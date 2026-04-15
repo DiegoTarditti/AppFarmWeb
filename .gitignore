@@ -19,8 +19,33 @@ uploads/
 .env
 
 # Claude Code
-.claude/settings.local.json
+.claude/
+
+# Dumps / backups
+backups/
+*.sql
+
+# Scratchpad personal
+NotasDiego/
+Pruebas/
+docker_panel/
+Facturas/
+Ofertas/
+ModulosOferta/
+EstadVentas/
+"Nueva carpeta"/
+
+# Muestras en raíz
+*.png
+*.jpg
+*.jpeg
+fc-kel.*
+image.*
+
+# Memoria local de Claude (ruta alterna si existiese)
+memory/
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
