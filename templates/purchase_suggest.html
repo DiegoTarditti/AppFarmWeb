@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sugerencia de pedido</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
+</head>
+<body class="min-h-screen">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <span class="font-bold text-sm">Sugerencia de pedido consolidado</span>
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('dashboard') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Dashboard</a>
+            <a href="{{ url_for('orders_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">Pedidos</a>
+        </div>
+    </div>
+</header>
+
+<div class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-4 py-3 text-sm">{{ messages[0] }}</div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Parámetros -->
+    <form method="get" class="bg-white rounded-xl border border-[#e0e0e0] p-5">
+        <p class="font-semibold text-sm mb-3">Parámetros del análisis</p>
+        <div class="grid md:grid-cols-3 gap-4 items-end">
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] block mb-1">
+                    Umbral de cobertura
+                </label>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-[#6f6f6f]">&lt;</span>
+                    <input type="number" name="threshold_days" value="{{ threshold_days }}" min="1" max="365"
+                           class="w-20 px-2 py-1.5 text-sm border border-[#e0e0e0] rounded-lg">
+                    <span class="text-xs text-[#6f6f6f]">días</span>
+                </div>
+                <p class="text-[11px] text-[#9ca3af] mt-1">Incluye productos cuyo stock alcanza para menos que esto</p>
+            </div>
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] block mb-1">
+                    Cobertura objetivo
+                </label>
+                <div class="flex items-center gap-2">
+                    <input type="number" name="target_days" value="{{ target_days }}" min="1" max="365"
+                           class="w-20 px-2 py-1.5 text-sm border border-[#e0e0e0] rounded-lg">
+                    <span class="text-xs text-[#6f6f6f]">días después de comprar</span>
+                </div>
+                <p class="text-[11px] text-[#9ca3af] mt-1">Cuánto stock dejar tras reponer</p>
+            </div>
+            <div>
+                <input type="hidden" name="calcular" value="1">
+                <button type="submit" class="w-full px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">
+                    Calcular sugerencias
+                </button>
+            </div>
+        </div>
+    </form>
+
+    {% if calcular %}
+        {% if groups %}
+        <!-- Resumen -->
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 flex flex-wrap gap-6">
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">Laboratorios</p>
+                <p class="text-xl font-bold">{{ groups|length }}</p>
+            </div>
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">Productos sugeridos</p>
+                <p class="text-xl font-bold">{{ total_items }}</p>
+            </div>
+            <div>
+                <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">Importe total estimado</p>
+                <p class="text-xl font-bold text-emerald-700">${{ '{:,.0f}'.format(total_importe).replace(',','.') }}</p>
+            </div>
+        </div>
+
+        {% for g in groups %}
+        <form method="post" action="{{ url_for('purchase_suggest_create_order') }}"
+              class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+            <input type="hidden" name="laboratorio" value="{{ g.laboratorio }}">
+
+            <div class="px-5 py-3 bg-[#f0f0f0] border-b border-[#e0e0e0] flex items-center justify-between">
+                <div>
+                    <p class="font-semibold text-sm">🏢 {{ g.laboratorio }}</p>
+                    <p class="text-xs text-[#6f6f6f]">
+                        {{ g.productos|length }} productos · {{ g.lab_units }} unidades ·
+                        <span class="font-semibold text-emerald-700">${{ '{:,.0f}'.format(g.lab_total).replace(',','.') }}</span>
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="toggleAll(this)"
+                        class="text-xs px-3 py-1.5 rounded-lg border border-[#e0e0e0] hover:bg-[#f9f9f9]">
+                        Seleccionar todos
+                    </button>
+                    <button type="submit"
+                        class="text-xs px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+                        onclick="return confirm('¿Crear pedido para {{ g.laboratorio }} con los productos seleccionados?')">
+                        Crear pedido
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-[#fafafa]">
+                        <tr class="text-xs text-[#6f6f6f] uppercase tracking-widest">
+                            <th class="px-3 py-2"><input type="checkbox" class="lab-check-all" checked></th>
+                            <th class="text-left px-3 py-2">Producto</th>
+                            <th class="text-right px-3 py-2">Stock</th>
+                            <th class="text-right px-3 py-2">Prom/mes</th>
+                            <th class="text-center px-3 py-2">Rot.</th>
+                            <th class="text-right px-3 py-2">Cobertura</th>
+                            <th class="text-right px-3 py-2">Sugerido</th>
+                            <th class="text-right px-3 py-2">PVP</th>
+                            <th class="text-right px-3 py-2">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for it in g.productos %}{# productos, no items: items colisiona con dict.items() en Jinja #}
+                        <tr class="border-t border-[#e0e0e0] {% if it.cobertura is not none and it.cobertura < 3 %}bg-red-50{% elif it.cobertura is not none and it.cobertura < 7 %}bg-amber-50{% endif %}">
+                            <td class="px-3 py-2 text-center">
+                                <input type="checkbox" name="sel" value="{{ it.codigo_barra }}" checked class="row-check">
+                                <input type="hidden" name="nom_{{ it.codigo_barra }}" value="{{ it.descripcion }}">
+                                <input type="hidden" name="pvp_{{ it.codigo_barra }}" value="{{ it.precio_pvp }}">
+                                <input type="hidden" name="rot_{{ it.codigo_barra }}" value="{{ it.rotacion or '' }}">
+                                <input type="hidden" name="avg_{{ it.codigo_barra }}" value="{{ it.avg_monthly }}">
+                            </td>
+                            <td class="px-3 py-2">
+                                <p class="font-medium">{{ it.descripcion }}</p>
+                                <p class="text-xs font-mono text-[#9ca3af]">{{ it.codigo_barra }}</p>
+                            </td>
+                            <td class="px-3 py-2 text-right font-mono">{{ it.stock }}</td>
+                            <td class="px-3 py-2 text-right font-mono">{{ it.avg_monthly }}</td>
+                            <td class="px-3 py-2 text-center">
+                                {% if it.rotacion == 'A' %}<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">A</span>
+                                {% elif it.rotacion == 'M' %}<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-bold">M</span>
+                                {% elif it.rotacion == 'B' %}<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-bold">B</span>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right font-bold">
+                                {% if it.cobertura is none %}—{% else %}{{ it.cobertura }} d{% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right">
+                                <input type="number" name="qty_{{ it.codigo_barra }}" value="{{ it.sugerido }}" min="0"
+                                       data-pvp="{{ it.precio_pvp }}"
+                                       oninput="recalc(this)"
+                                       class="w-20 px-2 py-1 text-sm text-right border border-[#e0e0e0] rounded-lg font-mono">
+                            </td>
+                            <td class="px-3 py-2 text-right font-mono text-xs">${{ '%.0f'|format(it.precio_pvp) }}</td>
+                            <td class="px-3 py-2 text-right font-mono font-semibold subtotal-cell">
+                                ${{ '{:,.0f}'.format(it.subtotal).replace(',','.') }}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
+        {% endfor %}
+
+        {% else %}
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-10 text-center text-sm text-[#6f6f6f]">
+            No hay productos con cobertura &lt; {{ threshold_days }} días. Probá subir el umbral.
+        </div>
+        {% endif %}
+    {% else %}
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-10 text-center text-sm text-[#6f6f6f]">
+            Ajustá los parámetros arriba y hacé clic en <strong>Calcular sugerencias</strong>.
+        </div>
+    {% endif %}
+
+</div>
+
+<script>
+function recalc(input) {
+    const qty = parseInt(input.value) || 0;
+    const pvp = parseFloat(input.dataset.pvp) || 0;
+    const row = input.closest('tr');
+    row.querySelector('.subtotal-cell').textContent = '$' + (qty * pvp).toLocaleString('es-AR', {maximumFractionDigits:0});
+}
+function toggleAll(btn) {
+    const form = btn.closest('form');
+    const checks = form.querySelectorAll('.row-check');
+    const allChecked = Array.from(checks).every(c => c.checked);
+    checks.forEach(c => c.checked = !allChecked);
+    btn.textContent = allChecked ? 'Seleccionar todos' : 'Deseleccionar todos';
+}
+</script>
+</body>
+</html>

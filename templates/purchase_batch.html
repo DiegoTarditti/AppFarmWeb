@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Procesamiento por lotes</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
+</head>
+<body class="min-h-screen">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <span class="font-bold text-sm">Procesamiento por lotes</span>
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('purchase_index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Análisis</a>
+            <a href="{{ url_for('dashboard') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">Dashboard</a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-6 space-y-4">
+
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 flex flex-wrap gap-6">
+        <div>
+            <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">Archivos procesados</p>
+            <p class="text-xl font-bold">{{ results|length }}</p>
+        </div>
+        <div>
+            <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">OK</p>
+            <p class="text-xl font-bold text-emerald-700">{{ ok|length }}</p>
+        </div>
+        <div>
+            <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">Con errores</p>
+            <p class="text-xl font-bold text-red-600">{{ fail|length }}</p>
+        </div>
+        <div>
+            <p class="text-[10px] uppercase tracking-wider text-[#9ca3af] font-semibold">Días</p>
+            <p class="text-xl font-bold">{{ n_days }}</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-[#fafafa]">
+                <tr class="text-xs text-[#6f6f6f] uppercase tracking-widest">
+                    <th class="text-left px-3 py-2">Archivo</th>
+                    <th class="text-left px-3 py-2">Laboratorio</th>
+                    <th class="text-left px-3 py-2">Período</th>
+                    <th class="text-right px-3 py-2">Productos</th>
+                    <th class="text-center px-3 py-2">Resultado</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for r in results %}
+                <tr class="border-t border-[#e0e0e0] {% if 'error' in r %}bg-red-50{% endif %}">
+                    <td class="px-3 py-2 font-mono text-xs">{{ r.filename }}</td>
+                    <td class="px-3 py-2">{{ r.laboratorio or '—' }}</td>
+                    <td class="px-3 py-2 text-xs text-[#6f6f6f]">{{ r.periodo or '—' }}</td>
+                    <td class="px-3 py-2 text-right font-mono">{{ r.count if 'count' in r else '—' }}</td>
+                    <td class="px-3 py-2 text-center">
+                        {% if 'uid' in r %}
+                            <a href="{{ url_for('purchase_results', uid=r.uid) }}"
+                               class="text-xs px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">
+                                Ver resultados
+                            </a>
+                        {% else %}
+                            <span class="text-xs text-red-700">{{ r.error }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="flex gap-2">
+        <a href="{{ url_for('dashboard') }}" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">
+            Ir al Dashboard
+        </a>
+        <a href="{{ url_for('purchase_suggest', calcular=1) }}" class="px-4 py-2 rounded-lg bg-white border border-[#e0e0e0] text-sm font-semibold hover:bg-[#f9f9f9]">
+            Sugerir pedido consolidado
+        </a>
+        <a href="{{ url_for('purchase_index') }}" class="ml-auto px-4 py-2 rounded-lg bg-white border border-[#e0e0e0] text-sm text-[#6f6f6f] hover:bg-[#f9f9f9]">
+            Procesar otro lote
+        </a>
+    </div>
+
+</main>
+</body>
+</html>

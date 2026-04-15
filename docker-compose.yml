@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    command: postgres -c timezone=UTC -c log_timezone=UTC
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: farmacia
+      PGTZ: UTC
+
+
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+    - "5432:5432"   # <--- este bloque es clave
+  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: >
+      sh -c "pip install --quiet beautifulsoup4 lxml &&
+             gunicorn --bind 0.0.0.0:5000 --timeout 120 --workers 2 app:app"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/farmacia
+      SECRET_KEY: replace-this-secret
+      TZ: America/Argentina/Buenos_Aires
+    ports:
+      - '5000:5000'
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+
+volumes:
+  pgdata:

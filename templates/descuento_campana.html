@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ campana.laboratorio_nombre }} — Farmacia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: {
+                fontFamily: { sans: ['Inter','sans-serif'] },
+                colors: {
+                    surface: { DEFAULT:'#ffffff', input:'#f5f5f5', border:'#e0e0e0', head:'#f0f0f0' },
+                    brand: { DEFAULT:'#EAB308', hover:'#CA8A04', dark:'#0d0d0d' }
+                }
+            }}
+        }
+    </script>
+    <style>
+        body { background-color:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('descuentos_list') }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors" title="Volver">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <div>
+                <p class="font-bold text-sm text-[#1e1e1e]">{{ campana.laboratorio_nombre }}</p>
+                {% if campana.proveedor_nombre %}
+                <p class="text-xs text-[#6f6f6f] mt-0.5">{{ campana.proveedor_nombre }}</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <button type="button" onclick="document.getElementById('edit-panel').classList.toggle('hidden')"
+                    class="text-xs text-[#6f6f6f] hover:text-brand px-3 py-1.5 rounded-lg hover:bg-black/[0.04] border border-surface-border transition-colors">
+                Editar encabezado
+            </button>
+            <button type="button" onclick="confirmDelete()"
+                    class="text-xs text-[#999] hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-900/20 border border-surface-border transition-colors">
+                Eliminar campaña
+            </button>
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">
+        {{ messages[0] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Info de la campaña -->
+    <div class="bg-surface rounded-xl border border-surface-border px-6 py-4 flex flex-wrap items-center gap-8 text-sm">
+        <div>
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-0.5">Laboratorio</p>
+            <p class="font-semibold text-[#1e1e1e]">{{ campana.laboratorio_nombre }}</p>
+        </div>
+        {% if campana.proveedor_nombre %}
+        <div>
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-0.5">Proveedor</p>
+            <p class="font-semibold text-[#1e1e1e]">{{ campana.proveedor_nombre }}</p>
+        </div>
+        {% endif %}
+        <div>
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-0.5">Fecha</p>
+            <p class="font-semibold text-[#1e1e1e]">{{ campana.fecha or '—' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-0.5">Módulos</p>
+            <p class="font-semibold text-brand">{{ modulos|length }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-0.5">Cargada</p>
+            <p class="text-[#999] text-xs">{{ campana.creado_en }}</p>
+        </div>
+        {% if campana.observacion %}
+        <div class="flex-1 min-w-0">
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-0.5">Observación</p>
+            <p class="text-[#6f6f6f] text-xs truncate">{{ campana.observacion }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Panel de edición (oculto por defecto) -->
+    <div id="edit-panel" class="hidden bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-6 py-4 border-b border-surface-border">
+            <p class="font-semibold text-[#1e1e1e]">Editar encabezado</p>
+        </div>
+        <form method="POST" action="{{ url_for('descuento_campana_edit', campana_id=campana.id) }}"
+              class="px-6 py-4 flex flex-wrap items-end gap-4">
+            <div class="w-56">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Proveedor</label>
+                <select name="proveedor_id"
+                        class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                        onchange="syncLabEdit(this)">
+                    <option value="">— Sin proveedor —</option>
+                    {% for p in proveedores %}
+                    <option value="{{ p.id }}" {{ 'selected' if campana.proveedor_id == p.id }}>{{ p.razon_social }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex-1 min-w-[180px]">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Laboratorio *</label>
+                <input type="text" name="laboratorio_nombre" required
+                       value="{{ campana.laboratorio_nombre }}"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <div class="w-36">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Fecha</label>
+                <input type="date" name="fecha" value="{{ campana.fecha_iso }}"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <div class="flex-[2] min-w-[200px]">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Observación</label>
+                <input type="text" name="observacion" value="{{ campana.observacion }}"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <button type="submit"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-5 py-2 rounded-lg text-sm transition-colors flex-shrink-0">
+                Guardar
+            </button>
+        </form>
+    </div>
+
+    <!-- Lista de módulos -->
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-[#1e1e1e]">Módulos</p>
+            <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20">
+                {{ modulos|length }}
+            </span>
+        </div>
+
+        {% if modulos %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-surface-head border-b border-surface-border">
+                    <tr>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Nombre del módulo</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Artículos</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Estado</th>
+                        <th class="px-5 py-3" aria-label="Acciones"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                {% for m in modulos %}
+                <tr class="hover:bg-black/[0.04] transition-colors {{ 'opacity-40' if not m.activo }}">
+                    <td class="px-5 py-3 font-medium text-[#1e1e1e]">{{ m.nombre }}</td>
+                    <td class="px-5 py-3 text-center">
+                        <span class="bg-surface-input text-[#1e1e1e] text-xs font-semibold px-2 py-0.5 rounded-full">
+                            {{ m.n_items }}
+                        </span>
+                    </td>
+                    <td class="px-5 py-3 text-center">
+                        {% if m.activo %}
+                        <span class="bg-emerald-900/30 text-emerald-600 text-xs px-2 py-0.5 rounded-full border border-emerald-800/30">activo</span>
+                        {% else %}
+                        <span class="bg-[#eaeaea] text-[#999] text-xs px-2 py-0.5 rounded-full border border-[#e0e0e0]">inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-3 text-right">
+                        <div class="flex items-center gap-1 justify-end">
+                            <a href="{{ url_for('descuento_detalle', modulo_id=m.id) }}"
+                               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                                Ver artículos
+                            </a>
+                            <form method="POST" action="{{ url_for('descuento_toggle', modulo_id=m.id) }}" class="inline">
+                                <button type="submit"
+                                    class="text-xs text-[#6f6f6f] hover:text-brand px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                                    {{ 'Desactivar' if m.activo else 'Activar' }}
+                                </button>
+                            </form>
+                            <button type="button" onclick="confirmDeleteMod({{ m.id }}, '{{ m.nombre }}')"
+                                class="text-xs text-[#999] hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-900/20 transition-colors">
+                                Eliminar
+                            </button>
+                            <form id="del-mod-{{ m.id }}" method="POST"
+                                  action="{{ url_for('descuento_delete', modulo_id=m.id) }}" class="hidden"></form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-12 text-center text-sm text-[#6f6f6f]">
+            Esta campaña no tiene módulos.
+        </div>
+        {% endif %}
+    </div>
+</main>
+
+<form id="form-delete-campana" method="POST"
+      action="{{ url_for('descuento_campana_delete', campana_id=campana.id) }}" class="hidden"></form>
+
+<script>
+const proveedores = {{ proveedores | tojson }};
+
+function syncLabEdit(sel) {
+    const inp = document.querySelector('input[name="laboratorio_nombre"]');
+    if (!sel.value) return;
+    const p = proveedores.find(x => x.id == sel.value);
+    if (p) inp.value = p.razon_social;
+}
+
+function confirmDelete() {
+    if (confirm('¿Eliminar la campaña "{{ campana.laboratorio_nombre }}" y todos sus módulos?\nEsta acción no se puede deshacer.')) {
+        document.getElementById('form-delete-campana').submit();
+    }
+}
+
+function confirmDeleteMod(id, nombre) {
+    if (confirm('¿Eliminar el módulo "' + nombre + '" y todos sus artículos?')) {
+        document.getElementById('del-mod-' + id).submit();
+    }
+}
+</script>
+</body>
+</html>

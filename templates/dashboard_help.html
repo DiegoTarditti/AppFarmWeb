@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ayuda · Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }
+        .prose h2 { scroll-margin-top: 80px; }
+    </style>
+</head>
+<body class="min-h-screen">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4 sticky top-0 z-10">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+        <div>
+            <p class="text-xs text-[#6f6f6f]">Centro de ayuda</p>
+            <p class="font-bold text-sm">Guía del Dashboard</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('dashboard') }}" title="Volver al dashboard"
+               class="w-9 h-9 rounded-lg border border-[#e0e0e0] flex items-center justify-center hover:bg-[#f0f0f0]">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Badge título -->
+    <div>
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold">
+            ✦ Control de stock y compras
+        </span>
+        <h1 class="mt-4 text-4xl font-extrabold tracking-tight">Cómo leer tu dashboard</h1>
+        <p class="mt-2 text-lg text-[#6f6f6f]">Un pantallazo de la farmacia en 10 segundos: qué te va a faltar, qué te sobra y dónde está tu plata.</p>
+    </div>
+
+    <!-- Índice -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
+        <p class="text-[10px] uppercase tracking-widest text-[#9ca3af] font-semibold mb-3">En esta guía</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-6 text-sm">
+            <a href="#que-hace" class="text-amber-700 hover:underline">1. ¿Qué hace este dashboard?</a>
+            <a href="#datos" class="text-amber-700 hover:underline">2. De dónde salen los datos</a>
+            <a href="#kpis" class="text-amber-700 hover:underline">3. Los 7 indicadores de arriba</a>
+            <a href="#graficos" class="text-amber-700 hover:underline">4. Los gráficos del carrusel</a>
+            <a href="#alertas" class="text-amber-700 hover:underline">5. Tabla de alertas y filtros</a>
+            <a href="#rutina" class="text-amber-700 hover:underline">6. Rutina semanal recomendada</a>
+            <a href="#faq" class="text-amber-700 hover:underline">7. Preguntas frecuentes</a>
+        </div>
+    </div>
+
+    <!-- 1. Qué hace -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="que-hace" class="text-2xl font-bold">1. ¿Qué hace este dashboard?</h2>
+        <p>Cruza el <strong>stock actual</strong>, el <strong>ritmo de venta</strong> y el <strong>precio de venta</strong> de cada producto para responder tres preguntas en un vistazo:</p>
+        <ul class="list-disc pl-6 space-y-1 text-[#333]">
+            <li>¿Qué productos voy a quebrar en los próximos días?</li>
+            <li>¿Cuánta plata tengo parada en mercadería que no se mueve?</li>
+            <li>¿Qué me está haciendo perder venta ahora mismo por falta de stock?</li>
+        </ul>
+    </section>
+
+    <!-- 2. Datos -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="datos" class="text-2xl font-bold">2. De dónde salen los datos</h2>
+        <p>El dashboard se alimenta de tres procesos del sistema:</p>
+        <div class="grid md:grid-cols-3 gap-3 mt-3">
+            <div class="border border-[#e0e0e0] rounded-lg p-3">
+                <p class="text-[10px] uppercase text-[#9ca3af] font-semibold">Proceso A</p>
+                <p class="font-semibold text-sm mt-1">Estadística de ventas por laboratorio</p>
+                <p class="text-xs text-[#6f6f6f] mt-2">Menú <em>Compras</em> → subís el Excel que te pasa el laboratorio. De ahí salen promedio mensual, rotación, forecast y "sin movimiento 60 días".</p>
+            </div>
+            <div class="border border-[#e0e0e0] rounded-lg p-3">
+                <p class="text-[10px] uppercase text-[#9ca3af] font-semibold">Proceso B</p>
+                <p class="font-semibold text-sm mt-1">Factura de compra (PDF)</p>
+                <p class="text-xs text-[#6f6f6f] mt-2">Al procesar una factura, se graba la <em>fecha de última compra</em> de cada producto. Así sabés cuándo compraste por última vez cada ítem.</p>
+            </div>
+            <div class="border border-[#e0e0e0] rounded-lg p-3">
+                <p class="text-[10px] uppercase text-[#9ca3af] font-semibold">Proceso C</p>
+                <p class="font-semibold text-sm mt-1">Reclamos</p>
+                <p class="text-xs text-[#6f6f6f] mt-2">Cuenta los reclamos abiertos al proveedor (diferencias de factura vs ERP).</p>
+            </div>
+        </div>
+        <div class="mt-3 bg-amber-50 border border-amber-300 rounded-lg p-3 text-sm">
+            <p class="font-semibold text-amber-800">⚠️ Importante</p>
+            <p class="text-amber-900 mt-1">Los productos de laboratorios que nunca procesaste <strong>no aparecen en el dashboard</strong>. Para tener el panorama completo, al menos una vez procesá el Excel de ventas de cada lab con el que trabajás.</p>
+        </div>
+    </section>
+
+    <!-- 3. KPIs -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="kpis" class="text-2xl font-bold">3. Los 7 indicadores de arriba</h2>
+        <div class="space-y-3 mt-2">
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-emerald-500"></span>
+                <div>
+                    <p class="font-semibold">Capital inmovilizado</p>
+                    <p class="text-sm text-[#6f6f6f]">Suma de <code>stock × PVP</code> de todos los productos analizados. Es la plata que tenés parada en góndola y depósito. Si filtrás por laboratorio, muestra solo ese lab.</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-orange-500"></span>
+                <div>
+                    <p class="font-semibold">Stock muerto</p>
+                    <p class="text-sm text-[#6f6f6f]">Capital en productos que <strong>no vendieron nada en 60 días</strong>. Meta: bajarlo con canjes, devoluciones o promociones.</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-red-500"></span>
+                <div>
+                    <p class="font-semibold">Alertas cobertura</p>
+                    <p class="text-sm text-[#6f6f6f]">Cantidad de productos cuyo stock alcanza para menos de N días (por defecto 10). Cambiá N en el filtro de abajo si querés ser más conservador.</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-amber-500"></span>
+                <div>
+                    <p class="font-semibold">Sin movimiento 60d</p>
+                    <p class="text-sm text-[#6f6f6f]">Productos que no registraron venta en los últimos 60 días según el Excel del laboratorio.</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-sky-500"></span>
+                <div>
+                    <p class="font-semibold">Reclamos abiertos</p>
+                    <p class="text-sm text-[#6f6f6f]">Diferencias de factura pendientes con proveedores. Cada uno representa plata a recuperar.</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-emerald-500"></span>
+                <div>
+                    <p class="font-semibold">Facturas del mes</p>
+                    <p class="text-sm text-[#6f6f6f]">Cuántas facturas procesaste desde el día 1. Sirve para medir actividad de compra.</p>
+                </div>
+            </div>
+            <div class="flex gap-3">
+                <span class="inline-block w-2 rounded bg-[#1e1e1e]"></span>
+                <div>
+                    <p class="font-semibold">Analizados</p>
+                    <p class="text-sm text-[#6f6f6f]">Cantidad total de productos con análisis cargado. Si es bajo, te faltan labs por procesar.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 4. Gráficos -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="graficos" class="text-2xl font-bold">4. Los gráficos del carrusel</h2>
+        <p>Usá las flechas <strong>‹ ›</strong> para moverte entre las vistas.</p>
+        <ol class="list-decimal pl-6 space-y-2 mt-2 text-[#333]">
+            <li><strong>🏆 Top 10 más vendidos (u/mes)</strong> — cuáles son tus caballos de carrera en volumen. Si alguno está en la tabla de alertas, priorizá ese pedido.</li>
+            <li><strong>💰 Top 10 que más facturan</strong> — los que te dejan más plata por mes (prom × PVP). No siempre coinciden con los más vendidos: acá mandan los caros.</li>
+            <li><strong>🔻 Top 10 pérdida diaria por falta de stock</strong> — productos ya quebrados que te cuestan plata <em>hoy</em>. Cada día que pasa sin reponer, esa es la venta que dejás de hacer.</li>
+            <li><strong>🪦 Top 10 stock muerto valorizado</strong> — dónde está parada la mayor cantidad de plata sin rotar. Candidatos ideales para canje con el proveedor.</li>
+        </ol>
+    </section>
+
+    <!-- 5. Alertas -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="alertas" class="text-2xl font-bold">5. Tabla de alertas y filtros</h2>
+        <p>La tabla muestra los productos ordenados por urgencia (cobertura ascendente).</p>
+        <ul class="list-disc pl-6 space-y-1 mt-2 text-[#333]">
+            <li><strong>Filas rojas</strong>: cobertura menor a 3 días — urgente.</li>
+            <li><strong>Filas ámbar</strong>: cobertura entre 3 y 7 días — pedir pronto.</li>
+            <li><strong>Filas blancas</strong>: entre 7 y N días — entran al próximo pedido.</li>
+        </ul>
+        <p class="mt-3 font-semibold">Filtros disponibles:</p>
+        <ul class="list-disc pl-6 space-y-1 text-[#333]">
+            <li><strong>Buscar</strong>: texto en descripción o código de barras.</li>
+            <li><strong>Analizar para N días</strong>: umbral de cobertura. Subí a 20-30 si querés ver el pedido completo del mes.</li>
+            <li><strong>Laboratorio</strong>: limita todo (KPIs, gráficos y tabla) a un lab puntual.</li>
+            <li><strong>Rotación</strong>: A (alta) / M (media) / B (baja). Útil para concentrarte en los A que no podés dejar quebrar.</li>
+            <li><strong>Solo sin movimiento 60d</strong>: muestra candidatos a canje/devolución.</li>
+        </ul>
+    </section>
+
+    <!-- 6. Rutina -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="rutina" class="text-2xl font-bold">6. Rutina semanal recomendada</h2>
+        <ol class="list-decimal pl-6 space-y-2 mt-2 text-[#333]">
+            <li>Lunes: procesar las estadísticas de ventas de la semana anterior (una por laboratorio). Así el dashboard queda al día.</li>
+            <li>Revisar KPI <em>Alertas cobertura</em> con N=10 → armar pedido urgente.</li>
+            <li>Cambiar N a 30 → ver el pedido completo del mes.</li>
+            <li>Filtrar por <em>Solo sin movimiento 60d</em> → armar lista de canjes con el visitador.</li>
+            <li>Cada factura nueva: subirla en <em>Compras</em> para refrescar fechas de última compra y mantener los reclamos al día.</li>
+        </ol>
+    </section>
+
+    <!-- 7. FAQ -->
+    <section class="bg-white rounded-xl border border-[#e0e0e0] p-6 space-y-3">
+        <h2 id="faq" class="text-2xl font-bold">7. Preguntas frecuentes</h2>
+        <div class="space-y-3 mt-2">
+            <div>
+                <p class="font-semibold">¿Por qué un producto no aparece?</p>
+                <p class="text-sm text-[#6f6f6f]">Porque nunca procesaste el Excel de ventas del laboratorio al que pertenece. El dashboard solo ve lo que ya fue analizado.</p>
+            </div>
+            <div>
+                <p class="font-semibold">¿El capital inmovilizado incluye IVA?</p>
+                <p class="text-sm text-[#6f6f6f]">Sí, se calcula con PVP (precio de venta al público), que ya tiene IVA incluido.</p>
+            </div>
+            <div>
+                <p class="font-semibold">¿Qué es "cobertura"?</p>
+                <p class="text-sm text-[#6f6f6f]">Días que te dura el stock al ritmo de venta actual. Fórmula: <code>stock × 30 / promedio_mensual</code>. Si es 5, te quedan 5 días.</p>
+            </div>
+            <div>
+                <p class="font-semibold">¿Cómo clasifica la rotación?</p>
+                <p class="text-sm text-[#6f6f6f]">Por el promedio mensual de ventas. Los umbrales A/M/B se configuran en <em>Ajustes</em> y aplican al procesar el Excel.</p>
+            </div>
+            <div>
+                <p class="font-semibold">La "pérdida diaria" ¿es real?</p>
+                <p class="text-sm text-[#6f6f6f]">Es una estimación: si vendías X/mes a precio P y ahora tenés stock 0, se asume que cada día perdés <code>(X/30) × P</code>. Sirve para priorizar, no es contable.</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="text-center text-xs text-[#6f6f6f] py-6">
+        <a href="{{ url_for('dashboard') }}" class="text-amber-700 hover:underline font-semibold">← Volver al dashboard</a>
+    </div>
+
+</main>
+</body>
+</html>

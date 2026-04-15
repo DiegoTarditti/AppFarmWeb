@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Asistente de parsing — Factura {{ invoice.numero_factura }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0', head: '#f0f0f0' },
+                        brand:   { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        #pdf-text {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            line-height: 1.6;
+        }
+        .opt-card { transition: box-shadow .15s, border-color .15s; }
+        .opt-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+        #auto-result { display:none; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+                <svg class="w-4 h-4 text-[#1a1100]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+                </svg>
+            </div>
+            <div>
+                <span class="font-bold text-sm">Generación de documentos</span>
+                <span class="ml-3 text-xs text-[#6f6f6f]">{{ invoice.proveedor_razon }} · {{ invoice.numero_factura }}</span>
+            </div>
+        </div>
+        <a href="{{ url_for('index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors">← Inicio</a>
+    </div>
+</header>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+    <div class="max-w-7xl mx-auto mt-4 px-6">
+        <div class="rounded-lg px-4 py-3 text-sm {% if cat == 'warning' %}bg-amber-50 border border-amber-200 text-amber-800{% else %}bg-red-50 border border-red-200 text-red-800{% endif %}">
+            {{ msg }}
+        </div>
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<div class="max-w-7xl mx-auto px-6 pt-6">
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 flex items-center gap-3 flex-wrap">
+        <span class="text-xs font-semibold text-[#6f6f6f]">Tipo de comprobante:</span>
+        <div id="tipo-chips" class="flex gap-2">
+            <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-tipo="FAC">Factura (FAC)</button>
+            <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-tipo="NCR">Nota de crédito (NCR)</button>
+        </div>
+        <span id="tipo-status" class="text-xs text-[#6f6f6f] ml-auto"></span>
+    </div>
+</div>
+
+<style>
+.tchip.active { background: #16a34a !important; color: white; }
+</style>
+
+<script>
+const CURRENT_TIPO = {{ (invoice.tipo_comprobante or 'FAC')|tojson }};
+function paintTipo(t) {
+    document.querySelectorAll('#tipo-chips .tchip').forEach(c => c.classList.toggle('active', c.dataset.tipo === t));
+}
+paintTipo(CURRENT_TIPO);
+document.getElementById('tipo-chips').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.tchip'); if (!btn) return;
+    const tipo = btn.dataset.tipo;
+    const status = document.getElementById('tipo-status');
+    status.textContent = 'Guardando…';
+    const fd = new FormData();
+    fd.append('tipo_comprobante', tipo);
+    const resp = await fetch('{{ url_for("update_invoice_header", invoice_id=invoice.id) }}', { method:'POST', body: fd });
+    if (resp.ok) { paintTipo(tipo); status.textContent = 'Guardado ✓'; setTimeout(()=>status.textContent='', 1500); }
+    else { status.textContent = 'Error'; }
+});
+</script>
+
+<div class="max-w-7xl mx-auto px-6 py-6 flex gap-6">
+
+    <!-- Izquierda: texto PDF -->
+    <div class="w-1/2 shrink-0">
+        <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+            <div class="px-4 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0]">
+                <p class="font-semibold text-sm">Texto extraído del PDF</p>
+                <p class="text-xs text-[#6f6f6f] mt-0.5">Usá esto como referencia para identificar columnas</p>
+            </div>
+            <div id="pdf-text" class="p-4 overflow-y-auto max-h-[75vh] text-[#1e1e1e]">{{ pdf_text }}</div>
+        </div>
+    </div>
+
+    <!-- Derecha: opciones -->
+    <div class="w-1/2 flex flex-col gap-4">
+
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            <strong>El parser no encontró artículos.</strong> Elegí una de las siguientes opciones para extraerlos de todas formas:
+        </div>
+
+        <!-- Opción A -->
+        <div class="opt-card bg-white rounded-xl border border-[#e0e0e0] p-5">
+            <div class="flex items-start gap-4">
+                <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0 font-bold text-sm">A</div>
+                <div class="flex-1">
+                    <p class="font-semibold text-sm">Detectar tabla automáticamente</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1">Analiza el PDF con pdfplumber. Si encuentra una tabla, la muestra para que configures las columnas.</p>
+                    <button id="btn-auto" onclick="runAutoTable()"
+                            class="mt-3 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition-colors">
+                        Detectar ahora
+                    </button>
+                    <div id="auto-result" class="mt-3">
+                        <div id="auto-info" class="text-xs text-[#6f6f6f] mb-2"></div>
+                        <div id="auto-preview" class="overflow-x-auto max-h-48 overflow-y-auto border border-[#e0e0e0] rounded text-xs"></div>
+                        <a id="btn-auto-use" href="{{ url_for('map_columns', invoice_id=invoice.id) }}"
+                           class="mt-2 inline-block px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold transition-colors hidden">
+                            Usar esta tabla → Mapear columnas
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Opción B -->
+        <div class="opt-card bg-white rounded-xl border border-[#e0e0e0] p-5">
+            <div class="flex items-start gap-4">
+                <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center shrink-0 font-bold text-sm">B</div>
+                <div class="flex-1">
+                    <p class="font-semibold text-sm">Mapear columnas manualmente</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1">Ve la tabla fila por fila y asignás vos qué columna es código, descripción, cantidad, precio, etc.</p>
+                    <a href="{{ url_for('map_columns', invoice_id=invoice.id) }}"
+                       class="mt-3 inline-block px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">
+                        Ir al mapeador de columnas
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Opción C -->
+        <div class="opt-card bg-white rounded-xl border border-[#e0e0e0] p-5">
+            <div class="flex items-start gap-4">
+                <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 font-bold text-sm">C</div>
+                <div class="flex-1">
+                    <p class="font-semibold text-sm">Ingresar artículos manualmente</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1">Cargás cada artículo a mano en una tabla editable. Útil como último recurso o para facturas cortas.</p>
+                    <a href="{{ url_for('manual_items', invoice_id=invoice.id) }}"
+                       class="mt-3 inline-block px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors">
+                        Ingresar manualmente
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Opción D -->
+        <div class="opt-card bg-white rounded-xl border border-[#e0e0e0] p-5">
+            <div class="flex items-start gap-4">
+                <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 font-bold text-sm">D</div>
+                <div class="flex-1">
+                    <p class="font-semibold text-sm">Aprender patrón por ejemplo</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1">Seleccioná fragmentos de una fila del PDF (código, descripción, cantidad, precio…) y el sistema infiere una regex y la aplica a todas las filas.</p>
+                    <a href="{{ url_for('pick_items', invoice_id=invoice.id) }}"
+                       class="mt-3 inline-block px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors">
+                        Abrir selector por ejemplo
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+async function runAutoTable() {
+    const btn = document.getElementById('btn-auto');
+    const resultDiv = document.getElementById('auto-result');
+    const infoEl = document.getElementById('auto-info');
+    const previewEl = document.getElementById('auto-preview');
+    const useBtn = document.getElementById('btn-auto-use');
+
+    btn.textContent = 'Detectando…';
+    btn.disabled = true;
+
+    try {
+        const resp = await fetch('{{ url_for("auto_table", invoice_id=invoice.id) }}', { method: 'POST' });
+        const data = await resp.json();
+        resultDiv.style.display = 'block';
+
+        if (data.error) {
+            infoEl.textContent = 'Error: ' + data.error;
+            return;
+        }
+
+        const rows = data.rows || [];
+        infoEl.textContent = `Fuente: ${data.source === 'table' ? 'tabla detectada automáticamente' : 'palabras agrupadas por posición Y'} · ${rows.length} filas`;
+
+        // Render preview table
+        if (rows.length === 0) {
+            previewEl.textContent = 'No se encontraron filas.';
+            return;
+        }
+        const maxCols = Math.max(...rows.map(r => Array.isArray(r) ? r.length : 0));
+        let html = '<table class="w-full border-collapse"><tbody>';
+        rows.slice(0, 25).forEach((row, ri) => {
+            html += `<tr class="${ri % 2 === 0 ? 'bg-white' : 'bg-[#f5f5f5]'}">`;
+            (Array.isArray(row) ? row : []).forEach(cell => {
+                html += `<td class="border border-[#e0e0e0] px-1 py-0.5 whitespace-nowrap">${cell ?? ''}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        previewEl.innerHTML = html;
+
+        if (rows.length > 2) {
+            useBtn.classList.remove('hidden');
+        }
+    } catch(e) {
+        infoEl.textContent = 'Error al conectar con el servidor.';
+        resultDiv.style.display = 'block';
+    } finally {
+        btn.textContent = 'Detectar ahora';
+        btn.disabled = false;
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
+</head>
+<body class="min-h-screen">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <span class="font-bold text-sm">Dashboard · control de stock</span>
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('purchase_suggest') }}" class="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg">
+                💡 Sugerir pedido
+            </a>
+            <a href="{{ url_for('dashboard_help') }}" class="text-xs text-amber-700 hover:text-amber-800 font-semibold flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Ayuda
+            </a>
+            <a href="{{ url_for('index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Inicio</a>
+        </div>
+    </div>
+</header>
+
+<div class="max-w-7xl mx-auto px-6 py-6 space-y-6">
+
+    <!-- KPIs compactos -->
+    <div class="grid grid-cols-3 md:grid-cols-7 gap-2">
+        <div class="bg-white rounded-lg border-2 border-emerald-300 px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Capital inmovilizado</p>
+            <p class="text-lg font-bold text-emerald-700 leading-tight">${{ '{:,.0f}'.format(capital_total).replace(',','.') }}</p>
+            <p class="text-[10px] text-[#6f6f6f]">stock × PVP</p>
+        </div>
+        <div class="bg-white rounded-lg border-2 border-orange-300 px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Stock muerto</p>
+            <p class="text-lg font-bold text-orange-700 leading-tight">${{ '{:,.0f}'.format(stock_muerto_total).replace(',','.') }}</p>
+            <p class="text-[10px] text-[#6f6f6f]">
+                {% if capital_total > 0 %}{{ '%.0f'|format(stock_muerto_total/capital_total*100) }}% del total{% else %}sin mov 60d{% endif %}
+            </p>
+        </div>
+        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Alertas cobertura</p>
+            <p class="text-lg font-bold text-red-600 leading-tight">{{ alerts_count }}</p>
+            <p class="text-[10px] text-[#6f6f6f]">&lt; {{ n_days }}d</p>
+        </div>
+        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Sin mov 60d</p>
+            <p class="text-lg font-bold text-amber-600 leading-tight">{{ sin_mov_count }}</p>
+            <p class="text-[10px] text-[#6f6f6f]">de {{ total_products }}</p>
+        </div>
+        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Reclamos abiertos</p>
+            <p class="text-lg font-bold text-sky-600 leading-tight">{{ claims_open }}</p>
+            <a href="{{ url_for('claims_list') }}" class="text-[10px] text-sky-600 hover:underline">ver →</a>
+        </div>
+        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Facturas del mes</p>
+            <p class="text-lg font-bold text-emerald-600 leading-tight">{{ invoices_month }}</p>
+        </div>
+        <div class="bg-white rounded-lg border border-[#e0e0e0] px-3 py-2">
+            <p class="text-[9px] uppercase tracking-wider text-[#9ca3af] font-semibold">Analizados</p>
+            <p class="text-lg font-bold leading-tight">{{ total_products }}</p>
+            {% if ultima_act %}<p class="text-[10px] text-[#6f6f6f]">{{ ultima_act.strftime('%d/%m %H:%M') }}</p>{% endif %}
+        </div>
+    </div>
+
+    <!-- Carousel de gráficos -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 relative">
+        <div class="flex items-center justify-between mb-2">
+            <div>
+                <p id="slide-title" class="font-semibold text-sm"></p>
+                <p class="text-[11px] text-[#6f6f6f]">{{ lab_filter or 'Todos los laboratorios' }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="prevSlide()" class="w-8 h-8 rounded-full bg-[#f0f0f0] hover:bg-[#e0e0e0] flex items-center justify-center font-bold">‹</button>
+                <div id="slide-dots" class="flex gap-1"></div>
+                <button onclick="nextSlide()" class="w-8 h-8 rounded-full bg-[#f0f0f0] hover:bg-[#e0e0e0] flex items-center justify-center font-bold">›</button>
+            </div>
+        </div>
+        <div class="slide" data-title="🏆 Top 10 más vendidos (unidades/mes)"><div style="height:360px"><canvas id="chart-qty"></canvas></div></div>
+        <div class="slide hidden" data-title="💰 Top 10 que más facturan (prom/mes × PVP)"><div style="height:360px"><canvas id="chart-val"></canvas></div></div>
+        <div class="slide hidden" data-title="🔻 Top 10 pérdida diaria por falta de stock"><div style="height:360px"><canvas id="chart-loss"></canvas></div></div>
+        <div class="slide hidden" data-title="🪦 Top 10 stock muerto valorizado (sin mov 60d)"><div style="height:360px"><canvas id="chart-muerto"></canvas></div></div>
+    </div>
+
+    <!-- Filtros -->
+    <form method="get" class="bg-white rounded-xl border border-[#e0e0e0] p-4 flex flex-wrap items-center gap-3">
+        <label class="text-xs font-semibold text-[#6f6f6f]">Buscar</label>
+        <input type="text" name="q" value="{{ q_text }}" placeholder="Producto o código…"
+               class="w-56 px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
+
+        <label class="text-xs font-semibold text-[#6f6f6f] ml-2">Analizar para</label>
+        <input type="number" name="n_days" value="{{ n_days }}" min="1" max="365"
+               class="w-20 px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
+        <span class="text-xs text-[#6f6f6f]">días</span>
+
+        <label class="text-xs font-semibold text-[#6f6f6f] ml-4">Laboratorio</label>
+        <select name="laboratorio" class="px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
+            <option value="">Todos</option>
+            {% for l in labs %}
+            <option value="{{ l }}" {% if l == lab_filter %}selected{% endif %}>{{ l }}</option>
+            {% endfor %}
+        </select>
+
+        <label class="text-xs font-semibold text-[#6f6f6f] ml-4">Rotación</label>
+        <select name="rotacion" class="px-2 py-1 text-sm border border-[#e0e0e0] rounded-lg">
+            <option value="">Todas</option>
+            <option value="A" {% if rot_filter == 'A' %}selected{% endif %}>Alta</option>
+            <option value="M" {% if rot_filter == 'M' %}selected{% endif %}>Media</option>
+            <option value="B" {% if rot_filter == 'B' %}selected{% endif %}>Baja</option>
+        </select>
+
+        <label class="flex items-center gap-1.5 ml-4 cursor-pointer">
+            <input type="checkbox" name="sin_mov" value="1" {% if only_sin_mov %}checked{% endif %} class="accent-amber-500">
+            <span class="text-xs font-semibold text-[#6f6f6f]">Solo sin movimiento 60d</span>
+        </label>
+
+        <button type="submit" class="ml-auto px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold">Aplicar</button>
+    </form>
+
+    <!-- Alertas de cobertura -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+        <div class="px-5 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0] flex items-center justify-between">
+            <div>
+                <p class="font-semibold text-sm">
+                    {% if only_sin_mov %}Productos sin movimiento en los últimos 60 días
+                    {% else %}Productos con riesgo de quiebre{% endif %}
+                </p>
+                <p class="text-xs text-[#6f6f6f]">
+                    {% if only_sin_mov %}ordenados alfabéticamente
+                    {% else %}Cobertura &lt; {{ n_days }} días · ordenados por urgencia{% endif %}
+                </p>
+            </div>
+            <p class="text-xs text-[#6f6f6f]">{{ alerts|length }} mostrados</p>
+        </div>
+        {% if alerts %}
+        <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#fafafa] sticky top-0">
+                    <tr class="text-xs text-[#6f6f6f] uppercase tracking-widest">
+                        <th class="text-left px-3 py-2">Producto</th>
+                        <th class="text-left px-3 py-2">Laboratorio</th>
+                        <th class="text-right px-3 py-2">Stock</th>
+                        <th class="text-right px-3 py-2">Prom/mes</th>
+                        <th class="text-center px-3 py-2">Rot.</th>
+                        <th class="text-right px-3 py-2">Cobertura</th>
+                        <th class="text-right px-3 py-2">Últ. compra</th>
+                        <th class="text-right px-3 py-2">P.PVP</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for a in alerts %}
+                    <tr class="border-t border-[#e0e0e0] {% if a.cobertura is not none and a.cobertura < 3 %}bg-red-50{% elif a.cobertura is not none and a.cobertura < 7 %}bg-amber-50{% endif %}">
+                        <td class="px-3 py-2">
+                            <div class="flex items-center gap-2">
+                                <p class="font-medium">{{ a.descripcion }}</p>
+                                {% if a.sin_mov_60d %}
+                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 font-bold">SIN MOV 60d</span>
+                                {% endif %}
+                            </div>
+                            <p class="text-xs font-mono text-[#9ca3af]">{{ a.codigo_barra }}</p>
+                        </td>
+                        <td class="px-3 py-2 text-xs">{{ a.laboratorio or '—' }}</td>
+                        <td class="px-3 py-2 text-right font-mono">{{ a.stock }}</td>
+                        <td class="px-3 py-2 text-right font-mono">{{ a.avg_monthly }}</td>
+                        <td class="px-3 py-2 text-center">
+                            {% if a.rotacion == 'A' %}<span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">A</span>
+                            {% elif a.rotacion == 'M' %}<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-bold">M</span>
+                            {% elif a.rotacion == 'B' %}<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-bold">B</span>
+                            {% else %}—{% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-right font-bold">
+                            {% if a.cobertura is none %}—{% else %}{{ a.cobertura }} d{% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-right text-xs">
+                            {% if a.ultima_compra %}{{ a.ultima_compra.strftime('%d/%m/%y') }}{% else %}<span class="text-[#9ca3af]">—</span>{% endif %}
+                        </td>
+                        <td class="px-3 py-2 text-right font-mono text-xs">${{ '%.0f'|format(a.precio_pvp) }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-8 text-center text-sm text-[#6f6f6f]">
+            {% if total_products == 0 %}
+                No hay datos de analytics. Procesá una estadística de venta en <a href="{{ url_for('purchase_index') }}" class="text-amber-600 hover:underline">Compras</a>.
+            {% else %}
+                No hay productos con cobertura &lt; {{ n_days }} días. Todo bajo control.
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<script>
+const PALETTE = [
+    '#ef4444','#f97316','#f59e0b','#eab308','#84cc16',
+    '#22c55e','#10b981','#14b8a6','#06b6d4','#3b82f6'
+];
+const TOP_QTY = {{ top_qty|tojson }};
+const TOP_VAL = {{ top_val|tojson }};
+const TOP_LOSS = {{ top_loss|tojson }};
+const TOP_MUERTO = {{ top_muerto|tojson }};
+
+function fmtMiles(v, isCurrency) {
+    if (isCurrency) {
+        if (v >= 1000) return '$' + (v/1000).toFixed(v >= 10000 ? 0 : 1) + 'k';
+        return '$' + v.toFixed(0);
+    }
+    return v.toLocaleString('es-AR', {maximumFractionDigits: 1});
+}
+
+const tipLabelPlugin = {
+    id: 'tipLabel',
+    afterDatasetsDraw(chart, args, opts) {
+        const {ctx} = chart;
+        const meta = chart.getDatasetMeta(0);
+        const isCurrency = opts.isCurrency;
+        ctx.save();
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.fillStyle = '#1e1e1e';
+        ctx.textBaseline = 'middle';
+        meta.data.forEach((bar, i) => {
+            const v = chart.data.datasets[0].data[i];
+            if (!v) return;
+            ctx.fillText(' ' + fmtMiles(v, isCurrency), bar.x + 4, bar.y);
+        });
+        ctx.restore();
+    }
+};
+
+function mkBar(ctxId, data, isCurrency, unitLabel) {
+    const ctx = document.getElementById(ctxId);
+    if (!ctx || !data.length) return;
+    new Chart(ctx, {
+        type: 'bar',
+        plugins: [tipLabelPlugin],
+        data: {
+            labels: data.map(d => d.nombre),
+            datasets: [{
+                label: unitLabel,
+                data: data.map(d => d.valor),
+                backgroundColor: data.map((_,i) => PALETTE[i % PALETTE.length]),
+                borderRadius: 6,
+                borderSkipped: false,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { right: 60 } },
+            plugins: {
+                legend: { display: false },
+                tipLabel: { isCurrency: isCurrency },
+                tooltip: {
+                    callbacks: {
+                        label: (c) => isCurrency
+                            ? '$ ' + c.parsed.x.toLocaleString('es-AR', {maximumFractionDigits:0})
+                            : c.parsed.x.toLocaleString('es-AR', {maximumFractionDigits:1}) + ' ' + unitLabel
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: { callback: v => fmtMiles(v, isCurrency) },
+                    grid: { color: '#f0f0f0' }
+                },
+                y: {
+                    ticks: { font: { size: 10 } },
+                    grid: { display: false }
+                }
+            }
+        }
+    });
+}
+
+mkBar('chart-qty', TOP_QTY, false, 'u/mes');
+mkBar('chart-val', TOP_VAL, true, 'Facturación');
+mkBar('chart-loss', TOP_LOSS, true, 'Pérdida/día');
+mkBar('chart-muerto', TOP_MUERTO, true, 'Stock muerto');
+
+// Carousel
+const slides = document.querySelectorAll('.slide');
+const titleEl = document.getElementById('slide-title');
+const dotsEl = document.getElementById('slide-dots');
+let currentSlide = 0;
+
+slides.forEach((_, i) => {
+    const dot = document.createElement('button');
+    dot.className = 'w-2 h-2 rounded-full bg-[#d0d0d0]';
+    dot.onclick = () => showSlide(i);
+    dotsEl.appendChild(dot);
+});
+
+function showSlide(i) {
+    currentSlide = (i + slides.length) % slides.length;
+    slides.forEach((s, idx) => s.classList.toggle('hidden', idx !== currentSlide));
+    titleEl.textContent = slides[currentSlide].dataset.title;
+    dotsEl.querySelectorAll('button').forEach((d, idx) => {
+        d.className = 'w-2 h-2 rounded-full ' + (idx === currentSlide ? 'bg-amber-500' : 'bg-[#d0d0d0]');
+    });
+}
+function prevSlide() { showSlide(currentSlide - 1); }
+function nextSlide() { showSlide(currentSlide + 1); }
+showSlide(0);
+</script>
+
+</body>
+</html>

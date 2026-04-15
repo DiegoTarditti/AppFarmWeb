@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ modulo.nombre }} — Farmacia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: {
+                fontFamily: { sans: ['Inter','sans-serif'] },
+                colors: {
+                    surface: { DEFAULT:'#ffffff', input:'#f5f5f5', border:'#e0e0e0', head:'#f0f0f0' },
+                    brand: { DEFAULT:'#EAB308', hover:'#CA8A04', dark:'#0d0d0d' }
+                }
+            }}
+        }
+    </script>
+    <style>
+        body { background-color:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        .row-principal { background: rgba(234,179,8,0.08); }
+        .row-principal td:first-child { border-left: 2px solid #EAB308; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            {% if modulo.campana_id %}
+            <a href="{{ url_for('descuento_campana', campana_id=modulo.campana_id) }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors" title="Volver a campaña">
+            {% else %}
+            <a href="{{ url_for('descuentos_list') }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors" title="Volver">
+            {% endif %}
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <div>
+                <p class="font-bold text-sm text-[#1e1e1e]">{{ modulo.nombre }}</p>
+                <p class="text-xs text-[#6f6f6f] mt-0.5">Módulo de descuento</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            {% if modulo.activo %}
+            <span class="bg-emerald-900/30 text-emerald-600 text-xs px-2 py-0.5 rounded-full border border-emerald-800/30">activo</span>
+            {% else %}
+            <span class="bg-[#eaeaea] text-[#999] text-xs px-2 py-0.5 rounded-full border border-[#e0e0e0]">inactivo</span>
+            {% endif %}
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-6 py-8 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">
+        {{ messages[0] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Agregar ítem -->
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-6 py-4 border-b border-surface-border">
+            <p class="font-semibold text-[#1e1e1e]">Agregar artículo</p>
+        </div>
+        <form method="POST" action="{{ url_for('descuento_add_item', modulo_id=modulo.id) }}"
+              class="px-6 py-4 flex items-end gap-3 flex-wrap">
+            <div class="w-40">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Código EAN</label>
+                <input type="text" name="codigo_ean" placeholder="7798012345678"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <div class="flex-[2] min-w-[180px]">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Descripción</label>
+                <input type="text" name="descripcion" placeholder="Nombre del producto"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <div class="w-20">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Cant.</label>
+                <input type="number" name="cantidad" value="1" min="1" title="Cantidad" placeholder="1"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <div class="w-24">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Dto. %</label>
+                <input type="number" name="descuento" value="0" min="0" max="100" step="0.5" title="Descuento %" placeholder="0"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono text-right focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <div class="flex flex-col items-center gap-1">
+                <label class="text-xs text-[#6f6f6f] uppercase tracking-wide">Principal</label>
+                <input type="checkbox" name="es_principal" value="1"
+                       class="w-4 h-4 accent-brand rounded">
+            </div>
+            <button type="submit"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-5 py-2 rounded-lg text-sm transition-colors flex-shrink-0">
+                Agregar
+            </button>
+        </form>
+    </div>
+
+    <!-- Lista de artículos -->
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-[#1e1e1e]">Artículos del módulo</p>
+            <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20">
+                {{ items|length }}
+            </span>
+        </div>
+
+        {% if items %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-surface-head border-b border-surface-border">
+                    <tr>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código EAN</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Cant.</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Dto. %</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Principal</th>
+                        <th class="px-5 py-3" aria-label="Acciones" scope="col"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                {% for it in items %}
+                <tr class="{{ 'row-principal' if it.es_principal }} hover:bg-black/[0.04] transition-colors">
+                    <td class="px-5 py-3 font-mono text-xs text-brand">{{ it.codigo_ean }}</td>
+                    <td class="px-5 py-3 text-[#1e1e1e]">{{ it.descripcion or '—' }}</td>
+                    <td class="px-5 py-3 text-center font-mono text-xs text-[#1e1e1e]">{{ it.cantidad }}</td>
+                    <td class="px-5 py-3 text-center font-mono text-xs font-semibold
+                               {{ 'text-brand' if it.descuento else 'text-[#999]' }}">
+                        {{ it.descuento if it.descuento else '—' }}{% if it.descuento %}%{% endif %}
+                    </td>
+                    <td class="px-5 py-3 text-center">
+                        {% if it.es_principal %}
+                        <span class="text-brand text-xs">★</span>
+                        {% else %}
+                        <span class="text-[#bbb] text-xs">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-5 py-3 text-right">
+                        <form method="POST"
+                              action="{{ url_for('descuento_delete_item', modulo_id=modulo.id, item_id=it.id) }}"
+                              class="inline"
+                              onsubmit="return confirm('¿Eliminar este artículo?')">
+                            <button type="submit"
+                                class="text-xs text-[#999] hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-900/20 transition-colors">
+                                Eliminar
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-12 text-center text-sm text-[#6f6f6f]">
+            No hay artículos en este módulo. Agregá el primero arriba.
+        </div>
+        {% endif %}
+    </div>
+</main>
+
+</body>
+</html>

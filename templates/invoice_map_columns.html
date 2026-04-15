@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mapear columnas — Factura {{ invoice.numero_factura }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } }</script>
+    <style>
+        body { background:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        select { background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px; padding:2px 6px; font-size:0.7rem; }
+        .col-highlight-0  { background:rgba(234,179,8,.15); }
+        .col-highlight-1  { background:rgba(99,102,241,.12); }
+        .col-highlight-2  { background:rgba(34,197,94,.12); }
+        .col-highlight-3  { background:rgba(239,68,68,.12); }
+        .col-highlight-4  { background:rgba(249,115,22,.12); }
+        .col-highlight-5  { background:rgba(14,165,233,.12); }
+        .col-highlight-6  { background:rgba(168,85,247,.12); }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-violet-500 flex items-center justify-center">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M3 10h18M3 6h18M3 14h18M3 18h18"/>
+                </svg>
+            </div>
+            <div>
+                <span class="font-bold text-sm">Mapear columnas</span>
+                <span class="ml-3 text-xs text-[#6f6f6f]">{{ invoice.proveedor_razon }} · {{ invoice.numero_factura }}</span>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <a href="{{ url_for('parse_helper', invoice_id=invoice.id) }}"
+               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors">← Volver al asistente</a>
+        </div>
+    </div>
+</header>
+
+{% with messages = get_flashed_messages() %}
+  {% for msg in messages %}
+    <div class="max-w-7xl mx-auto mt-4 px-6">
+        <div class="rounded-lg px-4 py-3 text-sm bg-red-50 border border-red-200 text-red-800">{{ msg }}</div>
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<div class="max-w-7xl mx-auto px-6 py-6">
+
+    <!-- Leyenda de campos -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 mb-4">
+        <p class="text-xs font-semibold text-[#6f6f6f] mb-3 uppercase tracking-wide">Asignación de columnas</p>
+        <p class="text-xs text-[#6f6f6f] mb-3">
+            Fuente detectada: <strong>{{ source }}</strong> · {{ rows|length }} filas totales.
+            Usá los selectores de la primera fila para asignar cada columna al campo correspondiente.
+            Cambiá "Fila encabezado" para indicar hasta qué fila ignorar (0 = primera fila).
+        </p>
+        <div class="flex flex-wrap gap-2 text-xs">
+            {% set field_colors = [
+                ('Código barra','col_codigo','bg-amber-100 text-amber-800','col-highlight-0'),
+                ('Descripción','col_desc','bg-indigo-100 text-indigo-800','col-highlight-1'),
+                ('Cantidad','col_cant','bg-green-100 text-green-800','col-highlight-2'),
+                ('Precio unit.','col_precio','bg-red-100 text-red-800','col-highlight-3'),
+                ('Dto%','col_dto','bg-orange-100 text-orange-800','col-highlight-4'),
+                ('Importe','col_importe','bg-sky-100 text-sky-800','col-highlight-5'),
+                ('Lote','col_lote','bg-purple-100 text-purple-800','col-highlight-6'),
+            ] %}
+            {% for label, key, cls, _ in field_colors %}
+                <span class="px-2 py-1 rounded font-medium {{ cls }}">{{ label }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <form method="POST">
+        <input type="hidden" name="rows_json" value="{{ rows_json | e }}">
+
+        <!-- Fila encabezado + submit -->
+        <div class="flex items-center gap-4 mb-3">
+            <label class="text-xs font-medium">Fila encabezado (ignorar hasta):
+                <input type="number" name="header_row" value="0" min="0" max="{{ rows|length }}"
+                       class="ml-1 w-16 border border-[#e0e0e0] rounded px-2 py-1 text-xs bg-white">
+            </label>
+            <button type="submit"
+                    class="ml-auto px-5 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold transition-colors">
+                Guardar artículos →
+            </button>
+        </div>
+
+        <!-- Tabla de preview con selectores en columna header -->
+        <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+            <div class="overflow-x-auto overflow-y-auto max-h-[68vh]">
+                <table class="text-xs border-collapse w-full" id="preview-table">
+                    <thead class="sticky top-0 z-10 bg-[#f0f0f0]">
+                        <!-- Fila de selectores -->
+                        <tr>
+                            <th class="border border-[#e0e0e0] px-1 py-1 text-[#6f6f6f] font-normal w-8">#</th>
+                            {% for ci in range(num_cols) %}
+                            <th class="border border-[#e0e0e0] px-1 py-1 min-w-[80px]" id="th-{{ ci }}">
+                                <select onchange="updateCol({{ ci }}, this.value)" class="w-full">
+                                    <option value="-1">— ignorar —</option>
+                                    {% for label, key, cls, hcls in field_colors %}
+                                    <option value="{{ key }}:{{ loop.index0 }}:{{ hcls }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </th>
+                            {% endfor %}
+                        </tr>
+                        <!-- Inputs hidden para cada campo -->
+                        {% for label, key, cls, hcls in field_colors %}
+                        <input type="hidden" name="{{ key }}" id="input-{{ key }}" value="-1">
+                        {% endfor %}
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr class="{{ 'bg-white' if loop.index0 % 2 == 0 else 'bg-[#fafafa]' }}" data-row="{{ loop.index0 }}">
+                            <td class="border border-[#e0e0e0] px-1 py-0.5 text-center text-[#aaa] select-none">{{ loop.index0 }}</td>
+                            {% for ci in range(num_cols) %}
+                            <td class="border border-[#e0e0e0] px-1 py-0.5 whitespace-nowrap max-w-[200px] overflow-hidden text-ellipsis col-cell-{{ ci }}"
+                                title="{{ (row[ci] if row|length > ci else '') or '' }}">
+                                {{ (row[ci] if row|length > ci else '') or '' }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+// fieldMap tracks which input-name is assigned to each column index
+const fieldMap = {}; // colIdx -> fieldKey
+
+function updateCol(colIdx, selectVal) {
+    // Remove previous assignment for this column
+    const prevKey = fieldMap[colIdx];
+    if (prevKey) {
+        document.getElementById('input-' + prevKey).value = '-1';
+        delete fieldMap[colIdx];
+    }
+
+    if (selectVal === '-1') {
+        // Clear highlight
+        document.querySelectorAll('.col-cell-' + colIdx).forEach(td => {
+            td.className = td.className.replace(/col-highlight-\d+/g, '');
+        });
+        return;
+    }
+
+    // val format: "col_codigo:3:col-highlight-0"
+    const parts = selectVal.split(':');
+    const fieldKey = parts[0];
+    const hcls     = parts[2];
+
+    // Unassign if fieldKey was assigned to another column
+    for (const [ci, fk] of Object.entries(fieldMap)) {
+        if (fk === fieldKey && parseInt(ci) !== colIdx) {
+            // Reset that column's select
+            const th = document.getElementById('th-' + ci);
+            if (th) th.querySelector('select').value = '-1';
+            document.querySelectorAll('.col-cell-' + ci).forEach(td => {
+                td.className = td.className.replace(/col-highlight-\d+/g, '');
+            });
+            delete fieldMap[ci];
+        }
+    }
+
+    fieldMap[colIdx] = fieldKey;
+    document.getElementById('input-' + fieldKey).value = colIdx;
+
+    // Highlight column
+    document.querySelectorAll('.col-cell-' + colIdx).forEach(td => {
+        td.className = td.className.replace(/col-highlight-\d+/g, '') + ' ' + hcls;
+    });
+}
+</script>
+</body>
+</html>

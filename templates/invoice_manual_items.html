@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ingresar artículos — Factura {{ invoice.numero_factura }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } }</script>
+    <style>
+        body { background:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        #pdf-text {
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.74rem;
+            line-height: 1.6;
+        }
+        input[type=text], input[type=number] {
+            background:#f5f5f5; border:1px solid #e0e0e0; border-radius:5px;
+            padding:3px 6px; font-size:0.72rem; width:100%;
+        }
+        input:focus { outline:2px solid #EAB308; background:#fff; }
+        .item-row td { padding:3px 4px; border-bottom:1px solid #f0f0f0; }
+        .del-btn { color:#ef4444; cursor:pointer; font-size:1rem; line-height:1; }
+        .del-btn:hover { color:#b91c1c; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-7xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 4v16m8-8H4"/>
+                </svg>
+            </div>
+            <div>
+                <span class="font-bold text-sm">Ingresar artículos manualmente</span>
+                <span class="ml-3 text-xs text-[#6f6f6f]">{{ invoice.proveedor_razon }} · {{ invoice.numero_factura }}</span>
+            </div>
+        </div>
+        <a href="{{ url_for('parse_helper', invoice_id=invoice.id) }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors">← Volver al asistente</a>
+    </div>
+</header>
+
+{% with messages = get_flashed_messages() %}
+  {% for msg in messages %}
+    <div class="max-w-7xl mx-auto mt-4 px-6">
+        <div class="rounded-lg px-4 py-3 text-sm bg-red-50 border border-red-200 text-red-800">{{ msg }}</div>
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<div class="max-w-7xl mx-auto px-6 py-6 flex gap-5">
+
+    <!-- Izquierda: texto PDF -->
+    <div class="w-5/12 shrink-0">
+        <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden sticky top-4">
+            <div class="px-4 py-2.5 border-b border-[#e0e0e0] bg-[#f0f0f0]">
+                <p class="font-semibold text-xs">Texto del PDF (referencia)</p>
+            </div>
+            <div id="pdf-text" class="p-3 overflow-y-auto max-h-[80vh]">{{ pdf_text }}</div>
+        </div>
+    </div>
+
+    <!-- Derecha: tabla manual -->
+    <div class="flex-1">
+        <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+            <div class="px-4 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0] flex items-center justify-between">
+                <p class="font-semibold text-sm">Artículos</p>
+                <div class="flex gap-2">
+                    <button onclick="addRow()"
+                            class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors">
+                        + Agregar fila
+                    </button>
+                    <button onclick="guardar()"
+                            class="px-4 py-1.5 rounded-lg bg-[#EAB308] hover:bg-[#CA8A04] text-[#1a1100] text-xs font-semibold transition-colors">
+                        Guardar artículos →
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-[#f0f0f0] text-[#6f6f6f]">
+                        <tr>
+                            <th class="px-2 py-2 text-left font-semibold w-28">Código barra</th>
+                            <th class="px-2 py-2 text-left font-semibold">Descripción *</th>
+                            <th class="px-2 py-2 text-left font-semibold w-14">Cant.</th>
+                            <th class="px-2 py-2 text-left font-semibold w-24">Precio unit.</th>
+                            <th class="px-2 py-2 text-left font-semibold w-16">Dto%</th>
+                            <th class="px-2 py-2 text-left font-semibold w-24">Importe</th>
+                            <th class="px-2 py-2 text-left font-semibold w-28">Lote</th>
+                            <th class="w-8"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="items-body"></tbody>
+                </table>
+            </div>
+
+            <div class="px-4 py-3 border-t border-[#e0e0e0] text-xs text-[#6f6f6f]">
+                * Descripción es obligatoria. Los demás campos son opcionales.
+                Decimales: usá coma (ej: <code>1.234,56</code>) o punto (ej: <code>1234.56</code>).
+            </div>
+        </div>
+    </div>
+</div>
+
+<form id="save-form" method="POST">
+    <input type="hidden" name="items_json" id="items-json-input">
+</form>
+
+<script>
+let rowCount = 0;
+
+function addRow(data) {
+    data = data || {};
+    const tbody = document.getElementById('items-body');
+    const tr = document.createElement('tr');
+    tr.className = 'item-row';
+    tr.dataset.id = rowCount++;
+    tr.innerHTML = `
+        <td><input type="text" placeholder="7790001..." value="${data.codigo_barra||''}"></td>
+        <td><input type="text" placeholder="Descripción del artículo" value="${data.descripcion||''}"></td>
+        <td><input type="number" placeholder="0" min="0" value="${data.cantidad||''}"></td>
+        <td><input type="text" placeholder="0,00" value="${data.precio_unitario||''}"></td>
+        <td><input type="text" placeholder="0" value="${data.dto||''}"></td>
+        <td><input type="text" placeholder="0,00" value="${data.importe||''}"></td>
+        <td><input type="text" placeholder="Lote" value="${data.lote||''}"></td>
+        <td class="text-center"><span class="del-btn" onclick="this.closest('tr').remove()">×</span></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelector('input[type=text]') && tr.querySelectorAll('input')[1].focus();
+}
+
+function guardar() {
+    const rows = document.querySelectorAll('#items-body tr.item-row');
+    const items = [];
+    for (const tr of rows) {
+        const inputs = tr.querySelectorAll('input');
+        items.push({
+            codigo_barra:    inputs[0].value.trim() || null,
+            descripcion:     inputs[1].value.trim(),
+            cantidad:        inputs[2].value.trim(),
+            precio_unitario: inputs[3].value.trim() || null,
+            dto:             inputs[4].value.trim() || null,
+            importe:         inputs[5].value.trim() || null,
+            lote:            inputs[6].value.trim() || null,
+        });
+    }
+    if (items.filter(i => i.descripcion).length === 0) {
+        alert('Agregá al menos un artículo con descripción.');
+        return;
+    }
+    document.getElementById('items-json-input').value = JSON.stringify(items);
+    document.getElementById('save-form').submit();
+}
+
+// Start with 3 empty rows
+addRow(); addRow(); addRow();
+</script>
+</body>
+</html>

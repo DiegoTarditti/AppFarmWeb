@@ -1,0 +1,1280 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Analizar pedido — {{ pedido.laboratorio }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+        .step-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; }
+        .step-header { background: #f8f8f8; border-bottom: 1px solid #e0e0e0;
+                       border-radius: 12px 12px 0 0; padding: 12px 16px;
+                       display: flex; align-items: center; gap: 10px; }
+        .step-badge { width: 22px; height: 22px; border-radius: 50%; background: #EAB308;
+                      color: #1a1100; font-size: 11px; font-weight: 700;
+                      display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .step-badge.done { background: #4ade80; color: #14532d; }
+        .step-badge.waiting { background: #e0e0e0; color: #888; }
+        .mod-header-row { background: #fef9c3; }
+        .mod-header-row td { font-weight: 600; color: #92400e; padding: 6px 8px; }
+        .mod-footer-row { background: #f0fdf4; }
+        .mod-footer-row td { font-size: 11px; color: #166534; padding: 4px 8px; }
+        .data-row td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
+        .data-row:hover td { background: rgba(0,0,0,0.02); }
+        .saldo-neg { color: #dc2626; font-weight: 600; }
+        .saldo-ok  { color: #16a34a; }
+        input.prop-input { width: 64px; background: #fff; border: 1px solid #d0d0d0;
+                           border-radius: 5px; padding: 2px 6px; text-align: right;
+                           font-size: 12px; color: #1e1e1e; }
+        input.prop-input:focus { outline: none; border-color: #EAB308; }
+        @media print {
+            aside, .no-print { display: none !important; }
+            .print-section { display: block !important; }
+            body { background: #fff; }
+            .step-card { border: none; box-shadow: none; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex font-sans">
+
+<!-- Sidebar -->
+<aside class="w-52 min-h-screen bg-surface border-r border-surface-border flex flex-col flex-shrink-0 no-print">
+    <div class="px-4 py-5 border-b border-surface-border">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-[#1e1e1e] leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#888]">Farmacia</p>
+            </div>
+        </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-1">
+        <a href="{{ url_for('index') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Nueva factura
+        </a>
+        <a href="{{ url_for('purchase_index') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+            </svg>
+            Análisis de ventas
+        </a>
+        <a href="{{ url_for('orders_list') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200 transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+            </svg>
+            Pedidos guardados
+        </a>
+    </nav>
+</aside>
+
+<!-- Main -->
+<div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+
+    <!-- Top bar -->
+    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0 no-print">
+        <div>
+            <h1 class="text-base font-bold text-[#1e1e1e]">{{ pedido.laboratorio }}</h1>
+            <p class="text-xs text-[#6f6f6f]">{{ pedido.periodo }} · {{ pedido.n_days }}d · {{ pedido.productos | length }} productos</p>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
+            <a href="{{ url_for('orders_list') }}"
+               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1 transition-colors">
+                ← Volver a pedidos
+            </a>
+        </div>
+    </div>
+
+    <div class="flex-1 overflow-auto px-4 py-4 space-y-4">
+
+    <!-- ═══════════════════════════════════════════════════════════
+         PASO 1 — MÓDULOS DE DESCUENTO
+    ═══════════════════════════════════════════════════════════ -->
+    <div class="step-card" id="card-modulos">
+        <div class="step-header">
+            <span class="step-badge" id="badge-1">1</span>
+            <span class="text-sm font-semibold text-[#1e1e1e]">Módulos de descuento</span>
+            <span class="text-xs text-[#999] ml-1" id="modulos-status">Importá el Excel de módulos</span>
+            <div class="ml-auto flex items-center gap-2 no-print" id="modulos-actions">
+                <!-- Plantilla -->
+                <a href="{{ url_for('order_modules_template', pedido_id=pedido.id) }}"
+                   class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                   title="Descargar plantilla Excel para completar">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Plantilla
+                </a>
+                <!-- Upload -->
+                <label class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Importar Excel
+                    <input type="file" id="input-modulos" accept=".xlsx,.xls" class="hidden" onchange="uploadModulos(this)">
+                </label>
+                <!-- Match manual -->
+                <button id="btn-match-modulos" onclick="toggleMatchPanel()"
+                        class="hidden flex items-center gap-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                    Match manual
+                </button>
+                <!-- Procesar (hidden until data loaded) -->
+                <button id="btn-procesar-modulos" onclick="procesarModulos()"
+                        class="hidden flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    Procesar
+                </button>
+                <!-- Confirmar (hidden until processed) -->
+                <button id="btn-confirmar-modulos" onclick="confirmarModulos()"
+                        class="hidden flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    ✓ Confirmar y pasar a Ofertas
+                </button>
+                <!-- Re-editar módulos (visible solo tras confirmar) -->
+                <button id="btn-reeditar-modulos" onclick="reeditarModulos()"
+                        class="hidden flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                    Editar módulos
+                </button>
+                <!-- Exports (hidden until processed) -->
+                <button id="btn-export-mod-pdf" onclick="printStep('modulos')"
+                        class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    PDF
+                </button>
+                <form id="form-export-mod-xlsx" method="POST"
+                      action="{{ url_for('order_export', pedido_id=pedido.id, step='modules', fmt='xlsx') }}">
+                    <input type="hidden" name="data" id="h-mod-data">
+                    <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
+                    <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
+                    <button type="button" id="btn-export-mod-xlsx" onclick="exportModulos()"
+                            class="hidden flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        XLSX
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div id="modulos-body" class="p-4 overflow-x-auto hidden">
+            <!-- JS renders table here -->
+        </div>
+
+        <!-- Resumen por producto -->
+        <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4 overflow-x-auto">
+            <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen por producto</p>
+            <table class="w-full text-xs border-collapse" style="min-width:800px">
+                <thead>
+                    <tr class="bg-[#f5f0e8] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
+                        <th class="text-left px-2 py-1.5" style="min-width:180px">Producto</th>
+                        <th class="text-left px-2 py-1.5" style="min-width:80px">EAN</th>
+                        <th class="text-right px-2 py-1.5 text-amber-700">Cant.Pedida</th>
+                        <th class="text-right px-2 py-1.5 text-purple-700">Rot. / Prom.mes</th>
+                        <th class="text-right px-2 py-1.5 text-emerald-700">Propuesta Total</th>
+                        <th class="text-right px-2 py-1.5 text-sky-700">Saldo</th>
+                        <th class="text-right px-2 py-1.5 text-[#888]">Tol.%</th>
+                        <th class="text-right px-2 py-1.5 text-rose-700">Precio Total</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody-resumen-mod"></tbody>
+            </table>
+        </div>
+
+        <!-- Panel de cruce manual módulos ↔ pedido -->
+        <div id="match-panel" class="hidden border-t border-surface-border">
+            <div class="px-4 py-3 bg-sky-50 border-b border-sky-100 flex items-center gap-3">
+                <span class="text-xs font-semibold text-sky-800">Cruce manual — EAN módulo → producto del pedido</span>
+                <span class="text-xs text-sky-600 ml-1">Escribí el N° del producto (derecha) al lado de cada módulo sin match</span>
+                <button onclick="guardarMatches()"
+                        class="ml-auto flex items-center gap-1.5 bg-sky-700 hover:bg-sky-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    Guardar equivalencias
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-0 divide-x divide-surface-border">
+                <!-- Izquierda: ítems del módulo sin match -->
+                <div class="overflow-y-auto" style="max-height:520px">
+                    <div class="sticky top-0 z-10 bg-[#f0f0f0] px-3 py-2 text-[10px] font-semibold text-[#6f6f6f] uppercase tracking-wide flex gap-2">
+                        <span class="w-5 flex-shrink-0">#</span>
+                        <span class="flex-1">Producto en módulo</span>
+                        <span class="w-28 text-right flex-shrink-0">EAN módulo</span>
+                        <span class="w-14 text-right flex-shrink-0">N° pedido</span>
+                    </div>
+                    <div id="match-left"></div>
+                </div>
+                <!-- Derecha: ítems del pedido (referencia) -->
+                <div class="overflow-y-auto" style="max-height:520px">
+                    <div class="sticky top-0 z-10 bg-[#f0f0f0] px-3 py-2 text-[10px] font-semibold text-[#6f6f6f] uppercase tracking-wide flex gap-2">
+                        <span class="w-5 flex-shrink-0">#</span>
+                        <span class="flex-1">Producto en pedido</span>
+                        <span class="w-28 text-right flex-shrink-0">Cód. barras</span>
+                        <span class="w-14 text-right flex-shrink-0">Cant.</span>
+                    </div>
+                    <div id="match-right"></div>
+                </div>
+            </div>
+            <div id="match-feedback" class="hidden px-4 py-2 text-xs bg-emerald-50 border-t border-emerald-200 text-emerald-700"></div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         PASO 2 — PRODUCTOS EN OFERTA
+    ═══════════════════════════════════════════════════════════ -->
+    <div class="step-card opacity-40 pointer-events-none" id="card-ofertas">
+        <div class="step-header">
+            <span class="step-badge waiting" id="badge-2">2</span>
+            <span class="text-sm font-semibold text-[#1e1e1e]">Productos en oferta</span>
+            <span class="text-xs text-[#999] ml-1" id="ofertas-status">Disponible después de confirmar módulos</span>
+            <div class="ml-auto flex items-center gap-2 no-print" id="ofertas-actions">
+                <label class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                    </svg>
+                    Importar Excel
+                    <input type="file" id="input-ofertas" accept=".xlsx,.xls" class="hidden" onchange="uploadOfertas(this)">
+                </label>
+                <button id="btn-procesar-ofertas" onclick="procesarOfertas()"
+                        class="hidden flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    Procesar
+                </button>
+                <button id="btn-export-off-pdf" onclick="printStep('ofertas')"
+                        class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    PDF
+                </button>
+                <form id="form-export-off-xlsx" method="POST"
+                      action="{{ url_for('order_export', pedido_id=pedido.id, step='offers', fmt='xlsx') }}">
+                    <input type="hidden" name="data" id="h-off-data">
+                    <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
+                    <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
+                    <button type="button" id="btn-export-off-xlsx" onclick="exportOfertas()"
+                            class="hidden flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        XLSX
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div id="ofertas-body" class="p-4 overflow-x-auto hidden"></div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         PASO 3 — SIN DEAL + RESUMEN
+    ═══════════════════════════════════════════════════════════ -->
+    <div class="step-card opacity-40 pointer-events-none" id="card-resumen">
+        <div class="step-header">
+            <span class="step-badge waiting" id="badge-3">3</span>
+            <span class="text-sm font-semibold text-[#1e1e1e]">Resumen final</span>
+            <span class="text-xs text-[#999] ml-1" id="resumen-status">Disponible después de procesar ofertas</span>
+            <div class="ml-auto flex items-center gap-2 no-print">
+                <button id="btn-export-sum-pdf" onclick="printStep('resumen')"
+                        class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    PDF
+                </button>
+                <form id="form-export-sum-xlsx" method="POST"
+                      action="{{ url_for('order_export', pedido_id=pedido.id, step='summary', fmt='xlsx') }}">
+                    <input type="hidden" name="data" id="h-sum-data">
+                    <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
+                    <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
+                    <button type="button" id="btn-export-sum-xlsx" onclick="exportResumen()"
+                            class="hidden flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        XLSX
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div id="resumen-body" class="p-4 hidden"></div>
+    </div>
+
+    </div><!-- /overflow-auto -->
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     DATOS EMBEBIDOS
+════════════════════════════════════════════════════════════════════ -->
+<script>
+const PEDIDO_ID   = {{ pedido.id }};
+const LAB         = {{ pedido.laboratorio | tojson }};
+const PERIODO     = {{ pedido.periodo | tojson }};
+const PROD_URL_MODULES  = "{{ url_for('order_parse_modules',        pedido_id=pedido.id) }}";
+const PROD_URL_OFFERS   = "{{ url_for('order_parse_offers',         pedido_id=pedido.id) }}";
+const PROD_URL_MATCHES  = "{{ url_for('order_save_module_matches',  pedido_id=pedido.id) }}";
+
+// Construir lookup del pedido por EAN
+const PEDIDO_PRODS    = {{ pedido.productos | tojson }};
+const EQUIV_GROUPS    = {{ productos_equiv | tojson }};  // [{barcodes:[cb, alt1, alt2, alt3]}, ...]
+const TOL_CONFIG      = {{ tol_config | tojson }};  // {A: %, M: %, B: %}
+const PRODUCT_PRICES  = {{ product_prices | tojson }};  // ean → precio_pvp (todos los productos)
+
+// Packs de módulos: ean_pack → {ean_unidad, cantidad}
+const MODULO_PACKS  = {};
+{% for mp in modulo_packs %}
+MODULO_PACKS["{{ mp.ean_pack }}"] = { ean_unidad: "{{ mp.ean_unidad }}", cantidad: {{ mp.cantidad }} };
+{% endfor %}
+
+// Lookup directo desde el pedido
+const pedidoQty = {};   // ean → cantidad
+const pedidoNom = {};   // ean → nombre
+const pedidoRot = {};   // ean → {rotacion, avg_monthly}
+const pedidoPvp = {};   // ean → precio_pvp
+const pedidoErp = {};   // ean → erp stock actual
+PEDIDO_PRODS.forEach(p => {
+    pedidoQty[p.codigo_barra] = p.cantidad;
+    pedidoNom[p.codigo_barra] = p.nombre;
+    pedidoRot[p.codigo_barra] = { rotacion: p.rotacion || '', avg: p.avg_monthly || null };
+    pedidoPvp[p.codigo_barra] = p.precio_pvp || 0;
+    if (p.erp_qty !== null && p.erp_qty !== undefined) pedidoErp[p.codigo_barra] = p.erp_qty;
+});
+
+// Expandir con equivalencias: si cualquier barcode del grupo está en el pedido,
+// todos los barcodes del grupo apuntan a la misma cantidad/nombre.
+EQUIV_GROUPS.forEach(g => {
+    let qty = null, nom = null;
+    // Buscar en orden: primero el que ya está en el pedido
+    for (const bc of g.barcodes) {
+        if (pedidoQty[bc] !== undefined) { qty = pedidoQty[bc]; nom = pedidoNom[bc]; break; }
+    }
+    if (qty !== null) {
+        let rot = null, pvp = 0;
+        for (const bc of g.barcodes) { if (pedidoRot[bc]) { rot = pedidoRot[bc]; break; } }
+        for (const bc of g.barcodes) { if (pedidoPvp[bc]) { pvp = pedidoPvp[bc]; break; } }
+        let erp = null;
+        for (const bc of g.barcodes) { if (pedidoErp[bc] !== undefined) { erp = pedidoErp[bc]; break; } }
+        g.barcodes.forEach(bc => {
+            if (pedidoQty[bc] === undefined) pedidoQty[bc] = qty;
+            if (!pedidoNom[bc])              pedidoNom[bc] = nom;
+            if (!pedidoRot[bc] && rot)       pedidoRot[bc] = rot;
+            if (!pedidoPvp[bc] && pvp)       pedidoPvp[bc] = pvp;
+            if (pedidoErp[bc] === undefined && erp !== null) pedidoErp[bc] = erp;
+        });
+    }
+});
+
+// Estado global
+let modulesData   = [];   // parsed from server
+let saldosPostMod = {};   // ean → saldo después de módulos
+let ofertasData   = [];   // parsed from server
+let offResult     = [];   // items matcheados en ofertas
+let nodealResult  = [];   // items sin ningún deal
+
+// ─────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────
+function rotBadgeHtml(rot, avg) {
+    if (!rot) return '<span class="text-[#ccc]">—</span>';
+    const colors = { A: 'bg-emerald-100 text-emerald-800', M: 'bg-amber-100 text-amber-800', B: 'bg-red-100 text-red-700' };
+    const cls = colors[rot] || 'bg-gray-100 text-gray-600';
+    const avgTxt = avg != null ? `<span class="ml-1 text-[#999]">${avg}</span>` : '';
+    return `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${cls}">${rot}</span>${avgTxt}`;
+}
+
+function tolHtml(cantPedida, propuesta, cantMod, rot) {
+    if (!cantPedida || !propuesta || !cantMod) return '<span class="text-[#ccc]">—</span>';
+    const cubierto = propuesta * cantMod;
+    const pct = Math.min(100, Math.round(cubierto / cantPedida * 100));
+    const saldo = cantPedida - cubierto;
+    const tolMin = TOL_CONFIG[rot] || 0;
+    const over = tolMin > 0 && saldo >= tolMin;
+    const cls = pct >= 100 ? 'text-emerald-700 font-bold' : over ? 'text-amber-600 font-bold' : 'text-[#999]';
+    const tip = ` title="Cubre ${pct}% del pedido (${cubierto}/${cantPedida} u)${over ? ' · saldo ≥ tolerancia → conviene subir módulo' : ''}"`;
+    return `<span class="${cls}"${tip}>${pct}%</span>`;
+}
+
+function show(id)  { document.getElementById(id)?.classList.remove('hidden'); }
+function hide(id)  { document.getElementById(id)?.classList.add('hidden'); }
+function enable(cardId) {
+    const el = document.getElementById(cardId);
+    el?.classList.remove('opacity-40', 'pointer-events-none');
+}
+
+function fmt(n) { return (n === null || n === undefined) ? '—' : n; }
+
+function saldoClass(s) {
+    if (s > 0) return 'saldo-ok';
+    if (s < 0) return 'saldo-neg';
+    return 'text-[#999]';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PASO 1 — UPLOAD MÓDULOS
+// ─────────────────────────────────────────────────────────────────
+async function uploadModulos(input) {
+    const file = input.files[0];
+    if (!file) return;
+    document.getElementById('modulos-status').textContent = 'Procesando…';
+    const fd = new FormData();
+    fd.append('modules_file', file);
+    try {
+        const r = await fetch(PROD_URL_MODULES, { method: 'POST', body: fd });
+        const d = await r.json();
+        if (d.error) { alert('Error: ' + d.error); return; }
+        modulesData = d.modules;
+        renderModulosRaw();
+        show('btn-procesar-modulos');
+        show('btn-match-modulos');
+        document.getElementById('modulos-status').textContent =
+            `${modulesData.length} módulos · ${modulesData.reduce((a,m)=>a+m.items.length,0)} ítems`;
+    } catch(e) { alert('Error al subir: ' + e); }
+    input.value = '';
+}
+
+function renderModulosRaw() {
+    // Muestra la tabla sin calcular (sólo para revisar antes de procesar)
+    const body = document.getElementById('modulos-body');
+    let html = `<table class="w-full text-xs border-collapse min-w-[1000px]" id="tbl-modulos">
+    <thead>
+      <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
+        <th class="text-left px-2 py-2 w-6"><input type="checkbox" id="chk-all-mods" onchange="toggleAllModules(this.checked)"></th>
+        <th class="text-left px-2 py-2" style="min-width:180px">Módulo / Producto</th>
+        <th class="text-left px-2 py-2" style="min-width:80px">EAN</th>
+        <th class="text-center px-2 py-2 text-emerald-700" title="Ítem es pack de unidades">Pack</th>
+        <th class="text-right px-2 py-2">Cantidad</th>
+        <th class="text-right px-2 py-2 text-emerald-700" title="Unidades del pedido que cubre cada slot del módulo">Can.Un.Mod.</th>
+        <th class="text-right px-2 py-2">Desc%</th>
+        <th class="text-right px-2 py-2 text-amber-700">Cant.Pedida</th>
+        <th class="text-right px-2 py-2 text-purple-700" title="Rotación A/M/B · promedio de unidades vendidas por mes">Rot. / Prom.mes</th>
+        <th class="text-right px-2 py-2 text-brand">Cant.Calc.</th>
+        <th class="text-right px-2 py-2 text-emerald-700">Propuesta</th>
+        <th class="text-right px-2 py-2 text-sky-700">Saldo</th>
+        <th class="text-right px-2 py-2 text-[#888]" title="% del pedido cubierto por la propuesta">Tol.%</th>
+        <th class="text-right px-2 py-2 text-rose-700" title="precio_pvp × unidades propuestas">Precio</th>
+      </tr>
+    </thead>
+    <tbody id="tbody-modulos">`;
+
+    modulesData.forEach((mod, mi) => {
+        const modId = `mod-${mi}`;
+        html += `<tr class="mod-header-row">
+            <td class="px-2 py-1.5">
+                <input type="checkbox" id="chk-${modId}" checked
+                       onchange="toggleModule(${mi}, this.checked)">
+            </td>
+            <td colspan="13" class="px-2 py-1.5">
+                <label for="chk-${modId}" class="cursor-pointer">${mod.nombre}</label>
+                <span class="ml-2 text-[10px] text-amber-600 font-normal" id="sug-${mi}"></span>
+            </td>
+        </tr>`;
+        mod.items.forEach((it, ii) => {
+            const _pack = MODULO_PACKS[it.ean];
+            const esPack = !!_pack;
+            const unidadesPorSlot = _pack ? it.cant * _pack.cantidad : it.cant;
+            const cantPedida = _pack ? (pedidoQty[_pack.ean_unidad] ?? 0) : (pedidoQty[it.ean] ?? 0);
+            const rot = pedidoRot[_pack ? _pack.ean_unidad : it.ean] || {};
+            const rotBadge = rotBadgeHtml(rot.rotacion, rot.avg);
+            const packBadge = esPack
+                ? `<span class="text-emerald-600 font-bold" title="Pack: ${_pack.cantidad} unid./${it.cant}">✓</span>`
+                : `<span class="text-[#ddd]">—</span>`;
+            const unModCell = esPack
+                ? `<span class="font-semibold text-emerald-700">${unidadesPorSlot}</span>`
+                : `<span class="text-[#999]">${unidadesPorSlot}</span>`;
+            html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
+                <td class="px-2"></td>
+                <td class="px-2 font-medium text-[#1e1e1e]">${it.descripcion}</td>
+                <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
+                <td class="px-2 text-center">${packBadge}</td>
+                <td class="px-2 text-right text-[#555]">${it.cant}</td>
+                <td class="px-2 text-right">${unModCell}</td>
+                <td class="px-2 text-right text-[#999]">${it.desc_pct}%</td>
+                <td class="px-2 text-right font-medium text-amber-700" id="cp-${mi}-${ii}">${cantPedida > 0 ? cantPedida : '<span class="text-[#ccc]">—</span>'}</td>
+                <td class="px-2 text-right" id="rot-${mi}-${ii}">${rotBadge}</td>
+                <td class="px-2 text-right font-bold text-brand" id="cc-${mi}-${ii}">—</td>
+                <td class="px-2 text-right text-[#aaa]" id="prop-disp-${mi}-${ii}">—</td>
+                <td class="px-2 text-right" id="saldo-${mi}-${ii}">—</td>
+                <td class="px-2 text-right" id="tol-${mi}-${ii}">—</td>
+                <td class="px-2 text-right text-rose-700 font-medium" id="pvp-${mi}-${ii}">—</td>
+            </tr>`;
+        });
+        // Fila de control a nivel módulo
+        html += `<tr class="mod-footer-row" id="mod-footer-${mi}">
+            <td></td>
+            <td colspan="10" class="px-2 py-2 text-right text-[11px]">
+                <span class="text-[#888]">Módulos que soporta cada ítem:</span>
+                <span class="ml-1 font-semibold text-amber-700" id="sug-${mi}">—</span>
+                <span class="ml-3 text-[#888]">·</span>
+                <span class="ml-3 font-semibold text-[#555]">Módulos a pedir:</span>
+            </td>
+            <td class="px-2 py-2 text-right" colspan="3">
+                <input type="number" min="0" class="prop-input" id="modprop-${mi}"
+                       value="0" disabled
+                       oninput="recalcModuloAll(${mi})"
+                       style="width:64px;font-weight:700;color:#EAB308;font-size:13px">
+            </td>
+        </tr>`;
+    });
+
+    html += '</tbody></table>';
+    body.innerHTML = html;
+    show('modulos-body');
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PROCESO DE MÓDULOS
+// ─────────────────────────────────────────────────────────────────
+function procesarModulos() {
+    modulesData.forEach((mod, mi) => {
+        mod.items.forEach((it, ii) => {
+            // Si el EAN del módulo es un pack, buscar el EAN de la unidad individual
+            const pack = MODULO_PACKS[it.ean];
+            let cantPedida, unidadesPorSlot;
+            if (pack) {
+                cantPedida = pedidoQty[pack.ean_unidad] ?? 0;
+                unidadesPorSlot = it.cant * pack.cantidad;
+            } else {
+                cantPedida = pedidoQty[it.ean] ?? 0;
+                unidadesPorSlot = it.cant;
+            }
+            const cantCalc   = unidadesPorSlot > 0 ? Math.floor(cantPedida / unidadesPorSlot) : 0;
+            it.cant_pedida      = cantPedida;
+            it.cant_calculada   = cantCalc;
+            it._unidadesPorSlot = unidadesPorSlot;
+
+            document.getElementById(`cc-${mi}-${ii}`).textContent = cantCalc;
+        });
+
+        // Módulos sugeridos = mínimo de cant_calculada (ítem más restrictivo)
+        const calculadas = mod.items.map(it => it.cant_calculada ?? 0);
+        const sug = calculadas.length ? Math.min(...calculadas) : 0;
+        mod.modulos_sugeridos = sug;
+
+        // Actualizar display sugerido y activar input de módulos
+        const sugEl = document.getElementById(`sug-${mi}`);
+        if (sugEl) {
+            const mins = mod.items
+                .map((it, ii) => ({ calc: it.cant_calculada, desc: it.descripcion }))
+                .filter(x => x.calc === sug);
+            const limitante = mins.length ? mins[0].desc : '';
+            sugEl.textContent = sug + (limitante ? ` (limitado por: ${limitante})` : '');
+        }
+
+        const modPropEl = document.getElementById(`modprop-${mi}`);
+        if (modPropEl) {
+            modPropEl.value = sug;
+            modPropEl.disabled = false;
+        }
+
+        // Aplicar propuesta módulo a todos los ítems
+        recalcModuloAll(mi);
+    });
+
+    hide('btn-procesar-modulos');
+    show('btn-confirmar-modulos');
+    show('btn-export-mod-pdf');
+    show('btn-export-mod-xlsx');
+    document.getElementById('modulos-status').textContent = 'Procesado — revisá propuestas y confirmá';
+}
+
+function recalcModuloAll(mi) {
+    const modPropEl = document.getElementById(`modprop-${mi}`);
+    if (!modPropEl) return;
+    const prop = Math.max(0, parseInt(modPropEl.value) || 0);
+    modulesData[mi].modulos_propuesta = prop;
+
+    modulesData[mi].items.forEach((it, ii) => {
+        const _ups = it._unidadesPorSlot ?? it.cant;
+        it.propuesta = prop;
+        it.saldo = (it.cant_pedida ?? 0) - prop * _ups;
+        // Mostrar unidades cubiertas en la celda propuesta del item
+        const dispEl = document.getElementById(`prop-disp-${mi}-${ii}`);
+        if (dispEl) {
+            const unidCub = prop * _ups;
+            dispEl.innerHTML = unidCub > 0
+                ? `<span class="font-semibold text-emerald-700">${unidCub}</span>`
+                : `<span class="text-[#ccc]">0</span>`;
+        }
+        updateSaldoCell(mi, ii, it.cant_pedida ?? 0, prop, _ups);
+        // Precio: pvp × unidades cubiertas
+        const pvpEl = document.getElementById(`pvp-${mi}-${ii}`);
+        if (pvpEl) {
+            const pack = MODULO_PACKS[it.ean];
+            const eanTarget = pack ? pack.ean_unidad : it.ean;
+            const pvp = pedidoPvp[eanTarget] || PRODUCT_PRICES[eanTarget] || PRODUCT_PRICES[it.ean] || 0;
+            const importe = pvp * prop * _ups;
+            pvpEl.innerHTML = importe > 0
+                ? `$${importe.toLocaleString('es-AR', {maximumFractionDigits:0})}`
+                : '<span class="text-[#ccc]">—</span>';
+        }
+    });
+    renderResumenModulos();
+}
+
+function recalcRow(mi, ii) {
+    // Alias mantenido por compatibilidad — propaga al nivel módulo
+    recalcModuloAll(mi);
+}
+
+function renderResumenModulos() {
+    const wrap  = document.getElementById('resumen-modulos-wrap');
+    const tbody = document.getElementById('tbody-resumen-mod');
+    if (!wrap || !tbody) return;
+
+    // Agregar por EAN target
+    const byEan = {};  // ean → {descripcion, cant_pedida, rot, cubierto, pvp}
+    modulesData.forEach(mod => {
+        if (mod._selected === false) return;
+        mod.items.forEach(it => {
+            const pack      = MODULO_PACKS[it.ean];
+            const ean       = pack ? pack.ean_unidad : it.ean;
+            const _ups      = it._unidadesPorSlot ?? it.cant;
+            const cubierto  = (it.propuesta || 0) * _ups;
+            if (!byEan[ean]) {
+                byEan[ean] = {
+                    descripcion: pedidoNom[ean] || it.descripcion,
+                    cant_pedida: pedidoQty[ean] ?? 0,
+                    rot:         pedidoRot[ean] || {},
+                    pvp:         pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0,
+                    cubierto:    0,
+                };
+            }
+            byEan[ean].cubierto += cubierto;
+        });
+    });
+
+    const rows = Object.entries(byEan);
+    if (rows.length === 0) { wrap.classList.add('hidden'); return; }
+
+    const fmt = n => n.toLocaleString('es-AR', {maximumFractionDigits: 0});
+    let html = '';
+    rows.forEach(([ean, d]) => {
+        const saldo    = d.cant_pedida - d.cubierto;
+        const pct      = d.cant_pedida > 0 ? Math.min(100, Math.round(d.cubierto / d.cant_pedida * 100)) : 0;
+        const importe  = d.pvp * d.cubierto;
+        const pctCls   = pct >= 100 ? 'text-emerald-700 font-bold' : pct > 0 ? 'text-amber-600' : 'text-[#999]';
+        const saldoCls = saldo > 0 ? 'saldo-ok' : saldo < 0 ? 'saldo-neg' : 'text-[#999]';
+        html += `<tr class="border-b border-[#ede8e0] hover:bg-amber-50/40 transition-colors">
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${d.descripcion}</td>
+            <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
+            <td class="px-2 py-1.5 text-right text-amber-700">${d.cant_pedida > 0 ? d.cant_pedida : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
+            <td class="px-2 py-1.5 text-right font-semibold text-emerald-700">${d.cubierto > 0 ? d.cubierto : '<span class="text-[#ccc]">0</span>'}</td>
+            <td class="px-2 py-1.5 text-right ${saldoCls}">${saldo}</td>
+            <td class="px-2 py-1.5 text-right"><span class="${pctCls}">${pct}%</span></td>
+            <td class="px-2 py-1.5 text-right text-rose-700 font-medium">${importe > 0 ? '$' + fmt(importe) : '<span class="text-[#ccc]">—</span>'}</td>
+        </tr>`;
+    });
+
+    tbody.innerHTML = html;
+    wrap.classList.remove('hidden');
+}
+
+function updateSaldoCell(mi, ii, cantPedida, propuesta, cantMod) {
+    const saldo = cantPedida - propuesta * cantMod;
+    const el    = document.getElementById(`saldo-${mi}-${ii}`);
+    el.textContent = saldo;
+    el.className   = `px-2 text-right ${saldoClass(saldo)}`;
+
+    const it  = modulesData[mi].items[ii];
+    const rot = (pedidoRot[it.ean] || {}).rotacion || '';
+    const tolEl = document.getElementById(`tol-${mi}-${ii}`);
+    if (tolEl) tolEl.innerHTML = tolHtml(cantPedida, propuesta, cantMod, rot);
+}
+
+function updateModuloSugerido(mi) {
+    // Actualiza el display de módulos calculados (mínimo por restricción de ítems)
+    const mod = modulesData[mi];
+    const calculadas = mod.items.map(it => it.cant_calculada ?? 0).filter(v => v >= 0);
+    const sug = calculadas.length ? Math.min(...calculadas) : 0;
+    mod.modulos_sugeridos = sug;
+    const el = document.getElementById(`sug-${mi}`);
+    if (el) {
+        const limitante = mod.items.find(it => (it.cant_calculada ?? 0) === sug);
+        el.textContent = sug + (limitante ? ` (lim: ${limitante.descripcion})` : '');
+    }
+}
+
+function toggleModule(mi, checked) {
+    const mod  = modulesData[mi];
+    const rows = document.querySelectorAll(`[data-mi="${mi}"]`);
+    rows.forEach(row => { row.style.display = checked ? '' : 'none'; });
+    mod._selected = checked;
+}
+
+function toggleAllModules(checked) {
+    modulesData.forEach((_, mi) => {
+        document.getElementById(`chk-mod-${mi}`)?.click;
+        const chk = document.getElementById(`chk-mod-${mi}`);
+        if (chk && chk.checked !== checked) chk.click();
+        // fallback
+        toggleModule(mi, checked);
+        const chkEl = document.getElementById(`chk-mod-${mi}`);
+        if (chkEl) chkEl.checked = checked;
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CONFIRMAR MÓDULOS → calcula saldos
+// ─────────────────────────────────────────────────────────────────
+function confirmarModulos() {
+    // Inicializar saldos con la totalidad del pedido
+    Object.keys(pedidoQty).forEach(ean => { saldosPostMod[ean] = pedidoQty[ean]; });
+
+    // Descontar lo cubierto por módulos seleccionados
+    modulesData.forEach(mod => {
+        if (mod._selected === false) return;
+        mod.items.forEach(it => {
+            const pack = MODULO_PACKS[it.ean];
+            const eanTarget = pack ? pack.ean_unidad : it.ean;
+            const unidadesPorSlot = it._unidadesPorSlot ?? it.cant;
+            if (saldosPostMod[eanTarget] !== undefined) {
+                saldosPostMod[eanTarget] -= (it.propuesta || 0) * unidadesPorSlot;
+            }
+        });
+    });
+
+    // Activar paso 2
+    enable('card-ofertas');
+    document.getElementById('badge-1').classList.add('done');
+    document.getElementById('badge-2').classList.remove('waiting');
+    hide('btn-confirmar-modulos');
+    show('btn-reeditar-modulos');
+    document.getElementById('modulos-status').textContent = '✓ Confirmado';
+    document.getElementById('ofertas-status').textContent = 'Importá el Excel de ofertas';
+
+    // Scroll a paso 2
+    document.getElementById('card-ofertas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function reeditarModulos() {
+    show('modulos-body');
+    hide('btn-reeditar-modulos');
+    show('btn-confirmar-modulos');
+    document.getElementById('btn-confirmar-modulos').textContent = '↺ Re-confirmar módulos';
+    document.getElementById('modulos-status').textContent = 'Editando — re-confirmá para actualizar saldos';
+    document.getElementById('card-modulos').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Reactivar inputs de módulos
+    modulesData.forEach((_, mi) => {
+        const inp = document.getElementById(`modprop-${mi}`);
+        if (inp) inp.disabled = false;
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PASO 2 — UPLOAD OFERTAS
+// ─────────────────────────────────────────────────────────────────
+async function uploadOfertas(input) {
+    const file = input.files[0];
+    if (!file) return;
+    document.getElementById('ofertas-status').textContent = 'Procesando…';
+    const fd = new FormData();
+    fd.append('offers_file', file);
+    try {
+        const r = await fetch(PROD_URL_OFFERS, { method: 'POST', body: fd });
+        const d = await r.json();
+        if (d.error) { alert('Error: ' + d.error); return; }
+        ofertasData = d.ofertas;
+        show('btn-procesar-ofertas');
+        document.getElementById('ofertas-status').textContent =
+            `${ofertasData.length} productos en oferta`;
+    } catch(e) { alert('Error al subir: ' + e); }
+    input.value = '';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PROCESAR OFERTAS
+// ─────────────────────────────────────────────────────────────────
+function procesarOfertas() {
+    const ofertasByEan = {};
+    ofertasData.forEach(o => { ofertasByEan[o.ean] = o; });
+
+    // Expandir con equivalencias: si la oferta trae un EAN alternativo
+    // y el pedido usa otro EAN del mismo grupo, el match igual se produce.
+    EQUIV_GROUPS.forEach(g => {
+        let oferta = null;
+        for (const bc of g.barcodes) {
+            if (ofertasByEan[bc]) { oferta = ofertasByEan[bc]; break; }
+        }
+        if (oferta) {
+            g.barcodes.forEach(bc => { if (!ofertasByEan[bc]) ofertasByEan[bc] = oferta; });
+        }
+    });
+
+    // Expandir ofertasByEan con packs de módulos (bidireccional)
+    Object.entries(MODULO_PACKS).forEach(([eanPack, pack]) => {
+        if (ofertasByEan[eanPack] && !ofertasByEan[pack.ean_unidad])
+            ofertasByEan[pack.ean_unidad] = ofertasByEan[eanPack];
+        if (ofertasByEan[pack.ean_unidad] && !ofertasByEan[eanPack])
+            ofertasByEan[eanPack] = ofertasByEan[pack.ean_unidad];
+    });
+
+    offResult   = [];
+    nodealResult = [];
+
+    Object.entries(saldosPostMod).forEach(([ean, saldo]) => {
+        if (saldo <= 0) return;
+        const entry = { ean, nombre: pedidoNom[ean] || ean, cantidad: saldo };
+        if (ofertasByEan[ean]) {
+            offResult.push({ ...entry, descripcion_oferta: ofertasByEan[ean].descripcion });
+        } else {
+            nodealResult.push(entry);
+        }
+    });
+
+    renderOfertasTable();
+    renderResumen();
+
+    show('btn-export-off-pdf');
+    show('btn-export-off-xlsx');
+    show('btn-export-sum-pdf');
+    show('btn-export-sum-xlsx');
+    document.getElementById('ofertas-status').textContent =
+        `${offResult.length} en oferta · ${nodealResult.length} sin deal`;
+
+    enable('card-resumen');
+    document.getElementById('badge-2').classList.add('done');
+    document.getElementById('badge-3').classList.remove('waiting');
+    document.getElementById('resumen-status').textContent = 'Resumen completo';
+    document.getElementById('card-resumen').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderOfertasTable() {
+    const body = document.getElementById('ofertas-body');
+    if (!offResult.length && !nodealResult.length) {
+        body.innerHTML = '<p class="text-sm text-[#999]">No quedan saldos después de los módulos.</p>';
+        show('ofertas-body');
+        return;
+    }
+
+    let html = '';
+
+    if (offResult.length) {
+        html += `<p class="text-xs font-semibold text-emerald-700 mb-2">EN OFERTA (${offResult.length})</p>`;
+        html += `<table class="w-full text-xs border-collapse mb-4 min-w-[500px]">
+        <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
+            <th class="text-left px-2 py-2">EAN</th>
+            <th class="text-left px-2 py-2">Producto</th>
+            <th class="text-right px-2 py-2 text-brand">Cant. a pedir</th>
+        </tr></thead><tbody>`;
+        offResult.forEach(it => {
+            html += `<tr class="data-row">
+                <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
+                <td class="px-2 font-medium">${it.nombre}</td>
+                <td class="px-2 text-right font-bold text-brand">${it.cantidad}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+    }
+
+    show('ofertas-body');
+    body.innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// RESUMEN FINAL — tabla unificada flat
+// ─────────────────────────────────────────────────────────────────
+let resumenRows    = [];   // para export (flat)
+let resumenAgrEans = [];  // orden de EANs en el resumen agrupado
+let resumenAgr     = {};  // ean → {nombre, cant_mod, cant_oferta, cant_nodeal, cant_pedida, pvp, rot, erp_qty}
+
+function buildResumenAgrupado() {
+    resumenAgr     = {};
+    resumenAgrEans = [];
+
+    function get(ean, nombre) {
+        if (!resumenAgr[ean]) {
+            resumenAgrEans.push(ean);
+            resumenAgr[ean] = {
+                nombre:      pedidoNom[ean] || nombre || ean,
+                cant_mod:    0,
+                cant_oferta: 0,
+                cant_nodeal: 0,
+                cant_pedida: pedidoQty[ean] ?? 0,
+                pvp:         pedidoPvp[ean] || PRODUCT_PRICES[ean] || 0,
+                rot:         pedidoRot[ean] || {},
+                erp_qty:     pedidoErp[ean] ?? null,
+            };
+        }
+        return resumenAgr[ean];
+    }
+
+    modulesData.forEach(mod => {
+        if (mod._selected === false) return;
+        mod.items.forEach(it => {
+            const pack = MODULO_PACKS[it.ean];
+            const ean  = pack ? pack.ean_unidad : it.ean;
+            get(ean, it.descripcion).cant_mod += (it.propuesta || 0) * (it._unidadesPorSlot ?? it.cant);
+        });
+    });
+    offResult.forEach(it   => { get(it.ean, it.nombre).cant_oferta = it.cantidad; });
+    nodealResult.forEach(it => { get(it.ean, it.nombre).cant_nodeal = it.cantidad; });
+}
+
+// Genera resumenRows (flat, para export XLSX)
+function buildResumenRows() {
+    buildResumenAgrupado();
+    return resumenAgrEans.map(ean => {
+        const d = resumenAgr[ean];
+        const total = d.cant_mod + d.cant_oferta + d.cant_nodeal;
+        return {
+            ean, nombre: d.nombre,
+            cant_modulo: d.cant_mod   || null,
+            cant_oferta: d.cant_oferta || null,
+            cant_nodeal: d.cant_nodeal || null,
+            cant_pedida: d.cant_pedida,
+            total,
+            saldo: d.cant_pedida - total,
+        };
+    });
+}
+
+function renderResumen() {
+    buildResumenAgrupado();
+    resumenRows = resumenAgrEans.map(ean => {
+        const d = resumenAgr[ean];
+        const total = d.cant_mod + d.cant_oferta + d.cant_nodeal;
+        return { ean, nombre: d.nombre, cant_modulo: d.cant_mod, cant_oferta: d.cant_oferta,
+                 cant_nodeal: d.cant_nodeal, cant_pedida: d.cant_pedida, total, saldo: d.cant_pedida - total };
+    });
+
+    const total_prods = resumenAgrEans.length;
+    const body = document.getElementById('resumen-body');
+
+    let html = `
+    <div class="flex items-center gap-3 mb-3 no-print flex-wrap">
+        <input type="text" id="resumen-filter" placeholder="Filtrar por producto o EAN…"
+               oninput="filterResumen()"
+               class="bg-[#f5f5f5] border border-[#e0e0e0] text-[#1e1e1e] rounded-lg px-3 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-[#EAB308]">
+        <span id="resumen-count" class="text-xs text-[#999]">${total_prods} productos</span>
+    </div>
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:980px">
+    <thead>
+        <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
+            <th class="text-left px-2 py-2" style="min-width:200px">Producto</th>
+            <th class="text-left px-2 py-2" style="width:110px">EAN</th>
+            <th class="text-right px-2 py-2" style="width:65px" title="Stock actual ERP">Stock</th>
+            <th class="text-right px-2 py-2 text-purple-700" style="width:90px">Rot./Prom.mes</th>
+            <th class="text-right px-2 py-2 text-rose-700" style="width:70px">Precio</th>
+            <th class="text-right px-2 py-2 text-amber-700" style="width:70px" title="Unidades de módulos">Módulo</th>
+            <th class="text-right px-2 py-2 text-emerald-700" style="width:80px" title="Editable">Oferta</th>
+            <th class="text-right px-2 py-2 text-sky-700" style="width:80px" title="Editable">Sin Deal</th>
+            <th class="text-right px-2 py-2 text-brand font-bold" style="width:70px">Total</th>
+            <th class="text-right px-2 py-2 text-amber-700" style="width:75px">Cant.Pedida</th>
+            <th class="text-right px-2 py-2 text-red-600" style="width:65px">Saldo</th>
+        </tr>
+    </thead>
+    <tbody id="tbody-resumen">`;
+
+    const fmtPvp = n => n > 0 ? '$' + n.toLocaleString('es-AR', {maximumFractionDigits:0}) : '<span class="text-[#ccc]">—</span>';
+    const fmtN   = n => n != null ? n : '<span class="text-[#ccc]">—</span>';
+
+    resumenAgrEans.forEach(ean => {
+        const d = resumenAgr[ean];
+        const initOff    = d.cant_oferta;
+        const initNodeal = d.cant_nodeal;
+        const initTotal  = d.cant_mod + initOff + initNodeal;
+        const initSaldo  = d.cant_pedida - initTotal;
+        const saldoCls   = initSaldo > 0 ? 'text-red-600 font-bold' : initSaldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]';
+        const totalCls   = initTotal > 0 ? 'font-bold text-brand' : 'text-[#ccc]';
+        const stockCell  = d.erp_qty != null ? d.erp_qty : '<span class="text-[#ccc]">—</span>';
+
+        html += `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.02] transition-colors"
+                     data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}">
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${d.nombre}</td>
+            <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
+            <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
+            <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
+            <td class="px-2 py-1.5 text-right text-rose-700">${fmtPvp(d.pvp)}</td>
+            <td class="px-2 py-1.5 text-right font-semibold text-amber-700">${d.cant_mod > 0 ? d.cant_mod : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right">
+                <input type="number" min="0" value="${initOff}"
+                       class="res-inp w-14 text-right bg-white border border-emerald-300 rounded px-1 py-0.5 text-emerald-700 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                       data-ean="${ean}" data-field="oferta"
+                       oninput="recalcResumenRow('${ean}')">
+            </td>
+            <td class="px-2 py-1.5 text-right">
+                <input type="number" min="0" value="${initNodeal}"
+                       class="res-inp w-14 text-right bg-white border border-sky-300 rounded px-1 py-0.5 text-sky-700 font-semibold focus:outline-none focus:ring-1 focus:ring-sky-400"
+                       data-ean="${ean}" data-field="nodeal"
+                       oninput="recalcResumenRow('${ean}')">
+            </td>
+            <td class="px-2 py-1.5 text-right ${totalCls}" id="res-total-${ean}">${initTotal}</td>
+            <td class="px-2 py-1.5 text-right text-amber-700">${d.cant_pedida > 0 ? d.cant_pedida : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right ${saldoCls}" id="res-saldo-${ean}">${initSaldo}</td>
+        </tr>`;
+    });
+
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+    show('resumen-body');
+}
+
+function recalcResumenRow(ean) {
+    const d = resumenAgr[ean];
+    if (!d) return;
+    let oferta = 0, nodeal = 0;
+    document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+        const v = parseInt(inp.value) || 0;
+        if (inp.dataset.field === 'oferta')  oferta = v;
+        if (inp.dataset.field === 'nodeal')  nodeal = v;
+    });
+    const total = d.cant_mod + oferta + nodeal;
+    const saldo = d.cant_pedida - total;
+    const totalEl = document.getElementById(`res-total-${ean}`);
+    const saldoEl = document.getElementById(`res-saldo-${ean}`);
+    if (totalEl) {
+        totalEl.textContent = total;
+        totalEl.className = `px-2 py-1.5 text-right ${total > 0 ? 'font-bold text-brand' : 'text-[#ccc]'}`;
+    }
+    if (saldoEl) {
+        saldoEl.textContent = saldo;
+        saldoEl.className = `px-2 py-1.5 text-right ${saldo > 0 ? 'text-red-600 font-bold' : saldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]'}`;
+    }
+    // Sync resumenRows para export
+    const row = resumenRows.find(r => r.ean === ean);
+    if (row) { row.cant_oferta = oferta; row.cant_nodeal = nodeal; row.total = total; row.saldo = saldo; }
+}
+
+function filterResumen() {
+    const q = document.getElementById('resumen-filter').value.toLowerCase().trim();
+    let visible = 0;
+    document.querySelectorAll('#tbody-resumen tr').forEach(tr => {
+        const match = !q || tr.dataset.nombre.includes(q) || tr.dataset.ean.includes(q);
+        tr.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+    document.getElementById('resumen-count').textContent = visible + ' productos';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EXPORTS
+// ─────────────────────────────────────────────────────────────────
+function exportModulos() {
+    const exportData = modulesData.map(mod => ({
+        nombre: mod.nombre,
+        modulos_sugeridos: mod.modulos_sugeridos ?? 0,
+        items: mod.items.map(it => ({
+            ean: it.ean,
+            descripcion: it.descripcion,
+            cant: it.cant,
+            desc_pct: it.desc_pct,
+            cant_pedida:   it.cant_pedida   ?? 0,
+            cant_calculada: it.cant_calculada ?? 0,
+            propuesta: it.propuesta ?? 0,
+            saldo:     it.saldo     ?? 0,
+        }))
+    }));
+    document.getElementById('h-mod-data').value = JSON.stringify(exportData);
+    document.getElementById('form-export-mod-xlsx').submit();
+}
+
+function exportOfertas() {
+    const exportData = offResult.map(it => ({
+        ean: it.ean, nombre: it.nombre, cantidad: it.cantidad
+    }));
+    document.getElementById('h-off-data').value = JSON.stringify(exportData);
+    document.getElementById('form-export-off-xlsx').submit();
+}
+
+function exportResumen() {
+    // Leer valores actuales de los inputs editables
+    const exportData = resumenAgrEans.map(ean => {
+        const d = resumenAgr[ean];
+        let oferta = d.cant_oferta, nodeal = d.cant_nodeal;
+        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+            const v = parseInt(inp.value) || 0;
+            if (inp.dataset.field === 'oferta')  oferta  = v;
+            if (inp.dataset.field === 'nodeal')  nodeal = v;
+        });
+        const total = d.cant_mod + oferta + nodeal;
+        return {
+            ean,
+            nombre:       d.nombre,
+            erp_qty:      d.erp_qty,
+            rotacion:     d.rot.rotacion || '',
+            avg_monthly:  d.rot.avg,
+            precio_pvp:   d.pvp,
+            cant_modulo:  d.cant_mod,
+            cant_oferta:  oferta,
+            cant_nodeal:  nodeal,
+            total,
+            cant_pedida:  d.cant_pedida,
+            saldo:        d.cant_pedida - total,
+        };
+    });
+    document.getElementById('h-sum-data').value = JSON.stringify(exportData);
+    document.getElementById('form-export-sum-xlsx').submit();
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MATCH MANUAL
+// ─────────────────────────────────────────────────────────────────
+let matchPanelRendered = false;
+let pedidoListForMatch = [];
+
+function toggleMatchPanel() {
+    const panel = document.getElementById('match-panel');
+    const isHidden = panel.classList.contains('hidden');
+    if (isHidden) {
+        panel.classList.remove('hidden');
+        if (!matchPanelRendered) {
+            renderMatchPanel();
+            matchPanelRendered = true;
+        }
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+
+function renderMatchPanel() {
+    // Collect module items with no pedido quantity (dedup by EAN, sorted alfa)
+    const seen = new Set();
+    const unmatched = [];
+    modulesData.forEach(mod => {
+        mod.items.forEach(it => {
+            const _p = MODULO_PACKS[it.ean];
+            const _hasQty = _p ? (pedidoQty[_p.ean_unidad] > 0) : (pedidoQty[it.ean] > 0);
+            if (!seen.has(it.ean) && !_hasQty) {
+                seen.add(it.ean);
+                unmatched.push({ ean: it.ean, descripcion: it.descripcion });
+            }
+        });
+    });
+    unmatched.sort((a, b) => (a.descripcion || '').localeCompare(b.descripcion || ''));
+
+    // Left: unmatched module items
+    let leftHtml = '';
+    if (!unmatched.length) {
+        leftHtml = '<p class="px-3 py-4 text-xs text-[#999]">Todos los ítems tienen match con el pedido.</p>';
+    } else {
+        unmatched.forEach((it, i) => {
+            leftHtml += `<div class="flex gap-2 items-center px-3 py-2 border-b border-[#f0f0f0] hover:bg-[#fafafa]">
+                <span class="w-5 text-[10px] text-[#bbb] flex-shrink-0">${i + 1}</span>
+                <span class="flex-1 text-xs text-[#1e1e1e] truncate" title="${it.descripcion}">${it.descripcion}</span>
+                <span class="w-28 text-right font-mono text-[10px] text-[#888] flex-shrink-0">${it.ean}</span>
+                <input type="number" min="1" placeholder="N°"
+                       class="w-14 text-right text-xs border border-[#d0d0d0] rounded px-1 py-0.5 focus:outline-none focus:border-sky-400 flex-shrink-0"
+                       id="match-input-${i}" data-ean="${it.ean}">
+            </div>`;
+        });
+    }
+    document.getElementById('match-left').innerHTML = leftHtml;
+
+    // Right: pedido items sorted by nombre, numbered
+    pedidoListForMatch = [...PEDIDO_PRODS].sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+    let rightHtml = '';
+    pedidoListForMatch.forEach((p, i) => {
+        rightHtml += `<div class="flex gap-2 items-center px-3 py-2 border-b border-[#f0f0f0] hover:bg-[#fafafa]">
+            <span class="w-5 text-[10px] text-[#888] font-mono flex-shrink-0">${i + 1}</span>
+            <span class="flex-1 text-xs text-[#1e1e1e] truncate" title="${p.nombre || ''}">${p.nombre || '—'}</span>
+            <span class="w-28 text-right font-mono text-[10px] text-[#888] flex-shrink-0">${p.codigo_barra}</span>
+            <span class="w-14 text-right text-xs font-bold text-amber-700 flex-shrink-0">${p.cantidad}</span>
+        </div>`;
+    });
+    document.getElementById('match-right').innerHTML = rightHtml;
+}
+
+async function guardarMatches() {
+    const inputs = document.querySelectorAll('[id^="match-input-"]');
+    const pairs  = [];
+    inputs.forEach(input => {
+        const n = parseInt(input.value);
+        if (!n || n < 1 || n > pedidoListForMatch.length) return;
+        pairs.push({
+            module_ean:     input.dataset.ean,
+            pedido_barcode: pedidoListForMatch[n - 1].codigo_barra,
+            pedido_nombre:  pedidoListForMatch[n - 1].nombre || '',
+        });
+    });
+
+    if (!pairs.length) {
+        const fb = document.getElementById('match-feedback');
+        fb.textContent = 'No hay coincidencias para guardar.';
+        show('match-feedback');
+        return;
+    }
+
+    try {
+        const r = await fetch(PROD_URL_MATCHES, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ matches: pairs }),
+        });
+        const d = await r.json();
+        if (d.error) { alert('Error: ' + d.error); return; }
+
+        // Update EQUIV_GROUPS in place
+        if (d.equiv && d.equiv.length) {
+            EQUIV_GROUPS.length = 0;
+            d.equiv.forEach(g => EQUIV_GROUPS.push(g));
+        }
+
+        // Re-propagate equivalences into pedidoQty / pedidoNom
+        EQUIV_GROUPS.forEach(g => {
+            let qty = null, nom = null;
+            for (const bc of g.barcodes) {
+                if (pedidoQty[bc] !== undefined) { qty = pedidoQty[bc]; nom = pedidoNom[bc]; break; }
+            }
+            if (qty !== null) {
+                g.barcodes.forEach(bc => {
+                    if (pedidoQty[bc] === undefined) pedidoQty[bc] = qty;
+                    if (!pedidoNom[bc])              pedidoNom[bc] = nom;
+                });
+            }
+        });
+
+        // Close panel and re-render + re-process modules
+        document.getElementById('match-panel').classList.add('hidden');
+        matchPanelRendered = false;
+        renderModulosRaw();
+        procesarModulos();
+
+        const fb = document.getElementById('match-feedback');
+        fb.textContent = `✓ ${pairs.length} equivalencia${pairs.length !== 1 ? 's' : ''} guardada${pairs.length !== 1 ? 's' : ''}. Módulos actualizados.`;
+        show('match-feedback');
+        setTimeout(() => hide('match-feedback'), 5000);
+
+    } catch(e) { alert('Error al guardar: ' + e); }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PRINT / PDF
+// ─────────────────────────────────────────────────────────────────
+function printStep(step) {
+    // Colapsa las secciones que no queremos imprimir temporalmente
+    const cards = { modulos: 'card-modulos', ofertas: 'card-ofertas', resumen: 'card-resumen' };
+    const hide_cards = Object.entries(cards)
+        .filter(([k]) => k !== step)
+        .map(([, v]) => document.getElementById(v));
+
+    hide_cards.forEach(el => { if(el) el.style.display = 'none'; });
+    window.print();
+    hide_cards.forEach(el => { if(el) el.style.display = ''; });
+}
+</script>
+
+</body>
+</html>

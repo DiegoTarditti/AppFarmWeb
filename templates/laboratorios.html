@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Laboratorios — Farmacia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                </svg>
+            </div>
+            <span class="font-bold text-sm text-[#1e1e1e]">Laboratorios</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('modulo_packs_list') }}"
+               class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
+                Packs de módulos
+            </a>
+            <a href="{{ url_for('index') }}"
+               class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+                Inicio
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="flex items-start gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">
+            {{ messages[0] }}
+        </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Agregar -->
+    <div class="bg-surface rounded-xl border border-surface-border p-5">
+        <p class="font-semibold text-sm text-[#1e1e1e] mb-3">Nuevo laboratorio</p>
+        <form method="post" action="{{ url_for('laboratorio_create') }}" class="flex gap-2">
+            <input type="text" name="nombre" placeholder="Nombre del laboratorio" required
+                   class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <button type="submit"
+                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
+                Agregar
+            </button>
+        </form>
+    </div>
+
+    <!-- Lista -->
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-5 py-3 border-b border-surface-border">
+            <p class="font-semibold text-sm text-[#1e1e1e]">{{ laboratorios|length }} laboratorio{{ 's' if laboratorios|length != 1 }}</p>
+        </div>
+        {% if laboratorios %}
+        <div class="divide-y divide-surface-border">
+            {% for lab in laboratorios %}
+            <div class="px-5 py-4" id="lab-row-{{ lab.id }}">
+                <!-- Vista -->
+                <div id="lab-view-{{ lab.id }}" class="flex items-center gap-4">
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-[#1e1e1e] truncate">{{ lab.nombre }}</p>
+                        <p class="text-xs text-[#6f6f6f] mt-0.5">ID #{{ lab.id }}</p>
+                    </div>
+                    <div class="flex items-center gap-1 flex-shrink-0 text-xs text-[#6f6f6f]">
+                        <a href="{{ url_for('productos_list') }}?lab={{ lab.id }}"
+                           class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                            </svg>
+                            {{ lab.prod_count }} producto{{ 's' if lab.prod_count != 1 }}
+                        </a>
+                        <a href="{{ url_for('modulo_packs_list') }}?lab={{ lab.id }}"
+                           class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                            </svg>
+                            {{ lab.mod_count }} módulo{{ 's' if lab.mod_count != 1 }}
+                        </a>
+                        <a href="{{ url_for('orders_list') }}?lab={{ lab.nombre }}"
+                           class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                            </svg>
+                            {{ lab.ped_count }} pedido{{ 's' if lab.ped_count != 1 }}
+                        </a>
+                        <a href="{{ url_for('dashboard') }}?laboratorio={{ lab.nombre }}"
+                           class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                            {{ lab.analytics_count }} en analytics
+                        </a>
+                        <button onclick="openLabEdit({{ lab.id }})"
+                            class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                            </svg>
+                            Renombrar
+                        </button>
+                        <form method="post" action="{{ url_for('laboratorio_delete', lab_id=lab.id) }}"
+                              onsubmit="return confirm('¿Eliminar laboratorio «{{ lab.nombre }}»? Los productos quedarán sin laboratorio asignado.')">
+                            <button type="submit"
+                                class="flex items-center gap-1 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M10 7V4a1 1 0 011-1h2a1 1 0 011 1v3"/>
+                                </svg>
+                                Eliminar
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <!-- Edit inline -->
+                <form id="lab-edit-{{ lab.id }}" class="hidden flex gap-2 mt-2"
+                      method="post" action="{{ url_for('laboratorio_edit', lab_id=lab.id) }}">
+                    <input type="text" name="nombre" value="{{ lab.nombre }}" required
+                           class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    <button type="submit"
+                        class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                        Guardar
+                    </button>
+                    <button type="button" onclick="closeLabEdit({{ lab.id }})"
+                        class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg border border-surface-border transition-colors">
+                        Cancelar
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-5 py-10 text-center text-sm text-[#999]">No hay laboratorios registrados.</div>
+        {% endif %}
+    </div>
+
+</main>
+
+<script>
+function openLabEdit(id) {
+    document.getElementById('lab-view-' + id).classList.add('hidden');
+    document.getElementById('lab-edit-' + id).classList.remove('hidden');
+}
+function closeLabEdit(id) {
+    document.getElementById('lab-edit-' + id).classList.add('hidden');
+    document.getElementById('lab-view-' + id).classList.remove('hidden');
+}
+</script>
+</body>
+</html>

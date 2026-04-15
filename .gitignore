@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Uploads y archivos temporales
+uploads/
+*.pdf
+*.xlsx
+*.xls
+
+# Base de datos local
+*.db
+*.sqlite
+
+# Docker
+.env
+
+# Claude Code
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db

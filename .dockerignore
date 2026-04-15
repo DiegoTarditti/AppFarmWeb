@@ -1,0 +1,52 @@
+# VCS / editor
+.git
+.gitignore
+.vscode
+.idea
+*.swp
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+venv/
+.venv/
+
+# Local DB / backups / dumps
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+backups/
+
+# Datos locales (uploads se monta como disk persistente en Render)
+uploads/
+Facturas/
+Ofertas/
+ModulosOferta/
+EstadVentas/
+Pruebas/
+NotasDiego/
+Nueva carpeta/
+
+# Muestras en la raíz
+*.pdf
+*.xlsx
+*.xls
+*.png
+*.jpg
+*.jpeg
+
+# Docs
+*.md
+docs/
+docker_panel/
+memory/
+
+# No necesarios dentro de la imagen
+Dockerfile
+docker-compose.yml

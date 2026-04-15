@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Análisis procesados</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
+</head>
+<body class="min-h-screen">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <span class="font-bold text-sm">Análisis procesados</span>
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('purchase_index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Análisis</a>
+            <a href="{{ url_for('dashboard') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">Dashboard</a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-6 space-y-4">
+
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4 flex items-center justify-between">
+        <p class="text-sm"><strong>{{ items|length }}</strong> análisis guardados</p>
+        <a href="{{ url_for('purchase_index') }}#batch"
+           class="text-xs px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">
+            📁 Procesar nuevo lote
+        </a>
+    </div>
+
+    <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+        {% if items %}
+        <table class="w-full text-sm">
+            <thead class="bg-[#fafafa]">
+                <tr class="text-xs text-[#6f6f6f] uppercase tracking-widest">
+                    <th class="text-left px-3 py-2">Laboratorio</th>
+                    <th class="text-left px-3 py-2">Período</th>
+                    <th class="text-right px-3 py-2">Días</th>
+                    <th class="text-right px-3 py-2">Productos</th>
+                    <th class="text-left px-3 py-2">Procesado</th>
+                    <th class="text-center px-3 py-2"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for it in items %}
+                <tr class="border-t border-[#e0e0e0]">
+                    <td class="px-3 py-2 font-semibold">{{ it.laboratorio }}</td>
+                    <td class="px-3 py-2 text-xs text-[#6f6f6f]">{{ it.periodo or '—' }}</td>
+                    <td class="px-3 py-2 text-right font-mono">{{ it.n_days }}</td>
+                    <td class="px-3 py-2 text-right font-mono">{{ it.count }}</td>
+                    <td class="px-3 py-2 text-xs text-[#6f6f6f]">{{ it.mtime.strftime('%d/%m/%y %H:%M') }}</td>
+                    <td class="px-3 py-2 text-center">
+                        <a href="{{ url_for('purchase_results', uid=it.uid) }}"
+                           class="text-xs px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">
+                            Ver resultados
+                        </a>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="p-10 text-center text-sm text-[#6f6f6f]">
+            Todavía no hay análisis procesados.
+            <a href="{{ url_for('purchase_index') }}" class="text-amber-700 hover:underline font-semibold">Procesar uno</a>.
+        </div>
+        {% endif %}
+    </div>
+
+</main>
+</body>
+</html>

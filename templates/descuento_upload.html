@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Importar campaña — Farmacia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: {
+                fontFamily: { sans: ['Inter','sans-serif'] },
+                colors: {
+                    surface: { DEFAULT:'#ffffff', input:'#f5f5f5', border:'#e0e0e0', head:'#f0f0f0' },
+                    brand: { DEFAULT:'#EAB308', hover:'#CA8A04', dark:'#0d0d0d' }
+                }
+            }}
+        }
+    </script>
+    <style>
+        body { background-color:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        .row-principal { background: rgba(234,179,8,0.08); }
+        .row-principal td:first-child { border-left: 2px solid #EAB308; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('descuentos_list') }}"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors" title="Volver">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+            </a>
+            <span class="font-bold text-sm text-[#1e1e1e]">Importar campaña de descuento</span>
+        </div>
+        <a href="{{ url_for('index') }}" title="Inicio"
+           class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+            </svg>
+        </a>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-8 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">
+        {{ messages[0] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    {% if not preview %}
+    <!-- ── Formulario de carga ── -->
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-6 py-4 border-b border-surface-border">
+            <p class="font-semibold text-[#1e1e1e]">Seleccionar archivo</p>
+            <p class="text-xs text-[#6f6f6f] mt-0.5">Excel (.xlsx / .xls) o PDF con columnas: NOMBRE MODULO, CODIGO EAN, DESCRIPCION, CANT, DESC</p>
+        </div>
+        <form method="POST" action="{{ url_for('descuento_upload') }}" enctype="multipart/form-data"
+              class="px-6 py-6 flex items-end gap-4">
+            <div class="flex-1">
+                <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Archivo Excel o PDF</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls,.pdf" required
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm
+                              file:mr-3 file:py-1 file:px-3 file:rounded file:border-0
+                              file:text-xs file:font-semibold file:bg-brand file:text-brand-dark
+                              hover:file:bg-brand-hover cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand">
+            </div>
+            <button type="submit"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-6 py-2 rounded-lg text-sm transition-colors flex-shrink-0">
+                Leer archivo
+            </button>
+        </form>
+    </div>
+
+    {% else %}
+    <!-- ── Preview ── -->
+    <div class="flex items-start gap-6">
+
+        <!-- Columna izquierda: datos de la campaña -->
+        <form method="POST" action="{{ url_for('descuento_campana_guardar') }}" class="w-80 flex-shrink-0 space-y-4">
+            <input type="hidden" name="preview_json" value="{{ preview_json }}">
+
+            <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+                <div class="px-5 py-4 border-b border-surface-border">
+                    <p class="font-semibold text-[#1e1e1e]">Datos de la campaña</p>
+                </div>
+                <div class="px-5 py-4 space-y-4">
+
+                    <!-- Proveedor -->
+                    <div>
+                        <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Proveedor (opcional)</label>
+                        <select name="proveedor_id" id="sel-proveedor"
+                                class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                                onchange="syncLab(this)">
+                            <option value="">— Sin proveedor —</option>
+                            {% for p in proveedores %}
+                            <option value="{{ p.id }}">{{ p.razon_social }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Laboratorio nombre -->
+                    <div>
+                        <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Laboratorio *</label>
+                        <input type="text" name="laboratorio_nombre" id="inp-lab" required
+                               placeholder="Ej: ROEMMERS"
+                               class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    </div>
+
+                    <!-- Fecha -->
+                    <div>
+                        <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Fecha</label>
+                        <input type="date" name="fecha"
+                               value="{{ ''|default('') }}"
+                               class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    </div>
+
+                    <!-- Observación -->
+                    <div>
+                        <label class="block text-xs text-[#6f6f6f] mb-1.5 uppercase tracking-wide">Observación</label>
+                        <textarea name="observacion" rows="2" placeholder="Campaña invierno 2026..."
+                                  class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-brand"></textarea>
+                    </div>
+                </div>
+                <div class="px-5 py-4 border-t border-surface-border space-y-2">
+                    <button type="submit"
+                            class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2 rounded-lg text-sm transition-colors">
+                        Confirmar y guardar
+                    </button>
+                    <a href="{{ url_for('descuento_upload') }}"
+                       class="block w-full text-center text-xs text-[#6f6f6f] hover:text-[#1e1e1e] py-1.5 rounded-lg hover:bg-black/[0.04] transition-colors">
+                        Volver a cargar otro archivo
+                    </a>
+                </div>
+            </div>
+
+            <!-- Resumen -->
+            <div class="bg-surface rounded-xl border border-surface-border px-5 py-4">
+                <p class="text-xs text-[#6f6f6f] uppercase tracking-wide mb-3">Resumen del archivo</p>
+                <div class="flex justify-between text-sm mb-1">
+                    <span class="text-[#6f6f6f]">Módulos</span>
+                    <span class="font-semibold text-brand">{{ preview|length }}</span>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span class="text-[#6f6f6f]">Artículos</span>
+                    <span class="font-semibold text-brand">{{ preview|sum(attribute='items')|list|length }}</span>
+                </div>
+            </div>
+        </form>
+
+        <!-- Columna derecha: tabla preview -->
+        <div class="flex-1 min-w-0 space-y-4">
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide">
+                Preview — revisá los datos antes de guardar
+                <span class="ml-2 text-brand">● fila resaltada = artículo principal del módulo</span>
+            </p>
+
+            {% for mod in preview %}
+            <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+                <div class="px-5 py-3 border-b border-surface-border flex items-center justify-between">
+                    <p class="font-semibold text-sm text-[#1e1e1e]">{{ mod.nombre }}</p>
+                    <span class="text-xs text-[#999]">{{ mod.items|length }} artículo{{ 's' if mod.items|length != 1 }}</span>
+                </div>
+                <table class="w-full text-xs">
+                    <thead class="bg-surface-head">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">EAN</th>
+                            <th class="px-4 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">Descripción</th>
+                            <th class="px-4 py-2 text-center text-[#6f6f6f] font-semibold uppercase tracking-wide">Cant.</th>
+                            <th class="px-4 py-2 text-center text-[#6f6f6f] font-semibold uppercase tracking-wide">Dto.%</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-surface-border">
+                    {% for it in mod.items %}
+                    <tr class="{{ 'row-principal' if it.es_principal }} hover:bg-black/[0.04] transition-colors">
+                        <td class="px-4 py-2 font-mono text-brand">{{ it.ean }}</td>
+                        <td class="px-4 py-2 text-[#1e1e1e]">{{ it.descripcion }}</td>
+                        <td class="px-4 py-2 text-center font-mono text-[#1e1e1e]">{{ it.cantidad }}</td>
+                        <td class="px-4 py-2 text-center font-mono font-semibold
+                                   {{ 'text-brand' if it.descuento else 'text-[#999]' }}">
+                            {{ it.descuento if it.descuento else '—' }}{% if it.descuento %}%{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</main>
+
+<script>
+const proveedores = {{ proveedores | tojson }};
+
+function syncLab(sel) {
+    const inp = document.getElementById('inp-lab');
+    if (!sel.value) return;
+    const p = proveedores.find(x => x.id == sel.value);
+    if (p && !inp.value) inp.value = p.razon_social;
+}
+</script>
+</body>
+</html>

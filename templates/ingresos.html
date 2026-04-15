@@ -1,0 +1,790 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Control de Ingreso — {{ config.farmacia_nombre }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+    </style>
+</head>
+<body class="min-h-screen flex font-sans">
+
+<!-- Sidebar -->
+<aside class="w-52 min-h-screen bg-surface border-r border-surface-border flex flex-col flex-shrink-0">
+    <div class="px-4 py-5 border-b border-surface-border">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-[#1e1e1e] leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#888]">{{ config.farmacia_nombre }}</p>
+            </div>
+        </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+        <a href="{{ url_for('index') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+            </svg>
+            Inicio
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Gestión</p>
+        <a href="{{ url_for('providers_list') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+            </svg>
+            Proveedores
+        </a>
+        <a href="{{ url_for('laboratorios_list') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+            </svg>
+            Laboratorios
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Operaciones</p>
+        <a href="{{ url_for('ingresos') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Control de Ingreso
+        </a>
+        <a href="{{ url_for('batch_new') }}"
+           class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            Batch de facturas
+        </a>
+        <a href="{{ url_for('claims_list') }}"
+           class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            Reclamos
+        </a>
+        <a href="{{ url_for('purchase_index') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+            </svg>
+            Compras
+        </a>
+        <a href="{{ url_for('productos_list') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+            </svg>
+            Productos
+        </a>
+        <a href="{{ url_for('settings') }}"
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Configuración
+        </a>
+    </nav>
+</aside>
+
+<!-- Main content -->
+<div class="flex-1 flex gap-8 py-10 px-8 items-start">
+
+<!-- Columna izquierda: formulario de carga -->
+<div class="w-full max-w-md flex-shrink-0">
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="flex items-start gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 mb-4 text-sm">
+            <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            {{ messages[0] }}
+        </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Card principal -->
+    <div class="bg-surface rounded-xl border border-surface-border p-6 space-y-5">
+
+        <!-- Selector de proveedor -->
+        <div>
+            <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Proveedor</label>
+            <select id="provider-select" title="Seleccioná un proveedor"
+                class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                <option value="">— Seleccioná un proveedor —</option>
+                {% for p in providers %}
+                <option value="{{ p.id }}" data-cuit="{{ p.cuit }}" data-parser="{{ p.parser_file }}" data-ruta="{{ p.ruta_facturas }}">
+                    {{ p.razon_social }}{% if p.cuit %} · {{ p.cuit }}{% endif %}
+                </option>
+                {% endfor %}
+                <option value="new">＋ Nuevo proveedor...</option>
+            </select>
+        </div>
+
+        <!-- Info proveedor existente -->
+        <div id="provider-info" class="hidden bg-[#f3f3f3] rounded-lg px-4 py-3 text-xs space-y-1.5 border border-surface-border">
+            <div class="flex justify-between">
+                <span class="text-[#6f6f6f]">CUIT</span>
+                <span id="info-cuit" class="font-mono text-[#1e1e1e]"></span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-[#6f6f6f]">Parser</span>
+                <span id="info-parser" class="font-mono text-[#1e1e1e]"></span>
+            </div>
+            <div id="info-ruta-row" class="hidden flex justify-between items-center gap-2">
+                <span class="text-[#6f6f6f] flex-shrink-0">Carpeta PDF</span>
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <span id="info-ruta" class="font-mono text-brand truncate max-w-[180px]" title=""></span>
+                    <button type="button" onclick="copyRuta()" title="Copiar ruta"
+                            class="flex-shrink-0 text-[#999] hover:text-brand transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── PROVEEDOR EXISTENTE: subir PDF + ERP ── -->
+        <form id="upload-section" class="hidden space-y-4"
+              method="post" action="{{ url_for('upload_files') }}" enctype="multipart/form-data">
+            <input type="hidden" name="proveedor_id" id="proveedor_id">
+
+            <div>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Factura PDF</label>
+                <div class="file-drop flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group"
+                     onclick="pickPdf('pdf-input','lbl-pdf')">
+                    <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar PDF</span>
+                    <input type="file" id="pdf-input" name="invoice_pdf" accept=".pdf" required class="hidden" onchange="setLabel(this,'lbl-pdf'); document.getElementById('btn-probar-existing').disabled = !this.files.length;">
+                </div>
+                <p id="lbl-pdf" class="text-xs text-[#999] mt-1 ml-1"></p>
+                <button type="button" id="btn-probar-existing" disabled onclick="probarParserExistente()"
+                        class="mt-2 w-full border border-surface-border text-xs text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] disabled:opacity-40 disabled:cursor-not-allowed py-1.5 rounded-lg transition-colors">
+                    🔍 Probar parser con este PDF
+                </button>
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Informe ERP Excel</label>
+                <label class="file-drop flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
+                    <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                    <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel</span>
+                    <input type="file" name="erp_excel" accept=".xlsx,.xls" required class="hidden" onchange="setLabel(this,'lbl-erp')">
+                </label>
+                <p id="lbl-erp" class="text-xs text-[#999] mt-1 ml-1"></p>
+            </div>
+
+            <!-- Tipo de comprobante -->
+            <div>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Tipo de comprobante</label>
+                <input type="hidden" name="tipo_comprobante" id="tipo_comprobante" value="FAC">
+                <div class="flex rounded-lg overflow-hidden border border-surface-border">
+                    <button type="button" id="btn-fac"
+                        onclick="setTipo('FAC')"
+                        class="flex-1 py-2 text-sm font-semibold transition-colors bg-brand text-brand-dark">
+                        FAC — Factura
+                    </button>
+                    <button type="button" id="btn-ncr"
+                        onclick="setTipo('NCR')"
+                        class="flex-1 py-2 text-sm font-semibold transition-colors bg-surface-input text-[#6f6f6f] hover:text-[#1e1e1e]">
+                        NCR — Nota de crédito
+                    </button>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2.5 rounded-lg text-sm transition-colors">
+                Procesar archivos
+            </button>
+        </form>
+
+        <!-- ── NUEVO PROVEEDOR: subir PDF + identificar + ERP ── -->
+        <div id="new-step1" class="hidden space-y-4">
+            <p class="text-xs text-[#6f6f6f]">Subí la factura PDF. Se leerá el encabezado para identificar al proveedor.</p>
+
+            <div>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Factura PDF</label>
+                <label class="flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
+                    <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    <span id="lbl-new-pdf-text" class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar PDF</span>
+                    <input type="file" id="new-pdf-input" accept=".pdf" class="hidden">
+                </label>
+                <p id="lbl-new-pdf-file" class="text-xs text-brand mt-1 ml-1 hidden"></p>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button type="button" id="btn-identify" onclick="identifyProvider()"
+                    class="flex-1 bg-surface-input hover:bg-black/[0.06] text-[#1e1e1e] font-medium py-2.5 rounded-lg text-sm border border-surface-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled>
+                    <span id="btn-identify-text">Identificar proveedor</span>
+                </button>
+                <label class="flex items-center gap-2 text-xs text-[#6f6f6f] cursor-pointer select-none flex-shrink-0">
+                    <input type="checkbox" id="chk-probar" class="w-3.5 h-3.5 accent-brand rounded">
+                    Probar parser
+                </label>
+            </div>
+
+            <form id="new-step2" class="hidden space-y-4 pt-4 border-t border-surface-border"
+                  method="post" action="{{ url_for('upload_files') }}" enctype="multipart/form-data">
+                <input type="hidden" name="is_new_provider" value="1">
+                <input type="hidden" name="pdf_temp_filename" id="pdf_temp_filename">
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Nombre del proveedor</label>
+                    <input type="text" name="provider_name_new" id="provider_name_new" required
+                        class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand placeholder-[#aaa]"
+                        placeholder="Nombre del proveedor">
+                    <p class="text-xs text-[#999] mt-1 ml-1">Podés editar el nombre antes de confirmar.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Informe ERP Excel</label>
+                    <label class="flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
+                        <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                        <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel</span>
+                        <input type="file" name="erp_excel" accept=".xlsx,.xls" required class="hidden" onchange="setLabel(this,'lbl-new-erp')">
+                    </label>
+                    <p id="lbl-new-erp" class="text-xs text-[#999] mt-1 ml-1"></p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Tipo de comprobante</label>
+                    <input type="hidden" name="tipo_comprobante" id="tipo_comprobante_new" value="FAC">
+                    <div class="flex rounded-lg overflow-hidden border border-surface-border">
+                        <button type="button" id="btn-fac-new" onclick="setTipo('FAC', true)"
+                            class="flex-1 py-2 text-sm font-semibold transition-colors bg-brand text-brand-dark">
+                            FAC — Factura
+                        </button>
+                        <button type="button" id="btn-ncr-new" onclick="setTipo('NCR', true)"
+                            class="flex-1 py-2 text-sm font-semibold transition-colors bg-surface-input text-[#6f6f6f] hover:text-[#1e1e1e]">
+                            NCR — Nota de crédito
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2.5 rounded-lg text-sm transition-colors">
+                    Confirmar y procesar
+                </button>
+            </form>
+        </div>
+
+    </div>
+</div>
+
+<!-- Columna derecha: Ver facturas -->
+<div class="flex-1 min-w-0">
+    <div class="bg-surface rounded-xl border border-surface-border p-5">
+        <div class="flex items-center justify-between mb-4">
+            <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Ver facturas</p>
+        </div>
+        <select id="fac-provider-select"
+            class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand mb-4">
+            <option value="">— Elegí un proveedor —</option>
+            {% for p in providers %}
+            <option value="{{ p.id }}">{{ p.razon_social }}{% if p.cuit %} · {{ p.cuit }}{% endif %}</option>
+            {% endfor %}
+        </select>
+
+        <div id="fac-empty" class="text-center py-8 text-sm text-[#bbb]">
+            Seleccioná un proveedor para ver sus facturas
+        </div>
+        <div id="fac-loading" class="hidden text-center py-8 text-sm text-[#6f6f6f]">Cargando...</div>
+        <div id="fac-table-wrap" class="hidden rounded-lg overflow-hidden border border-surface-border">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-[#f3f3f3] text-[#6f6f6f] text-xs uppercase">
+                        <th class="px-3 py-2.5 text-left font-medium">Factura</th>
+                        <th class="px-3 py-2.5 text-left font-medium">Fecha</th>
+                        <th class="px-3 py-2.5 text-center font-medium">Tipo</th>
+                        <th class="px-3 py-2.5 text-center font-medium">Art.</th>
+                        <th class="px-3 py-2.5 text-right font-medium">Total</th>
+                        <th class="px-3 py-2.5"></th>
+                    </tr>
+                </thead>
+                <tbody id="fac-tbody"></tbody>
+            </table>
+        </div>
+        <div id="fac-none" class="hidden text-center py-6 text-sm text-[#bbb]">Este proveedor no tiene facturas.</div>
+    </div>
+</div>
+
+</div><!-- /flex row -->
+
+<script>
+const select = document.getElementById('provider-select');
+
+select.addEventListener('change', function () {
+    hide('upload-section');
+    hide('new-step1');
+    hide('new-step2');
+    hide('provider-info');
+
+    if (this.value === 'new') {
+        show('new-step1');
+    } else if (this.value) {
+        const opt = this.options[this.selectedIndex];
+        document.getElementById('proveedor_id').value = this.value;
+        document.getElementById('info-cuit').textContent = opt.dataset.cuit || '—';
+        document.getElementById('info-parser').textContent = 'parsers/' + (opt.dataset.parser || '?') + '.py';
+        const ruta = opt.dataset.ruta || '';
+        const rutaRow = document.getElementById('info-ruta-row');
+        if (ruta) {
+            document.getElementById('info-ruta').textContent = ruta;
+            document.getElementById('info-ruta').title = ruta;
+            rutaRow.classList.remove('hidden');
+        } else {
+            rutaRow.classList.add('hidden');
+        }
+        show('provider-info');
+        show('upload-section');
+    }
+});
+
+document.getElementById('new-pdf-input').addEventListener('change', function () {
+    const btn = document.getElementById('btn-identify');
+    if (this.files.length > 0) {
+        const fileLbl = document.getElementById('lbl-new-pdf-file');
+        fileLbl.textContent = '✓ ' + this.files[0].name;
+        fileLbl.classList.remove('hidden');
+        document.getElementById('lbl-new-pdf-text').textContent = this.files[0].name;
+        btn.disabled = false;
+        hide('new-step2');
+    }
+});
+
+let _identifiedProviderId = null;
+let _identifiedPdfFilename = null;
+let _showStep2AfterModal = false;
+
+async function probarParserExistente() {
+    const input = document.getElementById('pdf-input');
+    if (!input.files.length) return;
+    const providerId   = document.getElementById('proveedor_id').value;
+    const providerName = select.options[select.selectedIndex].textContent.trim();
+    if (!providerId) return;
+
+    const btn = document.getElementById('btn-probar-existing');
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Subiendo PDF…';
+
+    const fd = new FormData();
+    fd.append('invoice_pdf', input.files[0]);
+    try {
+        const res  = await fetch('/provider/peek', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok || !data.pdf_filename) {
+            alert(data.error || 'Error al subir el PDF.');
+            return;
+        }
+        _identifiedProviderId  = providerId;
+        _identifiedPdfFilename = data.pdf_filename;
+        openParserPreviewSaved(providerId, providerName, data.pdf_filename);
+    } catch (e) {
+        alert('Error de conexión al servidor.');
+    } finally {
+        btn.textContent = prev;
+        btn.disabled = false;
+    }
+}
+
+async function identifyProvider() {
+    const input = document.getElementById('new-pdf-input');
+    if (!input.files.length) return;
+
+    const btnText = document.getElementById('btn-identify-text');
+    btnText.textContent = 'Leyendo encabezado...';
+    document.getElementById('btn-identify').disabled = true;
+
+    const fd = new FormData();
+    fd.append('invoice_pdf', input.files[0]);
+
+    try {
+        const res = await fetch('/provider/peek', { method: 'POST', body: fd });
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+            alert(data.error || 'Error al leer el PDF.');
+            btnText.textContent = 'Identificar proveedor';
+            document.getElementById('btn-identify').disabled = false;
+            return;
+        }
+
+        _identifiedProviderId = data.provider_id || null;
+        _identifiedPdfFilename = data.pdf_filename || null;
+        document.getElementById('pdf_temp_filename').value = data.pdf_filename;
+        document.getElementById('provider_name_new').value = data.proposed_name;
+
+        btnText.textContent = '✓ Identificado';
+
+        if (document.getElementById('chk-probar').checked && _identifiedProviderId) {
+            _showStep2AfterModal = true;
+            openParserPreviewSaved(_identifiedProviderId, data.proposed_name, data.pdf_filename);
+        } else {
+            show('new-step2');
+        }
+    } catch (e) {
+        alert('Error de conexión al servidor.');
+        btnText.textContent = 'Identificar proveedor';
+        document.getElementById('btn-identify').disabled = false;
+    }
+}
+
+async function openParserPreviewSaved(providerId, name, pdfFilename) {
+    document.getElementById('modal-title').textContent = 'Probar parser — ' + name;
+    document.getElementById('modal-subtitle').textContent = pdfFilename;
+    document.getElementById('modal-drop').classList.add('hidden');
+    document.getElementById('modal-loading').classList.remove('hidden');
+    document.getElementById('modal-error').classList.add('hidden');
+    document.getElementById('modal-results').classList.add('hidden');
+    document.getElementById('parser-modal').classList.remove('hidden');
+
+    try {
+        const res = await fetch(`/provider/${providerId}/parser-preview-saved`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({pdf_filename: pdfFilename})
+        });
+        const data = await res.json();
+        document.getElementById('modal-loading').classList.add('hidden');
+        if (!res.ok || data.error) {
+            document.getElementById('modal-error').textContent = data.error || 'Error desconocido.';
+            document.getElementById('modal-error').classList.remove('hidden');
+            document.getElementById('modal-drop').classList.remove('hidden');
+            return;
+        }
+        fillParserModal(data);
+    } catch(e) {
+        document.getElementById('modal-loading').classList.add('hidden');
+        document.getElementById('modal-error').textContent = 'Error de red: ' + e.message;
+        document.getElementById('modal-error').classList.remove('hidden');
+        document.getElementById('modal-drop').classList.remove('hidden');
+    }
+}
+
+function fillParserModal(data) {
+    document.getElementById('res-numero').textContent = data.numero_factura || '—';
+    document.getElementById('res-fecha').textContent = data.fecha || '—';
+    document.getElementById('res-proveedor').textContent = data.proveedor || '—';
+    document.getElementById('res-total').textContent = data.total ? '$' + Number(data.total).toLocaleString('es-AR') : '—';
+    document.getElementById('res-count').textContent = data.items.length + ' ítem' + (data.items.length !== 1 ? 's' : '');
+
+    // Botón asistente: siempre visible para poder ajustar campos del encabezado
+    document.getElementById('btn-open-assistant').classList.remove('hidden');
+
+    const tbody = document.getElementById('res-tbody');
+    tbody.innerHTML = '';
+    data.items.forEach((it, i) => {
+        const ok = it.codigo_barra && it.descripcion && it.cantidad;
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-black/[0.04] ' + (ok ? '' : 'opacity-50');
+        tr.innerHTML = `
+            <td class="px-3 py-2 text-[#999]">${i+1}</td>
+            <td class="px-3 py-2 font-mono text-brand">${it.codigo_barra || '<span class="text-red-600">—</span>'}</td>
+            <td class="px-3 py-2 text-[#1e1e1e]">${it.descripcion || '<span class="text-red-600">—</span>'}</td>
+            <td class="px-3 py-2 text-right text-[#1e1e1e]">${it.cantidad || '—'}</td>
+            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.precio_unitario || '—'}</td>
+            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.dto || '—'}</td>
+            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.importe || '—'}</td>
+            <td class="px-3 py-2 text-[#888]">${it.lote || '—'}</td>
+            <td class="px-3 py-2 text-[#888]">${it.vencimiento || '—'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    document.getElementById('modal-results').classList.remove('hidden');
+}
+
+async function openParseAssistant() {
+    const btn = document.getElementById('btn-open-assistant');
+    btn.textContent = 'Creando…';
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/invoice/probe-create', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                provider_id: _identifiedProviderId,
+                pdf_filename: _identifiedPdfFilename
+            })
+        });
+        const data = await res.json();
+        if (data.invoice_id) {
+            window.location.href = `/invoice/${data.invoice_id}/parse-helper`;
+        } else {
+            alert(data.error || 'Error al crear la factura de prueba.');
+            btn.textContent = 'Abrir asistente de extracción →';
+            btn.disabled = false;
+        }
+    } catch(e) {
+        alert('Error de conexión.');
+        btn.textContent = 'Abrir asistente de extracción →';
+        btn.disabled = false;
+    }
+}
+
+const _IDB_NAME = 'farmacia-handles';
+const _IDB_STORE = 'pdf-dirs';
+
+function _openIdb() {
+    return new Promise((res, rej) => {
+        const req = indexedDB.open(_IDB_NAME, 1);
+        req.onupgradeneeded = e => e.target.result.createObjectStore(_IDB_STORE);
+        req.onsuccess = e => res(e.target.result);
+        req.onerror   = e => rej(e.target.error);
+    });
+}
+async function getStoredHandle(providerId) {
+    if (!providerId) return null;
+    try {
+        const db = await _openIdb();
+        return await new Promise((res, rej) => {
+            const tx = db.transaction(_IDB_STORE, 'readonly');
+            const req = tx.objectStore(_IDB_STORE).get('prov_' + providerId);
+            req.onsuccess = e => res(e.target.result || null);
+            req.onerror   = e => rej(e.target.error);
+        });
+    } catch { return null; }
+}
+async function storeHandle(providerId, handle) {
+    if (!providerId || !handle) return;
+    try {
+        const db = await _openIdb();
+        await new Promise((res, rej) => {
+            const tx = db.transaction(_IDB_STORE, 'readwrite');
+            const req = tx.objectStore(_IDB_STORE).put(handle, 'prov_' + providerId);
+            req.onsuccess = () => res();
+            req.onerror   = e => rej(e.target.error);
+        });
+    } catch {}
+}
+
+async function pickPdf(inputId, lblId) {
+    if (!window.showOpenFilePicker) {
+        document.getElementById(inputId).click();
+        return;
+    }
+    const pid = document.getElementById('proveedor_id').value;
+    const storedHandle = await getStoredHandle(pid);
+    let startIn = 'documents';
+    if (storedHandle) {
+        try {
+            const perm = await storedHandle.queryPermission({ mode: 'read' });
+            if (perm === 'granted' || perm === 'prompt') startIn = storedHandle;
+        } catch {}
+    }
+    try {
+        const [fh] = await window.showOpenFilePicker({
+            startIn,
+            types: [{ description: 'PDF', accept: { 'application/pdf': ['.pdf'] } }],
+            multiple: false
+        });
+        if (fh.getParent) {
+            try { await storeHandle(pid, await fh.getParent()); } catch {}
+        } else {
+            await storeHandle(pid, fh);
+        }
+        const file = await fh.getFile();
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        const input = document.getElementById(inputId);
+        input.files = dt.files;
+        setLabel(input, lblId);
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch(e) {
+        if (e.name !== 'AbortError') document.getElementById(inputId).click();
+    }
+}
+
+function copyRuta() {
+    const r = document.getElementById('info-ruta').textContent;
+    if (!r) return;
+    navigator.clipboard.writeText(r).catch(() => {});
+}
+
+function setLabel(input, id) {
+    const el = document.getElementById(id);
+    if (el && input.files.length > 0) {
+        el.textContent = '✓ ' + input.files[0].name;
+        el.classList.add('text-brand');
+        el.classList.remove('text-[#999]');
+    }
+}
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+function setTipo(tipo, isNew) {
+    const suffix = isNew ? '_new' : '';
+    const input  = document.getElementById('tipo_comprobante' + suffix);
+    const btnFac = document.getElementById('btn-fac' + (isNew ? '-new' : ''));
+    const btnNcr = document.getElementById('btn-ncr' + (isNew ? '-new' : ''));
+    input.value = tipo;
+    if (tipo === 'FAC') {
+        btnFac.className = 'flex-1 py-2 text-sm font-semibold transition-colors bg-brand text-brand-dark';
+        btnNcr.className = 'flex-1 py-2 text-sm font-semibold transition-colors bg-surface-input text-[#6f6f6f] hover:text-[#1e1e1e]';
+    } else {
+        btnNcr.className = 'flex-1 py-2 text-sm font-semibold transition-colors bg-red-600 text-white';
+        btnFac.className = 'flex-1 py-2 text-sm font-semibold transition-colors bg-surface-input text-[#6f6f6f] hover:text-[#1e1e1e]';
+    }
+}
+
+document.getElementById('fac-provider-select').addEventListener('change', async function () {
+    const pid = this.value;
+    const empty = document.getElementById('fac-empty');
+    const loading = document.getElementById('fac-loading');
+    const tableWrap = document.getElementById('fac-table-wrap');
+    const none = document.getElementById('fac-none');
+
+    empty.classList.add('hidden');
+    tableWrap.classList.add('hidden');
+    none.classList.add('hidden');
+
+    if (!pid) { empty.classList.remove('hidden'); return; }
+
+    loading.classList.remove('hidden');
+    try {
+        const res = await fetch(`/api/provider/${pid}/invoices`);
+        const rows = await res.json();
+        loading.classList.add('hidden');
+
+        if (!rows.length) { none.classList.remove('hidden'); return; }
+
+        const tbody = document.getElementById('fac-tbody');
+        tbody.innerHTML = '';
+        rows.forEach(inv => {
+            const badge = inv.tipo_comprobante === 'FAC'
+                ? '<span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-green-900/40 text-green-600 border border-green-700/30">FAC</span>'
+                : '<span class="text-xs font-semibold px-1.5 py-0.5 rounded bg-red-900/40 text-red-600 border border-red-700/30">NCR</span>';
+            const total = inv.total.toLocaleString('es-AR', {minimumFractionDigits:2});
+            tbody.insertAdjacentHTML('beforeend', `
+                <tr class="border-t border-[#e0e0e0] hover:bg-black/[0.02] transition-colors">
+                    <td class="px-3 py-2.5 font-mono text-xs text-[#1e1e1e]">${inv.numero_factura}</td>
+                    <td class="px-3 py-2.5 text-xs text-[#6f6f6f]">${inv.fecha}</td>
+                    <td class="px-3 py-2.5 text-center">${badge}</td>
+                    <td class="px-3 py-2.5 text-center text-xs text-[#6f6f6f]">${inv.total_articulos}</td>
+                    <td class="px-3 py-2.5 text-right text-xs font-mono text-[#1e1e1e]">$${total}</td>
+                    <td class="px-3 py-2.5 text-right">
+                        <a href="/results/${inv.id}" class="text-xs text-brand hover:text-brand-hover transition-colors">Ver →</a>
+                    </td>
+                </tr>`);
+        });
+        tableWrap.classList.remove('hidden');
+    } catch(e) {
+        loading.classList.add('hidden');
+        none.classList.remove('hidden');
+    }
+});
+</script>
+
+<!-- Modal parser preview -->
+<div id="parser-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/70" onclick="closeParserPreview()"></div>
+    <div class="relative bg-white border border-[#e0e0e0] rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-[#e0e0e0] flex-shrink-0">
+            <div>
+                <p class="font-semibold text-[#1e1e1e]" id="modal-title">Probar parser</p>
+                <p class="text-xs text-[#6f6f6f] mt-0.5" id="modal-subtitle"></p>
+            </div>
+            <button type="button" onclick="closeParserPreview()" class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div id="modal-upload" class="px-6 py-4 flex-shrink-0">
+            <div id="modal-drop" class="hidden"></div>
+            <div id="modal-loading" class="hidden text-center py-6 text-sm text-[#6f6f6f]">
+                <svg class="w-5 h-5 animate-spin mx-auto mb-2 text-brand" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                </svg>
+                Procesando...
+            </div>
+            <div id="modal-error" class="hidden mt-2 text-sm text-red-600 bg-red-900/20 border border-red-800/30 rounded-lg px-4 py-3"></div>
+        </div>
+        <div id="modal-results" class="hidden flex-1 overflow-hidden flex flex-col px-6 pb-6">
+            <div class="flex items-center gap-6 text-sm mb-4 pb-4 border-b border-[#e0e0e0] flex-shrink-0 flex-wrap">
+                <div><span class="text-[#6f6f6f]">Factura:</span> <span class="text-[#1e1e1e] font-mono ml-1" id="res-numero"></span></div>
+                <div><span class="text-[#6f6f6f]">Fecha:</span> <span class="text-[#1e1e1e] ml-1" id="res-fecha"></span></div>
+                <div><span class="text-[#6f6f6f]">Proveedor:</span> <span class="text-[#1e1e1e] ml-1" id="res-proveedor"></span></div>
+                <div><span class="text-[#6f6f6f]">Total:</span> <span class="text-brand font-mono ml-1" id="res-total"></span></div>
+                <div class="ml-auto flex items-center gap-3">
+                    <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20" id="res-count"></span>
+                    <button id="btn-open-assistant" onclick="openParseAssistant()"
+                            class="hidden px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors">
+                        Abrir asistente de extracción →
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-auto flex-1">
+                <table class="w-full text-xs">
+                    <thead class="bg-[#f0f0f0] sticky top-0">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">#</th>
+                            <th class="px-3 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">Código</th>
+                            <th class="px-3 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">Descripción</th>
+                            <th class="px-3 py-2 text-right text-[#6f6f6f] font-semibold uppercase tracking-wide">Cant.</th>
+                            <th class="px-3 py-2 text-right text-[#6f6f6f] font-semibold uppercase tracking-wide">P.Unit.</th>
+                            <th class="px-3 py-2 text-right text-[#6f6f6f] font-semibold uppercase tracking-wide">Dto%</th>
+                            <th class="px-3 py-2 text-right text-[#6f6f6f] font-semibold uppercase tracking-wide">Importe</th>
+                            <th class="px-3 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">Lote</th>
+                            <th class="px-3 py-2 text-left text-[#6f6f6f] font-semibold uppercase tracking-wide">Vence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="res-tbody" class="divide-y divide-[#e0e0e0]"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+function closeParserPreview() {
+    document.getElementById('parser-modal').classList.add('hidden');
+    if (_showStep2AfterModal) {
+        _showStep2AfterModal = false;
+        show('new-step2');
+    }
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeParserPreview(); });
+</script>
+</body>
+</html>

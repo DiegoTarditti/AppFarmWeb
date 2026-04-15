@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Convertir documentos</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { background:#f3f3f3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
+</head>
+<body class="min-h-screen">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <span class="font-bold text-sm">Convertir documentos</span>
+        <a href="{{ url_for('index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Inicio</a>
+    </div>
+</header>
+
+{% with messages = get_flashed_messages() %}
+  {% for m in messages %}
+    <div class="max-w-5xl mx-auto mt-4 px-6">
+        <div class="rounded-lg px-4 py-3 text-sm bg-red-50 border border-red-200 text-red-800">{{ m }}</div>
+    </div>
+  {% endfor %}
+{% endwith %}
+
+<div class="max-w-5xl mx-auto px-6 py-6 space-y-6">
+
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-6">
+        <p class="font-semibold text-sm mb-2">Subir un PDF para extraer</p>
+        <p class="text-xs text-[#6f6f6f] mb-4">Funciona con facturas, remitos, notas de crédito u otros documentos tabulares. Después podés exportarlo como XLSX para usar en cualquier proceso de importación.</p>
+        <form method="post" action="{{ url_for('converter_upload') }}" enctype="multipart/form-data" class="flex items-center gap-3">
+            <input type="file" name="document" accept=".pdf" required class="text-sm">
+            <button type="submit" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">Subir y abrir selector</button>
+        </form>
+    </div>
+
+    {% if files %}
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-6">
+        <p class="font-semibold text-sm mb-3">Documentos recientes</p>
+        <table class="w-full text-sm">
+            <thead class="bg-[#f0f0f0]">
+                <tr><th class="text-left px-3 py-2">Archivo</th><th class="text-left px-3 py-2">Tipo</th><th class="text-right px-3 py-2">Tamaño</th><th class="px-3 py-2"></th></tr>
+            </thead>
+            <tbody>
+            {% set tipo_labels = {'factura':'Factura','remito':'Remito','nc':'Nota de crédito','otro':'Otro'} %}
+            {% for f in files %}
+                <tr class="border-t border-[#e0e0e0]">
+                    <td class="px-3 py-2 font-mono text-xs">{{ f.name }}</td>
+                    <td class="px-3 py-2 text-xs">
+                        {% if f.tipo %}
+                        <span class="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">{{ tipo_labels.get(f.tipo, f.tipo) }}</span>
+                        {% else %}<span class="text-[#9ca3af]">—</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-right text-xs">{{ (f.size/1024)|round(1) }} KB</td>
+                    <td class="px-3 py-2 text-right">
+                        <a href="{{ url_for('converter_helper', token=f.name) }}" class="text-amber-600 hover:text-amber-800 text-xs font-semibold mr-3">Abrir →</a>
+                        <form method="post" action="{{ url_for('converter_delete', token=f.name) }}" class="inline" onsubmit="return confirm('¿Eliminar {{ f.name }}?');">
+                            <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-semibold">Eliminar</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+</div>
+</body>
+</html>

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Productos — Farmacia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+        .alt-badge { display: inline-block; font-family: monospace; font-size: 10px;
+                     background: #f0f0f0; border: 1px solid #e0e0e0; border-radius: 4px;
+                     padding: 1px 5px; color: #555; }
+        .editable-cell { cursor: pointer; }
+        .editable-cell:hover { background: rgba(234,179,8,0.07); }
+        .editable-cell input { border: 1px solid #EAB308; border-radius: 4px; padding: 1px 4px;
+                               font-size: inherit; font-family: inherit; width: 100%;
+                               background: #fff; outline: none; }
+        .editable-cell.saving { opacity: 0.5; }
+    </style>
+</head>
+<body class="min-h-screen flex font-sans">
+
+<!-- Sidebar -->
+<aside class="w-52 min-h-screen bg-surface border-r border-surface-border flex flex-col flex-shrink-0">
+    <div class="px-4 py-5 border-b border-surface-border">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-[#1e1e1e] leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#888]">Farmacia</p>
+            </div>
+        </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Inicio
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Gestión</p>
+        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+            Proveedores
+        </a>
+        <a href="{{ url_for('laboratorios_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+            Laboratorios
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Operaciones</p>
+        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            Control de Ingreso
+        </a>
+        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            Compras
+        </a>
+        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            Productos
+        </a>
+        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Configuración
+        </a>
+    </nav>
+    <div class="px-4 py-4 border-t border-surface-border text-xs text-[#999]">
+        <span id="sb-count">…</span> productos
+    </div>
+</aside>
+
+<!-- Main -->
+<div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+
+    <!-- Top bar con filtro -->
+    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
+        <div>
+            <h1 class="text-base font-bold text-[#1e1e1e]">Tabla de productos</h1>
+            <p class="text-xs text-[#6f6f6f]">Códigos de barra y equivalencias · ordenado por descripción</p>
+        </div>
+        <div class="ml-auto flex items-center gap-3 flex-wrap">
+            <input type="text" id="search" placeholder="Buscar por descripción o código…"
+                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-1 focus:ring-brand"
+                   oninput="filterProductos()">
+            <select id="filter-lab" onchange="filterProductos()"
+                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Todos los labs</option>
+                <option value="__none__">Sin laboratorio</option>
+                {% for lab in laboratorios %}
+                <option value="{{ lab.id }}" {% if request.args.get('lab')|string == lab.id|string %}selected{% endif %}>{{ lab.nombre }}</option>
+                {% endfor %}
+            </select>
+            <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none">
+                <input type="checkbox" id="only-alt" onchange="filterProductos()">
+                Solo con EAN alt.
+            </label>
+            <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none">
+                <input type="checkbox" id="only-pack" onchange="filterProductos()">
+                Solo packs
+            </label>
+            <span class="text-xs text-[#999]" id="count-label">…</span>
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+        </div>
+    </div>
+
+    <!-- Formulario nuevo producto -->
+    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-end gap-3 flex-wrap">
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[#999] uppercase tracking-wide">Cód. de barra *</label>
+            <input id="new-cb" type="text" placeholder="7795345000000"
+                   class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm w-40 focus:outline-none focus:ring-1 focus:ring-brand font-mono">
+        </div>
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[#999] uppercase tracking-wide">Descripción</label>
+            <input id="new-desc" type="text" placeholder="AMOXIDAL 500MG X 16 COM"
+                   class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] text-[#999] uppercase tracking-wide">Precio PVP</label>
+            <input id="new-pvp" type="number" min="0" step="0.01" placeholder="0"
+                   class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+        <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none mb-1.5">
+            <input type="checkbox" id="new-pack" class="rounded">
+            Es pack
+        </label>
+        <button onclick="crearProducto()"
+                class="flex-shrink-0 bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-1.5 rounded-lg transition-colors mb-0.5">
+            + Agregar
+        </button>
+        <span id="new-error" class="text-xs text-red-500 hidden"></span>
+    </div>
+
+    <!-- Loading overlay -->
+    <div id="loading-overlay" class="flex-1 flex items-center justify-center py-16">
+        <div class="text-center text-[#888]">
+            <svg class="w-8 h-8 mx-auto mb-3 animate-spin text-brand" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"/>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+            </svg>
+            <p class="text-sm">Cargando productos…</p>
+        </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="flex-1 overflow-auto px-4 py-4 hidden" id="tabla-wrap">
+        <div id="empty-state" class="text-center py-16 text-[#999] hidden">
+            <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+            </svg>
+            <p class="text-sm">La tabla se pobla automáticamente al importar facturas y análisis de compra.</p>
+        </div>
+        <table class="w-full text-xs border-collapse" id="main-table" style="min-width:900px">
+            <thead>
+                <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
+                    <th class="text-left px-3 py-2 rounded-tl-lg" style="min-width:240px">Descripción</th>
+                    <th class="text-left px-3 py-2" style="width:130px">Cód. principal</th>
+                    <th class="text-left px-3 py-2" style="width:110px">EAN alt. 1</th>
+                    <th class="text-left px-3 py-2" style="width:110px">EAN alt. 2</th>
+                    <th class="text-left px-3 py-2" style="width:110px">EAN alt. 3</th>
+                    <th class="text-left px-3 py-2" style="width:130px">Laboratorio</th>
+                    <th class="text-right px-3 py-2" style="width:70px">P.PVP</th>
+                    <th class="text-center px-3 py-2" style="width:52px">Pack</th>
+                    <th class="text-right px-3 py-2" style="width:80px">Actualizado</th>
+                    <th class="px-3 py-2 rounded-tr-lg" style="width:36px"></th>
+                </tr>
+            </thead>
+            <tbody id="table-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const LABS = {{ laboratorios | tojson }};
+let allProductos = [];
+
+// Opciones de lab pre-generadas (se reusan en cada fila)
+const LAB_OPTIONS = LABS.map(l =>
+    `<option value="${l.id}">${escHtml(l.nombre)}</option>`
+).join('');
+
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function altCell(val) {
+    return val
+        ? `<span class="alt-badge">${escHtml(val)}</span>`
+        : '<span class="text-[#ccc] placeholder">—</span>';
+}
+
+function buildRow(p) {
+    const hasAlt = p.alt1 || p.alt2 || p.alt3;
+    // Marcar la opción seleccionada en el select de lab
+    const labSel = LAB_OPTIONS.replace(
+        `value="${p.laboratorio_id}"`,
+        `value="${p.laboratorio_id}" selected`
+    );
+    return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors"
+        data-desc="${escHtml(p.descripcion.toLowerCase())}"
+        data-cb="${escHtml(p.codigo_barra)}"
+        data-alt1="${escHtml(p.alt1)}"
+        data-alt2="${escHtml(p.alt2)}"
+        data-alt3="${escHtml(p.alt3)}"
+        data-labid="${escHtml(String(p.laboratorio_id))}"
+        data-hasalt="${hasAlt ? 'true' : 'false'}"
+        data-ispack="${p.es_pack ? 'true' : 'false'}">
+        <td class="px-3 py-2 font-medium text-[#1e1e1e] editable-cell" data-id="${p.id}" data-field="descripcion">${escHtml(p.descripcion)}</td>
+        <td class="px-3 py-2 font-mono text-[#555] text-[11px] editable-cell" data-id="${p.id}" data-field="codigo_barra">${escHtml(p.codigo_barra)}</td>
+        <td class="px-3 py-2 editable-cell" data-id="${p.id}" data-field="codigo_barra_alt1">${altCell(p.alt1)}</td>
+        <td class="px-3 py-2 editable-cell" data-id="${p.id}" data-field="codigo_barra_alt2">${altCell(p.alt2)}</td>
+        <td class="px-3 py-2 editable-cell" data-id="${p.id}" data-field="codigo_barra_alt3">${altCell(p.alt3)}</td>
+        <td class="px-3 py-2">
+            <form method="post" action="/producto/${p.id}/laboratorio" onchange="this.submit()">
+                <select name="laboratorio_id" title="Laboratorio"
+                        class="bg-transparent border-0 text-xs text-[#555] focus:outline-none focus:ring-1 focus:ring-brand rounded px-1 py-0.5 cursor-pointer hover:bg-black/[0.04] max-w-[120px]">
+                    <option value="">— sin lab —</option>
+                    ${labSel}
+                </select>
+            </form>
+        </td>
+        <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
+            ${p.precio_pvp ? '$' + parseInt(p.precio_pvp) : '<span class="text-[#ccc] placeholder">—</span>'}
+        </td>
+        <td class="px-3 py-2 text-center">
+            <input type="checkbox" ${p.es_pack ? 'checked' : ''}
+                   onchange="togglePack(${p.id}, this.checked)"
+                   class="w-3.5 h-3.5 accent-amber-500 cursor-pointer">
+        </td>
+        <td class="px-3 py-2 text-right text-[#999]">${escHtml(p.actualizado_en)}</td>
+        <td class="px-3 py-2 text-center">
+            <button onclick="deleteProducto(${p.id}, this)" title="Eliminar producto"
+                    class="w-6 h-6 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors mx-auto">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            </button>
+        </td>
+    </tr>`;
+}
+
+async function loadProductos() {
+    try {
+        const resp = await fetch('/api/productos');
+        allProductos = await resp.json();
+
+        const tbody = document.getElementById('table-body');
+        if (allProductos.length === 0) {
+            document.getElementById('main-table').classList.add('hidden');
+            document.getElementById('empty-state').classList.remove('hidden');
+        } else {
+            tbody.innerHTML = allProductos.map(buildRow).join('');
+        }
+
+        setCount(allProductos.length);
+        document.getElementById('loading-overlay').classList.add('hidden');
+        document.getElementById('tabla-wrap').classList.remove('hidden');
+
+        // Aplicar filtro de URL si viene con ?lab=
+        const urlLab = new URLSearchParams(location.search).get('lab');
+        if (urlLab) {
+            const sel = document.getElementById('filter-lab');
+            if (sel) { sel.value = urlLab; filterProductos(); }
+        }
+    } catch (e) {
+        document.getElementById('loading-overlay').innerHTML =
+            '<p class="text-red-500 text-sm">Error al cargar productos. Recargá la página.</p>';
+    }
+}
+
+function setCount(n) {
+    document.getElementById('count-label').textContent = n + ' registros';
+    document.getElementById('sb-count').textContent = n;
+}
+
+function filterProductos() {
+    const q        = document.getElementById('search').value.toLowerCase().trim();
+    const onlyAlt  = document.getElementById('only-alt').checked;
+    const onlyPack = document.getElementById('only-pack').checked;
+    const labVal   = document.getElementById('filter-lab').value;
+    let visible = 0;
+
+    document.querySelectorAll('#table-body tr').forEach(tr => {
+        const desc   = tr.dataset.desc || '';
+        const cb     = tr.dataset.cb   || '';
+        const alt1   = tr.dataset.alt1 || '';
+        const alt2   = tr.dataset.alt2 || '';
+        const alt3   = tr.dataset.alt3 || '';
+        const labId  = tr.dataset.labid || '';
+        const hasAlt = tr.dataset.hasalt === 'true';
+        const isPack = tr.dataset.ispack === 'true';
+
+        const matchSearch = !q || desc.includes(q) || cb.includes(q)
+                            || alt1.includes(q) || alt2.includes(q) || alt3.includes(q);
+        const matchAlt    = !onlyAlt  || hasAlt;
+        const matchPack   = !onlyPack || isPack;
+        let matchLab = true;
+        if (labVal === '__none__') matchLab = !labId;
+        else if (labVal) matchLab = labId === labVal;
+
+        const show = matchSearch && matchAlt && matchPack && matchLab;
+        tr.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+
+    setCount(visible);
+}
+
+// Edición inline
+function cellCurrentValue(td) {
+    const inp = td.querySelector('input');
+    if (inp) return inp.value;
+    const ph = td.querySelector('.placeholder');
+    if (ph) return '';
+    const badge = td.querySelector('.alt-badge');
+    if (badge) return badge.textContent.trim();
+    return td.textContent.trim().replace(/^\$/, '');
+}
+
+function renderCell(td, value) {
+    const field = td.dataset.field;
+    if (!value) {
+        td.innerHTML = '<span class="text-[#ccc] placeholder">—</span>';
+        return;
+    }
+    if (field === 'precio_pvp') {
+        td.innerHTML = '$' + parseInt(value);
+    } else if (field.startsWith('codigo_barra_alt')) {
+        td.innerHTML = '<span class="alt-badge">' + escHtml(value) + '</span>';
+    } else {
+        td.textContent = value;
+    }
+}
+
+document.addEventListener('click', function(e) {
+    const td = e.target.closest('td.editable-cell');
+    if (!td || td.querySelector('input')) return;
+
+    const orig = cellCurrentValue(td);
+    const inp = document.createElement('input');
+    inp.value = orig;
+    inp.style.minWidth = '60px';
+    td.innerHTML = '';
+    td.appendChild(inp);
+    inp.focus();
+    inp.select();
+
+    async function save() {
+        const newVal = inp.value.trim();
+        if (newVal === orig) { renderCell(td, orig); return; }
+        td.classList.add('saving');
+        const resp = await fetch('/producto/' + td.dataset.id + '/edit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({field: td.dataset.field, value: newVal})
+        });
+        td.classList.remove('saving');
+        if (resp.ok) {
+            renderCell(td, newVal);
+            const tr = td.closest('tr');
+            if (td.dataset.field === 'descripcion') tr.dataset.desc = newVal.toLowerCase();
+            if (td.dataset.field === 'codigo_barra') tr.dataset.cb = newVal;
+            if (td.dataset.field === 'codigo_barra_alt1') tr.dataset.alt1 = newVal;
+            if (td.dataset.field === 'codigo_barra_alt2') tr.dataset.alt2 = newVal;
+            if (td.dataset.field === 'codigo_barra_alt3') tr.dataset.alt3 = newVal;
+            tr.dataset.hasalt = (tr.dataset.alt1||tr.dataset.alt2||tr.dataset.alt3) ? 'true':'false';
+        } else {
+            const err = await resp.json().catch(()=>({}));
+            alert(err.error || 'Error al guardar');
+            renderCell(td, orig);
+        }
+    }
+
+    inp.addEventListener('blur', save);
+    inp.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); }
+        if (ev.key === 'Escape') { inp.removeEventListener('blur', save); renderCell(td, orig); }
+    });
+});
+
+async function togglePack(id, checked) {
+    await fetch('/producto/' + id + '/edit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({field: 'es_pack', value: checked ? '1' : '0'})
+    });
+}
+
+async function deleteProducto(id, btn) {
+    if (!confirm('¿Eliminar este producto?')) return;
+    const tr = btn.closest('tr');
+    const resp = await fetch('/producto/' + id + '/delete', { method: 'POST' });
+    if (resp.ok) {
+        tr.remove();
+        const count = document.querySelectorAll('#table-body tr:not([style*="none"])').length;
+        setCount(count);
+    } else {
+        alert('Error al eliminar');
+    }
+}
+
+async function crearProducto() {
+    const cb   = document.getElementById('new-cb').value.trim();
+    const desc = document.getElementById('new-desc').value.trim();
+    const pvp  = document.getElementById('new-pvp').value.trim();
+    const pack = document.getElementById('new-pack').checked;
+    const errEl = document.getElementById('new-error');
+    errEl.classList.add('hidden');
+
+    if (!cb) { errEl.textContent = 'El código de barra es obligatorio.'; errEl.classList.remove('hidden'); return; }
+
+    const r = await fetch('/producto/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({codigo_barra: cb, descripcion: desc || null, precio_pvp: pvp || null, es_pack: pack})
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error || 'Error'; errEl.classList.remove('hidden'); return; }
+
+    // Limpiar y recargar tabla
+    document.getElementById('new-cb').value = '';
+    document.getElementById('new-desc').value = '';
+    document.getElementById('new-pvp').value = '';
+    document.getElementById('new-pack').checked = false;
+    await loadProductos();
+}
+
+window.addEventListener('DOMContentLoaded', loadProductos);
+</script>
+
+</body>
+</html>

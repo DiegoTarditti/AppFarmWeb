@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Campañas de descuento — Farmacia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: {
+                fontFamily: { sans: ['Inter','sans-serif'] },
+                colors: {
+                    surface: { DEFAULT:'#ffffff', input:'#f5f5f5', border:'#e0e0e0', head:'#f0f0f0' },
+                    brand: { DEFAULT:'#EAB308', hover:'#CA8A04', dark:'#0d0d0d' }
+                }
+            }}
+        }
+    </script>
+    <style>
+        body { background-color:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; height:5px; }
+        ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a2 2 0 012-2z"/>
+                </svg>
+            </div>
+            <span class="font-bold text-sm text-[#1e1e1e]">Campañas de descuento</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <a href="{{ url_for('descuento_upload') }}"
+               class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors">
+                + Importar módulos
+            </a>
+            <a href="{{ url_for('descuento_upload_libre') }}"
+               class="bg-surface-input hover:bg-black/[0.06] text-[#1e1e1e] border border-surface-border font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors">
+                + Importación libre
+            </a>
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="flex items-center gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">
+        {{ messages[0] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-[#1e1e1e]">Campañas registradas</p>
+            <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20">
+                {{ campanas|length }}
+            </span>
+        </div>
+
+        {% if campanas %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-surface-head border-b border-surface-border">
+                    <tr>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Laboratorio</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Módulos</th>
+                        <th class="px-5 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Artículos</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Fecha</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Observación</th>
+                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Cargada</th>
+                        <th class="px-5 py-3" aria-label="Acciones"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                {% for c in campanas %}
+                <tr class="hover:bg-black/[0.04] transition-colors">
+                    <td class="px-5 py-3 font-semibold text-[#1e1e1e]">{{ c.laboratorio_nombre }}</td>
+                    <td class="px-5 py-3 text-center">
+                        <span class="bg-surface-input text-[#1e1e1e] text-xs font-semibold px-2 py-0.5 rounded-full">{{ c.n_modulos }}</span>
+                    </td>
+                    <td class="px-5 py-3 text-center">
+                        <span class="bg-surface-input text-[#1e1e1e] text-xs font-semibold px-2 py-0.5 rounded-full">{{ c.n_items }}</span>
+                    </td>
+                    <td class="px-5 py-3 text-xs text-[#6f6f6f]">{{ c.fecha or '—' }}</td>
+                    <td class="px-5 py-3 text-xs text-[#6f6f6f] max-w-xs truncate">{{ c.observacion or '—' }}</td>
+                    <td class="px-5 py-3 text-xs text-[#999]">{{ c.creado_en }}</td>
+                    <td class="px-5 py-3 text-right">
+                        <div class="flex items-center gap-1 justify-end">
+                            <a href="{{ url_for('descuento_campana', campana_id=c.id) }}"
+                               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
+                                Ver módulos
+                            </a>
+                            <button type="button" onclick="confirmDeleteCampana({{ c.id }}, '{{ c.laboratorio_nombre }}')"
+                                class="text-xs text-[#999] hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-900/20 transition-colors">
+                                Eliminar
+                            </button>
+                            <form id="del-c-{{ c.id }}" method="POST"
+                                  action="{{ url_for('descuento_campana_delete', campana_id=c.id) }}" class="hidden"></form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-16 text-center">
+            <p class="text-sm text-[#6f6f6f] mb-4">No hay campañas registradas.</p>
+            <a href="{{ url_for('descuento_upload') }}"
+               class="inline-block bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-5 py-2 rounded-lg text-sm transition-colors">
+                Importar primera campaña
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</main>
+
+<script>
+function confirmDeleteCampana(id, nombre) {
+    if (confirm('¿Eliminar la campaña "' + nombre + '" y todos sus módulos y artículos?\nEsta acción no se puede deshacer.')) {
+        document.getElementById('del-c-' + id).submit();
+    }
+}
+</script>
+</body>
+</html>

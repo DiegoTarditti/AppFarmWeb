@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Reclamo — Farmacia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0', head: '#f0f0f0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-6xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <span class="font-bold text-sm text-[#1e1e1e]">Control de Stock</span>
+        </div>
+        <a href="{{ url_for('index') }}"
+           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+            </svg>
+            Inicio
+        </a>
+    </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-8 space-y-6">
+
+    <!-- Cabecera del reclamo -->
+    <div class="bg-surface rounded-xl border border-surface-border p-6">
+        <div class="flex items-start justify-between mb-5">
+            <div>
+                <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-widest mb-1">Reclamo #{{ claim.id }}</p>
+                <h1 class="text-xl font-bold text-[#1e1e1e]">{{ claim.provider.razon_social }}</h1>
+                <p class="text-sm text-[#6f6f6f] mt-0.5">
+                    Generado el {{ claim.creado_en.strftime('%d/%m/%Y') if claim.creado_en else '—' }}
+                </p>
+            </div>
+            {% if claim.estado == 'COMPLETADO' %}
+                <span class="bg-green-900/40 text-green-600 text-xs font-semibold px-3 py-1.5 rounded-full border border-green-700/30">
+                    Completado
+                </span>
+            {% else %}
+                <span class="bg-yellow-900/40 text-brand text-xs font-semibold px-3 py-1.5 rounded-full border border-yellow-700/30">
+                    Abierto
+                </span>
+            {% endif %}
+        </div>
+
+        <div class="grid grid-cols-2 gap-x-8 gap-y-3 text-sm border-t border-surface-border pt-5">
+            <div>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">CUIT</p>
+                <p class="font-mono text-[#1e1e1e]">{{ claim.provider.cuit or '—' }}</p>
+            </div>
+            <div>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">Número de factura</p>
+                <p class="font-semibold text-[#1e1e1e]">{{ claim.numero_factura }}</p>
+            </div>
+            <div>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">Fecha de factura</p>
+                <p class="text-[#1e1e1e]">{{ claim.fecha }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ítems -->
+    {% if claim.items %}
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-surface-border">
+            <p class="font-semibold text-[#1e1e1e]">Ítems reclamados</p>
+            <span class="text-xs text-[#6f6f6f]">{{ claim.items|length }} ítem{{ 's' if claim.items|length != 1 }}</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-surface-head border-b border-surface-border">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción</th>
+                        <th class="px-4 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Fact.</th>
+                        <th class="px-4 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">ERP</th>
+                        <th class="px-4 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Diferencia</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Observaciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                    {% for item in claim.items %}
+                    <tr class="hover:bg-black/[0.04] transition-colors">
+                        <td class="px-4 py-3 font-mono text-xs text-[#6f6f6f]">{{ item.codigo_barra }}</td>
+                        <td class="px-4 py-3 text-[#1e1e1e]">{{ item.descripcion }}</td>
+                        <td class="px-4 py-3 text-center text-[#1e1e1e]">{{ item.cantidad_factura }}</td>
+                        <td class="px-4 py-3 text-center text-[#1e1e1e]">{{ item.cantidad_erp }}</td>
+                        <td class="px-4 py-3 text-center">
+                            {% if item.diferencia > 0 %}
+                                <span class="bg-green-900/40 text-green-600 font-semibold px-2 py-0.5 rounded-full text-xs border border-green-700/30">+{{ item.diferencia }}</span>
+                            {% else %}
+                                <span class="bg-red-900/40 text-red-600 font-semibold px-2 py-0.5 rounded-full text-xs border border-red-700/30">{{ item.diferencia }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-xs text-[#6f6f6f]">{{ item.observaciones or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <div class="bg-surface rounded-xl border border-surface-border p-8 text-center text-sm text-[#6f6f6f]">
+        No hay ítems asociados al reclamo.
+    </div>
+    {% endif %}
+
+    <div class="flex items-center justify-between">
+        <a href="{{ url_for('claim_pdf', claim_id=claim.id) }}"
+           class="flex items-center gap-2 text-sm bg-surface border border-surface-border hover:border-brand/40 hover:text-brand text-[#6f6f6f] font-medium px-4 py-2 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+            </svg>
+            Descargar PDF
+        </a>
+        {% if claim.estado != 'COMPLETADO' %}
+        <form method="post" action="{{ url_for('complete_claim_route', claim_id=claim.id) }}">
+            <button type="submit"
+                class="bg-green-700 hover:bg-green-600 text-white font-semibold px-6 py-2 rounded-lg text-sm transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                Marcar como completado
+            </button>
+        </form>
+        {% else %}
+        <span></span>
+        {% endif %}
+    </div>
+
+</main>
+
+{% if auto_download %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const a = document.createElement('a');
+    a.href = '{{ url_for("claim_pdf", claim_id=claim.id) }}';
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+});
+</script>
+{% endif %}
+
+</body>
+</html>

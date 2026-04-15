@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pedido — {{ laboratorio }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+        input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+        .qty-input { width: 82px; background: #fff; border: 1px solid #d0d0d0; color: #1e1e1e;
+                     border-radius: 6px; padding: 4px 4px 4px 8px; text-align: right; font-size: 13px; }
+        input[type=number]::-webkit-outer-spin-button,
+        input[type=number]::-webkit-inner-spin-button { margin-left: 6px; }
+        .qty-input:focus { outline: none; border-color: #EAB308; }
+        tr.has-order { background-color: rgba(234, 179, 8, 0.08); }
+        tr.no-sales { opacity: 0.4; }
+        .hidden-row { display: none; }
+    </style>
+</head>
+<body class="min-h-screen flex font-sans">
+
+<!-- Sidebar -->
+<aside class="w-52 min-h-screen bg-surface border-r border-surface-border flex flex-col flex-shrink-0">
+    <div class="px-4 py-5 border-b border-surface-border">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-[#1e1e1e] leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#888]">Farmacia</p>
+            </div>
+        </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Inicio
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Gestión</p>
+        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+            Proveedores
+        </a>
+        <a href="{{ url_for('laboratorios_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+            Laboratorios
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Operaciones</p>
+        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            Control de Ingreso
+        </a>
+        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            Compras
+        </a>
+        <a href="{{ url_for('descuentos_list') }}" class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">Descuentos</a>
+        <a href="{{ url_for('orders_list') }}" class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">Pedidos guardados</a>
+        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            Productos
+        </a>
+        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Configuración
+        </a>
+    </nav>
+
+    <!-- Totales sidebar -->
+    <div class="px-4 py-4 border-t border-surface-border space-y-2 text-xs">
+        <p class="text-[#6f6f6f] font-medium uppercase tracking-wide">Resumen</p>
+        <div class="flex justify-between">
+            <span class="text-[#6f6f6f]">Productos</span>
+            <span class="text-[#1e1e1e] font-medium" id="sb-count">—</span>
+        </div>
+        <div class="flex justify-between">
+            <span class="text-[#6f6f6f]">Unidades</span>
+            <span class="text-brand font-bold" id="sb-units">—</span>
+        </div>
+        <div class="flex justify-between">
+            <span class="text-[#6f6f6f]">Total est.</span>
+            <span class="text-[#1e1e1e] font-medium" id="sb-total">—</span>
+        </div>
+    </div>
+</aside>
+
+<!-- Main -->
+<div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+
+    <!-- Top bar -->
+    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
+        <div>
+            <h1 class="text-base font-bold text-[#1e1e1e]">{{ laboratorio }} — Pedido {{ n_days }}d</h1>
+            <p class="text-xs text-[#6f6f6f]">{{ periodo }} · {{ farmacia }}</p>
+        </div>
+
+        <div class="ml-auto flex items-center gap-3">
+            <!-- Home -->
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+
+            <!-- Buscador -->
+            <input type="text" id="search" placeholder="Buscar producto..."
+                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-1 focus:ring-brand"
+                   oninput="filterTable()">
+
+            <!-- Filtro cobertura -->
+            <div class="flex items-center gap-1.5">
+                <span class="text-xs text-[#6f6f6f] whitespace-nowrap">Cubre ≥</span>
+                <input type="number" id="max-cubre" min="0" max="9999" placeholder="—"
+                       class="w-14 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 focus:ring-brand"
+                       oninput="filterTable()">
+                <span class="text-xs text-[#6f6f6f]">días</span>
+                <div class="flex gap-1">
+                    {% for d in [n_days, 30, 60] %}
+                    <button type="button"
+                            onclick="document.getElementById('max-cubre').value={{ d }};filterTable()"
+                            class="text-[10px] px-1.5 py-1 rounded border border-surface-border text-[#6f6f6f] hover:border-brand/50 hover:text-brand transition-colors">
+                        {{ d }}d
+                    </button>
+                    {% endfor %}
+                    <button type="button"
+                            onclick="document.getElementById('max-cubre').value='';filterTable()"
+                            class="text-[10px] px-1.5 py-1 rounded border border-surface-border text-[#6f6f6f] hover:border-red-400 hover:text-red-500 transition-colors">
+                        ✕
+                    </button>
+                </div>
+            </div>
+
+            <!-- Toggle sin ventas -->
+            <label class="flex items-center gap-2 text-xs text-[#6f6f6f] cursor-pointer select-none">
+                <input type="checkbox" id="show-all" class="rounded" onchange="filterTable()">
+                Mostrar sin ventas
+            </label>
+
+            <!-- Filtro solo packs -->
+            <label class="flex items-center gap-2 text-xs text-[#6f6f6f] cursor-pointer select-none">
+                <input type="checkbox" id="only-packs" class="rounded" onchange="filterTable()">
+                Solo packs
+            </label>
+
+            <!-- Guardar pedido -->
+            <form method="POST" action="{{ url_for('purchase_save_order', uid=uid) }}" id="form-save">
+                {% for p in products %}
+                <input type="hidden" name="qty_{{ loop.index0 }}" id="s-qty-{{ loop.index0 }}" value="{{ p.order_qty }}">
+                {% endfor %}
+                <button type="submit"
+                        class="flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                    Guardar pedido
+                </button>
+            </form>
+
+            <!-- Exportar -->
+            <form method="POST" action="{{ url_for('purchase_export', uid=uid, fmt='xlsx') }}" id="form-xlsx">
+                {% for p in products %}
+                <input type="hidden" name="qty_{{ loop.index0 }}" id="h-qty-{{ loop.index0 }}" value="{{ p.order_qty }}">
+                {% endfor %}
+                <button type="submit"
+                        class="flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    XLSX
+                </button>
+            </form>
+
+            <form method="POST" action="{{ url_for('purchase_export', uid=uid, fmt='pdf') }}" id="form-pdf">
+                {% for p in products %}
+                <input type="hidden" name="qty_{{ loop.index0 }}" id="ph-qty-{{ loop.index0 }}" value="{{ p.order_qty }}">
+                {% endfor %}
+                <button type="submit"
+                        class="flex items-center gap-1.5 bg-red-800 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                    PDF
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="flex-1 overflow-auto px-4 py-4">
+        <table class="w-full text-xs border-collapse min-w-[1100px]" id="main-table">
+            <thead>
+                <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
+                    <th class="text-left px-3 py-2 rounded-tl-lg" style="width:220px">Producto</th>
+                    <th class="text-right px-3 py-2">P.PVP</th>
+                    <th class="text-right px-3 py-2">Subtotal</th>
+                    <th class="text-right px-3 py-2">Stock</th>
+                    <th class="text-right px-3 py-2">Prom/mes</th>
+                    <th class="text-center px-3 py-2">Rot.</th>
+                    <th class="text-right px-3 py-2">Tendencia</th>
+                    <th class="text-center px-3 py-2">Baja</th>
+                    <th class="text-center px-3 py-2">Pico</th>
+                    <th class="text-right px-3 py-2 text-brand">Pedido</th>
+                    <th class="text-left px-3 py-2 rounded-tr-lg">Nota</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+            {% for p in products %}
+            {% set i = loop.index0 %}
+            {% set has_order = p.order_qty > 0 %}
+            {% set no_sales = p.total == 0 %}
+            {% set sin_mov = p.sin_mov_60d %}
+            {% if 'cubre' in p.comment %}
+                {% set cov_days = p.comment.replace('cubre ', '').replace('d', '') | int %}
+            {% elif p.stock <= 0 %}
+                {% set cov_days = 0 %}
+            {% else %}
+                {% set cov_days = 9999 %}
+            {% endif %}
+            <tr class="border-b border-[#e4e4e4] hover:bg-black/[0.03] transition-colors
+                        {{ 'has-order' if has_order else '' }}
+                        {{ 'no-sales hidden-row' if no_sales else '' }}"
+                data-name="{{ p.nombre | lower }}"
+                data-has-order="{{ 'true' if has_order else 'false' }}"
+                data-no-sales="{{ 'true' if no_sales else 'false' }}"
+                data-sin-mov="{{ 'true' if sin_mov else 'false' }}"
+                data-is-pack="{{ 'true' if p.es_pack else 'false' }}"
+                data-cubre="{{ cov_days }}"
+                data-idx="{{ i }}">
+
+                <td class="px-3 py-2" style="max-width:220px">
+                    <div class="font-medium text-[#1e1e1e] leading-tight truncate">
+                        {{ p.nombre }}
+                        {% if p.es_pack %}
+                        <span class="inline-block ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 align-middle">PACK</span>
+                        {% endif %}
+                    </div>
+                    <div class="text-[#999] text-xs mt-0.5">{{ p.codigo_barra }}</div>
+                </td>
+                <td class="px-3 py-2 text-right text-[#6f6f6f]">${{ p.precio_pvp | int }}</td>
+                <td class="px-3 py-2 text-right font-medium" id="sub-{{ i }}">
+                    {% if p.order_qty > 0 %}
+                    <span class="text-brand">${{ p.subtotal | int }}</span>
+                    {% else %}<span class="text-[#bbb]">—</span>{% endif %}
+                </td>
+                <td class="px-3 py-2 text-right">
+                    {% if p.stock <= 0 %}
+                    <span class="text-red-600 font-medium">agotado</span>
+                    {% else %}
+                    <span class="text-[#1e1e1e]">{{ p.stock }}</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2 text-right text-[#555]">{{ p.avg_monthly | int }}</td>
+                <td class="px-3 py-2 text-center">
+                    {% if p.rotacion == 'A' %}
+                    <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">A</span>
+                    {% elif p.rotacion == 'M' %}
+                    <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">M</span>
+                    {% else %}
+                    <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200">B</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2 text-right font-medium">
+                    {% if p.slope > umbral_tendencia %}
+                    <span class="text-emerald-600">↑ {{ p.slope }}</span>
+                    {% elif p.slope < -umbral_tendencia %}
+                    <span class="text-red-600">↓ {{ p.slope | abs }}</span>
+                    {% else %}
+                    <span class="text-[#999]">— {{ p.slope }}</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2 text-center">
+                    {% if p.low_month %}
+                    <span class="text-sky-600 font-medium">{{ p.low_month }}</span>
+                    {% else %}<span class="text-[#bbb]">—</span>{% endif %}
+                </td>
+                <td class="px-3 py-2 text-center">
+                    {% if p.peak_month %}
+                    <span class="text-amber-700 font-medium">{{ p.peak_month }}</span>
+                    {% else %}<span class="text-[#bbb]">—</span>{% endif %}
+                </td>
+                <td class="px-3 py-2 text-right">
+                    <div class="flex items-center justify-end gap-2">
+                        <button onclick="openChart({{ i }})" title="Ver gráfico"
+                            class="text-[#bbb] hover:text-brand transition-colors flex-shrink-0">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                            </svg>
+                        </button>
+                        <input type="number" min="0" step="1"
+                               class="qty-input"
+                               value="{{ p.order_qty }}"
+                               data-idx="{{ i }}"
+                               data-price="{{ p.precio_pvp }}"
+                               onchange="updateRow(this)">
+                    </div>
+                </td>
+                <td class="px-3 py-2 text-[#999]">
+                    {% if sin_mov %}
+                    <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 mr-1">sin mov. 60d</span>
+                    {% endif %}
+                    {{ p.comment }}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal gráfico -->
+<div id="chart-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+     onclick="if(event.target===this) closeChart()">
+    <div class="bg-[#f3f3f3] border border-[#e0e0e0] rounded-2xl shadow-2xl w-[700px] max-w-[96vw] p-6">
+
+        <!-- Header modal -->
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="chart-title"></p>
+                <p class="text-xs text-[#999] font-mono mt-0.5" id="chart-barcode"></p>
+            </div>
+            <button onclick="closeChart()"
+                class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">
+                ✕
+            </button>
+        </div>
+
+        <!-- Canvas -->
+        <div class="bg-[#f0f0f0] rounded-xl p-3" style="height:240px;position:relative">
+            <canvas id="product-chart"></canvas>
+        </div>
+
+        <!-- Stats -->
+        <div class="grid grid-cols-5 gap-2 mt-4" id="chart-stats"></div>
+
+        <!-- Nota distorsión tendencia -->
+        <p id="chart-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3"></p>
+
+        <!-- Leyenda -->
+        <p class="text-[10px] text-[#bbb] mt-2">* mes parcial: azul = vendido hasta hoy, ámbar = proyección fin de mes · Líneas: — prom.pond. — tendencia (lineal, sin estacionalidad) ·· stock · Las proyecciones (→) sí incorporan estacionalidad.</p>
+    </div>
+</div>
+
+<script>
+// Datos de todos los productos embebidos
+const ALL_PRODUCTS = {{ products | tojson }};
+const MONTH_ES = {{ month_es | tojson }};
+const FULL_MONTHS = 11;
+const N_DAYS = {{ n_days }};
+let chartInstance = null;
+
+
+function openChart(idx) {
+    const p = ALL_PRODUCTS[idx];
+    const ventas = p.ventas || Array(12).fill(0);
+
+    document.getElementById('chart-title').textContent = p.nombre;
+    document.getElementById('chart-barcode').textContent = p.codigo_barra || '';
+    document.getElementById('chart-modal').classList.remove('hidden');
+
+    // Mes parcial: prorrateo para proyectar fin de mes
+    const today = new Date();
+    const daysElapsed = today.getDate();
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+    const partialSold = ventas[11] || 0;
+    const proratedFull = (partialSold > 0 && daysElapsed > 0)
+        ? Math.round(partialSold * daysInMonth / daysElapsed) : 0;
+    const proratedRemaining = Math.max(0, proratedFull - partialSold);
+
+    // Calcular línea de tendencia (regresión lineal sobre 11 meses)
+    const vals = ventas.slice(0, FULL_MONTHS);
+    const meanX = (FULL_MONTHS - 1) / 2;
+    const meanY = vals.reduce((a, b) => a + b, 0) / FULL_MONTHS;
+    const slope = p.slope || 0;
+    const avg = p.avg_monthly || 0;
+
+    // Barras de proyección: 1 mes si n_days < 35, 2 si >= 35
+    const numFcst = N_DAYS >= 35 ? 2 : 1;
+    const MAX_TREND_HORIZON = 2.0;
+    const fcstVals = [];
+    for (let off = 0; off < numFcst; off++) {
+        const si = (avg > 0 && ventas[off] > 0) ? ventas[off] / avg : 1.0;
+        const trendHorizon = Math.min(FULL_MONTHS + off - meanX, MAX_TREND_HORIZON);
+        const fcst = Math.max(0, Math.round(avg * si + slope * trendHorizon));
+        fcstVals.push(fcst);
+    }
+    const fcstLabels = fcstVals.map((_, i) => MONTH_ES[i] + '→');
+    const totalCols = 12 + numFcst;
+
+    // Línea de tendencia extendida (clampeada para no alejarse >60% del promedio)
+    const trendClamp = avg > 0 ? avg * 0.6 : Infinity;
+    const trendLine = Array.from({length: totalCols}, (_, i) => {
+        const raw = meanY + slope * (i - meanX);
+        const clamped = avg > 0 ? Math.min(Math.max(raw, avg - trendClamp), avg + trendClamp) : raw;
+        return Math.max(0, clamped);
+    });
+
+    // Promedio ponderado y stock extendidos
+    const avgLine = Array(totalCols).fill(p.avg_monthly);
+    const stockLine = p.stock > 0 ? Array(totalCols).fill(p.stock) : null;
+
+    // Labels: histórico + proyección
+    const labels = [
+        ...MONTH_ES.map((m, i) => i === 11 ? m + '*' : m),
+        ...fcstLabels
+    ];
+
+    // Colores barras históricas (mes parcial = mismo azul; la extensión ámbar se dibuja encima)
+    const barColors = ventas.map(() => 'rgba(56,189,248,0.45)');
+    const barBorders = ventas.map(() => 'rgba(56,189,248,0.75)');
+
+    // Dataset histórico (nulls en posiciones de proyección)
+    const histData = [...ventas, ...Array(numFcst).fill(null)];
+
+    // Dataset proyección (nulls en posiciones históricas)
+    const fcstData = [...Array(12).fill(null), ...fcstVals];
+
+    const datasets = [
+        {
+            label: 'Ventas',
+            data: histData,
+            type: 'bar',
+            backgroundColor: barColors,
+            borderColor: barBorders,
+            borderWidth: 1,
+            borderRadius: 3,
+            order: 3,
+        },
+        {
+            label: 'Proyección',
+            data: fcstData,
+            type: 'bar',
+            backgroundColor: 'rgba(34,197,94,0.35)',
+            borderColor: 'rgba(34,197,94,0.85)',
+            borderWidth: 1,
+            borderRadius: 3,
+            order: 3,
+        },
+        {
+            label: 'Tendencia',
+            data: trendLine,
+            type: 'line',
+            borderColor: '#f97316',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0,
+            fill: false,
+            order: 1,
+        },
+        {
+            label: 'Prom. pond.',
+            data: avgLine,
+            type: 'line',
+            borderColor: '#EAB308',
+            borderWidth: 1.5,
+            borderDash: [6, 3],
+            pointRadius: 0,
+            tension: 0,
+            fill: false,
+            order: 2,
+        },
+    ];
+
+    if (stockLine) {
+        datasets.push({
+            label: 'Stock actual',
+            data: stockLine,
+            type: 'line',
+            borderColor: '#ef4444',
+            borderWidth: 1.5,
+            borderDash: [3, 3],
+            pointRadius: 0,
+            tension: 0,
+            fill: false,
+            order: 2,
+        });
+    }
+
+    // Plugin inline para labels en punta de barras + extensión mes parcial
+    const barLabelPlugin = {
+        id: 'barLabels',
+        afterDraw(chart) {
+            const ctx2 = chart.ctx;
+            const yScale = chart.scales.y;
+            chart.data.datasets.forEach((ds, di) => {
+                const meta = chart.getDatasetMeta(di);
+                if (meta.type !== 'bar') return;
+                meta.data.forEach((bar, i) => {
+                    const val = ds.data[i];
+                    if (val == null || val <= 0) return;
+
+                    // Mes parcial (índice 11, dataset Ventas = di 0): dibujar extensión ámbar
+                    if (di === 0 && i === 11 && proratedRemaining > 0) {
+                        const yProratedTop = yScale.getPixelForValue(proratedFull);
+                        const halfW = bar.width / 2;
+
+                        // Rectángulo ámbar punteado (proyección al fin del mes)
+                        ctx2.save();
+                        ctx2.fillStyle = 'rgba(234,179,8,0.22)';
+                        ctx2.fillRect(bar.x - halfW, yProratedTop, bar.width, bar.y - yProratedTop);
+                        ctx2.strokeStyle = 'rgba(234,179,8,0.7)';
+                        ctx2.lineWidth = 1;
+                        ctx2.setLineDash([3, 2]);
+                        ctx2.strokeRect(bar.x - halfW, yProratedTop, bar.width, bar.y - yProratedTop);
+                        ctx2.restore();
+
+                        // Label: vendido hasta hoy (tope de la barra azul)
+                        ctx2.save();
+                        ctx2.font = '8px sans-serif';
+                        ctx2.fillStyle = '#64748b';
+                        ctx2.textAlign = 'center';
+                        ctx2.textBaseline = 'bottom';
+                        ctx2.fillText(partialSold, bar.x, bar.y - 2);
+                        ctx2.restore();
+
+                        // Label: proyección fin de mes (tope de la extensión ámbar)
+                        ctx2.save();
+                        ctx2.font = 'bold 8px sans-serif';
+                        ctx2.fillStyle = '#b45309';
+                        ctx2.textAlign = 'center';
+                        ctx2.textBaseline = 'bottom';
+                        ctx2.fillText('~' + proratedFull, bar.x, yProratedTop - 2);
+                        ctx2.restore();
+                        return;
+                    }
+
+                    // Label estándar
+                    ctx2.save();
+                    ctx2.font = '8px sans-serif';
+                    ctx2.fillStyle = di === 1 ? 'rgba(34,197,94,0.9)' : '#888';
+                    ctx2.textAlign = 'center';
+                    ctx2.textBaseline = 'bottom';
+                    ctx2.fillText(Math.round(val), bar.x, bar.y - 2);
+                    ctx2.restore();
+                });
+            });
+        }
+    };
+
+    const ctx = document.getElementById('product-chart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+
+    chartInstance = new Chart(ctx, {
+        type: 'bar',
+        plugins: [barLabelPlugin],
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: {
+                    labels: { color: '#888', font: { size: 10 }, boxWidth: 20, padding: 12 }
+                },
+                tooltip: {
+                    backgroundColor: '#ffffff',
+                    titleColor: '#1e1e1e',
+                    bodyColor: '#555',
+                    borderColor: '#e0e0e0',
+                    borderWidth: 1,
+                },
+            },
+            scales: {
+                x: {
+                    grid: { color: '#e8e8e8' },
+                    ticks: { color: '#999', font: { size: 10 } }
+                },
+                y: {
+                    grid: { color: '#e8e8e8' },
+                    ticks: { color: '#999', font: { size: 10 } },
+                    beginAtZero: true,
+                }
+            }
+        }
+    });
+
+    // Stats
+    const slopeSign = slope > 0.05 ? '↑' : slope < -0.05 ? '↓' : '→';
+    const slopeColor = slope > 0.05 ? '#4ade80' : slope < -0.05 ? '#f87171' : '#888';
+    const stockDays = p.avg_monthly > 0 && p.stock > 0
+        ? Math.round(p.stock / (p.avg_monthly / 30.4)) + 'd'
+        : p.stock <= 0 ? 'agotado' : '—';
+
+    // Índice estacional ponderado para los próximos 60 días
+    // ventas[0] corresponde al mes de inicio del período; ventas[11] = mes actual parcial
+    const startMonthNum = ((today.getMonth() - FULL_MONTHS) % 12 + 12) % 12 + 1;
+    let siSum = 0;
+    for (let d = 1; d <= 60; d++) {
+        const fd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + d);
+        const fm = fd.getMonth() + 1;  // 1-12
+        const vi = (fm - startMonthNum + 12) % 12;  // índice en ventas[]
+        let si;
+        if (vi === 11) {
+            si = (avg > 0 && proratedFull > 0) ? proratedFull / avg : 1.0;
+        } else {
+            si = (avg > 0 && ventas[vi] > 0) ? ventas[vi] / avg : 1.0;
+        }
+        siSum += si;
+    }
+    const seasonalIdx = siSum / 60;
+    const seasonalPct = Math.round((seasonalIdx - 1) * 100);
+    const seasonalLabel = seasonalIdx >= 1.10 ? 'ALTA' : seasonalIdx >= 0.90 ? 'MEDIA' : 'BAJA';
+    const seasonalColor = seasonalIdx >= 1.10 ? '#15803d' : seasonalIdx >= 0.90 ? '#b45309' : '#dc2626';
+
+    const rotColors = { A: '#15803d', M: '#b45309', B: '#dc2626' };
+    const rotLabels = { A: 'Alta', M: 'Media', B: 'Baja' };
+    const rot = p.rotacion || 'B';
+    const stats = [
+        { label: 'Prom/mes', value: Math.round(p.avg_monthly), color: '#1e1e1e' },
+        { label: 'Rotación', value: rotLabels[rot] || rot, color: rotColors[rot] || '#888' },
+        { label: 'Tendencia', value: `${slopeSign} ${Math.abs(slope)}/m`, color: slopeColor },
+        { label: 'Stock', value: p.stock <= 0 ? 'agotado' : p.stock, color: p.stock <= 0 ? '#f87171' : '#1e1e1e' },
+        { label: 'Cobertura', value: stockDays, color: '#888' },
+        { label: 'Temporada 60d', value: `${seasonalLabel} (${seasonalPct > 0 ? '+' : ''}${seasonalPct}%)`, color: seasonalColor },
+        { label: 'Pedido', value: p.order_qty, color: p.order_qty > 0 ? '#EAB308' : '#555' },
+    ];
+    if (partialSold > 0) {
+        stats.push({
+            label: `Mes actual (${daysElapsed}/${daysInMonth}d)`,
+            value: `${partialSold} / ~${proratedFull}`,
+            color: '#b45309'
+        });
+    }
+
+    document.getElementById('chart-stats').innerHTML = stats.map(s => `
+        <div class="bg-white rounded-lg px-3 py-2.5 text-center">
+            <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.label}</p>
+            <p class="text-sm font-bold" style="color:${s.color}">${s.value}</p>
+        </div>
+    `).join('');
+
+    // Nota de distorsión cuando hay meses sin ventas
+    const zeroMonths = vals.filter(v => v === 0).length;
+    const slopeRatio = avg > 0 ? Math.abs(slope) / avg : 0;
+    const noteEl = document.getElementById('chart-note');
+    if (zeroMonths > 0 && slopeRatio > 0.08) {
+        noteEl.textContent = `⚠ ${zeroMonths} mes${zeroMonths > 1 ? 'es' : ''} sin ventas en el historial — la tendencia puede estar distorsionada. Revisá manualmente.`;
+        noteEl.classList.remove('hidden');
+    } else {
+        noteEl.classList.add('hidden');
+    }
+}
+
+function closeChart() {
+    document.getElementById('chart-modal').classList.add('hidden');
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+}
+
+// Cerrar con Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChart(); });
+
+// Sincroniza los hidden inputs de los forms de exportación
+function updateRow(input) {
+    const idx = input.dataset.idx;
+    const qty = Math.max(0, parseInt(input.value) || 0);
+    const price = parseFloat(input.dataset.price);
+    input.value = qty;
+
+    // Actualizar subtotal visible
+    const subCell = document.getElementById(`sub-${idx}`);
+    if (qty > 0) {
+        subCell.innerHTML = `<span class="text-brand">$${Math.round(qty * price).toLocaleString('es-AR')}</span>`;
+    } else {
+        subCell.textContent = '—';
+    }
+
+    // Actualizar hidden inputs de los forms
+    const hx = document.getElementById(`h-qty-${idx}`);
+    const ph = document.getElementById(`ph-qty-${idx}`);
+    const sv = document.getElementById(`s-qty-${idx}`);
+    if (hx) hx.value = qty;
+    if (ph) ph.value = qty;
+    if (sv) sv.value = qty;
+
+    recalcSummary();
+}
+
+function recalcSummary() {
+    let count = 0, units = 0, total = 0;
+    document.querySelectorAll('.qty-input').forEach(inp => {
+        const qty = parseInt(inp.value) || 0;
+        if (qty > 0) {
+            count++;
+            units += qty;
+            total += qty * parseFloat(inp.dataset.price);
+        }
+    });
+    document.getElementById('sb-count').textContent = count;
+    document.getElementById('sb-units').textContent = units.toLocaleString('es-AR');
+    document.getElementById('sb-total').textContent = '$' + Math.round(total).toLocaleString('es-AR');
+}
+
+function filterTable() {
+    const q = document.getElementById('search').value.toLowerCase();
+    const showAll = document.getElementById('show-all').checked;
+    const onlyPacks = document.getElementById('only-packs').checked;
+    const maxCubreVal = document.getElementById('max-cubre').value;
+    const maxCubre = maxCubreVal !== '' ? parseInt(maxCubreVal) : null;
+
+    document.querySelectorAll('#table-body tr').forEach(tr => {
+        const name = tr.dataset.name || '';
+        const noSales = tr.dataset.noSales === 'true';
+        const isPack = tr.dataset.isPack === 'true';
+        const cubre = parseInt(tr.dataset.cubre ?? '9999');
+
+        const matchSearch = !q || name.includes(q);
+        const matchSales = showAll || !noSales;
+        const matchCubre = maxCubre === null || cubre >= maxCubre;
+        const matchPack = !onlyPacks || isPack;
+
+        tr.style.display = (matchSearch && matchSales && matchCubre && matchPack) ? '' : 'none';
+    });
+}
+
+// Calcular al cargar
+window.addEventListener('DOMContentLoaded', recalcSummary);
+</script>
+</body>
+</html>
