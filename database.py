@@ -328,8 +328,26 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS umbral_baja DECIMAL(4,2) NOT NULL DEFAULT 0.70"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS umbral_tendencia DECIMAL(4,2) NOT NULL DEFAULT 0.20"))
     conn.execute(text(
-        "INSERT INTO configuracion (id, farmacia_nombre, umbral_pico, umbral_baja, umbral_tendencia) "
-        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20) ON CONFLICT DO NOTHING"
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_alta_min DECIMAL(6,1) NOT NULL DEFAULT 20.0"
+    ))
+    conn.execute(text(
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_alta_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"
+    ))
+    conn.execute(text(
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_media_min DECIMAL(6,1) NOT NULL DEFAULT 5.0"
+    ))
+    conn.execute(text(
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_media_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"
+    ))
+    conn.execute(text(
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_baja_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"
+    ))
+    conn.execute(text(
+        "INSERT INTO configuracion "
+        "(id, farmacia_nombre, umbral_pico, umbral_baja, umbral_tendencia, "
+        " rot_alta_min, rot_alta_tol, rot_media_min, rot_media_tol, rot_baja_tol) "
+        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0) "
+        "ON CONFLICT DO NOTHING"
     ))
     conn.execute(text(
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS ruta_facturas VARCHAR(500)"
