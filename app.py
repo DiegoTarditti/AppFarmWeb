@@ -2042,15 +2042,34 @@ def cuentas_corrientes():
                              .filter_by(proveedor_id=provider_id)
                              .order_by(database.PagoAjusteCC.fecha).all())
 
+            # Precargar reclamos e ingresadas para las facturas
+            inv_ids = [inv.id for inv in invoices]
+            reclamos_map = {}
+            if inv_ids:
+                for c in session.query(database.Claim).filter(database.Claim.factura_id.in_(inv_ids)).all():
+                    reclamos_map[c.factura_id] = c.estado
+            ingresadas = set()
+            if inv_ids:
+                from sqlalchemy import distinct
+                ingresadas = {r[0] for r in session.query(distinct(database.StockDifference.factura_id))
+                              .filter(database.StockDifference.factura_id.in_(inv_ids)).all()}
+
             for inv in invoices:
                 signo = 1 if inv.tipo_comprobante == 'FAC' else -1
+                reclamo_est = reclamos_map.get(inv.id)
+                obs_parts = []
+                if reclamo_est:
+                    obs_parts.append(f'Reclamo: {reclamo_est}')
                 movimientos.append({
                     'fecha': inv.fecha,
+                    'fecha_proceso': inv.creado_en.strftime('%d/%m/%Y') if inv.creado_en else '',
                     'tipo': inv.tipo_comprobante,
                     'comprobante': inv.numero_factura or '',
                     'debe': float(abs(inv.total or 0)) if signo == 1 else 0,
                     'haber': float(abs(inv.total or 0)) if signo == -1 else 0,
-                    'obs': '',
+                    'obs': ' · '.join(obs_parts),
+                    'ingresada': inv.id in ingresadas,
+                    'reclamo_estado': reclamo_est,
                     'origen': 'factura',
                     'id': inv.id,
                 })
@@ -2058,11 +2077,14 @@ def cuentas_corrientes():
                 es_debe = pa.tipo == 'AJUSTE_POS'
                 movimientos.append({
                     'fecha': pa.fecha,
+                    'fecha_proceso': '',
                     'tipo': pa.tipo,
                     'comprobante': pa.numero_comprobante or '',
                     'debe': float(pa.monto) if es_debe else 0,
                     'haber': float(pa.monto) if not es_debe else 0,
                     'obs': pa.observaciones or '',
+                    'ingresada': None,
+                    'reclamo_estado': None,
                     'origen': 'manual',
                     'id': pa.id,
                 })

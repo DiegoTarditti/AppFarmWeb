@@ -70,6 +70,7 @@ class Invoice(Base):
     pdf_filename = Column(String(200))
     erp_filename = Column(String(200))
     batch_id = Column(Integer, ForeignKey('invoice_batches.id'), nullable=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
     items = relationship('InvoiceItem', back_populates='invoice')
     batch = relationship('InvoiceBatch', back_populates='invoices')
 
@@ -437,6 +438,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS rotacion VARCHAR(1)"))
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS avg_monthly DECIMAL(10,2)"))
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_pack INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW()"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS pagos_ajustes_cc (
             id SERIAL PRIMARY KEY,
