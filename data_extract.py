@@ -134,21 +134,35 @@ def parse_erp_excel(excel_path):
 
 
 def get_or_create_provider(session, razon_social, cuit=None, domicilio=None, parser_file=None):
+    from sqlalchemy import func
     razon_social = (razon_social or '').strip()
     cuit = (cuit or '').strip()
     provider = None
     if cuit:
         provider = session.query(Provider).filter_by(cuit=cuit).first()
     if not provider and razon_social:
-        provider = session.query(Provider).filter_by(razon_social=razon_social).first()
+        provider = session.query(Provider).filter(
+            func.lower(Provider.razon_social) == razon_social.lower()
+        ).first()
     if not provider and razon_social:
         provider = Provider(razon_social=razon_social, cuit=cuit or None,
                             domicilio=domicilio, parser_file=parser_file)
         session.add(provider)
         session.flush()
-    elif provider and parser_file and not provider.parser_file:
-        provider.parser_file = parser_file
-        session.flush()
+    else:
+        # Actualizar datos faltantes del proveedor existente
+        changed = False
+        if provider and cuit and not provider.cuit:
+            provider.cuit = cuit
+            changed = True
+        if provider and domicilio and not provider.domicilio:
+            provider.domicilio = domicilio
+            changed = True
+        if provider and parser_file and not provider.parser_file:
+            provider.parser_file = parser_file
+            changed = True
+        if changed:
+            session.flush()
     return provider
 
 
