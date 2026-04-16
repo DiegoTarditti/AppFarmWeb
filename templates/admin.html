@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consola admin — Farmacia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>body { background-color: #f3f3f3; color: #1e1e1e; }</style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-surface border-b border-surface-border px-6 py-4">
+    <div class="max-w-4xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+            </div>
+            <span class="font-bold text-sm text-[#1e1e1e]">Consola admin</span>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ url_for('settings') }}" title="Configuración"
+               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg hover:bg-black/[0.06]">← Configuración</a>
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06]">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-6 py-8 space-y-6">
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <div class="bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">
+        {{ messages[0] }}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Deploy / Render info -->
+    <section class="bg-surface border border-surface-border rounded-2xl p-6">
+        <h2 class="text-sm font-bold text-[#1e1e1e] mb-4">Deploy</h2>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+            <div>
+                <p class="text-[#999] uppercase tracking-wide text-[10px] mb-1">Commit</p>
+                <p class="font-mono text-[#1e1e1e]">{{ deploy.commit }}</p>
+            </div>
+            <div>
+                <p class="text-[#999] uppercase tracking-wide text-[10px] mb-1">Branch</p>
+                <p class="font-mono text-[#1e1e1e]">{{ deploy.branch }}</p>
+            </div>
+            <div>
+                <p class="text-[#999] uppercase tracking-wide text-[10px] mb-1">Servicio</p>
+                <p class="font-mono text-[#1e1e1e]">{{ deploy.service }}</p>
+            </div>
+            <div>
+                <p class="text-[#999] uppercase tracking-wide text-[10px] mb-1">URL</p>
+                {% if deploy.url %}
+                <a href="{{ deploy.url }}" target="_blank" class="text-brand hover:underline font-mono truncate block">{{ deploy.url }}</a>
+                {% else %}
+                <p class="text-[#bbb]">—</p>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats de la DB -->
+    <section class="bg-surface border border-surface-border rounded-2xl p-6">
+        <h2 class="text-sm font-bold text-[#1e1e1e] mb-4">Estado de la base de datos</h2>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            {% for k, v in stats.items() %}
+            <div class="bg-surface-input border border-surface-border rounded-xl p-3">
+                <p class="text-[10px] text-[#999] uppercase tracking-wide mb-1">{{ k.replace('_', ' ') }}</p>
+                <p class="text-xl font-bold text-brand">{{ '{:,}'.format(v).replace(',', '.') }}</p>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Backup -->
+    <section class="bg-surface border border-surface-border rounded-2xl p-6">
+        <h2 class="text-sm font-bold text-[#1e1e1e] mb-2">Backup de base de datos</h2>
+        <p class="text-xs text-[#6f6f6f] mb-4">
+            Pegá la <strong>External Database URL</strong> de Render (Dashboard → farmacia-db → Info → External Database URL).
+            Se genera un <code class="text-[11px] bg-surface-input px-1.5 py-0.5 rounded">pg_dump</code> y se descarga como <code class="text-[11px] bg-surface-input px-1.5 py-0.5 rounded">.sql</code>.
+        </p>
+        <form method="POST" action="{{ url_for('admin_backup') }}" class="flex flex-col gap-3">
+            <input type="text" name="db_url" required
+                   placeholder="postgresql://user:password@host:5432/dbname"
+                   autocomplete="off"
+                   class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+            <div class="flex items-center justify-between">
+                <p class="text-[11px] text-[#999]">La URL no se guarda. Se usa solo para este backup.</p>
+                <button type="submit"
+                        class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-5 py-2 rounded-xl transition-colors text-sm">
+                    Descargar backup
+                </button>
+            </div>
+        </form>
+    </section>
+
+</main>
+
+</body>
+</html>
