@@ -444,6 +444,7 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS modulo_id INTEGER REFERENCES modulos(id) ON DELETE SET NULL"))
     conn.execute(text("ALTER TABLE modulos ADD COLUMN IF NOT EXISTS lista_nombre VARCHAR(200)"))
+    conn.execute(text("ALTER TABLE modulos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT false"))
     conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS cant_modulo INTEGER"))
     conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS desc_pct DECIMAL(5,2)"))
     # Migrar datos viejos: cantidad almacenaba el CANT del Excel → mover a cant_modulo, resetear cantidad=1
@@ -592,6 +593,8 @@ def _sqlite_add_columns(conn):
     existing_mod2 = {row[1] for row in conn.execute(text("PRAGMA table_info(modulos)"))}
     if 'lista_nombre' not in existing_mod2:
         conn.execute(text("ALTER TABLE modulos ADD COLUMN lista_nombre VARCHAR(200)"))
+    if 'activo' not in existing_mod2:
+        conn.execute(text("ALTER TABLE modulos ADD COLUMN activo INTEGER NOT NULL DEFAULT 0"))
     if 'cant_modulo' not in existing_mp:
         conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN cant_modulo INTEGER"))
         conn.execute(text("UPDATE modulo_packs SET cant_modulo = cantidad, cantidad = 1 WHERE cant_modulo IS NULL AND cantidad != 1"))
