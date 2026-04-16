@@ -7,6 +7,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+        const PEDIDO_LABORATORIO = {{ pedido.laboratorio | tojson }};
+    </script>
+    <script>
         tailwind.config = {
             theme: {
                 extend: {
@@ -55,8 +58,8 @@
 <body class="min-h-screen flex font-sans">
 
 <!-- Sidebar -->
-<aside class="w-52 min-h-screen bg-surface border-r border-surface-border flex flex-col flex-shrink-0 no-print">
-    <div class="px-4 py-5 border-b border-surface-border">
+<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0 no-print">
+    <div class="px-4 py-5 border-b border-[#111827]">
         <div class="flex items-center gap-2.5">
             <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
                 <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -65,14 +68,14 @@
                 </svg>
             </div>
             <div>
-                <p class="text-sm font-bold text-[#1e1e1e] leading-tight">Control de Stock</p>
-                <p class="text-xs text-[#888]">Farmacia</p>
+                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#9ca3af]">Farmacia</p>
             </div>
         </div>
     </div>
     <nav class="flex-1 px-3 py-4 space-y-1">
         <a href="{{ url_for('index') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
@@ -80,7 +83,7 @@
             Nueva factura
         </a>
         <a href="{{ url_for('purchase_index') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
@@ -88,7 +91,7 @@
             Análisis de ventas
         </a>
         <a href="{{ url_for('orders_list') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200 transition-colors">
+           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
@@ -102,7 +105,7 @@
 <div class="flex-1 flex flex-col min-h-screen overflow-hidden">
 
     <!-- Top bar -->
-    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0 no-print">
+    <div class="bg-surface border-b border-[#111827] px-6 py-3 flex items-center gap-4 flex-shrink-0 no-print">
         <div>
             <h1 class="text-base font-bold text-[#1e1e1e]">{{ pedido.laboratorio }}</h1>
             <p class="text-xs text-[#6f6f6f]">{{ pedido.periodo }} · {{ pedido.n_days }}d · {{ pedido.productos | length }} productos</p>
@@ -126,6 +129,16 @@
             <span class="text-sm font-semibold text-[#1e1e1e]">Módulos de descuento</span>
             <span class="text-xs text-[#999] ml-1" id="modulos-status">Importá el Excel de módulos</span>
             <div class="ml-auto flex items-center gap-2 no-print" id="modulos-actions">
+                <!-- Módulo activo guardado -->
+                <select id="select-modulo-activo"
+                        class="text-xs border border-[#e0e0e0] rounded-lg px-2 py-1.5 bg-white text-[#555] focus:outline-none focus:ring-1 focus:ring-brand"
+                        title="Lista de módulos activa del laboratorio">
+                    <option value="">Cargando lista activa…</option>
+                </select>
+                <button type="button" onclick="cargarModuloActivo()"
+                        class="flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                    ✓ Usar módulo
+                </button>
                 <!-- Plantilla -->
                 <a href="{{ url_for('order_modules_template', pedido_id=pedido.id) }}"
                    class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -427,6 +440,65 @@ function saldoClass(s) {
     if (s > 0) return 'saldo-ok';
     if (s < 0) return 'saldo-neg';
     return 'text-[#999]';
+}
+
+// ─────────────────────────────────────────────────────────────────
+// MÓDULOS ACTIVOS — cargar desde laboratorio
+// ─────────────────────────────────────────────────────────────────
+let _listasActivas = [];
+
+(async function cargarOpcionesListasActivas() {
+    const sel = document.getElementById('select-modulo-activo');
+    try {
+        const r = await fetch('/modulo-packs/activos?lab=' + encodeURIComponent(PEDIDO_LABORATORIO));
+        const d = await r.json();
+        _listasActivas = d.listas || [];
+        sel.innerHTML = '';
+        if (_listasActivas.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Sin lista de mod. activa';
+            sel.appendChild(opt);
+            sel.disabled = true;
+        } else {
+            _listasActivas.forEach((lista, idx) => {
+                const totalPacks = lista.modulos.reduce((s, m) => s + m.packs.length, 0);
+                const opt = document.createElement('option');
+                opt.value = idx;
+                opt.textContent = lista.lista_nombre + ' (' + totalPacks + ' productos)';
+                sel.appendChild(opt);
+            });
+        }
+    } catch(e) {
+        sel.innerHTML = '<option value="">Sin lista de mod. activa</option>';
+        sel.disabled = true;
+        console.warn('No se pudieron cargar listas activas', e);
+    }
+})();
+
+function cargarModuloActivo() {
+    const sel = document.getElementById('select-modulo-activo');
+    const idx = sel.value;
+    if (idx === '' || idx === null) { alert('No hay lista de módulos activa para este laboratorio.'); return; }
+    const lista = _listasActivas[parseInt(idx)];
+    if (!lista) return;
+    modulesData = lista.modulos.map(mod => ({
+        nombre: mod.nombre,
+        items: mod.packs.map(p => ({
+            ean_modulo:  p.ean_pack,
+            descripcion: p.desc_pack,
+            cantidad:    p.cant_modulo || 1,
+            ean_erp:     p.ean_unidad,
+            desc_erp:    p.desc_unidad,
+            descuento:   p.desc_pct || 0
+        }))
+    }));
+    renderModulosRaw();
+    show('btn-procesar-modulos');
+    show('btn-match-modulos');
+    const totalItems = modulesData.reduce((s, m) => s + m.items.length, 0);
+    document.getElementById('modulos-status').textContent =
+        `${modulesData.length} módulo(s) · ${totalItems} ítems`;
 }
 
 // ─────────────────────────────────────────────────────────────────

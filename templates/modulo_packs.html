@@ -25,8 +25,8 @@
 <body class="min-h-screen flex font-sans">
 
 <!-- Sidebar -->
-<aside class="w-52 min-h-screen bg-surface border-r border-surface-border flex flex-col flex-shrink-0">
-    <div class="px-4 py-5 border-b border-surface-border">
+<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0">
+    <div class="px-4 py-5 border-b border-[#111827]">
         <div class="flex items-center gap-2.5">
             <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
                 <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -34,40 +34,40 @@
                 </svg>
             </div>
             <div>
-                <p class="text-sm font-bold text-[#1e1e1e] leading-tight">Control de Stock</p>
-                <p class="text-xs text-[#888]">Farmacia</p>
+                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#9ca3af]">Farmacia</p>
             </div>
         </div>
     </div>
     <nav class="flex-1 px-3 py-4 space-y-0.5">
-        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
             Inicio
         </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Gestión</p>
-        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Gestión</p>
+        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
             Proveedores
         </a>
-        <a href="{{ url_for('laboratorios_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+        <a href="{{ url_for('laboratorios_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
             Laboratorios
         </a>
         <a href="{{ url_for('modulo_packs_list') }}" class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-semibold text-amber-800 bg-amber-50/60">Packs de módulos</a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#bbb] uppercase tracking-widest">Operaciones</p>
-        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Operaciones</p>
+        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
             Control de Ingreso
         </a>
-        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
             Compras
         </a>
-        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
             Productos
         </a>
-        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             Configuración
         </a>
@@ -76,18 +76,30 @@
 
 <!-- Main -->
 <div class="flex-1 flex flex-col min-h-screen overflow-hidden">
-    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
+    <div class="bg-surface border-b border-[#e0e0e0] px-6 py-3 flex items-center gap-2 flex-shrink-0">
         <div>
             <h1 class="text-base font-bold text-[#1e1e1e]">Packs de módulos</h1>
             <p class="text-xs text-[#6f6f6f]">Módulos agrupados por laboratorio · equivalencias EAN pack → EAN unidad</p>
         </div>
-        <button onclick="document.getElementById('nuevo-modulo-panel').classList.toggle('hidden')"
-                class="ml-auto text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
-            + Nuevo módulo
-        </button>
-        <a href="{{ url_for('index') }}" class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-        </a>
+        <div class="ml-auto flex items-center gap-2">
+            <a href="{{ url_for('modulo_packs_plantilla') }}"
+               class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#e0e0e0] text-[#555] hover:bg-black/[0.04] transition-colors flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                Plantilla
+            </a>
+            <button type="button" onclick="document.getElementById('importar-panel').classList.toggle('hidden')"
+                    class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#e0e0e0] text-[#555] hover:bg-black/[0.04] transition-colors flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                Importar Excel
+            </button>
+            <button type="button" onclick="document.getElementById('nuevo-modulo-panel').classList.toggle('hidden')"
+                    class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
+                + Nueva lista de módulos
+            </button>
+            <a href="{{ url_for('index') }}" class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            </a>
+        </div>
     </div>
 
     <div class="flex-1 overflow-auto px-4 py-4">
@@ -99,54 +111,168 @@
 
         <!-- Panel nuevo módulo -->
         <div id="nuevo-modulo-panel" class="hidden bg-white border border-[#e0e0e0] rounded-xl px-4 py-4 mb-4">
-            <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Nuevo módulo</p>
+            <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Nueva lista de módulos</p>
             <div class="flex gap-3 flex-wrap items-end">
-                <div class="flex flex-col gap-1 flex-1 min-w-[200px]">
-                    <label class="text-[10px] text-[#999] uppercase tracking-wide">Nombre del módulo</label>
-                    <input id="nm-nombre" type="text" placeholder="MOD. AMOXIDAL"
-                           class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                </div>
                 <div class="flex flex-col gap-1" style="min-width:200px">
                     <label class="text-[10px] text-[#999] uppercase tracking-wide">Laboratorio</label>
-                    <select id="nm-lab" class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                        <option value="">— sin laboratorio —</option>
-                        {% for l in labs %}<option value="{{ l.id }}">{{ l.nombre }}</option>{% endfor %}
+                    <select id="nm-lab" onchange="sugerirNombreLista()"
+                            class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                        <option value="" data-nombre="">— sin laboratorio —</option>
+                        {% for l in labs %}<option value="{{ l.id }}" data-nombre="{{ l.nombre }}">{{ l.nombre }}</option>{% endfor %}
                     </select>
+                </div>
+                <div class="flex flex-col gap-1 flex-1 min-w-[220px]">
+                    <label class="text-[10px] text-[#999] uppercase tracking-wide">Nombre de la lista</label>
+                    <input id="nm-nombre" type="text" placeholder="Ej: Roemmers 16/04/2026"
+                           class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
                 </div>
                 <button onclick="crearModulo()"
                         class="flex-shrink-0 bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-1.5 rounded-lg transition-colors">
-                    Crear módulo
+                    Crear lista de módulos
                 </button>
             </div>
             <p id="nm-error" class="text-xs text-red-500 mt-2 hidden"></p>
         </div>
 
+        <!-- Panel importar Excel -->
+        <div id="importar-panel" class="hidden bg-white border border-[#e0e0e0] rounded-xl px-4 py-4 mb-4">
+            <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Importar módulos desde Excel</p>
+            <div class="flex gap-3 flex-wrap items-end">
+                <div class="flex flex-col gap-1" style="min-width:180px">
+                    <label class="text-[10px] text-[#999] uppercase tracking-wide">Laboratorio</label>
+                    <select id="imp-lab" onchange="actualizarNombreLista()"
+                            class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                        <option value="" data-nombre="">— sin laboratorio —</option>
+                        {% for l in labs %}<option value="{{ l.id }}" data-nombre="{{ l.nombre }}">{{ l.nombre }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1 flex-1 min-w-[200px]">
+                    <label class="text-[10px] text-[#999] uppercase tracking-wide">Nombre de la lista</label>
+                    <input type="text" id="imp-lista-nombre" placeholder="Ej: Roemmers 16/04/2026"
+                           class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                </div>
+                <div class="flex flex-col gap-1 flex-1 min-w-[200px]">
+                    <label class="text-[10px] text-[#999] uppercase tracking-wide">Archivo Excel</label>
+                    <input type="file" id="imp-file" accept=".xlsx"
+                           class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                </div>
+                <button type="button" onclick="importarModulos()"
+                        class="flex-shrink-0 bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-1.5 rounded-lg transition-colors">
+                    Importar
+                </button>
+            </div>
+            <p id="imp-msg" class="text-xs mt-2 hidden"></p>
+        </div>
+
+        <!-- Filtro por laboratorio -->
+        <div class="flex items-center gap-2 flex-wrap mb-4">
+            <span class="text-xs text-[#999] font-medium mr-1">Filtrar:</span>
+            <button type="button" onclick="filtrarLab(null)" id="pill-todos"
+                    class="pill-lab text-xs font-semibold px-3 py-1 rounded-full border transition-colors bg-brand text-brand-dark border-brand">
+                Todos
+            </button>
+            {% for l in labs %}
+            <button type="button" onclick="filtrarLab('{{ l.nombre }}')" id="pill-{{ l.id }}"
+                    class="pill-lab text-xs font-semibold px-3 py-1 rounded-full border transition-colors bg-white text-[#555] border-[#ddd] hover:border-brand hover:text-brand-dark">
+                {{ l.nombre }}
+            </button>
+            {% endfor %}
+            <button type="button" onclick="filtrarLab('__sin__')" id="pill-sin"
+                    class="pill-lab text-xs font-semibold px-3 py-1 rounded-full border transition-colors bg-white text-[#555] border-[#ddd] hover:border-brand hover:text-brand-dark">
+                Sin laboratorio
+            </button>
+        </div>
+
         <!-- Módulos -->
-        <div id="modulos-container" class="space-y-3">
+        <div id="modulos-container" class="space-y-1">
+        {% set ns = namespace(lista_actual='', lista_lab_id=0) %}
         {% for m in modulos %}
-        <div class="bg-white border border-[#e0e0e0] rounded-xl overflow-hidden" id="modulo-{{ m.id }}">
-            <!-- Encabezado del módulo -->
-            <div class="flex items-center gap-3 px-4 py-2.5 bg-[#f8f8f8] border-b border-[#e0e0e0] cursor-pointer select-none"
+
+        {# ── Encabezado de Lista (nivel 1) ── #}
+        {% if m.lista_nombre != ns.lista_actual %}
+        {% set ns.lista_actual = m.lista_nombre %}
+        {% set ns.lista_lab_id = m.lab_id %}
+        <div class="flex items-center gap-3 px-4 py-2.5 bg-[#1e3a5f] rounded-xl mt-5 mb-1"
+             data-lab-header="{{ m.lab_nombre if m.lab_nombre != '—' else '' }}">
+            <svg class="w-4 h-4 text-white/60 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+            </svg>
+            <span class="font-bold text-sm text-white uppercase tracking-wide">{{ m.lista_nombre }}</span>
+            <span class="text-[10px] text-white/50">{{ m.lab_nombre }}</span>
+            <div class="ml-auto flex items-center gap-2">
+                <button type="button"
+                        onclick="event.stopPropagation(); toggleActivo({{ m.lista_toggle_id }}, this)"
+                        id="activo-lista-btn-{{ m.lista_toggle_id }}"
+                        title="{{ 'Desactivar lista' if m.lista_activo else 'Marcar lista como activa' }}"
+                        class="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded border transition-colors
+                               {{ 'bg-emerald-500 text-white border-emerald-600' if m.lista_activo else 'bg-white/10 text-white/60 border-white/20 hover:bg-emerald-500/30 hover:text-white' }}">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    {{ 'Activo' if m.lista_activo else 'Inactivo' }}
+                </button>
+                <button type="button"
+                        onclick="abrirAddPack('{{ m.lista_nombre | replace("'", "\\'") }}', {{ m.lab_id }})"
+                        class="flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded bg-white/10 text-white hover:bg-white/20 border border-white/20 transition-colors">
+                    + Pack
+                </button>
+                <button type="button"
+                        onclick="deleteAllModulos('{{ m.lista_nombre | replace("'", "\\'") }}')"
+                        class="flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded bg-red-500/20 text-red-200 hover:bg-red-500/40 border border-red-400/30 transition-colors">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                    Eliminar lista
+                </button>
+            </div>
+        </div>
+        {# Panel inline agregar pack (oculto) #}
+        <div id="add-pack-lista-{{ m.lista_nombre | replace(' ', '-') | replace('/', '-') }}"
+             class="hidden bg-[#f0f4fa] border border-[#c7d8f0] rounded-xl px-4 py-3 mb-1">
+            <p class="text-[10px] font-semibold text-[#1e3a5f] uppercase tracking-wide mb-2">Nuevo pack en "{{ m.lista_nombre }}"</p>
+            <div class="flex gap-3 items-end flex-wrap">
+                <div class="flex flex-col gap-1 flex-1 min-w-[200px]">
+                    <label class="text-[10px] text-[#888] uppercase tracking-wide">Nombre del pack</label>
+                    <input type="text" id="new-pack-nombre-{{ loop.index }}" placeholder="MOD. EJEMPLO"
+                           class="bg-white border border-[#c7d8f0] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-[#1e3a5f]">
+                </div>
+                <button onclick="crearPack('{{ m.lista_nombre | replace("'", "\\'") }}', {{ m.lab_id }}, {{ loop.index }})"
+                        class="flex-shrink-0 bg-[#1e3a5f] hover:bg-[#2a4f7e] text-white font-semibold text-sm px-4 py-1.5 rounded-lg transition-colors">
+                    Crear pack
+                </button>
+                <button onclick="cerrarAddPack('{{ m.lista_nombre | replace(' ', '-') | replace('/', '-') }}')"
+                        class="flex-shrink-0 text-sm px-3 py-1.5 rounded-lg border border-[#c7d8f0] text-[#888] hover:bg-white transition-colors">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Pack (nivel 2) — omitir marcadores de lista ── #}
+        {% if not m.is_lista_marker %}
+        <div class="bg-white border border-[#e0e0e0] rounded-xl overflow-hidden ml-4" id="modulo-{{ m.id }}" data-lab="{{ m.lab_nombre if m.lab_nombre != '—' else '' }}" data-lista="{{ m.lista_nombre }}">
+            <!-- Encabezado del pack -->
+            <div class="flex items-center gap-3 px-4 py-2 bg-[#fefce8] border-b border-[#fde68a] cursor-pointer select-none"
                  onclick="toggleModulo({{ m.id }})">
-                <svg id="arrow-{{ m.id }}" class="w-3.5 h-3.5 text-[#999] transition-transform"
+                <svg id="arrow-{{ m.id }}" class="w-3 h-3 text-[#92400e] transition-transform flex-shrink-0"
                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
                 </svg>
-                <span class="font-semibold text-sm text-[#1e1e1e]">{{ m.nombre }}</span>
-                <span class="text-xs text-[#6f6f6f] ml-1">· {{ m.lab_nombre }}</span>
+                <span class="font-bold text-sm text-[#92400e] uppercase tracking-wide">{{ m.nombre }}</span>
                 <span class="ml-2 text-[10px] text-[#bbb]">{{ m.creado_en }}</span>
                 <span class="ml-2 text-[10px] bg-amber-100 text-amber-700 font-semibold px-1.5 py-0.5 rounded">
-                    {{ m.packs | length }} pack{{ 's' if m.packs | length != 1 else '' }}
+                    {{ m.packs | length }} producto{{ 's' if m.packs | length != 1 else '' }}
                 </span>
                 <button onclick="event.stopPropagation(); addPackToModulo({{ m.id }})"
-                        class="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
-                    + Pack
+                        class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-colors">
+                    + Producto
                 </button>
-                <button onclick="event.stopPropagation(); deleteModulo({{ m.id }})"
-                        class="w-6 h-6 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <button type="button" onclick="event.stopPropagation(); deleteModulo({{ m.id }})"
+                        class="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                     </svg>
+                    Eliminar
                 </button>
             </div>
             <!-- Packs del módulo -->
@@ -156,33 +282,67 @@
                 <thead>
                     <tr class="bg-[#f5f5f5] text-[#aaa] text-[10px] uppercase tracking-wide">
                         <th class="text-left px-4 py-1.5">EAN pack</th>
-                        <th class="text-left px-3 py-1.5">Descripción pack</th>
+                        <th class="text-left px-3 py-1.5">Descripción</th>
                         <th class="text-left px-3 py-1.5">EAN unidad (ERP)</th>
                         <th class="text-left px-3 py-1.5">Descripción unidad</th>
-                        <th class="text-center px-3 py-1.5 w-20">Unid./pack</th>
-                        <th class="w-8"></th>
+                        <th class="text-center px-3 py-1.5 w-16">Cant.</th>
+                        <th class="text-center px-3 py-1.5 w-16">Unid./pack</th>
+                        <th class="text-center px-3 py-1.5 w-20">Unid. equiv.</th>
+                        <th class="text-center px-3 py-1.5 w-16">Desc. %</th>
+                        <th class="w-16"></th>
                     </tr>
                 </thead>
                 <tbody>
                 {% for mp in m.packs %}
-                <tr class="border-t border-[#f0f0f0] hover:bg-amber-50/30" id="pack-row-{{ mp.id }}"
-                    data-ean-pack="{{ mp.ean_pack }}" data-ean-unidad="{{ mp.ean_unidad }}"
-                    data-cantidad="{{ mp.cantidad }}" data-prod-unidad-id="{{ mp.prod_unidad_id or '' }}">
+                <!-- Fila vista -->
+                <tr class="border-t border-[#f0f0f0] hover:bg-amber-50/30" id="pack-row-{{ mp.id }}">
                     <td class="px-4 py-1.5 font-mono text-[#555]">{{ mp.ean_pack }}</td>
                     <td class="px-3 py-1.5 text-[#1e1e1e]">{{ mp.desc_pack or '—' }}</td>
-                    <td class="px-3 py-1.5 font-mono text-[#555] editable-pack cursor-pointer hover:bg-amber-100"
-                        id="td-unidad-{{ mp.id }}" data-id="{{ mp.id }}" data-field="ean_unidad">{{ mp.ean_unidad }}</td>
-                    <td class="px-3 py-1.5 text-[#6f6f6f] editable-pack cursor-pointer hover:bg-amber-100"
-                        id="desc-unidad-{{ mp.id }}" data-id="{{ mp.id }}" data-field="desc_unidad">{{ mp.desc_unidad or '—' }}</td>
-                    <td class="px-3 py-1.5 text-center font-semibold text-brand editable-pack cursor-pointer hover:bg-amber-100"
-                        id="td-cantidad-{{ mp.id }}" data-id="{{ mp.id }}" data-field="cantidad">{{ mp.cantidad }}</td>
+                    <td class="px-3 py-1.5 font-mono text-[#555]">{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '—' }}</td>
+                    <td class="px-3 py-1.5 text-[#6f6f6f]">{{ mp.desc_unidad or '—' }}</td>
+                    <td class="px-3 py-1.5 text-center font-semibold text-brand">{{ mp.cant_modulo if mp.cant_modulo is not none else '—' }}</td>
+                    <td class="px-3 py-1.5 text-center text-[#555]">{{ mp.cantidad }}</td>
+                    <td class="px-3 py-1.5 text-center font-semibold text-[#1e1e1e]">
+                        {% if mp.cant_modulo is not none %}{{ mp.cant_modulo * mp.cantidad }}{% else %}—{% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-center text-[#555]">{{ '%.1f' % mp.desc_pct if mp.desc_pct is not none else '—' }}</td>
                     <td class="px-2 py-1.5 text-center">
-                        <button onclick="deletePack({{ mp.id }})"
-                                class="w-5 h-5 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors mx-auto">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
+                        <div class="flex items-center justify-center gap-1">
+                            <button type="button" onclick="editPackRow({{ mp.id }})"
+                                    class="w-5 h-5 flex items-center justify-center rounded text-[#bbb] hover:text-brand hover:bg-amber-50 transition-colors" title="Editar">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                            </button>
+                            <button type="button" onclick="deletePack({{ mp.id }})"
+                                    class="w-5 h-5 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors" title="Eliminar">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <!-- Fila edición (oculta) -->
+                <tr class="hidden bg-amber-50/50 border-t border-amber-200" id="pack-edit-{{ mp.id }}">
+                    <td class="px-2 py-1.5"><input type="text" value="{{ mp.ean_pack }}" id="edit-ean-pack-{{ mp.id }}"
+                        class="w-full text-xs font-mono bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
+                    <td class="px-2 py-1.5"><input type="text" value="{{ mp.desc_pack or '' }}" id="edit-desc-pack-{{ mp.id }}"
+                        class="w-full text-xs bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
+                    <td class="px-2 py-1.5"><input type="text" value="{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '' }}" id="edit-ean-unidad-{{ mp.id }}"
+                        class="w-full text-xs font-mono bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
+                    <td class="px-2 py-1.5"><input type="text" value="{{ mp.desc_unidad or '' }}" id="edit-desc-unidad-{{ mp.id }}"
+                        class="w-full text-xs bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
+                    <td class="px-2 py-1.5"><input type="number" value="{{ mp.cant_modulo or '' }}" id="edit-cant-modulo-{{ mp.id }}" min="1"
+                        class="w-full text-xs text-center bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand" placeholder="—"></td>
+                    <td class="px-2 py-1.5"><input type="number" value="{{ mp.cantidad }}" id="edit-cantidad-{{ mp.id }}" min="1"
+                        class="w-full text-xs text-center bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
+                    <td class="px-2 py-1.5 text-center text-[#aaa] text-[10px]">auto</td>
+                    <td class="px-2 py-1.5"><input type="number" value="{{ mp.desc_pct or '' }}" id="edit-desc-pct-{{ mp.id }}" min="0" max="100" step="0.1"
+                        class="w-full text-xs text-center bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand" placeholder="—"></td>
+                    <td class="px-2 py-1.5">
+                        <div class="flex items-center justify-center gap-1">
+                            <button type="button" onclick="savePackRow({{ mp.id }})"
+                                    class="text-[10px] font-semibold px-2 py-0.5 rounded bg-brand text-brand-dark hover:bg-brand-hover transition-colors">✓</button>
+                            <button type="button" onclick="cancelPackEdit({{ mp.id }})"
+                                    class="text-[10px] font-semibold px-2 py-0.5 rounded border border-[#e0e0e0] text-[#999] hover:bg-[#f0f0f0] transition-colors">✕</button>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -193,11 +353,12 @@
             {% endif %}
             </div>
         </div>
+        {% endif %}{# end is_lista_marker #}
         {% endfor %}
 
         <!-- Sin módulo -->
         {% if orphan_packs %}
-        <div class="bg-white border border-dashed border-[#d0d0d0] rounded-xl overflow-hidden">
+        <div id="sin-modulo-section" class="bg-white border border-dashed border-[#d0d0d0] rounded-xl overflow-hidden">
             <div class="flex items-center gap-3 px-4 py-2.5 bg-[#fafafa] border-b border-[#e0e0e0] cursor-pointer"
                  onclick="toggleModulo('orphan')">
                 <svg id="arrow-orphan" class="w-3.5 h-3.5 text-[#bbb] transition-transform"
@@ -218,7 +379,7 @@
                         <th class="text-left px-3 py-1.5">EAN unidad (ERP)</th>
                         <th class="text-left px-3 py-1.5">Descripción unidad</th>
                         <th class="text-center px-3 py-1.5 w-20">Unid./pack</th>
-                        <th class="w-8"></th>
+                        <th class="w-16"></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -252,7 +413,7 @@
 
         {% if not modulos and not orphan_packs %}
         <div class="text-center py-16 text-[#bbb] text-sm">
-            Sin módulos ni packs. Creá el primer módulo con el botón "Nuevo módulo".
+            Sin listas de módulos. Creá la primera con el botón "+ Nueva lista de módulos".
         </div>
         {% endif %}
         </div>
@@ -261,7 +422,7 @@
         <div id="add-pack-panel" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-black/50" onclick="closeAddPack()"></div>
             <div class="relative bg-white rounded-xl border border-[#e0e0e0] shadow-2xl p-5 w-full max-w-2xl">
-                <p class="font-semibold text-sm mb-4" id="add-pack-title">Agregar pack al módulo</p>
+                <p class="font-semibold text-sm mb-4" id="add-pack-title">Agregar producto al pack</p>
                 <input type="hidden" id="add-pack-modulo-id">
                 <div class="flex gap-3 flex-wrap items-end">
                     <div class="flex flex-col gap-1 relative" style="width:220px">
@@ -340,6 +501,172 @@ function toggleModulo(id) {
     arrow.style.transform = hidden ? '' : 'rotate(-90deg)';
 }
 
+function filtrarLab(lab) {
+    // Actualizar pills
+    document.querySelectorAll('.pill-lab').forEach(p => {
+        p.classList.remove('bg-brand', 'text-brand-dark', 'border-brand');
+        p.classList.add('bg-white', 'text-[#555]', 'border-[#ddd]');
+    });
+    const activePill = lab === null ? document.getElementById('pill-todos')
+                     : lab === '__sin__' ? document.getElementById('pill-sin')
+                     : [...document.querySelectorAll('.pill-lab')].find(p => p.textContent.trim() === lab);
+    if (activePill) {
+        activePill.classList.add('bg-brand', 'text-brand-dark', 'border-brand');
+        activePill.classList.remove('bg-white', 'text-[#555]', 'border-[#ddd]');
+    }
+    // Filtrar módulos
+    document.querySelectorAll('#modulos-container > div[data-lab]').forEach(el => {
+        const elLab = el.dataset.lab;
+        if (lab === null) { el.style.display = ''; return; }
+        if (lab === '__sin__') { el.style.display = elLab === '' ? '' : 'none'; return; }
+        el.style.display = elLab === lab ? '' : 'none';
+    });
+    // Filtrar headers de lab
+    document.querySelectorAll('[data-lab-header]').forEach(el => {
+        const h = el.dataset.labHeader;
+        if (lab === null) { el.style.display = ''; return; }
+        if (lab === '__sin__') { el.style.display = h === '' ? '' : 'none'; return; }
+        el.style.display = h === lab ? '' : 'none';
+    });
+    // Filtrar sección "Sin módulo asignado"
+    const sinModulo = document.getElementById('sin-modulo-section');
+    if (sinModulo) sinModulo.style.display = (lab === null || lab === '__sin__') ? '' : 'none';
+}
+
+function editPackRow(id) {
+    document.getElementById('pack-row-' + id).classList.add('hidden');
+    document.getElementById('pack-edit-' + id).classList.remove('hidden');
+    document.getElementById('edit-ean-pack-' + id).focus();
+}
+
+function cancelPackEdit(id) {
+    document.getElementById('pack-edit-' + id).classList.add('hidden');
+    document.getElementById('pack-row-' + id).classList.remove('hidden');
+}
+
+async function savePackRow(id) {
+    const eanUnidad = document.getElementById('edit-ean-unidad-' + id).value.trim();
+    const cantModulo = parseInt(document.getElementById('edit-cant-modulo-' + id).value) || null;
+    const descPct = parseFloat(document.getElementById('edit-desc-pct-' + id).value) || null;
+    const data = {
+        ean_pack:    document.getElementById('edit-ean-pack-' + id).value.trim(),
+        descripcion: document.getElementById('edit-desc-pack-' + id).value.trim(),
+        ean_unidad:  eanUnidad || document.getElementById('edit-ean-pack-' + id).value.trim(),
+        cantidad:    parseInt(document.getElementById('edit-cantidad-' + id).value) || 1,
+        cant_modulo: cantModulo,
+        desc_pct:    descPct,
+    };
+    if (!data.ean_pack) { alert('EAN pack es obligatorio.'); return; }
+    const r = await fetch(`/modulo-pack/${id}/update`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    });
+    const d = await r.json();
+    if (d.error) { alert('Error: ' + d.error); return; }
+    location.reload();
+}
+
+async function deleteAllModulos(listaNombre) {
+    if (!confirm(`¿Eliminar TODA la lista "${listaNombre}"? Esta acción no se puede deshacer.`)) return;
+    const r = await fetch('/modulos/delete-by-lista', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lista_nombre: listaNombre})
+    });
+    const d = await r.json();
+    if (d.error) { alert('Error: ' + d.error); return; }
+    location.reload();
+}
+
+async function toggleActivo(id, btn) {
+    const r = await fetch(`/modulo/${id}/toggle-activo`, {method: 'POST'});
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+
+    function setActivo(b, activo) {
+        if (activo) {
+            b.classList.remove('bg-white/10','text-white/60','border-white/20','hover:bg-emerald-500/30','hover:text-white');
+            b.classList.add('bg-emerald-500','text-white','border-emerald-600');
+            b.innerHTML = b.innerHTML.replace('Inactivo','Activo');
+            b.title = 'Desactivar lista';
+        } else {
+            b.classList.remove('bg-emerald-500','text-white','border-emerald-600');
+            b.classList.add('bg-white/10','text-white/60','border-white/20','hover:bg-emerald-500/30','hover:text-white');
+            b.innerHTML = b.innerHTML.replace('Activo','Inactivo');
+            b.title = 'Marcar lista como activa';
+        }
+    }
+
+    if (d.activo) {
+        // Desactivar todas las otras listas visualmente
+        document.querySelectorAll('[id^="activo-lista-btn-"]').forEach(b => {
+            if (b !== btn) setActivo(b, false);
+        });
+    }
+    setActivo(btn, d.activo);
+}
+
+function actualizarNombreLista() {
+    const sel = document.getElementById('imp-lab');
+    const labNombre = sel.options[sel.selectedIndex].dataset.nombre || '';
+    const hoy = new Date();
+    const fecha = `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+    document.getElementById('imp-lista-nombre').value = labNombre ? `${labNombre} ${fecha}` : fecha;
+}
+// Inicializar con la fecha actual
+actualizarNombreLista();
+
+async function importarModulos() {
+    const file        = document.getElementById('imp-file').files[0];
+    const labId       = document.getElementById('imp-lab').value;
+    const listaNombre = document.getElementById('imp-lista-nombre').value.trim();
+    const msgEl       = document.getElementById('imp-msg');
+    msgEl.className = 'text-xs mt-2';
+    if (!file)        { msgEl.textContent = 'Seleccioná un archivo Excel.'; msgEl.classList.add('text-red-500'); return; }
+    if (!listaNombre) { msgEl.textContent = 'El nombre de la lista es obligatorio.'; msgEl.classList.add('text-red-500'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('lab_id', labId);
+    fd.append('lista_nombre', listaNombre);
+    msgEl.textContent = 'Importando...'; msgEl.classList.add('text-[#999]');
+    try {
+        const r = await fetch('/modulo-packs/importar', { method: 'POST', body: fd });
+        const d = await r.json();
+        if (d.error) { msgEl.textContent = 'Error: ' + d.error; msgEl.classList.add('text-red-500'); return; }
+        msgEl.textContent = `✓ ${d.modulos_creados} pack(s) creado(s), ${d.packs_agregados} producto(s) importado(s).`;
+        msgEl.classList.add('text-green-600');
+        setTimeout(() => location.reload(), 1500);
+    } catch(e) {
+        msgEl.textContent = 'Error de conexión.'; msgEl.classList.add('text-red-500');
+    }
+}
+
+function sugerirNombreLista() {
+    const sel = document.getElementById('nm-lab');
+    const labNombre = sel.options[sel.selectedIndex].dataset.nombre || '';
+    const hoy = new Date();
+    const fecha = `${String(hoy.getDate()).padStart(2,'0')}/${String(hoy.getMonth()+1).padStart(2,'0')}/${hoy.getFullYear()}`;
+    document.getElementById('nm-nombre').value = labNombre ? `${labNombre} ${fecha}` : fecha;
+}
+
+function abrirAddPack(listaNombre, labId) {
+    const key = listaNombre.replace(/[ /]/g, '-');
+    document.getElementById('add-pack-lista-' + key)?.classList.remove('hidden');
+}
+function cerrarAddPack(key) {
+    document.getElementById('add-pack-lista-' + key)?.classList.add('hidden');
+}
+async function crearPack(listaNombre, labId, idx) {
+    const nombre = document.getElementById('new-pack-nombre-' + idx)?.value.trim();
+    if (!nombre) { alert('Ingresá un nombre para el pack.'); return; }
+    const r = await fetch('/modulo/add', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({nombre, laboratorio_id: labId || null, lista_nombre: listaNombre})
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Error al crear pack'); return; }
+    location.reload();
+}
+
 async function crearModulo() {
     const nombre = document.getElementById('nm-nombre').value.trim();
     const labId  = document.getElementById('nm-lab').value;
@@ -348,7 +675,7 @@ async function crearModulo() {
     if (!nombre) { errEl.textContent = 'Nombre requerido.'; errEl.classList.remove('hidden'); return; }
     const r = await fetch('/modulo/add', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({nombre, laboratorio_id: labId || null})
+        body: JSON.stringify({nombre, laboratorio_id: labId || null, lista_nombre: nombre})
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Error'; errEl.classList.remove('hidden'); return; }

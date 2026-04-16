@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, DECIMAL, ForeignKey, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, DECIMAL, ForeignKey, Text, text, Boolean
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 
 Base = declarative_base()
@@ -215,7 +215,9 @@ class Modulo(Base):
     id = Column(Integer, primary_key=True)
     nombre = Column(String(200), nullable=False)
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
+    lista_nombre = Column(String(200), nullable=True)  # Nombre de la lista/importación a la que pertenece
     creado_en = Column(DateTime, default=datetime.utcnow)
+    activo = Column(Boolean, default=False, nullable=False, server_default='false')
     laboratorio = relationship('Laboratorio')
     packs = relationship('ModuloPack', back_populates='modulo', cascade='all, delete-orphan')
 
@@ -227,6 +229,8 @@ class ModuloPack(Base):
     ean_pack = Column(String(30), unique=True, nullable=False)   # EAN del pack (proveedor/módulo)
     ean_unidad = Column(String(30), nullable=False)              # EAN de la unidad individual (ERP/pedido)
     cantidad = Column(Integer, nullable=False, default=1)        # Unidades individuales por pack
+    cant_modulo = Column(Integer, nullable=True)                 # Cant. de packs en el módulo (CANT. del Excel)
+    desc_pct = Column(DECIMAL(5, 2), nullable=True)             # Descuento % del módulo (DESC.% del Excel)
     descripcion = Column(String(255))
     modulo_id = Column(Integer, ForeignKey('modulos.id'), nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
@@ -439,6 +443,11 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS modulo_id INTEGER REFERENCES modulos(id) ON DELETE SET NULL"))
+    conn.execute(text("ALTER TABLE modulos ADD COLUMN IF NOT EXISTS lista_nombre VARCHAR(200)"))
+    conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS cant_modulo INTEGER"))
+    conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS desc_pct DECIMAL(5,2)"))
+    # Migrar datos viejos: cantidad almacenaba el CANT del Excel → mover a cant_modulo, resetear cantidad=1
+    conn.execute(text("UPDATE modulo_packs SET cant_modulo = cantidad, cantidad = 1 WHERE cant_modulo IS NULL AND cantidad != 1"))
     conn.execute(text(
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) NOT NULL DEFAULT 'drogueria'"
     ))
@@ -580,6 +589,14 @@ def _sqlite_add_columns(conn):
     existing_mp = {row[1] for row in conn.execute(text("PRAGMA table_info(modulo_packs)"))}
     if 'modulo_id' not in existing_mp:
         conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN modulo_id INTEGER REFERENCES modulos(id)"))
+    existing_mod2 = {row[1] for row in conn.execute(text("PRAGMA table_info(modulos)"))}
+    if 'lista_nombre' not in existing_mod2:
+        conn.execute(text("ALTER TABLE modulos ADD COLUMN lista_nombre VARCHAR(200)"))
+    if 'cant_modulo' not in existing_mp:
+        conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN cant_modulo INTEGER"))
+        conn.execute(text("UPDATE modulo_packs SET cant_modulo = cantidad, cantidad = 1 WHERE cant_modulo IS NULL AND cantidad != 1"))
+    if 'desc_pct' not in existing_mp:
+        conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN desc_pct DECIMAL(5,2)"))
     existing_prov3 = {row[1] for row in conn.execute(text("PRAGMA table_info(proveedores)"))}
     if 'tipo' not in existing_prov3:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN tipo VARCHAR(20) NOT NULL DEFAULT 'drogueria'"))

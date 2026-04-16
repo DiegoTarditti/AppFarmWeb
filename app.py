@@ -23,6 +23,12 @@ app.config['TEMPLATES_AUTO_RELOAD'] = True
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+@app.before_request
+def bloquear_descuentos():
+    from flask import request, abort
+    if request.path.startswith('/descuentos'):
+        abort(404)
+
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db')
 init_db(DATABASE_URL)
 
@@ -87,7 +93,10 @@ def _get_or_create_provider_by_name(razon_social, cuit='', parser_name=''):
     if cuit:
         provider = session.query(database.Provider).filter_by(cuit=cuit).first()
     if not provider:
-        provider = session.query(database.Provider).filter_by(razon_social=razon_social).first()
+        from sqlalchemy import func
+        provider = session.query(database.Provider).filter(
+            func.lower(database.Provider.razon_social) == razon_social.lower()
+        ).first()
     if not provider:
         provider = database.Provider(razon_social=razon_social,
                                      cuit=cuit or None,
@@ -1572,13 +1581,12 @@ def laboratorios_list():
     data = []
     for l in labs:
         prod_count = session.query(_func.count(Producto.id)).filter_by(laboratorio_id=l.id).scalar() or 0
-        mod_count = session.query(_func.count(database.Modulo.id)).filter_by(laboratorio_id=l.id).scalar() or 0
         ped_count = session.query(_func.count(database.Pedido.id)).filter_by(laboratorio=l.nombre).scalar() or 0
         analytics_count = session.query(_func.count(database.ProductAnalytics.codigo_barra))\
             .filter_by(laboratorio=l.nombre).scalar() or 0
         data.append({
             'id': l.id, 'nombre': l.nombre,
-            'prod_count': prod_count, 'mod_count': mod_count,
+            'prod_count': prod_count,
             'ped_count': ped_count, 'analytics_count': analytics_count,
         })
     session.close()
@@ -2956,7 +2964,7 @@ def purchase_suggest():
                     continue
                 daily = avg / 30.0
                 target_stock = daily * target_days
-                suggested = max(0, int(math.ceil(target_stock - (p.stock or 0))))
+                suggested = max(0, int(math.floor(target_stock - (p.stock or 0))))
                 if suggested <= 0:
                     continue
                 pvp = float(p.precio_pvp or 0)
@@ -3129,6 +3137,8 @@ def modulo_packs_list():
         def _pack_dict(mp):
             return {'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
                     'cantidad': mp.cantidad,
+                    'cant_modulo': mp.cant_modulo,
+                    'desc_pct': float(mp.desc_pct) if mp.desc_pct is not None else None,
                     'desc_pack':   mp.descripcion or '',
                     'desc_unidad': (prod_map[mp.ean_unidad].descripcion or '') if mp.ean_unidad in prod_map else '',
                     'prod_unidad_id': prod_map[mp.ean_unidad].id if mp.ean_unidad in prod_map else None,
@@ -3136,12 +3146,35 @@ def modulo_packs_list():
 
         modulos_raw = (session.query(Modulo)
                        .outerjoin(Laboratorio)
-                       .order_by(Laboratorio.nombre, Modulo.nombre).all())
+                       .order_by(Modulo.lista_nombre, Laboratorio.nombre, Modulo.nombre).all())
+        def _lista_nombre(m):
+            if m.lista_nombre:
+                return m.lista_nombre
+            return m.laboratorio.nombre if m.laboratorio else '—'
+
         modulos = [{'id': m.id, 'nombre': m.nombre,
                     'lab_nombre': m.laboratorio.nombre if m.laboratorio else '—',
+                    'lab_id': m.laboratorio_id or 0,
+                    'lista_nombre': _lista_nombre(m),
+                    'is_lista_marker': bool(m.lista_nombre and m.nombre == m.lista_nombre),
                     'creado_en': m.creado_en.strftime('%d/%m/%Y') if m.creado_en else '',
+                    'activo': m.activo,
                     'packs': [_pack_dict(mp) for mp in m.packs]}
                    for m in modulos_raw]
+
+        # Pre-computar activo y toggle_id a nivel de lista
+        lista_activo_map = {}    # lista_nombre → bool
+        lista_toggle_map = {}    # lista_nombre → modulo_id (preferir is_lista_marker)
+        for md in modulos:
+            ln = md['lista_nombre']
+            if md['activo']:
+                lista_activo_map[ln] = True
+            if ln not in lista_toggle_map or md['is_lista_marker']:
+                lista_toggle_map[ln] = md['id']
+        for md in modulos:
+            ln = md['lista_nombre']
+            md['lista_activo']    = lista_activo_map.get(ln, False)
+            md['lista_toggle_id'] = lista_toggle_map.get(ln, md['id'])
 
         orphan_packs = [_pack_dict(mp) for mp in
                         session.query(ModuloPack).filter(ModuloPack.modulo_id.is_(None))
@@ -3157,17 +3190,242 @@ def modulo_packs_list():
         session.close()
 
 
+@app.route('/modulo-packs/vista')
+def modulo_packs_vista():
+    session = database.SessionLocal()
+    try:
+        prod_map = {p.codigo_barra: p for p in session.query(Producto).all()}
+        labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
+        lab_filter = request.args.get('lab', '').strip()
+
+        q = session.query(Modulo).outerjoin(Laboratorio).order_by(Laboratorio.nombre, Modulo.nombre)
+        modulos_raw = q.all()
+
+        modulos = []
+        for m in modulos_raw:
+            lab_nombre = m.laboratorio.nombre if m.laboratorio else ''
+            if lab_filter and lab_nombre != lab_filter:
+                continue
+            packs = [{'ean_pack': mp.ean_pack,
+                      'desc_pack': mp.descripcion or '—',
+                      'ean_unidad': mp.ean_unidad,
+                      'desc_unidad': (prod_map[mp.ean_unidad].descripcion or '—') if mp.ean_unidad in prod_map else '—',
+                      'cantidad': mp.cantidad}
+                     for mp in m.packs]
+            modulos.append({'id': m.id, 'nombre': m.nombre,
+                            'lab_nombre': lab_nombre or '—',
+                            'packs': packs})
+
+        return render_template('modulo_packs_vista.html',
+                               modulos=modulos,
+                               labs=[{'id': l.id, 'nombre': l.nombre} for l in labs],
+                               lab_filter=lab_filter)
+    finally:
+        session.close()
+
+
+@app.route('/modulo-packs/plantilla')
+def modulo_packs_plantilla():
+    """Descarga plantilla XLSX para importar módulos."""
+    import io, openpyxl
+    from openpyxl.styles import Font, PatternFill, Border, Side
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Módulos'
+    hdr_fill = PatternFill('solid', fgColor='1C1C1E')
+    hdr_font = Font(bold=True, color='EAB308')
+    mod_fill = PatternFill('solid', fgColor='FEF9C3')
+    mod_font = Font(bold=True, color='92400E')
+    border   = Border(bottom=Side(style='thin', color='D0D0D0'))
+    ws.append(['MÓDULOS — plantilla de importación'])
+    ws['A1'].font = Font(bold=True, size=13)
+    ws.append([])
+    headers = ['NOMBRE MÓDULO', 'EAN PACK', 'DESCRIPCIÓN PACK', 'EAN UNIDAD', 'UNID./PACK']
+    ws.append(headers)
+    for ci, _ in enumerate(headers, 1):
+        c = ws.cell(row=3, column=ci)
+        c.fill = hdr_fill; c.font = hdr_font; c.border = border
+    ws.append(['MOD. EJEMPLO'])
+    c = ws.cell(row=4, column=1); c.fill = mod_fill; c.font = mod_font
+    for ean, desc, ean_u, cant in [('7790001000001','PRODUCTO EJEMPLO 1','7790001000002',10),
+                                    ('7790001000003','PRODUCTO EJEMPLO 2','7790001000004',6)]:
+        ws.append(['', ean, desc, ean_u, cant])
+    ws.column_dimensions['A'].width = 25
+    ws.column_dimensions['B'].width = 18
+    ws.column_dimensions['C'].width = 40
+    ws.column_dimensions['D'].width = 18
+    ws.column_dimensions['E'].width = 12
+    buf = io.BytesIO()
+    wb.save(buf); buf.seek(0)
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    resp.headers['Content-Disposition'] = 'attachment; filename="plantilla_modulos.xlsx"'
+    return resp
+
+
+@app.route('/modulo-packs/importar', methods=['POST'])
+def modulo_packs_importar():
+    """Importa módulos desde un XLSX (formato Roemmers o plantilla propia)."""
+    from parsers.modulos_xlsx import parse_modulos_xlsx
+    f = request.files.get('file')
+    lab_id = request.form.get('lab_id') or None
+    lista_nombre = (request.form.get('lista_nombre') or '').strip() or None
+    if not f:
+        return jsonify({'error': 'No se recibió archivo'}), 400
+    tmp = os.path.join(UPLOAD_FOLDER, secure_filename(f.filename))
+    f.save(tmp)
+    session = database.SessionLocal()
+    try:
+        modules = parse_modulos_xlsx(tmp)
+        if not modules:
+            return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
+        creados = 0
+        packs_agregados = 0
+        for mod in modules:
+            nombre_mod = mod['nombre']
+            modulo_actual = session.query(Modulo).filter_by(nombre=nombre_mod, lista_nombre=lista_nombre).first()
+            if not modulo_actual:
+                modulo_actual = Modulo(nombre=nombre_mod,
+                                       laboratorio_id=int(lab_id) if lab_id else None,
+                                       lista_nombre=lista_nombre)
+                session.add(modulo_actual)
+                session.flush()
+                creados += 1
+            for item in mod['items']:
+                ean_pack = item['ean']
+                if not ean_pack:
+                    continue
+                existe = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
+                if not existe:
+                    session.add(ModuloPack(
+                        ean_pack=ean_pack,
+                        ean_unidad=ean_pack,   # default: mismo EAN; el usuario lo vincula luego
+                        cantidad=1,
+                        descripcion=item.get('descripcion', ''),
+                        cant_modulo=item.get('cant'),
+                        desc_pct=item.get('desc_pct'),
+                        modulo_id=modulo_actual.id,
+                    ))
+                    packs_agregados += 1
+        session.commit()
+        return jsonify({'ok': True, 'modulos_creados': creados, 'packs_agregados': packs_agregados})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+        try: os.remove(tmp)
+        except: pass
+
+
+@app.route('/modulos/delete-by-lista', methods=['POST'])
+def modulos_delete_by_lista():
+    """Elimina todos los módulos (y sus packs en cascada) de una lista/importación."""
+    data = request.get_json(silent=True) or {}
+    lista_nombre = data.get('lista_nombre', '').strip()
+    if not lista_nombre:
+        return jsonify({'error': 'lista_nombre requerido'}), 400
+    session = database.SessionLocal()
+    try:
+        # Buscar por lista_nombre exacto, o por lab_nombre (fallback para datos viejos)
+        modulos = session.query(Modulo).filter(
+            (Modulo.lista_nombre == lista_nombre) |
+            ((Modulo.lista_nombre.is_(None)) &
+             (Modulo.laboratorio.has(database.Laboratorio.nombre == lista_nombre)))
+        ).all()
+        count = len(modulos)
+        for m in modulos:
+            session.delete(m)
+        session.commit()
+        return jsonify({'ok': True, 'eliminados': count})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
+@app.route('/modulo-packs/activos')
+def modulo_packs_activos():
+    """Devuelve las listas activas agrupadas por lista_nombre. ?lab=Nombre filtra por laboratorio."""
+    lab_nombre = request.args.get('lab', '').strip()
+    session = database.SessionLocal()
+    try:
+        q = session.query(Modulo).filter_by(activo=True).outerjoin(Laboratorio)
+        if lab_nombre:
+            q = q.filter(Laboratorio.nombre == lab_nombre)
+        raw = q.order_by(Modulo.lista_nombre, Modulo.nombre).all()
+        prod_map = {p.codigo_barra: p for p in session.query(Producto).all()}
+
+        # Agrupar por lista_nombre → lista de módulos (packs) con sus productos
+        from collections import OrderedDict
+        listas = OrderedDict()
+        for m in raw:
+            ln = m.lista_nombre or m.nombre
+            if ln not in listas:
+                listas[ln] = {'lista_nombre': ln,
+                               'lab_nombre': m.laboratorio.nombre if m.laboratorio else '',
+                               'modulos': []}
+            # Omitir el marcador de lista (es_lista_marker)
+            if m.lista_nombre and m.nombre == m.lista_nombre:
+                continue
+            packs = [{'ean_pack':    mp.ean_pack,
+                      'desc_pack':   mp.descripcion or '',
+                      'ean_unidad':  mp.ean_unidad,
+                      'desc_unidad': (prod_map[mp.ean_unidad].descripcion or '') if mp.ean_unidad in prod_map else '',
+                      'cant_modulo': mp.cant_modulo if mp.cant_modulo is not None else mp.cantidad,
+                      'desc_pct':    float(mp.desc_pct) if mp.desc_pct is not None else 0.0}
+                     for mp in m.packs]
+            listas[ln]['modulos'].append({'id': m.id, 'nombre': m.nombre, 'packs': packs})
+
+        return jsonify({'listas': list(listas.values())})
+    finally:
+        session.close()
+
+
+@app.route('/modulo/<int:modulo_id>/toggle-activo', methods=['POST'])
+def modulo_toggle_activo(modulo_id):
+    session = database.SessionLocal()
+    try:
+        m = session.get(Modulo, modulo_id)
+        if not m:
+            return jsonify({'error': 'No encontrado'}), 404
+        nuevo_estado = not bool(m.activo)
+        if nuevo_estado:
+            # Desactivar todos los del mismo laboratorio
+            session.query(Modulo).filter(
+                Modulo.laboratorio_id == m.laboratorio_id
+            ).update({'activo': False})
+            session.flush()
+        # Activar/desactivar todos los de la misma lista
+        if m.lista_nombre:
+            session.query(Modulo).filter(
+                Modulo.lista_nombre == m.lista_nombre
+            ).update({'activo': nuevo_estado})
+        else:
+            m.activo = nuevo_estado
+        session.commit()
+        return jsonify({'activo': nuevo_estado})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        session.close()
+
+
 @app.route('/modulo/add', methods=['POST'])
 def modulo_add():
     data = request.get_json(silent=True) or {}
     nombre = (data.get('nombre') or '').strip()
     lab_id = data.get('laboratorio_id')
+    lista_nombre = (data.get('lista_nombre') or nombre or '').strip() or None
     if not nombre:
         return jsonify({'error': 'Nombre requerido'}), 400
     session = database.SessionLocal()
     try:
         m = Modulo(nombre=nombre,
-                   laboratorio_id=int(lab_id) if lab_id else None)
+                   laboratorio_id=int(lab_id) if lab_id else None,
+                   lista_nombre=lista_nombre)
         session.add(m)
         session.commit()
         lab_nombre = m.laboratorio.nombre if m.laboratorio else '—'
@@ -3244,6 +3502,35 @@ def modulo_pack_add():
     except Exception as e:
         session.rollback()
         return {'error': str(e)}, 500
+    finally:
+        session.close()
+
+
+@app.route('/modulo-pack/<int:pack_id>/update', methods=['POST'])
+def modulo_pack_update(pack_id):
+    session = database.SessionLocal()
+    try:
+        data = request.get_json(silent=True) or {}
+        mp = session.get(ModuloPack, pack_id)
+        if not mp:
+            return jsonify({'error': 'No encontrado'}), 404
+        if 'ean_pack' in data:
+            mp.ean_pack = str(data['ean_pack']).strip()
+        if 'descripcion' in data:
+            mp.descripcion = str(data['descripcion']).strip() or None
+        if 'ean_unidad' in data:
+            mp.ean_unidad = str(data['ean_unidad']).strip()
+        if 'cantidad' in data:
+            mp.cantidad = int(data['cantidad'])
+        if 'cant_modulo' in data:
+            mp.cant_modulo = int(data['cant_modulo']) if data['cant_modulo'] is not None else None
+        if 'desc_pct' in data:
+            mp.desc_pct = float(data['desc_pct']) if data['desc_pct'] is not None else None
+        session.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'error': str(e)}), 500
     finally:
         session.close()
 

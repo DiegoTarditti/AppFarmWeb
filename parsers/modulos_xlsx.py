@@ -35,6 +35,31 @@ def _detect_format(ws):
     return 'A'  # default
 
 
+def _norm_ean(val):
+    """Normaliza un valor de celda a string EAN. Retorna None si inválido."""
+    if val is None:
+        return None
+    try:
+        return str(int(float(str(val).strip())))
+    except (ValueError, TypeError):
+        s = str(val).strip()
+        return s if s else None
+
+
+def _parse_int(val, default=1):
+    try:
+        return int(val) if val is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
+def _parse_float(val, default=0.0):
+    try:
+        return float(val) if val is not None else default
+    except (ValueError, TypeError):
+        return default
+
+
 def parse_modulos_xlsx(path):
     """
     Retorna lista de módulos:
@@ -62,42 +87,71 @@ def parse_modulos_xlsx(path):
         if not row or all(v is None for v in row):
             continue
 
+        # ── FORMATO B ────────────────────────────────────────────────
         if fmt == 'B':
-            # col[0]=cod_mod, col[1]=nombre, col[2]=ean, col[3]=desc, col[4]=cant, col[5]=desc_pct
-            cod    = row[0] if len(row) > 0 else None
-            nombre = str(row[1]).strip() if len(row) > 1 and row[1] else None
-            ean    = row[2] if len(row) > 2 else None
-            desc   = str(row[3]).strip() if len(row) > 3 and row[3] else ''
-            cant   = row[4] if len(row) > 4 else None
+            print(f"[DEBUG B] row={row}")
+            cod      = row[0] if len(row) > 0 else None
+            nombre   = str(row[1]).strip() if len(row) > 1 and row[1] else None
+            ean_raw  = row[2] if len(row) > 2 else None
+            desc     = str(row[3]).strip() if len(row) > 3 and row[3] else ''
+            cant     = row[4] if len(row) > 4 else None
             desc_pct = row[5] if len(row) > 5 else 0
 
-            # Saltar fila de encabezados
+            # Saltar fila de encabezados de columna
             if nombre and str(nombre).upper() in ('NOMBRE MODULO', 'NOMBRE MÓDULO'):
                 continue
-            # Saltar título global (col[0]=None, col[1]=título que no es un módulo conocido)
-            if cod is None and ean is None and nombre:
-                # Podría ser cabecera de módulo o título global
-                # Si es la primera fila con este patrón y no hay current → título global
+
+            # Cabecera de módulo: col[0] vacío y cols[2..5] todas vacías
+            # Usamos "not x" en vez de "is None" para cubrir también strings vacíos
+            tail_empty = all(
+                not row[i]
+                for i in range(2, min(6, len(row)))
+            )
+            if not cod and tail_empty and nombre:
                 if current is not None:
                     modules.append(current)
                 current = {'nombre': nombre, 'items': []}
                 continue
 
-        else:
-            # Formato A: col[0]=nombre, col[1]=ean, col[2]=desc, col[3]=cant, col[4]=desc_pct
-            nombre = str(row[0]).strip() if row[0] else None
-            ean    = row[1] if len(row) > 1 else None
-            desc   = str(row[2]).strip() if len(row) > 2 and row[2] else ''
-            cant   = row[3] if len(row) > 3 else None
-            desc_pct = row[4] if len(row) > 4 else 0
-
-            # Saltar fila de encabezados de columnas
-            if nombre and str(nombre).upper() in ('NOMBRE MÓDULO', 'NOMBRE MODULO', 'MÓDULO', 'MODULO'):
+            # Fila de ítem: necesita al menos un nombre en col[1]
+            if not nombre:
                 continue
 
+            ean = _norm_ean(ean_raw)
+            if not ean:
+                # Fallback: EAN puede estar en col[1] (layout real Roemmers: COD MOD | EAN | vacío | DESC | CANT | %)
+                ean = _norm_ean(nombre)
+            if not ean:
+                # EAN ausente → saltar ítem pero NO cortar el módulo
+                continue
+
+            if current is None:
+                current = {'nombre': nombre, 'items': []}
+
+            current['items'].append({
+                'ean':         ean,
+                'descripcion': desc,
+                'cant':        _parse_int(cant),
+                'desc_pct':    _parse_float(desc_pct),
+            })
+            continue   # ← FORMAT B completamente manejado aquí
+
+        # ── FORMATO A ────────────────────────────────────────────────
+        nombre   = str(row[0]).strip() if row[0] else None
+        ean_raw  = row[1] if len(row) > 1 else None
+        desc     = str(row[2]).strip() if len(row) > 2 and row[2] else ''
+        cant     = row[3] if len(row) > 3 else None
+        desc_pct = row[4] if len(row) > 4 else 0
+
+        # Saltar fila de encabezados de columna
+        if nombre and str(nombre).upper() in ('NOMBRE MÓDULO', 'NOMBRE MODULO', 'MÓDULO', 'MODULO'):
+            continue
+
+        ean = _norm_ean(ean_raw)
+
         if ean is None:
-            # Fila de cabecera de módulo (o título global)
-            if nombre:
+            # Fila de cabecera de módulo (sin EAN)
+            if nombre and (current is None or nombre != current['nombre']):
                 if current is not None:
                     modules.append(current)
                 current = {'nombre': nombre, 'items': []}
@@ -105,20 +159,11 @@ def parse_modulos_xlsx(path):
             # Fila de ítem
             if current is None:
                 current = {'nombre': nombre or 'SIN NOMBRE', 'items': []}
-            try:
-                cant_int = int(cant) if cant is not None else 1
-            except (ValueError, TypeError):
-                cant_int = 1
-            try:
-                desc_float = float(desc_pct) if desc_pct is not None else 0.0
-            except (ValueError, TypeError):
-                desc_float = 0.0
-
             current['items'].append({
-                'ean': str(ean).strip(),
+                'ean':         ean,
                 'descripcion': desc,
-                'cant': cant_int,
-                'desc_pct': desc_float,
+                'cant':        _parse_int(cant),
+                'desc_pct':    _parse_float(desc_pct),
             })
 
     if current is not None:

@@ -100,13 +100,6 @@
                             </svg>
                             {{ lab.prod_count }} producto{{ 's' if lab.prod_count != 1 }}
                         </a>
-                        <a href="{{ url_for('modulo_packs_list') }}?lab={{ lab.id }}"
-                           class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                            </svg>
-                            {{ lab.mod_count }} módulo{{ 's' if lab.mod_count != 1 }}
-                        </a>
                         <a href="{{ url_for('orders_list') }}?lab={{ lab.nombre }}"
                            class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
