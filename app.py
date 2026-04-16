@@ -251,9 +251,7 @@ def admin_console():
 @app.route('/admin/backup', methods=['POST'])
 def admin_backup():
     import subprocess
-    import shlex
     from datetime import datetime as _dt
-    from flask import Response
 
     db_url = (request.form.get('db_url') or '').strip()
     if not db_url:
@@ -263,30 +261,21 @@ def admin_backup():
         flash('URL inválida (debe empezar con postgres:// o postgresql://).')
         return redirect(url_for('admin_console'))
 
-    ts = _dt.now().strftime('%Y%m%d_%H%M%S')
-    filename = f'farmacia_backup_{ts}.sql'
-
     cmd = ['pg_dump', '--no-owner', '--no-privileges', '--clean',
            '--if-exists', db_url]
+    result = subprocess.run(cmd, capture_output=True)
 
-    def generate():
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        try:
-            while True:
-                chunk = proc.stdout.read(65536)
-                if not chunk:
-                    break
-                yield chunk
-            proc.wait()
-            if proc.returncode != 0:
-                err = proc.stderr.read().decode('utf-8', errors='replace')
-                yield f"\n-- ERROR pg_dump (exit {proc.returncode}):\n-- {err}\n".encode()
-        finally:
-            if proc.poll() is None:
-                proc.kill()
+    if result.returncode != 0:
+        err = result.stderr.decode('utf-8', errors='replace').strip()
+        flash(f'pg_dump falló (exit {result.returncode}): {err[:500]}')
+        return redirect(url_for('admin_console'))
 
-    return Response(generate(), mimetype='application/sql',
-                    headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+    ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+    filename = f'farmacia_backup_{ts}.sql'
+    resp = make_response(result.stdout)
+    resp.headers['Content-Type'] = 'application/sql'
+    resp.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp
 
 
 @app.route('/settings', methods=['POST'])
