@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Cuenta corriente — {{ provider.razon_social }}</title>
+    <title>Cuentas corrientes — Farmacia</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -25,193 +25,258 @@
         ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
     </style>
 </head>
-<body class="min-h-screen font-sans">
+<body class="min-h-screen flex font-sans">
 
-<header class="bg-surface border-b border-surface-border px-6 py-4">
-    <div class="max-w-5xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
+<!-- Sidebar -->
+<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0">
+    <div class="px-4 py-5 border-b border-[#111827]">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
                 <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
                 </svg>
             </div>
             <div>
-                <p class="font-bold text-sm text-[#1e1e1e]">{{ provider.razon_social }}</p>
-                <p class="text-xs text-[#6f6f6f]">Cuenta corriente{% if provider.cuit %} · CUIT {{ provider.cuit }}{% endif %}</p>
+                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#9ca3af]">Farmacia</p>
             </div>
         </div>
-        <div class="flex items-center gap-2">
-            <a href="{{ url_for('providers_list') }}"
-               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg hover:bg-black/[0.06]">← Proveedores</a>
-            <a href="{{ url_for('index') }}"
-               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06]">
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Inicio
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Gestión</p>
+        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+            Proveedores
+        </a>
+        <a href="{{ url_for('cuentas_corrientes') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Ctas. Corrientes
+        </a>
+        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Operaciones</p>
+        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+            Control de Ingreso
+        </a>
+        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            Compras
+        </a>
+        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+            Productos
+        </a>
+        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Configuración
+        </a>
+    </nav>
+</aside>
+
+<!-- Main -->
+<div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+
+    <!-- Top bar -->
+    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
+        <h1 class="text-base font-bold text-[#1e1e1e]">Cuentas corrientes</h1>
+
+        <!-- Selector de proveedor -->
+        <form method="GET" class="flex items-center gap-2">
+            <select name="proveedor" onchange="this.form.submit()"
+                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand min-w-[250px]">
+                <option value="">— Seleccionar proveedor —</option>
+                {% for p in proveedores %}
+                <option value="{{ p.id }}" {% if p.id == provider_id %}selected{% endif %}>{{ p.razon_social }}</option>
+                {% endfor %}
+            </select>
+        </form>
+
+        {% if provider %}
+        <span class="text-xs text-[#6f6f6f]">{% if provider.cuit %}CUIT {{ provider.cuit }}{% endif %}</span>
+        {% endif %}
+
+        <div class="ml-auto">
+            <a href="{{ url_for('index') }}" title="Inicio"
+               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
                 </svg>
             </a>
         </div>
     </div>
-</header>
 
-<main class="max-w-5xl mx-auto px-6 py-6 space-y-5">
+    <div class="flex-1 overflow-auto px-4 py-4 space-y-4">
 
-    {% with messages = get_flashed_messages() %}
-    {% if messages %}
-    <div class="bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">{{ messages[0] }}</div>
-    {% endif %}
-    {% endwith %}
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 text-sm">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
 
-    <!-- Saldo actual -->
-    <div class="bg-surface border border-surface-border rounded-2xl p-5 flex items-center justify-between">
-        <div>
-            <p class="text-[10px] text-[#999] uppercase tracking-wide mb-1">Saldo actual</p>
-            <p class="text-2xl font-bold {% if saldo_total > 0 %}text-red-600{% elif saldo_total < 0 %}text-green-600{% else %}text-[#1e1e1e]{% endif %}">
-                ${{ '{:,.2f}'.format(saldo_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
-            </p>
-            <p class="text-xs text-[#999] mt-1">{% if saldo_total > 0 %}Deuda a favor del proveedor{% elif saldo_total < 0 %}Saldo a favor{% else %}Sin saldo{% endif %}</p>
-        </div>
-        <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
-                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-xl transition-colors text-sm">
-            + Nuevo movimiento
-        </button>
-    </div>
-
-    <!-- Formulario nuevo movimiento -->
-    <div id="form-nuevo" class="hidden bg-surface border border-surface-border rounded-2xl p-5">
-        <h3 class="text-sm font-bold text-[#1e1e1e] mb-3">Registrar pago / ajuste</h3>
-        <form method="POST" action="{{ url_for('cuenta_corriente_add', provider_id=provider.id) }}"
-              class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
-            <div>
-                <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Tipo</label>
-                <select name="tipo" required
-                        class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                    <option value="PAGO">Pago</option>
-                    <option value="AJUSTE_NEG">Ajuste negativo (N/C)</option>
-                    <option value="AJUSTE_POS">Ajuste positivo</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Monto</label>
-                <input type="number" name="monto" step="0.01" min="0.01" required
-                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
-            </div>
-            <div>
-                <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Fecha</label>
-                <input type="date" name="fecha" required
-                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-            </div>
-            <div>
-                <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Comprobante</label>
-                <input type="text" name="comprobante" placeholder="Nro. recibo"
-                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-            </div>
-            <div class="flex gap-2">
-                <button type="submit"
-                        class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-xl transition-colors text-sm whitespace-nowrap">
-                    Guardar
-                </button>
-                <button type="button" onclick="document.getElementById('form-nuevo').classList.add('hidden')"
-                        class="text-[#999] hover:text-[#1e1e1e] px-3 py-2 text-sm">
-                    Cancelar
-                </button>
-            </div>
-            <div class="col-span-2 md:col-span-5">
-                <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Observaciones</label>
-                <input type="text" name="observaciones" placeholder="Opcional"
-                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-            </div>
-        </form>
-    </div>
-
-    <!-- Tabla de movimientos -->
-    <div class="bg-surface border border-surface-border rounded-2xl overflow-hidden">
-        {% if movimientos %}
-        <div class="overflow-x-auto">
-            <table class="w-full text-xs border-collapse">
-                <thead>
-                    <tr class="bg-surface-input text-[#999] uppercase tracking-wide text-[10px]">
-                        <th class="text-left py-2.5 px-4">Fecha</th>
-                        <th class="text-left py-2.5 px-2">Tipo</th>
-                        <th class="text-left py-2.5 px-2">Comprobante</th>
-                        <th class="text-right py-2.5 px-2">Debe</th>
-                        <th class="text-right py-2.5 px-2">Haber</th>
-                        <th class="text-right py-2.5 px-4">Saldo</th>
-                        <th class="text-left py-2.5 px-2">Obs.</th>
-                        <th class="py-2.5 px-2"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for m in movimientos %}
-                <tr class="border-t border-[#f0f0f0] hover:bg-black/[0.02]">
-                    <td class="py-2 px-4 text-[#1e1e1e]">{{ m.fecha.strftime('%d/%m/%Y') if m.fecha else '' }}</td>
-                    <td class="py-2 px-2">
-                        {% if m.tipo == 'FAC' %}
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">FAC</span>
-                        {% elif m.tipo == 'NCR' %}
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">NCR</span>
-                        {% elif m.tipo == 'PAGO' %}
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">PAGO</span>
-                        {% elif m.tipo == 'AJUSTE_POS' %}
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">AJ+</span>
-                        {% elif m.tipo == 'AJUSTE_NEG' %}
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">AJ−</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-2 px-2 text-[#6f6f6f] font-mono">{{ m.comprobante }}</td>
-                    <td class="py-2 px-2 text-right font-mono {% if m.debe %}text-red-600{% else %}text-[#ccc]{% endif %}">
-                        {% if m.debe %}${{ '{:,.2f}'.format(m.debe).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
-                    </td>
-                    <td class="py-2 px-2 text-right font-mono {% if m.haber %}text-green-600{% else %}text-[#ccc]{% endif %}">
-                        {% if m.haber %}${{ '{:,.2f}'.format(m.haber).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
-                    </td>
-                    <td class="py-2 px-4 text-right font-mono font-bold {% if m.saldo > 0 %}text-red-600{% elif m.saldo < 0 %}text-green-600{% else %}text-[#1e1e1e]{% endif %}">
-                        ${{ '{:,.2f}'.format(m.saldo).replace(',', 'X').replace('.', ',').replace('X', '.') }}
-                    </td>
-                    <td class="py-2 px-2 text-[#999] max-w-[200px] truncate">{{ m.obs }}</td>
-                    <td class="py-2 px-2">
-                        {% if m.origen == 'manual' %}
-                        <form method="POST" action="{{ url_for('cuenta_corriente_delete', provider_id=provider.id, mov_id=m.id) }}"
-                              onsubmit="return confirm('¿Eliminar este movimiento?')">
-                            <button type="submit" class="text-[#ccc] hover:text-red-500 transition-colors" title="Eliminar">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                </svg>
-                            </button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-                </tbody>
-                <tfoot>
-                    <tr class="border-t-2 border-[#d0d0d0] bg-surface-input">
-                        <td colspan="3" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
-                        <td class="py-2.5 px-2 text-right font-mono font-bold text-red-600">
-                            ${{ '{:,.2f}'.format(movimientos | map(attribute='debe') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
-                        </td>
-                        <td class="py-2.5 px-2 text-right font-mono font-bold text-green-600">
-                            ${{ '{:,.2f}'.format(movimientos | map(attribute='haber') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
-                        </td>
-                        <td class="py-2.5 px-4 text-right font-mono font-bold text-lg {% if saldo_total > 0 %}text-red-600{% elif saldo_total < 0 %}text-green-600{% else %}text-[#1e1e1e]{% endif %}">
-                            ${{ '{:,.2f}'.format(saldo_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
-                        </td>
-                        <td colspan="2"></td>
-                    </tr>
-                </tfoot>
-            </table>
+        {% if not provider %}
+        <!-- Estado vacío -->
+        <div class="text-center py-16 text-[#999]">
+            <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                    d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <p class="text-sm">Seleccioná un proveedor para ver su cuenta corriente.</p>
         </div>
         {% else %}
-        <div class="text-center py-12 text-[#999]">
-            <p class="text-sm">No hay movimientos registrados.</p>
-            <p class="text-xs mt-1">Las facturas cargadas aparecerán automáticamente aquí.</p>
+
+        <!-- Saldo actual + botón nuevo -->
+        <div class="bg-surface border border-surface-border rounded-2xl p-5 flex items-center justify-between">
+            <div>
+                <p class="text-[10px] text-[#999] uppercase tracking-wide mb-1">Saldo actual — {{ provider.razon_social }}</p>
+                <p class="text-2xl font-bold {% if saldo_total > 0 %}text-red-600{% elif saldo_total < 0 %}text-green-600{% else %}text-[#1e1e1e]{% endif %}">
+                    ${{ '{:,.2f}'.format(saldo_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                </p>
+                <p class="text-xs text-[#999] mt-1">{% if saldo_total > 0 %}Deuda a favor del proveedor{% elif saldo_total < 0 %}Saldo a favor{% else %}Sin saldo{% endif %}</p>
+            </div>
+            <button onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-xl transition-colors text-sm">
+                + Nuevo movimiento
+            </button>
         </div>
+
+        <!-- Formulario nuevo movimiento -->
+        <div id="form-nuevo" class="hidden bg-surface border border-surface-border rounded-2xl p-5">
+            <h3 class="text-sm font-bold text-[#1e1e1e] mb-3">Registrar pago / ajuste</h3>
+            <form method="POST" action="{{ url_for('cuenta_corriente_add', provider_id=provider.id) }}"
+                  class="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
+                <div>
+                    <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Tipo</label>
+                    <select name="tipo" required
+                            class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                        <option value="PAGO">Pago</option>
+                        <option value="AJUSTE_NEG">Ajuste negativo (N/C)</option>
+                        <option value="AJUSTE_POS">Ajuste positivo</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Monto</label>
+                    <input type="number" name="monto" step="0.01" min="0.01" required
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                </div>
+                <div>
+                    <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Fecha</label>
+                    <input type="date" name="fecha" required
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                </div>
+                <div>
+                    <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Comprobante</label>
+                    <input type="text" name="comprobante" placeholder="Nro. recibo"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit"
+                            class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-xl transition-colors text-sm whitespace-nowrap">
+                        Guardar
+                    </button>
+                    <button type="button" onclick="document.getElementById('form-nuevo').classList.add('hidden')"
+                            class="text-[#999] hover:text-[#1e1e1e] px-3 py-2 text-sm">Cancelar</button>
+                </div>
+                <div class="col-span-2 md:col-span-5">
+                    <label class="block text-[10px] text-[#999] uppercase tracking-wide mb-1">Observaciones</label>
+                    <input type="text" name="observaciones" placeholder="Opcional"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                </div>
+            </form>
+        </div>
+
+        <!-- Tabla de movimientos -->
+        <div class="bg-surface border border-surface-border rounded-2xl overflow-hidden">
+            {% if movimientos %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs border-collapse">
+                    <thead>
+                        <tr class="bg-surface-input text-[#999] uppercase tracking-wide text-[10px]">
+                            <th class="text-left py-2.5 px-4">Fecha</th>
+                            <th class="text-left py-2.5 px-2">Tipo</th>
+                            <th class="text-left py-2.5 px-2">Comprobante</th>
+                            <th class="text-right py-2.5 px-2">Debe</th>
+                            <th class="text-right py-2.5 px-2">Haber</th>
+                            <th class="text-right py-2.5 px-4">Saldo</th>
+                            <th class="text-left py-2.5 px-2">Obs.</th>
+                            <th class="py-2.5 px-2"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for m in movimientos %}
+                    <tr class="border-t border-[#f0f0f0] hover:bg-black/[0.02]">
+                        <td class="py-2 px-4 text-[#1e1e1e]">{{ m.fecha.strftime('%d/%m/%Y') if m.fecha else '' }}</td>
+                        <td class="py-2 px-2">
+                            {% if m.tipo == 'FAC' %}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">FAC</span>
+                            {% elif m.tipo == 'NCR' %}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600">NCR</span>
+                            {% elif m.tipo == 'PAGO' %}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">PAGO</span>
+                            {% elif m.tipo == 'AJUSTE_POS' %}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">AJ+</span>
+                            {% elif m.tipo == 'AJUSTE_NEG' %}
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-700">AJ−</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-2 text-[#6f6f6f] font-mono">{{ m.comprobante }}</td>
+                        <td class="py-2 px-2 text-right font-mono {% if m.debe %}text-red-600{% else %}text-[#ccc]{% endif %}">
+                            {% if m.debe %}${{ '{:,.2f}'.format(m.debe).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
+                        </td>
+                        <td class="py-2 px-2 text-right font-mono {% if m.haber %}text-green-600{% else %}text-[#ccc]{% endif %}">
+                            {% if m.haber %}${{ '{:,.2f}'.format(m.haber).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
+                        </td>
+                        <td class="py-2 px-4 text-right font-mono font-bold {% if m.saldo > 0 %}text-red-600{% elif m.saldo < 0 %}text-green-600{% else %}text-[#1e1e1e]{% endif %}">
+                            ${{ '{:,.2f}'.format(m.saldo).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                        </td>
+                        <td class="py-2 px-2 text-[#999] max-w-[200px] truncate">{{ m.obs }}</td>
+                        <td class="py-2 px-2">
+                            {% if m.origen == 'manual' %}
+                            <form method="POST" action="{{ url_for('cuenta_corriente_delete', provider_id=provider.id, mov_id=m.id) }}"
+                                  onsubmit="return confirm('¿Eliminar este movimiento?')">
+                                <button type="submit" class="text-[#ccc] hover:text-red-500 transition-colors" title="Eliminar">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t-2 border-[#d0d0d0] bg-surface-input">
+                            <td colspan="3" class="py-2.5 px-4 text-[10px] text-[#999] uppercase tracking-wide font-bold">Saldo final</td>
+                            <td class="py-2.5 px-2 text-right font-mono font-bold text-red-600">
+                                ${{ '{:,.2f}'.format(movimientos | map(attribute='debe') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                            </td>
+                            <td class="py-2.5 px-2 text-right font-mono font-bold text-green-600">
+                                ${{ '{:,.2f}'.format(movimientos | map(attribute='haber') | sum).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                            </td>
+                            <td class="py-2.5 px-4 text-right font-mono font-bold text-lg {% if saldo_total > 0 %}text-red-600{% elif saldo_total < 0 %}text-green-600{% else %}text-[#1e1e1e]{% endif %}">
+                                ${{ '{:,.2f}'.format(saldo_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}
+                            </td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-12 text-[#999]">
+                <p class="text-sm">No hay movimientos registrados para este proveedor.</p>
+                <p class="text-xs mt-1">Las facturas cargadas aparecerán automáticamente.</p>
+            </div>
+            {% endif %}
+        </div>
+
         {% endif %}
     </div>
-
-</main>
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {

@@ -1613,19 +1613,6 @@ def providers_list():
             q = q.filter(database.Invoice.proveedor_razon == p.razon_social)
         invoice_count = q.count()
         claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
-
-        # Saldo cuenta corriente
-        from sqlalchemy import func as _f
-        fac_total = q.filter(database.Invoice.tipo_comprobante == 'FAC')\
-            .with_entities(_f.coalesce(_f.sum(_f.abs(database.Invoice.total)), 0)).scalar() or 0
-        ncr_total = q.filter(database.Invoice.tipo_comprobante == 'NCR')\
-            .with_entities(_f.coalesce(_f.sum(_f.abs(database.Invoice.total)), 0)).scalar() or 0
-        pa_debe = session.query(_f.coalesce(_f.sum(database.PagoAjusteCC.monto), 0))\
-            .filter_by(proveedor_id=p.id).filter(database.PagoAjusteCC.tipo == 'AJUSTE_POS').scalar() or 0
-        pa_haber = session.query(_f.coalesce(_f.sum(database.PagoAjusteCC.monto), 0))\
-            .filter_by(proveedor_id=p.id).filter(database.PagoAjusteCC.tipo.in_(['PAGO', 'AJUSTE_NEG'])).scalar() or 0
-        saldo_cc = float(fac_total) + float(pa_debe) - float(ncr_total) - float(pa_haber)
-
         provider_data.append({
             'id': p.id,
             'razon_social': p.razon_social,
@@ -1637,7 +1624,6 @@ def providers_list():
             'tipo': p.tipo or 'drogueria',
             'invoice_count': invoice_count,
             'claim_count': claim_count,
-            'saldo_cc': saldo_cc,
         })
     session.close()
     return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
@@ -2026,70 +2012,76 @@ def delete_all_mappings(provider_id):
 
 # ─── CUENTA CORRIENTE ─────────────────────────────────────────────────────────
 
-@app.route('/provider/<int:provider_id>/cuenta-corriente')
-def cuenta_corriente(provider_id):
-    from sqlalchemy import func as _func
+@app.route('/cuentas-corrientes')
+def cuentas_corrientes():
     session = database.SessionLocal()
     try:
-        provider = session.get(database.Provider, provider_id)
-        if not provider:
-            flash('Proveedor no encontrado.')
-            return redirect(url_for('providers_list'))
+        proveedores = session.query(database.Provider).order_by(database.Provider.razon_social).all()
+        prov_list = [{'id': p.id, 'razon_social': p.razon_social} for p in proveedores]
 
-        q_inv = session.query(database.Invoice)
-        if provider.cuit:
-            q_inv = q_inv.filter(
-                (database.Invoice.proveedor_cuit == provider.cuit) |
-                (database.Invoice.proveedor_razon == provider.razon_social)
-            )
-        else:
-            q_inv = q_inv.filter(database.Invoice.proveedor_razon == provider.razon_social)
-        invoices = q_inv.order_by(database.Invoice.fecha).all()
-
-        pagos_ajustes = (session.query(database.PagoAjusteCC)
-                         .filter_by(proveedor_id=provider_id)
-                         .order_by(database.PagoAjusteCC.fecha).all())
-
+        provider_id = request.args.get('proveedor', type=int)
+        provider = None
         movimientos = []
-        for inv in invoices:
-            signo = 1 if inv.tipo_comprobante == 'FAC' else -1
-            movimientos.append({
-                'fecha': inv.fecha,
-                'tipo': inv.tipo_comprobante,
-                'comprobante': inv.numero_factura or '',
-                'debe': float(abs(inv.total or 0)) if signo == 1 else 0,
-                'haber': float(abs(inv.total or 0)) if signo == -1 else 0,
-                'obs': '',
-                'origen': 'factura',
-                'id': inv.id,
-            })
-        for pa in pagos_ajustes:
-            es_debe = pa.tipo == 'AJUSTE_POS'
-            movimientos.append({
-                'fecha': pa.fecha,
-                'tipo': pa.tipo,
-                'comprobante': pa.numero_comprobante or '',
-                'debe': float(pa.monto) if es_debe else 0,
-                'haber': float(pa.monto) if not es_debe else 0,
-                'obs': pa.observaciones or '',
-                'origen': 'manual',
-                'id': pa.id,
-            })
+        saldo_total = 0
 
-        movimientos.sort(key=lambda m: (m['fecha'], m['tipo']))
+        if provider_id:
+            provider = session.get(database.Provider, provider_id)
 
-        saldo = 0
-        for m in movimientos:
-            saldo += m['debe'] - m['haber']
-            m['saldo'] = saldo
+        if provider:
+            q_inv = session.query(database.Invoice)
+            if provider.cuit:
+                q_inv = q_inv.filter(
+                    (database.Invoice.proveedor_cuit == provider.cuit) |
+                    (database.Invoice.proveedor_razon == provider.razon_social)
+                )
+            else:
+                q_inv = q_inv.filter(database.Invoice.proveedor_razon == provider.razon_social)
+            invoices = q_inv.order_by(database.Invoice.fecha).all()
+
+            pagos_ajustes = (session.query(database.PagoAjusteCC)
+                             .filter_by(proveedor_id=provider_id)
+                             .order_by(database.PagoAjusteCC.fecha).all())
+
+            for inv in invoices:
+                signo = 1 if inv.tipo_comprobante == 'FAC' else -1
+                movimientos.append({
+                    'fecha': inv.fecha,
+                    'tipo': inv.tipo_comprobante,
+                    'comprobante': inv.numero_factura or '',
+                    'debe': float(abs(inv.total or 0)) if signo == 1 else 0,
+                    'haber': float(abs(inv.total or 0)) if signo == -1 else 0,
+                    'obs': '',
+                    'origen': 'factura',
+                    'id': inv.id,
+                })
+            for pa in pagos_ajustes:
+                es_debe = pa.tipo == 'AJUSTE_POS'
+                movimientos.append({
+                    'fecha': pa.fecha,
+                    'tipo': pa.tipo,
+                    'comprobante': pa.numero_comprobante or '',
+                    'debe': float(pa.monto) if es_debe else 0,
+                    'haber': float(pa.monto) if not es_debe else 0,
+                    'obs': pa.observaciones or '',
+                    'origen': 'manual',
+                    'id': pa.id,
+                })
+
+            movimientos.sort(key=lambda m: (m['fecha'], m['tipo']))
+            saldo = 0
+            for m in movimientos:
+                saldo += m['debe'] - m['haber']
+                m['saldo'] = saldo
+            saldo_total = saldo
 
         prov = {'id': provider.id, 'razon_social': provider.razon_social,
-                'cuit': provider.cuit or ''}
+                'cuit': provider.cuit or ''} if provider else None
     finally:
         session.close()
 
     return render_template('cuenta_corriente.html', provider=prov,
-                           movimientos=movimientos, saldo_total=saldo)
+                           proveedores=prov_list, provider_id=provider_id or 0,
+                           movimientos=movimientos, saldo_total=saldo_total)
 
 
 @app.route('/provider/<int:provider_id>/cuenta-corriente/add', methods=['POST'])
