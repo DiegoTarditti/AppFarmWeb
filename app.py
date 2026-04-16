@@ -1613,6 +1613,19 @@ def providers_list():
             q = q.filter(database.Invoice.proveedor_razon == p.razon_social)
         invoice_count = q.count()
         claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
+
+        # Saldo cuenta corriente
+        from sqlalchemy import func as _f
+        fac_total = q.filter(database.Invoice.tipo_comprobante == 'FAC')\
+            .with_entities(_f.coalesce(_f.sum(_f.abs(database.Invoice.total)), 0)).scalar() or 0
+        ncr_total = q.filter(database.Invoice.tipo_comprobante == 'NCR')\
+            .with_entities(_f.coalesce(_f.sum(_f.abs(database.Invoice.total)), 0)).scalar() or 0
+        pa_debe = session.query(_f.coalesce(_f.sum(database.PagoAjusteCC.monto), 0))\
+            .filter_by(proveedor_id=p.id).filter(database.PagoAjusteCC.tipo == 'AJUSTE_POS').scalar() or 0
+        pa_haber = session.query(_f.coalesce(_f.sum(database.PagoAjusteCC.monto), 0))\
+            .filter_by(proveedor_id=p.id).filter(database.PagoAjusteCC.tipo.in_(['PAGO', 'AJUSTE_NEG'])).scalar() or 0
+        saldo_cc = float(fac_total) + float(pa_debe) - float(ncr_total) - float(pa_haber)
+
         provider_data.append({
             'id': p.id,
             'razon_social': p.razon_social,
@@ -1624,6 +1637,7 @@ def providers_list():
             'tipo': p.tipo or 'drogueria',
             'invoice_count': invoice_count,
             'claim_count': claim_count,
+            'saldo_cc': saldo_cc,
         })
     session.close()
     return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
@@ -2008,6 +2022,125 @@ def delete_all_mappings(provider_id):
     session.close()
     flash('Todas las equivalencias fueron eliminadas.')
     return redirect(url_for('provider_mappings', provider_id=provider_id))
+
+
+# ─── CUENTA CORRIENTE ─────────────────────────────────────────────────────────
+
+@app.route('/provider/<int:provider_id>/cuenta-corriente')
+def cuenta_corriente(provider_id):
+    from sqlalchemy import func as _func
+    session = database.SessionLocal()
+    try:
+        provider = session.get(database.Provider, provider_id)
+        if not provider:
+            flash('Proveedor no encontrado.')
+            return redirect(url_for('providers_list'))
+
+        q_inv = session.query(database.Invoice)
+        if provider.cuit:
+            q_inv = q_inv.filter(
+                (database.Invoice.proveedor_cuit == provider.cuit) |
+                (database.Invoice.proveedor_razon == provider.razon_social)
+            )
+        else:
+            q_inv = q_inv.filter(database.Invoice.proveedor_razon == provider.razon_social)
+        invoices = q_inv.order_by(database.Invoice.fecha).all()
+
+        pagos_ajustes = (session.query(database.PagoAjusteCC)
+                         .filter_by(proveedor_id=provider_id)
+                         .order_by(database.PagoAjusteCC.fecha).all())
+
+        movimientos = []
+        for inv in invoices:
+            signo = 1 if inv.tipo_comprobante == 'FAC' else -1
+            movimientos.append({
+                'fecha': inv.fecha,
+                'tipo': inv.tipo_comprobante,
+                'comprobante': inv.numero_factura or '',
+                'debe': float(abs(inv.total or 0)) if signo == 1 else 0,
+                'haber': float(abs(inv.total or 0)) if signo == -1 else 0,
+                'obs': '',
+                'origen': 'factura',
+                'id': inv.id,
+            })
+        for pa in pagos_ajustes:
+            es_debe = pa.tipo == 'AJUSTE_POS'
+            movimientos.append({
+                'fecha': pa.fecha,
+                'tipo': pa.tipo,
+                'comprobante': pa.numero_comprobante or '',
+                'debe': float(pa.monto) if es_debe else 0,
+                'haber': float(pa.monto) if not es_debe else 0,
+                'obs': pa.observaciones or '',
+                'origen': 'manual',
+                'id': pa.id,
+            })
+
+        movimientos.sort(key=lambda m: (m['fecha'], m['tipo']))
+
+        saldo = 0
+        for m in movimientos:
+            saldo += m['debe'] - m['haber']
+            m['saldo'] = saldo
+
+        prov = {'id': provider.id, 'razon_social': provider.razon_social,
+                'cuit': provider.cuit or ''}
+    finally:
+        session.close()
+
+    return render_template('cuenta_corriente.html', provider=prov,
+                           movimientos=movimientos, saldo_total=saldo)
+
+
+@app.route('/provider/<int:provider_id>/cuenta-corriente/add', methods=['POST'])
+def cuenta_corriente_add(provider_id):
+    from datetime import datetime as _dt
+    session = database.SessionLocal()
+    try:
+        tipo = request.form.get('tipo', '').strip()
+        if tipo not in ('PAGO', 'AJUSTE_POS', 'AJUSTE_NEG'):
+            flash('Tipo inválido.')
+            return redirect(url_for('cuenta_corriente', provider_id=provider_id))
+        monto = float(request.form.get('monto', 0))
+        if monto <= 0:
+            flash('El monto debe ser positivo.')
+            return redirect(url_for('cuenta_corriente', provider_id=provider_id))
+        fecha_str = request.form.get('fecha', '')
+        fecha = _dt.strptime(fecha_str, '%Y-%m-%d').date() if fecha_str else _dt.now().date()
+        pa = database.PagoAjusteCC(
+            proveedor_id=provider_id,
+            tipo=tipo,
+            fecha=fecha,
+            monto=monto,
+            numero_comprobante=request.form.get('comprobante', '').strip() or None,
+            observaciones=request.form.get('observaciones', '').strip() or None,
+        )
+        session.add(pa)
+        session.commit()
+        flash(f'{tipo.replace("_", " ").title()} registrado.')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('cuenta_corriente', provider_id=provider_id))
+
+
+@app.route('/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete', methods=['POST'])
+def cuenta_corriente_delete(provider_id, mov_id):
+    session = database.SessionLocal()
+    try:
+        pa = session.get(database.PagoAjusteCC, mov_id)
+        if pa and pa.proveedor_id == provider_id:
+            session.delete(pa)
+            session.commit()
+            flash('Movimiento eliminado.')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('cuenta_corriente', provider_id=provider_id))
 
 
 @app.route('/invoice/<int:invoice_id>/items')

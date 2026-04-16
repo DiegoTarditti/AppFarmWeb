@@ -264,6 +264,20 @@ class PedidoItem(Base):
     pedido = relationship('Pedido', back_populates='items')
 
 
+class PagoAjusteCC(Base):
+    """Pagos y ajustes de cuenta corriente de proveedores."""
+    __tablename__ = 'pagos_ajustes_cc'
+    id = Column(Integer, primary_key=True)
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=False)
+    tipo = Column(String(10), nullable=False)  # PAGO, AJUSTE_POS, AJUSTE_NEG
+    fecha = Column(Date, nullable=False)
+    monto = Column(DECIMAL(14, 2), nullable=False)
+    numero_comprobante = Column(String(30))
+    observaciones = Column(Text)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    proveedor = relationship('Provider')
+
+
 class ProductAnalytics(Base):
     """Snapshot del último análisis de ventas por producto."""
     __tablename__ = 'product_analytics'
@@ -423,6 +437,18 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS rotacion VARCHAR(1)"))
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS avg_monthly DECIMAL(10,2)"))
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_pack INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS pagos_ajustes_cc (
+            id SERIAL PRIMARY KEY,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+            tipo VARCHAR(10) NOT NULL,
+            fecha DATE NOT NULL,
+            monto DECIMAL(14,2) NOT NULL,
+            numero_comprobante VARCHAR(30),
+            observaciones TEXT,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analizado_en TIMESTAMP"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS modulo_packs (
