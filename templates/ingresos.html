@@ -180,9 +180,30 @@
         <form id="upload-section" class="hidden space-y-4"
               method="post" action="{{ url_for('upload_files') }}" enctype="multipart/form-data">
             <input type="hidden" name="proveedor_id" id="proveedor_id">
+            <input type="hidden" name="pdf_pendiente_filename" value="{{ pdf_pendiente }}">
+            <input type="hidden" name="doc_pendiente_id" value="{{ doc_pendiente_id }}">
+
+            {% if pdf_pendiente %}
+            <div class="flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
+                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+                PDF pendiente: <span class="font-mono font-semibold">{{ pdf_pendiente }}</span>
+            </div>
+            {% endif %}
 
             <div>
                 <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Factura PDF</label>
+                {% if pdf_pendiente %}
+                <div class="flex items-center gap-2 w-full bg-surface-input border border-brand/40 rounded-lg px-3 py-2.5 text-sm">
+                    <svg class="w-5 h-5 text-brand flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    <span class="font-mono text-xs text-[#1e1e1e]">{{ pdf_pendiente }}</span>
+                    <span class="text-[10px] text-brand font-medium ml-auto">Pre-cargado</span>
+                </div>
+                {% else %}
                 <div class="file-drop flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group"
                      onclick="pickPdf('pdf-input','lbl-pdf')">
                     <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -191,6 +212,7 @@
                     <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar PDF</span>
                     <input type="file" id="pdf-input" name="invoice_pdf" accept=".pdf" required class="hidden" onchange="setLabel(this,'lbl-pdf'); document.getElementById('btn-probar-existing').disabled = !this.files.length;">
                 </div>
+                {% endif %}
                 <p id="lbl-pdf" class="text-xs text-[#999] mt-1 ml-1"></p>
                 <button type="button" id="btn-probar-existing" disabled onclick="probarParserExistente()"
                         class="mt-2 w-full border border-surface-border text-xs text-[#d1d5db] hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed py-1.5 rounded-lg transition-colors">

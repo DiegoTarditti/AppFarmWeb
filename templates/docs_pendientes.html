@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Docs. Pendientes — Farmacia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
+                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #f3f3f3; color: #1e1e1e; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+    </style>
+</head>
+<body class="min-h-screen flex font-sans">
+
+<!-- Sidebar -->
+<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0">
+    <div class="px-4 py-5 border-b border-[#111827]">
+        <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#9ca3af]">Farmacia</p>
+            </div>
+        </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-0.5">
+        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+            Inicio
+        </a>
+        <a href="{{ url_for('docs_pendientes') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+            </svg>
+            Docs. Pendientes
+        </a>
+        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+            </svg>
+            Control de Ingreso
+        </a>
+        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+            Configuración
+        </a>
+    </nav>
+</aside>
+
+<!-- Main -->
+<div class="flex-1 py-8 px-8 overflow-auto">
+    <div class="max-w-5xl mx-auto space-y-6">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-xl font-bold text-[#1e1e1e]">Documentos Pendientes</h1>
+                <p class="text-xs text-[#888] mt-1">PDFs detectados en la carpeta <span class="font-mono text-brand">{{ ruta_pendientes or 'no configurada' }}</span></p>
+            </div>
+            <form method="POST" action="{{ url_for('docs_pendientes_scan') }}">
+                <button type="submit"
+                        class="inline-flex items-center gap-2 bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-xl text-sm transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    Escanear carpeta
+                </button>
+            </form>
+        </div>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+            <div class="flex items-center gap-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl px-4 py-3 text-sm">
+                <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+                {{ messages[0] }}
+            </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Tabla -->
+        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+            {% set pendientes = docs | selectattr('estado', 'equalto', 'PENDIENTE') | list %}
+            {% set procesados = docs | selectattr('estado', 'equalto', 'PROCESADO') | list %}
+
+            {% if not docs %}
+            <div class="px-6 py-12 text-center">
+                <svg class="w-10 h-10 text-[#ccc] mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+                <p class="text-sm text-[#999]">No hay documentos registrados.</p>
+                <p class="text-xs text-[#bbb] mt-1">Presioná "Escanear carpeta" para buscar PDFs en pendientes.</p>
+            </div>
+            {% else %}
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="bg-surface-input text-[#999] uppercase tracking-wide text-[10px]">
+                        <th class="text-left py-2.5 px-4">Archivo</th>
+                        <th class="text-left py-2.5 px-2">Detectado</th>
+                        <th class="text-center py-2.5 px-2">Estado</th>
+                        <th class="text-left py-2.5 px-2">Proveedor</th>
+                        <th class="py-2.5 px-4 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                    {% for doc in docs %}
+                    <tr class="hover:bg-surface-input/50 transition-colors {{ 'opacity-50' if doc.estado == 'PROCESADO' else '' }}">
+                        <td class="py-2.5 px-4">
+                            <div class="font-mono text-xs truncate max-w-[280px]" title="{{ doc.filename }}">{{ doc.filename }}</div>
+                        </td>
+                        <td class="py-2.5 px-2 text-xs text-[#888]">
+                            {{ doc.fecha_detectado.strftime('%d/%m/%Y %H:%M') if doc.fecha_detectado else '' }}
+                        </td>
+                        <td class="py-2.5 px-2 text-center">
+                            {% if doc.estado == 'PENDIENTE' %}
+                            <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">PENDIENTE</span>
+                            {% else %}
+                            <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">PROCESADO</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2.5 px-2 text-xs text-[#888]">
+                            {{ doc.proveedor.razon_social if doc.proveedor else '—' }}
+                        </td>
+                        <td class="py-2.5 px-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                {% if doc.estado == 'PENDIENTE' %}
+                                <a href="{{ url_for('docs_pendientes_procesar', doc_id=doc.id) }}"
+                                   class="inline-flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium bg-brand text-brand-dark hover:bg-brand-hover transition-colors">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                    </svg>
+                                    Procesar
+                                </a>
+                                {% elif doc.factura_id %}
+                                <a href="{{ url_for('results', invoice_id=doc.factura_id) }}"
+                                   class="text-xs text-brand hover:underline">Ver resultado</a>
+                                {% endif %}
+                                <form method="POST" action="{{ url_for('docs_pendientes_delete', doc_id=doc.id) }}" class="inline"
+                                      onsubmit="return confirm('Eliminar registro?')">
+                                    <button type="submit" class="text-[#ccc] hover:text-red-500 transition-colors" title="Eliminar registro">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div class="px-4 py-3 border-t border-surface-border bg-surface-input/50 text-xs text-[#888] flex justify-between">
+                <span>{{ pendientes|length }} pendiente(s)</span>
+                <span>{{ procesados|length }} procesado(s)</span>
+            </div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+
+</body>
+</html>

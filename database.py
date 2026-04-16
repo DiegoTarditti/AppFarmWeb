@@ -279,6 +279,21 @@ class PagoAjusteCC(Base):
     proveedor = relationship('Provider')
 
 
+class DocumentoPendiente(Base):
+    """Documentos detectados en carpeta pendientes, listos para procesar."""
+    __tablename__ = 'documentos_pendientes'
+    id = Column(Integer, primary_key=True)
+    filename = Column(String(300), nullable=False)
+    ruta_completa = Column(String(500), nullable=False)
+    fecha_detectado = Column(DateTime, default=datetime.utcnow)
+    estado = Column(String(20), nullable=False, default='PENDIENTE')  # PENDIENTE / PROCESADO
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=True)
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    proveedor = relationship('Provider')
+    factura = relationship('Invoice')
+
+
 class ProductAnalytics(Base):
     """Snapshot del último análisis de ventas por producto."""
     __tablename__ = 'product_analytics'
@@ -498,6 +513,18 @@ def _pg_add_columns(conn):
             actualizado_en TIMESTAMP DEFAULT NOW()
         )
     """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS documentos_pendientes (
+            id SERIAL PRIMARY KEY,
+            filename VARCHAR(300) NOT NULL,
+            ruta_completa VARCHAR(500) NOT NULL,
+            fecha_detectado TIMESTAMP DEFAULT NOW(),
+            estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+            proveedor_id INTEGER REFERENCES proveedores(id),
+            factura_id INTEGER REFERENCES facturas(id),
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
 
 
 def _sqlite_add_columns(conn):
@@ -647,5 +674,17 @@ def _sqlite_add_columns(conn):
             sin_mov_60d INTEGER NOT NULL DEFAULT 0,
             precio_pvp DECIMAL(14,2),
             actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS documentos_pendientes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename VARCHAR(300) NOT NULL,
+            ruta_completa VARCHAR(500) NOT NULL,
+            fecha_detectado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            estado VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+            proveedor_id INTEGER REFERENCES proveedores(id),
+            factura_id INTEGER REFERENCES facturas(id),
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """))

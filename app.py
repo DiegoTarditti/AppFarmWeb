@@ -212,7 +212,10 @@ def index():
 
 @app.route('/ingresos')
 def ingresos():
-    return render_template('ingresos.html', providers=get_providers(), config=get_config())
+    pdf_pendiente = request.args.get('pdf_pendiente', '')
+    doc_pendiente_id = request.args.get('doc_pendiente_id', '', type=int)
+    return render_template('ingresos.html', providers=get_providers(), config=get_config(),
+                           pdf_pendiente=pdf_pendiente, doc_pendiente_id=doc_pendiente_id or '')
 
 
 @app.route('/settings')
@@ -545,9 +548,19 @@ def process_upload():
         if not proveedor_id:
             return {'error': 'Seleccioná un proveedor antes de cargar los archivos.'}, 400
 
-        invoice_file = request.files.get('invoice_pdf')
-        if not invoice_file or not allowed_file(invoice_file.filename):
-            return {'error': 'Por favor cargue un archivo de factura PDF válido.'}, 400
+        # PDF desde docs pendientes o desde file upload
+        pdf_pendiente = request.form.get('pdf_pendiente_filename', '').strip()
+        if pdf_pendiente:
+            invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(pdf_pendiente))
+            if not os.path.exists(invoice_path):
+                return {'error': 'El PDF pendiente ya no está disponible.'}, 400
+        else:
+            invoice_file = request.files.get('invoice_pdf')
+            if not invoice_file or not allowed_file(invoice_file.filename):
+                return {'error': 'Por favor cargue un archivo de factura PDF válido.'}, 400
+            invoice_filename = secure_filename(invoice_file.filename)
+            invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice_filename)
+            invoice_file.save(invoice_path)
 
         session = database.SessionLocal()
         provider = session.get(database.Provider, int(proveedor_id))
@@ -559,9 +572,6 @@ def process_upload():
             return {'error': f'El proveedor "{provider.razon_social}" no tiene parser configurado.'}, 400
 
         parser_file = provider.parser_file
-        invoice_filename = secure_filename(invoice_file.filename)
-        invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice_filename)
-        invoice_file.save(invoice_path)
 
     # --- Guardar ERP ---
     erp_filename = secure_filename(erp_file.filename)
@@ -658,6 +668,41 @@ def upload_files():
     if status != 200:
         flash(result['error'])
         return redirect(url_for('index'))
+
+    # Archivar doc pendiente si corresponde
+    doc_pendiente_id = request.form.get('doc_pendiente_id', type=int)
+    if doc_pendiente_id:
+        session = database.SessionLocal()
+        try:
+            doc = session.get(database.DocumentoPendiente, doc_pendiente_id)
+            if doc:
+                doc.estado = 'PROCESADO'
+                doc.factura_id = result['invoice'].id
+                # Buscar proveedor por CUIT
+                inv = result['invoice']
+                if inv.proveedor_cuit:
+                    prov = session.query(database.Provider).filter_by(cuit=inv.proveedor_cuit).first()
+                    if prov:
+                        doc.proveedor_id = prov.id
+                        # Mover a carpeta del proveedor
+                        cfg = get_config()
+                        ruta_base = cfg.get('ruta_facturas', '')
+                        if ruta_base and os.path.isfile(doc.ruta_completa):
+                            import shutil
+                            prov_dir = os.path.join(ruta_base, secure_filename(prov.razon_social))
+                            os.makedirs(prov_dir, exist_ok=True)
+                            dst = os.path.join(prov_dir, doc.filename)
+                            try:
+                                shutil.move(doc.ruta_completa, dst)
+                                doc.ruta_completa = dst
+                            except OSError:
+                                pass
+                session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+
     return redirect(url_for('compare_view', invoice_id=result['invoice'].id))
 
 
@@ -4894,6 +4939,174 @@ def dashboard():
 @app.route('/dashboard/help')
 def dashboard_help():
     return render_template('dashboard_help.html')
+
+
+# ── Documentos Pendientes ──────────────────────────────────────
+
+@app.route('/docs-pendientes')
+def docs_pendientes():
+    session = database.SessionLocal()
+    try:
+        docs = (session.query(database.DocumentoPendiente)
+                .order_by(database.DocumentoPendiente.fecha_detectado.desc())
+                .all())
+        cfg = get_config()
+        ruta_pendientes = ''
+        if cfg.get('ruta_facturas'):
+            ruta_pendientes = os.path.join(cfg['ruta_facturas'], 'pendientes')
+    finally:
+        session.close()
+    return render_template('docs_pendientes.html', docs=docs, ruta_pendientes=ruta_pendientes)
+
+
+@app.route('/docs-pendientes/scan', methods=['POST'])
+def docs_pendientes_scan():
+    cfg = get_config()
+    ruta_base = cfg.get('ruta_facturas', '')
+    if not ruta_base:
+        flash('No hay ruta de facturas configurada. Configurar en Ajustes.')
+        return redirect(url_for('docs_pendientes'))
+
+    ruta_pendientes = os.path.join(ruta_base, 'pendientes')
+    if not os.path.isdir(ruta_pendientes):
+        try:
+            os.makedirs(ruta_pendientes, exist_ok=True)
+            flash(f'Se creó la carpeta: {ruta_pendientes}')
+        except OSError as e:
+            flash(f'No se pudo crear la carpeta pendientes: {e}')
+            return redirect(url_for('docs_pendientes'))
+
+    session = database.SessionLocal()
+    try:
+        # Obtener archivos ya registrados
+        existentes = {d.filename for d in session.query(database.DocumentoPendiente)
+                      .filter(database.DocumentoPendiente.estado == 'PENDIENTE').all()}
+
+        nuevos = 0
+        for fname in os.listdir(ruta_pendientes):
+            if not fname.lower().endswith('.pdf'):
+                continue
+            if fname in existentes:
+                continue
+            ruta_completa = os.path.join(ruta_pendientes, fname)
+            if not os.path.isfile(ruta_completa):
+                continue
+            doc = database.DocumentoPendiente(
+                filename=fname,
+                ruta_completa=ruta_completa,
+            )
+            session.add(doc)
+            nuevos += 1
+
+        session.commit()
+        if nuevos:
+            flash(f'Se detectaron {nuevos} documento(s) nuevo(s).')
+        else:
+            flash('No se encontraron documentos nuevos en pendientes.')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error al escanear: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('docs_pendientes'))
+
+
+@app.route('/docs-pendientes/<int:doc_id>/procesar')
+def docs_pendientes_procesar(doc_id):
+    """Redirige a la pantalla de ingreso con el PDF pre-seleccionado."""
+    session = database.SessionLocal()
+    try:
+        doc = session.get(database.DocumentoPendiente, doc_id)
+        if not doc or doc.estado != 'PENDIENTE':
+            flash('Documento no encontrado o ya procesado.')
+            return redirect(url_for('docs_pendientes'))
+        # Copiar el PDF a uploads/ para que el flujo normal lo encuentre
+        src = doc.ruta_completa
+        if not os.path.isfile(src):
+            flash(f'Archivo no encontrado: {src}')
+            return redirect(url_for('docs_pendientes'))
+        dst = os.path.join(app.config['UPLOAD_FOLDER'], doc.filename)
+        import shutil
+        shutil.copy2(src, dst)
+    finally:
+        session.close()
+    return redirect(url_for('ingresos', pdf_pendiente=doc.filename, doc_pendiente_id=doc_id))
+
+
+@app.route('/docs-pendientes/<int:doc_id>/archivar', methods=['POST'])
+def docs_pendientes_archivar(doc_id):
+    """Marca como procesado y mueve el PDF a la carpeta del proveedor."""
+    session = database.SessionLocal()
+    try:
+        doc = session.get(database.DocumentoPendiente, doc_id)
+        if not doc:
+            flash('Documento no encontrado.')
+            return redirect(url_for('docs_pendientes'))
+
+        factura_id = request.form.get('factura_id', type=int)
+        carpeta_destino = request.form.get('carpeta_destino', '').strip()
+
+        if factura_id:
+            doc.factura_id = factura_id
+            inv = session.get(database.Invoice, factura_id)
+            if inv and inv.proveedor_cuit:
+                prov = session.query(database.Provider).filter_by(cuit=inv.proveedor_cuit).first()
+                if prov:
+                    doc.proveedor_id = prov.id
+
+        doc.estado = 'PROCESADO'
+
+        # Mover archivo si hay carpeta destino
+        if carpeta_destino and os.path.isfile(doc.ruta_completa):
+            os.makedirs(carpeta_destino, exist_ok=True)
+            dst = os.path.join(carpeta_destino, doc.filename)
+            try:
+                import shutil
+                shutil.move(doc.ruta_completa, dst)
+                doc.ruta_completa = dst
+                flash(f'Archivo movido a {carpeta_destino}')
+            except OSError as e:
+                flash(f'No se pudo mover el archivo: {e}')
+        elif os.path.isfile(doc.ruta_completa):
+            # Si no se eligió carpeta, mover a "procesados" dentro de la ruta base
+            cfg = get_config()
+            ruta_base = cfg.get('ruta_facturas', '')
+            if ruta_base:
+                proc_dir = os.path.join(ruta_base, 'procesados')
+                os.makedirs(proc_dir, exist_ok=True)
+                dst = os.path.join(proc_dir, doc.filename)
+                try:
+                    import shutil
+                    shutil.move(doc.ruta_completa, dst)
+                    doc.ruta_completa = dst
+                except OSError:
+                    pass
+
+        session.commit()
+        flash('Documento archivado.')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('docs_pendientes'))
+
+
+@app.route('/docs-pendientes/<int:doc_id>/delete', methods=['POST'])
+def docs_pendientes_delete(doc_id):
+    session = database.SessionLocal()
+    try:
+        doc = session.get(database.DocumentoPendiente, doc_id)
+        if doc:
+            session.delete(doc)
+            session.commit()
+            flash('Registro eliminado.')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('docs_pendientes'))
 
 
 if __name__ == '__main__':
