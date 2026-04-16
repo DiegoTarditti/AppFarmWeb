@@ -2090,7 +2090,7 @@ def cuenta_corriente_add(provider_id):
     session = database.SessionLocal()
     try:
         tipo = request.form.get('tipo', '').strip()
-        if tipo not in ('PAGO', 'AJUSTE_POS', 'AJUSTE_NEG'):
+        if tipo not in ('PAGO', 'NCR', 'AJUSTE_POS', 'AJUSTE_NEG'):
             flash('Tipo inválido.')
             return redirect(url_for('cuenta_corriente', provider_id=provider_id))
         monto = float(request.form.get('monto', 0))
