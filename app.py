@@ -2115,6 +2115,7 @@ def cuentas_corrientes():
                     'obs': ' · '.join(obs_parts),
                     'ingresada': inv.id in ingresadas,
                     'reclamo_estado': reclamo_est,
+                    'conciliado': inv.conciliado,
                     'origen': 'factura',
                     'id': inv.id,
                 })
@@ -2130,6 +2131,7 @@ def cuentas_corrientes():
                     'obs': pa.observaciones or '',
                     'ingresada': None,
                     'reclamo_estado': None,
+                    'conciliado': pa.conciliado,
                     'origen': 'manual',
                     'id': pa.id,
                 })
@@ -2194,6 +2196,47 @@ def cuenta_corriente_delete(provider_id, mov_id):
             session.delete(pa)
             session.commit()
             flash('Movimiento eliminado.')
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('cuentas_corrientes', provider_id=provider_id))
+
+
+@app.route('/provider/<int:provider_id>/cuenta-corriente/conciliar', methods=['POST'])
+def cuenta_corriente_conciliar(provider_id):
+    """Toggle conciliado para un movimiento (factura o pago/ajuste)."""
+    origen = request.form.get('origen')
+    mov_id = request.form.get('mov_id', type=int)
+    session = database.SessionLocal()
+    try:
+        if origen == 'factura' and mov_id:
+            obj = session.get(database.Invoice, mov_id)
+        elif origen == 'manual' and mov_id:
+            obj = session.get(database.PagoAjusteCC, mov_id)
+        else:
+            obj = None
+        if obj:
+            obj.conciliado = not obj.conciliado
+            session.commit()
+    except Exception as e:
+        session.rollback()
+        flash(f'Error: {e}')
+    finally:
+        session.close()
+    return redirect(url_for('cuentas_corrientes', provider_id=provider_id))
+
+
+@app.route('/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs', methods=['POST'])
+def cuenta_corriente_edit_obs(provider_id, mov_id):
+    """Editar observaciones de un movimiento manual."""
+    session = database.SessionLocal()
+    try:
+        pa = session.get(database.PagoAjusteCC, mov_id)
+        if pa and pa.proveedor_id == provider_id:
+            pa.observaciones = request.form.get('observaciones', '').strip() or None
+            session.commit()
     except Exception as e:
         session.rollback()
         flash(f'Error: {e}')
