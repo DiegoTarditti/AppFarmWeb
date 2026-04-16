@@ -2137,7 +2137,7 @@ def cuenta_corriente_add(provider_id):
         flash(f'Error: {e}')
     finally:
         session.close()
-    return redirect(url_for('cuenta_corriente', provider_id=provider_id))
+    return redirect(url_for('cuentas_corrientes', provider_id=provider_id))
 
 
 @app.route('/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete', methods=['POST'])
@@ -2154,7 +2154,7 @@ def cuenta_corriente_delete(provider_id, mov_id):
         flash(f'Error: {e}')
     finally:
         session.close()
-    return redirect(url_for('cuenta_corriente', provider_id=provider_id))
+    return redirect(url_for('cuentas_corrientes', provider_id=provider_id))
 
 
 @app.route('/invoice/<int:invoice_id>/items')
