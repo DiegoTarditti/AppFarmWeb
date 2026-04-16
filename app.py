@@ -3126,6 +3126,164 @@ def order_delete(pedido_id):
     return redirect(url_for('orders_list'))
 
 
+@app.route('/order/<int:pedido_id>/export/<fmt>')
+def order_export_file(pedido_id, fmt):
+    """Exporta el pedido guardado a xlsx o pdf."""
+    session = database.SessionLocal()
+    try:
+        pedido = session.query(Pedido).get(pedido_id)
+        if not pedido:
+            return 'Pedido no encontrado', 404
+        items = [{
+            'codigo_barra': it.codigo_barra or '',
+            'nombre': it.nombre or '',
+            'cantidad': it.cantidad or 0,
+            'precio_pvp': float(it.precio_pvp or 0),
+            'subtotal': float(it.subtotal or 0),
+        } for it in pedido.items]
+        total_unidades = sum(it['cantidad'] for it in items)
+        total_importe = sum(it['subtotal'] for it in items)
+        lab = pedido.laboratorio or 'Pedido'
+        periodo = pedido.periodo or ''
+        n_days = pedido.n_days or 0
+        safe_lab = secure_filename(lab) or 'pedido'
+    finally:
+        session.close()
+
+    if fmt == 'xlsx':
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from io import BytesIO as _BIO
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Pedido'
+        ws.append([f'{lab} — {periodo}'])
+        ws['A1'].font = Font(bold=True, size=13)
+        ws.append([f'{n_days} días'])
+        ws.append([])
+
+        headers = ['Cód. Barras', 'Producto', 'P.PVP', 'Cantidad', 'Subtotal']
+        ws.append(headers)
+        hdr_row = ws.max_row
+        for c in range(1, len(headers) + 1):
+            cell = ws.cell(row=hdr_row, column=c)
+            cell.fill = PatternFill('solid', fgColor='1C1C1E')
+            cell.font = Font(bold=True, color='EAB308')
+        ws.column_dimensions['A'].width = 16
+        ws.column_dimensions['B'].width = 42
+        ws.column_dimensions['C'].width = 12
+        ws.column_dimensions['D'].width = 10
+        ws.column_dimensions['E'].width = 14
+
+        for it in items:
+            ws.append([it['codigo_barra'], it['nombre'],
+                       it['precio_pvp'], it['cantidad'], it['subtotal']])
+
+        ws.append([])
+        ws.append(['', 'Total', '', total_unidades, total_importe])
+        tot_row = ws.max_row
+        for c in (2, 4, 5):
+            ws.cell(row=tot_row, column=c).font = Font(bold=True)
+
+        buf = _BIO()
+        wb.save(buf); buf.seek(0)
+        resp = make_response(buf.read())
+        resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        resp.headers['Content-Disposition'] = f'attachment; filename="Pedido_{safe_lab}.xlsx"'
+        return resp
+
+    if fmt == 'pdf':
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib import colors
+        from reportlab.lib.units import cm
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.pdfgen import canvas as rl_canvas
+        from io import BytesIO as _BIO
+        from datetime import datetime as _dt
+
+        fecha_emision = _dt.now().strftime('%d/%m/%Y %H:%M')
+        page_w, page_h = A4
+
+        class _NumberedCanvas(rl_canvas.Canvas):
+            def __init__(self, *args, **kwargs):
+                rl_canvas.Canvas.__init__(self, *args, **kwargs)
+                self._pages = []
+            def showPage(self):
+                self._pages.append(dict(self.__dict__))
+                self._startPage()
+            def save(self):
+                total = len(self._pages)
+                for i, state in enumerate(self._pages, 1):
+                    self.__dict__.update(state)
+                    self.saveState()
+                    self.setFont('Helvetica', 7)
+                    self.setFillColor(colors.HexColor('#6B7280'))
+                    self.drawString(1.5*cm, 0.6*cm, f"Emitido: {fecha_emision}")
+                    self.drawRightString(page_w - 1.5*cm, 0.6*cm, f"Página {i} de {total}")
+                    self.restoreState()
+                    rl_canvas.Canvas.showPage(self)
+                rl_canvas.Canvas.save(self)
+
+        buf = _BIO()
+        doc = SimpleDocTemplate(buf, pagesize=A4,
+                                leftMargin=1.5*cm, rightMargin=1.5*cm,
+                                topMargin=1.5*cm, bottomMargin=1.5*cm)
+        styles = getSampleStyleSheet()
+        accent = colors.HexColor('#EAB308')
+        txt = colors.HexColor('#1A202C')
+        hdr_bg = colors.HexColor('#2D3748')
+        row_b = colors.HexColor('#F3F4F6')
+        title_s = ParagraphStyle('t', parent=styles['Normal'], fontSize=14, textColor=accent, spaceAfter=4)
+        sub_s = ParagraphStyle('s', parent=styles['Normal'], fontSize=9, textColor=txt, spaceAfter=2)
+        cell_s = ParagraphStyle('c', parent=styles['Normal'], fontSize=7, textColor=txt, leading=9)
+
+        story = [
+            Paragraph(f"Pedido — {lab}", title_s),
+            Paragraph(f"{periodo} · {n_days} días", sub_s),
+            Paragraph(f"{len(items)} productos · {total_unidades} unidades · ${total_importe:,.0f}".replace(',', '.'), sub_s),
+            Spacer(1, 0.4*cm),
+        ]
+        headers = ['Cód. Barras', 'Producto', 'P.PVP', 'Cantidad', 'Subtotal']
+        rows = [headers]
+        for it in items:
+            rows.append([
+                it['codigo_barra'],
+                Paragraph(it['nombre'], cell_s),
+                f"${it['precio_pvp']:,.0f}".replace(',', '.'),
+                it['cantidad'],
+                f"${it['subtotal']:,.0f}".replace(',', '.'),
+            ])
+        rows.append(['', 'TOTAL', '', total_unidades,
+                     f"${total_importe:,.0f}".replace(',', '.')])
+
+        t = Table(rows, colWidths=[3.2*cm, 9.5*cm, 2.2*cm, 2.2*cm, 2.4*cm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), hdr_bg),
+            ('TEXTCOLOR',  (0, 0), (-1, 0), colors.white),
+            ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE',   (0, 0), (-1, 0), 8),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, row_b]),
+            ('FONTSIZE',   (0, 1), (-1, -1), 7),
+            ('ALIGN',      (2, 0), (-1, -1), 'RIGHT'),
+            ('ALIGN',      (0, 0), (1, -1), 'LEFT'),
+            ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FEF3C7')),
+            ('GRID',       (0, 0), (-1, -1), 0.25, colors.HexColor('#D1D5DB')),
+            ('VALIGN',     (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        story.append(t)
+        doc.build(story, canvasmaker=_NumberedCanvas)
+        buf.seek(0)
+        resp = make_response(buf.read())
+        resp.headers['Content-Type'] = 'application/pdf'
+        resp.headers['Content-Disposition'] = f'attachment; filename="Pedido_{safe_lab}.pdf"'
+        return resp
+
+    return 'Formato inválido', 400
+
+
 @app.route('/modulo-packs')
 def modulo_packs_list():
     session = database.SessionLocal()

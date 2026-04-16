@@ -182,12 +182,35 @@
 
                 <!-- Analizar módulos -->
                 <a href="{{ url_for('order_detail', pedido_id=p.id) }}" title="Analizar con módulos y ofertas"
+                   onclick="event.stopPropagation()"
                    class="ml-2 flex-shrink-0 flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/>
                     </svg>
                     Analizar
+                </a>
+
+                <!-- Exportar XLSX -->
+                <a href="{{ url_for('order_export_file', pedido_id=p.id, fmt='xlsx') }}" title="Exportar a Excel"
+                   onclick="event.stopPropagation()"
+                   class="flex-shrink-0 flex items-center gap-1.5 bg-green-50 hover:bg-green-100 border border-green-300 text-green-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    XLSX
+                </a>
+
+                <!-- Exportar PDF -->
+                <a href="{{ url_for('order_export_file', pedido_id=p.id, fmt='pdf') }}" title="Exportar a PDF"
+                   onclick="event.stopPropagation()"
+                   class="flex-shrink-0 flex items-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-300 text-red-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                    </svg>
+                    PDF
                 </a>
 
                 <!-- Eliminar -->
