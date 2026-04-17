@@ -5156,7 +5156,28 @@ def api_product_chart(barcode):
         pass
 
     if not best:
-        return jsonify({'ok': False, 'error': 'No se encontraron datos de ventas para este producto'}), 404
+        # Fallback: buscar en ProductAnalytics (sin historial mensual)
+        session = database.SessionLocal()
+        try:
+            pa = session.get(database.ProductAnalytics, barcode)
+            if pa:
+                return jsonify({
+                    'ok': True,
+                    'nombre': pa.descripcion or '',
+                    'codigo_barra': barcode,
+                    'ventas': [],
+                    'avg_monthly': float(pa.avg_monthly or 0),
+                    'slope': float(pa.slope or 0),
+                    'stock': pa.stock or 0,
+                    'rotacion': pa.rotacion or '',
+                    'tipo': pa.tipo or 'N',
+                    'start_month': 4,
+                    'n_days': 35,
+                    'sin_historial': True,
+                })
+        finally:
+            session.close()
+        return jsonify({'ok': False, 'error': 'No se encontraron datos de ventas. Procesá un análisis de ventas primero.'}), 404
     return jsonify({'ok': True, **best})
 
 

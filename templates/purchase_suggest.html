@@ -299,7 +299,32 @@ function openChart(barcode) {
 }
 
 function renderChart(p) {
-    const ventas = p.ventas || Array(12).fill(0);
+    if (p.sin_historial || !p.ventas || p.ventas.length === 0) {
+        // Sin historial mensual: mostrar solo stats
+        const avg = p.avg_monthly || 0;
+        const slope = p.slope || 0;
+        const rot = p.rotacion || 'B';
+        const rotColors = { A:'#15803d', M:'#b45309', B:'#dc2626' };
+        const rotLabels = { A:'Alta', M:'Media', B:'Baja' };
+        const stockDays = avg > 0 && p.stock > 0 ? Math.round(p.stock / (avg / 30.4)) + 'd' : p.stock <= 0 ? 'agotado' : '—';
+        const stats = [
+            { label:'Prom/mes', value:Math.round(avg), color:'#1e1e1e' },
+            { label:'Rotación', value:rotLabels[rot]||rot, color:rotColors[rot]||'#888' },
+            { label:'Stock', value:p.stock<=0?'agotado':p.stock, color:p.stock<=0?'#f87171':'#1e1e1e' },
+            { label:'Cobertura', value:stockDays, color:'#888' },
+            { label:'Tipo', value: p.tipo==='C' ? 'Crónico' : 'Normal', color: p.tipo==='C' ? '#7c3aed' : '#888' },
+        ];
+        document.getElementById('chart-stats').innerHTML = stats.map(s => `
+            <div class="bg-white rounded-lg px-3 py-2.5 text-center">
+                <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.label}</p>
+                <p class="text-sm font-bold" style="color:${s.color}">${s.value}</p>
+            </div>
+        `).join('');
+        document.getElementById('chart-note').textContent = '⚠ Sin historial mensual de ventas. Procesá un análisis de ventas para ver el gráfico completo.';
+        document.getElementById('chart-note').classList.remove('hidden');
+        return;
+    }
+    const ventas = p.ventas;
     const sm = p.start_month || 4;
     const FULL_MONTHS = 11;
     const N_DAYS = p.n_days || 35;
