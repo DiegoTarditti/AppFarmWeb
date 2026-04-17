@@ -15,6 +15,7 @@ from routes import (
     dashboard,
     docs_pendientes,
     batch,
+    vademecum,
 )
 
 _modules = [
@@ -32,6 +33,7 @@ _modules = [
     dashboard,
     docs_pendientes,
     batch,
+    vademecum,
 ]
 
 

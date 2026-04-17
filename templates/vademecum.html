@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% set nav_active = "vademecum" %}
+{% block title %}Vademécum — Farmacia{% endblock %}
+
+{% block main %}
+<div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+    <!-- Header -->
+    <div class="bg-surface border-b border-[#e0e0e0] px-6 py-3 flex-shrink-0">
+        <div class="flex items-center gap-3 flex-wrap">
+            <div>
+                <h1 class="text-base font-bold text-[#1e1e1e]">Vademécum</h1>
+                <p class="text-xs text-[#6f6f6f]">Búsqueda integrada en PR Vademécum Argentina</p>
+            </div>
+            <div class="flex items-center gap-2 ml-auto">
+                <input type="text" id="vad-search" placeholder="Buscar medicamento…"
+                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-1 focus:ring-brand"
+                       onkeydown="if(event.key==='Enter') doSearch()">
+                <button onclick="doSearch()"
+                        class="bg-brand hover:bg-brand-hover text-brand-dark px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                    Buscar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1 overflow-auto p-6">
+        <!-- Loading -->
+        <div id="loading" class="hidden text-center py-12 text-sm text-[#999]">
+            <svg class="animate-spin h-5 w-5 mx-auto mb-2 text-brand" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Buscando en PR Vademécum…
+        </div>
+
+        <!-- Empty state -->
+        <div id="empty" class="text-center py-16">
+            <svg class="w-12 h-12 mx-auto text-[#d0d0d0] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+            </svg>
+            <p class="text-sm text-[#999]">Buscá un medicamento para ver la información de PR Vademécum.</p>
+            <p class="text-xs text-[#ccc] mt-1">Ejemplo: amoxidal, ibuprofeno, losartan</p>
+        </div>
+
+        <!-- Search results -->
+        <div id="results" class="hidden">
+            <p class="text-xs text-[#999] mb-3"><span id="results-count">0</span> resultados</p>
+            <div id="results-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+        </div>
+
+        <!-- Detail panel -->
+        <div id="detail" class="hidden">
+            <button onclick="backToResults()" class="text-sm text-brand hover:underline mb-4 flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Volver a resultados
+            </button>
+            <div class="bg-white border border-[#e0e0e0] rounded-xl overflow-hidden">
+                <!-- Detail header -->
+                <div class="px-6 py-4 bg-[#fafafa] border-b border-[#e0e0e0]">
+                    <h2 id="det-nombre" class="text-lg font-bold text-[#1e1e1e]"></h2>
+                    <div class="flex flex-wrap gap-4 mt-2 text-sm">
+                        <div>
+                            <span class="text-[#999]">Principio activo:</span>
+                            <span id="det-pa" class="font-semibold text-[#1e1e1e]"></span>
+                        </div>
+                        <div>
+                            <span class="text-[#999]">Laboratorio:</span>
+                            <span id="det-lab" class="font-semibold text-[#1e1e1e]"></span>
+                        </div>
+                        <div>
+                            <span class="text-[#999]">Acción terapéutica:</span>
+                            <span id="det-accion" class="font-semibold text-[#1e1e1e]"></span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Composición -->
+                <div id="det-comp-wrap" class="px-6 py-3 border-b border-[#e0e0e0] hidden">
+                    <p class="text-xs font-semibold text-[#999] uppercase mb-1">Composición</p>
+                    <p id="det-comp" class="text-sm text-[#444] leading-relaxed"></p>
+                </div>
+                <!-- Presentaciones -->
+                <div id="det-pres-wrap" class="px-6 py-3 border-b border-[#e0e0e0] hidden">
+                    <p class="text-xs font-semibold text-[#999] uppercase mb-1">Presentaciones</p>
+                    <ul id="det-pres" class="text-sm text-[#444] list-disc ml-4 space-y-0.5"></ul>
+                </div>
+                <!-- Save to product -->
+                <div class="px-6 py-4">
+                    <p class="text-xs font-semibold text-[#999] uppercase mb-2">Guardar en producto local</p>
+                    <div class="flex items-end gap-3 flex-wrap">
+                        <div class="flex-1 min-w-[200px]">
+                            <label class="text-xs text-[#666] block mb-0.5">Buscar producto por código o nombre</label>
+                            <input type="text" id="save-search" placeholder="Código de barra o nombre…"
+                                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-brand"
+                                   oninput="searchProducto(this.value)">
+                            <div id="save-dropdown" class="hidden absolute z-20 bg-white border border-[#e0e0e0] rounded-lg shadow-lg mt-0.5 max-h-48 overflow-auto w-80"></div>
+                        </div>
+                        <div id="save-selected" class="hidden flex items-center gap-2 text-sm">
+                            <span class="bg-amber-50 border border-amber-200 rounded px-2 py-1 text-xs font-mono" id="save-prod-label"></span>
+                            <button onclick="clearSelectedProd()" class="text-[#ccc] hover:text-red-400 text-xs">&times;</button>
+                        </div>
+                        <button onclick="saveToProduct()"
+                                id="save-btn" disabled
+                                class="bg-brand hover:bg-brand-hover disabled:opacity-40 disabled:cursor-not-allowed text-brand-dark px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+                            Guardar monodroga
+                        </button>
+                    </div>
+                    <p id="save-msg" class="text-xs mt-1.5 hidden"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let lastResults = [];
+let selectedProdId = null;
+let currentDetail = null;
+
+async function doSearch() {
+    const q = document.getElementById('vad-search').value.trim();
+    if (!q) return;
+    document.getElementById('empty').classList.add('hidden');
+    document.getElementById('detail').classList.add('hidden');
+    document.getElementById('results').classList.add('hidden');
+    document.getElementById('loading').classList.remove('hidden');
+
+    try {
+        const resp = await fetch('/api/vademecum/search?q=' + encodeURIComponent(q));
+        lastResults = await resp.json();
+        if (lastResults.error) throw new Error(lastResults.error);
+        renderResults(lastResults);
+    } catch (e) {
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('empty').classList.remove('hidden');
+        document.getElementById('empty').innerHTML =
+            `<p class="text-sm text-red-500">Error al buscar: ${escHtml(e.message)}</p>`;
+    }
+}
+
+function renderResults(items) {
+    document.getElementById('loading').classList.add('hidden');
+    if (!items.length) {
+        document.getElementById('empty').classList.remove('hidden');
+        document.getElementById('empty').innerHTML =
+            '<p class="text-sm text-[#999]">No se encontraron resultados.</p>';
+        return;
+    }
+    document.getElementById('results-count').textContent = items.length;
+    const list = document.getElementById('results-list');
+    list.innerHTML = items.map((it, i) => `
+        <div class="bg-white border border-[#e0e0e0] rounded-lg p-4 hover:border-brand cursor-pointer transition-colors"
+             onclick="loadDetail('${escAttr(it.slug)}')">
+            <p class="font-semibold text-sm text-[#1e1e1e]">${escHtml(it.name)}</p>
+            ${it.tipo ? `<p class="text-xs text-[#999] mt-0.5">${escHtml(it.tipo)}</p>` : ''}
+            <p class="text-[10px] text-[#ccc] mt-1 font-mono">${escHtml(it.slug)}</p>
+        </div>
+    `).join('');
+    document.getElementById('results').classList.remove('hidden');
+}
+
+async function loadDetail(slug) {
+    document.getElementById('results').classList.add('hidden');
+    document.getElementById('loading').classList.remove('hidden');
+
+    try {
+        const resp = await fetch('/api/vademecum/detail?slug=' + encodeURIComponent(slug));
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error);
+        currentDetail = data;
+        renderDetail(data);
+    } catch (e) {
+        document.getElementById('loading').classList.add('hidden');
+        alert('Error al cargar detalle: ' + e.message);
+        document.getElementById('results').classList.remove('hidden');
+    }
+}
+
+function renderDetail(d) {
+    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('det-nombre').textContent = d.nombre || '—';
+    document.getElementById('det-pa').textContent = d.principio_activo || '—';
+    document.getElementById('det-lab').textContent = d.laboratorio || '—';
+    document.getElementById('det-accion').textContent = d.accion_terapeutica || '—';
+
+    const compWrap = document.getElementById('det-comp-wrap');
+    if (d.composicion) {
+        document.getElementById('det-comp').textContent = d.composicion;
+        compWrap.classList.remove('hidden');
+    } else { compWrap.classList.add('hidden'); }
+
+    const presWrap = document.getElementById('det-pres-wrap');
+    if (d.presentaciones && d.presentaciones.length) {
+        document.getElementById('det-pres').innerHTML =
+            d.presentaciones.map(p => `<li>${escHtml(p)}</li>`).join('');
+        presWrap.classList.remove('hidden');
+    } else { presWrap.classList.add('hidden'); }
+
+    // Reset save
+    selectedProdId = null;
+    document.getElementById('save-search').value = '';
+    document.getElementById('save-dropdown').classList.add('hidden');
+    document.getElementById('save-selected').classList.add('hidden');
+    document.getElementById('save-btn').disabled = true;
+    document.getElementById('save-msg').classList.add('hidden');
+
+    document.getElementById('detail').classList.remove('hidden');
+}
+
+function backToResults() {
+    document.getElementById('detail').classList.add('hidden');
+    document.getElementById('results').classList.remove('hidden');
+}
+
+// ── Product search for saving ──
+
+let searchTimeout = null;
+async function searchProducto(q) {
+    clearTimeout(searchTimeout);
+    const dd = document.getElementById('save-dropdown');
+    if (q.trim().length < 2) { dd.classList.add('hidden'); return; }
+    searchTimeout = setTimeout(async () => {
+        try {
+            const resp = await fetch('/api/productos');
+            const all = await resp.json();
+            const lower = q.toLowerCase();
+            const matches = all.filter(p =>
+                p.codigo_barra.includes(lower) ||
+                (p.descripcion || '').toLowerCase().includes(lower) ||
+                (p.alt1 || '').includes(lower) ||
+                (p.alt2 || '').includes(lower) ||
+                (p.alt3 || '').includes(lower)
+            ).slice(0, 15);
+            if (!matches.length) {
+                dd.innerHTML = '<p class="px-3 py-2 text-xs text-[#999]">Sin resultados</p>';
+            } else {
+                dd.innerHTML = matches.map(p => `
+                    <div class="px-3 py-1.5 hover:bg-amber-50 cursor-pointer text-sm border-b border-[#f0f0f0] last:border-0"
+                         onclick="selectProd(${p.id}, '${escAttr(p.codigo_barra)}', '${escAttr(p.descripcion || '')}')">
+                        <span class="font-mono text-xs text-[#999]">${escHtml(p.codigo_barra)}</span>
+                        <span class="ml-1 text-[#333]">${escHtml(p.descripcion || '—')}</span>
+                    </div>
+                `).join('');
+            }
+            dd.classList.remove('hidden');
+        } catch (e) { dd.classList.add('hidden'); }
+    }, 300);
+}
+
+function selectProd(id, cb, desc) {
+    selectedProdId = id;
+    document.getElementById('save-dropdown').classList.add('hidden');
+    document.getElementById('save-search').value = '';
+    document.getElementById('save-prod-label').textContent = cb + ' — ' + (desc || '—');
+    document.getElementById('save-selected').classList.remove('hidden');
+    document.getElementById('save-btn').disabled = false;
+}
+
+function clearSelectedProd() {
+    selectedProdId = null;
+    document.getElementById('save-selected').classList.add('hidden');
+    document.getElementById('save-btn').disabled = true;
+}
+
+async function saveToProduct() {
+    if (!selectedProdId || !currentDetail) return;
+    const btn = document.getElementById('save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+
+    try {
+        const resp = await fetch('/api/vademecum/save', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                producto_id: selectedProdId,
+                monodroga: currentDetail.principio_activo || '',
+                presentacion: currentDetail.presentaciones ? currentDetail.presentaciones.join(' | ') : '',
+                accion_terapeutica: currentDetail.accion_terapeutica || '',
+            })
+        });
+        const data = await resp.json();
+        const msg = document.getElementById('save-msg');
+        if (data.ok) {
+            msg.textContent = 'Monodroga y datos guardados correctamente.';
+            msg.className = 'text-xs mt-1.5 text-green-600';
+        } else {
+            msg.textContent = data.error || 'Error al guardar';
+            msg.className = 'text-xs mt-1.5 text-red-500';
+        }
+        msg.classList.remove('hidden');
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Guardar monodroga';
+    }
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+function escAttr(s) { return (s||'').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+// Auto-search from ?q= parameter
+document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(location.search);
+    const q = params.get('q');
+    if (q) {
+        document.getElementById('vad-search').value = q;
+        doSearch();
+    }
+});
+</script>
+{% endblock %}

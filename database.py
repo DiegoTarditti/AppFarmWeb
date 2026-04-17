@@ -207,6 +207,9 @@ class Producto(Base):
     precio_pvp = Column(DECIMAL(14, 2))
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     laboratorio = relationship('Laboratorio')
+    monodroga = Column(String(200), nullable=True)
+    presentacion = Column(String(500), nullable=True)
+    accion_terapeutica = Column(String(200), nullable=True)
     actualizado_en = Column(DateTime, default=datetime.utcnow)
     ultima_compra = Column(Date, nullable=True)
 
@@ -506,6 +509,15 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS ultima_compra DATE"
     ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS monodroga VARCHAR(200)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS presentacion VARCHAR(500)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS accion_terapeutica VARCHAR(200)"
+    ))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS product_analytics (
             codigo_barra VARCHAR(20) PRIMARY KEY,
@@ -681,6 +693,12 @@ def _sqlite_add_columns(conn):
     existing_prod3 = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'ultima_compra' not in existing_prod3:
         conn.execute(text("ALTER TABLE productos ADD COLUMN ultima_compra DATE"))
+    if 'monodroga' not in existing_prod3:
+        conn.execute(text("ALTER TABLE productos ADD COLUMN monodroga VARCHAR(200)"))
+    if 'presentacion' not in existing_prod3:
+        conn.execute(text("ALTER TABLE productos ADD COLUMN presentacion VARCHAR(500)"))
+    if 'accion_terapeutica' not in existing_prod3:
+        conn.execute(text("ALTER TABLE productos ADD COLUMN accion_terapeutica VARCHAR(200)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS product_analytics (
             codigo_barra VARCHAR(20) PRIMARY KEY,
