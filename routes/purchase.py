@@ -1159,7 +1159,7 @@ def init_app(app):
             rows = data if isinstance(data, list) else []
 
             hrow(ws, ['EAN', 'Producto', 'Stock ERP', 'Rot.', 'Prom.mes',
-                      'Precio PVP', 'Cant. módulo', 'Cant. oferta', 'Sin Deal',
+                      'Precio PVP', 'Cant. módulo', 'Cant. oferta', 'Oferta c/mín', 'Sin Deal',
                       'Total', 'Cant. pedida', 'Saldo'])
             ws.column_dimensions['A'].width = 16
             ws.column_dimensions['B'].width = 40
@@ -1169,10 +1169,11 @@ def init_app(app):
             ws.column_dimensions['F'].width = 12
             ws.column_dimensions['G'].width = 12
             ws.column_dimensions['H'].width = 12
-            ws.column_dimensions['I'].width = 10
+            ws.column_dimensions['I'].width = 12
             ws.column_dimensions['J'].width = 10
-            ws.column_dimensions['K'].width = 12
-            ws.column_dimensions['L'].width = 10
+            ws.column_dimensions['K'].width = 10
+            ws.column_dimensions['L'].width = 12
+            ws.column_dimensions['M'].width = 10
 
             for row in rows:
                 saldo = row.get('saldo', '')
@@ -1185,6 +1186,7 @@ def init_app(app):
                     row.get('precio_pvp', '') if row.get('precio_pvp') else '',
                     row.get('cant_modulo', '') if row.get('cant_modulo') else '',
                     row.get('cant_oferta', '') if row.get('cant_oferta') else '',
+                    row.get('cant_oferta_min', '') if row.get('cant_oferta_min') else '',
                     row.get('cant_nodeal', '') if row.get('cant_nodeal') else '',
                     row.get('total', ''),
                     row.get('cant_pedida', ''),
@@ -1194,9 +1196,9 @@ def init_app(app):
                 if saldo_val is not None:
                     from openpyxl.styles import PatternFill as _PF
                     if saldo_val > 0:
-                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='FEE2E2')
+                        ws.cell(row=ws.max_row, column=13).fill = _PF(fill_type='solid', fgColor='FEE2E2')
                     elif saldo_val < 0:
-                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='D1FAE5')
+                        ws.cell(row=ws.max_row, column=13).fill = _PF(fill_type='solid', fgColor='D1FAE5')
 
         if fmt == 'xlsx':
             buf = BytesIO()
