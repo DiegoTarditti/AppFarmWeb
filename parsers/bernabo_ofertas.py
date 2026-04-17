@@ -132,9 +132,9 @@ def parse_bernabo_ofertas(path):
             continue
 
         rows_with_min = [r for r in valid if r[3] is not None]
-        # Mínimo compartido = hay múltiples productos pero el mínimo aparece
-        # en menos filas que el total del grupo
-        is_grouped = len(valid) > 1 and len(rows_with_min) < len(valid)
+        # Mínimo compartido = cualquier grupo con 2+ productos entre filas vacías
+        # (el mínimo puede estar en celda fusionada que _cell() resuelve para todas las filas)
+        is_grouped = len(valid) > 1
 
         if is_grouped:
             grupo_counter += 1

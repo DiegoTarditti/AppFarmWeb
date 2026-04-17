@@ -189,7 +189,7 @@
 
 <!-- Modal Ofertas -->
 <div id="ofertas-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-4 max-h-[90vh] flex flex-col">
         <div class="flex items-center justify-between">
             <div>
                 <p id="ofertas-modal-title" class="font-bold text-[#1e1e1e]">Importar ofertas</p>
@@ -224,7 +224,7 @@
             </div>
         </form>
 
-        <div id="ofertas-result" class="hidden"></div>
+        <div id="ofertas-result" class="hidden overflow-y-auto flex-1"></div>
     </div>
 </div>
 
@@ -282,7 +282,7 @@ document.getElementById('ofertas-form').addEventListener('submit', async functio
         if (grupos) html += ` · ${grupos} grupo${grupos !== 1 ? 's' : ''} con mínimo compartido`;
         html += '</p>';
 
-        html += '<div class="max-h-48 overflow-y-auto border border-surface-border rounded-xl text-xs">';
+        html += '<div class="overflow-auto border border-surface-border rounded-xl text-xs" style="max-height:60vh">';
         html += '<table class="w-full">';
         if (conMinimo) {
             html += '<thead class="bg-[#f5f5f5] sticky top-0"><tr><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th><th class="text-right px-3 py-2">Mín.</th><th class="text-right px-3 py-2">Dto.</th><th class="text-right px-3 py-2">Gpo.</th></tr></thead><tbody>';
