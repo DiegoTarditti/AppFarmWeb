@@ -360,48 +360,46 @@ def init_app(app):
         for it in items:
             grupos[it['lab'] or 'SIN LAB'].append(it)
 
-        session = database.SessionLocal()
-        try:
-            campanas_creadas = 0
-            for lab_nombre, lab_items in grupos.items():
-                prov_id = int(proveedor_id) if proveedor_id else None
-                campana = database.DescuentoCampana(
-                    proveedor_id=prov_id,
-                    laboratorio_nombre=lab_nombre,
-                    fecha=fecha,
-                    observacion=observacion,
-                )
-                session.add(campana)
-                session.flush()
-
-                modulo = database.DescuentoModulo(
-                    campana_id=campana.id,
-                    nombre=f'Importación {lab_nombre}',
-                    codigo=None,
-                    laboratorio=lab_nombre,
-                    descuento_default=0,
-                )
-                session.add(modulo)
-                session.flush()
-
-                for it in lab_items:
-                    item = database.DescuentoModuloItem(
-                        modulo_id=modulo.id,
-                        codigo_barra=it['ean'],
-                        descripcion=it['descripcion'],
-                        cantidad=it['cantidad'] or 0,
-                        descuento=it['descuento'] or 0,
-                        es_principal=0,
+        with database.get_db() as session:
+            try:
+                campanas_creadas = 0
+                for lab_nombre, lab_items in grupos.items():
+                    prov_id = int(proveedor_id) if proveedor_id else None
+                    campana = database.DescuentoCampana(
+                        proveedor_id=prov_id,
+                        laboratorio_nombre=lab_nombre,
+                        fecha=fecha,
+                        observacion=observacion,
                     )
-                    session.add(item)
-                campanas_creadas += 1
+                    session.add(campana)
+                    session.flush()
 
-            session.commit()
-            flash(f'{campanas_creadas} campaña(s) importada(s) correctamente.')
-        except Exception as e:
-            session.rollback()
-            flash(f'Error al guardar: {e}')
-        finally:
-            session.close()
+                    modulo = database.DescuentoModulo(
+                        campana_id=campana.id,
+                        nombre=f'Importación {lab_nombre}',
+                        codigo=None,
+                        laboratorio=lab_nombre,
+                        descuento_default=0,
+                    )
+                    session.add(modulo)
+                    session.flush()
+
+                    for it in lab_items:
+                        item = database.DescuentoModuloItem(
+                            modulo_id=modulo.id,
+                            codigo_barra=it['ean'],
+                            descripcion=it['descripcion'],
+                            cantidad=it['cantidad'] or 0,
+                            descuento=it['descuento'] or 0,
+                            es_principal=0,
+                        )
+                        session.add(item)
+                    campanas_creadas += 1
+
+                session.commit()
+                flash(f'{campanas_creadas} campaña(s) importada(s) correctamente.')
+            except Exception as e:
+                session.rollback()
+                flash(f'Error al guardar: {e}')
 
         return redirect(url_for('descuentos_list'))

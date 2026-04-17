@@ -12,15 +12,13 @@ def init_app(app):
 
     @app.route('/claim/<int:claim_id>')
     def view_claim(claim_id):
-        session = database.SessionLocal()
-        claim = session.get(Claim, claim_id)
-        if not claim:
-            session.close()
-            return 'Reclamo no encontrado', 404
-        _ = claim.provider
-        _ = claim.items
-        session.close()
-        return render_template('claim.html', claim=claim)
+        with database.get_db() as session:
+            claim = session.get(Claim, claim_id)
+            if not claim:
+                return 'Reclamo no encontrado', 404
+            _ = claim.provider
+            _ = claim.items
+            return render_template('claim.html', claim=claim)
 
     @app.route('/claim/create', methods=['POST'])
     def create_claim_route():
@@ -35,18 +33,16 @@ def init_app(app):
             flash('Seleccione al menos un registro para reclamo.')
             return redirect(request.referrer or url_for('index'))
 
-        session = database.SessionLocal()
-        claim = create_claim(session, invoice_id, [int(i) for i in selected_ids])
-        _ = claim.provider
-        _ = claim.items
-        session.close()
-        return render_template('claim.html', claim=claim, auto_download=True)
+        with database.get_db() as session:
+            claim = create_claim(session, invoice_id, [int(i) for i in selected_ids])
+            _ = claim.provider
+            _ = claim.items
+            return render_template('claim.html', claim=claim, auto_download=True)
 
     @app.route('/claim/<int:claim_id>/complete', methods=['POST'])
     def complete_claim_route(claim_id):
-        session = database.SessionLocal()
-        claim = complete_claim(session, claim_id)
-        session.close()
+        with database.get_db() as session:
+            claim = complete_claim(session, claim_id)
         if not claim:
             return 'Reclamo no encontrado', 404
         return redirect(url_for('view_claim', claim_id=claim.id))
@@ -59,24 +55,21 @@ def init_app(app):
         if not factura_id or not difference_ids:
             return jsonify({'error': 'factura_id y difference_ids son obligatorios'}), 400
 
-        session = database.SessionLocal()
         try:
-            claim = create_claim(session, int(factura_id), [int(i) for i in difference_ids])
+            with database.get_db() as session:
+                claim = create_claim(session, int(factura_id), [int(i) for i in difference_ids])
         except Exception as exc:
-            session.close()
             return jsonify({'error': str(exc)}), 400
-        session.close()
         return jsonify({'claim_id': claim.id, 'estado': claim.estado}), 201
 
     @app.route('/claims')
     def claims_list():
-        session = database.SessionLocal()
-        claims = (session.query(database.Claim)
-                  .order_by(database.Claim.creado_en.desc()).all())
-        for c in claims:
-            _ = c.provider
-        session.close()
-        return render_template('claims_list.html', claims=claims)
+        with database.get_db() as session:
+            claims = (session.query(database.Claim)
+                      .order_by(database.Claim.creado_en.desc()).all())
+            for c in claims:
+                _ = c.provider
+            return render_template('claims_list.html', claims=claims)
 
     @app.route('/claim/<int:claim_id>/pdf')
     def claim_pdf(claim_id):
@@ -88,14 +81,12 @@ def init_app(app):
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
-        session = database.SessionLocal()
-        claim = session.get(Claim, claim_id)
-        if not claim:
-            session.close()
-            return 'Reclamo no encontrado', 404
-        _ = claim.provider
-        _ = claim.items
-        session.close()
+        with database.get_db() as session:
+            claim = session.get(Claim, claim_id)
+            if not claim:
+                return 'Reclamo no encontrado', 404
+            _ = claim.provider
+            _ = claim.items
 
         buf = BytesIO()
         doc = SimpleDocTemplate(buf, pagesize=A4,

@@ -48,23 +48,21 @@ def init_app(app):
         if not prod_id:
             return jsonify({'error': 'producto_id requerido'}), 400
 
-        session = database.SessionLocal()
-        try:
-            prod = session.get(Producto, int(prod_id))
-            if not prod:
-                return jsonify({'error': 'Producto no encontrado'}), 404
-            if body.get('monodroga'):
-                prod.monodroga = body['monodroga'].strip()
-            if body.get('presentacion'):
-                prod.presentacion = body['presentacion'].strip()
-            if body.get('accion_terapeutica'):
-                prod.accion_terapeutica = body['accion_terapeutica'].strip()
-            from datetime import datetime as _dt
-            prod.actualizado_en = _dt.now()
-            session.commit()
-            return jsonify({'ok': True})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                prod = session.get(Producto, int(prod_id))
+                if not prod:
+                    return jsonify({'error': 'Producto no encontrado'}), 404
+                if body.get('monodroga'):
+                    prod.monodroga = body['monodroga'].strip()
+                if body.get('presentacion'):
+                    prod.presentacion = body['presentacion'].strip()
+                if body.get('accion_terapeutica'):
+                    prod.accion_terapeutica = body['accion_terapeutica'].strip()
+                from datetime import datetime as _dt
+                prod.actualizado_en = _dt.now()
+                session.commit()
+                return jsonify({'ok': True})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500

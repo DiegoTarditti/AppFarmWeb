@@ -12,8 +12,7 @@ def init_app(app):
 
     @app.route('/modulo-packs')
     def modulo_packs_list():
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             all_prods = session.query(Producto).order_by(Producto.codigo_barra).all()
             prod_map = {p.codigo_barra: p for p in all_prods}
             labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
@@ -69,13 +68,10 @@ def init_app(app):
                                    modulos=modulos, orphan_packs=orphan_packs,
                                    labs=[{'id': l.id, 'nombre': l.nombre} for l in labs],
                                    prods_pack=prods_pack, prods_all=prods_all)
-        finally:
-            session.close()
 
     @app.route('/modulo-packs/vista')
     def modulo_packs_vista():
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             prod_map = {p.codigo_barra: p for p in session.query(Producto).all()}
             labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
             lab_filter = request.args.get('lab', '').strip()
@@ -102,8 +98,6 @@ def init_app(app):
                                    modulos=modulos,
                                    labs=[{'id': l.id, 'nombre': l.nombre} for l in labs],
                                    lab_filter=lab_filter)
-        finally:
-            session.close()
 
     @app.route('/modulo-packs/plantilla')
     def modulo_packs_plantilla():
@@ -154,46 +148,46 @@ def init_app(app):
             return jsonify({'error': 'No se recibió archivo'}), 400
         tmp = os.path.join(UPLOAD_FOLDER, secure_filename(f.filename))
         f.save(tmp)
-        session = database.SessionLocal()
         try:
-            modules = parse_modulos_xlsx(tmp)
-            if not modules:
-                return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
-            creados = 0
-            packs_agregados = 0
-            for mod in modules:
-                nombre_mod = mod['nombre']
-                modulo_actual = session.query(Modulo).filter_by(nombre=nombre_mod, lista_nombre=lista_nombre).first()
-                if not modulo_actual:
-                    modulo_actual = Modulo(nombre=nombre_mod,
-                                           laboratorio_id=int(lab_id) if lab_id else None,
-                                           lista_nombre=lista_nombre)
-                    session.add(modulo_actual)
-                    session.flush()
-                    creados += 1
-                for item in mod['items']:
-                    ean_pack = item['ean']
-                    if not ean_pack:
-                        continue
-                    existe = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
-                    if not existe:
-                        session.add(ModuloPack(
-                            ean_pack=ean_pack,
-                            ean_unidad=ean_pack,
-                            cantidad=1,
-                            descripcion=item.get('descripcion', ''),
-                            cant_modulo=item.get('cant'),
-                            desc_pct=item.get('desc_pct'),
-                            modulo_id=modulo_actual.id,
-                        ))
-                        packs_agregados += 1
-            session.commit()
-            return jsonify({'ok': True, 'modulos_creados': creados, 'packs_agregados': packs_agregados})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
+            with database.get_db() as session:
+                try:
+                    modules = parse_modulos_xlsx(tmp)
+                    if not modules:
+                        return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
+                    creados = 0
+                    packs_agregados = 0
+                    for mod in modules:
+                        nombre_mod = mod['nombre']
+                        modulo_actual = session.query(Modulo).filter_by(nombre=nombre_mod, lista_nombre=lista_nombre).first()
+                        if not modulo_actual:
+                            modulo_actual = Modulo(nombre=nombre_mod,
+                                                   laboratorio_id=int(lab_id) if lab_id else None,
+                                                   lista_nombre=lista_nombre)
+                            session.add(modulo_actual)
+                            session.flush()
+                            creados += 1
+                        for item in mod['items']:
+                            ean_pack = item['ean']
+                            if not ean_pack:
+                                continue
+                            existe = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
+                            if not existe:
+                                session.add(ModuloPack(
+                                    ean_pack=ean_pack,
+                                    ean_unidad=ean_pack,
+                                    cantidad=1,
+                                    descripcion=item.get('descripcion', ''),
+                                    cant_modulo=item.get('cant'),
+                                    desc_pct=item.get('desc_pct'),
+                                    modulo_id=modulo_actual.id,
+                                ))
+                                packs_agregados += 1
+                    session.commit()
+                    return jsonify({'ok': True, 'modulos_creados': creados, 'packs_agregados': packs_agregados})
+                except Exception as e:
+                    session.rollback()
+                    return jsonify({'error': str(e)}), 500
         finally:
-            session.close()
             try: os.remove(tmp)
             except OSError: pass
 
@@ -204,30 +198,27 @@ def init_app(app):
         lista_nombre = data.get('lista_nombre', '').strip()
         if not lista_nombre:
             return jsonify({'error': 'lista_nombre requerido'}), 400
-        session = database.SessionLocal()
-        try:
-            modulos = session.query(Modulo).filter(
-                (Modulo.lista_nombre == lista_nombre) |
-                ((Modulo.lista_nombre.is_(None)) &
-                 (Modulo.laboratorio.has(database.Laboratorio.nombre == lista_nombre)))
-            ).all()
-            count = len(modulos)
-            for m in modulos:
-                session.delete(m)
-            session.commit()
-            return jsonify({'ok': True, 'eliminados': count})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                modulos = session.query(Modulo).filter(
+                    (Modulo.lista_nombre == lista_nombre) |
+                    ((Modulo.lista_nombre.is_(None)) &
+                     (Modulo.laboratorio.has(database.Laboratorio.nombre == lista_nombre)))
+                ).all()
+                count = len(modulos)
+                for m in modulos:
+                    session.delete(m)
+                session.commit()
+                return jsonify({'ok': True, 'eliminados': count})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/modulo-packs/activos')
     def modulo_packs_activos():
         """Devuelve las listas activas agrupadas por lista_nombre. ?lab=Nombre filtra por laboratorio."""
         lab_nombre = request.args.get('lab', '').strip()
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             q = session.query(Modulo).filter_by(activo=True).outerjoin(Laboratorio)
             if lab_nombre:
                 q = q.filter(Laboratorio.nombre == lab_nombre)
@@ -254,35 +245,31 @@ def init_app(app):
                 listas[ln]['modulos'].append({'id': m.id, 'nombre': m.nombre, 'packs': packs})
 
             return jsonify({'listas': list(listas.values())})
-        finally:
-            session.close()
 
     @app.route('/modulo/<int:modulo_id>/toggle-activo', methods=['POST'])
     def modulo_toggle_activo(modulo_id):
-        session = database.SessionLocal()
-        try:
-            m = session.get(Modulo, modulo_id)
-            if not m:
-                return jsonify({'error': 'No encontrado'}), 404
-            nuevo_estado = not bool(m.activo)
-            if nuevo_estado:
-                session.query(Modulo).filter(
-                    Modulo.laboratorio_id == m.laboratorio_id
-                ).update({'activo': False})
-                session.flush()
-            if m.lista_nombre:
-                session.query(Modulo).filter(
-                    Modulo.lista_nombre == m.lista_nombre
-                ).update({'activo': nuevo_estado})
-            else:
-                m.activo = nuevo_estado
-            session.commit()
-            return jsonify({'activo': nuevo_estado})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                m = session.get(Modulo, modulo_id)
+                if not m:
+                    return jsonify({'error': 'No encontrado'}), 404
+                nuevo_estado = not bool(m.activo)
+                if nuevo_estado:
+                    session.query(Modulo).filter(
+                        Modulo.laboratorio_id == m.laboratorio_id
+                    ).update({'activo': False})
+                    session.flush()
+                if m.lista_nombre:
+                    session.query(Modulo).filter(
+                        Modulo.lista_nombre == m.lista_nombre
+                    ).update({'activo': nuevo_estado})
+                else:
+                    m.activo = nuevo_estado
+                session.commit()
+                return jsonify({'activo': nuevo_estado})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/modulo/add', methods=['POST'])
     def modulo_add():
@@ -292,55 +279,49 @@ def init_app(app):
         lista_nombre = (data.get('lista_nombre') or nombre or '').strip() or None
         if not nombre:
             return jsonify({'error': 'Nombre requerido'}), 400
-        session = database.SessionLocal()
-        try:
-            m = Modulo(nombre=nombre,
-                       laboratorio_id=int(lab_id) if lab_id else None,
-                       lista_nombre=lista_nombre)
-            session.add(m)
-            session.commit()
-            lab_nombre = m.laboratorio.nombre if m.laboratorio else '—'
-            return jsonify({'ok': True, 'id': m.id, 'nombre': m.nombre,
-                            'lab_nombre': lab_nombre,
-                            'creado_en': m.creado_en.strftime('%d/%m/%Y') if m.creado_en else ''})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                m = Modulo(nombre=nombre,
+                           laboratorio_id=int(lab_id) if lab_id else None,
+                           lista_nombre=lista_nombre)
+                session.add(m)
+                session.commit()
+                lab_nombre = m.laboratorio.nombre if m.laboratorio else '—'
+                return jsonify({'ok': True, 'id': m.id, 'nombre': m.nombre,
+                                'lab_nombre': lab_nombre,
+                                'creado_en': m.creado_en.strftime('%d/%m/%Y') if m.creado_en else ''})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/modulo/<int:modulo_id>/delete', methods=['POST'])
     def modulo_delete(modulo_id):
-        session = database.SessionLocal()
-        try:
-            m = session.get(Modulo, modulo_id)
-            if m:
-                session.delete(m)
-                session.commit()
-            return jsonify({'ok': True})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                m = session.get(Modulo, modulo_id)
+                if m:
+                    session.delete(m)
+                    session.commit()
+                return jsonify({'ok': True})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/modulo-pack/<int:pack_id>/assign', methods=['POST'])
     def modulo_pack_assign(pack_id):
         data = request.get_json(silent=True) or {}
         modulo_id = data.get('modulo_id')
-        session = database.SessionLocal()
-        try:
-            mp = session.get(ModuloPack, pack_id)
-            if not mp:
-                return jsonify({'error': 'Pack no encontrado'}), 404
-            mp.modulo_id = int(modulo_id) if modulo_id else None
-            session.commit()
-            return jsonify({'ok': True})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                mp = session.get(ModuloPack, pack_id)
+                if not mp:
+                    return jsonify({'error': 'Pack no encontrado'}), 404
+                mp.modulo_id = int(modulo_id) if modulo_id else None
+                session.commit()
+                return jsonify({'ok': True})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/modulo-pack/add', methods=['POST'])
     def modulo_pack_add():
@@ -352,63 +333,56 @@ def init_app(app):
         modulo_id  = data.get('modulo_id')
         if not ean_pack or not ean_unidad or cantidad < 1:
             return {'error': 'Datos incompletos'}, 400
-        session = database.SessionLocal()
-        try:
-            existing = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
-            if existing:
-                existing.ean_unidad = ean_unidad
-                existing.cantidad = cantidad
-                existing.descripcion = descripcion or existing.descripcion
-                if modulo_id is not None:
-                    existing.modulo_id = int(modulo_id) if modulo_id else None
-            else:
-                session.add(ModuloPack(ean_pack=ean_pack, ean_unidad=ean_unidad,
-                                       cantidad=cantidad, descripcion=descripcion,
-                                       modulo_id=int(modulo_id) if modulo_id else None))
-            session.commit()
-            return {'ok': True}
-        except Exception as e:
-            session.rollback()
-            return {'error': str(e)}, 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                existing = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
+                if existing:
+                    existing.ean_unidad = ean_unidad
+                    existing.cantidad = cantidad
+                    existing.descripcion = descripcion or existing.descripcion
+                    if modulo_id is not None:
+                        existing.modulo_id = int(modulo_id) if modulo_id else None
+                else:
+                    session.add(ModuloPack(ean_pack=ean_pack, ean_unidad=ean_unidad,
+                                           cantidad=cantidad, descripcion=descripcion,
+                                           modulo_id=int(modulo_id) if modulo_id else None))
+                session.commit()
+                return {'ok': True}
+            except Exception as e:
+                session.rollback()
+                return {'error': str(e)}, 500
 
     @app.route('/modulo-pack/<int:pack_id>/update', methods=['POST'])
     def modulo_pack_update(pack_id):
-        session = database.SessionLocal()
-        try:
-            data = request.get_json(silent=True) or {}
-            mp = session.get(ModuloPack, pack_id)
-            if not mp:
-                return jsonify({'error': 'No encontrado'}), 404
-            if 'ean_pack' in data:
-                mp.ean_pack = str(data['ean_pack']).strip()
-            if 'descripcion' in data:
-                mp.descripcion = str(data['descripcion']).strip() or None
-            if 'ean_unidad' in data:
-                mp.ean_unidad = str(data['ean_unidad']).strip()
-            if 'cantidad' in data:
-                mp.cantidad = int(data['cantidad'])
-            if 'cant_modulo' in data:
-                mp.cant_modulo = int(data['cant_modulo']) if data['cant_modulo'] is not None else None
-            if 'desc_pct' in data:
-                mp.desc_pct = float(data['desc_pct']) if data['desc_pct'] is not None else None
-            session.commit()
-            return jsonify({'ok': True})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                data = request.get_json(silent=True) or {}
+                mp = session.get(ModuloPack, pack_id)
+                if not mp:
+                    return jsonify({'error': 'No encontrado'}), 404
+                if 'ean_pack' in data:
+                    mp.ean_pack = str(data['ean_pack']).strip()
+                if 'descripcion' in data:
+                    mp.descripcion = str(data['descripcion']).strip() or None
+                if 'ean_unidad' in data:
+                    mp.ean_unidad = str(data['ean_unidad']).strip()
+                if 'cantidad' in data:
+                    mp.cantidad = int(data['cantidad'])
+                if 'cant_modulo' in data:
+                    mp.cant_modulo = int(data['cant_modulo']) if data['cant_modulo'] is not None else None
+                if 'desc_pct' in data:
+                    mp.desc_pct = float(data['desc_pct']) if data['desc_pct'] is not None else None
+                session.commit()
+                return jsonify({'ok': True})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/modulo-pack/<int:pack_id>/delete', methods=['POST'])
     def modulo_pack_delete(pack_id):
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             mp = session.get(ModuloPack, pack_id)
             if mp:
                 session.delete(mp)
                 session.commit()
             return {'ok': True}
-        finally:
-            session.close()

@@ -96,48 +96,51 @@ def init_app(app):
             flash(f'Error al leer el ERP: {e}')
             return redirect(url_for('batch_new'))
 
-        session = database.SessionLocal()
-        batch = session.get(InvoiceBatch, int(batch_id))
-        if not batch:
-            session.close()
-            flash('Batch no encontrado.')
-            return redirect(url_for('index'))
+        with database.get_db() as session:
+            batch = session.get(InvoiceBatch, int(batch_id))
+            if not batch:
+                flash('Batch no encontrado.')
+                return redirect(url_for('index'))
 
-        batch.erp_filename = erp_filename
-        batch.estado = 'PROCESADO'
-        session.commit()
+            batch.erp_filename = erp_filename
+            batch.estado = 'PROCESADO'
+            session.commit()
 
-        save_erp_to_db(session, erp_data)
+            save_erp_to_db(session, erp_data)
 
-        invoices = session.query(database.Invoice).filter_by(batch_id=batch.id).all()
-        for invoice in invoices:
-            invoice.erp_filename = erp_filename
-            differences = compare_invoice_vs_erp(session, invoice.id)
-            save_differences(session, invoice.id, differences)
-        session.commit()
-        session.close()
+            invoices = session.query(database.Invoice).filter_by(batch_id=batch.id).all()
+            for invoice in invoices:
+                invoice.erp_filename = erp_filename
+                differences = compare_invoice_vs_erp(session, invoice.id)
+                save_differences(session, invoice.id, differences)
+            session.commit()
+            batch_id_result = batch.id
 
-        return redirect(url_for('batch_results', batch_id=batch.id))
+        return redirect(url_for('batch_results', batch_id=batch_id_result))
 
     @app.route('/batch/<int:batch_id>/results')
     def batch_results(batch_id):
-        session = database.SessionLocal()
-        batch = session.get(InvoiceBatch, batch_id)
-        if not batch:
-            session.close()
-            flash('Batch no encontrado.')
-            return redirect(url_for('index'))
+        from sqlalchemy import func as _func
+        with database.get_db() as session:
+            batch = session.get(InvoiceBatch, batch_id)
+            if not batch:
+                flash('Batch no encontrado.')
+                return redirect(url_for('index'))
 
-        provider = session.get(database.Provider, batch.proveedor_id)
-        invoices = session.query(database.Invoice).filter_by(batch_id=batch_id).all()
+            provider = session.get(database.Provider, batch.proveedor_id)
+            invoices = session.query(database.Invoice).filter_by(batch_id=batch_id).all()
+            inv_ids = [inv.id for inv in invoices]
 
-        invoice_data = []
-        for inv in invoices:
-            diff_count = session.query(database.StockDifference).filter_by(factura_id=inv.id).count()
-            invoice_data.append({
-                'invoice': inv,
-                'diff_count': diff_count,
-            })
-        session.close()
-        return render_template('batch_results.html', batch=batch, provider=provider,
-                               invoices=invoice_data)
+            diff_counts = dict(
+                session.query(database.StockDifference.factura_id,
+                              _func.count(database.StockDifference.id))
+                .filter(database.StockDifference.factura_id.in_(inv_ids))
+                .group_by(database.StockDifference.factura_id).all()
+            ) if inv_ids else {}
+
+            invoice_data = [
+                {'invoice': inv, 'diff_count': diff_counts.get(inv.id, 0)}
+                for inv in invoices
+            ]
+            return render_template('batch_results.html', batch=batch, provider=provider,
+                                   invoices=invoice_data)

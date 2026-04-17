@@ -162,35 +162,33 @@ def init_app(app):
 
         doc_pendiente_id = request.form.get('doc_pendiente_id', type=int)
         if doc_pendiente_id:
-            session = database.SessionLocal()
-            try:
-                doc = session.get(database.DocumentoPendiente, doc_pendiente_id)
-                if doc:
-                    doc.estado = 'PROCESADO'
-                    doc.factura_id = result['invoice'].id
-                    inv = result['invoice']
-                    if inv.proveedor_cuit:
-                        prov = session.query(database.Provider).filter_by(cuit=inv.proveedor_cuit).first()
-                        if prov:
-                            doc.proveedor_id = prov.id
-                            cfg = get_config()
-                            ruta_base = cfg.get('ruta_facturas', '')
-                            if ruta_base and os.path.isfile(doc.ruta_completa):
-                                import shutil
-                                prov_dir = os.path.join(ruta_base, secure_filename(prov.razon_social))
-                                os.makedirs(prov_dir, exist_ok=True)
-                                dst = os.path.join(prov_dir, doc.filename)
-                                try:
-                                    shutil.move(doc.ruta_completa, dst)
-                                    doc.ruta_completa = dst
-                                except OSError:
-                                    pass
-                    session.commit()
-            except Exception:
-                app.logger.warning('Error al actualizar doc pendiente', exc_info=True)
-                session.rollback()
-            finally:
-                session.close()
+            with database.get_db() as session:
+                try:
+                    doc = session.get(database.DocumentoPendiente, doc_pendiente_id)
+                    if doc:
+                        doc.estado = 'PROCESADO'
+                        doc.factura_id = result['invoice'].id
+                        inv = result['invoice']
+                        if inv.proveedor_cuit:
+                            prov = session.query(database.Provider).filter_by(cuit=inv.proveedor_cuit).first()
+                            if prov:
+                                doc.proveedor_id = prov.id
+                                cfg = get_config()
+                                ruta_base = cfg.get('ruta_facturas', '')
+                                if ruta_base and os.path.isfile(doc.ruta_completa):
+                                    import shutil
+                                    prov_dir = os.path.join(ruta_base, secure_filename(prov.razon_social))
+                                    os.makedirs(prov_dir, exist_ok=True)
+                                    dst = os.path.join(prov_dir, doc.filename)
+                                    try:
+                                        shutil.move(doc.ruta_completa, dst)
+                                        doc.ruta_completa = dst
+                                    except OSError:
+                                        pass
+                        session.commit()
+                except Exception:
+                    app.logger.warning('Error al actualizar doc pendiente', exc_info=True)
+                    session.rollback()
 
         return redirect(url_for('compare_view', invoice_id=result['invoice'].id))
 

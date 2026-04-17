@@ -251,8 +251,7 @@ def init_app(app):
         data.setdefault('rot_media_tol', cfg['rot_media_tol'])
         data.setdefault('rot_baja_tol', cfg['rot_baja_tol'])
 
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             barcodes = [p['codigo_barra'] for p in data.get('products', []) if p.get('codigo_barra')]
             pack_eans = {mp.ean_pack for mp in session.query(ModuloPack).all()}
             prods_pack = {
@@ -264,8 +263,6 @@ def init_app(app):
             for p in data.get('products', []):
                 cb = p.get('codigo_barra', '')
                 p['es_pack'] = prods_pack.get(cb, False) or (cb in pack_eans)
-        finally:
-            session.close()
 
         _mes_jan = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
         sm = data.get('start_month', 4)
@@ -484,54 +481,52 @@ def init_app(app):
             flash('La sesión expiró. Analizá el PDF nuevamente.')
             return redirect(url_for('purchase_index'))
 
-        session = database.SessionLocal()
-        try:
-            with open(json_path, encoding='utf-8') as jf:
-                data = json.load(jf)
+        with database.get_db() as session:
+            try:
+                with open(json_path, encoding='utf-8') as jf:
+                    data = json.load(jf)
 
-            products = data.get('products', [])
-            items = []
-            for i, p in enumerate(products):
-                try:
-                    qty = int(request.form.get(f'qty_{i}') or 0)
-                except (ValueError, TypeError):
-                    qty = 0
-                if qty > 0:
-                    precio = float(p.get('precio_pvp') or 0)
-                    items.append(PedidoItem(
-                        codigo_barra=p.get('codigo_barra', ''),
-                        nombre=p.get('nombre', ''),
-                        cantidad=qty,
-                        precio_pvp=precio,
-                        subtotal=round(qty * precio, 2),
-                        rotacion=p.get('rotacion') or None,
-                        avg_monthly=p.get('avg_monthly') or None,
-                    ))
+                products = data.get('products', [])
+                items = []
+                for i, p in enumerate(products):
+                    try:
+                        qty = int(request.form.get(f'qty_{i}') or 0)
+                    except (ValueError, TypeError):
+                        qty = 0
+                    if qty > 0:
+                        precio = float(p.get('precio_pvp') or 0)
+                        items.append(PedidoItem(
+                            codigo_barra=p.get('codigo_barra', ''),
+                            nombre=p.get('nombre', ''),
+                            cantidad=qty,
+                            precio_pvp=precio,
+                            subtotal=round(qty * precio, 2),
+                            rotacion=p.get('rotacion') or None,
+                            avg_monthly=p.get('avg_monthly') or None,
+                        ))
 
-            if not items:
-                flash('No hay productos con cantidad > 0 para guardar.')
+                if not items:
+                    flash('No hay productos con cantidad > 0 para guardar.')
+                    return redirect(url_for('purchase_results', uid=uid))
+
+                pedido = Pedido(
+                    laboratorio=data.get('laboratorio', ''),
+                    farmacia=data.get('farmacia', ''),
+                    periodo=data.get('periodo', ''),
+                    n_days=data.get('n_days', 0),
+                    items=items,
+                )
+                session.add(pedido)
+                for it in items:
+                    _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
+                session.commit()
+                flash(f'Pedido guardado: {len(items)} productos.')
+                return redirect(url_for('orders_list'))
+            except Exception as e:
+                session.rollback()
+                app.logger.exception('Error en purchase_save_order')
+                flash(f'Error al guardar el pedido: {e}')
                 return redirect(url_for('purchase_results', uid=uid))
-
-            pedido = Pedido(
-                laboratorio=data.get('laboratorio', ''),
-                farmacia=data.get('farmacia', ''),
-                periodo=data.get('periodo', ''),
-                n_days=data.get('n_days', 0),
-                items=items,
-            )
-            session.add(pedido)
-            for it in items:
-                _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
-            session.commit()
-            flash(f'Pedido guardado: {len(items)} productos.')
-            return redirect(url_for('orders_list'))
-        except Exception as e:
-            session.rollback()
-            app.logger.exception('Error en purchase_save_order')
-            flash(f'Error al guardar el pedido: {e}')
-            return redirect(url_for('purchase_results', uid=uid))
-        finally:
-            session.close()
 
     @app.route('/purchase/suggest', methods=['GET'])
     def purchase_suggest():
@@ -554,8 +549,7 @@ def init_app(app):
         total_importe = 0.0
 
         if calcular:
-            session = database.SessionLocal()
-            try:
+            with database.get_db() as session:
                 PA = database.ProductAnalytics
                 rows = session.query(PA).filter(
                     PA.avg_monthly > 0,
@@ -601,8 +595,6 @@ def init_app(app):
                         'lab_total': round(lab_total, 2),
                         'lab_units': lab_units,
                     })
-            finally:
-                session.close()
 
         return render_template('purchase_suggest.html',
                                threshold_days=threshold_days,
@@ -620,67 +612,67 @@ def init_app(app):
             flash('Laboratorio faltante.')
             return redirect(url_for('purchase_suggest'))
 
-        session = database.SessionLocal()
-        try:
-            selected = request.form.getlist('sel')
-            items = []
-            for cb in selected:
-                try:
-                    qty = int(request.form.get(f'qty_{cb}') or 0)
-                except (ValueError, TypeError):
-                    qty = 0
-                if qty <= 0:
-                    continue
-                nombre = request.form.get(f'nom_{cb}') or ''
-                try:
-                    precio = float(request.form.get(f'pvp_{cb}') or 0)
-                except (ValueError, TypeError):
-                    precio = 0.0
-                rotacion = request.form.get(f'rot_{cb}') or None
-                try:
-                    avg = float(request.form.get(f'avg_{cb}') or 0)
-                except (ValueError, TypeError):
-                    avg = 0.0
-                items.append(PedidoItem(
-                    codigo_barra=cb,
-                    nombre=nombre[:200],
-                    cantidad=qty,
-                    precio_pvp=precio,
-                    subtotal=round(qty * precio, 2),
-                    rotacion=rotacion,
-                    avg_monthly=avg or None,
-                ))
+        with database.get_db() as session:
+            try:
+                selected = request.form.getlist('sel')
+                items = []
+                for cb in selected:
+                    try:
+                        qty = int(request.form.get(f'qty_{cb}') or 0)
+                    except (ValueError, TypeError):
+                        qty = 0
+                    if qty <= 0:
+                        continue
+                    nombre = request.form.get(f'nom_{cb}') or ''
+                    try:
+                        precio = float(request.form.get(f'pvp_{cb}') or 0)
+                    except (ValueError, TypeError):
+                        precio = 0.0
+                    rotacion = request.form.get(f'rot_{cb}') or None
+                    try:
+                        avg = float(request.form.get(f'avg_{cb}') or 0)
+                    except (ValueError, TypeError):
+                        avg = 0.0
+                    items.append(PedidoItem(
+                        codigo_barra=cb,
+                        nombre=nombre[:200],
+                        cantidad=qty,
+                        precio_pvp=precio,
+                        subtotal=round(qty * precio, 2),
+                        rotacion=rotacion,
+                        avg_monthly=avg or None,
+                    ))
 
-            if not items:
-                flash('No seleccionaste productos con cantidad > 0.')
+                if not items:
+                    flash('No seleccionaste productos con cantidad > 0.')
+                    return redirect(url_for('purchase_suggest', calcular=1))
+
+                pedido = Pedido(
+                    laboratorio=laboratorio[:150],
+                    farmacia='',
+                    periodo='Sugerido',
+                    n_days=0,
+                    items=items,
+                )
+                session.add(pedido)
+                for it in items:
+                    _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
+                session.commit()
+                flash(f'Pedido creado para {laboratorio}: {len(items)} productos.')
+                return redirect(url_for('orders_list'))
+            except Exception as e:
+                session.rollback()
+                app.logger.exception('Error en purchase_suggest_create_order')
+                flash(f'Error al crear pedido: {e}')
                 return redirect(url_for('purchase_suggest', calcular=1))
-
-            pedido = Pedido(
-                laboratorio=laboratorio[:150],
-                farmacia='',
-                periodo='Sugerido',
-                n_days=0,
-                items=items,
-            )
-            session.add(pedido)
-            for it in items:
-                _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
-            session.commit()
-            flash(f'Pedido creado para {laboratorio}: {len(items)} productos.')
-            return redirect(url_for('orders_list'))
-        except Exception as e:
-            session.rollback()
-            app.logger.exception('Error en purchase_suggest_create_order')
-            flash(f'Error al crear pedido: {e}')
-            return redirect(url_for('purchase_suggest', calcular=1))
-        finally:
-            session.close()
 
     @app.route('/orders')
     def orders_list():
-        session = database.SessionLocal()
-        try:
-            pedidos = session.query(Pedido).order_by(Pedido.creado_en.desc()).all()
+        from sqlalchemy.orm import joinedload
+        with database.get_db() as session:
+            pedidos = (session.query(Pedido)
+                       .options(joinedload(Pedido.items))
+                       .order_by(Pedido.creado_en.desc()).all())
             result = []
             for p in pedidos:
                 total_unidades = sum(it.cantidad for it in p.items)
@@ -709,30 +701,25 @@ def init_app(app):
                     ],
                 })
             return render_template('orders_list.html', pedidos=result)
-        finally:
-            session.close()
 
     @app.route('/order/<int:pedido_id>/delete', methods=['POST'])
     def order_delete(pedido_id):
-        session = database.SessionLocal()
-        try:
-            pedido = session.query(Pedido).get(pedido_id)
-            if pedido:
-                session.delete(pedido)
-                session.commit()
-                flash('Pedido eliminado.')
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                pedido = session.query(Pedido).get(pedido_id)
+                if pedido:
+                    session.delete(pedido)
+                    session.commit()
+                    flash('Pedido eliminado.')
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('orders_list'))
 
     @app.route('/order/<int:pedido_id>/export/<fmt>')
     def order_export_file(pedido_id, fmt):
         """Exporta el pedido guardado a xlsx o pdf."""
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             pedido = session.query(Pedido).get(pedido_id)
             if not pedido:
                 return 'Pedido no encontrado', 404
@@ -749,8 +736,6 @@ def init_app(app):
             periodo = pedido.periodo or ''
             n_days = pedido.n_days or 0
             safe_lab = secure_filename(lab) or 'pedido'
-        finally:
-            session.close()
 
         if fmt == 'xlsx':
             import openpyxl
@@ -889,8 +874,7 @@ def init_app(app):
 
     @app.route('/order/<int:pedido_id>')
     def order_detail(pedido_id):
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             pedido = session.query(Pedido).get(pedido_id)
             if not pedido:
                 flash('Pedido no encontrado.')
@@ -957,65 +941,58 @@ def init_app(app):
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
                                    product_prices=product_prices)
-        finally:
-            session.close()
 
     @app.route('/order/<int:pedido_id>/save-module-matches', methods=['POST'])
     def order_save_module_matches(pedido_id):
         """Guarda equivalencias EAN-módulo → barcode-pedido en tabla productos."""
         body    = request.get_json(silent=True) or {}
         matches = body.get('matches', []) if isinstance(body, dict) else body
-        session = database.SessionLocal()
-        try:
-            pedido = session.get(Pedido, pedido_id)
-            lab_id = None
-            if pedido and pedido.laboratorio:
-                lab_name = pedido.laboratorio.strip()
-                lab = session.query(Laboratorio).filter(
-                    Laboratorio.nombre.ilike(lab_name)
-                ).first()
-                if not lab:
-                    lab = Laboratorio(nombre=lab_name)
-                    session.add(lab)
-                    session.flush()
-                lab_id = lab.id
+        with database.get_db() as session:
+            try:
+                pedido = session.get(Pedido, pedido_id)
+                lab_id = None
+                if pedido and pedido.laboratorio:
+                    lab_name = pedido.laboratorio.strip()
+                    lab = session.query(Laboratorio).filter(
+                        Laboratorio.nombre.ilike(lab_name)
+                    ).first()
+                    if not lab:
+                        lab = Laboratorio(nombre=lab_name)
+                        session.add(lab)
+                        session.flush()
+                    lab_id = lab.id
 
-            saved = 0
-            for m in matches:
-                module_ean  = str(m.get('module_ean', '')).strip()
-                pedido_bc   = str(m.get('pedido_barcode', '')).strip()
-                pedido_nom  = m.get('pedido_nombre', '')
-                if not module_ean or not pedido_bc or module_ean == pedido_bc:
-                    continue
-                _upsert_producto(session, pedido_bc, pedido_nom, laboratorio_id=lab_id)
-                _add_alt_barcode(session, pedido_bc, module_ean)
-                saved += 1
-            session.commit()
-            equiv = [
-                {'barcodes': [b for b in [
-                    p.codigo_barra, p.codigo_barra_alt1,
-                    p.codigo_barra_alt2, p.codigo_barra_alt3,
-                ] if b]}
-                for p in session.query(Producto).all()
-            ]
-            return jsonify({'ok': True, 'saved': saved, 'equiv': equiv})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'ok': False, 'error': str(e)}), 500
-        finally:
-            session.close()
+                saved = 0
+                for m in matches:
+                    module_ean  = str(m.get('module_ean', '')).strip()
+                    pedido_bc   = str(m.get('pedido_barcode', '')).strip()
+                    pedido_nom  = m.get('pedido_nombre', '')
+                    if not module_ean or not pedido_bc or module_ean == pedido_bc:
+                        continue
+                    _upsert_producto(session, pedido_bc, pedido_nom, laboratorio_id=lab_id)
+                    _add_alt_barcode(session, pedido_bc, module_ean)
+                    saved += 1
+                session.commit()
+                equiv = [
+                    {'barcodes': [b for b in [
+                        p.codigo_barra, p.codigo_barra_alt1,
+                        p.codigo_barra_alt2, p.codigo_barra_alt3,
+                    ] if b]}
+                    for p in session.query(Producto).all()
+                ]
+                return jsonify({'ok': True, 'saved': saved, 'equiv': equiv})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'ok': False, 'error': str(e)}), 500
 
     @app.route('/order/<int:pedido_id>/modules-template', methods=['GET'])
     def order_modules_template(pedido_id):
         """Descarga una plantilla XLSX lista para completar con módulos."""
         import io, openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             pedido = session.query(database.Pedido).get(pedido_id)
             lab = pedido.laboratorio if pedido else 'Laboratorio'
-        finally:
-            session.close()
 
         wb = openpyxl.Workbook()
         ws = wb.active

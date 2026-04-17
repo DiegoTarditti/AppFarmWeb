@@ -21,8 +21,7 @@ def init_app(app):
         q_text = (request.args.get('q') or '').strip()
         only_sin_mov = request.args.get('sin_mov') == '1'
 
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             PA = database.ProductAnalytics
             cobertura_expr = _case(
                 (PA.avg_monthly == 0, None),
@@ -124,8 +123,6 @@ def init_app(app):
                 'nombre': (p.descripcion or p.codigo_barra or '')[:40],
                 'valor': float(p.stock or 0) * float(p.precio_pvp or 0),
             } for p in muerto_rows]
-        finally:
-            session.close()
 
         return render_template('dashboard.html',
                                n_days=n_days,

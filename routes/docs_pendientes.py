@@ -12,15 +12,12 @@ def init_app(app):
     @app.route('/docs-pendientes')
     def docs_pendientes():
         from sqlalchemy.orm import joinedload
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             docs = (session.query(database.DocumentoPendiente)
                     .options(joinedload(database.DocumentoPendiente.proveedor))
                     .order_by(database.DocumentoPendiente.fecha_detectado.desc())
                     .all())
             return render_template('docs_pendientes.html', docs=docs)
-        finally:
-            session.close()
 
     @app.route('/docs-pendientes/upload', methods=['POST'])
     def docs_pendientes_upload():
@@ -30,43 +27,40 @@ def init_app(app):
             flash('Seleccioná al menos un archivo PDF.')
             return redirect(url_for('docs_pendientes'))
 
-        session = database.SessionLocal()
-        try:
-            existentes = {d.filename for d in session.query(database.DocumentoPendiente)
-                          .filter(database.DocumentoPendiente.estado == 'PENDIENTE').all()}
-            nuevos = 0
-            for f in files:
-                if not f.filename.lower().endswith('.pdf'):
-                    continue
-                fname = secure_filename(f.filename)
-                if fname in existentes:
-                    continue
-                dst = os.path.join(app.config['UPLOAD_FOLDER'], fname)
-                f.save(dst)
-                doc = database.DocumentoPendiente(
-                    filename=fname,
-                    ruta_completa=dst,
-                )
-                session.add(doc)
-                existentes.add(fname)
-                nuevos += 1
-            session.commit()
-            if nuevos:
-                flash(f'{nuevos} documento(s) subido(s).')
-            else:
-                flash('No se subieron documentos nuevos (ya existían o no eran PDF).')
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                existentes = {d.filename for d in session.query(database.DocumentoPendiente)
+                              .filter(database.DocumentoPendiente.estado == 'PENDIENTE').all()}
+                nuevos = 0
+                for f in files:
+                    if not f.filename.lower().endswith('.pdf'):
+                        continue
+                    fname = secure_filename(f.filename)
+                    if fname in existentes:
+                        continue
+                    dst = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                    f.save(dst)
+                    doc = database.DocumentoPendiente(
+                        filename=fname,
+                        ruta_completa=dst,
+                    )
+                    session.add(doc)
+                    existentes.add(fname)
+                    nuevos += 1
+                session.commit()
+                if nuevos:
+                    flash(f'{nuevos} documento(s) subido(s).')
+                else:
+                    flash('No se subieron documentos nuevos (ya existían o no eran PDF).')
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('docs_pendientes'))
 
     @app.route('/docs-pendientes/<int:doc_id>/procesar')
     def docs_pendientes_procesar(doc_id):
         """Redirige a la pantalla de ingreso con el PDF pre-seleccionado."""
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             doc = session.get(database.DocumentoPendiente, doc_id)
             if not doc or doc.estado != 'PENDIENTE':
                 flash('Documento no encontrado o ya procesado.')
@@ -75,9 +69,9 @@ def init_app(app):
             if not os.path.isfile(dst):
                 flash(f'Archivo no encontrado en el servidor.')
                 return redirect(url_for('docs_pendientes'))
-        finally:
-            session.close()
-        return redirect(url_for('ingresos', pdf_pendiente=doc.filename, doc_pendiente_id=doc_id))
+            filename = doc.filename
+            doc_id_val = doc.id
+        return redirect(url_for('ingresos', pdf_pendiente=filename, doc_pendiente_id=doc_id_val))
 
     @app.route('/docs-pendientes/upload-api', methods=['POST'])
     def docs_pendientes_upload_api():
@@ -86,57 +80,52 @@ def init_app(app):
         if not files or not files[0].filename:
             return jsonify({'ok': False, 'error': 'No se recibieron archivos'}), 400
 
-        session = database.SessionLocal()
-        try:
-            existentes = {d.filename for d in session.query(database.DocumentoPendiente)
-                          .filter(database.DocumentoPendiente.estado == 'PENDIENTE').all()}
-            nuevos = 0
-            nombres = []
-            for f in files:
-                if not f.filename.lower().endswith('.pdf'):
-                    continue
-                fname = secure_filename(f.filename)
-                if fname in existentes:
-                    continue
-                dst = os.path.join(app.config['UPLOAD_FOLDER'], fname)
-                f.save(dst)
-                doc = database.DocumentoPendiente(
-                    filename=fname,
-                    ruta_completa=dst,
-                )
-                session.add(doc)
-                existentes.add(fname)
-                nuevos += 1
-                nombres.append(fname)
-            session.commit()
-            return jsonify({'ok': True, 'nuevos': nuevos, 'archivos': nombres})
-        except Exception as e:
-            session.rollback()
-            return jsonify({'ok': False, 'error': str(e)}), 500
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                existentes = {d.filename for d in session.query(database.DocumentoPendiente)
+                              .filter(database.DocumentoPendiente.estado == 'PENDIENTE').all()}
+                nuevos = 0
+                nombres = []
+                for f in files:
+                    if not f.filename.lower().endswith('.pdf'):
+                        continue
+                    fname = secure_filename(f.filename)
+                    if fname in existentes:
+                        continue
+                    dst = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                    f.save(dst)
+                    doc = database.DocumentoPendiente(
+                        filename=fname,
+                        ruta_completa=dst,
+                    )
+                    session.add(doc)
+                    existentes.add(fname)
+                    nuevos += 1
+                    nombres.append(fname)
+                session.commit()
+                return jsonify({'ok': True, 'nuevos': nuevos, 'archivos': nombres})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'ok': False, 'error': str(e)}), 500
 
     @app.route('/docs-pendientes/<int:doc_id>/delete', methods=['POST'])
     def docs_pendientes_delete(doc_id):
-        session = database.SessionLocal()
-        try:
-            doc = session.get(database.DocumentoPendiente, doc_id)
-            if doc:
-                session.delete(doc)
-                session.commit()
-                flash('Registro eliminado.')
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                doc = session.get(database.DocumentoPendiente, doc_id)
+                if doc:
+                    session.delete(doc)
+                    session.commit()
+                    flash('Registro eliminado.')
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('docs_pendientes'))
 
     @app.route('/api/product/<barcode>/chart')
     def api_product_chart(barcode):
         """Devuelve datos de ventas históricas de un producto desde ProductAnalytics."""
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             pa = session.get(database.ProductAnalytics, barcode)
             if not pa:
                 return jsonify({'ok': False, 'error': 'Producto no encontrado. Procesá un análisis de ventas primero.'}), 404
@@ -160,5 +149,3 @@ def init_app(app):
                 'n_days': pa.n_days or 35,
                 'sin_historial': len(ventas) == 0,
             })
-        finally:
-            session.close()

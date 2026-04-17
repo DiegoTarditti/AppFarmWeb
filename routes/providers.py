@@ -117,31 +117,27 @@ def init_app(app):
         if not name:
             return jsonify({'error': 'Nombre requerido.'}), 400
 
-        session = database.SessionLocal()
-        try:
-            if peek_id:
-                prov = session.get(database.Provider, int(peek_id))
-                if prov:
-                    return jsonify({'provider_id': prov.id})
+        with database.get_db() as session:
+            try:
+                if peek_id:
+                    prov = session.get(database.Provider, int(peek_id))
+                    if prov:
+                        return jsonify({'provider_id': prov.id})
 
-            existing = session.query(database.Provider).filter(
-                database.Provider.razon_social.ilike(f'%{name}%')
-            ).first()
-            if existing:
-                return jsonify({'provider_id': existing.id})
+                existing = session.query(database.Provider).filter(
+                    database.Provider.razon_social.ilike(f'%{name}%')
+                ).first()
+                if existing:
+                    return jsonify({'provider_id': existing.id})
 
-            prov = database.Provider(razon_social=name)
-            session.add(prov)
-            session.commit()
-            session.refresh(prov)
-            pid = prov.id
-        except Exception as e:
-            session.rollback()
-            return jsonify({'error': str(e)}), 500
-        finally:
-            session.close()
-
-        return jsonify({'provider_id': pid})
+                prov = database.Provider(razon_social=name)
+                session.add(prov)
+                session.commit()
+                session.refresh(prov)
+                return jsonify({'provider_id': prov.id})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/provider/<int:provider_id>/parser-preview/export', methods=['POST'])
     def provider_parser_preview_export(provider_id):

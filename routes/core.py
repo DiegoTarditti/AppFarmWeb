@@ -27,33 +27,31 @@ def init_app(app):
     def settings_save():
         nombre = request.form.get('farmacia_nombre', '').strip() or 'Farmacia'
         ruta = request.form.get('ruta_facturas', '').strip()
-        session = database.SessionLocal()
-        cfg = session.get(database.Config, 1)
-        if not cfg:
-            cfg = database.Config(id=1)
-            session.add(cfg)
-        cfg.farmacia_nombre = nombre
-        cfg.ruta_facturas = ruta or None
-        try:
-            cfg.umbral_pico = max(1.01, min(3.0, float(request.form.get('umbral_pico', 1.30))))
-            cfg.umbral_baja = max(0.01, min(0.99, float(request.form.get('umbral_baja', 0.70))))
-            cfg.umbral_tendencia = max(0.0, min(5.0, float(request.form.get('umbral_tendencia', 0.20))))
-            cfg.rot_alta_min = max(0.0, float(request.form.get('rot_alta_min', 20.0)))
-            cfg.rot_alta_tol = max(0.0, float(request.form.get('rot_alta_tol', 0.0)))
-            cfg.rot_media_min = max(0.0, float(request.form.get('rot_media_min', 5.0)))
-            cfg.rot_media_tol = max(0.0, float(request.form.get('rot_media_tol', 0.0)))
-            cfg.rot_baja_tol = max(0.0, float(request.form.get('rot_baja_tol', 0.0)))
-        except (ValueError, TypeError):
-            pass
-        session.commit()
-        session.close()
+        with database.get_db() as session:
+            cfg = session.get(database.Config, 1)
+            if not cfg:
+                cfg = database.Config(id=1)
+                session.add(cfg)
+            cfg.farmacia_nombre = nombre
+            cfg.ruta_facturas = ruta or None
+            try:
+                cfg.umbral_pico = max(1.01, min(3.0, float(request.form.get('umbral_pico', 1.30))))
+                cfg.umbral_baja = max(0.01, min(0.99, float(request.form.get('umbral_baja', 0.70))))
+                cfg.umbral_tendencia = max(0.0, min(5.0, float(request.form.get('umbral_tendencia', 0.20))))
+                cfg.rot_alta_min = max(0.0, float(request.form.get('rot_alta_min', 20.0)))
+                cfg.rot_alta_tol = max(0.0, float(request.form.get('rot_alta_tol', 0.0)))
+                cfg.rot_media_min = max(0.0, float(request.form.get('rot_media_min', 5.0)))
+                cfg.rot_media_tol = max(0.0, float(request.form.get('rot_media_tol', 0.0)))
+                cfg.rot_baja_tol = max(0.0, float(request.form.get('rot_baja_tol', 0.0)))
+            except (ValueError, TypeError):
+                pass
+            session.commit()
         flash('Configuración guardada.')
         return redirect(url_for('settings'))
 
     @app.route('/admin')
     def admin_console():
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             stats = {
                 'proveedores': session.query(database.Provider).count(),
                 'facturas': session.query(database.Invoice).count(),
@@ -66,8 +64,6 @@ def init_app(app):
                 'modulos': session.query(database.Modulo).count(),
                 'modulo_packs': session.query(database.ModuloPack).count(),
             }
-        finally:
-            session.close()
 
         deploy = {
             'commit':  os.environ.get('RENDER_GIT_COMMIT', '')[:7] or 'local',

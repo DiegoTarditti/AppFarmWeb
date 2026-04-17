@@ -9,8 +9,7 @@ def init_app(app):
 
     @app.route('/cuentas-corrientes')
     def cuentas_corrientes():
-        session = database.SessionLocal()
-        try:
+        with database.get_db() as session:
             prov_list = get_providers()
 
             provider_id = request.args.get('proveedor', type=int)
@@ -93,95 +92,85 @@ def init_app(app):
 
             prov = {'id': provider.id, 'razon_social': provider.razon_social,
                     'cuit': provider.cuit or ''} if provider else None
-        finally:
-            session.close()
 
-        return render_template('cuenta_corriente.html', provider=prov,
-                               proveedores=prov_list, provider_id=provider_id or 0,
-                               movimientos=movimientos, saldo_total=saldo_total)
+            return render_template('cuenta_corriente.html', provider=prov,
+                                   proveedores=prov_list, provider_id=provider_id or 0,
+                                   movimientos=movimientos, saldo_total=saldo_total)
 
     @app.route('/provider/<int:provider_id>/cuenta-corriente/add', methods=['POST'])
     def cuenta_corriente_add(provider_id):
         from datetime import datetime as _dt
-        session = database.SessionLocal()
-        try:
-            tipo = request.form.get('tipo', '').strip()
-            if tipo not in ('PAGO', 'NCR', 'AJUSTE_POS', 'AJUSTE_NEG'):
-                flash('Tipo inválido.')
-                return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
-            monto = float(request.form.get('monto', 0))
-            if monto <= 0:
-                flash('El monto debe ser positivo.')
-                return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
-            fecha_str = request.form.get('fecha', '')
-            fecha = _dt.strptime(fecha_str, '%Y-%m-%d').date() if fecha_str else _dt.now().date()
-            pa = database.PagoAjusteCC(
-                proveedor_id=provider_id,
-                tipo=tipo,
-                fecha=fecha,
-                monto=monto,
-                numero_comprobante=request.form.get('comprobante', '').strip() or None,
-                observaciones=request.form.get('observaciones', '').strip() or None,
-            )
-            session.add(pa)
-            session.commit()
-            flash(f'{tipo.replace("_", " ").title()} registrado.')
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                tipo = request.form.get('tipo', '').strip()
+                if tipo not in ('PAGO', 'NCR', 'AJUSTE_POS', 'AJUSTE_NEG'):
+                    flash('Tipo inválido.')
+                    return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
+                monto = float(request.form.get('monto', 0))
+                if monto <= 0:
+                    flash('El monto debe ser positivo.')
+                    return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
+                fecha_str = request.form.get('fecha', '')
+                fecha = _dt.strptime(fecha_str, '%Y-%m-%d').date() if fecha_str else _dt.now().date()
+                pa = database.PagoAjusteCC(
+                    proveedor_id=provider_id,
+                    tipo=tipo,
+                    fecha=fecha,
+                    monto=monto,
+                    numero_comprobante=request.form.get('comprobante', '').strip() or None,
+                    observaciones=request.form.get('observaciones', '').strip() or None,
+                )
+                session.add(pa)
+                session.commit()
+                flash(f'{tipo.replace("_", " ").title()} registrado.')
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
 
     @app.route('/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/delete', methods=['POST'])
     def cuenta_corriente_delete(provider_id, mov_id):
-        session = database.SessionLocal()
-        try:
-            pa = session.get(database.PagoAjusteCC, mov_id)
-            if pa and pa.proveedor_id == provider_id:
-                session.delete(pa)
-                session.commit()
-                flash('Movimiento eliminado.')
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                pa = session.get(database.PagoAjusteCC, mov_id)
+                if pa and pa.proveedor_id == provider_id:
+                    session.delete(pa)
+                    session.commit()
+                    flash('Movimiento eliminado.')
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
 
     @app.route('/provider/<int:provider_id>/cuenta-corriente/conciliar', methods=['POST'])
     def cuenta_corriente_conciliar(provider_id):
         origen = request.form.get('origen')
         mov_id = request.form.get('mov_id', type=int)
-        session = database.SessionLocal()
-        try:
-            if origen == 'factura' and mov_id:
-                obj = session.get(database.Invoice, mov_id)
-            elif origen == 'manual' and mov_id:
-                obj = session.get(database.PagoAjusteCC, mov_id)
-            else:
-                obj = None
-            if obj:
-                obj.conciliado = not obj.conciliado
-                session.commit()
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                if origen == 'factura' and mov_id:
+                    obj = session.get(database.Invoice, mov_id)
+                elif origen == 'manual' and mov_id:
+                    obj = session.get(database.PagoAjusteCC, mov_id)
+                else:
+                    obj = None
+                if obj:
+                    obj.conciliado = not obj.conciliado
+                    session.commit()
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
 
     @app.route('/provider/<int:provider_id>/cuenta-corriente/<int:mov_id>/edit-obs', methods=['POST'])
     def cuenta_corriente_edit_obs(provider_id, mov_id):
-        session = database.SessionLocal()
-        try:
-            pa = session.get(database.PagoAjusteCC, mov_id)
-            if pa and pa.proveedor_id == provider_id:
-                pa.observaciones = request.form.get('observaciones', '').strip() or None
-                session.commit()
-        except Exception as e:
-            session.rollback()
-            flash(f'Error: {e}')
-        finally:
-            session.close()
+        with database.get_db() as session:
+            try:
+                pa = session.get(database.PagoAjusteCC, mov_id)
+                if pa and pa.proveedor_id == provider_id:
+                    pa.observaciones = request.form.get('observaciones', '').strip() or None
+                    session.commit()
+            except Exception as e:
+                session.rollback()
+                flash(f'Error: {e}')
         return redirect(url_for('cuentas_corrientes', proveedor=provider_id))
