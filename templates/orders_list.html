@@ -1,87 +1,20 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Pedidos guardados — Farmacia</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-        details > summary { list-style: none; }
-        details > summary::-webkit-details-marker { display: none; }
-    </style>
-</head>
-<body class="min-h-screen flex font-sans">
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
 
-<!-- Sidebar -->
-<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0">
-    <div class="px-4 py-5 border-b border-[#111827]">
-        <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                </svg>
-            </div>
-            <div>
-                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
-                <p class="text-xs text-[#9ca3af]">Farmacia</p>
-            </div>
-        </div>
-    </div>
-    <nav class="flex-1 px-3 py-4 space-y-0.5">
-        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-            Inicio
-        </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Gestión</p>
-        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-            Proveedores
-        </a>
-        <a href="{{ url_for('laboratorios_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-            Laboratorios
-        </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Operaciones</p>
-        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-            Control de Ingreso
-        </a>
-        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-            Compras
-        </a>        <a href="{{ url_for('orders_list') }}" class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-semibold text-amber-800 bg-amber-50/60">Pedidos guardados</a>
-        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-            Productos
-        </a>
-        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Configuración
-        </a>
-    </nav>
-</aside>
+{% block title %}Pedidos guardados — Farmacia{% endblock %}
 
-<!-- Main -->
-<div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+{% block extra_head %}
+<style>
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+</style>
+{% endblock %}
 
+{% block nav_after_compras %}
+        <a href="{{ url_for('orders_list') }}" class="{{ nav_sub_active }}">Pedidos guardados</a>
+{% endblock %}
+
+{% block main %}
     <!-- Top bar -->
     <div class="bg-surface border-b border-[#111827] px-6 py-3 flex items-center gap-4 flex-shrink-0">
         <h1 class="text-base font-bold text-[#1e1e1e]">Pedidos guardados</h1>
@@ -235,7 +168,7 @@
                            oninput="filtrarItems(this)"
                            class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-brand">
                     <button onclick="this.previousElementSibling.value=''; filtrarItems(this.previousElementSibling)"
-                            class="text-xs text-[#999] hover:text-[#555] transition-colors">✕</button>
+                            class="text-xs text-[#999] hover:text-[#555] transition-colors">&#x2715;</button>
                     <span class="text-xs text-[#bbb] items-count"></span>
                 </div>
                 <table class="w-full text-xs border-collapse">
@@ -255,7 +188,7 @@
                         data-cb="{{ it.codigo_barra }}">
                         <td class="py-1.5 pr-3 font-medium text-[#1e1e1e] truncate max-w-[340px]">
                             <div class="flex items-center gap-1">
-                                <a href="https://ar.prvademecum.com/buscar/?q={{ it.nombre | urlencode }}"
+                                <a href="https://ar.prvademecum.com/resultados/?q={{ it.nombre | urlencode }}"
                                    target="_blank" rel="noopener" title="Buscar en PR Vademécum"
                                    onclick="event.stopPropagation()"
                                    class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-[#ccc] hover:text-blue-600 hover:bg-blue-50 transition-colors">
@@ -287,8 +220,9 @@
         </div>
         {% endif %}
     </div>
-</div>
+{% endblock %}
 
+{% block after_main %}
 <script>
 let estadoActual = 'pendiente';
 
@@ -339,5 +273,4 @@ document.addEventListener('DOMContentLoaded', () => {
     setEstado('pendiente');
 });
 </script>
-</body>
-</html>
+{% endblock %}

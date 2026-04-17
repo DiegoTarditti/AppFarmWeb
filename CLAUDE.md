@@ -54,7 +54,9 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 
 | Archivo | Rol |
 |---------|-----|
-| `app.py` | Rutas Flask + lógica de controlador |
+| `app.py` | Flask app factory, config, template filters, registro de rutas |
+| `helpers.py` | Constantes compartidas, funciones utilitarias |
+| `routes/*.py` | 14 módulos de rutas con patrón `init_app(app)` |
 | `database.py` | Modelos SQLAlchemy + `init_db()` con migraciones |
 | `data_extract.py` | Parseo de PDF/Excel, comparación en 3 pasos, guardado de diferencias, reclamos, barcode_mappings |
 | `parsers/<slug>.py` | Un parser por proveedor, implementa `parse_invoice_pdf(path) → dict` |
@@ -164,7 +166,7 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 ## Tabla Producto (master)
 
 - Se puebla automáticamente desde: `process_upload` (ErpStock + InvoiceItems), `apply_mapping` (upsert ERP + add alt), `purchase_save_order` (ítems del pedido), `order_save_module_matches` (match manual).
-- Helpers en `app.py`: `_upsert_producto()` y `_add_alt_barcode()` (no duplica alts, no mete el mismo barcode).
+- Helpers en `helpers.py`: `_upsert_producto()` y `_add_alt_barcode()` (no duplica alts, no mete el mismo barcode).
 - Equivalencias multi-barcode: al buscar un EAN contra pedido, si ese EAN está en alt1/2/3 de un producto del pedido, se encuentra.
 
 ## Match manual módulos (order_detail.html)

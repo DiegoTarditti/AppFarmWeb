@@ -1,122 +1,16 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Control de Ingreso — {{ config.farmacia_nombre }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-    </style>
-</head>
-<body class="min-h-screen flex font-sans">
+{% extends "base.html" %}
+{% set nav_active = "ingresos" %}
 
-<!-- Sidebar -->
-<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0">
-    <div class="px-4 py-5 border-b border-[#111827]">
-        <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                </svg>
-            </div>
-            <div>
-                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
-                <p class="text-xs text-[#9ca3af]">{{ config.farmacia_nombre }}</p>
-            </div>
-        </div>
-    </div>
-    <nav class="flex-1 px-3 py-4 space-y-0.5">
-        <a href="{{ url_for('index') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-            </svg>
-            Inicio
-        </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Gestión</p>
-        <a href="{{ url_for('providers_list') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-            </svg>
-            Proveedores
-        </a>
-        <a href="{{ url_for('laboratorios_list') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
-            </svg>
-            Laboratorios
-        </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Operaciones</p>
-        <a href="{{ url_for('ingresos') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-            </svg>
-            Control de Ingreso
-        </a>
-        <a href="{{ url_for('batch_new') }}"
-           class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            Batch de facturas
-        </a>
-        <a href="{{ url_for('claims_list') }}"
-           class="flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            Reclamos
-        </a>
-        <a href="{{ url_for('purchase_index') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-            </svg>
-            Compras
-        </a>
-        <a href="{{ url_for('productos_list') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-            </svg>
-            Productos
-        </a>
-        <a href="{{ url_for('settings') }}"
-           class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-            </svg>
-            Configuración
-        </a>
-    </nav>
-</aside>
+{% block title %}Control de Ingreso — {{ config.farmacia_nombre }}{% endblock %}
 
+{% block nav_after_ingresos %}
+        <a href="{{ url_for('batch_new') }}" class="{{ nav_sub }}">Batch de facturas</a>
+        <a href="{{ url_for('claims_list') }}" class="{{ nav_sub }}">Reclamos</a>
+{% endblock %}
+
+{% block main %}
 <!-- Main content -->
-<div class="flex-1 flex gap-8 py-10 px-8 items-start">
+<div class="flex-1 flex gap-8 py-10 px-8 items-start overflow-auto">
 
 <!-- Columna izquierda: formulario de carga -->
 <div class="w-full max-w-md flex-shrink-0">
@@ -147,7 +41,7 @@
                     {{ p.razon_social }}{% if p.cuit %} · {{ p.cuit }}{% endif %}
                 </option>
                 {% endfor %}
-                <option value="new">＋ Nuevo proveedor...</option>
+                <option value="new">+ Nuevo proveedor...</option>
             </select>
         </div>
 
@@ -176,7 +70,7 @@
             </div>
         </div>
 
-        <!-- ── PROVEEDOR EXISTENTE: subir PDF + ERP ── -->
+        <!-- PROVEEDOR EXISTENTE: subir PDF + ERP -->
         <form id="upload-section" class="hidden space-y-4"
               method="post" action="{{ url_for('upload_files') }}" enctype="multipart/form-data">
             <input type="hidden" name="proveedor_id" id="proveedor_id">
@@ -216,7 +110,7 @@
                 <p id="lbl-pdf" class="text-xs text-[#999] mt-1 ml-1"></p>
                 <button type="button" id="btn-probar-existing" disabled onclick="probarParserExistente()"
                         class="mt-2 w-full border border-surface-border text-xs text-[#d1d5db] hover:text-white hover:bg-white/[0.06] disabled:opacity-40 disabled:cursor-not-allowed py-1.5 rounded-lg transition-colors">
-                    🔍 Probar parser con este PDF
+                    Probar parser con este PDF
                 </button>
             </div>
 
@@ -255,7 +149,7 @@
             </button>
         </form>
 
-        <!-- ── NUEVO PROVEEDOR: subir PDF + identificar + ERP ── -->
+        <!-- NUEVO PROVEEDOR: subir PDF + identificar + ERP -->
         <div id="new-step1" class="hidden space-y-4">
             <p class="text-xs text-[#6f6f6f]">Subí la factura PDF. Se leerá el encabezado para identificar al proveedor.</p>
 
@@ -370,7 +264,9 @@
 </div>
 
 </div><!-- /flex row -->
+{% endblock %}
 
+{% block after_main %}
 <script>
 const select = document.getElementById('provider-select');
 
@@ -405,7 +301,7 @@ document.getElementById('new-pdf-input').addEventListener('change', function () 
     const btn = document.getElementById('btn-identify');
     if (this.files.length > 0) {
         const fileLbl = document.getElementById('lbl-new-pdf-file');
-        fileLbl.textContent = '✓ ' + this.files[0].name;
+        fileLbl.textContent = '\u2713 ' + this.files[0].name;
         fileLbl.classList.remove('hidden');
         document.getElementById('lbl-new-pdf-text').textContent = this.files[0].name;
         btn.disabled = false;
@@ -427,7 +323,7 @@ async function probarParserExistente() {
     const btn = document.getElementById('btn-probar-existing');
     const prev = btn.textContent;
     btn.disabled = true;
-    btn.textContent = 'Subiendo PDF…';
+    btn.textContent = 'Subiendo PDF\u2026';
 
     const fd = new FormData();
     fd.append('invoice_pdf', input.files[0]);
@@ -476,7 +372,7 @@ async function identifyProvider() {
         document.getElementById('pdf_temp_filename').value = data.pdf_filename;
         document.getElementById('provider_name_new').value = data.proposed_name;
 
-        btnText.textContent = '✓ Identificado';
+        btnText.textContent = '\u2713 Identificado';
 
         if (document.getElementById('chk-probar').checked && _identifiedProviderId) {
             _showStep2AfterModal = true;
@@ -492,7 +388,7 @@ async function identifyProvider() {
 }
 
 async function openParserPreviewSaved(providerId, name, pdfFilename) {
-    document.getElementById('modal-title').textContent = 'Probar parser — ' + name;
+    document.getElementById('modal-title').textContent = 'Probar parser \u2014 ' + name;
     document.getElementById('modal-subtitle').textContent = pdfFilename;
     document.getElementById('modal-drop').classList.add('hidden');
     document.getElementById('modal-loading').classList.remove('hidden');
@@ -524,11 +420,11 @@ async function openParserPreviewSaved(providerId, name, pdfFilename) {
 }
 
 function fillParserModal(data) {
-    document.getElementById('res-numero').textContent = data.numero_factura || '—';
-    document.getElementById('res-fecha').textContent = data.fecha || '—';
-    document.getElementById('res-proveedor').textContent = data.proveedor || '—';
-    document.getElementById('res-total').textContent = data.total ? '$' + Number(data.total).toLocaleString('es-AR') : '—';
-    document.getElementById('res-count').textContent = data.items.length + ' ítem' + (data.items.length !== 1 ? 's' : '');
+    document.getElementById('res-numero').textContent = data.numero_factura || '\u2014';
+    document.getElementById('res-fecha').textContent = data.fecha || '\u2014';
+    document.getElementById('res-proveedor').textContent = data.proveedor || '\u2014';
+    document.getElementById('res-total').textContent = data.total ? '$' + Number(data.total).toLocaleString('es-AR') : '\u2014';
+    document.getElementById('res-count').textContent = data.items.length + ' \u00edtem' + (data.items.length !== 1 ? 's' : '');
 
     // Botón asistente: siempre visible para poder ajustar campos del encabezado
     document.getElementById('btn-open-assistant').classList.remove('hidden');
@@ -541,14 +437,14 @@ function fillParserModal(data) {
         tr.className = 'hover:bg-black/[0.04] ' + (ok ? '' : 'opacity-50');
         tr.innerHTML = `
             <td class="px-3 py-2 text-[#999]">${i+1}</td>
-            <td class="px-3 py-2 font-mono text-brand">${it.codigo_barra || '<span class="text-red-600">—</span>'}</td>
-            <td class="px-3 py-2 text-[#1e1e1e]">${it.descripcion || '<span class="text-red-600">—</span>'}</td>
-            <td class="px-3 py-2 text-right text-[#1e1e1e]">${it.cantidad || '—'}</td>
-            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.precio_unitario || '—'}</td>
-            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.dto || '—'}</td>
-            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.importe || '—'}</td>
-            <td class="px-3 py-2 text-[#888]">${it.lote || '—'}</td>
-            <td class="px-3 py-2 text-[#888]">${it.vencimiento || '—'}</td>
+            <td class="px-3 py-2 font-mono text-brand">${it.codigo_barra || '<span class="text-red-600">\u2014</span>'}</td>
+            <td class="px-3 py-2 text-[#1e1e1e]">${it.descripcion || '<span class="text-red-600">\u2014</span>'}</td>
+            <td class="px-3 py-2 text-right text-[#1e1e1e]">${it.cantidad || '\u2014'}</td>
+            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.precio_unitario || '\u2014'}</td>
+            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.dto || '\u2014'}</td>
+            <td class="px-3 py-2 text-right font-mono text-[#555]">${it.importe || '\u2014'}</td>
+            <td class="px-3 py-2 text-[#888]">${it.lote || '\u2014'}</td>
+            <td class="px-3 py-2 text-[#888]">${it.vencimiento || '\u2014'}</td>
         `;
         tbody.appendChild(tr);
     });
@@ -557,7 +453,7 @@ function fillParserModal(data) {
 
 async function openParseAssistant() {
     const btn = document.getElementById('btn-open-assistant');
-    btn.textContent = 'Creando…';
+    btn.textContent = 'Creando\u2026';
     btn.disabled = true;
     try {
         const res = await fetch('/api/invoice/probe-create', {
@@ -573,12 +469,12 @@ async function openParseAssistant() {
             window.location.href = `/invoice/${data.invoice_id}/parse-helper`;
         } else {
             alert(data.error || 'Error al crear la factura de prueba.');
-            btn.textContent = 'Abrir asistente de extracción →';
+            btn.textContent = 'Abrir asistente de extracci\u00f3n \u2192';
             btn.disabled = false;
         }
     } catch(e) {
-        alert('Error de conexión.');
-        btn.textContent = 'Abrir asistente de extracción →';
+        alert('Error de conexi\u00f3n.');
+        btn.textContent = 'Abrir asistente de extracci\u00f3n \u2192';
         btn.disabled = false;
     }
 }
@@ -665,7 +561,7 @@ function copyRuta() {
 function setLabel(input, id) {
     const el = document.getElementById(id);
     if (el && input.files.length > 0) {
-        el.textContent = '✓ ' + input.files[0].name;
+        el.textContent = '\u2713 ' + input.files[0].name;
         el.classList.add('text-brand');
         el.classList.remove('text-[#999]');
     }
@@ -725,7 +621,7 @@ document.getElementById('fac-provider-select').addEventListener('change', async 
                     <td class="px-3 py-2.5 text-center text-xs text-[#6f6f6f]">${inv.total_articulos}</td>
                     <td class="px-3 py-2.5 text-right text-xs font-mono text-[#1e1e1e]">$${total}</td>
                     <td class="px-3 py-2.5 text-right">
-                        <a href="/results/${inv.id}" class="text-xs text-brand hover:text-brand-hover transition-colors">Ver →</a>
+                        <a href="/results/${inv.id}" class="text-xs text-brand hover:text-brand-hover transition-colors">Ver \u2192</a>
                     </td>
                 </tr>`);
         });
@@ -773,7 +669,7 @@ document.getElementById('fac-provider-select').addEventListener('change', async 
                     <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20" id="res-count"></span>
                     <button id="btn-open-assistant" onclick="openParseAssistant()"
                             class="hidden px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition-colors">
-                        Abrir asistente de extracción →
+                        Abrir asistente de extracci&oacute;n &rarr;
                     </button>
                 </div>
             </div>
@@ -808,5 +704,4 @@ function closeParserPreview() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeParserPreview(); });
 </script>
-</body>
-</html>
+{% endblock %}

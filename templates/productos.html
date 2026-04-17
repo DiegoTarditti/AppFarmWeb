@@ -1,97 +1,29 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Productos — Farmacia</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-        .alt-badge { display: inline-block; font-family: monospace; font-size: 10px;
-                     background: #f0f0f0; border: 1px solid #e0e0e0; border-radius: 4px;
-                     padding: 1px 5px; color: #555; }
-        .editable-cell { cursor: pointer; }
-        .editable-cell:hover { background: rgba(234,179,8,0.07); }
-        .editable-cell input { border: 1px solid #EAB308; border-radius: 4px; padding: 1px 4px;
-                               font-size: inherit; font-family: inherit; width: 100%;
-                               background: #fff; outline: none; }
-        .editable-cell.saving { opacity: 0.5; }
-    </style>
-</head>
-<body class="min-h-screen flex font-sans">
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
 
-<!-- Sidebar -->
-<aside class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0">
-    <div class="px-4 py-5 border-b border-[#111827]">
-        <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                </svg>
-            </div>
-            <div>
-                <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
-                <p class="text-xs text-[#9ca3af]">Farmacia</p>
-            </div>
-        </div>
-    </div>
-    <nav class="flex-1 px-3 py-4 space-y-0.5">
-        <a href="{{ url_for('index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-            Inicio
-        </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Gestión</p>
-        <a href="{{ url_for('providers_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
-            Proveedores
-        </a>
-        <a href="{{ url_for('laboratorios_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-            Laboratorios
-        </a>
-        <p class="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#9ca3af] uppercase tracking-widest">Operaciones</p>
-        <a href="{{ url_for('ingresos') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-            Control de Ingreso
-        </a>
-        <a href="{{ url_for('purchase_index') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
-            Compras
-        </a>
-        <a href="{{ url_for('productos_list') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-            Productos
-        </a>
-        <a href="{{ url_for('settings') }}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors">
-            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Configuración
-        </a>
-    </nav>
-    <div class="px-4 py-4 border-t border-surface-border text-xs text-[#999]">
-        <span id="sb-count">…</span> productos
-    </div>
-</aside>
+{% block title %}Productos — Farmacia{% endblock %}
 
-<!-- Main -->
-<div class="flex-1 flex flex-col min-h-screen overflow-hidden">
+{% block extra_head %}
+<style>
+    .alt-badge { display: inline-block; font-family: monospace; font-size: 10px;
+                 background: #f0f0f0; border: 1px solid #e0e0e0; border-radius: 4px;
+                 padding: 1px 5px; color: #555; }
+    .editable-cell { cursor: pointer; }
+    .editable-cell:hover { background: rgba(234,179,8,0.07); }
+    .editable-cell input { border: 1px solid #EAB308; border-radius: 4px; padding: 1px 4px;
+                           font-size: inherit; font-family: inherit; width: 100%;
+                           background: #fff; outline: none; }
+    .editable-cell.saving { opacity: 0.5; }
+</style>
+{% endblock %}
 
+{% block sidebar_footer %}
+<div class="px-4 py-4 border-t border-surface-border text-xs text-[#999]">
+    <span id="sb-count">…</span> productos
+</div>
+{% endblock %}
+
+{% block main %}
     <!-- Barra única: filtros + agregar -->
     <div class="bg-surface border-b border-[#e0e0e0] px-6 py-3 flex-shrink-0">
         <!-- Fila principal: título + filtros + botones -->
@@ -203,38 +135,28 @@
             <tbody id="table-body"></tbody>
         </table>
     </div>
-</div>
+{% endblock %}
 
+{% block after_main %}
 <script>
 const LABS = {{ laboratorios | tojson }};
 let allProductos = [];
 
-// Opciones de lab pre-generadas (se reusan en cada fila)
 const LAB_OPTIONS = LABS.map(l =>
     `<option value="${l.id}">${escHtml(l.nombre)}</option>`
 ).join('');
 
 function escHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function altCell(val) {
-    return val
-        ? `<span class="alt-badge">${escHtml(val)}</span>`
-        : '<span class="text-[#ccc] placeholder">—</span>';
+    return val ? `<span class="alt-badge">${escHtml(val)}</span>` : '<span class="text-[#ccc] placeholder">—</span>';
 }
 
 function buildRow(p) {
     const hasAlt = p.alt1 || p.alt2 || p.alt3;
-    // Marcar la opción seleccionada en el select de lab
-    const labSel = LAB_OPTIONS.replace(
-        `value="${p.laboratorio_id}"`,
-        `value="${p.laboratorio_id}" selected`
-    );
+    const labSel = LAB_OPTIONS.replace(`value="${p.laboratorio_id}"`, `value="${p.laboratorio_id}" selected`);
     return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors"
         data-desc="${escHtml(p.descripcion.toLowerCase())}"
         data-cb="${escHtml(p.codigo_barra)}"
@@ -269,7 +191,7 @@ function buildRow(p) {
         <td class="px-3 py-2 text-right text-[#999]">${escHtml(p.actualizado_en)}</td>
         <td class="px-3 py-2 text-center">
             <div class="flex items-center justify-center gap-0.5">
-                <a href="https://ar.prvademecum.com/buscar/?q=${encodeURIComponent(p.descripcion)}"
+                <a href="https://ar.prvademecum.com/resultados/?q=${encodeURIComponent(p.descripcion)}"
                    target="_blank" rel="noopener" title="Buscar en PR Vademécum"
                    class="w-6 h-6 flex items-center justify-center rounded text-[#bbb] hover:text-blue-600 hover:bg-blue-50 transition-colors">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -291,7 +213,6 @@ async function loadProductos() {
     try {
         const resp = await fetch('/api/productos');
         allProductos = await resp.json();
-
         const tbody = document.getElementById('table-body');
         if (allProductos.length === 0) {
             document.getElementById('main-table').classList.add('hidden');
@@ -299,12 +220,9 @@ async function loadProductos() {
         } else {
             tbody.innerHTML = allProductos.map(buildRow).join('');
         }
-
         setCount(allProductos.length);
         document.getElementById('loading-overlay').classList.add('hidden');
         document.getElementById('tabla-wrap').classList.remove('hidden');
-
-        // Aplicar filtro de URL si viene con ?lab=
         const urlLab = new URLSearchParams(location.search).get('lab');
         if (urlLab) {
             const sel = document.getElementById('filter-lab');
@@ -318,88 +236,46 @@ async function loadProductos() {
 
 function setCount(n) {
     document.getElementById('count-label').textContent = n + ' registros';
-    document.getElementById('sb-count').textContent = n;
+    const sb = document.getElementById('sb-count');
+    if (sb) sb.textContent = n;
 }
 
 function filterProductos() {
-    const q        = document.getElementById('search').value.toLowerCase().trim();
-    const onlyAlt  = document.getElementById('only-alt').checked;
+    const q = document.getElementById('search').value.toLowerCase().trim();
+    const onlyAlt = document.getElementById('only-alt').checked;
     const onlyPack = document.getElementById('only-pack').checked;
-    const labVal   = document.getElementById('filter-lab').value;
+    const labVal = document.getElementById('filter-lab').value;
     let visible = 0;
-
     document.querySelectorAll('#table-body tr').forEach(tr => {
-        const desc   = tr.dataset.desc || '';
-        const cb     = tr.dataset.cb   || '';
-        const alt1   = tr.dataset.alt1 || '';
-        const alt2   = tr.dataset.alt2 || '';
-        const alt3   = tr.dataset.alt3 || '';
-        const labId  = tr.dataset.labid || '';
-        const hasAlt = tr.dataset.hasalt === 'true';
-        const isPack = tr.dataset.ispack === 'true';
-
-        const matchSearch = !q || desc.includes(q) || cb.includes(q)
-                            || alt1.includes(q) || alt2.includes(q) || alt3.includes(q);
-        const matchAlt    = !onlyAlt  || hasAlt;
-        const matchPack   = !onlyPack || isPack;
+        const desc=tr.dataset.desc||'', cb=tr.dataset.cb||'',
+              alt1=tr.dataset.alt1||'', alt2=tr.dataset.alt2||'', alt3=tr.dataset.alt3||'',
+              labId=tr.dataset.labid||'', hasAlt=tr.dataset.hasalt==='true', isPack=tr.dataset.ispack==='true';
+        const matchSearch = !q || desc.includes(q) || cb.includes(q) || alt1.includes(q) || alt2.includes(q) || alt3.includes(q);
+        const matchAlt = !onlyAlt || hasAlt;
+        const matchPack = !onlyPack || isPack;
         let matchLab = true;
         if (labVal === '__none__') matchLab = !labId;
         else if (labVal) matchLab = labId === labVal;
-
         const show = matchSearch && matchAlt && matchPack && matchLab;
         tr.style.display = show ? '' : 'none';
         if (show) visible++;
     });
-
     setCount(visible);
-}
-
-// Edición inline
-function cellCurrentValue(td) {
-    const inp = td.querySelector('input');
-    if (inp) return inp.value;
-    const ph = td.querySelector('.placeholder');
-    if (ph) return '';
-    const badge = td.querySelector('.alt-badge');
-    if (badge) return badge.textContent.trim();
-    return td.textContent.trim().replace(/^\$/, '');
-}
-
-function renderCell(td, value) {
-    const field = td.dataset.field;
-    if (!value) {
-        td.innerHTML = '<span class="text-[#ccc] placeholder">—</span>';
-        return;
-    }
-    if (field === 'precio_pvp') {
-        td.innerHTML = '$' + parseInt(value);
-    } else if (field.startsWith('codigo_barra_alt')) {
-        td.innerHTML = '<span class="alt-badge">' + escHtml(value) + '</span>';
-    } else {
-        td.textContent = value;
-    }
 }
 
 document.addEventListener('click', function(e) {
     const td = e.target.closest('td.editable-cell');
     if (!td || td.querySelector('input')) return;
-
     const orig = cellCurrentValue(td);
     const inp = document.createElement('input');
-    inp.value = orig;
-    inp.style.minWidth = '60px';
-    td.innerHTML = '';
-    td.appendChild(inp);
-    inp.focus();
-    inp.select();
-
+    inp.value = orig; inp.style.minWidth = '60px';
+    td.innerHTML = ''; td.appendChild(inp); inp.focus(); inp.select();
     async function save() {
         const newVal = inp.value.trim();
         if (newVal === orig) { renderCell(td, orig); return; }
         td.classList.add('saving');
         const resp = await fetch('/producto/' + td.dataset.id + '/edit', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            method: 'POST', headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({field: td.dataset.field, value: newVal})
         });
         td.classList.remove('saving');
@@ -418,7 +294,6 @@ document.addEventListener('click', function(e) {
             renderCell(td, orig);
         }
     }
-
     inp.addEventListener('blur', save);
     inp.addEventListener('keydown', function(ev) {
         if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); }
@@ -426,10 +301,23 @@ document.addEventListener('click', function(e) {
     });
 });
 
+function cellCurrentValue(td) {
+    const inp = td.querySelector('input'); if (inp) return inp.value;
+    const ph = td.querySelector('.placeholder'); if (ph) return '';
+    const badge = td.querySelector('.alt-badge'); if (badge) return badge.textContent.trim();
+    return td.textContent.trim().replace(/^\$/, '');
+}
+function renderCell(td, value) {
+    const field = td.dataset.field;
+    if (!value) { td.innerHTML = '<span class="text-[#ccc] placeholder">—</span>'; return; }
+    if (field === 'precio_pvp') { td.innerHTML = '$' + parseInt(value); }
+    else if (field.startsWith('codigo_barra_alt')) { td.innerHTML = '<span class="alt-badge">' + escHtml(value) + '</span>'; }
+    else { td.textContent = value; }
+}
+
 async function togglePack(id, checked) {
     await fetch('/producto/' + id + '/edit', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({field: 'es_pack', value: checked ? '1' : '0'})
     });
 }
@@ -440,32 +328,24 @@ async function deleteProducto(id, btn) {
     const resp = await fetch('/producto/' + id + '/delete', { method: 'POST' });
     if (resp.ok) {
         tr.remove();
-        const count = document.querySelectorAll('#table-body tr:not([style*="none"])').length;
-        setCount(count);
-    } else {
-        alert('Error al eliminar');
-    }
+        setCount(document.querySelectorAll('#table-body tr:not([style*="none"])').length);
+    } else { alert('Error al eliminar'); }
 }
 
 async function crearProducto() {
-    const cb   = document.getElementById('new-cb').value.trim();
+    const cb = document.getElementById('new-cb').value.trim();
     const desc = document.getElementById('new-desc').value.trim();
-    const pvp  = document.getElementById('new-pvp').value.trim();
+    const pvp = document.getElementById('new-pvp').value.trim();
     const pack = document.getElementById('new-pack').checked;
     const errEl = document.getElementById('new-error');
     errEl.classList.add('hidden');
-
     if (!cb) { errEl.textContent = 'El código de barra es obligatorio.'; errEl.classList.remove('hidden'); return; }
-
     const r = await fetch('/producto/create', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({codigo_barra: cb, descripcion: desc || null, precio_pvp: pvp || null, es_pack: pack})
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || 'Error'; errEl.classList.remove('hidden'); return; }
-
-    // Limpiar, cerrar formulario y recargar tabla
     document.getElementById('new-cb').value = '';
     document.getElementById('new-desc').value = '';
     document.getElementById('new-pvp').value = '';
@@ -477,6 +357,4 @@ async function crearProducto() {
 
 window.addEventListener('DOMContentLoaded', loadProductos);
 </script>
-
-</body>
-</html>
+{% endblock %}

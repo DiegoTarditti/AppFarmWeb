@@ -1,0 +1,149 @@
+"""Batch processing routes."""
+
+import os
+from flask import render_template, request, redirect, url_for, flash, jsonify
+from werkzeug.utils import secure_filename
+import database
+from database import InvoiceBatch
+from data_extract import parse_invoice_pdf, parse_erp_excel, save_invoice_to_db, save_erp_to_db, compare_invoice_vs_erp, save_differences
+from helpers import UPLOAD_FOLDER, allowed_file, get_providers
+
+
+def init_app(app):
+
+    @app.route('/batch/new')
+    def batch_new():
+        return render_template('batch.html', providers=get_providers())
+
+    @app.route('/batch/add-pdf', methods=['POST'])
+    def batch_add_pdf():
+        proveedor_id = request.form.get('proveedor_id')
+        batch_id = request.form.get('batch_id') or None
+        tipo_comprobante = request.form.get('tipo_comprobante', 'FAC').upper()
+        invoice_file = request.files.get('invoice_pdf')
+
+        if not proveedor_id:
+            return jsonify({'error': 'Seleccioná un proveedor.'}), 400
+        if not invoice_file or not allowed_file(invoice_file.filename):
+            return jsonify({'error': 'PDF inválido.'}), 400
+
+        session = database.SessionLocal()
+        provider = session.get(database.Provider, int(proveedor_id))
+        if not provider:
+            session.close()
+            return jsonify({'error': 'Proveedor no encontrado.'}), 400
+        if not provider.parser_file:
+            session.close()
+            return jsonify({'error': f'El proveedor "{provider.razon_social}" no tiene parser configurado.'}), 400
+
+        filename = secure_filename(invoice_file.filename)
+        invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        invoice_file.save(invoice_path)
+
+        try:
+            invoice_data = parse_invoice_pdf(invoice_path, provider.parser_file)
+        except Exception as e:
+            session.close()
+            return jsonify({'error': f'Error al leer PDF: {e}'}), 400
+
+        if not invoice_data.get('items'):
+            session.close()
+            return jsonify({'error': f'El parser no detectó artículos en este PDF.'}), 400
+
+        if tipo_comprobante not in ('FAC', 'NCR'):
+            tipo_comprobante = 'FAC'
+
+        invoice = save_invoice_to_db(session, invoice_data,
+                                      pdf_filename=os.path.basename(invoice_path),
+                                      tipo_comprobante=tipo_comprobante)
+
+        batch = None
+        if batch_id:
+            batch = session.get(InvoiceBatch, int(batch_id))
+        if not batch:
+            batch = InvoiceBatch(proveedor_id=int(proveedor_id))
+            session.add(batch)
+            session.flush()
+
+        invoice.batch_id = batch.id
+        session.commit()
+
+        result = {
+            'batch_id': batch.id,
+            'invoice_id': invoice.id,
+            'numero_factura': invoice.numero_factura,
+            'total_articulos': invoice.total_articulos or 0,
+            'proveedor_razon': invoice.proveedor_razon,
+            'fecha': str(invoice.fecha),
+            'tipo_comprobante': invoice.tipo_comprobante,
+        }
+        session.close()
+        return jsonify(result), 200
+
+    @app.route('/batch/process', methods=['POST'])
+    def batch_process():
+        batch_id = request.form.get('batch_id')
+        erp_file = request.files.get('erp_excel')
+
+        if not batch_id:
+            flash('Batch no encontrado.')
+            return redirect(url_for('index'))
+        if not erp_file or not allowed_file(erp_file.filename):
+            flash('ERP Excel inválido.')
+            return redirect(url_for('batch_new'))
+
+        erp_filename = secure_filename(erp_file.filename)
+        erp_path = os.path.join(app.config['UPLOAD_FOLDER'], erp_filename)
+        erp_file.save(erp_path)
+
+        try:
+            erp_data = parse_erp_excel(erp_path)
+        except Exception as e:
+            flash(f'Error al leer el ERP: {e}')
+            return redirect(url_for('batch_new'))
+
+        session = database.SessionLocal()
+        batch = session.get(InvoiceBatch, int(batch_id))
+        if not batch:
+            session.close()
+            flash('Batch no encontrado.')
+            return redirect(url_for('index'))
+
+        batch.erp_filename = erp_filename
+        batch.estado = 'PROCESADO'
+        session.commit()
+
+        save_erp_to_db(session, erp_data)
+
+        invoices = session.query(database.Invoice).filter_by(batch_id=batch.id).all()
+        for invoice in invoices:
+            invoice.erp_filename = erp_filename
+            differences = compare_invoice_vs_erp(session, invoice.id)
+            save_differences(session, invoice.id, differences)
+        session.commit()
+        session.close()
+
+        return redirect(url_for('batch_results', batch_id=batch.id))
+
+    @app.route('/batch/<int:batch_id>/results')
+    def batch_results(batch_id):
+        session = database.SessionLocal()
+        batch = session.get(InvoiceBatch, batch_id)
+        if not batch:
+            session.close()
+            flash('Batch no encontrado.')
+            return redirect(url_for('index'))
+
+        provider = session.get(database.Provider, batch.proveedor_id)
+        invoices = session.query(database.Invoice).filter_by(batch_id=batch_id).all()
+
+        invoice_data = []
+        for inv in invoices:
+            diff_count = session.query(database.StockDifference).filter_by(factura_id=inv.id).count()
+            invoice_data.append({
+                'invoice': inv,
+                'diff_count': diff_count,
+            })
+        session.close()
+        return render_template('batch_results.html', batch=batch, provider=provider,
+                               invoices=invoice_data)
