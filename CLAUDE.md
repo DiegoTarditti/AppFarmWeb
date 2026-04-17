@@ -179,3 +179,24 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 
 - En Jinja, `dict.items` resuelve al método `items()` del dict, no a la key `'items'`. Renombrar la key a `'productos'` u otra.
 - `order_save_module_matches` recibe `{matches: [...]}` como JSON, no array directo: usar `body.get('matches', [])`.
+
+## Estado de features — order_detail.html (Abril 2026)
+
+### Implementado
+- **Paso 3 ofertas c/mín**: muestra TODOS los grupos del Excel Bernabó (no solo los con saldo). Fila individual se pone verde + ✓ al llegar al mínimo. Botón "Completar" por producto individual.
+- **Auto-carga ofertas c/mín**: al llegar al paso 3 carga automáticamente desde DB via `/api/laboratorio/<lab_id>/ofertas-minimo` (campo `lab_id` en `Pedido` resuelto en `order_detail`).
+- **Gráfico histórico**: botón 📊 (`CHART_BTN(ean)`) en todas las tablas del análisis. Modal Chart.js v4. Proyección mes actual suavizada: `pf = ps + (avg/dim)*(dim-de)`.
+- **Plantilla export por laboratorio**: modelo `ExportTemplate` en DB, ruta `/laboratorio/<lab_id>/export-template`, template `export_template.html` con drag-and-drop. Botón "Exportar plantilla" en resumen usa ese formato vía `/order/<id>/export/summary/xlsx`.
+- **Ofertas c/mín guardadas**: modelo `OfertaMinimo` en DB. API `GET/POST /api/laboratorio/<lab_id>/ofertas-minimo`. Botón "Guardar en sistema" en `laboratorios.html`.
+- **Plantilla modulo_packs**: columnas correctas (NOMBRE MÓDULO / EAN / DESCRIPCIÓN / CANT. MÓDULO / DESC. %), sin título ni instrucciones extra.
+- **Fix `cargarModuloActivo`**: keys corregidas a `ean`, `cant`, `desc_pct` (antes eran `ean_modulo`, `cantidad`, `descuento` → todo salía "undefined").
+- **Resumen paso 4**: columna Producto angosta (`min-width:150px`). Badge verde `2u/pk` cuando el producto forma parte de un pack (`UNIT_TO_PACK` reverse map de `MODULO_PACKS`).
+
+### Modelos DB nuevos
+| Modelo | Tabla | Descripción |
+|--------|-------|-------------|
+| `ExportTemplate` | `export_templates` | PK=laboratorio_id, columns_json, custom_header |
+| `OfertaMinimo` | `ofertas_minimo` | ean, descripcion, codigo, unidades_minima, descuento_psl, rentabilidad, plazo_pago, grupo_id, laboratorio_id FK |
+
+### Pendiente
+- Revisar si la plantilla de **módulos de descuento** (la que sube descuentos, distinta a modulo_packs) está desactualizada.
