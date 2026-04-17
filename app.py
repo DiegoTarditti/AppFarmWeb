@@ -2895,6 +2895,7 @@ def _snapshot_product_analytics(results, laboratorio):
             pa.forecast_next = float(forecast_next) if forecast_next is not None else None
             pa.sin_mov_60d = 1 if p.get('sin_mov_60d') else 0
             pa.precio_pvp = float(p.get('precio_pvp') or 0)
+            pa.tipo = p.get('tipo') or 'N'
             pa.actualizado_en = _dt.utcnow()
         session.commit()
     except Exception:
@@ -3268,6 +3269,7 @@ def purchase_suggest():
                     'stock': p.stock or 0,
                     'avg_monthly': round(avg, 1),
                     'rotacion': p.rotacion,
+                    'tipo': p.tipo or 'N',
                     'cobertura': cov,
                     'sugerido': suggested,
                     'precio_pvp': pvp,
@@ -4988,14 +4990,16 @@ def dashboard_help():
 
 @app.route('/docs-pendientes')
 def docs_pendientes():
+    from sqlalchemy.orm import joinedload
     session = database.SessionLocal()
     try:
         docs = (session.query(database.DocumentoPendiente)
+                .options(joinedload(database.DocumentoPendiente.proveedor))
                 .order_by(database.DocumentoPendiente.fecha_detectado.desc())
                 .all())
+        return render_template('docs_pendientes.html', docs=docs)
     finally:
         session.close()
-    return render_template('docs_pendientes.html', docs=docs)
 
 
 @app.route('/docs-pendientes/upload', methods=['POST'])
@@ -5140,6 +5144,7 @@ def api_product_chart(barcode):
                             'slope': p.get('slope', 0),
                             'stock': p.get('stock', 0),
                             'rotacion': p.get('rotacion', ''),
+                            'tipo': p.get('tipo', 'N'),
                             'start_month': data.get('start_month', 4),
                             'n_days': data.get('n_days', 35),
                         }

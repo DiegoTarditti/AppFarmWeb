@@ -309,6 +309,7 @@ class ProductAnalytics(Base):
     forecast_next = Column(DECIMAL(10, 2), nullable=True)
     sin_mov_60d = Column(Integer, nullable=False, default=0)
     precio_pvp = Column(DECIMAL(14, 2), nullable=True)
+    tipo = Column(String(1), nullable=True)            # C=crónico, N=normal
     actualizado_en = Column(DateTime, default=datetime.utcnow)
 
 
@@ -517,6 +518,9 @@ def _pg_add_columns(conn):
             actualizado_en TIMESTAMP DEFAULT NOW()
         )
     """))
+    conn.execute(text(
+        "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS tipo VARCHAR(1)"
+    ))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS documentos_pendientes (
             id SERIAL PRIMARY KEY,

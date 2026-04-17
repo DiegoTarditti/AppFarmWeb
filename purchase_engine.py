@@ -72,7 +72,8 @@ def _seasonality_index(ventas, past_idx, avg):
 
 
 def analyze_product(ventas, stock, n_days, start_month_idx, data_start_month=4,
-                    umbral_pico=1.30, umbral_baja=0.70, end_month=None):
+                    umbral_pico=1.30, umbral_baja=0.70, end_month=None,
+                    tipo=None):
     """
     data_start_month: número de mes (1-12) correspondiente a ventas[0].
     end_month: mes de cierre del período (para prorratear el mes parcial).
@@ -97,6 +98,8 @@ def analyze_product(ventas, stock, n_days, start_month_idx, data_start_month=4,
 
     avg   = sum(trend_vals) / n_months
     slope = _linear_trend(trend_vals)
+    # Crónicos: amortiguar tendencia (usar solo 20% del slope)
+    effective_slope = slope * 0.2 if tipo == 'C' else slope
     hist_center = (n_months - 1) / 2.0
 
     # Base 0-indexada (0=Ene) para el primer mes de datos
@@ -116,7 +119,7 @@ def analyze_product(ventas, stock, n_days, start_month_idx, data_start_month=4,
 
         future_pos = n_months + month_offset
         trend_horizon = min(future_pos - hist_center, 2.0)
-        trend_adj = slope * trend_horizon
+        trend_adj = effective_slope * trend_horizon
         monthly_fcst = max(0.0, avg * si + trend_adj)
         forecast_total += monthly_fcst / days_in_month * days_here
 
@@ -169,17 +172,41 @@ def rotation_index(avg_monthly, rot_alta_min=20.0, rot_media_min=5.0):
     return 'B'
 
 
+def _coef_variacion(ventas):
+    """Coeficiente de variación sobre meses completos con ventas > 0."""
+    vals = [v for v in ventas[:FULL_MONTHS] if v > 0]
+    if len(vals) < 3:
+        return 999.0  # insuficientes datos
+    avg = sum(vals) / len(vals)
+    if avg <= 0:
+        return 999.0
+    variance = sum((v - avg) ** 2 for v in vals) / len(vals)
+    return (variance ** 0.5) / avg
+
+
+def tipo_producto(ventas, cv_umbral=0.30):
+    """Devuelve 'C' (crónico) o 'N' (normal) basado en coeficiente de variación.
+    Crónico: CV < cv_umbral y al menos 8 de 11 meses con ventas."""
+    meses_con_venta = sum(1 for v in ventas[:FULL_MONTHS] if v > 0)
+    if meses_con_venta < 8:
+        return 'N'
+    cv = _coef_variacion(ventas)
+    return 'C' if cv < cv_umbral else 'N'
+
+
 def analyze_purchase(products, n_days, start_month, end_month,
                      umbral_pico=1.30, umbral_baja=0.70, umbral_tendencia=0.20,
                      rot_alta_min=20.0, rot_media_min=5.0):
     sidx = start_month_idx_from_period(start_month, end_month)
     results = []
     for p in products:
+        tipo = tipo_producto(p['ventas'])
         qty, forecast, slope, peak_month, low_month, comment, sin_mov_60d = analyze_product(
             p['ventas'], p['stock'], n_days, sidx,
             data_start_month=start_month,
             umbral_pico=umbral_pico, umbral_baja=umbral_baja,
             end_month=end_month,
+            tipo=tipo,
         )
         # avg_monthly con prorated si aplica
         prorated = _prorate_partial(p['ventas'], end_month)
@@ -191,6 +218,7 @@ def analyze_purchase(products, n_days, start_month, end_month,
             **p,
             'avg_monthly': round(avg_m, 1),
             'rotacion': rotation_index(avg_m, rot_alta_min, rot_media_min),
+            'tipo': tipo,
             'forecast': forecast,
             'order_qty': qty,
             'subtotal': round(qty * p['precio_pvp'], 2),
