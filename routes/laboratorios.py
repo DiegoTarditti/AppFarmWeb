@@ -12,17 +12,34 @@ def init_app(app):
         from sqlalchemy import func as _func
         with database.get_db() as session:
             labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
-            data = []
-            for l in labs:
-                prod_count = session.query(_func.count(Producto.id)).filter_by(laboratorio_id=l.id).scalar() or 0
-                ped_count = session.query(_func.count(database.Pedido.id)).filter_by(laboratorio=l.nombre).scalar() or 0
-                analytics_count = session.query(_func.count(database.ProductAnalytics.codigo_barra))\
-                    .filter_by(laboratorio=l.nombre).scalar() or 0
-                data.append({
-                    'id': l.id, 'nombre': l.nombre,
-                    'prod_count': prod_count,
-                    'ped_count': ped_count, 'analytics_count': analytics_count,
-                })
+            lab_ids   = [l.id     for l in labs]
+            lab_names = [l.nombre for l in labs]
+
+            prod_map = dict(
+                session.query(Producto.laboratorio_id, _func.count(Producto.id))
+                .filter(Producto.laboratorio_id.in_(lab_ids))
+                .group_by(Producto.laboratorio_id).all()
+            ) if lab_ids else {}
+
+            ped_map = dict(
+                session.query(database.Pedido.laboratorio, _func.count(database.Pedido.id))
+                .filter(database.Pedido.laboratorio.in_(lab_names))
+                .group_by(database.Pedido.laboratorio).all()
+            ) if lab_names else {}
+
+            analytics_map = dict(
+                session.query(database.ProductAnalytics.laboratorio,
+                              _func.count(database.ProductAnalytics.codigo_barra))
+                .filter(database.ProductAnalytics.laboratorio.in_(lab_names))
+                .group_by(database.ProductAnalytics.laboratorio).all()
+            ) if lab_names else {}
+
+            data = [{
+                'id': l.id, 'nombre': l.nombre,
+                'prod_count':      prod_map.get(l.id, 0),
+                'ped_count':       ped_map.get(l.nombre, 0),
+                'analytics_count': analytics_map.get(l.nombre, 0),
+            } for l in labs]
         return render_template('laboratorios.html', laboratorios=data)
 
     @app.route('/laboratorio/create', methods=['POST'])

@@ -904,17 +904,23 @@ def init_app(app):
                 }
                 for it in pedido.items
             ]
+            all_prods = session.query(Producto).all()
             equiv = [
-                {
-                    'barcodes': [b for b in [
-                        p.codigo_barra,
-                        p.codigo_barra_alt1,
-                        p.codigo_barra_alt2,
-                        p.codigo_barra_alt3,
-                    ] if b],
-                }
-                for p in session.query(Producto).all()
+                {'barcodes': [b for b in [
+                    p.codigo_barra, p.codigo_barra_alt1,
+                    p.codigo_barra_alt2, p.codigo_barra_alt3,
+                ] if b]}
+                for p in all_prods
             ]
+            product_prices = {}
+            for p in all_prods:
+                if p.precio_pvp is not None:
+                    price = float(p.precio_pvp)
+                    for bc in [p.codigo_barra, p.codigo_barra_alt1,
+                               p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                        if bc:
+                            product_prices[bc] = price
+
             cfg = session.query(database.Config).get(1)
             tol_config = {
                 'A': float(cfg.rot_alta_tol)  if cfg else 0.0,
@@ -931,13 +937,6 @@ def init_app(app):
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
             else:
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
-            product_prices = {}
-            for p in session.query(Producto).filter(Producto.precio_pvp.isnot(None)).all():
-                price = float(p.precio_pvp)
-                for bc in [p.codigo_barra, p.codigo_barra_alt1,
-                           p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                    if bc:
-                        product_prices[bc] = price
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
                                    product_prices=product_prices)
