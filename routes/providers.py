@@ -16,29 +16,27 @@ def init_app(app):
 
     @app.route('/api/provider/<int:provider_id>/invoices')
     def api_provider_invoices(provider_id):
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        if not provider:
-            session.close()
-            return jsonify([])
-        invoices = (session.query(database.Invoice)
-                    .filter(
-                        (database.Invoice.proveedor_cuit == provider.cuit) |
-                        (database.Invoice.proveedor_razon == provider.razon_social)
-                    )
-                    .order_by(database.Invoice.fecha.desc())
-                    .limit(50).all())
-        result = []
-        for inv in invoices:
-            result.append({
-                'id': inv.id,
-                'numero_factura': inv.numero_factura,
-                'fecha': inv.fecha.strftime('%d/%m/%Y') if inv.fecha else '—',
-                'tipo_comprobante': inv.tipo_comprobante,
-                'total_articulos': inv.total_articulos or 0,
-                'total': float(inv.total or 0),
-            })
-        session.close()
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                return jsonify([])
+            invoices = (session.query(database.Invoice)
+                        .filter(
+                            (database.Invoice.proveedor_cuit == provider.cuit) |
+                            (database.Invoice.proveedor_razon == provider.razon_social)
+                        )
+                        .order_by(database.Invoice.fecha.desc())
+                        .limit(50).all())
+            result = []
+            for inv in invoices:
+                result.append({
+                    'id': inv.id,
+                    'numero_factura': inv.numero_factura,
+                    'fecha': inv.fecha.strftime('%d/%m/%Y') if inv.fecha else '—',
+                    'tipo_comprobante': inv.tipo_comprobante,
+                    'total_articulos': inv.total_articulos or 0,
+                    'total': float(inv.total or 0),
+                })
         return jsonify(result)
 
     @app.route('/provider/peek', methods=['POST'])
@@ -56,13 +54,12 @@ def init_app(app):
 
         provider_id = None
         if proposed_name:
-            session = database.SessionLocal()
-            existing = session.query(database.Provider).filter(
-                database.Provider.razon_social.ilike(f'%{proposed_name}%')
-            ).first()
-            if existing and existing.parser_file:
-                provider_id = existing.id
-            session.close()
+            with database.get_db() as session:
+                existing = session.query(database.Provider).filter(
+                    database.Provider.razon_social.ilike(f'%{proposed_name}%')
+                ).first()
+                if existing and existing.parser_file:
+                    provider_id = existing.id
 
         return jsonify({'proposed_name': proposed_name, 'pdf_filename': filename,
                         'provider_id': provider_id})
@@ -180,9 +177,8 @@ def init_app(app):
         if not pdf_filename:
             return jsonify({'error': 'Falta pdf_filename.'}), 400
 
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        session.close()
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
         if not provider or not provider.parser_file:
             return jsonify({'error': 'El proveedor no tiene parser configurado.'}), 400
 
@@ -214,43 +210,41 @@ def init_app(app):
     @app.route('/providers')
     def providers_list():
         tipo_filter = (request.args.get('tipo') or '').strip().lower()
-        session = database.SessionLocal()
-        q = session.query(database.Provider)
-        if tipo_filter in ('drogueria', 'laboratorio', 'otro'):
-            q = q.filter(database.Provider.tipo == tipo_filter)
-        providers = q.order_by(database.Provider.razon_social).all()
-        provider_data = []
-        for p in providers:
-            q = session.query(database.Invoice)
-            if p.cuit:
-                q = q.filter(
-                    (database.Invoice.proveedor_cuit == p.cuit) |
-                    (database.Invoice.proveedor_razon == p.razon_social)
-                )
-            else:
-                q = q.filter(database.Invoice.proveedor_razon == p.razon_social)
-            invoice_count = q.count()
-            claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
-            provider_data.append({
-                'id': p.id,
-                'razon_social': p.razon_social,
-                'cuit': p.cuit or '',
-                'parser_file': p.parser_file or '',
-                'ruta_facturas': p.ruta_facturas or '',
-                'match_strategy': p.match_strategy,
-                'grabar_productos': p.grabar_productos if p.grabar_productos is not None else 1,
-                'tipo': p.tipo or 'drogueria',
-                'invoice_count': invoice_count,
-                'claim_count': claim_count,
-            })
-        session.close()
+        with database.get_db() as session:
+            q = session.query(database.Provider)
+            if tipo_filter in ('drogueria', 'laboratorio', 'otro'):
+                q = q.filter(database.Provider.tipo == tipo_filter)
+            providers = q.order_by(database.Provider.razon_social).all()
+            provider_data = []
+            for p in providers:
+                q = session.query(database.Invoice)
+                if p.cuit:
+                    q = q.filter(
+                        (database.Invoice.proveedor_cuit == p.cuit) |
+                        (database.Invoice.proveedor_razon == p.razon_social)
+                    )
+                else:
+                    q = q.filter(database.Invoice.proveedor_razon == p.razon_social)
+                invoice_count = q.count()
+                claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
+                provider_data.append({
+                    'id': p.id,
+                    'razon_social': p.razon_social,
+                    'cuit': p.cuit or '',
+                    'parser_file': p.parser_file or '',
+                    'ruta_facturas': p.ruta_facturas or '',
+                    'match_strategy': p.match_strategy,
+                    'grabar_productos': p.grabar_productos if p.grabar_productos is not None else 1,
+                    'tipo': p.tipo or 'drogueria',
+                    'invoice_count': invoice_count,
+                    'claim_count': claim_count,
+                })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 
     @app.route('/provider/<int:provider_id>/parser-preview', methods=['POST'])
     def provider_parser_preview(provider_id):
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        session.close()
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
         if not provider or not provider.parser_file:
             return {'error': 'El proveedor no tiene parser configurado.'}, 400
 
@@ -293,99 +287,91 @@ def init_app(app):
 
     @app.route('/provider/<int:provider_id>/edit', methods=['POST'])
     def provider_edit(provider_id):
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        if not provider:
-            session.close()
-            flash('Proveedor no encontrado.')
-            return redirect(url_for('providers_list'))
-
-        provider.razon_social = request.form.get('razon_social', provider.razon_social).strip() or provider.razon_social
-        provider.cuit = request.form.get('cuit', provider.cuit or '').strip() or None
-        provider.parser_file = request.form.get('parser_file', provider.parser_file or '').strip() or None
-        provider.ruta_facturas = request.form.get('ruta_facturas', '').strip() or None
-        ms = request.form.get('match_strategy', 'barcode')
-        provider.match_strategy = ms if ms in ('barcode', 'descripcion') else 'barcode'
-        provider.grabar_productos = 1 if request.form.get('grabar_productos') == '1' else 0
-        tipo = (request.form.get('tipo') or '').strip().lower()
-        if tipo in ('drogueria', 'laboratorio', 'otro'):
-            provider.tipo = tipo
-        session.commit()
-        session.close()
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                flash('Proveedor no encontrado.')
+                return redirect(url_for('providers_list'))
+            provider.razon_social = request.form.get('razon_social', provider.razon_social).strip() or provider.razon_social
+            provider.cuit = request.form.get('cuit', provider.cuit or '').strip() or None
+            provider.parser_file = request.form.get('parser_file', provider.parser_file or '').strip() or None
+            provider.ruta_facturas = request.form.get('ruta_facturas', '').strip() or None
+            ms = request.form.get('match_strategy', 'barcode')
+            provider.match_strategy = ms if ms in ('barcode', 'descripcion') else 'barcode'
+            provider.grabar_productos = 1 if request.form.get('grabar_productos') == '1' else 0
+            tipo = (request.form.get('tipo') or '').strip().lower()
+            if tipo in ('drogueria', 'laboratorio', 'otro'):
+                provider.tipo = tipo
+            session.commit()
         return redirect(url_for('providers_list', tipo=request.form.get('tipo_filter') or None))
 
     @app.route('/provider/<int:provider_id>/delete', methods=['POST'])
     def provider_delete(provider_id):
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        if provider:
-            claim_ids = [c.id for c in session.query(database.Claim).filter_by(proveedor_id=provider_id).all()]
-            if claim_ids:
-                session.query(database.ClaimItem).filter(
-                    database.ClaimItem.reclamo_id.in_(claim_ids)
-                ).delete(synchronize_session=False)
-            session.query(database.Claim).filter_by(proveedor_id=provider_id).delete()
-            session.query(database.BarcodeMapping).filter_by(proveedor_id=provider_id).delete()
-            batch_ids = [b.id for b in session.query(database.InvoiceBatch).filter_by(proveedor_id=provider_id).all()]
-            if batch_ids:
-                session.query(database.Invoice).filter(
-                    database.Invoice.batch_id.in_(batch_ids)
-                ).update({'batch_id': None}, synchronize_session=False)
-                session.query(database.InvoiceBatch).filter(
-                    database.InvoiceBatch.id.in_(batch_ids)
-                ).delete(synchronize_session=False)
-            session.delete(provider)
-            session.commit()
-        session.close()
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if provider:
+                claim_ids = [c.id for c in session.query(database.Claim).filter_by(proveedor_id=provider_id).all()]
+                if claim_ids:
+                    session.query(database.ClaimItem).filter(
+                        database.ClaimItem.reclamo_id.in_(claim_ids)
+                    ).delete(synchronize_session=False)
+                session.query(database.Claim).filter_by(proveedor_id=provider_id).delete()
+                session.query(database.BarcodeMapping).filter_by(proveedor_id=provider_id).delete()
+                batch_ids = [b.id for b in session.query(database.InvoiceBatch).filter_by(proveedor_id=provider_id).all()]
+                if batch_ids:
+                    session.query(database.Invoice).filter(
+                        database.Invoice.batch_id.in_(batch_ids)
+                    ).update({'batch_id': None}, synchronize_session=False)
+                    session.query(database.InvoiceBatch).filter(
+                        database.InvoiceBatch.id.in_(batch_ids)
+                    ).delete(synchronize_session=False)
+                session.delete(provider)
+                session.commit()
         return redirect(url_for('providers_list'))
 
     @app.route('/provider/<int:provider_id>/invoices')
     def provider_invoices(provider_id):
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        if not provider:
-            session.close()
-            flash('Proveedor no encontrado.')
-            return redirect(url_for('providers_list'))
-        invoices = session.query(database.Invoice).filter(
-            (database.Invoice.proveedor_cuit == provider.cuit) |
-            (database.Invoice.proveedor_razon == provider.razon_social)
-        ).order_by(database.Invoice.fecha.desc()).all()
-        session.close()
-        return render_template('provider_invoices.html', provider=provider, invoices=invoices)
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                flash('Proveedor no encontrado.')
+                return redirect(url_for('providers_list'))
+            invoices = session.query(database.Invoice).filter(
+                (database.Invoice.proveedor_cuit == provider.cuit) |
+                (database.Invoice.proveedor_razon == provider.razon_social)
+            ).order_by(database.Invoice.fecha.desc()).all()
+            return render_template('provider_invoices.html', provider=provider, invoices=invoices)
 
     @app.route('/invoice/<int:invoice_id>/delete', methods=['POST'])
     def delete_invoice(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        if not invoice:
-            session.close()
-            flash('Factura no encontrada.')
-            return redirect(url_for('providers_list'))
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                flash('Factura no encontrada.')
+                return redirect(url_for('providers_list'))
 
-        provider = None
-        if invoice.proveedor_cuit:
-            provider = session.query(database.Provider).filter_by(cuit=invoice.proveedor_cuit).first()
-        if not provider and invoice.proveedor_razon:
-            provider = session.query(database.Provider).filter_by(razon_social=invoice.proveedor_razon).first()
-        provider_id = provider.id if provider else None
+            provider = None
+            if invoice.proveedor_cuit:
+                provider = session.query(database.Provider).filter_by(cuit=invoice.proveedor_cuit).first()
+            if not provider and invoice.proveedor_razon:
+                provider = session.query(database.Provider).filter_by(razon_social=invoice.proveedor_razon).first()
+            provider_id = provider.id if provider else None
 
-        diff_ids = [d.id for d in session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()]
-        if diff_ids:
+            diff_ids = [d.id for d in session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()]
+            if diff_ids:
+                session.query(database.ClaimItem).filter(
+                    database.ClaimItem.diferencia_id.in_(diff_ids)
+                ).delete(synchronize_session=False)
+            session.query(database.StockDifference).filter_by(factura_id=invoice_id).delete()
             session.query(database.ClaimItem).filter(
-                database.ClaimItem.diferencia_id.in_(diff_ids)
+                database.ClaimItem.reclamo_id.in_(
+                    session.query(database.Claim.id).filter_by(factura_id=invoice_id)
+                )
             ).delete(synchronize_session=False)
-        session.query(database.StockDifference).filter_by(factura_id=invoice_id).delete()
-        session.query(database.ClaimItem).filter(
-            database.ClaimItem.reclamo_id.in_(
-                session.query(database.Claim.id).filter_by(factura_id=invoice_id)
-            )
-        ).delete(synchronize_session=False)
-        session.query(database.Claim).filter_by(factura_id=invoice_id).delete()
-        session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).delete()
-        session.delete(invoice)
-        session.commit()
-        session.close()
+            session.query(database.Claim).filter_by(factura_id=invoice_id).delete()
+            session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).delete()
+            session.delete(invoice)
+            session.commit()
 
         if provider_id:
             return redirect(url_for('provider_invoices', provider_id=provider_id))
@@ -393,33 +379,29 @@ def init_app(app):
 
     @app.route('/provider/<int:provider_id>/mappings')
     def provider_mappings(provider_id):
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, provider_id)
-        if not provider:
-            session.close()
-            flash('Proveedor no encontrado.')
-            return redirect(url_for('providers_list'))
-        mappings = (session.query(database.BarcodeMapping)
-                    .filter_by(proveedor_id=provider_id)
-                    .order_by(database.BarcodeMapping.creado_en.desc()).all())
-        session.close()
-        return render_template('provider_mappings.html', provider=provider, mappings=mappings)
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                flash('Proveedor no encontrado.')
+                return redirect(url_for('providers_list'))
+            mappings = (session.query(database.BarcodeMapping)
+                        .filter_by(proveedor_id=provider_id)
+                        .order_by(database.BarcodeMapping.creado_en.desc()).all())
+            return render_template('provider_mappings.html', provider=provider, mappings=mappings)
 
     @app.route('/provider/<int:provider_id>/mappings/<int:mapping_id>/delete', methods=['POST'])
     def delete_mapping(provider_id, mapping_id):
-        session = database.SessionLocal()
-        mapping = session.get(database.BarcodeMapping, mapping_id)
-        if mapping and mapping.proveedor_id == provider_id:
-            session.delete(mapping)
-            session.commit()
-        session.close()
+        with database.get_db() as session:
+            mapping = session.get(database.BarcodeMapping, mapping_id)
+            if mapping and mapping.proveedor_id == provider_id:
+                session.delete(mapping)
+                session.commit()
         return redirect(url_for('provider_mappings', provider_id=provider_id))
 
     @app.route('/provider/<int:provider_id>/mappings/delete-all', methods=['POST'])
     def delete_all_mappings(provider_id):
-        session = database.SessionLocal()
-        session.query(database.BarcodeMapping).filter_by(proveedor_id=provider_id).delete()
-        session.commit()
-        session.close()
+        with database.get_db() as session:
+            session.query(database.BarcodeMapping).filter_by(proveedor_id=provider_id).delete()
+            session.commit()
         flash('Todas las equivalencias fueron eliminadas.')
         return redirect(url_for('provider_mappings', provider_id=provider_id))

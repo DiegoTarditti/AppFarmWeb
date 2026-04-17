@@ -250,27 +250,25 @@ def init_app(app):
 
     @app.route('/descuentos/modulo/<int:modulo_id>/toggle', methods=['POST'])
     def descuento_toggle(modulo_id):
-        session = database.SessionLocal()
-        m = session.get(DescuentoModulo, modulo_id)
-        campana_id = None
-        if m:
-            m.activo = 0 if m.activo else 1
-            session.commit()
-            campana_id = m.campana_id
-        session.close()
+        with database.get_db() as session:
+            m = session.get(DescuentoModulo, modulo_id)
+            campana_id = None
+            if m:
+                m.activo = 0 if m.activo else 1
+                session.commit()
+                campana_id = m.campana_id
         if campana_id:
             return redirect(url_for('descuento_campana', campana_id=campana_id))
         return redirect(url_for('descuentos_list'))
 
     @app.route('/descuentos/modulo/<int:modulo_id>/delete', methods=['POST'])
     def descuento_delete(modulo_id):
-        session = database.SessionLocal()
-        m = session.get(DescuentoModulo, modulo_id)
-        campana_id = m.campana_id if m else None
-        if m:
-            session.delete(m)
-            session.commit()
-        session.close()
+        with database.get_db() as session:
+            m = session.get(DescuentoModulo, modulo_id)
+            campana_id = m.campana_id if m else None
+            if m:
+                session.delete(m)
+                session.commit()
         flash('Módulo eliminado.')
         if campana_id:
             return redirect(url_for('descuento_campana', campana_id=campana_id))
