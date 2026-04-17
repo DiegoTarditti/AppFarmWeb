@@ -56,9 +56,8 @@ def process_upload(app):
             invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice_filename)
             invoice_file.save(invoice_path)
 
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, int(proveedor_id))
-        session.close()
+        with database.get_db() as session:
+            provider = session.get(database.Provider, int(proveedor_id))
 
         if not provider:
             return {'error': 'Proveedor no encontrado.'}, 400
@@ -82,59 +81,55 @@ def process_upload(app):
         return {'error': f'Error al leer el Excel ERP: {e}. Asegurate de subir un archivo .xlsx válido.'}, 400
 
     if not invoice_data.get('items'):
-        _session = database.SessionLocal()
         try:
-            _tipo = request.form.get('tipo_comprobante', 'FAC').upper()
-            if _tipo not in ('FAC', 'NCR'):
-                _tipo = 'FAC'
-            _inv = save_invoice_to_db(_session, {**invoice_data, 'items': []},
-                                      pdf_filename=os.path.basename(invoice_path),
-                                      tipo_comprobante=_tipo)
-            _inv.erp_filename = erp_filename
-            _session.commit()
-            save_erp_to_db(_session, erp_data)
-            _invoice_id = _inv.id
+            with database.get_db() as _session:
+                _tipo = request.form.get('tipo_comprobante', 'FAC').upper()
+                if _tipo not in ('FAC', 'NCR'):
+                    _tipo = 'FAC'
+                _inv = save_invoice_to_db(_session, {**invoice_data, 'items': []},
+                                          pdf_filename=os.path.basename(invoice_path),
+                                          tipo_comprobante=_tipo)
+                _inv.erp_filename = erp_filename
+                _session.commit()
+                save_erp_to_db(_session, erp_data)
+                _invoice_id = _inv.id
         except Exception as e:
-            _session.close()
             return {'error': f'Error al guardar encabezado: {e}'}, 400
-        _session.close()
         return {'parse_failed': True, 'invoice_id': _invoice_id}, 202
 
-    session = database.SessionLocal()
     try:
-        tipo_comprobante = request.form.get('tipo_comprobante', 'FAC').upper()
-        if tipo_comprobante not in ('FAC', 'NCR'):
-            tipo_comprobante = 'FAC'
-        invoice = save_invoice_to_db(session, invoice_data,
-                                     pdf_filename=os.path.basename(invoice_path),
-                                     tipo_comprobante=tipo_comprobante)
-        invoice.erp_filename = erp_filename
-        session.commit()
-        save_erp_to_db(session, erp_data)
-        differences = compare_invoice_vs_erp(session, invoice.id)
-        save_differences(session, invoice.id, differences)
-        try:
-            erp_rows = session.query(database.ErpStock).all()
-            _bulk_upsert_productos(session, [
-                (e.codigo_barra, e.descripcion, float(e.precio_unitario) if e.precio_unitario else None, None)
-                for e in erp_rows
-            ])
-            _prov = session.get(database.Provider, int(proveedor_id)) if proveedor_id else None
-            if not _prov or _prov.grabar_productos != 0:
-                inv_rows = session.query(database.InvoiceItem).filter_by(factura_id=invoice.id).all()
-                _bulk_upsert_productos(session, [
-                    (it.codigo_barra, it.descripcion, None, invoice.fecha)
-                    for it in inv_rows
-                ])
+        with database.get_db() as session:
+            tipo_comprobante = request.form.get('tipo_comprobante', 'FAC').upper()
+            if tipo_comprobante not in ('FAC', 'NCR'):
+                tipo_comprobante = 'FAC'
+            invoice = save_invoice_to_db(session, invoice_data,
+                                         pdf_filename=os.path.basename(invoice_path),
+                                         tipo_comprobante=tipo_comprobante)
+            invoice.erp_filename = erp_filename
             session.commit()
-        except Exception:
-            app.logger.warning('Error al upsert productos tras upload', exc_info=True)
-            session.rollback()
-        saved_differences = get_saved_differences(session, invoice.id)
+            save_erp_to_db(session, erp_data)
+            differences = compare_invoice_vs_erp(session, invoice.id)
+            save_differences(session, invoice.id, differences)
+            try:
+                erp_rows = session.query(database.ErpStock).all()
+                _bulk_upsert_productos(session, [
+                    (e.codigo_barra, e.descripcion, float(e.precio_unitario) if e.precio_unitario else None, None)
+                    for e in erp_rows
+                ])
+                _prov = session.get(database.Provider, int(proveedor_id)) if proveedor_id else None
+                if not _prov or _prov.grabar_productos != 0:
+                    inv_rows = session.query(database.InvoiceItem).filter_by(factura_id=invoice.id).all()
+                    _bulk_upsert_productos(session, [
+                        (it.codigo_barra, it.descripcion, None, invoice.fecha)
+                        for it in inv_rows
+                    ])
+                session.commit()
+            except Exception:
+                app.logger.warning('Error al upsert productos tras upload', exc_info=True)
+                session.rollback()
+            saved_differences = get_saved_differences(session, invoice.id)
     except Exception as e:
-        session.close()
         return {'error': f'Error al procesar los datos: {e}'}, 400
-    session.close()
 
     return {
         'invoice': invoice,
@@ -219,9 +214,8 @@ def init_app(app):
     @app.route('/invoice/<int:invoice_id>/parse-helper')
     def parse_helper(invoice_id):
         import pdfplumber as _plumber
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
         if not invoice:
             flash('Factura no encontrada.')
             return redirect(url_for('index'))
@@ -237,9 +231,8 @@ def init_app(app):
     def auto_table(invoice_id):
         import pdfplumber as _plumber
         from collections import defaultdict as _dd
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
         if not invoice:
             return jsonify({'error': 'Factura no encontrada'}), 404
         pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice.pdf_filename or '')
@@ -392,9 +385,8 @@ def init_app(app):
     @app.route('/invoice/<int:invoice_id>/pick-items', methods=['GET'])
     def pick_items(invoice_id):
         import pdfplumber as _plumber
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
         if not invoice:
             flash('Factura no encontrada.')
             return redirect(url_for('index'))
@@ -415,9 +407,8 @@ def init_app(app):
         example_line = body.get('example_line', '')
         selections = body.get('selections', [])
 
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
         if not invoice:
             return jsonify({'error': 'Factura no encontrada'}), 404
 
@@ -454,94 +445,91 @@ def init_app(app):
         rows = body.get('rows', [])
         header = body.get('header', {}) or {}
 
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        if not invoice:
-            session.close()
-            return jsonify({'error': 'Factura no encontrada'}), 404
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                return jsonify({'error': 'Factura no encontrada'}), 404
 
-        tipo = invoice.tipo_comprobante or 'FAC'
-        sign = -1 if tipo == 'NCR' else 1
+            tipo = invoice.tipo_comprobante or 'FAC'
+            sign = -1 if tipo == 'NCR' else 1
 
-        def _f(s):
-            if s is None or s == '':
-                return None
-            try:
-                return float(str(s).replace('.', '').replace(',', '.'))
-            except Exception:
-                return None
-
-        if header.get('razon_social'):
-            invoice.proveedor_razon = header['razon_social'].strip()
-        if header.get('numero_factura'):
-            invoice.numero_factura = header['numero_factura'].strip()
-        if header.get('total'):
-            t = _f(header['total'])
-            if t is not None:
-                invoice.total = sign * t
-        if header.get('fecha'):
-            raw = header['fecha'].strip()
-            m = _re.search(r'(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})', raw)
-            if m:
-                d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
-                if y < 100:
-                    y += 2000
+            def _f(s):
+                if s is None or s == '':
+                    return None
                 try:
-                    invoice.fecha = _dt.date(y, mo, d)
+                    return float(str(s).replace('.', '').replace(',', '.'))
                 except Exception:
-                    pass
+                    return None
 
-        aliases = {
-            'descripcion': ['descripcion', 'concepto', 'detalle', 'producto', 'articulo', 'descripción'],
-            'codigo_barra': ['codigo_barra', 'codigo', 'código', 'ean', 'cod'],
-            'cantidad': ['cantidad', 'cant', 'qty'],
-            'precio_unitario': ['precio_unitario', 'pcio_unit', 'pcio', 'precio', 'unitario'],
-            'importe': ['importe', 'total', 'subtotal', 'monto'],
-            'dto': ['dto', 'descto', 'descuento'],
-            'lote': ['lote'],
-        }
-        def _pick(r, std):
-            for k in aliases.get(std, [std]):
-                if r.get(k):
-                    return r.get(k)
-            return None
+            if header.get('razon_social'):
+                invoice.proveedor_razon = header['razon_social'].strip()
+            if header.get('numero_factura'):
+                invoice.numero_factura = header['numero_factura'].strip()
+            if header.get('total'):
+                t = _f(header['total'])
+                if t is not None:
+                    invoice.total = sign * t
+            if header.get('fecha'):
+                raw = header['fecha'].strip()
+                m = _re.search(r'(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})', raw)
+                if m:
+                    d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                    if y < 100:
+                        y += 2000
+                    try:
+                        invoice.fecha = _dt.date(y, mo, d)
+                    except Exception:
+                        pass
 
-        saved = 0
-        for r in rows:
-            desc = str(_pick(r, 'descripcion') or '').strip()[:150]
-            if not desc:
-                continue
-            precio  = _f(_pick(r, 'precio_unitario'))
-            importe = _f(_pick(r, 'importe'))
-            dto     = _f(_pick(r, 'dto'))
+            aliases = {
+                'descripcion': ['descripcion', 'concepto', 'detalle', 'producto', 'articulo', 'descripción'],
+                'codigo_barra': ['codigo_barra', 'codigo', 'código', 'ean', 'cod'],
+                'cantidad': ['cantidad', 'cant', 'qty'],
+                'precio_unitario': ['precio_unitario', 'pcio_unit', 'pcio', 'precio', 'unitario'],
+                'importe': ['importe', 'total', 'subtotal', 'monto'],
+                'dto': ['dto', 'descto', 'descuento'],
+                'lote': ['lote'],
+            }
+            def _pick(r, std):
+                for k in aliases.get(std, [std]):
+                    if r.get(k):
+                        return r.get(k)
+                return None
+
+            saved = 0
+            for r in rows:
+                desc = str(_pick(r, 'descripcion') or '').strip()[:150]
+                if not desc:
+                    continue
+                precio  = _f(_pick(r, 'precio_unitario'))
+                importe = _f(_pick(r, 'importe'))
+                dto     = _f(_pick(r, 'dto'))
+                try:
+                    cant = int(float(str(_pick(r, 'cantidad') or 0).replace(',', '.')))
+                except Exception:
+                    cant = 0
+                session.add(database.InvoiceItem(
+                    factura_id=invoice_id,
+                    codigo_barra=(_pick(r, 'codigo_barra') or None),
+                    descripcion=desc, cantidad=cant,
+                    precio_unitario=sign * precio if precio is not None else None,
+                    dto=dto,
+                    importe=sign * importe if importe is not None else None,
+                    lote=(_pick(r, 'lote') or None),
+                ))
+                saved += 1
+
             try:
-                cant = int(float(str(_pick(r, 'cantidad') or 0).replace(',', '.')))
-            except Exception:
-                cant = 0
-            session.add(database.InvoiceItem(
-                factura_id=invoice_id,
-                codigo_barra=(_pick(r, 'codigo_barra') or None),
-                descripcion=desc, cantidad=cant,
-                precio_unitario=sign * precio if precio is not None else None,
-                dto=dto,
-                importe=sign * importe if importe is not None else None,
-                lote=(_pick(r, 'lote') or None),
-            ))
-            saved += 1
-
-        try:
-            if saved > 0:
-                invoice.total_articulos = saved
-            session.commit()
-            if saved > 0:
-                differences = compare_invoice_vs_erp(session, invoice_id)
-                save_differences(session, invoice_id, differences)
-        except Exception as e:
-            session.rollback()
-            session.close()
-            import traceback as _tb
-            return jsonify({'error': str(e), 'trace': _tb.format_exc()}), 500
-        session.close()
+                if saved > 0:
+                    invoice.total_articulos = saved
+                session.commit()
+                if saved > 0:
+                    differences = compare_invoice_vs_erp(session, invoice_id)
+                    save_differences(session, invoice_id, differences)
+            except Exception as e:
+                session.rollback()
+                import traceback as _tb
+                return jsonify({'error': str(e), 'trace': _tb.format_exc()}), 500
         return jsonify({'saved': saved, 'redirect': url_for('compare_view', invoice_id=invoice_id)})
 
     @app.route('/invoice/<int:invoice_id>/manual-items', methods=['GET', 'POST'])
@@ -609,10 +597,9 @@ def init_app(app):
 
     @app.route('/api/invoice/<int:invoice_id>/differences', methods=['GET'])
     def invoice_differences(invoice_id):
-        session = database.SessionLocal()
-        differences = session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()
-        session.close()
-        return jsonify([
+        with database.get_db() as session:
+            differences = session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()
+            return jsonify([
             {
                 'id': d.id, 'codigo_barra': d.codigo_barra, 'descripcion': d.descripcion,
                 'cantidad_factura': d.cantidad_factura, 'cantidad_erp': d.cantidad_erp,
@@ -623,53 +610,49 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/header', methods=['POST'])
     def update_invoice_header(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        if not invoice:
-            session.close()
-            flash('Factura no encontrada.')
-            return redirect(url_for('index'))
-        tipo = (request.form.get('tipo_comprobante') or '').upper()
-        ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or (
-            request.form.keys() and set(request.form.keys()) == {'tipo_comprobante'}
-        )
-        if tipo in ('FAC', 'NCR'):
-            invoice.tipo_comprobante = tipo
-        if 'numero_factura' in request.form:
-            invoice.numero_factura = request.form.get('numero_factura', invoice.numero_factura).strip() or invoice.numero_factura
-        if 'proveedor_razon' in request.form:
-            invoice.proveedor_razon = request.form.get('proveedor_razon', invoice.proveedor_razon).strip() or invoice.proveedor_razon
-        session.commit()
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                flash('Factura no encontrada.')
+                return redirect(url_for('index'))
+            tipo = (request.form.get('tipo_comprobante') or '').upper()
+            ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or (
+                request.form.keys() and set(request.form.keys()) == {'tipo_comprobante'}
+            )
+            if tipo in ('FAC', 'NCR'):
+                invoice.tipo_comprobante = tipo
+            if 'numero_factura' in request.form:
+                invoice.numero_factura = request.form.get('numero_factura', invoice.numero_factura).strip() or invoice.numero_factura
+            if 'proveedor_razon' in request.form:
+                invoice.proveedor_razon = request.form.get('proveedor_razon', invoice.proveedor_razon).strip() or invoice.proveedor_razon
+            session.commit()
         if ajax:
             return jsonify({'ok': True})
         return redirect(url_for('show_results', invoice_id=invoice_id))
 
     @app.route('/results/<int:invoice_id>')
     def show_results(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        saved_differences = get_saved_differences(session, invoice_id)
-        differences = [
-            {
-                'id': d.id, 'codigo_barra': d.codigo_barra, 'descripcion': d.descripcion,
-                'cantidad_factura': d.cantidad_factura, 'cantidad_erp': d.cantidad_erp,
-                'diferencia': d.diferencia, 'observaciones': d.observaciones,
-            }
-            for d in saved_differences
-        ]
-        total_unidades_calc = sum(
-            item.cantidad for item in invoice.items if item.cantidad
-        ) if invoice else 0
-        session.close()
-        return render_template('results.html', invoice=invoice, differences=differences,
-                               total_unidades_calc=total_unidades_calc)
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            saved_differences = get_saved_differences(session, invoice_id)
+            differences = [
+                {
+                    'id': d.id, 'codigo_barra': d.codigo_barra, 'descripcion': d.descripcion,
+                    'cantidad_factura': d.cantidad_factura, 'cantidad_erp': d.cantidad_erp,
+                    'diferencia': d.diferencia, 'observaciones': d.observaciones,
+                }
+                for d in saved_differences
+            ]
+            total_unidades_calc = sum(
+                item.cantidad for item in invoice.items if item.cantidad
+            ) if invoice else 0
+            return render_template('results.html', invoice=invoice, differences=differences,
+                                   total_unidades_calc=total_unidades_calc)
 
     @app.route('/invoice/<int:invoice_id>/pick-fields', methods=['GET'])
     def pick_fields(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
         if not invoice:
             flash('Factura no encontrada.')
             return redirect(url_for('index'))
@@ -686,42 +669,36 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/pick-fields', methods=['POST'])
     def pick_fields_save(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        if not invoice:
-            session.close()
-            flash('Factura no encontrada.')
-            return redirect(url_for('index'))
-
-        fields = ('numero_factura', 'proveedor_razon', 'proveedor_cuit', 'fecha', 'total')
-        for field in fields:
-            val = request.form.get(field, '').strip()
-            if val:
-                setattr(invoice, field, val)
-        session.commit()
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                flash('Factura no encontrada.')
+                return redirect(url_for('index'))
+            fields = ('numero_factura', 'proveedor_razon', 'proveedor_cuit', 'fecha', 'total')
+            for field in fields:
+                val = request.form.get(field, '').strip()
+                if val:
+                    setattr(invoice, field, val)
+            session.commit()
         return redirect(url_for('show_results', invoice_id=invoice_id))
 
     @app.route('/invoice/<int:invoice_id>/items')
     def invoice_items(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        if not invoice:
-            session.close()
-            flash('Factura no encontrada.')
-            return redirect(url_for('index'))
-        items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
-        session.close()
-        return render_template('invoice_items.html', invoice=invoice, items=items)
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                flash('Factura no encontrada.')
+                return redirect(url_for('index'))
+            items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
+            return render_template('invoice_items.html', invoice=invoice, items=items)
 
     @app.route('/invoice/<int:invoice_id>/items/export')
     def invoice_items_export(invoice_id):
         import io
         import openpyxl
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
         if not invoice:
             return 'Factura no encontrada', 404
 
@@ -749,10 +726,9 @@ def init_app(app):
     def invoice_differences_export(invoice_id):
         import io
         import openpyxl
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        diffs = session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()
-        session.close()
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            diffs = session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()
         if not invoice:
             return 'Factura no encontrada', 404
 
@@ -776,85 +752,82 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/compare')
     def compare_view(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        if not invoice:
-            session.close()
-            flash('Factura no encontrada.')
-            return redirect(url_for('index'))
-        invoice_diffs = (session.query(database.StockDifference)
-                         .filter_by(factura_id=invoice_id)
-                         .order_by(database.StockDifference.descripcion).all())
-        erp_items = get_erp_items_with_issues(session, invoice_id)
-        inv_items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
-        inv_prices = {
-            item.codigo_barra: float(item.precio_unitario or 0)
-            for item in inv_items if item.codigo_barra
-        }
-        session.close()
-        return render_template('compare.html', invoice=invoice,
-                               invoice_diffs=invoice_diffs, erp_items=erp_items,
-                               inv_prices=inv_prices)
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            if not invoice:
+                flash('Factura no encontrada.')
+                return redirect(url_for('index'))
+            invoice_diffs = (session.query(database.StockDifference)
+                             .filter_by(factura_id=invoice_id)
+                             .order_by(database.StockDifference.descripcion).all())
+            erp_items = get_erp_items_with_issues(session, invoice_id)
+            inv_items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
+            inv_prices = {
+                item.codigo_barra: float(item.precio_unitario or 0)
+                for item in inv_items if item.codigo_barra
+            }
+            return render_template('compare.html', invoice=invoice,
+                                   invoice_diffs=invoice_diffs, erp_items=erp_items,
+                                   inv_prices=inv_prices)
 
     @app.route('/invoice/<int:invoice_id>/apply-mapping', methods=['POST'])
     def apply_mapping(invoice_id):
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
-        diffs = (session.query(database.StockDifference)
-                 .filter_by(factura_id=invoice_id)
-                 .order_by(database.StockDifference.descripcion).all())
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
+            diffs = (session.query(database.StockDifference)
+                     .filter_by(factura_id=invoice_id)
+                     .order_by(database.StockDifference.descripcion).all())
 
-        proveedor_id = None
-        if invoice and invoice.proveedor_cuit:
-            prov = session.query(database.Provider).filter_by(cuit=invoice.proveedor_cuit).first()
-            if prov:
-                proveedor_id = prov.id
-        if proveedor_id is None and invoice and invoice.proveedor_razon:
-            prov = session.query(database.Provider).filter_by(razon_social=invoice.proveedor_razon).first()
-            if prov:
-                proveedor_id = prov.id
+            proveedor_id = None
+            if invoice and invoice.proveedor_cuit:
+                prov = session.query(database.Provider).filter_by(cuit=invoice.proveedor_cuit).first()
+                if prov:
+                    proveedor_id = prov.id
+            if proveedor_id is None and invoice and invoice.proveedor_razon:
+                prov = session.query(database.Provider).filter_by(razon_social=invoice.proveedor_razon).first()
+                if prov:
+                    proveedor_id = prov.id
 
-        to_delete = []
-        for key, value in request.form.items():
-            if not key.startswith('mapping_') or not value.strip():
-                continue
-            try:
-                erp_id = int(key.replace('mapping_', ''))
-                inv_num = int(value.strip())
-            except ValueError:
-                continue
-            if inv_num < 1 or inv_num > len(diffs):
-                continue
+            to_delete = []
+            for key, value in request.form.items():
+                if not key.startswith('mapping_') or not value.strip():
+                    continue
+                try:
+                    erp_id = int(key.replace('mapping_', ''))
+                    inv_num = int(value.strip())
+                except ValueError:
+                    continue
+                if inv_num < 1 or inv_num > len(diffs):
+                    continue
 
-            target_diff = diffs[inv_num - 1]
-            erp_item = session.get(database.ErpStock, erp_id)
-            if not erp_item:
-                continue
+                target_diff = diffs[inv_num - 1]
+                erp_item = session.get(database.ErpStock, erp_id)
+                if not erp_item:
+                    continue
 
-            if proveedor_id and target_diff.codigo_barra and erp_item.codigo_barra:
-                save_barcode_mapping(
-                    session,
-                    proveedor_id=proveedor_id,
-                    codigo_barra_factura=target_diff.codigo_barra,
-                    codigo_barra_erp=erp_item.codigo_barra,
-                    descripcion_factura=target_diff.descripcion,
-                    descripcion_erp=erp_item.descripcion,
+                if proveedor_id and target_diff.codigo_barra and erp_item.codigo_barra:
+                    save_barcode_mapping(
+                        session,
+                        proveedor_id=proveedor_id,
+                        codigo_barra_factura=target_diff.codigo_barra,
+                        codigo_barra_erp=erp_item.codigo_barra,
+                        descripcion_factura=target_diff.descripcion,
+                        descripcion_erp=erp_item.descripcion,
+                    )
+                    _upsert_producto(session, erp_item.codigo_barra, erp_item.descripcion,
+                                     fecha_compra=invoice.fecha if invoice else None)
+                    _add_alt_barcode(session, erp_item.codigo_barra, target_diff.codigo_barra)
+
+                target_diff.cantidad_erp = erp_item.cantidad
+                target_diff.diferencia = target_diff.cantidad_factura - erp_item.cantidad
+                target_diff.observaciones = (
+                    f'Cruce manual con ERP: {erp_item.descripcion} ({erp_item.codigo_barra})'
                 )
-                _upsert_producto(session, erp_item.codigo_barra, erp_item.descripcion,
-                                 fecha_compra=invoice.fecha if invoice else None)
-                _add_alt_barcode(session, erp_item.codigo_barra, target_diff.codigo_barra)
+                if target_diff.diferencia == 0:
+                    to_delete.append(target_diff)
 
-            target_diff.cantidad_erp = erp_item.cantidad
-            target_diff.diferencia = target_diff.cantidad_factura - erp_item.cantidad
-            target_diff.observaciones = (
-                f'Cruce manual con ERP: {erp_item.descripcion} ({erp_item.codigo_barra})'
-            )
-            if target_diff.diferencia == 0:
-                to_delete.append(target_diff)
+            for diff in to_delete:
+                session.delete(diff)
 
-        for diff in to_delete:
-            session.delete(diff)
-
-        session.commit()
-        session.close()
+            session.commit()
         return redirect(url_for('show_results', invoice_id=invoice_id))

@@ -77,14 +77,21 @@ def _analyze_sales_file(tmp_path, ext, n_days):
 def _snapshot_product_analytics(results, laboratorio, start_month=4, n_days=35):
     """Upsert de ProductAnalytics por codigo_barra desde los resultados de analyze_purchase."""
     from datetime import datetime as _dt
-    session = database.SessionLocal()
-    try:
-        seen = {}
-        for p in results:
-            cb = (p.get('codigo_barra') or '').strip()
-            if not cb:
-                continue
+    seen = {}
+    for p in results:
+        cb = (p.get('codigo_barra') or '').strip()
+        if cb:
             seen[cb] = p
+
+    if not seen:
+        return
+
+    with database.get_db() as session:
+        existing = {
+            pa.codigo_barra: pa
+            for pa in session.query(database.ProductAnalytics)
+            .filter(database.ProductAnalytics.codigo_barra.in_(seen.keys())).all()
+        }
         for cb, p in seen.items():
             forecast = p.get('forecast')
             forecast_next = None
@@ -92,7 +99,7 @@ def _snapshot_product_analytics(results, laboratorio, start_month=4, n_days=35):
                 forecast_next = forecast[0]
             elif isinstance(forecast, (int, float)):
                 forecast_next = forecast
-            pa = session.get(database.ProductAnalytics, cb)
+            pa = existing.get(cb)
             if pa is None:
                 pa = database.ProductAnalytics(codigo_barra=cb)
                 session.add(pa)
@@ -113,11 +120,6 @@ def _snapshot_product_analytics(results, laboratorio, start_month=4, n_days=35):
                 pa.n_days = n_days
             pa.actualizado_en = _dt.utcnow()
         session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
 
 
 def init_app(app):

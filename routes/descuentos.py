@@ -12,19 +12,34 @@ def init_app(app):
 
     @app.route('/descuentos')
     def descuentos_list():
-        session = database.SessionLocal()
-        campanas = session.query(DescuentoCampana).order_by(DescuentoCampana.creado_en.desc()).all()
-        data = [{
-            'id': c.id,
-            'laboratorio_nombre': c.laboratorio_nombre,
-            'proveedor_id': c.proveedor_id,
-            'fecha': c.fecha.strftime('%d/%m/%Y') if c.fecha else '',
-            'observacion': c.observacion or '',
-            'n_modulos': len(c.modulos),
-            'n_items': sum(len(m.items) for m in c.modulos),
-            'creado_en': c.creado_en.strftime('%d/%m/%Y') if c.creado_en else '',
-        } for c in campanas]
-        session.close()
+        from sqlalchemy import func as _func
+        with database.get_db() as session:
+            campanas = session.query(DescuentoCampana).order_by(DescuentoCampana.creado_en.desc()).all()
+            camp_ids = [c.id for c in campanas]
+
+            n_modulos_map = dict(
+                session.query(DescuentoModulo.campana_id, _func.count(DescuentoModulo.id))
+                .filter(DescuentoModulo.campana_id.in_(camp_ids))
+                .group_by(DescuentoModulo.campana_id).all()
+            ) if camp_ids else {}
+
+            n_items_map = dict(
+                session.query(DescuentoModulo.campana_id, _func.count(DescuentoModuloItem.id))
+                .join(DescuentoModuloItem, DescuentoModuloItem.modulo_id == DescuentoModulo.id)
+                .filter(DescuentoModulo.campana_id.in_(camp_ids))
+                .group_by(DescuentoModulo.campana_id).all()
+            ) if camp_ids else {}
+
+            data = [{
+                'id': c.id,
+                'laboratorio_nombre': c.laboratorio_nombre,
+                'proveedor_id': c.proveedor_id,
+                'fecha': c.fecha.strftime('%d/%m/%Y') if c.fecha else '',
+                'observacion': c.observacion or '',
+                'n_modulos': n_modulos_map.get(c.id, 0),
+                'n_items': n_items_map.get(c.id, 0),
+                'creado_en': c.creado_en.strftime('%d/%m/%Y') if c.creado_en else '',
+            } for c in campanas]
         return render_template('descuentos.html', campanas=data)
 
     @app.route('/descuentos/upload', methods=['GET', 'POST'])
