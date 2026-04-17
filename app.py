@@ -2750,7 +2750,9 @@ def _analyze_sales_file(tmp_path, ext, n_days):
     with open(json_path, 'w', encoding='utf-8') as jf:
         json.dump(data, jf, ensure_ascii=False)
 
-    _snapshot_product_analytics(results, parsed.get('laboratorio'))
+    _snapshot_product_analytics(results, parsed.get('laboratorio'),
+                                start_month=parsed.get('start_month', 4),
+                                n_days=n_days)
 
     return {
         'uid': uid,
@@ -2864,7 +2866,7 @@ def purchase_batch():
                            results=results, ok=ok, fail=fail, n_days=n_days)
 
 
-def _snapshot_product_analytics(results, laboratorio):
+def _snapshot_product_analytics(results, laboratorio, start_month=4, n_days=35):
     """Upsert de ProductAnalytics por codigo_barra desde los resultados de analyze_purchase."""
     from datetime import datetime as _dt
     session = database.SessionLocal()
@@ -2896,6 +2898,11 @@ def _snapshot_product_analytics(results, laboratorio):
             pa.sin_mov_60d = 1 if p.get('sin_mov_60d') else 0
             pa.precio_pvp = float(p.get('precio_pvp') or 0)
             pa.tipo = p.get('tipo') or 'N'
+            ventas = p.get('ventas')
+            if ventas and isinstance(ventas, list):
+                pa.ventas_json = json.dumps(ventas)
+                pa.start_month = start_month
+                pa.n_days = n_days
             pa.actualizado_en = _dt.utcnow()
         session.commit()
     except Exception:
@@ -5119,66 +5126,34 @@ def docs_pendientes_delete(doc_id):
 
 @app.route('/api/product/<barcode>/chart')
 def api_product_chart(barcode):
-    """Devuelve datos de ventas históricas de un producto buscando en los JSONs de análisis."""
-    # Buscar en los JSONs de purchase el producto por barcode
-    best = None
-    best_mtime = 0
+    """Devuelve datos de ventas históricas de un producto desde ProductAnalytics."""
+    session = database.SessionLocal()
     try:
-        for fn in os.listdir(PURCHASE_FOLDER):
-            if not fn.endswith('.json'):
-                continue
-            path = os.path.join(PURCHASE_FOLDER, fn)
-            mtime = os.path.getmtime(path)
-            if mtime <= best_mtime:
-                continue
+        pa = session.get(database.ProductAnalytics, barcode)
+        if not pa:
+            return jsonify({'ok': False, 'error': 'Producto no encontrado. Procesá un análisis de ventas primero.'}), 404
+        ventas = []
+        if pa.ventas_json:
             try:
-                with open(path, encoding='utf-8') as jf:
-                    data = json.load(jf)
-                for p in data.get('products', []):
-                    if p.get('codigo_barra') == barcode:
-                        best = {
-                            'nombre': p.get('nombre', ''),
-                            'codigo_barra': barcode,
-                            'ventas': p.get('ventas', []),
-                            'avg_monthly': p.get('avg_monthly', 0),
-                            'slope': p.get('slope', 0),
-                            'stock': p.get('stock', 0),
-                            'rotacion': p.get('rotacion', ''),
-                            'tipo': p.get('tipo', 'N'),
-                            'start_month': data.get('start_month', 4),
-                            'n_days': data.get('n_days', 35),
-                        }
-                        best_mtime = mtime
-                        break
-            except Exception:
-                continue
-    except FileNotFoundError:
-        pass
-
-    if not best:
-        # Fallback: buscar en ProductAnalytics (sin historial mensual)
-        session = database.SessionLocal()
-        try:
-            pa = session.get(database.ProductAnalytics, barcode)
-            if pa:
-                return jsonify({
-                    'ok': True,
-                    'nombre': pa.descripcion or '',
-                    'codigo_barra': barcode,
-                    'ventas': [],
-                    'avg_monthly': float(pa.avg_monthly or 0),
-                    'slope': float(pa.slope or 0),
-                    'stock': pa.stock or 0,
-                    'rotacion': pa.rotacion or '',
-                    'tipo': pa.tipo or 'N',
-                    'start_month': 4,
-                    'n_days': 35,
-                    'sin_historial': True,
-                })
-        finally:
-            session.close()
-        return jsonify({'ok': False, 'error': 'No se encontraron datos de ventas. Procesá un análisis de ventas primero.'}), 404
-    return jsonify({'ok': True, **best})
+                ventas = json.loads(pa.ventas_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return jsonify({
+            'ok': True,
+            'nombre': pa.descripcion or '',
+            'codigo_barra': barcode,
+            'ventas': ventas,
+            'avg_monthly': float(pa.avg_monthly or 0),
+            'slope': float(pa.slope or 0),
+            'stock': pa.stock or 0,
+            'rotacion': pa.rotacion or '',
+            'tipo': pa.tipo or 'N',
+            'start_month': pa.start_month or 4,
+            'n_days': pa.n_days or 35,
+            'sin_historial': len(ventas) == 0,
+        })
+    finally:
+        session.close()
 
 
 if __name__ == '__main__':

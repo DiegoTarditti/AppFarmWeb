@@ -310,6 +310,9 @@ class ProductAnalytics(Base):
     sin_mov_60d = Column(Integer, nullable=False, default=0)
     precio_pvp = Column(DECIMAL(14, 2), nullable=True)
     tipo = Column(String(1), nullable=True)            # C=crónico, N=normal
+    ventas_json = Column(Text, nullable=True)           # JSON: array de 12 valores mensuales
+    start_month = Column(Integer, nullable=True)        # mes de inicio (1-12)
+    n_days = Column(Integer, nullable=True)             # días del período analizado
     actualizado_en = Column(DateTime, default=datetime.utcnow)
 
 
@@ -520,6 +523,15 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text(
         "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS tipo VARCHAR(1)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS ventas_json TEXT"
+    ))
+    conn.execute(text(
+        "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS start_month INTEGER"
+    ))
+    conn.execute(text(
+        "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS n_days INTEGER"
     ))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS documentos_pendientes (
