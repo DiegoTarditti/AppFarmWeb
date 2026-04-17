@@ -1175,8 +1175,61 @@ async function uploadOfertasConMinimo(input) {
         show('btn-procesar-ofertas-min');
         document.getElementById('ofertas-min-status').textContent =
             `${ofertasMinData.length} productos · ${d.grupos ? d.grupos + ' grupos' : 'sin grupos'}`;
+        renderOfertasMinImportPreview();
     } catch(e) { alert('Error al subir: ' + e); }
     input.value = '';
+}
+
+function renderOfertasMinImportPreview() {
+    const body = document.getElementById('ofertas-min-body');
+    const fmtPct = v => v != null ? v + '%' : '—';
+    // Group items by grupo_id for display
+    const grupos = {};
+    const individuals = [];
+    ofertasMinData.forEach(it => {
+        if (it.grupo_id !== null && it.grupo_id !== undefined) {
+            if (!grupos[it.grupo_id]) grupos[it.grupo_id] = { min: it.unidades_minima, items: [] };
+            grupos[it.grupo_id].items.push(it);
+        } else {
+            individuals.push(it);
+        }
+    });
+    const thead = `<thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
+        <th class="text-left px-2 py-2">EAN</th>
+        <th class="text-left px-2 py-2">Producto</th>
+        <th class="text-right px-2 py-2 text-sky-700">Mín.</th>
+        <th class="text-right px-2 py-2 text-emerald-700">Dto%</th>
+        <th class="text-right px-2 py-2 text-purple-600">Rent%</th>
+        <th class="text-left px-2 py-2 text-[#888]">Plazo</th>
+    </tr></thead>`;
+    const itemRow = it => `<tr class="data-row">
+        <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
+        <td class="px-2 font-medium">${it.descripcion}</td>
+        <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
+        <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
+        <td class="px-2 text-right text-purple-600">${fmtPct(it.rentabilidad)}</td>
+        <td class="px-2 text-[#888]">${it.plazo_pago ?? '—'}</td>
+    </tr>`;
+    let html = `<p class="text-[10px] font-semibold text-[#888] uppercase tracking-wide mb-3">Vista previa del Excel importado — presioná Procesar para cruzar contra el pedido</p>`;
+    if (individuals.length) {
+        html += `<p class="text-xs font-semibold text-[#555] mb-1">Individuales (${individuals.length})</p>
+        <table class="w-full text-xs border-collapse mb-4 min-w-[600px]">${thead}<tbody>`;
+        individuals.forEach(it => { html += itemRow(it); });
+        html += '</tbody></table>';
+    }
+    Object.entries(grupos).forEach(([gid, grupo]) => {
+        html += `<div class="mb-4 border border-[#e0e0e0] rounded-lg overflow-hidden">
+            <div class="flex items-center gap-3 px-3 py-2 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs">
+                <span class="font-semibold">Grupo ${gid}</span>
+                <span>Mínimo compartido: <strong>${grupo.min ?? '—'}</strong> u.</span>
+                <span class="text-[#888]">${grupo.items.length} productos</span>
+            </div>
+            <table class="w-full text-xs border-collapse min-w-[600px]">${thead}<tbody>`;
+        grupo.items.forEach(it => { html += itemRow(it); });
+        html += '</tbody></table></div>';
+    });
+    body.innerHTML = html;
+    show('ofertas-min-body');
 }
 
 function procesarOfertasConMinimo() {
