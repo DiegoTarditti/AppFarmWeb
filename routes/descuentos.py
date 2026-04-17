@@ -5,7 +5,7 @@ from flask import render_template, request, redirect, url_for, flash, jsonify
 from werkzeug.utils import secure_filename
 import database
 from database import DescuentoCampana, DescuentoModulo, DescuentoModuloItem
-from helpers import UPLOAD_FOLDER
+from helpers import UPLOAD_FOLDER, get_providers
 
 
 def init_app(app):
@@ -31,10 +31,7 @@ def init_app(app):
     def descuento_upload():
         """GET: formulario de carga. POST: parsea xlsx y muestra preview."""
         if request.method == 'GET':
-            session = database.SessionLocal()
-            proveedores = session.query(database.Provider).order_by(database.Provider.razon_social).all()
-            provs = [{'id': p.id, 'razon_social': p.razon_social} for p in proveedores]
-            session.close()
+            provs = get_providers()
             return render_template('descuento_upload.html', proveedores=provs, preview=None)
 
         # POST: parsear archivo
@@ -67,10 +64,7 @@ def init_app(app):
             flash('El archivo no contiene módulos reconocibles.')
             return redirect(url_for('descuento_upload'))
 
-        session = database.SessionLocal()
-        proveedores = session.query(database.Provider).order_by(database.Provider.razon_social).all()
-        provs = [{'id': p.id, 'razon_social': p.razon_social} for p in proveedores]
-        session.close()
+        provs = get_providers()
 
         return render_template('descuento_upload.html',
                                proveedores=provs,
@@ -107,163 +101,151 @@ def init_app(app):
             except ValueError:
                 pass
 
-        session = database.SessionLocal()
-        campana = DescuentoCampana(
-            proveedor_id=int(proveedor_id) if proveedor_id else None,
-            laboratorio_nombre=lab_nombre,
-            fecha=fecha or _date.today(),
-            observacion=observacion or None,
-        )
-        session.add(campana)
-        session.flush()
-
-        for mod_data in modulos_data:
-            modulo = DescuentoModulo(
-                campana_id=campana.id,
-                nombre=mod_data.get('nombre', 'SIN NOMBRE'),
-                activo=1,
+        with database.get_db() as session:
+            campana = DescuentoCampana(
+                proveedor_id=int(proveedor_id) if proveedor_id else None,
+                laboratorio_nombre=lab_nombre,
+                fecha=fecha or _date.today(),
+                observacion=observacion or None,
             )
-            session.add(modulo)
+            session.add(campana)
             session.flush()
-            for it in mod_data.get('items', []):
-                session.add(DescuentoModuloItem(
-                    modulo_id=modulo.id,
-                    codigo_ean=str(it.get('ean', '')),
-                    descripcion=it.get('descripcion', '') or None,
-                    cantidad=int(it.get('cantidad', 1)),
-                    descuento=float(it.get('descuento', 0)),
-                    es_principal=1 if it.get('es_principal') else 0,
-                ))
 
-        session.commit()
-        campana_id = campana.id
-        session.close()
+            for mod_data in modulos_data:
+                modulo = DescuentoModulo(
+                    campana_id=campana.id,
+                    nombre=mod_data.get('nombre', 'SIN NOMBRE'),
+                    activo=1,
+                )
+                session.add(modulo)
+                session.flush()
+                for it in mod_data.get('items', []):
+                    session.add(DescuentoModuloItem(
+                        modulo_id=modulo.id,
+                        codigo_ean=str(it.get('ean', '')),
+                        descripcion=it.get('descripcion', '') or None,
+                        cantidad=int(it.get('cantidad', 1)),
+                        descuento=float(it.get('descuento', 0)),
+                        es_principal=1 if it.get('es_principal') else 0,
+                    ))
+
+            session.commit()
+            campana_id = campana.id
         flash(f'Campaña guardada con {len(modulos_data)} módulos.')
         return redirect(url_for('descuento_campana', campana_id=campana_id))
 
     @app.route('/descuentos/campana/<int:campana_id>')
     def descuento_campana(campana_id):
-        session = database.SessionLocal()
-        c = session.get(DescuentoCampana, campana_id)
-        if not c:
-            session.close()
-            flash('Campaña no encontrada.')
-            return redirect(url_for('descuentos_list'))
-        campana = {
-            'id': c.id,
-            'laboratorio_nombre': c.laboratorio_nombre,
-            'proveedor_id': c.proveedor_id,
-            'proveedor_nombre': c.proveedor.razon_social if c.proveedor else None,
-            'fecha': c.fecha.strftime('%d/%m/%Y') if c.fecha else '',
-            'fecha_iso': c.fecha.strftime('%Y-%m-%d') if c.fecha else '',
-            'observacion': c.observacion or '',
-            'creado_en': c.creado_en.strftime('%d/%m/%Y') if c.creado_en else '',
-        }
-        modulos = [{
-            'id': m.id,
-            'nombre': m.nombre or '—',
-            'activo': m.activo,
-            'n_items': len(m.items),
-        } for m in c.modulos]
-        proveedores = session.query(database.Provider).order_by(database.Provider.razon_social).all()
-        provs = [{'id': p.id, 'razon_social': p.razon_social} for p in proveedores]
-        session.close()
+        with database.get_db() as session:
+            c = session.get(DescuentoCampana, campana_id)
+            if not c:
+                flash('Campaña no encontrada.')
+                return redirect(url_for('descuentos_list'))
+            campana = {
+                'id': c.id,
+                'laboratorio_nombre': c.laboratorio_nombre,
+                'proveedor_id': c.proveedor_id,
+                'proveedor_nombre': c.proveedor.razon_social if c.proveedor else None,
+                'fecha': c.fecha.strftime('%d/%m/%Y') if c.fecha else '',
+                'fecha_iso': c.fecha.strftime('%Y-%m-%d') if c.fecha else '',
+                'observacion': c.observacion or '',
+                'creado_en': c.creado_en.strftime('%d/%m/%Y') if c.creado_en else '',
+            }
+            modulos = [{
+                'id': m.id,
+                'nombre': m.nombre or '—',
+                'activo': m.activo,
+                'n_items': len(m.items),
+            } for m in c.modulos]
         return render_template('descuento_campana.html',
-                               campana=campana, modulos=modulos, proveedores=provs)
+                               campana=campana, modulos=modulos, proveedores=get_providers())
 
     @app.route('/descuentos/campana/<int:campana_id>/edit', methods=['POST'])
     def descuento_campana_edit(campana_id):
-        session = database.SessionLocal()
-        c = session.get(DescuentoCampana, campana_id)
-        if c:
-            proveedor_id = request.form.get('proveedor_id', '').strip()
-            lab_nombre = request.form.get('laboratorio_nombre', '').strip()
-            fecha_str = request.form.get('fecha', '').strip()
-            c.proveedor_id = int(proveedor_id) if proveedor_id else None
-            if lab_nombre:
-                c.laboratorio_nombre = lab_nombre
-            c.observacion = request.form.get('observacion', '').strip() or None
-            if fecha_str:
-                try:
-                    from datetime import datetime as _dt
-                    c.fecha = _dt.strptime(fecha_str, '%Y-%m-%d').date()
-                except ValueError:
-                    pass
-            session.commit()
-        session.close()
+        with database.get_db() as session:
+            c = session.get(DescuentoCampana, campana_id)
+            if c:
+                proveedor_id = request.form.get('proveedor_id', '').strip()
+                lab_nombre = request.form.get('laboratorio_nombre', '').strip()
+                fecha_str = request.form.get('fecha', '').strip()
+                c.proveedor_id = int(proveedor_id) if proveedor_id else None
+                if lab_nombre:
+                    c.laboratorio_nombre = lab_nombre
+                c.observacion = request.form.get('observacion', '').strip() or None
+                if fecha_str:
+                    try:
+                        from datetime import datetime as _dt
+                        c.fecha = _dt.strptime(fecha_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+                session.commit()
         return redirect(url_for('descuento_campana', campana_id=campana_id))
 
     @app.route('/descuentos/campana/<int:campana_id>/delete', methods=['POST'])
     def descuento_campana_delete(campana_id):
-        session = database.SessionLocal()
-        c = session.get(DescuentoCampana, campana_id)
-        if c:
-            session.delete(c)
-            session.commit()
-        session.close()
+        with database.get_db() as session:
+            c = session.get(DescuentoCampana, campana_id)
+            if c:
+                session.delete(c)
+                session.commit()
         flash('Campaña eliminada.')
         return redirect(url_for('descuentos_list'))
 
     @app.route('/descuentos/modulo/<int:modulo_id>')
     def descuento_detalle(modulo_id):
-        session = database.SessionLocal()
-        m = session.get(DescuentoModulo, modulo_id)
-        if not m:
-            session.close()
-            flash('Módulo no encontrado.')
-            return redirect(url_for('descuentos_list'))
-        items = [{
-            'id': it.id,
-            'codigo_ean': it.codigo_ean,
-            'descripcion': it.descripcion or '',
-            'cantidad': it.cantidad,
-            'descuento': float(it.descuento),
-            'es_principal': bool(it.es_principal),
-        } for it in m.items]
-        modulo = {
-            'id': m.id,
-            'nombre': m.nombre or '—',
-            'activo': m.activo,
-            'campana_id': m.campana_id,
-        }
-        session.close()
+        with database.get_db() as session:
+            m = session.get(DescuentoModulo, modulo_id)
+            if not m:
+                flash('Módulo no encontrado.')
+                return redirect(url_for('descuentos_list'))
+            items = [{
+                'id': it.id,
+                'codigo_ean': it.codigo_ean,
+                'descripcion': it.descripcion or '',
+                'cantidad': it.cantidad,
+                'descuento': float(it.descuento),
+                'es_principal': bool(it.es_principal),
+            } for it in m.items]
+            modulo = {
+                'id': m.id,
+                'nombre': m.nombre or '—',
+                'activo': m.activo,
+                'campana_id': m.campana_id,
+            }
         return render_template('descuento_detalle.html', modulo=modulo, items=items)
 
     @app.route('/descuentos/modulo/<int:modulo_id>/item', methods=['POST'])
     def descuento_add_item(modulo_id):
-        session = database.SessionLocal()
-        m = session.get(DescuentoModulo, modulo_id)
-        if not m:
-            session.close()
-            flash('Módulo no encontrado.')
-            return redirect(url_for('descuentos_list'))
-        try:
-            ean = request.form.get('codigo_ean', '').strip()
-            if not ean:
-                flash('El código EAN es obligatorio.')
-                return redirect(url_for('descuento_detalle', modulo_id=modulo_id))
-            session.add(DescuentoModuloItem(
-                modulo_id=modulo_id,
-                codigo_ean=ean,
-                descripcion=request.form.get('descripcion', '').strip() or None,
-                cantidad=max(1, int(request.form.get('cantidad', 1))),
-                descuento=float(request.form.get('descuento', 0)),
-                es_principal=1 if request.form.get('es_principal') else 0,
-            ))
-            session.commit()
-        except (ValueError, TypeError):
-            flash('Datos inválidos.')
-        session.close()
+        with database.get_db() as session:
+            m = session.get(DescuentoModulo, modulo_id)
+            if not m:
+                flash('Módulo no encontrado.')
+                return redirect(url_for('descuentos_list'))
+            try:
+                ean = request.form.get('codigo_ean', '').strip()
+                if not ean:
+                    flash('El código EAN es obligatorio.')
+                    return redirect(url_for('descuento_detalle', modulo_id=modulo_id))
+                session.add(DescuentoModuloItem(
+                    modulo_id=modulo_id,
+                    codigo_ean=ean,
+                    descripcion=request.form.get('descripcion', '').strip() or None,
+                    cantidad=max(1, int(request.form.get('cantidad', 1))),
+                    descuento=float(request.form.get('descuento', 0)),
+                    es_principal=1 if request.form.get('es_principal') else 0,
+                ))
+                session.commit()
+            except (ValueError, TypeError):
+                flash('Datos inválidos.')
         return redirect(url_for('descuento_detalle', modulo_id=modulo_id))
 
     @app.route('/descuentos/modulo/<int:modulo_id>/item/<int:item_id>/delete', methods=['POST'])
     def descuento_delete_item(modulo_id, item_id):
-        session = database.SessionLocal()
-        item = session.get(DescuentoModuloItem, item_id)
-        if item and item.modulo_id == modulo_id:
-            session.delete(item)
-            session.commit()
-        session.close()
+        with database.get_db() as session:
+            item = session.get(DescuentoModuloItem, item_id)
+            if item and item.modulo_id == modulo_id:
+                session.delete(item)
+                session.commit()
         return redirect(url_for('descuento_detalle', modulo_id=modulo_id))
 
     @app.route('/descuentos/modulo/<int:modulo_id>/toggle', methods=['POST'])
@@ -297,10 +279,7 @@ def init_app(app):
     @app.route('/descuentos/upload-libre', methods=['GET', 'POST'])
     def descuento_upload_libre():
         """Importación libre: tabla plana LAB | EAN | DESC | CANT | DTO%"""
-        session = database.SessionLocal()
-        proveedores = session.query(database.Provider).order_by(database.Provider.razon_social).all()
-        provs = [{'id': p.id, 'razon_social': p.razon_social} for p in proveedores]
-        session.close()
+        provs = get_providers()
 
         if request.method == 'GET':
             return render_template('descuento_upload_libre.html', proveedores=provs, preview=None)

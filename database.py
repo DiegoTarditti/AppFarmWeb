@@ -79,7 +79,7 @@ class Invoice(Base):
 class InvoiceItem(Base):
     __tablename__ = 'factura_items'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False, index=True)
     codigo_barra = Column(String(20))
     cantidad = Column(Integer)
     descripcion = Column(String(150))
@@ -96,7 +96,7 @@ class InvoiceItem(Base):
 class ErpStock(Base):
     __tablename__ = 'erp_stock'
     id = Column(Integer, primary_key=True)
-    codigo_barra = Column(String(20), nullable=False)
+    codigo_barra = Column(String(20), nullable=False, index=True)
     descripcion = Column(String(150))
     cantidad = Column(Integer)
     precio_unitario = Column(DECIMAL(14, 2))
@@ -105,7 +105,7 @@ class ErpStock(Base):
 class StockDifference(Base):
     __tablename__ = 'stock_differences'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False, index=True)
     codigo_barra = Column(String(20))
     descripcion = Column(String(150))
     cantidad_factura = Column(Integer)
@@ -119,7 +119,7 @@ class Claim(Base):
     __tablename__ = 'reclamos'
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=False)
-    factura_id = Column(Integer, ForeignKey('facturas.id'))
+    factura_id = Column(Integer, ForeignKey('facturas.id'), index=True)
     numero_factura = Column(String(20))
     fecha = Column(Date, nullable=False)
     estado = Column(String(20), nullable=False, default='ABIERTO')
@@ -200,9 +200,9 @@ class Producto(Base):
     id = Column(Integer, primary_key=True)
     codigo_barra = Column(String(20), nullable=False, unique=True)
     descripcion = Column(String(200))
-    codigo_barra_alt1 = Column(String(20))
-    codigo_barra_alt2 = Column(String(20))
-    codigo_barra_alt3 = Column(String(20))
+    codigo_barra_alt1 = Column(String(20), index=True)
+    codigo_barra_alt2 = Column(String(20), index=True)
+    codigo_barra_alt3 = Column(String(20), index=True)
     es_pack = Column(Integer, nullable=False, default=0)   # 1 = es un pack de unidades
     precio_pvp = Column(DECIMAL(14, 2))
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
@@ -568,6 +568,17 @@ def _pg_add_columns(conn):
             creado_en TIMESTAMP DEFAULT NOW()
         )
     """))
+    # Índices para queries frecuentes
+    for stmt in [
+        "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
+        "CREATE INDEX IF NOT EXISTS idx_stock_diff_factura ON stock_differences(factura_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reclamos_factura ON reclamos(factura_id)",
+        "CREATE INDEX IF NOT EXISTS idx_erp_stock_codigo ON erp_stock(codigo_barra)",
+        "CREATE INDEX IF NOT EXISTS idx_productos_alt1 ON productos(codigo_barra_alt1)",
+        "CREATE INDEX IF NOT EXISTS idx_productos_alt2 ON productos(codigo_barra_alt2)",
+        "CREATE INDEX IF NOT EXISTS idx_productos_alt3 ON productos(codigo_barra_alt3)",
+    ]:
+        conn.execute(text(stmt))
 
 
 def _sqlite_add_columns(conn):
@@ -737,3 +748,14 @@ def _sqlite_add_columns(conn):
             creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    # Índices para queries frecuentes
+    for stmt in [
+        "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
+        "CREATE INDEX IF NOT EXISTS idx_stock_diff_factura ON stock_differences(factura_id)",
+        "CREATE INDEX IF NOT EXISTS idx_reclamos_factura ON reclamos(factura_id)",
+        "CREATE INDEX IF NOT EXISTS idx_erp_stock_codigo ON erp_stock(codigo_barra)",
+        "CREATE INDEX IF NOT EXISTS idx_productos_alt1 ON productos(codigo_barra_alt1)",
+        "CREATE INDEX IF NOT EXISTS idx_productos_alt2 ON productos(codigo_barra_alt2)",
+        "CREATE INDEX IF NOT EXISTS idx_productos_alt3 ON productos(codigo_barra_alt3)",
+    ]:
+        conn.execute(text(stmt))

@@ -82,11 +82,10 @@ def init_app(app):
 
         parser_file = None
         if provider_id:
-            _s = database.SessionLocal()
-            prov = _s.get(database.Provider, int(provider_id))
-            _s.close()
-            if prov:
-                parser_file = prov.parser_file
+            with database.get_db() as _s:
+                prov = _s.get(database.Provider, int(provider_id))
+                if prov:
+                    parser_file = prov.parser_file
 
         from data_extract import save_invoice_to_db
         invoice_data = {
@@ -101,16 +100,15 @@ def init_app(app):
             except Exception:
                 pass
 
-        _s = database.SessionLocal()
-        try:
-            inv = save_invoice_to_db(_s, invoice_data,
-                                     pdf_filename=pdf_filename, tipo_comprobante='FAC')
-            _s.commit()
-            inv_id = inv.id
-        except Exception as e:
-            _s.close()
-            return jsonify({'error': str(e)}), 500
-        _s.close()
+        with database.get_db() as _s:
+            try:
+                inv = save_invoice_to_db(_s, invoice_data,
+                                         pdf_filename=pdf_filename, tipo_comprobante='FAC')
+                _s.commit()
+                inv_id = inv.id
+            except Exception as e:
+                _s.rollback()
+                return jsonify({'error': str(e)}), 500
         return jsonify({'invoice_id': inv_id})
 
     @app.route('/provider/create-from-peek', methods=['POST'])

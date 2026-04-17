@@ -2,6 +2,7 @@
 
 from flask import render_template, request, redirect, url_for, flash
 import database
+from helpers import get_providers
 
 
 def init_app(app):
@@ -10,8 +11,7 @@ def init_app(app):
     def cuentas_corrientes():
         session = database.SessionLocal()
         try:
-            proveedores = session.query(database.Provider).order_by(database.Provider.razon_social).all()
-            prov_list = [{'id': p.id, 'razon_social': p.razon_social} for p in proveedores]
+            prov_list = get_providers()
 
             provider_id = request.args.get('proveedor', type=int)
             provider = None
