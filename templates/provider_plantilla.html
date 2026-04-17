@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plantilla exportación — {{ provider.razon_social }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] } } } }</script>
+    <style>
+        body { background:#f3f3f3; color:#1e1e1e; }
+        ::-webkit-scrollbar { width:5px; } ::-webkit-scrollbar-thumb { background:#d0d0d0; border-radius:99px; }
+        input,select { background:#f5f5f5; border:1px solid #e0e0e0; border-radius:6px; padding:4px 8px; font-size:0.8rem; }
+        input:focus, select:focus { outline:2px solid #EAB308; background:#fff; }
+        .campo-row { transition: background .1s; }
+        .campo-row:hover { background: #fafafa; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-5xl mx-auto flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-violet-500 flex items-center justify-center">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                </svg>
+            </div>
+            <div>
+                <span class="font-bold text-sm">Plantilla de exportación</span>
+                <span class="ml-2 text-xs text-[#6f6f6f]">{{ provider.razon_social }}</span>
+            </div>
+        </div>
+        <a href="{{ url_for('providers_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Proveedores</a>
+    </div>
+</header>
+
+<div class="max-w-5xl mx-auto px-6 py-6 space-y-5">
+
+    <!-- Info -->
+    <div class="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-800">
+        Definí el formato de ancho fijo para exportar el pedido. Cada campo ocupa una posición fija dentro de cada línea del archivo.
+        Al presionar "Exportar plantilla" en el resumen del pedido, se genera el archivo con este formato.
+    </div>
+
+    <!-- Encabezado de la plantilla -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4">
+        <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Configuración general</p>
+        <form method="POST" class="flex gap-3 flex-wrap items-end">
+            <input type="hidden" name="action" value="save_plantilla">
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Nombre</label>
+                <input type="text" name="nombre" value="{{ plantilla.nombre if plantilla else 'Plantilla' }}"
+                       placeholder="Plantilla ObServer" class="w-48">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Extensión archivo</label>
+                <input type="text" name="extension" value="{{ plantilla.extension if plantilla else 'txt' }}"
+                       placeholder="txt" class="w-20">
+            </div>
+            <button type="submit"
+                    class="px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold transition-colors">
+                Guardar
+            </button>
+            {% if plantilla %}
+            <form method="POST" class="ml-auto">
+                <input type="hidden" name="action" value="delete_plantilla">
+                <button type="submit" onclick="return confirm('¿Eliminar toda la plantilla?')"
+                        class="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold border border-red-200 transition-colors">
+                    Eliminar plantilla
+                </button>
+            </form>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Campos definidos -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
+        <div class="px-4 py-3 border-b border-[#e0e0e0] bg-[#f8f8f8] flex items-center justify-between">
+            <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">
+                Campos
+                {% if plantilla %}
+                <span class="ml-2 text-amber-600 font-bold">{{ plantilla.campos | length }}</span>
+                {% endif %}
+            </p>
+            {% if plantilla and plantilla.campos %}
+            <span class="text-xs text-[#999]">
+                Longitud total de línea:
+                <strong>{{ plantilla.campos | map(attribute='col_inicio') | list | zip(plantilla.campos | map(attribute='longitud') | list) | map('sum') | max }}</strong> chars
+            </span>
+            {% endif %}
+        </div>
+
+        {% if plantilla and plantilla.campos %}
+        <table class="w-full text-xs">
+            <thead class="bg-[#f5f5f5] text-[#aaa] text-[10px] uppercase tracking-wide">
+                <tr>
+                    <th class="text-left px-4 py-2">Nombre</th>
+                    <th class="text-left px-3 py-2">Campo sistema</th>
+                    <th class="text-center px-3 py-2 w-24">Col. inicio</th>
+                    <th class="text-center px-3 py-2 w-20">Longitud</th>
+                    <th class="text-center px-3 py-2 w-16">Alin.</th>
+                    <th class="text-center px-3 py-2 w-16">Relleno</th>
+                    <th class="text-left px-3 py-2">Valor fijo</th>
+                    <th class="w-8"></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for c in plantilla.campos %}
+            <tr class="campo-row border-t border-[#f0f0f0]">
+                <td class="px-4 py-2 font-medium text-[#1e1e1e]">{{ c.nombre }}</td>
+                <td class="px-3 py-2 text-[#555]">
+                    {{ campos_sistema | selectattr('0','equalto',c.campo_sistema) | map(attribute='1') | first | default(c.campo_sistema) }}
+                </td>
+                <td class="px-3 py-2 text-center font-mono text-amber-600 font-semibold">{{ c.col_inicio }}</td>
+                <td class="px-3 py-2 text-center font-mono text-[#555]">{{ c.longitud }}</td>
+                <td class="px-3 py-2 text-center text-[#555]">{{ 'Izq.' if c.alineacion == 'L' else 'Der.' }}</td>
+                <td class="px-3 py-2 text-center font-mono text-[#999]">"{{ c.relleno }}"</td>
+                <td class="px-3 py-2 font-mono text-[#999]">{{ c.valor_fijo or '—' }}</td>
+                <td class="px-2 py-2 text-center">
+                    <form method="POST" style="display:inline">
+                        <input type="hidden" name="action" value="delete_campo">
+                        <input type="hidden" name="campo_id" value="{{ c.id }}">
+                        <button type="submit" class="text-[#ccc] hover:text-red-500 transition-colors">✕</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Preview de una línea -->
+        <div class="px-4 py-3 border-t border-[#e0e0e0] bg-[#fafafa]">
+            <p class="text-[10px] text-[#999] uppercase tracking-wide mb-1">Preview de una línea (posiciones)</p>
+            <div class="font-mono text-[10px] text-[#555] overflow-x-auto whitespace-nowrap bg-white border border-[#e0e0e0] rounded px-2 py-1.5">
+                {% set ns = namespace(line='') %}
+                {% for c in plantilla.campos %}
+                    {% set ns.line = ns.line + ('·' * (c.col_inicio - ns.line|length)) if c.col_inicio > ns.line|length else ns.line %}
+                    {% set ns.line = ns.line + ('[' + c.nombre[:c.longitud-2] + ']' if c.longitud > 2 else '[' * c.longitud) %}
+                {% endfor %}
+                {{ ns.line }}
+            </div>
+            <div class="font-mono text-[10px] text-[#bbb] overflow-x-auto whitespace-nowrap px-2 mt-0.5">
+                {% for i in range(0, (plantilla.campos | map(attribute='col_inicio') | list | zip(plantilla.campos | map(attribute='longitud') | list) | map('sum') | max) + 1) %}{{ (i // 10) if i % 10 == 0 else ' ' }}{% endfor %}
+                <br>{% for i in range(0, (plantilla.campos | map(attribute='col_inicio') | list | zip(plantilla.campos | map(attribute='longitud') | list) | map('sum') | max) + 1) %}{{ i % 10 }}{% endfor %}
+            </div>
+        </div>
+        {% else %}
+        <p class="px-4 py-8 text-center text-xs text-[#bbb]">Sin campos definidos. Agregá el primero abajo.</p>
+        {% endif %}
+    </div>
+
+    <!-- Agregar campo -->
+    <div class="bg-white rounded-xl border border-[#e0e0e0] p-4">
+        <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Agregar campo</p>
+        <form method="POST" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <input type="hidden" name="action" value="add_campo">
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Nombre del campo</label>
+                <input type="text" name="campo_nombre" placeholder="Código de barra" required class="w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Campo sistema</label>
+                <select name="campo_sistema" onchange="toggleValorFijo(this)" class="w-full">
+                    {% for val, label in campos_sistema %}
+                    <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Col. inicio</label>
+                <input type="number" name="col_inicio" value="0" min="0" class="w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Longitud (chars)</label>
+                <input type="number" name="longitud" value="10" min="1" class="w-full">
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Alineación</label>
+                <select name="alineacion" class="w-full">
+                    <option value="L">Izquierda</option>
+                    <option value="R">Derecha</option>
+                </select>
+            </div>
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Relleno (padding)</label>
+                <input type="text" name="relleno" value=" " maxlength="1" class="w-full">
+            </div>
+            <div class="flex flex-col gap-1" id="valor-fijo-wrap" style="display:none!important">
+                <label class="text-[10px] text-[#999] uppercase tracking-wide">Valor fijo</label>
+                <input type="text" name="valor_fijo" placeholder="01" class="w-full">
+            </div>
+            <div class="flex items-end col-span-2 md:col-span-1">
+                <button type="submit"
+                        class="w-full px-4 py-1.5 rounded-lg bg-[#EAB308] hover:bg-[#CA8A04] text-[#1a1100] text-xs font-semibold transition-colors">
+                    + Agregar campo
+                </button>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+<script>
+function toggleValorFijo(sel) {
+    const wrap = document.getElementById('valor-fijo-wrap');
+    wrap.style.setProperty('display', sel.value === 'fijo' ? 'flex' : 'none', 'important');
+    wrap.style.flexDirection = 'column';
+    wrap.style.gap = '4px';
+}
+</script>
+</body>
+</html>

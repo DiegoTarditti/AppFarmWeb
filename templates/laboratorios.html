@@ -64,6 +64,21 @@
         {% endif %}
     {% endwith %}
 
+    <!-- Filtro -->
+    <div class="bg-surface rounded-xl border border-surface-border p-4">
+        <div class="relative">
+            <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"/>
+            </svg>
+            <input type="text" id="lab-filter" placeholder="Filtrar laboratorios por nombre…"
+                   oninput="filterLabs()"
+                   class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg pl-10 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <button type="button" onclick="clearLabFilter()"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-[#999] hover:text-[#1e1e1e] text-sm px-2 py-1 rounded hidden" id="lab-filter-clear">✕</button>
+        </div>
+    </div>
+
     <!-- Agregar -->
     <div class="bg-surface rounded-xl border border-surface-border p-5">
         <p class="font-semibold text-sm text-[#1e1e1e] mb-3">Nuevo laboratorio</p>
@@ -80,19 +95,22 @@
     <!-- Lista -->
     <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
         <div class="px-5 py-3 border-b border-surface-border">
-            <p class="font-semibold text-sm text-[#1e1e1e]">{{ laboratorios|length }} laboratorio{{ 's' if laboratorios|length != 1 }}</p>
+            <p class="font-semibold text-sm text-[#1e1e1e]">
+                <span id="lab-count">{{ laboratorios|length }}</span> laboratorio{{ 's' if laboratorios|length != 1 }}
+                <span id="lab-count-filtered" class="text-[#999] font-normal hidden"></span>
+            </p>
         </div>
         {% if laboratorios %}
         <div class="divide-y divide-surface-border">
             {% for lab in laboratorios %}
-            <div class="px-5 py-4" id="lab-row-{{ lab.id }}">
+            <div class="px-5 py-3 lab-row" data-nombre="{{ lab.nombre | lower }}" id="lab-row-{{ lab.id }}">
                 <!-- Vista -->
-                <div id="lab-view-{{ lab.id }}" class="flex items-center gap-4">
-                    <div class="flex-1 min-w-0">
-                        <p class="font-semibold text-[#1e1e1e] truncate">{{ lab.nombre }}</p>
-                        <p class="text-xs text-[#6f6f6f] mt-0.5">ID #{{ lab.id }}</p>
+                <div id="lab-view-{{ lab.id }}">
+                    <div class="flex items-baseline gap-2 mb-2">
+                        <p class="font-semibold text-base text-[#1e1e1e]">{{ lab.nombre }}</p>
+                        <p class="text-xs text-[#999]">#{{ lab.id }}</p>
                     </div>
-                    <div class="flex items-center gap-1 flex-shrink-0 text-xs text-[#6f6f6f]">
+                    <div class="flex items-center gap-1 flex-wrap text-xs text-[#6f6f6f]">
                         <a href="{{ url_for('productos_list') }}?lab={{ lab.id }}"
                            class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,12 +130,11 @@
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
                             </svg>
-                            {{ lab.analytics_count }} en analytics
+                            {{ lab.analytics_count }} analytics
                         </a>
 
                         <span class="w-px h-4 bg-surface-border mx-1"></span>
 
-                        <!-- Módulos -->
                         <a href="{{ url_for('modulo_packs_vista') }}?lab={{ lab.nombre }}"
                            class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors font-medium">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,8 +142,6 @@
                             </svg>
                             Módulos
                         </a>
-
-                        <!-- Ofertas -->
                         <button onclick="openOfertasModal({{ lab.id }}, '{{ lab.nombre }}', false)"
                                 class="flex items-center gap-1 hover:text-green-700 px-2 py-1 rounded-lg hover:bg-green-50 transition-colors font-medium">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,8 +149,6 @@
                             </svg>
                             Ofertas
                         </button>
-
-                        <!-- Ofertas con mínimo -->
                         <button onclick="openOfertasModal({{ lab.id }}, '{{ lab.nombre }}', true)"
                                 class="flex items-center gap-1 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors font-medium">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,8 +156,6 @@
                             </svg>
                             Ofertas c/mín.
                         </button>
-
-                        <!-- Plantilla exportación -->
                         <a href="{{ url_for('laboratorio_export_template', lab_id=lab.id) }}"
                            class="flex items-center gap-1 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 transition-colors font-medium">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -152,6 +163,8 @@
                             </svg>
                             Plantilla
                         </a>
+
+                        <span class="flex-1"></span>
 
                         <button onclick="openLabEdit({{ lab.id }})"
                             class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
@@ -238,6 +251,30 @@
 </div>
 
 <script>
+function filterLabs() {
+    const q = document.getElementById('lab-filter').value.trim().toLowerCase();
+    const clearBtn = document.getElementById('lab-filter-clear');
+    clearBtn.classList.toggle('hidden', !q);
+    let visible = 0;
+    document.querySelectorAll('.lab-row').forEach(row => {
+        const match = !q || row.dataset.nombre.includes(q);
+        row.classList.toggle('hidden', !match);
+        if (match) visible++;
+    });
+    const filteredEl = document.getElementById('lab-count-filtered');
+    if (q) {
+        filteredEl.textContent = `· ${visible} visible${visible !== 1 ? 's' : ''}`;
+        filteredEl.classList.remove('hidden');
+    } else {
+        filteredEl.classList.add('hidden');
+    }
+}
+function clearLabFilter() {
+    document.getElementById('lab-filter').value = '';
+    filterLabs();
+    document.getElementById('lab-filter').focus();
+}
+
 function openLabEdit(id) {
     document.getElementById('lab-view-' + id).classList.add('hidden');
     document.getElementById('lab-edit-' + id).classList.remove('hidden');

@@ -319,6 +319,13 @@
                         Exportar plantilla
                     </button>
                 </form>
+                {% if prov_plantilla %}
+                <button type="button" id="btn-export-plantilla" onclick="exportarPlantilla()"
+                        class="hidden flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        title="Exportar con plantilla: {{ prov_plantilla.nombre }}">
+                    Plantilla proveedor
+                </button>
+                {% endif %}
             </div>
         </div>
         <div id="resumen-body" class="p-4 hidden"></div>
@@ -1074,6 +1081,36 @@ function exportResumenPlantilla() {
     document.getElementById('form-export-sum-plantilla').submit();
 }
 
+{% if prov_plantilla %}
+async function exportarPlantilla() {
+    const rows = resumenAgrEans.map(ean => {
+        const d = resumenAgr[ean];
+        let oferta = d.cant_oferta, nodeal = d.cant_nodeal;
+        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+            const v = parseInt(inp.value) || 0;
+            if (inp.dataset.field === 'oferta')  oferta  = v;
+            if (inp.dataset.field === 'nodeal')  nodeal = v;
+        });
+        const total = d.cant_mod + oferta + nodeal;
+        return { ean, nombre: d.nombre, cantidad: total, cant_modulo: d.cant_mod,
+                 cant_oferta: oferta, cant_nodeal: nodeal, precio: d.pvp };
+    });
+    const resp = await fetch('{{ url_for("order_export_prov_plantilla", pedido_id=pedido.id) }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rows, proveedor_id: {{ prov_plantilla.proveedor_id }} })
+    });
+    if (!resp.ok) { alert('Error al exportar plantilla'); return; }
+    const blob = await resp.blob();
+    const ext  = '{{ prov_plantilla.extension }}';
+    const nom  = '{{ prov_plantilla.nombre }}';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${nom}_{{ pedido.laboratorio }}_{{ pedido.periodo }}.${ext}`;
+    a.click();
+}
+{% endif %}
+
 function exportResumen() {
     const exportData = resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
@@ -1497,6 +1534,7 @@ function confirmarOfertasConMinimo() {
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
     show('btn-export-sum-plantilla');
+    show('btn-export-plantilla');
     hide('btn-confirmar-ofertas-min');
     hide('btn-saltar-ofertas-min');
     document.getElementById('ofertas-min-status').textContent =
@@ -1514,6 +1552,7 @@ function saltarOfertasConMinimo() {
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
     show('btn-export-sum-plantilla');
+    show('btn-export-plantilla');
     document.getElementById('ofertas-min-status').textContent = 'Omitido';
     enable('card-resumen');
     document.getElementById('badge-3').classList.add('waiting');

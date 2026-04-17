@@ -939,9 +939,19 @@ def init_app(app):
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
             lab_obj = session.query(database.Laboratorio).filter_by(nombre=pedido.laboratorio).first()
             data['lab_id'] = lab_obj.id if lab_obj else None
+            prov_plantilla = None
+            _prov = session.query(database.Provider).filter(
+                database.Provider.razon_social.ilike(f'%{pedido.laboratorio or ""}%')
+            ).first()
+            if _prov:
+                _pl = session.query(database.PlantillaExportacion).filter_by(proveedor_id=_prov.id).first()
+                if _pl:
+                    prov_plantilla = {'proveedor_id': _prov.id, 'nombre': _pl.nombre,
+                                      'extension': _pl.extension}
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
-                                   product_prices=product_prices)
+                                   product_prices=product_prices,
+                                   prov_plantilla=prov_plantilla)
 
     @app.route('/order/<int:pedido_id>/save-module-matches', methods=['POST'])
     def order_save_module_matches(pedido_id):
@@ -1151,6 +1161,70 @@ def init_app(app):
         from flask import send_file
         return send_file(buf, as_attachment=True, download_name=fname,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    @app.route('/order/<int:pedido_id>/export-prov-plantilla', methods=['POST'])
+    def order_export_prov_plantilla(pedido_id):
+        """Genera archivo de ancho fijo con el resumen según plantilla del proveedor."""
+        from flask import Response
+        data = request.get_json(silent=True) or {}
+        rows = data.get('rows', [])
+        proveedor_id = data.get('proveedor_id')
+        if not proveedor_id:
+            return jsonify({'error': 'proveedor_id requerido'}), 400
+
+        with database.get_db() as session:
+            plantilla = session.query(database.PlantillaExportacion).filter_by(
+                proveedor_id=int(proveedor_id)).first()
+            if not plantilla:
+                return jsonify({'error': 'Este proveedor no tiene plantilla configurada.'}), 404
+            campos = sorted(plantilla.campos, key=lambda c: c.col_inicio)
+            if not campos:
+                return jsonify({'error': 'La plantilla no tiene campos definidos.'}), 400
+            line_len = max(c.col_inicio + c.longitud for c in campos)
+            ext = plantilla.extension or 'txt'
+            pedido = session.get(Pedido, pedido_id)
+            lab = (pedido.laboratorio or 'pedido').replace(' ', '_') if pedido else 'pedido'
+            periodo = (pedido.periodo or '').replace(' ', '_') if pedido else ''
+
+            lines = []
+            for row in rows:
+                line = bytearray(b' ' * line_len)
+                for c in campos:
+                    cs = c.campo_sistema
+                    if cs == 'fijo':
+                        val = c.valor_fijo or ''
+                    elif cs == 'codigo_barra':
+                        val = str(row.get('ean', '') or '')
+                    elif cs == 'descripcion':
+                        val = str(row.get('nombre', '') or '')
+                    elif cs == 'cantidad':
+                        val = str(int(row.get('cantidad', 0) or 0))
+                    elif cs == 'cant_modulo':
+                        val = str(int(row.get('cant_modulo', 0) or 0))
+                    elif cs == 'cant_oferta':
+                        val = str(int(row.get('cant_oferta', 0) or 0))
+                    elif cs == 'cant_nodeal':
+                        val = str(int(row.get('cant_nodeal', 0) or 0))
+                    elif cs == 'precio':
+                        val = str(row.get('precio_pvp', '') or '')
+                    else:
+                        val = ''
+                    pad = (c.relleno or ' ')[0]
+                    lng = c.longitud
+                    val = val[-lng:].rjust(lng, pad) if c.alineacion == 'R' else val[:lng].ljust(lng, pad)
+                    start = c.col_inicio
+                    end = min(start + lng, line_len)
+                    encoded = val.encode('latin-1', errors='replace')[:end - start]
+                    line[start:start + len(encoded)] = encoded
+                lines.append(bytes(line).decode('latin-1'))
+
+        content = '\r\n'.join(lines) + '\r\n'
+        filename = f'pedido_{lab}_{periodo}.{ext}'
+        return Response(
+            content.encode('latin-1'),
+            mimetype='text/plain',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+        )
 
     @app.route('/order/<int:pedido_id>/export/<step>/<fmt>', methods=['POST'])
     def order_export(pedido_id, step, fmt):

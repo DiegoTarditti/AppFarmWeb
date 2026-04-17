@@ -401,3 +401,65 @@ def init_app(app):
             session.commit()
         flash('Todas las equivalencias fueron eliminadas.')
         return redirect(url_for('provider_mappings', provider_id=provider_id))
+
+    # ── Plantillas de exportación por proveedor ──────────────────────────────
+
+    @app.route('/provider/<int:provider_id>/plantilla', methods=['GET', 'POST'])
+    def provider_plantilla(provider_id):
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                flash('Proveedor no encontrado.')
+                return redirect(url_for('providers_list'))
+
+            if request.method == 'POST':
+                action = request.form.get('action')
+
+                if action == 'save_plantilla':
+                    p = session.query(database.PlantillaExportacion).filter_by(proveedor_id=provider_id).first()
+                    if not p:
+                        p = database.PlantillaExportacion(proveedor_id=provider_id)
+                        session.add(p)
+                    p.nombre    = request.form.get('nombre', 'Plantilla').strip()
+                    p.extension = request.form.get('extension', 'txt').strip().lstrip('.')
+                    session.commit()
+
+                elif action == 'add_campo':
+                    p = session.query(database.PlantillaExportacion).filter_by(proveedor_id=provider_id).first()
+                    if not p:
+                        p = database.PlantillaExportacion(proveedor_id=provider_id, nombre='Plantilla')
+                        session.add(p)
+                        session.flush()
+                    campo = database.PlantillaCampo(
+                        plantilla_id  = p.id,
+                        nombre        = request.form.get('campo_nombre', '').strip(),
+                        campo_sistema = request.form.get('campo_sistema', 'espacio'),
+                        col_inicio    = int(request.form.get('col_inicio', 0)),
+                        longitud      = int(request.form.get('longitud', 1)),
+                        valor_fijo    = request.form.get('valor_fijo', '').strip() or None,
+                        alineacion    = request.form.get('alineacion', 'L'),
+                        relleno       = (request.form.get('relleno', ' ') or ' ')[0],
+                    )
+                    session.add(campo)
+                    session.commit()
+
+                elif action == 'delete_campo':
+                    campo_id = int(request.form.get('campo_id', 0))
+                    c = session.get(database.PlantillaCampo, campo_id)
+                    if c:
+                        session.delete(c)
+                        session.commit()
+
+                elif action == 'delete_plantilla':
+                    p = session.query(database.PlantillaExportacion).filter_by(proveedor_id=provider_id).first()
+                    if p:
+                        session.delete(p)
+                        session.commit()
+
+                return redirect(url_for('provider_plantilla', provider_id=provider_id))
+
+            plantilla = session.query(database.PlantillaExportacion).filter_by(proveedor_id=provider_id).first()
+            return render_template('provider_plantilla.html',
+                                   provider=provider,
+                                   plantilla=plantilla,
+                                   campos_sistema=database.CAMPOS_SISTEMA)

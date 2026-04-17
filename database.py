@@ -341,6 +341,48 @@ class ProductAnalytics(Base):
     actualizado_en = Column(DateTime, default=datetime.utcnow)
 
 
+class PlantillaExportacion(Base):
+    """Formato de exportación de ancho fijo para un proveedor."""
+    __tablename__ = 'plantillas_exportacion'
+    id = Column(Integer, primary_key=True)
+    proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=False)
+    nombre = Column(String(100), nullable=False, default='Plantilla')
+    extension = Column(String(10), nullable=False, default='txt')
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    proveedor = relationship('Provider')
+    campos = relationship('PlantillaCampo', back_populates='plantilla',
+                          order_by='PlantillaCampo.col_inicio',
+                          cascade='all, delete-orphan')
+
+
+class PlantillaCampo(Base):
+    """Campo de ancho fijo dentro de una PlantillaExportacion."""
+    __tablename__ = 'plantilla_campos'
+    id = Column(Integer, primary_key=True)
+    plantilla_id = Column(Integer, ForeignKey('plantillas_exportacion.id'), nullable=False)
+    nombre = Column(String(80), nullable=False)
+    campo_sistema = Column(String(30), nullable=False)
+    col_inicio = Column(Integer, nullable=False, default=0)
+    longitud = Column(Integer, nullable=False, default=1)
+    valor_fijo = Column(String(100), nullable=True)
+    alineacion = Column(String(1), nullable=False, default='L')
+    relleno = Column(String(1), nullable=False, default=' ')
+    plantilla = relationship('PlantillaExportacion', back_populates='campos')
+
+
+CAMPOS_SISTEMA = [
+    ('fijo',         'Valor fijo / constante'),
+    ('codigo_barra', 'Código de barra (EAN)'),
+    ('descripcion',  'Descripción del producto'),
+    ('cantidad',     'Cantidad total (mod+oferta+sin deal)'),
+    ('cant_modulo',  'Cantidad módulo'),
+    ('cant_oferta',  'Cantidad oferta'),
+    ('cant_nodeal',  'Cantidad sin deal'),
+    ('precio',       'Precio PVP'),
+    ('espacio',      'Espacio en blanco'),
+]
+
+
 engine = None
 SessionLocal = None
 
@@ -624,6 +666,28 @@ def _pg_add_columns(conn):
             creado_en TIMESTAMP DEFAULT NOW()
         )
     """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plantillas_exportacion (
+            id SERIAL PRIMARY KEY,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+            nombre VARCHAR(100) NOT NULL DEFAULT 'Plantilla',
+            extension VARCHAR(10) NOT NULL DEFAULT 'txt',
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plantilla_campos (
+            id SERIAL PRIMARY KEY,
+            plantilla_id INTEGER NOT NULL REFERENCES plantillas_exportacion(id) ON DELETE CASCADE,
+            nombre VARCHAR(80) NOT NULL,
+            campo_sistema VARCHAR(30) NOT NULL,
+            col_inicio INTEGER NOT NULL DEFAULT 0,
+            longitud INTEGER NOT NULL DEFAULT 1,
+            valor_fijo VARCHAR(100),
+            alineacion CHAR(1) NOT NULL DEFAULT 'L',
+            relleno CHAR(1) NOT NULL DEFAULT ' '
+        )
+    """))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
@@ -802,6 +866,28 @@ def _sqlite_add_columns(conn):
             proveedor_id INTEGER REFERENCES proveedores(id),
             factura_id INTEGER REFERENCES facturas(id),
             creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plantillas_exportacion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+            nombre VARCHAR(100) NOT NULL DEFAULT 'Plantilla',
+            extension VARCHAR(10) NOT NULL DEFAULT 'txt',
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS plantilla_campos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plantilla_id INTEGER NOT NULL REFERENCES plantillas_exportacion(id) ON DELETE CASCADE,
+            nombre VARCHAR(80) NOT NULL,
+            campo_sistema VARCHAR(30) NOT NULL,
+            col_inicio INTEGER NOT NULL DEFAULT 0,
+            longitud INTEGER NOT NULL DEFAULT 1,
+            valor_fijo VARCHAR(100),
+            alineacion CHAR(1) NOT NULL DEFAULT 'L',
+            relleno CHAR(1) NOT NULL DEFAULT ' '
         )
     """))
     # Índices para queries frecuentes
