@@ -23,18 +23,6 @@ from data_extract import (
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
-@pytest.fixture(scope='session', autouse=True)
-def init_test_db():
-    """Inicializa la DB SQLite en memoria sin correr migraciones de producción."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import sessionmaker
-    eng = create_engine('sqlite:///:memory:', echo=False, future=True)
-    database.Base.metadata.create_all(eng)
-    database.engine = eng
-    database.SessionLocal = sessionmaker(bind=eng, autoflush=False, autocommit=False,
-                                         expire_on_commit=False)
-
-
 @pytest.fixture
 def session():
     """Sesión limpia para cada test — hace rollback al terminar."""
