@@ -185,6 +185,12 @@
                     </svg>
                     Editar módulos
                 </button>
+                <!-- Saltar paso 1 -->
+                <button id="btn-saltar-modulos" onclick="saltarModulos()"
+                        class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#d0d0d0] text-[#888] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        title="Ir directo a ofertas sin módulos">
+                    Saltar →
+                </button>
                 <!-- Exports (hidden until processed) -->
                 <button id="btn-export-mod-pdf" onclick="printStep('modulos')"
                         class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
@@ -285,6 +291,12 @@
                 <button id="btn-procesar-ofertas" onclick="procesarOfertas()"
                         class="hidden flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
                     Procesar
+                </button>
+                <!-- Saltar paso 2 -->
+                <button id="btn-saltar-ofertas" onclick="saltarOfertas()"
+                        class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#d0d0d0] text-[#888] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
+                        title="Ir directo al resumen sin ofertas">
+                    Saltar →
                 </button>
                 <button id="btn-export-off-pdf" onclick="printStep('ofertas')"
                         class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
@@ -831,6 +843,7 @@ function confirmarModulos() {
     document.getElementById('badge-1').classList.add('done');
     document.getElementById('badge-2').classList.remove('waiting');
     hide('btn-confirmar-modulos');
+    hide('btn-saltar-modulos');
     show('btn-reeditar-modulos');
     document.getElementById('modulos-status').textContent = '✓ Confirmado';
     document.getElementById('ofertas-status').textContent = 'Importá el Excel de ofertas';
@@ -921,6 +934,7 @@ function procesarOfertas() {
     show('btn-export-off-xlsx');
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
+    hide('btn-saltar-ofertas');
     document.getElementById('ofertas-status').textContent =
         `${offResult.length} en oferta · ${nodealResult.length} sin deal`;
 
@@ -1330,6 +1344,52 @@ async function guardarMatches() {
         setTimeout(() => hide('match-feedback'), 5000);
 
     } catch(e) { alert('Error al guardar: ' + e); }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SALTAR PASOS (OPCIONALES)
+// ─────────────────────────────────────────────────────────────────
+function saltarModulos() {
+    // Inicializar saldos sin descuento de módulos
+    Object.keys(pedidoQty).forEach(ean => { saldosPostMod[ean] = pedidoQty[ean]; });
+
+    // Activar paso 2
+    enable('card-ofertas');
+    document.getElementById('badge-1').classList.add('waiting');
+    document.getElementById('badge-2').classList.remove('waiting');
+    hide('btn-saltar-modulos');
+    document.getElementById('modulos-status').textContent = 'Omitido';
+    document.getElementById('ofertas-status').textContent = 'Importá el Excel de ofertas';
+
+    document.getElementById('card-ofertas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function saltarOfertas() {
+    // Si no se confirmaron módulos, inicializar saldos desde pedido
+    if (Object.keys(saldosPostMod).length === 0) {
+        Object.keys(pedidoQty).forEach(ean => { saldosPostMod[ean] = pedidoQty[ean]; });
+    }
+
+    // Todo el saldo va a "sin deal"
+    offResult = [];
+    nodealResult = [];
+    Object.entries(saldosPostMod).forEach(([ean, saldo]) => {
+        if (saldo <= 0) return;
+        nodealResult.push({ ean, nombre: pedidoNom[ean] || ean, cantidad: saldo });
+    });
+
+    renderResumen();
+
+    show('btn-export-sum-pdf');
+    show('btn-export-sum-xlsx');
+    hide('btn-saltar-ofertas');
+    document.getElementById('ofertas-status').textContent = 'Omitido';
+
+    enable('card-resumen');
+    document.getElementById('badge-2').classList.add('waiting');
+    document.getElementById('badge-3').classList.remove('waiting');
+    document.getElementById('resumen-status').textContent = 'Resumen completo';
+    document.getElementById('card-resumen').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ─────────────────────────────────────────────────────────────────

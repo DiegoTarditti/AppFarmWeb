@@ -268,17 +268,17 @@
                 data-cubre="{{ cov_days }}"
                 data-idx="{{ i }}">
 
-                <td class="px-3 py-2" style="max-width:220px">
-                    <div class="font-medium text-[#1e1e1e] leading-tight truncate">
-                        {{ p.nombre }}
+                <td class="px-3 py-2" style="max-width:260px">
+                    <div class="font-medium text-[#1e1e1e] leading-tight truncate">{{ p.nombre }}</div>
+                    <div class="flex items-center gap-1 mt-0.5">
+                        <span class="text-[#999] text-xs">{{ p.codigo_barra }}</span>
                         {% if p.es_pack %}
-                        <span class="inline-block ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 align-middle">PACK</span>
+                        <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200">PACK</span>
                         {% endif %}
                         {% if p.tipo == 'C' %}
-                        <span class="inline-block ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200 align-middle">CRÓNICO</span>
+                        <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200">CRÓNICO</span>
                         {% endif %}
                     </div>
-                    <div class="text-[#999] text-xs mt-0.5">{{ p.codigo_barra }}</div>
                 </td>
                 <td class="px-3 py-2 text-right text-[#6f6f6f]">${{ p.precio_pvp | int }}</td>
                 <td class="px-3 py-2 text-right font-medium" id="sub-{{ i }}">
