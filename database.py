@@ -364,6 +364,18 @@ def init_db(database_url=None):
     engine = create_engine(database_url, echo=False, future=True)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
                                expire_on_commit=False)
+    if not database_url.startswith('sqlite'):
+        # Limpia entradas stale en pg_type que bloquean CREATE TABLE
+        with engine.connect() as conn:
+            for tname in ('export_templates', 'ofertas_minimo'):
+                conn.execute(text(f"""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = '{tname}') THEN
+                            DROP TYPE IF EXISTS {tname};
+                        END IF;
+                    END $$
+                """))
+            conn.commit()
     Base.metadata.create_all(engine)
     is_sqlite = database_url.startswith('sqlite')
     # Migraciones incrementales: agrega columnas nuevas si no existen
