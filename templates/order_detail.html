@@ -1263,6 +1263,20 @@ function procesarOfertasConMinimo() {
         }
     });
     nodealResult = newNodeal;
+
+    // Complete each found group with remaining members from ofertasMinData at qty=0
+    const foundGroups = new Set(offMinResult.filter(it => it.grupo_id != null).map(it => it.grupo_id));
+    const offMinEans = new Set(offMinResult.map(it => it.ean));
+    foundGroups.forEach(gid => {
+        ofertasMinData.filter(o => o.grupo_id === gid && !offMinEans.has(o.ean)).forEach(o => {
+            offMinResult.push({
+                ean: o.ean, nombre: o.descripcion, cantidad: 0,
+                unidades_minima: o.unidades_minima, descuento_psl: o.descuento_psl,
+                rentabilidad: o.rentabilidad, grupo_id: o.grupo_id,
+            });
+        });
+    });
+
     renderOfertasConMinimoTable();
     hide('btn-procesar-ofertas-min');
     show('btn-confirmar-ofertas-min');
@@ -1300,8 +1314,10 @@ function renderOfertasConMinimoTable() {
             <th class="text-right px-2 py-2 text-sky-700">Mín.</th>
             <th class="text-right px-2 py-2 text-emerald-700">Dto%</th>
             <th class="text-right px-2 py-2 text-purple-700">A pedir</th>
+            <th class="px-2 py-2"></th>
         </tr></thead><tbody>`;
         individuals.forEach(it => {
+            const minVal = it.unidades_minima ?? 0;
             html += `<tr class="data-row">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
                 <td class="px-2 font-medium">${it.nombre}</td>
@@ -1312,6 +1328,9 @@ function renderOfertasConMinimoTable() {
                     <input type="number" min="0" value="${it.cantidad}" id="qty-ofmin-${it.ean}"
                            class="w-16 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold text-xs focus:outline-none focus:ring-1 focus:ring-purple-400">
                 </td>
+                <td class="px-2 text-center">${minVal > 0 ? `<button onclick="completarMinimo('${it.ean}', ${minVal})"
+                    class="text-[10px] font-semibold px-2 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-700 border border-sky-300 transition-colors whitespace-nowrap">
+                    Completar</button>` : ''}</td>
             </tr>`;
         });
         html += '</tbody></table>';
@@ -1359,6 +1378,13 @@ function renderOfertasConMinimoTable() {
     });
     body.innerHTML = html;
     show('ofertas-min-body');
+}
+
+function completarMinimo(ean, minVal) {
+    const input = document.getElementById('qty-ofmin-' + ean);
+    if (!input) return;
+    const actual = parseInt(input.value) || 0;
+    if (actual < minVal) input.value = minVal;
 }
 
 function recalcGrupoTotal(gid) {
