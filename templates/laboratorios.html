@@ -114,6 +114,36 @@
                             </svg>
                             {{ lab.analytics_count }} en analytics
                         </a>
+
+                        <span class="w-px h-4 bg-surface-border mx-1"></span>
+
+                        <!-- Módulos -->
+                        <a href="{{ url_for('modulo_packs_vista') }}?lab={{ lab.nombre }}"
+                           class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors font-medium">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
+                            </svg>
+                            Módulos
+                        </a>
+
+                        <!-- Ofertas -->
+                        <button onclick="openOfertasModal({{ lab.id }}, '{{ lab.nombre }}', false)"
+                                class="flex items-center gap-1 hover:text-green-700 px-2 py-1 rounded-lg hover:bg-green-50 transition-colors font-medium">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                            </svg>
+                            Ofertas
+                        </button>
+
+                        <!-- Ofertas con mínimo -->
+                        <button onclick="openOfertasModal({{ lab.id }}, '{{ lab.nombre }}', true)"
+                                class="flex items-center gap-1 hover:text-blue-700 px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors font-medium">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                            </svg>
+                            Ofertas c/mín.
+                        </button>
+
                         <button onclick="openLabEdit({{ lab.id }})"
                             class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,6 +187,47 @@
 
 </main>
 
+<!-- Modal Ofertas -->
+<div id="ofertas-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <p id="ofertas-modal-title" class="font-bold text-[#1e1e1e]">Importar ofertas</p>
+                <p id="ofertas-modal-lab" class="text-xs text-[#6f6f6f] mt-0.5"></p>
+            </div>
+            <button onclick="closeOfertasModal()" class="text-[#999] hover:text-[#1e1e1e] transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+
+        <div id="ofertas-modal-desc" class="text-sm text-[#555] bg-[#f5f5f5] rounded-xl px-4 py-3"></div>
+
+        <form id="ofertas-form" class="space-y-3">
+            <input type="hidden" id="ofertas-lab-id" name="lab_id">
+            <input type="hidden" id="ofertas-con-minimo" name="con_minimo">
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-medium text-[#555]">Archivo Excel (.xlsx / .xls)</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls" required
+                       class="text-sm text-[#1e1e1e] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand file:text-brand-dark hover:file:bg-brand-hover cursor-pointer">
+            </div>
+            <div class="flex gap-2 pt-1">
+                <button type="submit"
+                        class="flex-1 bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm py-2 rounded-xl transition-colors">
+                    Importar y previsualizar
+                </button>
+                <button type="button" onclick="closeOfertasModal()"
+                        class="px-4 py-2 text-sm text-[#555] border border-surface-border rounded-xl hover:bg-[#f5f5f5] transition-colors">
+                    Cancelar
+                </button>
+            </div>
+        </form>
+
+        <div id="ofertas-result" class="hidden"></div>
+    </div>
+</div>
+
 <script>
 function openLabEdit(id) {
     document.getElementById('lab-view-' + id).classList.add('hidden');
@@ -166,6 +237,75 @@ function closeLabEdit(id) {
     document.getElementById('lab-edit-' + id).classList.add('hidden');
     document.getElementById('lab-view-' + id).classList.remove('hidden');
 }
+
+function openOfertasModal(labId, labNombre, conMinimo) {
+    document.getElementById('ofertas-lab-id').value = labId;
+    document.getElementById('ofertas-con-minimo').value = conMinimo ? '1' : '0';
+    document.getElementById('ofertas-modal-lab').textContent = labNombre;
+    document.getElementById('ofertas-modal-title').textContent =
+        conMinimo ? 'Ofertas con cantidad mínima' : 'Ofertas simples';
+    document.getElementById('ofertas-modal-desc').textContent = conMinimo
+        ? 'Excel con columnas: Código de barra, Producto, Unidades mínima, Descuento PSL, Rentabilidad, Plazo de pago. Grupos separados por filas vacías.'
+        : 'Excel con códigos de barra y descripciones de productos en oferta.';
+    document.getElementById('ofertas-result').classList.add('hidden');
+    document.getElementById('ofertas-form').classList.remove('hidden');
+    document.getElementById('ofertas-modal').classList.remove('hidden');
+}
+
+function closeOfertasModal() {
+    document.getElementById('ofertas-modal').classList.add('hidden');
+}
+
+document.getElementById('ofertas-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = this.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Procesando…';
+
+    const fd = new FormData(this);
+    const conMinimo = fd.get('con_minimo') === '1';
+    const url = conMinimo ? '/api/ofertas/preview-con-minimo' : '/api/ofertas/preview';
+
+    try {
+        const res = await fetch(url, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error desconocido');
+
+        const resultDiv = document.getElementById('ofertas-result');
+        resultDiv.classList.remove('hidden');
+        document.getElementById('ofertas-form').classList.add('hidden');
+
+        const items = data.items || [];
+        const grupos = data.grupos || null;
+
+        let html = `<p class="text-sm font-semibold text-[#1e1e1e] mb-2">${items.length} producto${items.length !== 1 ? 's' : ''} importado${items.length !== 1 ? 's' : ''}`;
+        if (grupos) html += ` · ${grupos} grupo${grupos !== 1 ? 's' : ''} con mínimo compartido`;
+        html += '</p>';
+
+        html += '<div class="max-h-48 overflow-y-auto border border-surface-border rounded-xl text-xs">';
+        html += '<table class="w-full">';
+        if (conMinimo) {
+            html += '<thead class="bg-[#f5f5f5] sticky top-0"><tr><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th><th class="text-right px-3 py-2">Mín.</th><th class="text-right px-3 py-2">Dto.</th><th class="text-right px-3 py-2">Gpo.</th></tr></thead><tbody>';
+            for (const it of items) {
+                const gpo = it.grupo_id != null ? `<span class="bg-blue-100 text-blue-700 rounded px-1">${it.grupo_id}</span>` : '';
+                html += `<tr class="border-t border-surface-border"><td class="px-3 py-1.5 font-mono">${it.ean}</td><td class="px-3 py-1.5 truncate max-w-[180px]">${it.descripcion}</td><td class="px-3 py-1.5 text-right">${it.unidades_minima ?? '—'}</td><td class="px-3 py-1.5 text-right">${it.descuento_psl != null ? it.descuento_psl + '%' : '—'}</td><td class="px-3 py-1.5 text-right">${gpo}</td></tr>`;
+            }
+        } else {
+            html += '<thead class="bg-[#f5f5f5] sticky top-0"><tr><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th></tr></thead><tbody>';
+            for (const it of items) {
+                html += `<tr class="border-t border-surface-border"><td class="px-3 py-1.5 font-mono">${it.ean}</td><td class="px-3 py-1.5">${it.descripcion}</td></tr>`;
+            }
+        }
+        html += '</tbody></table></div>';
+        html += '<button onclick="closeOfertasModal()" class="mt-3 w-full text-sm text-[#555] border border-surface-border rounded-xl py-2 hover:bg-[#f5f5f5] transition-colors">Cerrar</button>';
+        resultDiv.innerHTML = html;
+    } catch (err) {
+        alert('Error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Importar y previsualizar';
+    }
+});
 </script>
 </body>
 </html>

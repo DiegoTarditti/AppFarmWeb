@@ -1,6 +1,8 @@
 """Laboratorio CRUD routes."""
 
-from flask import request, redirect, url_for, flash, render_template
+import os
+import tempfile
+from flask import request, redirect, url_for, flash, render_template, jsonify
 import database
 from database import Laboratorio, Producto
 
@@ -79,3 +81,46 @@ def init_app(app):
                 session.delete(lab)
                 session.commit()
         return redirect(url_for('laboratorios_list'))
+
+    @app.route('/api/ofertas/preview', methods=['POST'])
+    def api_ofertas_preview():
+        """Preview de ofertas simples (solo EAN + descripción)."""
+        from parsers.ofertas_xlsx import parse_ofertas_xlsx
+        f = request.files.get('archivo')
+        if not f or not f.filename:
+            return jsonify({'error': 'No se recibió archivo'}), 400
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+        if ext not in ('xlsx', 'xls'):
+            return jsonify({'error': 'Solo se aceptan .xlsx / .xls'}), 400
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}')
+        f.save(tmp.name); tmp.close()
+        try:
+            items = parse_ofertas_xlsx(tmp.name)
+            return jsonify({'items': items})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+        finally:
+            try: os.unlink(tmp.name)
+            except OSError: pass
+
+    @app.route('/api/ofertas/preview-con-minimo', methods=['POST'])
+    def api_ofertas_preview_con_minimo():
+        """Preview de ofertas con cantidad mínima (formato Bernabó)."""
+        from parsers.bernabo_ofertas import parse_bernabo_ofertas
+        f = request.files.get('archivo')
+        if not f or not f.filename:
+            return jsonify({'error': 'No se recibió archivo'}), 400
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+        if ext not in ('xlsx', 'xls'):
+            return jsonify({'error': 'Solo se aceptan .xlsx / .xls'}), 400
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}')
+        f.save(tmp.name); tmp.close()
+        try:
+            items = parse_bernabo_ofertas(tmp.name)
+            grupos = len({it['grupo_id'] for it in items if it['grupo_id'] is not None})
+            return jsonify({'items': items, 'grupos': grupos or None})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+        finally:
+            try: os.unlink(tmp.name)
+            except OSError: pass
