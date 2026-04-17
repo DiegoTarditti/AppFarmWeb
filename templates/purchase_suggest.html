@@ -6,6 +6,7 @@
     <title>Sugerencia de pedido</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>body { background:#edeae3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
 </head>
 <body class="min-h-screen">
@@ -87,17 +88,17 @@
               class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
             <input type="hidden" name="laboratorio" value="{{ g.laboratorio }}">
 
-            <div class="px-5 py-3 bg-[#f0f0f0] border-b border-[#e0e0e0] flex items-center justify-between">
+            <div class="px-5 py-3 bg-[#3a3a3c] border-b border-[#2c2c2e] flex items-center justify-between">
                 <div>
-                    <p class="font-semibold text-sm">🏢 {{ g.laboratorio }}</p>
-                    <p class="text-xs text-[#6f6f6f]">
+                    <p class="font-semibold text-sm text-white">🏢 {{ g.laboratorio }}</p>
+                    <p class="text-xs text-[#aaa]">
                         {{ g.productos|length }} productos · {{ g.lab_units }} unidades ·
-                        <span class="font-semibold text-emerald-700">${{ '{:,.0f}'.format(g.lab_total).replace(',','.') }}</span>
+                        <span class="font-semibold text-emerald-400">${{ '{:,.0f}'.format(g.lab_total).replace(',','.') }}</span>
                     </p>
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" onclick="toggleAll(this)"
-                        class="text-xs px-3 py-1.5 rounded-lg border border-[#e0e0e0] hover:bg-[#f9f9f9]">
+                        class="text-xs px-3 py-1.5 rounded-lg border border-[#555] text-[#ccc] hover:bg-[#555]">
                         Seleccionar todos
                     </button>
                     <button type="submit"
@@ -110,8 +111,8 @@
 
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
-                    <thead class="bg-[#fafafa]">
-                        <tr class="text-xs text-[#6f6f6f] uppercase tracking-widest">
+                    <thead class="bg-[#5a5a5c]">
+                        <tr class="text-xs text-[#e0e0e0] uppercase tracking-widest">
                             <th class="px-3 py-2"><input type="checkbox" class="lab-check-all" checked></th>
                             <th class="text-left px-3 py-2">Producto</th>
                             <th class="text-right px-3 py-2">Stock</th>
@@ -134,8 +135,19 @@
                                 <input type="hidden" name="avg_{{ it.codigo_barra }}" value="{{ it.avg_monthly }}">
                             </td>
                             <td class="px-3 py-2">
-                                <p class="font-medium">{{ it.descripcion }}</p>
-                                <p class="text-xs font-mono text-[#9ca3af]">{{ it.codigo_barra }}</p>
+                                <div class="flex items-start gap-2">
+                                    <button type="button" onclick="openChart('{{ it.codigo_barra }}')" title="Ver gráfico de ventas"
+                                        class="text-[#bbb] hover:text-amber-500 transition-colors flex-shrink-0 mt-0.5">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                        </svg>
+                                    </button>
+                                    <div>
+                                        <p class="font-medium">{{ it.descripcion }}</p>
+                                        <p class="text-xs font-mono text-[#9ca3af]">{{ it.codigo_barra }}</p>
+                                    </div>
+                                </div>
                             </td>
                             <td class="px-3 py-2 text-right font-mono">{{ it.stock }}</td>
                             <td class="px-3 py-2 text-right font-mono">{{ it.avg_monthly }}</td>
@@ -179,6 +191,30 @@
 
 </div>
 
+<!-- Modal gráfico -->
+<div id="chart-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm"
+     onclick="if(event.target===this) closeChart()">
+    <div class="bg-[#f3f3f3] border border-[#e0e0e0] rounded-2xl shadow-2xl w-[700px] max-w-[96vw] p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="chart-title"></p>
+                <p class="text-xs text-[#999] font-mono mt-0.5" id="chart-barcode"></p>
+            </div>
+            <button onclick="closeChart()"
+                class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">
+                ✕
+            </button>
+        </div>
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-4" style="height:300px">
+            <canvas id="product-chart"></canvas>
+        </div>
+        <div class="grid grid-cols-5 gap-2 mt-4" id="chart-stats"></div>
+        <p id="chart-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3"></p>
+        <p id="chart-loading" class="text-center text-sm text-[#888] py-4 hidden">Cargando datos…</p>
+        <p id="chart-error" class="hidden text-center text-sm text-red-600 py-4"></p>
+    </div>
+</div>
+
 <script>
 function recalc(input) {
     const qty = parseInt(input.value) || 0;
@@ -193,6 +229,195 @@ function toggleAll(btn) {
     checks.forEach(c => c.checked = !allChecked);
     btn.textContent = allChecked ? 'Seleccionar todos' : 'Deseleccionar todos';
 }
+
+const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+let chartInstance = null;
+
+function openChart(barcode) {
+    const modal = document.getElementById('chart-modal');
+    const loading = document.getElementById('chart-loading');
+    const errorEl = document.getElementById('chart-error');
+    const statsEl = document.getElementById('chart-stats');
+    const noteEl = document.getElementById('chart-note');
+
+    document.getElementById('chart-title').textContent = '';
+    document.getElementById('chart-barcode').textContent = barcode;
+    statsEl.innerHTML = '';
+    noteEl.classList.add('hidden');
+    errorEl.classList.add('hidden');
+    loading.classList.remove('hidden');
+    modal.classList.remove('hidden');
+
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+    fetch('/api/product/' + barcode + '/chart')
+        .then(r => r.json())
+        .then(data => {
+            loading.classList.add('hidden');
+            if (!data.ok) {
+                errorEl.textContent = data.error || 'Sin datos';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+            document.getElementById('chart-title').textContent = data.nombre;
+            renderChart(data);
+        })
+        .catch(err => {
+            loading.classList.add('hidden');
+            errorEl.textContent = 'Error al cargar datos: ' + err;
+            errorEl.classList.remove('hidden');
+        });
+}
+
+function renderChart(p) {
+    const ventas = p.ventas || Array(12).fill(0);
+    const sm = p.start_month || 4;
+    const FULL_MONTHS = 11;
+    const N_DAYS = p.n_days || 35;
+    const avg = p.avg_monthly || 0;
+    const slope = p.slope || 0;
+    const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm - 1 + i) % 12]);
+
+    const today = new Date();
+    const daysElapsed = today.getDate();
+    const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
+    const partialSold = ventas[11] || 0;
+    const proratedFull = (partialSold > 0 && daysElapsed > 0)
+        ? Math.round(partialSold * daysInMonth / daysElapsed) : 0;
+    const proratedRemaining = Math.max(0, proratedFull - partialSold);
+
+    const vals = ventas.slice(0, FULL_MONTHS);
+    const meanX = (FULL_MONTHS - 1) / 2;
+    const meanY = vals.reduce((a,b)=>a+b,0) / FULL_MONTHS;
+
+    const numFcst = N_DAYS >= 35 ? 2 : 1;
+    const fcstVals = [];
+    for (let off = 0; off < numFcst; off++) {
+        const si = (avg > 0 && ventas[off] > 0) ? ventas[off] / avg : 1.0;
+        const trendHorizon = Math.min(FULL_MONTHS + off - meanX, 2.0);
+        fcstVals.push(Math.max(0, Math.round(avg * si + slope * trendHorizon)));
+    }
+    const fcstLabels = fcstVals.map((_,i) => _MES[(sm - 1 + i) % 12] + '→');
+    const totalCols = 12 + numFcst;
+
+    const trendClamp = avg > 0 ? avg * 0.6 : Infinity;
+    const trendLine = Array.from({length: totalCols}, (_,i) => {
+        const raw = meanY + slope * (i - meanX);
+        const clamped = avg > 0 ? Math.min(Math.max(raw, avg - trendClamp), avg + trendClamp) : raw;
+        return Math.max(0, clamped);
+    });
+
+    const labels = [...monthLabels.map((m,i) => i===11 ? m+'*' : m), ...fcstLabels];
+    const histData = [...ventas, ...Array(numFcst).fill(null)];
+    const fcstData = [...Array(12).fill(null), ...fcstVals];
+
+    const datasets = [
+        { label:'Ventas', data:histData, type:'bar', backgroundColor:'rgba(56,189,248,0.45)', borderColor:'rgba(56,189,248,0.75)', borderWidth:1, borderRadius:3, order:3 },
+        { label:'Proyección', data:fcstData, type:'bar', backgroundColor:'rgba(34,197,94,0.35)', borderColor:'rgba(34,197,94,0.85)', borderWidth:1, borderRadius:3, order:3 },
+        { label:'Tendencia', data:trendLine, type:'line', borderColor:'#f97316', borderWidth:2, pointRadius:0, tension:0, fill:false, order:1 },
+        { label:'Prom. pond.', data:Array(totalCols).fill(avg), type:'line', borderColor:'#EAB308', borderWidth:1.5, borderDash:[6,3], pointRadius:0, tension:0, fill:false, order:2 },
+    ];
+    if (p.stock > 0) {
+        datasets.push({ label:'Stock actual', data:Array(totalCols).fill(p.stock), type:'line', borderColor:'#ef4444', borderWidth:1.5, borderDash:[3,3], pointRadius:0, tension:0, fill:false, order:2 });
+    }
+
+    const barLabelPlugin = {
+        id: 'barLabels',
+        afterDraw(chart) {
+            const ctx2 = chart.ctx;
+            const yScale = chart.scales.y;
+            chart.data.datasets.forEach((ds, di) => {
+                const meta = chart.getDatasetMeta(di);
+                if (meta.type !== 'bar') return;
+                meta.data.forEach((bar, i) => {
+                    const val = ds.data[i];
+                    if (val == null || val <= 0) return;
+                    if (di === 0 && i === 11 && proratedRemaining > 0) {
+                        const yTop = yScale.getPixelForValue(proratedFull);
+                        const hw = bar.width / 2;
+                        ctx2.save();
+                        ctx2.fillStyle = 'rgba(234,179,8,0.22)';
+                        ctx2.fillRect(bar.x-hw, yTop, bar.width, bar.y-yTop);
+                        ctx2.strokeStyle = 'rgba(234,179,8,0.7)';
+                        ctx2.lineWidth = 1; ctx2.setLineDash([3,2]);
+                        ctx2.strokeRect(bar.x-hw, yTop, bar.width, bar.y-yTop);
+                        ctx2.restore();
+                        ctx2.save(); ctx2.font='8px sans-serif'; ctx2.fillStyle='#64748b';
+                        ctx2.textAlign='center'; ctx2.textBaseline='bottom';
+                        ctx2.fillText(partialSold, bar.x, bar.y-2); ctx2.restore();
+                        ctx2.save(); ctx2.font='bold 8px sans-serif'; ctx2.fillStyle='#b45309';
+                        ctx2.textAlign='center'; ctx2.textBaseline='bottom';
+                        ctx2.fillText('~'+proratedFull, bar.x, yTop-2); ctx2.restore();
+                        return;
+                    }
+                    ctx2.save(); ctx2.font='8px sans-serif';
+                    ctx2.fillStyle = di===1 ? 'rgba(34,197,94,0.9)' : '#888';
+                    ctx2.textAlign='center'; ctx2.textBaseline='bottom';
+                    ctx2.fillText(Math.round(val), bar.x, bar.y-2); ctx2.restore();
+                });
+            });
+        }
+    };
+
+    const ctx = document.getElementById('product-chart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+        type:'bar', plugins:[barLabelPlugin],
+        data:{ labels, datasets },
+        options:{
+            responsive:true, maintainAspectRatio:false,
+            interaction:{ mode:'index', intersect:false },
+            plugins:{
+                legend:{ labels:{ color:'#888', font:{size:10}, boxWidth:20, padding:12 } },
+                tooltip:{ backgroundColor:'#fff', titleColor:'#1e1e1e', bodyColor:'#555', borderColor:'#e0e0e0', borderWidth:1 },
+            },
+            scales:{
+                x:{ grid:{color:'#e8e8e8'}, ticks:{color:'#999',font:{size:10}} },
+                y:{ grid:{color:'#e8e8e8'}, ticks:{color:'#999',font:{size:10}}, beginAtZero:true }
+            }
+        }
+    });
+
+    // Stats
+    const slopeSign = slope > 0.05 ? '↑' : slope < -0.05 ? '↓' : '→';
+    const slopeColor = slope > 0.05 ? '#4ade80' : slope < -0.05 ? '#f87171' : '#888';
+    const stockDays = avg > 0 && p.stock > 0 ? Math.round(p.stock / (avg / 30.4)) + 'd' : p.stock <= 0 ? 'agotado' : '—';
+    const rotColors = { A:'#15803d', M:'#b45309', B:'#dc2626' };
+    const rotLabels = { A:'Alta', M:'Media', B:'Baja' };
+    const rot = p.rotacion || 'B';
+    const stats = [
+        { label:'Prom/mes', value:Math.round(avg), color:'#1e1e1e' },
+        { label:'Rotación', value:rotLabels[rot]||rot, color:rotColors[rot]||'#888' },
+        { label:'Tendencia', value:`${slopeSign} ${Math.abs(slope).toFixed(1)}/m`, color:slopeColor },
+        { label:'Stock', value:p.stock<=0?'agotado':p.stock, color:p.stock<=0?'#f87171':'#1e1e1e' },
+        { label:'Cobertura', value:stockDays, color:'#888' },
+    ];
+    if (partialSold > 0) {
+        stats.push({ label:`Mes actual (${daysElapsed}/${daysInMonth}d)`, value:`${partialSold} / ~${proratedFull}`, color:'#b45309' });
+    }
+    document.getElementById('chart-stats').innerHTML = stats.map(s => `
+        <div class="bg-white rounded-lg px-3 py-2.5 text-center">
+            <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.label}</p>
+            <p class="text-sm font-bold" style="color:${s.color}">${s.value}</p>
+        </div>
+    `).join('');
+
+    const zeroMonths = vals.filter(v => v===0).length;
+    const slopeRatio = avg > 0 ? Math.abs(slope)/avg : 0;
+    const noteEl = document.getElementById('chart-note');
+    if (zeroMonths > 0 && slopeRatio > 0.08) {
+        noteEl.textContent = `⚠ ${zeroMonths} mes${zeroMonths>1?'es':''} sin ventas — la tendencia puede estar distorsionada.`;
+        noteEl.classList.remove('hidden');
+    } else {
+        noteEl.classList.add('hidden');
+    }
+}
+
+function closeChart() {
+    document.getElementById('chart-modal').classList.add('hidden');
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+}
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeChart(); });
 </script>
 </body>
 </html>

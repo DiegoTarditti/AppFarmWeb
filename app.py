@@ -5058,6 +5058,44 @@ def docs_pendientes_procesar(doc_id):
     return redirect(url_for('ingresos', pdf_pendiente=doc.filename, doc_pendiente_id=doc_id))
 
 
+@app.route('/docs-pendientes/upload-api', methods=['POST'])
+def docs_pendientes_upload_api():
+    """API para el agente local: recibe PDFs via multipart y devuelve JSON."""
+    files = request.files.getlist('pdfs')
+    if not files or not files[0].filename:
+        return jsonify({'ok': False, 'error': 'No se recibieron archivos'}), 400
+
+    session = database.SessionLocal()
+    try:
+        existentes = {d.filename for d in session.query(database.DocumentoPendiente)
+                      .filter(database.DocumentoPendiente.estado == 'PENDIENTE').all()}
+        nuevos = 0
+        nombres = []
+        for f in files:
+            if not f.filename.lower().endswith('.pdf'):
+                continue
+            fname = secure_filename(f.filename)
+            if fname in existentes:
+                continue
+            dst = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+            f.save(dst)
+            doc = database.DocumentoPendiente(
+                filename=fname,
+                ruta_completa=dst,
+            )
+            session.add(doc)
+            existentes.add(fname)
+            nuevos += 1
+            nombres.append(fname)
+        session.commit()
+        return jsonify({'ok': True, 'nuevos': nuevos, 'archivos': nombres})
+    except Exception as e:
+        session.rollback()
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    finally:
+        session.close()
+
+
 @app.route('/docs-pendientes/<int:doc_id>/delete', methods=['POST'])
 def docs_pendientes_delete(doc_id):
     session = database.SessionLocal()
@@ -5073,6 +5111,48 @@ def docs_pendientes_delete(doc_id):
     finally:
         session.close()
     return redirect(url_for('docs_pendientes'))
+
+
+@app.route('/api/product/<barcode>/chart')
+def api_product_chart(barcode):
+    """Devuelve datos de ventas históricas de un producto buscando en los JSONs de análisis."""
+    # Buscar en los JSONs de purchase el producto por barcode
+    best = None
+    best_mtime = 0
+    try:
+        for fn in os.listdir(PURCHASE_FOLDER):
+            if not fn.endswith('.json'):
+                continue
+            path = os.path.join(PURCHASE_FOLDER, fn)
+            mtime = os.path.getmtime(path)
+            if mtime <= best_mtime:
+                continue
+            try:
+                with open(path, encoding='utf-8') as jf:
+                    data = json.load(jf)
+                for p in data.get('products', []):
+                    if p.get('codigo_barra') == barcode:
+                        best = {
+                            'nombre': p.get('nombre', ''),
+                            'codigo_barra': barcode,
+                            'ventas': p.get('ventas', []),
+                            'avg_monthly': p.get('avg_monthly', 0),
+                            'slope': p.get('slope', 0),
+                            'stock': p.get('stock', 0),
+                            'rotacion': p.get('rotacion', ''),
+                            'start_month': data.get('start_month', 4),
+                            'n_days': data.get('n_days', 35),
+                        }
+                        best_mtime = mtime
+                        break
+            except Exception:
+                continue
+    except FileNotFoundError:
+        pass
+
+    if not best:
+        return jsonify({'ok': False, 'error': 'No se encontraron datos de ventas para este producto'}), 404
+    return jsonify({'ok': True, **best})
 
 
 if __name__ == '__main__':

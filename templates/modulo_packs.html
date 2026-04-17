@@ -325,10 +325,21 @@
                         class="w-full text-xs font-mono bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
                     <td class="px-2 py-1.5"><input type="text" value="{{ mp.desc_pack or '' }}" id="edit-desc-pack-{{ mp.id }}"
                         class="w-full text-xs bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
-                    <td class="px-2 py-1.5"><input type="text" value="{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '' }}" id="edit-ean-unidad-{{ mp.id }}"
-                        class="w-full text-xs font-mono bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
-                    <td class="px-2 py-1.5"><input type="text" value="{{ mp.desc_unidad or '' }}" id="edit-desc-unidad-{{ mp.id }}"
-                        class="w-full text-xs bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand"></td>
+                    <td class="px-2 py-1.5 relative" colspan="2">
+                        <div class="flex items-center gap-1">
+                            <div class="relative flex-1">
+                                <input type="text" id="edit-ean-unidad-search-{{ mp.id }}"
+                                    value="{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '' }}"
+                                    placeholder="Buscar por nombre o EAN…" autocomplete="off"
+                                    oninput="filterEditDropdown({{ mp.id }})" onfocus="filterEditDropdown({{ mp.id }})"
+                                    class="w-full text-xs font-mono bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand">
+                                <input type="hidden" id="edit-ean-unidad-{{ mp.id }}" value="{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '' }}">
+                                <input type="hidden" id="edit-desc-unidad-{{ mp.id }}" value="{{ mp.desc_unidad or '' }}">
+                                <div id="dd-edit-unidad-{{ mp.id }}" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-[#e0e0e0] rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto text-xs" style="min-width:320px"></div>
+                            </div>
+                            <span id="edit-unidad-label-{{ mp.id }}" class="text-[10px] text-[#6f6f6f] truncate max-w-[140px]" title="{{ mp.desc_unidad or '' }}">{{ mp.desc_unidad or '' }}</span>
+                        </div>
+                    </td>
                     <td class="px-2 py-1.5"><input type="number" value="{{ mp.cant_modulo or '' }}" id="edit-cant-modulo-{{ mp.id }}" min="1"
                         class="w-full text-xs text-center bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand" placeholder="—"></td>
                     <td class="px-2 py-1.5"><input type="number" value="{{ mp.cantidad }}" id="edit-cantidad-{{ mp.id }}" min="1"
@@ -489,7 +500,33 @@ document.addEventListener('click', e => {
         if (!e.target.closest('#dd-' + t) && e.target.id !== 'f-ean-' + t + '-search')
             document.getElementById('dd-' + t)?.classList.add('hidden');
     });
+    // Cerrar dropdowns de edición
+    document.querySelectorAll('[id^="dd-edit-unidad-"]').forEach(dd => {
+        const id = dd.id.replace('dd-edit-unidad-', '');
+        const search = document.getElementById('edit-ean-unidad-search-' + id);
+        if (!dd.contains(e.target) && e.target !== search) dd.classList.add('hidden');
+    });
 });
+
+// ── Dropdown para edición de EAN unidad ────────────────────────────
+function filterEditDropdown(packId) {
+    const search = document.getElementById('edit-ean-unidad-search-' + packId);
+    const dd = document.getElementById('dd-edit-unidad-' + packId);
+    const q = search.value.toLowerCase().trim();
+    const filtered = (q ? PRODS_ALL.filter(p => p.ean.includes(q) || p.desc.toLowerCase().includes(q)) : PRODS_ALL).slice(0, 50);
+    dd.innerHTML = filtered.length
+        ? filtered.map(p => `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 flex items-center gap-2" onclick="selectEditEan(${packId},'${p.ean}','${p.desc.replace(/'/g,"\\'")}')"><span class="font-mono text-[#555] flex-shrink-0">${p.ean}</span><span class="text-[#888] truncate">${p.desc}</span></div>`).join('')
+        : '<div class="px-3 py-2 text-[#bbb]">Sin resultados</div>';
+    dd.classList.remove('hidden');
+}
+function selectEditEan(packId, ean, desc) {
+    document.getElementById('edit-ean-unidad-search-' + packId).value = ean;
+    document.getElementById('edit-ean-unidad-' + packId).value = ean;
+    document.getElementById('edit-desc-unidad-' + packId).value = desc;
+    document.getElementById('edit-unidad-label-' + packId).textContent = desc;
+    document.getElementById('edit-unidad-label-' + packId).title = desc;
+    document.getElementById('dd-edit-unidad-' + packId).classList.add('hidden');
+}
 
 // ── Módulos: toggle / crear / eliminar ──────────────────────────────
 function toggleModulo(id) {
