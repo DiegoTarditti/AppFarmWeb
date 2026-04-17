@@ -151,7 +151,7 @@ def init_app(app):
             res = _analyze_sales_file(tmp_path, ext, n_days)
         finally:
             try: os.remove(tmp_path)
-            except Exception: pass
+            except OSError: pass
 
         if 'error' in res:
             flash(res['error'])
@@ -217,7 +217,7 @@ def init_app(app):
                 res = {'error': str(e)}
             finally:
                 try: os.remove(tmp_path)
-                except Exception: pass
+                except OSError: pass
 
             res['filename'] = f.filename
             results.append(res)
@@ -1086,7 +1086,7 @@ def init_app(app):
             return jsonify({'error': str(e)}), 500
         finally:
             try: os.remove(tmp)
-            except: pass
+            except OSError: pass
 
     @app.route('/order/<int:pedido_id>/parse-offers', methods=['POST'])
     def order_parse_offers(pedido_id):
@@ -1103,7 +1103,7 @@ def init_app(app):
             return jsonify({'error': str(e)}), 500
         finally:
             try: os.remove(tmp)
-            except: pass
+            except OSError: pass
 
     @app.route('/order/<int:pedido_id>/export/<step>/<fmt>', methods=['POST'])
     def order_export(pedido_id, step, fmt):

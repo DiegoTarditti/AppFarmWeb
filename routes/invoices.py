@@ -11,7 +11,7 @@ from data_extract import (parse_invoice_pdf, parse_erp_excel, compare_invoice_vs
 from helpers import (
     UPLOAD_FOLDER, allowed_file, get_config, get_providers,
     _make_parser_slug, _ensure_parser_file, _get_or_create_provider_by_name,
-    _upsert_producto, _add_alt_barcode, _build_item_pattern,
+    _upsert_producto, _add_alt_barcode, _build_item_pattern, _bulk_upsert_productos,
 )
 
 
@@ -114,16 +114,21 @@ def process_upload(app):
         differences = compare_invoice_vs_erp(session, invoice.id)
         save_differences(session, invoice.id, differences)
         try:
-            for erp in session.query(database.ErpStock).all():
-                _upsert_producto(session, erp.codigo_barra, erp.descripcion,
-                                 float(erp.precio_unitario) if erp.precio_unitario else None)
+            erp_rows = session.query(database.ErpStock).all()
+            _bulk_upsert_productos(session, [
+                (e.codigo_barra, e.descripcion, float(e.precio_unitario) if e.precio_unitario else None, None)
+                for e in erp_rows
+            ])
             _prov = session.get(database.Provider, int(proveedor_id)) if proveedor_id else None
             if not _prov or _prov.grabar_productos != 0:
-                for it in session.query(database.InvoiceItem).filter_by(factura_id=invoice.id).all():
-                    _upsert_producto(session, it.codigo_barra, it.descripcion,
-                                     fecha_compra=invoice.fecha)
+                inv_rows = session.query(database.InvoiceItem).filter_by(factura_id=invoice.id).all()
+                _bulk_upsert_productos(session, [
+                    (it.codigo_barra, it.descripcion, None, invoice.fecha)
+                    for it in inv_rows
+                ])
             session.commit()
         except Exception:
+            app.logger.warning('Error al upsert productos tras upload', exc_info=True)
             session.rollback()
         saved_differences = get_saved_differences(session, invoice.id)
     except Exception as e:
@@ -187,6 +192,7 @@ def init_app(app):
                                     pass
                     session.commit()
             except Exception:
+                app.logger.warning('Error al actualizar doc pendiente', exc_info=True)
                 session.rollback()
             finally:
                 session.close()
@@ -274,117 +280,114 @@ def init_app(app):
         import json as _json
         from collections import defaultdict as _dd
 
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
 
-        if request.method == 'POST':
-            rows_json = request.form.get('rows_json', '[]')
-            mapping = {
-                'codigo_barra':    int(request.form.get('col_codigo',  -1)),
-                'descripcion':     int(request.form.get('col_desc',    -1)),
-                'cantidad':        int(request.form.get('col_cant',    -1)),
-                'precio_unitario': int(request.form.get('col_precio',  -1)),
-                'dto':             int(request.form.get('col_dto',     -1)),
-                'importe':         int(request.form.get('col_importe', -1)),
-                'lote':            int(request.form.get('col_lote',    -1)),
-            }
-            header_row = int(request.form.get('header_row', 0))
-            rows = _json.loads(rows_json)
+            if request.method == 'POST':
+                rows_json = request.form.get('rows_json', '[]')
+                mapping = {
+                    'codigo_barra':    int(request.form.get('col_codigo',  -1)),
+                    'descripcion':     int(request.form.get('col_desc',    -1)),
+                    'cantidad':        int(request.form.get('col_cant',    -1)),
+                    'precio_unitario': int(request.form.get('col_precio',  -1)),
+                    'dto':             int(request.form.get('col_dto',     -1)),
+                    'importe':         int(request.form.get('col_importe', -1)),
+                    'lote':            int(request.form.get('col_lote',    -1)),
+                }
+                header_row = int(request.form.get('header_row', 0))
+                rows = _json.loads(rows_json)
 
-            def _f(s):
-                if not s:
-                    return None
-                try:
-                    return float(str(s).replace('.', '').replace(',', '.'))
-                except Exception:
-                    return None
+                def _f(s):
+                    if not s:
+                        return None
+                    try:
+                        return float(str(s).replace('.', '').replace(',', '.'))
+                    except Exception:
+                        return None
 
-            def _col(row, idx):
-                if idx < 0 or idx >= len(row):
-                    return None
-                v = row[idx]
-                return str(v).strip() if v else None
+                def _col(row, idx):
+                    if idx < 0 or idx >= len(row):
+                        return None
+                    v = row[idx]
+                    return str(v).strip() if v else None
 
-            tipo = invoice.tipo_comprobante or 'FAC'
-            sign = -1 if tipo == 'NCR' else 1
-            saved = 0
-            for i, row in enumerate(rows):
-                if i <= header_row:
-                    continue
-                if not any(row):
-                    continue
-                desc    = _col(row, mapping['descripcion'])
-                codigo  = _col(row, mapping['codigo_barra'])
-                if not desc and not codigo:
-                    continue
-                cant_s  = _col(row, mapping['cantidad'])
-                precio  = _f(_col(row, mapping['precio_unitario']))
-                dto     = _f(_col(row, mapping['dto']))
-                importe = _f(_col(row, mapping['importe']))
-                lote    = _col(row, mapping['lote'])
-                try:
-                    cant = int(float(cant_s)) if cant_s else 0
-                except Exception:
-                    cant = 0
-                session.add(database.InvoiceItem(
-                    factura_id=invoice_id, codigo_barra=codigo, descripcion=desc,
-                    cantidad=cant,
-                    precio_unitario=sign * precio if precio is not None else None,
-                    dto=dto,
-                    importe=sign * importe if importe is not None else None,
-                    lote=lote,
-                ))
-                saved += 1
+                tipo = invoice.tipo_comprobante or 'FAC'
+                sign = -1 if tipo == 'NCR' else 1
+                saved = 0
+                for i, row in enumerate(rows):
+                    if i <= header_row:
+                        continue
+                    if not any(row):
+                        continue
+                    desc    = _col(row, mapping['descripcion'])
+                    codigo  = _col(row, mapping['codigo_barra'])
+                    if not desc and not codigo:
+                        continue
+                    cant_s  = _col(row, mapping['cantidad'])
+                    precio  = _f(_col(row, mapping['precio_unitario']))
+                    dto     = _f(_col(row, mapping['dto']))
+                    importe = _f(_col(row, mapping['importe']))
+                    lote    = _col(row, mapping['lote'])
+                    try:
+                        cant = int(float(cant_s)) if cant_s else 0
+                    except Exception:
+                        cant = 0
+                    session.add(database.InvoiceItem(
+                        factura_id=invoice_id, codigo_barra=codigo, descripcion=desc,
+                        cantidad=cant,
+                        precio_unitario=sign * precio if precio is not None else None,
+                        dto=dto,
+                        importe=sign * importe if importe is not None else None,
+                        lote=lote,
+                    ))
+                    saved += 1
 
-            if saved > 0:
-                invoice.total_articulos = saved
-                session.commit()
-                differences = compare_invoice_vs_erp(session, invoice_id)
-                save_differences(session, invoice_id, differences)
-                session.close()
-                flash(f'{saved} artículos guardados desde el mapeo de columnas.')
-                return redirect(url_for('compare_view', invoice_id=invoice_id))
-            session.close()
-            flash('No se pudieron extraer artículos con esa configuración.')
-            return redirect(url_for('map_columns', invoice_id=invoice_id))
+                if saved > 0:
+                    invoice.total_articulos = saved
+                    session.commit()
+                    differences = compare_invoice_vs_erp(session, invoice_id)
+                    save_differences(session, invoice_id, differences)
+                    flash(f'{saved} artículos guardados desde el mapeo de columnas.')
+                    return redirect(url_for('compare_view', invoice_id=invoice_id))
+                flash('No se pudieron extraer artículos con esa configuración.')
+                return redirect(url_for('map_columns', invoice_id=invoice_id))
 
-        # GET
-        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice.pdf_filename or '')
-        rows_preview = []
-        all_rows = []
-        source = 'none'
+            # GET
+            pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice.pdf_filename or '')
+            rows_preview = []
+            all_rows = []
+            source = 'none'
 
-        if os.path.exists(pdf_path):
-            tables = []
-            with _plumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    for tbl in (page.extract_tables() or []):
-                        if tbl and len(tbl) > 2:
-                            tables.append(tbl)
-            if tables:
-                all_rows = max(tables, key=lambda t: len(t))
-                source = 'table'
-            else:
-                all_words = []
+            if os.path.exists(pdf_path):
+                tables = []
                 with _plumber.open(pdf_path) as pdf:
                     for page in pdf.pages:
-                        all_words.extend(page.extract_words(x_tolerance=3, y_tolerance=3) or [])
-                rows_dict = _dd(list)
-                for w in all_words:
-                    y_key = round(w['top'] / 4) * 4
-                    rows_dict[y_key].append(w)
-                for y in sorted(rows_dict.keys()):
-                    row = sorted(rows_dict[y], key=lambda w: w['x0'])
-                    all_rows.append([w['text'] for w in row])
-                source = 'words'
-            rows_preview = all_rows[:60]
+                        for tbl in (page.extract_tables() or []):
+                            if tbl and len(tbl) > 2:
+                                tables.append(tbl)
+                if tables:
+                    all_rows = max(tables, key=lambda t: len(t))
+                    source = 'table'
+                else:
+                    all_words = []
+                    with _plumber.open(pdf_path) as pdf:
+                        for page in pdf.pages:
+                            all_words.extend(page.extract_words(x_tolerance=3, y_tolerance=3) or [])
+                    rows_dict = _dd(list)
+                    for w in all_words:
+                        y_key = round(w['top'] / 4) * 4
+                        rows_dict[y_key].append(w)
+                    for y in sorted(rows_dict.keys()):
+                        row = sorted(rows_dict[y], key=lambda w: w['x0'])
+                        all_rows.append([w['text'] for w in row])
+                    source = 'words'
+                rows_preview = all_rows[:60]
 
-        session.close()
-        num_cols = max((len(r) for r in rows_preview[:10] if r), default=0)
-        import json as _j
-        return render_template('invoice_map_columns.html', invoice=invoice,
-                               rows=rows_preview, rows_json=_j.dumps(all_rows),
-                               source=source, num_cols=num_cols)
+            num_cols = max((len(r) for r in rows_preview[:10] if r), default=0)
+            import json as _j
+            return render_template('invoice_map_columns.html', invoice=invoice,
+                                   rows=rows_preview, rows_json=_j.dumps(all_rows),
+                                   source=source, num_cols=num_cols)
 
     @app.route('/invoice/<int:invoice_id>/pick-items', methods=['GET'])
     def pick_items(invoice_id):
@@ -546,66 +549,63 @@ def init_app(app):
         import pdfplumber as _plumber
         import json as _json
 
-        session = database.SessionLocal()
-        invoice = session.get(database.Invoice, invoice_id)
+        with database.get_db() as session:
+            invoice = session.get(database.Invoice, invoice_id)
 
-        if request.method == 'POST':
-            items_data = _json.loads(request.form.get('items_json', '[]'))
-            tipo = invoice.tipo_comprobante or 'FAC'
-            sign = -1 if tipo == 'NCR' else 1
+            if request.method == 'POST':
+                items_data = _json.loads(request.form.get('items_json', '[]'))
+                tipo = invoice.tipo_comprobante or 'FAC'
+                sign = -1 if tipo == 'NCR' else 1
 
-            def _f(s):
-                if not s:
-                    return None
-                try:
-                    return float(str(s).replace('.', '').replace(',', '.'))
-                except Exception:
-                    return None
+                def _f(s):
+                    if not s:
+                        return None
+                    try:
+                        return float(str(s).replace('.', '').replace(',', '.'))
+                    except Exception:
+                        return None
 
-            saved = 0
-            for item in items_data:
-                desc = str(item.get('descripcion', '')).strip()
-                if not desc:
-                    continue
-                precio  = _f(item.get('precio_unitario'))
-                importe = _f(item.get('importe'))
-                dto     = _f(item.get('dto'))
-                try:
-                    cant = int(float(item.get('cantidad') or 0))
-                except Exception:
-                    cant = 0
-                session.add(database.InvoiceItem(
-                    factura_id=invoice_id,
-                    codigo_barra=item.get('codigo_barra') or None,
-                    descripcion=desc, cantidad=cant,
-                    precio_unitario=sign * precio if precio is not None else None,
-                    dto=dto,
-                    importe=sign * importe if importe is not None else None,
-                    lote=item.get('lote') or None,
-                ))
-                saved += 1
+                saved = 0
+                for item in items_data:
+                    desc = str(item.get('descripcion', '')).strip()
+                    if not desc:
+                        continue
+                    precio  = _f(item.get('precio_unitario'))
+                    importe = _f(item.get('importe'))
+                    dto     = _f(item.get('dto'))
+                    try:
+                        cant = int(float(item.get('cantidad') or 0))
+                    except Exception:
+                        cant = 0
+                    session.add(database.InvoiceItem(
+                        factura_id=invoice_id,
+                        codigo_barra=item.get('codigo_barra') or None,
+                        descripcion=desc, cantidad=cant,
+                        precio_unitario=sign * precio if precio is not None else None,
+                        dto=dto,
+                        importe=sign * importe if importe is not None else None,
+                        lote=item.get('lote') or None,
+                    ))
+                    saved += 1
 
-            if saved > 0:
-                invoice.total_articulos = saved
-                session.commit()
-                differences = compare_invoice_vs_erp(session, invoice_id)
-                save_differences(session, invoice_id, differences)
-                session.close()
-                flash(f'{saved} artículos guardados manualmente.')
-                return redirect(url_for('compare_view', invoice_id=invoice_id))
-            session.close()
-            flash('No se ingresaron artículos.')
-            return redirect(url_for('manual_items', invoice_id=invoice_id))
+                if saved > 0:
+                    invoice.total_articulos = saved
+                    session.commit()
+                    differences = compare_invoice_vs_erp(session, invoice_id)
+                    save_differences(session, invoice_id, differences)
+                    flash(f'{saved} artículos guardados manualmente.')
+                    return redirect(url_for('compare_view', invoice_id=invoice_id))
+                flash('No se ingresaron artículos.')
+                return redirect(url_for('manual_items', invoice_id=invoice_id))
 
-        # GET
-        pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice.pdf_filename or '')
-        pdf_text = ''
-        if os.path.exists(pdf_path):
-            with _plumber.open(pdf_path) as pdf:
-                for page in pdf.pages:
-                    pdf_text += (page.extract_text() or '') + '\n\n'
-        session.close()
-        return render_template('invoice_manual_items.html', invoice=invoice, pdf_text=pdf_text)
+            # GET
+            pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice.pdf_filename or '')
+            pdf_text = ''
+            if os.path.exists(pdf_path):
+                with _plumber.open(pdf_path) as pdf:
+                    for page in pdf.pages:
+                        pdf_text += (page.extract_text() or '') + '\n\n'
+            return render_template('invoice_manual_items.html', invoice=invoice, pdf_text=pdf_text)
 
     @app.route('/api/invoice/<int:invoice_id>/differences', methods=['GET'])
     def invoice_differences(invoice_id):

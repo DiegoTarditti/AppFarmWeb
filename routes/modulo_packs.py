@@ -195,7 +195,7 @@ def init_app(app):
         finally:
             session.close()
             try: os.remove(tmp)
-            except: pass
+            except OSError: pass
 
     @app.route('/modulos/delete-by-lista', methods=['POST'])
     def modulos_delete_by_lista():

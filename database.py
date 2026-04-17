@@ -323,6 +323,17 @@ engine = None
 SessionLocal = None
 
 
+from contextlib import contextmanager
+
+@contextmanager
+def get_db():
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def init_db(database_url=None):
     global engine, SessionLocal
     database_url = database_url or os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db')

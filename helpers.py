@@ -25,14 +25,12 @@ def allowed_file(filename):
 
 
 def get_providers():
-    session = database.SessionLocal()
-    providers = session.query(database.Provider).order_by(database.Provider.razon_social).all()
-    result = [{'id': p.id, 'razon_social': p.razon_social, 'cuit': p.cuit or '',
-               'parser_file': p.parser_file or '',
-               'ruta_facturas': p.ruta_facturas or '',
-               'grabar_productos': p.grabar_productos if p.grabar_productos is not None else 1} for p in providers]
-    session.close()
-    return result
+    with database.get_db() as session:
+        providers = session.query(database.Provider).order_by(database.Provider.razon_social).all()
+        return [{'id': p.id, 'razon_social': p.razon_social, 'cuit': p.cuit or '',
+                 'parser_file': p.parser_file or '',
+                 'ruta_facturas': p.ruta_facturas or '',
+                 'grabar_productos': p.grabar_productos if p.grabar_productos is not None else 1} for p in providers]
 
 
 def _make_parser_slug(name):
@@ -54,51 +52,46 @@ def _ensure_parser_file(parser_name, razon_social, cuit=''):
 
 
 def _get_or_create_provider_by_name(razon_social, cuit='', parser_name=''):
-    session = database.SessionLocal()
-    provider = None
-    if cuit:
-        provider = session.query(database.Provider).filter_by(cuit=cuit).first()
-    if not provider:
-        from sqlalchemy import func
-        provider = session.query(database.Provider).filter(
-            func.lower(database.Provider.razon_social) == razon_social.lower()
-        ).first()
-    if not provider:
-        provider = database.Provider(razon_social=razon_social,
-                                     cuit=cuit or None,
-                                     parser_file=parser_name)
-        session.add(provider)
-        session.commit()
-    elif not provider.parser_file and parser_name:
-        provider.parser_file = parser_name
-        session.commit()
-    provider_id = provider.id
-    parser_file = provider.parser_file
-    session.close()
-    return provider_id, parser_file
+    with database.get_db() as session:
+        provider = None
+        if cuit:
+            provider = session.query(database.Provider).filter_by(cuit=cuit).first()
+        if not provider:
+            from sqlalchemy import func
+            provider = session.query(database.Provider).filter(
+                func.lower(database.Provider.razon_social) == razon_social.lower()
+            ).first()
+        if not provider:
+            provider = database.Provider(razon_social=razon_social,
+                                         cuit=cuit or None,
+                                         parser_file=parser_name)
+            session.add(provider)
+            session.commit()
+        elif not provider.parser_file and parser_name:
+            provider.parser_file = parser_name
+            session.commit()
+        return provider.id, provider.parser_file
 
 
 def get_config():
-    session = database.SessionLocal()
-    cfg = session.get(database.Config, 1)
-    if not cfg:
-        cfg = database.Config(id=1, farmacia_nombre='Farmacia', ruta_facturas='')
-        session.add(cfg)
-        session.commit()
-    result = {
-        'farmacia_nombre': cfg.farmacia_nombre,
-        'ruta_facturas': cfg.ruta_facturas or '',
-        'umbral_pico': float(cfg.umbral_pico or 1.30),
-        'umbral_baja': float(cfg.umbral_baja or 0.70),
-        'umbral_tendencia': float(cfg.umbral_tendencia or 0.20),
-        'rot_alta_min': float(cfg.rot_alta_min or 20.0),
-        'rot_alta_tol': float(cfg.rot_alta_tol or 0.0),
-        'rot_media_min': float(cfg.rot_media_min or 5.0),
-        'rot_media_tol': float(cfg.rot_media_tol or 0.0),
-        'rot_baja_tol': float(cfg.rot_baja_tol or 0.0),
-    }
-    session.close()
-    return result
+    with database.get_db() as session:
+        cfg = session.get(database.Config, 1)
+        if not cfg:
+            cfg = database.Config(id=1, farmacia_nombre='Farmacia', ruta_facturas='')
+            session.add(cfg)
+            session.commit()
+        return {
+            'farmacia_nombre': cfg.farmacia_nombre,
+            'ruta_facturas': cfg.ruta_facturas or '',
+            'umbral_pico': float(cfg.umbral_pico or 1.30),
+            'umbral_baja': float(cfg.umbral_baja or 0.70),
+            'umbral_tendencia': float(cfg.umbral_tendencia or 0.20),
+            'rot_alta_min': float(cfg.rot_alta_min or 20.0),
+            'rot_alta_tol': float(cfg.rot_alta_tol or 0.0),
+            'rot_media_min': float(cfg.rot_media_min or 5.0),
+            'rot_media_tol': float(cfg.rot_media_tol or 0.0),
+            'rot_baja_tol': float(cfg.rot_baja_tol or 0.0),
+        }
 
 
 # ── Product helpers ──────────────────────────────────────────────────────────
@@ -163,6 +156,60 @@ def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt):
         prod.codigo_barra_alt2 = codigo_barra_alt
     elif not prod.codigo_barra_alt3:
         prod.codigo_barra_alt3 = codigo_barra_alt
+
+
+# ── Bulk product upsert ──────────────────────────────────────────────────────
+
+def _bulk_upsert_productos(session, items):
+    """Upsert masivo: 1 SELECT en vez de N. items: list of (codigo_barra, descripcion, precio_pvp, fecha_compra)."""
+    from sqlalchemy import or_
+    from datetime import datetime as _dt
+
+    barcodes = list({str(i[0]).strip() for i in items if i[0]})
+    if not barcodes:
+        return
+
+    existing = session.query(Producto).filter(
+        or_(
+            Producto.codigo_barra.in_(barcodes),
+            Producto.codigo_barra_alt1.in_(barcodes),
+            Producto.codigo_barra_alt2.in_(barcodes),
+            Producto.codigo_barra_alt3.in_(barcodes),
+        )
+    ).all()
+
+    prod_map = {}
+    for p in existing:
+        prod_map[p.codigo_barra] = p
+        if p.codigo_barra_alt1: prod_map[p.codigo_barra_alt1] = p
+        if p.codigo_barra_alt2: prod_map[p.codigo_barra_alt2] = p
+        if p.codigo_barra_alt3: prod_map[p.codigo_barra_alt3] = p
+
+    new_prods = []
+    for codigo_barra, descripcion, precio_pvp, fecha_compra in items:
+        if not codigo_barra:
+            continue
+        bc = str(codigo_barra).strip()
+        prod = prod_map.get(bc)
+        if prod:
+            if descripcion and not prod.descripcion:
+                prod.descripcion = str(descripcion).strip()
+            if precio_pvp and float(precio_pvp) > 0:
+                prod.precio_pvp = precio_pvp
+            if fecha_compra and (not prod.ultima_compra or fecha_compra > prod.ultima_compra):
+                prod.ultima_compra = fecha_compra
+            prod.actualizado_en = _dt.utcnow()
+        else:
+            new_prod = Producto(
+                codigo_barra=bc,
+                descripcion=str(descripcion).strip() if descripcion else '',
+                precio_pvp=precio_pvp,
+                ultima_compra=fecha_compra,
+            )
+            new_prods.append(new_prod)
+            prod_map[bc] = new_prod
+    if new_prods:
+        session.add_all(new_prods)
 
 
 # ── Pattern builder (used by invoices + converter) ──────────────────────────

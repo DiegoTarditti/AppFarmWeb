@@ -27,58 +27,52 @@ def init_app(app):
         if not invoice_file or not allowed_file(invoice_file.filename):
             return jsonify({'error': 'PDF inválido.'}), 400
 
-        session = database.SessionLocal()
-        provider = session.get(database.Provider, int(proveedor_id))
-        if not provider:
-            session.close()
-            return jsonify({'error': 'Proveedor no encontrado.'}), 400
-        if not provider.parser_file:
-            session.close()
-            return jsonify({'error': f'El proveedor "{provider.razon_social}" no tiene parser configurado.'}), 400
-
         filename = secure_filename(invoice_file.filename)
         invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         invoice_file.save(invoice_path)
 
-        try:
-            invoice_data = parse_invoice_pdf(invoice_path, provider.parser_file)
-        except Exception as e:
-            session.close()
-            return jsonify({'error': f'Error al leer PDF: {e}'}), 400
+        with database.get_db() as session:
+            provider = session.get(database.Provider, int(proveedor_id))
+            if not provider:
+                return jsonify({'error': 'Proveedor no encontrado.'}), 400
+            if not provider.parser_file:
+                return jsonify({'error': f'El proveedor "{provider.razon_social}" no tiene parser configurado.'}), 400
 
-        if not invoice_data.get('items'):
-            session.close()
-            return jsonify({'error': f'El parser no detectó artículos en este PDF.'}), 400
+            try:
+                invoice_data = parse_invoice_pdf(invoice_path, provider.parser_file)
+            except Exception as e:
+                return jsonify({'error': f'Error al leer PDF: {e}'}), 400
 
-        if tipo_comprobante not in ('FAC', 'NCR'):
-            tipo_comprobante = 'FAC'
+            if not invoice_data.get('items'):
+                return jsonify({'error': 'El parser no detectó artículos en este PDF.'}), 400
 
-        invoice = save_invoice_to_db(session, invoice_data,
-                                      pdf_filename=os.path.basename(invoice_path),
-                                      tipo_comprobante=tipo_comprobante)
+            if tipo_comprobante not in ('FAC', 'NCR'):
+                tipo_comprobante = 'FAC'
 
-        batch = None
-        if batch_id:
-            batch = session.get(InvoiceBatch, int(batch_id))
-        if not batch:
-            batch = InvoiceBatch(proveedor_id=int(proveedor_id))
-            session.add(batch)
-            session.flush()
+            invoice = save_invoice_to_db(session, invoice_data,
+                                          pdf_filename=os.path.basename(invoice_path),
+                                          tipo_comprobante=tipo_comprobante)
 
-        invoice.batch_id = batch.id
-        session.commit()
+            batch = None
+            if batch_id:
+                batch = session.get(InvoiceBatch, int(batch_id))
+            if not batch:
+                batch = InvoiceBatch(proveedor_id=int(proveedor_id))
+                session.add(batch)
+                session.flush()
 
-        result = {
-            'batch_id': batch.id,
-            'invoice_id': invoice.id,
-            'numero_factura': invoice.numero_factura,
-            'total_articulos': invoice.total_articulos or 0,
-            'proveedor_razon': invoice.proveedor_razon,
-            'fecha': str(invoice.fecha),
-            'tipo_comprobante': invoice.tipo_comprobante,
-        }
-        session.close()
-        return jsonify(result), 200
+            invoice.batch_id = batch.id
+            session.commit()
+
+            return jsonify({
+                'batch_id': batch.id,
+                'invoice_id': invoice.id,
+                'numero_factura': invoice.numero_factura,
+                'total_articulos': invoice.total_articulos or 0,
+                'proveedor_razon': invoice.proveedor_razon,
+                'fecha': str(invoice.fecha),
+                'tipo_comprobante': invoice.tipo_comprobante,
+            }), 200
 
     @app.route('/batch/process', methods=['POST'])
     def batch_process():
