@@ -6,6 +6,7 @@
 {% block aside_extra_class %}no-print{% endblock %}
 
 {% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
     const PEDIDO_LABORATORIO = {{ pedido.laboratorio | tojson }};
 </script>
@@ -310,6 +311,14 @@
                         XLSX
                     </button>
                 </form>
+                <form id="form-export-sum-plantilla" method="POST"
+                      action="{{ url_for('order_export_plantilla', pedido_id=pedido.id) }}">
+                    <input type="hidden" name="data" id="h-sum-plantilla-data">
+                    <button type="button" id="btn-export-sum-plantilla" onclick="exportResumenPlantilla()"
+                            class="hidden flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        Exportar plantilla
+                    </button>
+                </form>
             </div>
         </div>
         <div id="resumen-body" class="p-4 hidden"></div>
@@ -327,6 +336,7 @@ const PROD_URL_MODULES  = "{{ url_for('order_parse_modules',        pedido_id=pe
 const PROD_URL_OFFERS   = "{{ url_for('order_parse_offers',         pedido_id=pedido.id) }}";
 const PROD_URL_MATCHES      = "{{ url_for('order_save_module_matches',  pedido_id=pedido.id) }}";
 const PROD_URL_OFERTAS_MIN  = "/api/ofertas/preview-con-minimo";
+const PEDIDO_LAB_ID = {{ pedido.lab_id | tojson }};
 
 const PEDIDO_PRODS    = {{ pedido.productos | tojson }};
 const EQUIV_GROUPS    = {{ productos_equiv | tojson }};
@@ -337,6 +347,11 @@ const MODULO_PACKS  = {};
 {% for mp in modulo_packs %}
 MODULO_PACKS["{{ mp.ean_pack }}"] = { ean_unidad: "{{ mp.ean_unidad }}", cantidad: {{ mp.cantidad }} };
 {% endfor %}
+const UNIT_TO_PACK = {};
+Object.entries(MODULO_PACKS).forEach(([ep, mp]) => {
+    if (!UNIT_TO_PACK[mp.ean_unidad]) UNIT_TO_PACK[mp.ean_unidad] = [];
+    UNIT_TO_PACK[mp.ean_unidad].push({ ean_pack: ep, cantidad: mp.cantidad });
+});
 
 const pedidoQty = {};
 const pedidoNom = {};
@@ -452,12 +467,12 @@ function cargarModuloActivo() {
     modulesData = lista.modulos.map(mod => ({
         nombre: mod.nombre,
         items: mod.packs.map(p => ({
-            ean_modulo:  p.ean_pack,
+            ean:         p.ean_pack,
             descripcion: p.desc_pack,
-            cantidad:    p.cant_modulo || 1,
+            cant:        p.cant_modulo || 1,
             ean_erp:     p.ean_unidad,
             desc_erp:    p.desc_unidad,
-            descuento:   p.desc_pct || 0
+            desc_pct:    p.desc_pct || 0
         }))
     }));
     renderModulosRaw();
@@ -538,7 +553,7 @@ function renderModulosRaw() {
                 : `<span class="text-[#999]">${unidadesPorSlot}</span>`;
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
-                <td class="px-2 font-medium text-[#1e1e1e]">${it.descripcion}</td>
+                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(it.ean)}${it.descripcion}</td>
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
@@ -823,8 +838,8 @@ function procesarOfertas() {
     enable('card-ofertas-min');
     document.getElementById('badge-2').classList.add('done');
     document.getElementById('badge-3').classList.remove('waiting');
-    document.getElementById('ofertas-min-status').textContent = 'Importá el Excel de ofertas con mínimo';
     document.getElementById('card-ofertas-min').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    autocargarOfertasMinimo();
 }
 
 function renderOfertasTable() {
@@ -846,7 +861,7 @@ function renderOfertasTable() {
         offResult.forEach(it => {
             html += `<tr class="data-row">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${it.nombre}</td>
+                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${it.nombre}</td>
                 <td class="px-2 text-right font-bold text-brand">${it.cantidad}</td>
             </tr>`;
         });
@@ -920,7 +935,7 @@ function renderResumen() {
     <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:1080px">
     <thead>
         <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
-            <th class="text-left px-2 py-2" style="min-width:200px">Producto</th>
+            <th class="text-left px-2 py-2" style="min-width:150px">Producto</th>
             <th class="text-left px-2 py-2" style="width:110px">EAN</th>
             <th class="text-right px-2 py-2" style="width:65px" title="Stock actual ERP">Stock</th>
             <th class="text-right px-2 py-2 text-purple-700" style="width:90px">Rot./Prom.mes</th>
@@ -946,9 +961,13 @@ function renderResumen() {
         const saldoCls   = initSaldo > 0 ? 'text-red-600 font-bold' : initSaldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]';
         const totalCls   = initTotal > 0 ? 'font-bold text-brand' : 'text-[#ccc]';
         const stockCell  = d.erp_qty != null ? d.erp_qty : '<span class="text-[#ccc]">—</span>';
+        const _packs = UNIT_TO_PACK[ean] || [];
+        const packBadge = _packs.length
+            ? `<span class="inline-block text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 rounded font-bold mr-1 align-middle" title="Pack ${_packs.map(p=>p.ean_pack+' ('+p.cantidad+'u)').join(', ')}">${_packs[0].cantidad}u/pk</span>`
+            : '';
         html += `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.02] transition-colors"
                      data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${d.nombre}</td>
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${packBadge}${d.nombre}</td>
             <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
             <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
             <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
@@ -1033,6 +1052,26 @@ function exportOfertas() {
     const exportData = offResult.map(it => ({ ean: it.ean, nombre: it.nombre, cantidad: it.cantidad }));
     document.getElementById('h-off-data').value = JSON.stringify(exportData);
     document.getElementById('form-export-off-xlsx').submit();
+}
+
+function exportResumenPlantilla() {
+    const exportData = resumenAgrEans.map(ean => {
+        const d = resumenAgr[ean];
+        let oferta = d.cant_oferta, oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
+        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+            const v = parseInt(inp.value) || 0;
+            if (inp.dataset.field === 'oferta')      oferta     = v;
+            if (inp.dataset.field === 'oferta_min')  oferta_min = v;
+            if (inp.dataset.field === 'nodeal')      nodeal     = v;
+        });
+        const total = d.cant_mod + oferta + oferta_min + nodeal;
+        return { ean, nombre: d.nombre, erp_qty: d.erp_qty, rotacion: d.rot.rotacion || '',
+                 avg_monthly: d.rot.avg, precio_pvp: d.pvp, cant_modulo: d.cant_mod,
+                 cant_oferta: oferta, cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
+                 cant_pedida: d.cant_pedida, saldo: d.cant_pedida - total };
+    });
+    document.getElementById('h-sum-plantilla-data').value = JSON.stringify(exportData);
+    document.getElementById('form-export-sum-plantilla').submit();
 }
 
 function exportResumen() {
@@ -1163,6 +1202,26 @@ async function guardarMatches() {
         show('match-feedback');
         setTimeout(() => hide('match-feedback'), 5000);
     } catch(e) { alert('Error al guardar: ' + e); }
+}
+
+async function autocargarOfertasMinimo() {
+    if (!PEDIDO_LAB_ID) return;
+    const statusEl = document.getElementById('ofertas-min-status');
+    try {
+        const res = await fetch(`/api/laboratorio/${PEDIDO_LAB_ID}/ofertas-minimo`);
+        const data = await res.json();
+        if (!data.items || !data.items.length) {
+            statusEl.textContent = 'Importá el Excel de ofertas con mínimo';
+            return;
+        }
+        ofertasMinData = data.items;
+        const grupos = new Set(data.items.filter(i => i.grupo_id != null).map(i => i.grupo_id)).size;
+        statusEl.textContent = `✓ ${data.items.length} productos cargados del sistema · ${grupos} grupo${grupos !== 1 ? 's' : ''} — revisá el preview o importá otro Excel`;
+        show('btn-procesar-ofertas-min');
+        renderOfertasMinImportPreview();
+    } catch (e) {
+        statusEl.textContent = 'Importá el Excel de ofertas con mínimo';
+    }
 }
 
 async function uploadOfertasConMinimo(input) {
@@ -1323,7 +1382,7 @@ function renderOfertasConMinimoTable() {
             const rowCls = initOk ? 'data-row bg-emerald-50' : 'data-row';
             html += `<tr class="${rowCls}" id="row-ofmin-${it.ean}">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${it.nombre}</td>
+                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${it.nombre}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
                 <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
@@ -1369,7 +1428,7 @@ function renderOfertasConMinimoTable() {
         grupo.items.forEach(it => {
             html += `<tr class="data-row">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${it.nombre}</td>
+                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${it.nombre}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
                 <td class="px-2 text-right">
@@ -1437,6 +1496,7 @@ function confirmarOfertasConMinimo() {
     renderResumen();
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
+    show('btn-export-sum-plantilla');
     hide('btn-confirmar-ofertas-min');
     hide('btn-saltar-ofertas-min');
     document.getElementById('ofertas-min-status').textContent =
@@ -1453,6 +1513,7 @@ function saltarOfertasConMinimo() {
     renderResumen();
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
+    show('btn-export-sum-plantilla');
     document.getElementById('ofertas-min-status').textContent = 'Omitido';
     enable('card-resumen');
     document.getElementById('badge-3').classList.add('waiting');
@@ -1486,6 +1547,7 @@ function saltarOfertas() {
     document.getElementById('ofertas-status').textContent = 'Omitido';
     enable('card-ofertas-min');
     document.getElementById('badge-3').classList.remove('waiting');
+    autocargarOfertasMinimo();
     document.getElementById('ofertas-min-status').textContent = 'Importá el Excel de ofertas con mínimo';
     document.getElementById('card-ofertas-min').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -1499,5 +1561,151 @@ function printStep(step) {
     window.print();
     hide_cards.forEach(el => { if(el) el.style.display = ''; });
 }
+
+// ─── Gráfico histórico producto ───────────────────────────────────────────────
+const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+let chartInstance = null;
+const CHART_BTN = ean => `<button onclick="openChart('${ean}')" title="Ver gráfico histórico"
+    class="inline-flex items-center text-[#ccc] hover:text-amber-500 transition-colors mr-1.5 flex-shrink-0 align-middle">
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+    </svg></button>`;
+
+function openChart(barcode) {
+    const modal = document.getElementById('hist-chart-modal');
+    document.getElementById('hist-chart-title').textContent = '';
+    document.getElementById('hist-chart-barcode').textContent = barcode;
+    document.getElementById('hist-chart-stats').innerHTML = '';
+    document.getElementById('hist-chart-note').classList.add('hidden');
+    document.getElementById('hist-chart-error').classList.add('hidden');
+    document.getElementById('hist-chart-loading').classList.remove('hidden');
+    modal.classList.remove('hidden');
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    fetch('/api/product/' + barcode + '/chart')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('hist-chart-loading').classList.add('hidden');
+            if (!data.ok) {
+                document.getElementById('hist-chart-error').textContent = data.error || 'Sin datos';
+                document.getElementById('hist-chart-error').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('hist-chart-title').textContent = data.nombre;
+            renderHistChart(data);
+        })
+        .catch(err => {
+            document.getElementById('hist-chart-loading').classList.add('hidden');
+            document.getElementById('hist-chart-error').textContent = 'Error: ' + err;
+            document.getElementById('hist-chart-error').classList.remove('hidden');
+        });
+}
+
+function renderHistChart(p) {
+    const avg = p.avg_monthly||0, slope = p.slope||0, rot = p.rotacion||'B';
+    const rC = {A:'#15803d',M:'#b45309',B:'#dc2626'}, rL = {A:'Alta',M:'Media',B:'Baja'};
+    const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
+    if (p.sin_historial || !p.ventas || !p.ventas.length) {
+        document.getElementById('hist-chart-stats').innerHTML = [
+            {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+            {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
+            {l:'Cobertura',v:sd,c:'#888'},
+        ].map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+        const n = document.getElementById('hist-chart-note');
+        n.textContent = 'Sin historial mensual. Procesá un análisis de ventas para ver el gráfico.';
+        n.classList.remove('hidden');
+        return;
+    }
+    const ventas = p.ventas, sm = p.start_month||4, FM = 11, N_D = p.n_days||35;
+    const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm-1+i)%12]);
+    const today = new Date(), de = today.getDate(), dim = new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+    const ps = ventas[11]||0;
+    const pf = (avg>0&&de>0) ? Math.round(ps+(avg/dim)*(dim-de)) : (ps>0&&de>0?Math.round(ps*dim/de):0);
+    const pr = Math.max(0, pf-ps);
+    const vals = ventas.slice(0,FM), mx = (FM-1)/2, my = vals.reduce((a,b)=>a+b,0)/FM;
+    const nF = N_D>=35?2:1;
+    const fv = [];
+    for (let o=0;o<nF;o++) {
+        const si = (avg>0&&ventas[o]>0)?ventas[o]/avg:1.0, th = Math.min(FM+o-mx,2.0);
+        fv.push(Math.max(0,Math.round(avg*si+slope*th)));
+    }
+    const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→'), tc = 12+nF;
+    const tC = avg>0?avg*0.6:Infinity;
+    const tL = Array.from({length:tc},(_,i)=>{const r=my+slope*(i-mx);return Math.max(0,avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r);});
+    const labels = [...monthLabels.map((m,i)=>i===11?m+'*':m),...fl];
+    const hd = [...ventas,...Array(nF).fill(null)], fd = [...Array(12).fill(null),...fv];
+    const blp = {id:'barLabels',afterDraw(chart){
+        const ctx2=chart.ctx,yS=chart.scales.y;
+        chart.data.datasets.forEach((d,di)=>{
+            const meta=chart.getDatasetMeta(di);
+            if(meta.type!=='bar') return;
+            meta.data.forEach((bar,i)=>{
+                const v=d.data[i]; if(v==null||v<=0) return;
+                if(di===0&&i===11&&pr>0){
+                    const yt=yS.getPixelForValue(pf),hw=bar.width/2;
+                    ctx2.save();ctx2.fillStyle='rgba(234,179,8,0.22)';ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
+                    ctx2.strokeStyle='rgba(234,179,8,0.7)';ctx2.lineWidth=1;ctx2.setLineDash([3,2]);ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt);ctx2.restore();
+                    ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle='#64748b';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-2);ctx2.restore();
+                    ctx2.save();ctx2.font='bold 8px sans-serif';ctx2.fillStyle='#b45309';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-2);ctx2.restore();
+                    return;
+                }
+                ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle=di===1?'rgba(34,197,94,0.9)':'#888';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-2);ctx2.restore();
+            });
+        });
+    }};
+    const ctx = document.getElementById('hist-product-chart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+        type:'bar', plugins:[blp],
+        data:{labels, datasets:[
+            {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(56,189,248,0.45)',borderColor:'rgba(56,189,248,0.75)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(34,197,94,0.35)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
+            {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
+            ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            plugins:{legend:{labels:{color:'#888',font:{size:10},boxWidth:20,padding:12}},tooltip:{backgroundColor:'#fff',titleColor:'#1e1e1e',bodyColor:'#555',borderColor:'#e0e0e0',borderWidth:1}},
+            scales:{x:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:10}}},y:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:10}},beginAtZero:true}}}
+    });
+    const ss = slope>0.05?'↑':slope<-0.05?'↓':'→', sc = slope>0.05?'#4ade80':slope<-0.05?'#f87171':'#888';
+    const stats = [
+        {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+        {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+        {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
+        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
+        {l:'Cobertura',v:sd,c:'#888'},
+    ];
+    if (ps>0) stats.push({l:`Mes actual (${de}/${dim}d)`,v:`${ps} / ~${pf}`,c:'#b45309'});
+    document.getElementById('hist-chart-stats').innerHTML = stats.map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+}
+
+function closeHistChart() {
+    document.getElementById('hist-chart-modal').classList.add('hidden');
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+}
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeHistChart(); });
 </script>
+
+<!-- Modal gráfico histórico -->
+<div id="hist-chart-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm no-print"
+     onclick="if(event.target===this) closeHistChart()">
+    <div class="bg-[#f3f3f3] border border-[#e0e0e0] rounded-2xl shadow-2xl w-[700px] max-w-[96vw] p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="hist-chart-title"></p>
+                <p class="text-xs text-[#999] font-mono mt-0.5" id="hist-chart-barcode"></p>
+            </div>
+            <button onclick="closeHistChart()" class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">✕</button>
+        </div>
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-4" style="height:300px">
+            <canvas id="hist-product-chart"></canvas>
+        </div>
+        <div class="grid grid-cols-6 gap-2 mt-4" id="hist-chart-stats"></div>
+        <p id="hist-chart-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3"></p>
+        <p id="hist-chart-loading" class="text-center text-sm text-[#888] py-4 hidden">Cargando datos…</p>
+        <p id="hist-chart-error" class="hidden text-center text-sm text-red-600 py-4"></p>
+    </div>
+</div>
 {% endblock %}

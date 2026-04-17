@@ -101,35 +101,65 @@ def init_app(app):
 
     @app.route('/modulo-packs/plantilla')
     def modulo_packs_plantilla():
-        """Descarga plantilla XLSX para importar módulos."""
+        """Descarga plantilla XLSX para importar módulos (Formato A)."""
         import io, openpyxl
-        from openpyxl.styles import Font, PatternFill, Border, Side
+        from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+        from openpyxl.styles.numbers import FORMAT_NUMBER
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = 'Módulos'
-        hdr_fill = PatternFill('solid', fgColor='1C1C1E')
-        hdr_font = Font(bold=True, color='EAB308')
-        mod_fill = PatternFill('solid', fgColor='FEF9C3')
-        mod_font = Font(bold=True, color='92400E')
-        border   = Border(bottom=Side(style='thin', color='D0D0D0'))
-        ws.append(['MÓDULOS — plantilla de importación'])
-        ws['A1'].font = Font(bold=True, size=13)
-        ws.append([])
-        headers = ['NOMBRE MÓDULO', 'EAN PACK', 'DESCRIPCIÓN PACK', 'EAN UNIDAD', 'UNID./PACK']
+
+        hdr_fill  = PatternFill('solid', fgColor='1C1C1E')
+        hdr_font  = Font(bold=True, color='EAB308', size=10)
+        mod_fill  = PatternFill('solid', fgColor='FEF9C3')
+        mod_font  = Font(bold=True, color='92400E')
+        item_fill = PatternFill('solid', fgColor='FAFAFA')
+        border_b  = Border(bottom=Side(style='thin', color='D0D0D0'))
+
+        # Fila 1: encabezados
+        headers = ['NOMBRE MÓDULO', 'EAN', 'DESCRIPCIÓN', 'CANT. MÓDULO', 'DESC. %']
         ws.append(headers)
-        for ci, _ in enumerate(headers, 1):
-            c = ws.cell(row=3, column=ci)
-            c.fill = hdr_fill; c.font = hdr_font; c.border = border
-        ws.append(['MOD. EJEMPLO'])
-        c = ws.cell(row=4, column=1); c.fill = mod_fill; c.font = mod_font
-        for ean, desc, ean_u, cant in [('7790001000001','PRODUCTO EJEMPLO 1','7790001000002',10),
-                                        ('7790001000003','PRODUCTO EJEMPLO 2','7790001000004',6)]:
-            ws.append(['', ean, desc, ean_u, cant])
-        ws.column_dimensions['A'].width = 25
-        ws.column_dimensions['B'].width = 18
-        ws.column_dimensions['C'].width = 40
-        ws.column_dimensions['D'].width = 18
-        ws.column_dimensions['E'].width = 12
+        for ci in range(1, 6):
+            c = ws.cell(row=1, column=ci)
+            c.fill = hdr_fill; c.font = hdr_font; c.border = border_b
+            c.alignment = Alignment(horizontal='center')
+
+        # Módulo de ejemplo 1
+        ws.append(['MOD. EJEMPLO AMOXICILINA', None, None, None, None])
+        c = ws.cell(row=2, column=1); c.fill = mod_fill; c.font = mod_font
+        for ean, desc, cant, dto in [
+            ('7790001000001', 'AMOXICILINA 500 mg COM x 16', 10, 7.0),
+            ('7790001000003', 'AMOXICILINA 500 mg COM x 32', 6,  7.0),
+        ]:
+            r = ws.max_row + 1
+            ws.append([None, ean, desc, cant, dto])
+            ws.cell(row=r, column=1).fill = item_fill
+            ws.cell(row=r, column=2).number_format = '@'
+
+        # Fila vacía separadora
+        ws.append([])
+
+        # Módulo de ejemplo 2
+        ws.append(['MOD. EJEMPLO IBUPROFENO', None, None, None, None])
+        c = ws.cell(row=ws.max_row, column=1); c.fill = mod_fill; c.font = mod_font
+        for ean, desc, cant, dto in [
+            ('7790002000001', 'IBUPROFENO 400 mg COM x 20', 12, 10.0),
+        ]:
+            r = ws.max_row + 1
+            ws.append([None, ean, desc, cant, dto])
+            ws.cell(row=r, column=1).fill = item_fill
+            ws.cell(row=r, column=2).number_format = '@'
+
+        # Anchos
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 16
+        ws.column_dimensions['C'].width = 42
+        ws.column_dimensions['D'].width = 14
+        ws.column_dimensions['E'].width = 10
+
+        # Congelar encabezados
+        ws.freeze_panes = 'A2'
+
         buf = io.BytesIO()
         wb.save(buf); buf.seek(0)
         resp = make_response(buf.getvalue())

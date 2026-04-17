@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Plantilla de exportación — {{ lab.nombre }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['Inter','sans-serif'] }, colors: { brand: { DEFAULT:'#EAB308', hover:'#CA8A04', dark:'#1a1100' } } } } }</script>
+    <style>
+        body { background:#f3f3f3; color:#1e1e1e; }
+        .drag-item { cursor: grab; }
+        .drag-item.dragging { opacity: 0.4; }
+        .drag-item.drag-over { border-top: 2px solid #EAB308; }
+    </style>
+</head>
+<body class="min-h-screen font-sans">
+
+<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
+    <div class="max-w-2xl mx-auto flex items-center justify-between">
+        <div>
+            <p class="font-bold text-[#1e1e1e]">Plantilla de exportación</p>
+            <p class="text-xs text-[#888] mt-0.5">{{ lab.nombre }}</p>
+        </div>
+        <a href="{{ url_for('laboratorios_list') }}" class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors">← Laboratorios</a>
+    </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-6 py-8">
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="mb-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl px-4 py-3 text-sm">{{ messages[0] }}</div>
+        {% endif %}
+    {% endwith %}
+
+    <form method="post" id="tpl-form">
+
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-5 mb-4">
+            <p class="font-semibold text-sm mb-1">Título personalizado <span class="text-[#999] font-normal">(opcional)</span></p>
+            <p class="text-xs text-[#888] mb-3">Se muestra en la primera fila del Excel exportado.</p>
+            <input type="text" name="custom_header" value="{{ custom_header or '' }}"
+                   placeholder="Ej: Pedido {{ lab.nombre }} — Mayo 2026"
+                   class="w-full bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        </div>
+
+        <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden mb-4">
+            <div class="px-5 py-3 border-b border-[#e0e0e0] flex items-center justify-between">
+                <p class="font-semibold text-sm">Columnas</p>
+                <p class="text-xs text-[#999]">Arrastrá para reordenar · marcá para incluir</p>
+            </div>
+            <div id="col-list" class="divide-y divide-[#f0f0f0]">
+                {% for col in cols %}
+                <div class="drag-item flex items-center gap-3 px-5 py-3" data-field="{{ col.field }}">
+                    <!-- drag handle -->
+                    <svg class="w-4 h-4 text-[#ccc] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"/>
+                    </svg>
+                    <!-- checkbox -->
+                    <input type="checkbox" name="enabled" value="{{ col.field }}"
+                           {% if col.enabled %}checked{% endif %}
+                           class="w-4 h-4 accent-brand rounded flex-shrink-0">
+                    <!-- hidden field order -->
+                    <input type="hidden" name="field" value="{{ col.field }}">
+                    <!-- editable label -->
+                    <input type="text" name="label" value="{{ col.label }}"
+                           class="flex-1 bg-[#f5f5f5] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <span class="text-[10px] font-mono text-[#aaa] flex-shrink-0">{{ col.field }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit"
+                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-5 py-2.5 rounded-lg text-sm transition-colors">
+                Guardar plantilla
+            </button>
+            <a href="{{ url_for('laboratorios_list') }}"
+               class="px-5 py-2.5 rounded-lg text-sm text-[#555] hover:text-[#1e1e1e] hover:bg-black/[0.04] transition-colors">
+                Cancelar
+            </a>
+        </div>
+    </form>
+</main>
+
+<script>
+// HTML5 drag-and-drop reorder
+const list = document.getElementById('col-list');
+let dragged = null;
+
+list.querySelectorAll('.drag-item').forEach(item => {
+    item.setAttribute('draggable', true);
+
+    item.addEventListener('dragstart', () => {
+        dragged = item;
+        setTimeout(() => item.classList.add('dragging'), 0);
+    });
+    item.addEventListener('dragend', () => {
+        item.classList.remove('dragging');
+        list.querySelectorAll('.drag-item').forEach(i => i.classList.remove('drag-over'));
+        dragged = null;
+    });
+    item.addEventListener('dragover', e => {
+        e.preventDefault();
+        if (item !== dragged) {
+            list.querySelectorAll('.drag-item').forEach(i => i.classList.remove('drag-over'));
+            item.classList.add('drag-over');
+        }
+    });
+    item.addEventListener('drop', e => {
+        e.preventDefault();
+        if (item !== dragged) {
+            const items = [...list.querySelectorAll('.drag-item')];
+            const from  = items.indexOf(dragged);
+            const to    = items.indexOf(item);
+            if (from < to) list.insertBefore(dragged, item.nextSibling);
+            else           list.insertBefore(dragged, item);
+        }
+        list.querySelectorAll('.drag-item').forEach(i => i.classList.remove('drag-over'));
+    });
+});
+</script>
+</body>
+</html>

@@ -29,6 +29,28 @@ class Laboratorio(Base):
     creado_en = Column(DateTime, default=datetime.utcnow)
 
 
+class ExportTemplate(Base):
+    __tablename__ = 'export_templates'
+    laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
+    columns_json  = Column(Text, nullable=False, default='[]')
+    custom_header = Column(String(200))
+
+
+class OfertaMinimo(Base):
+    __tablename__ = 'ofertas_minimo'
+    id              = Column(Integer, primary_key=True)
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=False)
+    ean             = Column(String(20), nullable=False)
+    descripcion     = Column(String(300))
+    codigo          = Column(String(50))
+    unidades_minima = Column(Integer)
+    descuento_psl   = Column(DECIMAL(6, 2))
+    rentabilidad    = Column(DECIMAL(6, 2))
+    plazo_pago      = Column(String(100))
+    grupo_id        = Column(Integer)
+    actualizado_en  = Column(DateTime, default=datetime.utcnow)
+
+
 class Provider(Base):
     __tablename__ = 'proveedores'
     id = Column(Integer, primary_key=True)
@@ -556,6 +578,28 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS n_days INTEGER"
     ))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS export_templates (
+            laboratorio_id INTEGER PRIMARY KEY REFERENCES laboratorios(id) ON DELETE CASCADE,
+            columns_json TEXT NOT NULL DEFAULT '[]',
+            custom_header VARCHAR(200)
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ofertas_minimo (
+            id SERIAL PRIMARY KEY,
+            laboratorio_id INTEGER NOT NULL REFERENCES laboratorios(id) ON DELETE CASCADE,
+            ean VARCHAR(20) NOT NULL,
+            descripcion VARCHAR(300),
+            codigo VARCHAR(50),
+            unidades_minima INTEGER,
+            descuento_psl DECIMAL(6,2),
+            rentabilidad DECIMAL(6,2),
+            plazo_pago VARCHAR(100),
+            grupo_id INTEGER,
+            actualizado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS documentos_pendientes (
             id SERIAL PRIMARY KEY,

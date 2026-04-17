@@ -144,6 +144,15 @@
                             Ofertas c/mín.
                         </button>
 
+                        <!-- Plantilla exportación -->
+                        <a href="{{ url_for('laboratorio_export_template', lab_id=lab.id) }}"
+                           class="flex items-center gap-1 hover:text-violet-700 px-2 py-1 rounded-lg hover:bg-violet-50 transition-colors font-medium">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Plantilla
+                        </a>
+
                         <button onclick="openLabEdit({{ lab.id }})"
                             class="flex items-center gap-1 hover:text-[#1e1e1e] px-2 py-1 rounded-lg hover:bg-black/[0.04] transition-colors">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -297,8 +306,14 @@ document.getElementById('ofertas-form').addEventListener('submit', async functio
             }
         }
         html += '</tbody></table></div>';
-        html += '<button onclick="closeOfertasModal()" class="mt-3 w-full text-sm text-[#555] border border-surface-border rounded-xl py-2 hover:bg-[#f5f5f5] transition-colors">Cerrar</button>';
+        if (conMinimo) {
+            html += `<button onclick="guardarOfertasMinimo(${labId})" id="btn-guardar-ofmin"
+                class="mt-3 w-full text-sm font-semibold bg-brand hover:bg-brand-hover text-brand-dark rounded-xl py-2 transition-colors">
+                Guardar en sistema para este laboratorio</button>`;
+        }
+        html += '<button onclick="closeOfertasModal()" class="mt-2 w-full text-sm text-[#555] border border-surface-border rounded-xl py-2 hover:bg-[#f5f5f5] transition-colors">Cerrar</button>';
         resultDiv.innerHTML = html;
+        resultDiv._items = items;
     } catch (err) {
         alert('Error: ' + err.message);
     } finally {
@@ -306,6 +321,28 @@ document.getElementById('ofertas-form').addEventListener('submit', async functio
         btn.textContent = 'Importar y previsualizar';
     }
 });
+
+async function guardarOfertasMinimo(labId) {
+    const btn = document.getElementById('btn-guardar-ofmin');
+    const items = document.getElementById('ofertas-result')._items;
+    if (!items || !items.length) return;
+    btn.disabled = true;
+    btn.textContent = 'Guardando…';
+    try {
+        const res = await fetch(`/api/laboratorio/${labId}/ofertas-minimo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error');
+        btn.textContent = `✓ Guardado (${data.guardados} productos)`;
+        btn.className = btn.className.replace('bg-brand hover:bg-brand-hover text-brand-dark', 'bg-emerald-600 text-white');
+    } catch (err) {
+        btn.textContent = 'Error: ' + err.message;
+        btn.disabled = false;
+    }
+}
 </script>
 </body>
 </html>

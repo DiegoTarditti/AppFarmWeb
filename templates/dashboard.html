@@ -417,7 +417,8 @@ function renderProductChart(p) {
     const de = today.getDate();
     const dim = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
     const ps = ventas[11]||0;
-    const pf = (ps>0&&de>0) ? Math.round(ps*dim/de) : 0;
+    // Blend: actual sold + historical avg rate for remaining days (avoids front-loading distortion)
+    const pf = (avg>0&&de>0) ? Math.round(ps + (avg/dim)*(dim-de)) : (ps>0&&de>0 ? Math.round(ps*dim/de) : 0);
     const pr = Math.max(0, pf-ps);
 
     const vals = ventas.slice(0, FM);

@@ -937,6 +937,8 @@ def init_app(app):
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
             else:
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
+            lab_obj = session.query(database.Laboratorio).filter_by(nombre=pedido.laboratorio).first()
+            data['lab_id'] = lab_obj.id if lab_obj else None
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
                                    product_prices=product_prices)
@@ -1082,6 +1084,73 @@ def init_app(app):
         finally:
             try: os.remove(tmp)
             except OSError: pass
+
+    @app.route('/order/<int:pedido_id>/export/plantilla', methods=['POST'])
+    def order_export_plantilla(pedido_id):
+        """Exporta el resumen usando la plantilla configurada para el laboratorio."""
+        import json as _json
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        from io import BytesIO
+        from database import Pedido, Laboratorio, ExportTemplate
+
+        raw = request.form.get('data', '[]')
+        try:
+            rows = _json.loads(raw)
+        except Exception:
+            return 'Datos inválidos', 400
+
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                return 'Pedido no encontrado', 404
+            lab = session.query(Laboratorio).filter_by(nombre=pedido.laboratorio).first()
+            tpl = session.get(ExportTemplate, lab.id) if lab else None
+            if not tpl or not tpl.columns_json:
+                return 'El laboratorio no tiene plantilla configurada', 400
+            cols    = [c for c in _json.loads(tpl.columns_json) if c.get('enabled')]
+            hdr_txt = tpl.custom_header
+
+        if not cols:
+            return 'La plantilla no tiene columnas activas', 400
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Pedido'
+
+        row_offset = 1
+        if hdr_txt:
+            ws.cell(row=1, column=1, value=hdr_txt).font = Font(bold=True, size=12)
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cols))
+            row_offset = 2
+
+        hdr_fill = PatternFill('solid', fgColor='1e1e1e')
+        for ci, col in enumerate(cols, 1):
+            cell = ws.cell(row=row_offset, column=ci, value=col['label'])
+            cell.font      = Font(bold=True, color='FFFFFF', size=10)
+            cell.fill      = hdr_fill
+            cell.alignment = Alignment(horizontal='center')
+
+        for ri, row in enumerate(rows, row_offset + 1):
+            for ci, col in enumerate(cols, 1):
+                val = row.get(col['field'])
+                if val is None or val == '':
+                    val = None
+                ws.cell(row=ri, column=ci, value=val)
+
+        for ci, col in enumerate(cols, 1):
+            field = col['field']
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = (
+                20 if field in ('nombre',) else 15 if field == 'ean' else 12
+            )
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        fname = f"Pedido_{pedido.laboratorio}_{pedido.periodo or ''}.xlsx".replace(' ', '_')
+        from flask import send_file
+        return send_file(buf, as_attachment=True, download_name=fname,
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     @app.route('/order/<int:pedido_id>/export/<step>/<fmt>', methods=['POST'])
     def order_export(pedido_id, step, fmt):

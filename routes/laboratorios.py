@@ -4,7 +4,22 @@ import os
 import tempfile
 from flask import request, redirect, url_for, flash, render_template, jsonify
 import database
-from database import Laboratorio, Producto
+import json
+from database import Laboratorio, Producto, ExportTemplate, OfertaMinimo
+
+EXPORT_FIELDS = [
+    ('ean',           'Código de Barra'),
+    ('nombre',        'Descripción'),
+    ('total',         'Cantidad'),
+    ('cant_modulo',   'Cant. Módulo'),
+    ('cant_oferta',   'Cant. Oferta'),
+    ('cant_oferta_min','Cant. Oferta c/Mín'),
+    ('cant_nodeal',   'Sin Deal'),
+    ('precio_pvp',    'Precio PVP'),
+    ('erp_qty',       'Stock ERP'),
+    ('rotacion',      'Rotación'),
+    ('avg_monthly',   'Prom. Mensual'),
+]
 
 
 def init_app(app):
@@ -124,3 +139,88 @@ def init_app(app):
         finally:
             try: os.unlink(tmp.name)
             except OSError: pass
+
+    @app.route('/api/laboratorio/<int:lab_id>/ofertas-minimo', methods=['GET'])
+    def api_ofertas_minimo_get(lab_id):
+        with database.get_db() as session:
+            rows = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).order_by(OfertaMinimo.grupo_id.nullslast(), OfertaMinimo.id).all()
+            return jsonify({
+                'items': [{
+                    'ean': r.ean, 'descripcion': r.descripcion, 'codigo': r.codigo,
+                    'unidades_minima': r.unidades_minima,
+                    'descuento_psl': float(r.descuento_psl) if r.descuento_psl is not None else None,
+                    'rentabilidad': float(r.rentabilidad) if r.rentabilidad is not None else None,
+                    'plazo_pago': r.plazo_pago, 'grupo_id': r.grupo_id,
+                } for r in rows],
+                'count': len(rows),
+            })
+
+    @app.route('/api/laboratorio/<int:lab_id>/ofertas-minimo', methods=['POST'])
+    def api_ofertas_minimo_save(lab_id):
+        body = request.get_json(silent=True) or {}
+        items = body.get('items', [])
+        if not items:
+            return jsonify({'error': 'Sin items'}), 400
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                return jsonify({'error': 'Laboratorio no encontrado'}), 404
+            session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).delete()
+            for it in items:
+                session.add(OfertaMinimo(
+                    laboratorio_id  = lab_id,
+                    ean             = it.get('ean', ''),
+                    descripcion     = it.get('descripcion'),
+                    codigo          = it.get('codigo'),
+                    unidades_minima = it.get('unidades_minima'),
+                    descuento_psl   = it.get('descuento_psl'),
+                    rentabilidad    = it.get('rentabilidad'),
+                    plazo_pago      = it.get('plazo_pago'),
+                    grupo_id        = it.get('grupo_id'),
+                ))
+            session.commit()
+            return jsonify({'ok': True, 'guardados': len(items)})
+
+    @app.route('/laboratorio/<int:lab_id>/export-template', methods=['GET', 'POST'])
+    def laboratorio_export_template(lab_id):
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.')
+                return redirect(url_for('laboratorios_list'))
+
+            if request.method == 'POST':
+                fields  = request.form.getlist('field')
+                labels  = request.form.getlist('label')
+                enabled = set(request.form.getlist('enabled'))
+                header  = request.form.get('custom_header', '').strip() or None
+                cols = [{'field': f, 'label': l, 'enabled': f in enabled}
+                        for f, l in zip(fields, labels)]
+                tpl = session.get(ExportTemplate, lab_id)
+                if tpl:
+                    tpl.columns_json  = json.dumps(cols)
+                    tpl.custom_header = header
+                else:
+                    session.add(ExportTemplate(
+                        laboratorio_id=lab_id,
+                        columns_json=json.dumps(cols),
+                        custom_header=header,
+                    ))
+                session.commit()
+                flash('Plantilla guardada.')
+                return redirect(url_for('laboratorio_export_template', lab_id=lab_id))
+
+            tpl = session.get(ExportTemplate, lab_id)
+            saved = json.loads(tpl.columns_json) if tpl else []
+            saved_fields = [c['field'] for c in saved if any(f == c['field'] for f, _ in EXPORT_FIELDS)]
+            remaining    = [f for f, _ in EXPORT_FIELDS if f not in saved_fields]
+            ordered_cols = []
+            for c in saved:
+                default_label = next((l for f, l in EXPORT_FIELDS if f == c['field']), c['field'])
+                ordered_cols.append({'field': c['field'], 'label': c.get('label', default_label), 'enabled': c.get('enabled', True)})
+            for f, l in EXPORT_FIELDS:
+                if f in remaining:
+                    ordered_cols.append({'field': f, 'label': l, 'enabled': False})
+            return render_template('export_template.html',
+                                   lab=lab, cols=ordered_cols,
+                                   custom_header=tpl.custom_header if tpl else '')
