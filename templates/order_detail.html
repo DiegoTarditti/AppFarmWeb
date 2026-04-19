@@ -360,16 +360,18 @@ Object.entries(MODULO_PACKS).forEach(([ep, mp]) => {
     UNIT_TO_PACK[mp.ean_unidad].push({ ean_pack: ep, cantidad: mp.cantidad });
 });
 
-const pedidoQty = {};
-const pedidoNom = {};
-const pedidoRot = {};
-const pedidoPvp = {};
-const pedidoErp = {};
+const pedidoQty  = {};
+const pedidoNom  = {};
+const pedidoRot  = {};
+const pedidoPvp  = {};
+const pedidoErp  = {};
+const pedidoMono = {};
 PEDIDO_PRODS.forEach(p => {
     pedidoQty[p.codigo_barra] = p.cantidad;
     pedidoNom[p.codigo_barra] = p.nombre;
     pedidoRot[p.codigo_barra] = { rotacion: p.rotacion || '', avg: p.avg_monthly || null };
     pedidoPvp[p.codigo_barra] = p.precio_pvp || 0;
+    if (p.monodroga) pedidoMono[p.codigo_barra] = p.monodroga;
     if (p.erp_qty !== null && p.erp_qty !== undefined) pedidoErp[p.codigo_barra] = p.erp_qty;
 });
 
@@ -892,6 +894,7 @@ function buildResumenAgrupado() {
                 nombre: pedidoNom[ean] || nombre || ean, cant_mod: 0, cant_oferta: 0, cant_oferta_min: 0, cant_nodeal: 0,
                 cant_pedida: pedidoQty[ean] ?? 0, pvp: pedidoPvp[ean] || PRODUCT_PRICES[ean] || 0,
                 rot: pedidoRot[ean] || {}, erp_qty: pedidoErp[ean] ?? null,
+                monodroga: pedidoMono[ean] || '',
             };
         }
         return resumenAgr[ean];
@@ -972,9 +975,12 @@ function renderResumen() {
         const packBadge = _packs.length
             ? `<span class="inline-block text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 rounded font-bold mr-1 align-middle" title="Pack ${_packs.map(p=>p.ean_pack+' ('+p.cantidad+'u)').join(', ')}">${_packs[0].cantidad}u/pk</span>`
             : '';
+        const monoLine = d.monodroga
+            ? `<p class="text-[10px] text-[#888] font-normal leading-tight mt-0.5 pl-4 truncate" title="${d.monodroga}">${d.monodroga}</p>`
+            : '';
         html += `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.02] transition-colors"
                      data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${packBadge}${d.nombre}</td>
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${packBadge}${d.nombre}${monoLine}</td>
             <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
             <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
             <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>

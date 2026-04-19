@@ -891,6 +891,15 @@ def init_app(app):
                 row.codigo_barra: int(row.cantidad or 0)
                 for row in session.query(ErpStock).all()
             }
+            all_prods = session.query(Producto).all()
+            monodroga_by_bc = {}
+            for p in all_prods:
+                if not p.monodroga:
+                    continue
+                for bc in [p.codigo_barra, p.codigo_barra_alt1,
+                           p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                    if bc:
+                        monodroga_by_bc[bc] = p.monodroga
             data['productos'] = [
                 {
                     'codigo_barra': it.codigo_barra,
@@ -901,10 +910,10 @@ def init_app(app):
                     'rotacion': it.rotacion or '',
                     'avg_monthly': float(it.avg_monthly) if it.avg_monthly else None,
                     'erp_qty': erp_stock_map.get(it.codigo_barra),
+                    'monodroga': monodroga_by_bc.get(it.codigo_barra, ''),
                 }
                 for it in pedido.items
             ]
-            all_prods = session.query(Producto).all()
             equiv = [
                 {'barcodes': [b for b in [
                     p.codigo_barra, p.codigo_barra_alt1,

@@ -688,7 +688,26 @@ def init_app(app):
                 flash('Factura no encontrada.')
                 return redirect(url_for('index'))
             items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
-            return render_template('invoice_items.html', invoice=invoice, items=items)
+
+            # Build barcode → {monodroga, presentacion} map from Producto (incl. EANs alt)
+            barcodes = [it.codigo_barra for it in items if it.codigo_barra]
+            prod_info = {}
+            if barcodes:
+                from sqlalchemy import or_
+                prods = session.query(database.Producto).filter(or_(
+                    database.Producto.codigo_barra.in_(barcodes),
+                    database.Producto.codigo_barra_alt1.in_(barcodes),
+                    database.Producto.codigo_barra_alt2.in_(barcodes),
+                    database.Producto.codigo_barra_alt3.in_(barcodes),
+                )).all()
+                for p in prods:
+                    info = {'monodroga': p.monodroga or '', 'presentacion': p.presentacion or ''}
+                    for bc in [p.codigo_barra, p.codigo_barra_alt1,
+                               p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                        if bc:
+                            prod_info[bc] = info
+            return render_template('invoice_items.html', invoice=invoice,
+                                   items=items, prod_info=prod_info)
 
     @app.route('/invoice/<int:invoice_id>/items/export')
     def invoice_items_export(invoice_id):

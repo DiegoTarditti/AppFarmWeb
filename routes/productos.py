@@ -17,11 +17,51 @@ def init_app(app):
 
     @app.route('/api/productos')
     def api_productos():
+        from sqlalchemy import or_, func
+        from sqlalchemy.orm import joinedload
+
+        q = (request.args.get('q') or '').strip()
+        lab = (request.args.get('lab') or '').strip()
+        only_alt = request.args.get('only_alt') in ('1', 'true')
+        only_pack = request.args.get('only_pack') in ('1', 'true')
+        try:
+            limit = min(int(request.args.get('limit') or 100), 500)
+        except ValueError:
+            limit = 100
+        try:
+            offset = max(int(request.args.get('offset') or 0), 0)
+        except ValueError:
+            offset = 0
+
         with database.get_db() as session:
-            from sqlalchemy.orm import joinedload
-            prods = (session.query(Producto)
-                     .options(joinedload(Producto.laboratorio))
-                     .order_by(Producto.descripcion).all())
+            base = session.query(Producto).options(joinedload(Producto.laboratorio))
+            if q:
+                like = f'%{q.lower()}%'
+                base = base.filter(or_(
+                    func.lower(Producto.descripcion).like(like),
+                    Producto.codigo_barra.like(f'%{q}%'),
+                    Producto.codigo_barra_alt1.like(f'%{q}%'),
+                    Producto.codigo_barra_alt2.like(f'%{q}%'),
+                    Producto.codigo_barra_alt3.like(f'%{q}%'),
+                ))
+            if lab == '__none__':
+                base = base.filter(Producto.laboratorio_id.is_(None))
+            elif lab:
+                try:
+                    base = base.filter(Producto.laboratorio_id == int(lab))
+                except ValueError:
+                    pass
+            if only_alt:
+                base = base.filter(or_(
+                    Producto.codigo_barra_alt1.isnot(None),
+                    Producto.codigo_barra_alt2.isnot(None),
+                    Producto.codigo_barra_alt3.isnot(None),
+                ))
+            if only_pack:
+                base = base.filter(Producto.es_pack == 1)
+
+            total = base.count()
+            prods = base.order_by(Producto.descripcion).limit(limit).offset(offset).all()
             data = [
                 {
                     'id': p.id,
@@ -38,7 +78,7 @@ def init_app(app):
                 }
                 for p in prods
             ]
-            return jsonify(data)
+            return jsonify({'data': data, 'total': total, 'limit': limit, 'offset': offset})
 
     @app.route('/producto/<int:prod_id>/laboratorio', methods=['POST'])
     def producto_set_laboratorio(prod_id):

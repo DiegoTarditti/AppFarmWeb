@@ -34,8 +34,8 @@
             </div>
             <input type="text" id="search" placeholder="Buscar descripción o código…"
                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-56 focus:outline-none focus:ring-1 focus:ring-brand"
-                   oninput="filterProductos()">
-            <select id="filter-lab" onchange="filterProductos()"
+                   oninput="onFilterChange()">
+            <select id="filter-lab" onchange="onFilterChange()"
                     class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
                 <option value="">Todos los labs</option>
                 <option value="__none__">Sin laboratorio</option>
@@ -44,13 +44,17 @@
                 {% endfor %}
             </select>
             <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none">
-                <input type="checkbox" id="only-alt" onchange="filterProductos()">
+                <input type="checkbox" id="only-alt" onchange="onFilterChange()">
                 Solo con EAN alt.
             </label>
             <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none">
-                <input type="checkbox" id="only-pack" onchange="filterProductos()">
+                <input type="checkbox" id="only-pack" onchange="onFilterChange()">
                 Solo packs
             </label>
+            <button type="button" id="btn-clear" onclick="clearFilters()"
+                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-2 py-1.5 rounded hover:bg-black/[0.04] transition-colors hidden">
+                Limpiar filtros
+            </button>
             <span class="text-xs text-[#999]" id="count-label">…</span>
             <div class="ml-auto flex items-center gap-2">
                 <button type="button" onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
@@ -209,59 +213,97 @@ function buildRow(p) {
     </tr>`;
 }
 
+const PAGE_SIZE = 100;
+let loadSeq = 0;
+let currentTotal = 0;
+
+function currentFilters() {
+    return {
+        q: document.getElementById('search').value.trim(),
+        lab: document.getElementById('filter-lab').value,
+        only_alt: document.getElementById('only-alt').checked,
+        only_pack: document.getElementById('only-pack').checked,
+    };
+}
+
+function hasAnyFilter(f) {
+    return !!(f.q || f.lab || f.only_alt || f.only_pack);
+}
+
 async function loadProductos() {
+    const seq = ++loadSeq;
+    const f = currentFilters();
+    const params = new URLSearchParams();
+    if (f.q) params.set('q', f.q);
+    if (f.lab) params.set('lab', f.lab);
+    if (f.only_alt) params.set('only_alt', '1');
+    if (f.only_pack) params.set('only_pack', '1');
+    params.set('limit', PAGE_SIZE);
+
+    const overlay = document.getElementById('loading-overlay');
+    overlay.classList.remove('hidden');
+    document.getElementById('tabla-wrap').classList.add('hidden');
+    document.getElementById('btn-clear').classList.toggle('hidden', !hasAnyFilter(f));
+
     try {
-        const resp = await fetch('/api/productos');
-        allProductos = await resp.json();
+        const resp = await fetch('/api/productos?' + params.toString());
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const body = await resp.json();
+        if (seq !== loadSeq) return;  // stale response
+        allProductos = body.data || [];
+        currentTotal = body.total || 0;
+
         const tbody = document.getElementById('table-body');
+        const emptyState = document.getElementById('empty-state');
+        const mainTable = document.getElementById('main-table');
         if (allProductos.length === 0) {
-            document.getElementById('main-table').classList.add('hidden');
-            document.getElementById('empty-state').classList.remove('hidden');
+            mainTable.classList.add('hidden');
+            emptyState.classList.remove('hidden');
+            emptyState.querySelector('p').textContent = hasAnyFilter(f)
+                ? 'Ningún producto coincide con los filtros.'
+                : 'La tabla se pobla automáticamente al importar facturas y análisis de compra.';
         } else {
+            emptyState.classList.add('hidden');
+            mainTable.classList.remove('hidden');
             tbody.innerHTML = allProductos.map(buildRow).join('');
         }
-        setCount(allProductos.length);
-        document.getElementById('loading-overlay').classList.add('hidden');
+        setCount(allProductos.length, currentTotal);
+        overlay.classList.add('hidden');
         document.getElementById('tabla-wrap').classList.remove('hidden');
-        const urlLab = new URLSearchParams(location.search).get('lab');
-        if (urlLab) {
-            const sel = document.getElementById('filter-lab');
-            if (sel) { sel.value = urlLab; filterProductos(); }
-        }
     } catch (e) {
-        document.getElementById('loading-overlay').innerHTML =
-            '<p class="text-red-500 text-sm">Error al cargar productos. Recargá la página.</p>';
+        if (seq !== loadSeq) return;
+        overlay.innerHTML =
+            '<p class="text-red-500 text-sm">Error al cargar productos: ' + escHtml(e.message || e) + '</p>';
     }
 }
 
-function setCount(n) {
-    document.getElementById('count-label').textContent = n + ' registros';
+function setCount(shown, total) {
+    const el = document.getElementById('count-label');
+    if (total > shown) {
+        el.textContent = 'Mostrando ' + shown + ' de ' + total + ' · afiná el filtro para ver menos';
+    } else {
+        el.textContent = shown + ' registro' + (shown !== 1 ? 's' : '');
+    }
     const sb = document.getElementById('sb-count');
-    if (sb) sb.textContent = n;
+    if (sb) sb.textContent = total;
 }
 
-function filterProductos() {
-    const q = document.getElementById('search').value.toLowerCase().trim();
-    const onlyAlt = document.getElementById('only-alt').checked;
-    const onlyPack = document.getElementById('only-pack').checked;
-    const labVal = document.getElementById('filter-lab').value;
-    let visible = 0;
-    document.querySelectorAll('#table-body tr').forEach(tr => {
-        const desc=tr.dataset.desc||'', cb=tr.dataset.cb||'',
-              alt1=tr.dataset.alt1||'', alt2=tr.dataset.alt2||'', alt3=tr.dataset.alt3||'',
-              labId=tr.dataset.labid||'', hasAlt=tr.dataset.hasalt==='true', isPack=tr.dataset.ispack==='true';
-        const matchSearch = !q || desc.includes(q) || cb.includes(q) || alt1.includes(q) || alt2.includes(q) || alt3.includes(q);
-        const matchAlt = !onlyAlt || hasAlt;
-        const matchPack = !onlyPack || isPack;
-        let matchLab = true;
-        if (labVal === '__none__') matchLab = !labId;
-        else if (labVal) matchLab = labId === labVal;
-        const show = matchSearch && matchAlt && matchPack && matchLab;
-        tr.style.display = show ? '' : 'none';
-        if (show) visible++;
-    });
-    setCount(visible);
+let filterTimer = null;
+function onFilterChange() {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(loadProductos, 250);
 }
+
+function clearFilters() {
+    document.getElementById('search').value = '';
+    document.getElementById('filter-lab').value = '';
+    document.getElementById('only-alt').checked = false;
+    document.getElementById('only-pack').checked = false;
+    loadProductos();
+}
+
+// Kept for backwards-compat (still called after crearProducto)
+function filterProductos() { loadProductos(); }
 
 document.addEventListener('click', function(e) {
     const td = e.target.closest('td.editable-cell');
