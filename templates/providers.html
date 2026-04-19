@@ -65,14 +65,32 @@
     {% endwith %}
 
     <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
-        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between">
-            <p class="font-semibold text-[#1e1e1e]">{{ providers|length }} proveedor{{ 'es' if providers|length != 1 }}</p>
+        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between gap-4 flex-wrap">
+            <p class="font-semibold text-[#1e1e1e]">
+                <span id="prov-count">{{ providers|length }}</span> proveedor<span id="prov-plural">{{ 'es' if providers|length != 1 }}</span>
+            </p>
+            <div class="flex items-center gap-2 flex-1 sm:flex-none sm:w-80">
+                <input type="text" id="prov-search" placeholder="Buscar por nombre, CUIT o parser…"
+                       oninput="filterProviders()"
+                       class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <select id="prov-tipo" onchange="filterProviders()"
+                        class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <option value="">Todos</option>
+                    <option value="drogueria">Droguerías</option>
+                    <option value="laboratorio">Laboratorios</option>
+                    <option value="otro">Otros</option>
+                </select>
+            </div>
         </div>
 
         {% if providers %}
-        <div class="divide-y divide-surface-border">
+        <div class="divide-y divide-surface-border" id="prov-list">
             {% for p in providers %}
-            <div class="px-6 py-4" id="row-{{ p.id }}">
+            <div class="px-6 py-4 prov-row" id="row-{{ p.id }}"
+                 data-nombre="{{ p.razon_social | lower }}"
+                 data-cuit="{{ p.cuit or '' }}"
+                 data-parser="{{ (p.parser_file or '') | lower }}"
+                 data-tipo="{{ p.tipo or 'drogueria' }}">
 
                 <!-- Vista normal -->
                 <div id="view-{{ p.id }}" class="flex items-center gap-4">
@@ -446,6 +464,25 @@ function confirmDelete(id, name) {
     if (confirm('¿Eliminar el proveedor "' + name + '"?\nEsta acción no se puede deshacer.')) {
         document.getElementById('del-' + id).submit();
     }
+}
+
+function filterProviders() {
+    const q = (document.getElementById('prov-search').value || '').toLowerCase().trim();
+    const tipo = document.getElementById('prov-tipo').value;
+    let visible = 0;
+    document.querySelectorAll('.prov-row').forEach(row => {
+        const nombre = row.dataset.nombre || '';
+        const cuit = row.dataset.cuit || '';
+        const parser = row.dataset.parser || '';
+        const rowTipo = row.dataset.tipo || '';
+        const matchTexto = !q || nombre.includes(q) || cuit.includes(q) || parser.includes(q);
+        const matchTipo = !tipo || rowTipo === tipo;
+        const show = matchTexto && matchTipo;
+        row.classList.toggle('hidden', !show);
+        if (show) visible++;
+    });
+    document.getElementById('prov-count').textContent = visible;
+    document.getElementById('prov-plural').textContent = visible !== 1 ? 'es' : '';
 }
 </script>
 </body>

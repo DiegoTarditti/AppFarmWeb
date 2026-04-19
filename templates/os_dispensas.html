@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+
+{% block title %}Dispensas OS — Farmacia{% endblock %}
+
+{% block main %}
+<!-- Top bar -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Dispensas Obras Sociales</h1>
+    <span class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">MOCK</span>
+    <span class="text-xs text-[#6f6f6f]">
+        {{ total_recetas }} receta{{ 's' if total_recetas != 1 }} ·
+        <span class="text-emerald-600 font-semibold">${{ total_os | arg_currency }}</span> OS /
+        <span class="font-semibold">${{ total_pac | arg_currency }}</span> paciente
+    </span>
+    <div class="ml-auto">
+        <a href="{{ url_for('os_dashboard') }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1">
+            ← Dashboard
+        </a>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
+    <form method="get" class="flex items-center gap-2 flex-wrap text-sm">
+        <select name="os" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+            <option value="">Todas las OS</option>
+            <option value="PAMI" {% if os_filter == 'PAMI' %}selected{% endif %}>PAMI</option>
+            <option value="IAPOS" {% if os_filter == 'IAPOS' %}selected{% endif %}>IAPOS</option>
+        </select>
+
+        <select name="plan" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+            <option value="">Todos los planes</option>
+            {% if not os_filter or os_filter == 'PAMI' %}
+            <optgroup label="PAMI">
+                {% for p in planes_pami %}
+                <option value="{{ p }}" {% if plan_filter == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </optgroup>
+            {% endif %}
+            {% if not os_filter or os_filter == 'IAPOS' %}
+            <optgroup label="IAPOS">
+                {% for p in planes_iapos %}
+                <option value="{{ p }}" {% if plan_filter == p %}selected{% endif %}>{{ p }}</option>
+                {% endfor %}
+            </optgroup>
+            {% endif %}
+        </select>
+
+        <select name="tipo" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+            <option value="">Todos los tipos</option>
+            <option value="electronica" {% if tipo_filter == 'electronica' %}selected{% endif %}>Electrónica</option>
+            <option value="manual" {% if tipo_filter == 'manual' %}selected{% endif %}>Manual</option>
+            <option value="OPF" {% if tipo_filter == 'OPF' %}selected{% endif %}>OPF</option>
+        </select>
+
+        <div class="flex items-center gap-1">
+            <label class="text-xs text-[#6f6f6f]">Desde</label>
+            <input type="date" name="desde" value="{{ desde }}" onchange="this.form.submit()"
+                   class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+        <div class="flex items-center gap-1">
+            <label class="text-xs text-[#6f6f6f]">Hasta</label>
+            <input type="date" name="hasta" value="{{ hasta }}" onchange="this.form.submit()"
+                   class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+
+        <input type="text" name="q" value="{{ q_text }}" placeholder="Afiliado / DNI / médico / ticket…"
+               class="flex-1 min-w-[220px] bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+
+        <button type="submit"
+                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Filtrar
+        </button>
+        {% if os_filter or plan_filter or tipo_filter or q_text or desde or hasta %}
+        <a href="{{ url_for('os_dispensas') }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-2">Limpiar</a>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Tabla -->
+<div class="flex-1 overflow-auto">
+    {% if dispensas %}
+    <table class="w-full text-sm">
+        <thead class="bg-[#f0f0f0] sticky top-0 z-10">
+            <tr>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide whitespace-nowrap">Fecha</th>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">OS / Plan</th>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Ticket</th>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Afiliado</th>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Médico</th>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Receta</th>
+                <th class="px-3 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Items</th>
+                <th class="px-3 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide whitespace-nowrap">Importe OS</th>
+                <th class="px-3 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide whitespace-nowrap">Paciente</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-surface-border">
+            {% for d in dispensas %}
+            <tr class="hover:bg-black/[0.02] align-top">
+                <td class="px-3 py-2 font-mono text-xs text-[#6f6f6f] whitespace-nowrap">
+                    {{ d.fecha_venta.strftime('%d/%m %H:%M') }}
+                </td>
+                <td class="px-3 py-2">
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {% if d.os_codigo == 'PAMI' %}bg-sky-100 text-sky-800{% else %}bg-violet-100 text-violet-800{% endif %}">
+                        {{ d.os_codigo }}
+                    </span>
+                    <p class="text-[11px] text-[#6f6f6f] mt-0.5">{{ d.os_plan }}</p>
+                </td>
+                <td class="px-3 py-2 font-mono text-xs text-brand">{{ d.ticket_validacion }}</td>
+                <td class="px-3 py-2">
+                    <p class="text-[13px] text-[#1e1e1e]">{{ d.afiliado_nombre }}</p>
+                    <p class="text-[11px] font-mono text-[#6f6f6f]">{{ d.afiliado_nro }}</p>
+                </td>
+                <td class="px-3 py-2">
+                    <p class="text-[13px] text-[#1e1e1e]">{{ d.medico_nombre }}</p>
+                    <p class="text-[11px] font-mono text-[#6f6f6f]">Mat. {{ d.medico_matricula }}</p>
+                </td>
+                <td class="px-3 py-2">
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+                        {% if d.receta_tipo == 'electronica' %}bg-emerald-100 text-emerald-800
+                        {% elif d.receta_tipo == 'manual' %}bg-slate-100 text-slate-700
+                        {% else %}bg-orange-100 text-orange-800{% endif %}">
+                        {{ d.receta_tipo }}
+                    </span>
+                    <p class="text-[11px] text-[#6f6f6f] mt-0.5">Emit. {{ d.receta_fecha_emision.strftime('%d/%m/%Y') }}</p>
+                </td>
+                <td class="px-3 py-2 text-[12px]">
+                    {% for it in d['items'] %}
+                    <div class="text-[#1e1e1e]">
+                        <span class="font-mono text-[10px] text-[#6f6f6f]">×{{ it.cantidad }}</span>
+                        {{ it.descripcion }}
+                        <span class="text-[10px] text-[#6f6f6f]">({{ it.cobertura_pct }}%)</span>
+                    </div>
+                    {% endfor %}
+                </td>
+                <td class="px-3 py-2 text-right font-mono text-emerald-600 whitespace-nowrap">${{ d.importe_os | arg_currency }}</td>
+                <td class="px-3 py-2 text-right font-mono text-[#1e1e1e] whitespace-nowrap">${{ d.importe_paciente | arg_currency }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if total_recetas > dispensas | length %}
+    <div class="px-4 py-3 text-center text-xs text-[#6f6f6f]">
+        Mostrando {{ dispensas | length }} de {{ total_recetas }} resultados. Ajustá los filtros para ver más.
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="px-6 py-12 text-center text-sm text-[#6f6f6f]">No hay dispensas que coincidan con los filtros.</div>
+    {% endif %}
+</div>
+{% endblock %}

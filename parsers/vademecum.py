@@ -39,18 +39,26 @@ def search(query):
     html = _fetch(url)
 
     results = []
-    # Cards de resultados: <a ... title="NOMBRE" href="/medicamento/slug-id/">
+    seen = set()
+    # Estructura 2026: <a ... href="https://ar.prvademecum.com/medicamento/slug/">NOMBRE</a>
+    # El href puede venir absoluto o relativo.
     for m in re.finditer(
-        r'<a[^>]+title="([^"]+)"[^>]+href="(/medicamento/[^"]+)"', html
+        r'<a[^>]*href="(?:https?://[^/"]+)?(/medicamento/[^"]+)"[^>]*>(.*?)</a>',
+        html, re.DOTALL
     ):
-        name = unescape(m.group(1)).strip()
-        href = m.group(2)
-        # Tipo (label después del nombre)
+        href = m.group(1)
+        if href in seen:
+            continue
+        seen.add(href)
+        name = _clean(m.group(2))
+        if not name:
+            continue
+        # Tipo: buscar label cercano (ej "Producto", "Sustancia")
         tipo = ''
-        chunk = html[m.end():m.end() + 500]
-        t = re.search(r'<p[^>]*>(.*?)</p>', chunk, re.DOTALL)
+        chunk = html[m.end():m.end() + 400]
+        t = re.search(r'<(?:p|span|div)[^>]*>\s*(Producto|Sustancia|Laboratorio)\s*</', chunk, re.IGNORECASE)
         if t:
-            tipo = _clean(t.group(1))
+            tipo = t.group(1).strip().capitalize()
         results.append({
             'name': name,
             'url': BASE + href,

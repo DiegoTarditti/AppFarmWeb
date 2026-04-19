@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+
+{% block title %}Obras Sociales — Farmacia{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block main %}
+<!-- Top bar -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Obras Sociales</h1>
+    <span class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">MOCK</span>
+
+    <div class="flex items-center gap-1 bg-[#f3f3f3] rounded-lg p-0.5 border border-surface-border">
+        <a href="{{ url_for('os_dashboard') }}"
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if not os_filter %}bg-white shadow-sm text-[#1e1e1e]{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+            Todas
+        </a>
+        <a href="{{ url_for('os_dashboard', os='PAMI') }}"
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if os_filter == 'PAMI' %}bg-white shadow-sm text-sky-700{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+            PAMI
+        </a>
+        <a href="{{ url_for('os_dashboard', os='IAPOS') }}"
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if os_filter == 'IAPOS' %}bg-white shadow-sm text-violet-700{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+            IAPOS
+        </a>
+    </div>
+
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('os_dispensas') }}"
+           class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg transition-colors">
+            Ver dispensas →
+        </a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-4">
+
+    <!-- KPIs mes corriente -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide font-semibold">Recetas del mes</p>
+            <p class="text-2xl font-bold text-[#1e1e1e] mt-1">{{ mes_recetas }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide font-semibold">A cargo OS</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1">${{ mes_os_total | arg_currency }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide font-semibold">A cargo paciente</p>
+            <p class="text-2xl font-bold text-[#1e1e1e] mt-1">${{ mes_pac_total | arg_currency }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-xs text-[#6f6f6f] uppercase tracking-wide font-semibold">Ticket promedio</p>
+            <p class="text-2xl font-bold text-[#1e1e1e] mt-1">${{ mes_ticket_prom | arg_currency }}</p>
+        </div>
+    </div>
+
+    <!-- Breakdown por OS -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {% for code, info in por_os.items() %}
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full {% if code == 'PAMI' %}bg-sky-500{% else %}bg-violet-500{% endif %}"></span>
+                    <h3 class="font-bold text-[#1e1e1e]">{{ code }}</h3>
+                </div>
+                <a href="{{ url_for('os_dispensas', os=code) }}"
+                   class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">Ver dispensas →</a>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-sm">
+                <div>
+                    <p class="text-[11px] text-[#6f6f6f]">Recetas</p>
+                    <p class="font-bold text-[#1e1e1e]">{{ info.recetas }}</p>
+                </div>
+                <div>
+                    <p class="text-[11px] text-[#6f6f6f]">A cargo OS</p>
+                    <p class="font-bold text-emerald-600">${{ info.importe_os | arg_currency }}</p>
+                </div>
+                <div>
+                    <p class="text-[11px] text-[#6f6f6f]">A cargo paciente</p>
+                    <p class="font-bold text-[#1e1e1e]">${{ info.importe_paciente | arg_currency }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Serie diaria -->
+    <div class="bg-surface rounded-xl border border-surface-border p-4">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-[#1e1e1e]">Importe a cargo OS — últimos 30 días</h3>
+        </div>
+        <div class="h-64">
+            <canvas id="chart-serie"></canvas>
+        </div>
+    </div>
+
+    <!-- Lotes abiertos -->
+    {% if lotes %}
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <h3 class="font-bold text-[#1e1e1e]">Lotes abiertos</h3>
+            <span class="text-xs text-[#6f6f6f]">Recetas pendientes de cierre</span>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="bg-[#f0f0f0]">
+                <tr>
+                    <th class="px-4 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">OS</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Recetas</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">A cargo OS</th>
+                    <th class="px-4 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Desde</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for lote in lotes %}
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-4 py-2">
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded {% if lote.os_codigo == 'PAMI' %}bg-sky-100 text-sky-800{% else %}bg-violet-100 text-violet-800{% endif %}">
+                            {{ lote.os_codigo }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-2 text-right font-mono">{{ lote.cantidad_recetas }}</td>
+                    <td class="px-4 py-2 text-right font-mono text-emerald-600">${{ lote.importe_os | arg_currency }}</td>
+                    <td class="px-4 py-2 text-[#6f6f6f]">{{ lote.fecha_apertura.strftime('%d/%m/%Y') }}</td>
+                    <td class="px-4 py-2 text-right">
+                        <button disabled title="Próximamente"
+                                class="text-xs border border-surface-border text-[#6f6f6f] px-3 py-1 rounded-lg cursor-not-allowed opacity-60">
+                            Cerrar lote
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Top médicos y productos -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+            <div class="px-4 py-3 border-b border-surface-border">
+                <h3 class="font-bold text-[#1e1e1e]">Top médicos prescriptores</h3>
+                <p class="text-xs text-[#6f6f6f]">Del mes corriente</p>
+            </div>
+            <table class="w-full text-sm">
+                <thead class="bg-[#f0f0f0]">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase">Matrícula</th>
+                        <th class="px-4 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase">Nombre</th>
+                        <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase">Recetas</th>
+                        <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase">Importe OS</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                    {% for m in top_medicos %}
+                    <tr class="hover:bg-black/[0.02]">
+                        <td class="px-4 py-2 font-mono text-xs text-[#6f6f6f]">{{ m.matricula }}</td>
+                        <td class="px-4 py-2">{{ m.nombre }}</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ m.recetas }}</td>
+                        <td class="px-4 py-2 text-right font-mono text-emerald-600">${{ m.importe | arg_currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+            <div class="px-4 py-3 border-b border-surface-border">
+                <h3 class="font-bold text-[#1e1e1e]">Top productos dispensados</h3>
+                <p class="text-xs text-[#6f6f6f]">Del mes corriente</p>
+            </div>
+            <table class="w-full text-sm">
+                <thead class="bg-[#f0f0f0]">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase">Producto</th>
+                        <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase">Unid.</th>
+                        <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase">Importe OS</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                    {% for p in top_productos %}
+                    <tr class="hover:bg-black/[0.02]">
+                        <td class="px-4 py-2 text-[13px]">{{ p.descripcion }}</td>
+                        <td class="px-4 py-2 text-right font-mono">{{ p.unidades }}</td>
+                        <td class="px-4 py-2 text-right font-mono text-emerald-600">${{ p.importe | arg_currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Nota -->
+    <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+        <p class="font-semibold mb-1">Datos de prueba (mock)</p>
+        <p class="text-xs">Todas las cifras son generadas aleatoriamente. Al conectar la vista <code class="font-mono bg-amber-100 px-1 rounded">v_dispensas_os</code> de ObServer, la UI se mantiene igual y sólo cambia la fuente.</p>
+    </div>
+</div>
+
+<script>
+const serieData = {{ serie | tojson }};
+const labels = serieData.map(d => {
+    const [y, m, day] = d.fecha.split('-');
+    return `${day}/${m}`;
+});
+new Chart(document.getElementById('chart-serie'), {
+    type: 'bar',
+    data: {
+        labels: labels,
+        datasets: [
+            {
+                label: 'PAMI',
+                data: serieData.map(d => d.PAMI),
+                backgroundColor: 'rgba(14, 165, 233, 0.8)',
+            },
+            {
+                label: 'IAPOS',
+                data: serieData.map(d => d.IAPOS),
+                backgroundColor: 'rgba(139, 92, 246, 0.8)',
+            },
+        ],
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, ticks: { callback: v => '$' + v.toLocaleString('es-AR') } },
+        },
+        plugins: {
+            tooltip: {
+                callbacks: {
+                    label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString('es-AR', {maximumFractionDigits: 0})}`,
+                },
+            },
+        },
+    },
+});
+</script>
+{% endblock %}

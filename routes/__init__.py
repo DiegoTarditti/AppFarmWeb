@@ -16,6 +16,7 @@ from routes import (
     docs_pendientes,
     batch,
     vademecum,
+    obras_sociales,
 )
 
 _modules = [
@@ -34,6 +35,7 @@ _modules = [
     docs_pendientes,
     batch,
     vademecum,
+    obras_sociales,
 ]
 
 
