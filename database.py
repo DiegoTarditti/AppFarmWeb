@@ -432,17 +432,23 @@ def init_db(database_url=None):
                                expire_on_commit=False)
     if not database_url.startswith('sqlite'):
         # Limpia entradas stale en pg_type / secuencias huérfanas que bloquean CREATE TABLE
+        # (puede pasar en Render u otros PG cuando un deploy previo crea pg_type pero no pg_class)
         with engine.connect() as conn:
             for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra'):
-                conn.execute(text(f"""
-                    DO $$ BEGIN
-                        IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = '{tname}') THEN
-                            DROP TYPE IF EXISTS {tname};
-                            EXECUTE 'DROP SEQUENCE IF EXISTS {tname}_id_seq CASCADE';
-                        END IF;
-                    END $$
-                """))
-            conn.commit()
+                table_exists = conn.execute(
+                    text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"),
+                    {'t': tname}
+                ).first()
+                if table_exists:
+                    continue
+                # Tabla no existe → limpiar cualquier zombie de pg_type / pg_class
+                for ddl in (f'DROP TYPE IF EXISTS "{tname}" CASCADE',
+                            f'DROP SEQUENCE IF EXISTS "{tname}_id_seq" CASCADE'):
+                    try:
+                        conn.execute(text(ddl))
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
     Base.metadata.create_all(engine)
     is_sqlite = database_url.startswith('sqlite')
     # Migraciones incrementales: agrega columnas nuevas si no existen
