@@ -49,3 +49,7 @@ memory/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Windows reserved names (creados por MSYS al traducir /dev/null en docker exec)
+nul
+NUL

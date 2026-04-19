@@ -71,6 +71,17 @@
                 </p>
             </div>
             <div class="flex items-center gap-2">
+                {% if proc.pedido %}
+                <a href="{{ url_for('order_detail', pedido_id=proc.pedido.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ir al análisis →
+                </a>
+                {% else %}
+                <a href="{{ url_for('purchase_index') }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ir a Compras →
+                </a>
+                {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='analisis') }}">
                     <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
@@ -78,7 +89,7 @@
                 {% else %}
                 <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='analisis') }}">
                     <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
-                        Marcar como hecho
+                        Marcar hecho
                     </button>
                 </form>
                 {% endif %}
@@ -139,6 +150,17 @@
                 </p>
             </div>
             <div class="flex items-center gap-2">
+                {% if proc.pedido %}
+                <a href="{{ url_for('order_detail', pedido_id=proc.pedido.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ver pedido →
+                </a>
+                {% else %}
+                <a href="{{ url_for('purchase_index') }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Generar pedido →
+                </a>
+                {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='pedido') }}">
                     <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
@@ -146,7 +168,7 @@
                 {% else %}
                 <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='pedido') }}">
                     <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
-                        Marcar como enviado
+                        Marcar enviado
                     </button>
                 </form>
                 {% endif %}
@@ -210,6 +232,17 @@
                 </p>
             </div>
             <div class="flex items-center gap-2">
+                {% if proc.invoice %}
+                <a href="{{ url_for('invoice_items', invoice_id=proc.invoice.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ver factura →
+                </a>
+                {% else %}
+                <a href="{{ url_for('index') }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Subir factura →
+                </a>
+                {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='factura') }}">
                     <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
@@ -217,7 +250,7 @@
                 {% else %}
                 <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='factura') }}">
                     <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
-                        Marcar como facturado
+                        Marcar facturado
                     </button>
                 </form>
                 {% endif %}
@@ -286,6 +319,14 @@
                 </p>
             </div>
             <div class="flex items-center gap-2">
+                {% if proc.invoice %}
+                <a href="{{ url_for('compare_view', invoice_id=proc.invoice.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ir al cruce →
+                </a>
+                {% else %}
+                <span class="text-[11px] text-[#bbb]">requiere factura</span>
+                {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='cruce') }}">
                     <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
@@ -293,18 +334,16 @@
                 {% elif proc.invoice %}
                 <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='cruce') }}">
                     <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
-                        Marcar como conciliado
+                        Marcar conciliado
                     </button>
                 </form>
-                {% else %}
-                <span class="text-[11px] text-[#bbb]">requiere factura</span>
                 {% endif %}
             </div>
         </div>
         <div class="px-5 py-3">
             {% if proc.invoice %}
             <div class="flex items-center gap-3 text-sm">
-                <a href="{{ url_for('invoice_compare', invoice_id=proc.invoice.id) }}"
+                <a href="{{ url_for('compare_view', invoice_id=proc.invoice.id) }}"
                    class="text-xs text-brand hover:underline">Ir al cruce de esta factura →</a>
                 <a href="{{ url_for('show_results', invoice_id=proc.invoice.id) }}"
                    class="text-xs text-brand hover:underline">Ver diferencias →</a>
@@ -334,6 +373,19 @@
                 </p>
             </div>
             <div class="flex items-center gap-2">
+                {% if proc.reclamo %}
+                <a href="{{ url_for('view_claim', claim_id=proc.reclamo.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ver reclamo →
+                </a>
+                {% elif proc.invoice %}
+                <a href="{{ url_for('show_results', invoice_id=proc.invoice.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Ver diferencias →
+                </a>
+                {% else %}
+                <span class="text-[11px] text-[#bbb]">requiere factura</span>
+                {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='reclamo') }}">
                     <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
@@ -341,7 +393,7 @@
                 {% else %}
                 <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='reclamo') }}">
                     <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#f0f0f0] hover:bg-[#e5e5e5] text-[#333] transition-colors">
-                        Marcar como reclamado
+                        Marcar reclamado
                     </button>
                 </form>
                 {% endif %}

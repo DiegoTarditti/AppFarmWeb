@@ -348,6 +348,36 @@ def init_app(app):
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
+    @app.route('/pedido/<int:pedido_id>/enviar-a-proceso', methods=['POST'])
+    def pedido_enviar_a_proceso(pedido_id):
+        """Crea un ProcesoCompra desde un Pedido guardado, o redirige al existente."""
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                flash('Pedido no encontrado.')
+                return redirect(url_for('orders_list'))
+
+            existente = session.query(ProcesoCompra).filter_by(pedido_id=pedido.id).first()
+            if existente:
+                flash(f'Este pedido ya está en el proceso #{existente.id}.')
+                return redirect(url_for('proceso_detail', proceso_id=existente.id))
+
+            lab = session.query(Laboratorio).filter_by(nombre=pedido.laboratorio).first()
+            proc = ProcesoCompra(
+                tipo='laboratorio',
+                partner_id=lab.id if lab else None,
+                partner_nombre=pedido.laboratorio or '—',
+                analisis_periodo=pedido.periodo or None,
+                pedido_id=pedido.id,
+                analisis_hecho_en=pedido.creado_en or datetime.utcnow(),
+                estado='BORRADOR',
+            )
+            session.add(proc)
+            session.commit()
+            pid = proc.id
+        flash('Pedido enviado a Procesos.')
+        return redirect(url_for('proceso_detail', proceso_id=pid))
+
     @app.route('/proceso/<int:proceso_id>/delete', methods=['POST'])
     def proceso_delete(proceso_id):
         with database.get_db() as session:

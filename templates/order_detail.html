@@ -65,6 +65,25 @@
 
     <div class="flex-1 overflow-auto px-4 py-4 space-y-4">
 
+    {% if pedido.dias_desde_analisis is not none and pedido.dias_desde_analisis >= 2 %}
+    <!-- Aviso de datos desactualizados -->
+    <div class="bg-amber-50 border-l-4 border-amber-500 rounded-r-lg px-5 py-3 flex items-start gap-3 no-print">
+        <svg class="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+        </svg>
+        <div class="flex-1">
+            <p class="text-sm font-bold text-amber-900">
+                Atención: el análisis tiene {{ pedido.dias_desde_analisis }} día{{ 's' if pedido.dias_desde_analisis != 1 }} de antigüedad
+            </p>
+            <p class="text-xs text-amber-800 mt-0.5">
+                El stock y las ventas usadas para sugerir cantidades son del {{ pedido.creado_en }}. Desde entonces pudo haber ventas o compras que cambien la sugerencia.
+                Para datos actualizados, volvé a correr el análisis desde <a href="{{ url_for('purchase_suggest') }}" class="underline font-semibold hover:text-amber-900">Compras</a>.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- PASO 1 — MÓDULOS DE DESCUENTO -->
     <div class="step-card" id="card-modulos">
         <div class="step-header">

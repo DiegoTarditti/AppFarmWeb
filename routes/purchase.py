@@ -879,6 +879,10 @@ def init_app(app):
             if not pedido:
                 flash('Pedido no encontrado.')
                 return redirect(url_for('orders_list'))
+            from datetime import datetime as _dt2
+            dias_desde = None
+            if pedido.creado_en:
+                dias_desde = (_dt2.utcnow() - pedido.creado_en).days
             data = {
                 'id': pedido.id,
                 'laboratorio': pedido.laboratorio,
@@ -886,6 +890,7 @@ def init_app(app):
                 'periodo': pedido.periodo,
                 'n_days': pedido.n_days,
                 'creado_en': pedido.creado_en.strftime('%d/%m/%Y %H:%M') if pedido.creado_en else '',
+                'dias_desde_analisis': dias_desde,
             }
             erp_stock_map = {
                 row.codigo_barra: int(row.cantidad or 0)
