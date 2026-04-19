@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% set nav_active = "procesos" %}
+
+{% block title %}Procesos de compra — Farmacia{% endblock %}
+
+{% block main %}
+<!-- Header -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Procesos de compra</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ total }} proceso{{ 's' if total != 1 }}</span>
+    <div class="ml-auto">
+        <button type="button" onclick="document.getElementById('modal-crear').classList.remove('hidden')"
+                class="bg-brand hover:bg-brand-hover text-brand-dark text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors">
+            + Nuevo proceso
+        </button>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
+    <form method="get" class="flex items-center gap-2 flex-wrap text-sm">
+        <select name="estado" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+            <option value="">Todos los estados</option>
+            {% for est in estados %}
+            <option value="{{ est }}" {% if estado_filter == est %}selected{% endif %}>
+                {{ est }} ({{ counts.get(est, 0) }})
+            </option>
+            {% endfor %}
+        </select>
+        <select name="tipo" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+            <option value="">Labs y droguerías</option>
+            <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorios</option>
+            <option value="drogueria" {% if tipo_filter == 'drogueria' %}selected{% endif %}>Droguerías</option>
+        </select>
+        <input type="text" name="q" value="{{ q_text }}" placeholder="Buscar por nombre…"
+               class="flex-1 min-w-[200px] bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+        <button type="submit"
+                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
+            Filtrar
+        </button>
+        {% if estado_filter or tipo_filter or q_text %}
+        <a href="{{ url_for('procesos_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-2">Limpiar</a>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Listado -->
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    {% if procesos %}
+    <div class="space-y-3">
+        {% for p in procesos %}
+        <a href="{{ url_for('proceso_detail', proceso_id=p.id) }}"
+           class="block bg-white border border-surface-border rounded-xl px-5 py-4 hover:border-brand hover:shadow-sm transition-all">
+            <div class="flex items-start gap-4 flex-wrap">
+                <div class="flex-1 min-w-[220px]">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+                            {% if p.tipo == 'laboratorio' %}bg-violet-100 text-violet-800
+                            {% else %}bg-sky-100 text-sky-800{% endif %}">
+                            {{ 'LAB' if p.tipo == 'laboratorio' else 'DROG' }}
+                        </span>
+                        <h3 class="font-semibold text-[#1e1e1e]">{{ p.partner_nombre }}</h3>
+                        {% if p.analisis_periodo %}
+                        <span class="text-xs text-[#6f6f6f]">· {{ p.analisis_periodo }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-4 text-[11px] text-[#6f6f6f]">
+                        <span>Creado {{ p.creado_en }}</span>
+                        <span>Actualizado {{ p.actualizado_en }}</span>
+                        {% if p.pedido_id %}<span>· pedido #{{ p.pedido_id }}</span>{% endif %}
+                        {% if p.factura_id %}<span>· factura #{{ p.factura_id }}</span>{% endif %}
+                    </div>
+                </div>
+
+                <!-- Stepper -->
+                <div class="flex items-center gap-1">
+                    {% for step in p.pasos %}
+                    <div class="flex flex-col items-center gap-1">
+                        <div class="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold
+                            {% if step.hecho %}bg-emerald-500 text-white
+                            {% else %}bg-[#e8e8e8] text-[#999]{% endif %}"
+                            title="{{ step.paso|capitalize }}{{ ' · ' ~ step.fecha if step.fecha else '' }}">
+                            {% if step.hecho %}✓{% else %}{{ loop.index }}{% endif %}
+                        </div>
+                        <span class="text-[9px] text-[#999] uppercase">{{ step.paso[:4] }}</span>
+                    </div>
+                    {% if not loop.last %}
+                    <div class="w-6 h-0.5 {% if step.hecho and p.pasos[loop.index].hecho %}bg-emerald-400{% else %}bg-[#e8e8e8]{% endif %} mt-[-14px]"></div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+
+                <!-- Estado -->
+                <div class="flex items-center">
+                    <span class="text-[11px] font-semibold px-2 py-1 rounded
+                        {% if p.estado == 'CERRADO' %}bg-[#f0f0f0] text-[#666]
+                        {% elif p.estado == 'INGRESADO' %}bg-emerald-100 text-emerald-800
+                        {% elif p.estado == 'FACTURADO' %}bg-amber-100 text-amber-800
+                        {% elif p.estado == 'PEDIDO' %}bg-sky-100 text-sky-800
+                        {% else %}bg-orange-100 text-orange-800{% endif %}">
+                        {{ p.estado }}
+                    </span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="bg-white border border-dashed border-surface-border rounded-xl px-6 py-16 text-center">
+        <svg class="w-12 h-12 mx-auto text-[#d0d0d0] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+        </svg>
+        <p class="text-sm text-[#6f6f6f]">No hay procesos de compra todavía.</p>
+        <p class="text-xs text-[#999] mt-1">Creá uno para seguir el ciclo análisis → pedido → factura → cruce.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal crear proceso -->
+<div id="modal-crear" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl">
+        <h2 class="text-lg font-bold text-[#1e1e1e] mb-4">Nuevo proceso de compra</h2>
+        <form method="post" action="{{ url_for('proceso_crear') }}" class="space-y-3" id="form-crear">
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Tipo</label>
+                <div class="flex gap-2">
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="tipo" value="laboratorio" required class="peer hidden" onchange="onTipoChange()">
+                        <div class="border border-surface-border rounded-lg px-3 py-2 text-center text-sm peer-checked:bg-brand peer-checked:border-brand peer-checked:text-brand-dark peer-checked:font-semibold transition-colors">
+                            Laboratorio
+                        </div>
+                    </label>
+                    <label class="flex-1 cursor-pointer">
+                        <input type="radio" name="tipo" value="drogueria" required class="peer hidden" onchange="onTipoChange()">
+                        <div class="border border-surface-border rounded-lg px-3 py-2 text-center text-sm peer-checked:bg-brand peer-checked:border-brand peer-checked:text-brand-dark peer-checked:font-semibold transition-colors">
+                            Droguería
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <div id="wrap-lab" class="hidden">
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Laboratorio</label>
+                <select name="partner_id" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <option value="">— elegí un laboratorio —</option>
+                    {% for l in laboratorios %}
+                    <option value="{{ l.id }}">{{ l.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div id="wrap-drog" class="hidden">
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Droguería</label>
+                <select name="partner_id" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <option value="">— elegí una droguería —</option>
+                    {% for p in proveedores %}
+                    <option value="{{ p.id }}">{{ p.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Periodo / etiqueta (opcional)</label>
+                <input type="text" name="periodo" placeholder="Abril 2026, Campaña invierno…"
+                       class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+                <button type="button" onclick="document.getElementById('modal-crear').classList.add('hidden')"
+                        class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 transition-colors">
+                    Cancelar
+                </button>
+                <button type="submit"
+                        class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors">
+                    Crear proceso
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function onTipoChange() {
+    const tipo = document.querySelector('input[name="tipo"]:checked').value;
+    document.getElementById('wrap-lab').classList.toggle('hidden', tipo !== 'laboratorio');
+    document.getElementById('wrap-drog').classList.toggle('hidden', tipo !== 'drogueria');
+    // Solo el select visible manda partner_id
+    document.querySelectorAll('select[name="partner_id"]').forEach(s => {
+        s.disabled = s.closest('.hidden') !== null;
+    });
+}
+// Cerrar modal con Escape
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.getElementById('modal-crear').classList.add('hidden');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+{% set nav_active = "procesos" %}
+
+{% block title %}Proceso #{{ proc.id }} — {{ proc.partner_nombre }}{% endblock %}
+
+{% block main %}
+<!-- Header -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('procesos_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Procesos</a>
+    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+        {% if proc.tipo == 'laboratorio' %}bg-violet-100 text-violet-800{% else %}bg-sky-100 text-sky-800{% endif %}">
+        {{ 'LAB' if proc.tipo == 'laboratorio' else 'DROG' }}
+    </span>
+    <h1 class="text-base font-bold text-[#1e1e1e]">{{ proc.partner_nombre }}</h1>
+    {% if proc.analisis_periodo %}
+    <span class="text-xs text-[#6f6f6f]">· {{ proc.analisis_periodo }}</span>
+    {% endif %}
+    <span class="text-[11px] font-semibold px-2 py-1 rounded ml-2
+        {% if proc.estado == 'CERRADO' %}bg-[#f0f0f0] text-[#666]
+        {% elif proc.estado == 'INGRESADO' %}bg-emerald-100 text-emerald-800
+        {% elif proc.estado == 'FACTURADO' %}bg-amber-100 text-amber-800
+        {% elif proc.estado == 'PEDIDO' %}bg-sky-100 text-sky-800
+        {% else %}bg-orange-100 text-orange-800{% endif %}">
+        {{ proc.estado }}
+    </span>
+    <div class="ml-auto flex items-center gap-2">
+        {% if proc.estado != 'CERRADO' and proc.cruce_hecho_en %}
+        <form method="post" action="{{ url_for('proceso_cerrar', proceso_id=proc.id) }}">
+            <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
+                Cerrar proceso
+            </button>
+        </form>
+        {% endif %}
+        {% if proc.estado == 'CERRADO' %}
+        <form method="post" action="{{ url_for('proceso_reabrir', proceso_id=proc.id) }}">
+            <button class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 transition-colors">
+                Reabrir
+            </button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('proceso_delete', proceso_id=proc.id) }}"
+              onsubmit="return confirm('¿Eliminar este proceso? No afecta los pedidos/facturas asociados.');">
+            <button class="text-xs text-[#999] hover:text-red-600 px-2 py-1.5 transition-colors">Eliminar</button>
+        </form>
+    </div>
+</div>
+
+<!-- Main: timeline -->
+<div class="flex-1 overflow-auto px-4 sm:px-8 py-6">
+<div class="max-w-3xl mx-auto space-y-3">
+
+    {#
+      Macro para una card de paso.
+      params: num, titulo, hecho (bool), fecha (datetime|None), extra_html, doc_html, action_html
+    #}
+
+    <!-- ─── PASO 1: ANÁLISIS DE VENTAS ─── -->
+    {% set hecho = proc.analisis_hecho_en is not none %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
+                    {% if hecho %}bg-emerald-50/50{% endif %}">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                {% if hecho %}bg-emerald-500 text-white{% else %}bg-[#e8e8e8] text-[#999]{% endif %}">
+                {% if hecho %}✓{% else %}1{% endif %}
+            </div>
+            <div class="flex-1">
+                <h3 class="font-semibold text-[#1e1e1e]">Análisis de ventas</h3>
+                <p class="text-[11px] text-[#6f6f6f]">
+                    {% if hecho %}Realizado el {{ proc.analisis_hecho_en.strftime('%d/%m/%Y %H:%M') }}
+                    {% else %}Determinar qué comprar según rotación, stock y demanda{% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if hecho %}
+                <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='analisis') }}">
+                    <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='analisis') }}">
+                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
+                        Marcar como hecho
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Sub-pasos del análisis: módulos, ofertas, ofertas c/mín, sin deal -->
+        {% if proc.analisis_pasos %}
+        {% set sub = proc.analisis_pasos %}
+        <div class="px-5 py-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            {% for key, label in [('modulos','Módulos'),('ofertas','Ofertas'),('ofertas_min','Ofertas c/mín'),('sin_deal','Sin deal')] %}
+            {% set s = sub.get(key, {}) %}
+            <div class="flex items-start gap-2 px-3 py-2 rounded-lg
+                {% if s.hecho %}bg-emerald-50 border border-emerald-200{% else %}bg-[#f8f8f8] border border-[#ececec]{% endif %}">
+                <div class="w-4 h-4 rounded flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5
+                    {% if s.hecho %}bg-emerald-500 text-white{% else %}bg-[#d8d8d8] text-[#888]{% endif %}">
+                    {% if s.hecho %}✓{% else %}·{% endif %}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="font-semibold {% if s.hecho %}text-emerald-800{% else %}text-[#888]{% endif %}">
+                        {{ label }}
+                    </p>
+                    {% if s.hecho %}
+                    <p class="text-[10px] text-[#6f6f6f]">
+                        {% if s.cant %}{{ s.cant }} ítem{{ 's' if s.cant != 1 }}{% endif %}
+                        {% if s.unidades %}· {{ s.unidades }} u{% endif %}
+                    </p>
+                    {% else %}
+                    <p class="text-[10px] text-[#bbb]">no utilizado</p>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-5 py-3 text-[11px] text-[#999]">
+            Los sub-pasos (módulos, ofertas, ofertas c/mín, sin deal) se completan desde
+            <a href="{{ url_for('purchase_index') }}" class="text-brand hover:underline">Compras</a>
+            al avanzar el análisis del pedido.
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ─── PASO 2: PEDIDO ─── -->
+    {% set hecho = proc.pedido_hecho_en is not none %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
+                    {% if hecho %}bg-emerald-50/50{% endif %}">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                {% if hecho %}bg-emerald-500 text-white{% else %}bg-[#e8e8e8] text-[#999]{% endif %}">
+                {% if hecho %}✓{% else %}2{% endif %}
+            </div>
+            <div class="flex-1">
+                <h3 class="font-semibold text-[#1e1e1e]">Pedido</h3>
+                <p class="text-[11px] text-[#6f6f6f]">
+                    {% if hecho %}Pedido enviado el {{ proc.pedido_hecho_en.strftime('%d/%m/%Y %H:%M') }}
+                    {% else %}Confirmar y enviar el pedido al proveedor{% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if hecho %}
+                <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='pedido') }}">
+                    <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='pedido') }}">
+                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
+                        Marcar como enviado
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        <div class="px-5 py-3">
+            {% if proc.pedido %}
+            <div class="flex items-center gap-3 text-sm">
+                <div class="flex-1">
+                    <p class="font-semibold text-[#1e1e1e]">Pedido #{{ proc.pedido.id }}</p>
+                    <p class="text-[11px] text-[#6f6f6f]">
+                        {{ proc.pedido.periodo or '—' }} ·
+                        {{ proc.pedido.n_items }} ítems ·
+                        ${{ proc.pedido.total | arg_currency }}
+                    </p>
+                </div>
+                <a href="{{ url_for('order_detail', pedido_id=proc.pedido.id) }}"
+                   class="text-xs text-brand hover:underline">Ver pedido →</a>
+                <form method="post" action="{{ url_for('proceso_link_pedido', proceso_id=proc.id) }}"
+                      onsubmit="return confirm('¿Desvincular el pedido de este proceso?');">
+                    <input type="hidden" name="pedido_id" value="">
+                    <button class="text-[11px] text-[#999] hover:text-red-600">Desvincular</button>
+                </form>
+            </div>
+            {% elif pedidos_libres %}
+            <form method="post" action="{{ url_for('proceso_link_pedido', proceso_id=proc.id) }}"
+                  class="flex items-center gap-2 text-sm">
+                <label class="text-xs text-[#6f6f6f]">Asociar pedido:</label>
+                <select name="pedido_id" class="flex-1 bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    {% for p in pedidos_libres %}
+                    <option value="{{ p.id }}">#{{ p.id }} · {{ p.periodo or '—' }} ({{ p.creado_en }})</option>
+                    {% endfor %}
+                </select>
+                <button class="text-xs font-semibold bg-brand hover:bg-brand-hover text-brand-dark px-3 py-1 rounded-lg transition-colors">
+                    Asociar
+                </button>
+            </form>
+            {% else %}
+            <p class="text-xs text-[#999]">
+                No hay pedido asociado.
+                <a href="{{ url_for('purchase_index') }}" class="text-brand hover:underline">Generar uno desde Compras</a>.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ─── PASO 3: FACTURA ─── -->
+    {% set hecho = proc.factura_hecha_en is not none %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
+                    {% if hecho %}bg-emerald-50/50{% endif %}">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                {% if hecho %}bg-emerald-500 text-white{% else %}bg-[#e8e8e8] text-[#999]{% endif %}">
+                {% if hecho %}✓{% else %}3{% endif %}
+            </div>
+            <div class="flex-1">
+                <h3 class="font-semibold text-[#1e1e1e]">Factura del proveedor</h3>
+                <p class="text-[11px] text-[#6f6f6f]">
+                    {% if hecho %}Registrada el {{ proc.factura_hecha_en.strftime('%d/%m/%Y %H:%M') }}
+                    {% else %}Registrar la factura del pedido{% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if hecho %}
+                <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='factura') }}">
+                    <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='factura') }}">
+                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
+                        Marcar como facturado
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        <div class="px-5 py-3">
+            {% if proc.invoice %}
+            <div class="flex items-center gap-3 text-sm">
+                <div class="flex-1">
+                    <p class="font-semibold text-[#1e1e1e]">
+                        {{ proc.invoice.numero }}
+                        <span class="text-[10px] font-semibold px-1 py-0.5 rounded
+                            {% if proc.invoice.tipo_comprobante == 'NCR' %}bg-rose-100 text-rose-800
+                            {% else %}bg-emerald-100 text-emerald-800{% endif %}">
+                            {{ proc.invoice.tipo_comprobante }}
+                        </span>
+                    </p>
+                    <p class="text-[11px] text-[#6f6f6f]">
+                        {{ proc.invoice.fecha }} · ${{ proc.invoice.total | arg_currency }}
+                    </p>
+                </div>
+                <a href="{{ url_for('invoice_items', invoice_id=proc.invoice.id) }}"
+                   class="text-xs text-brand hover:underline">Ver ítems →</a>
+                <form method="post" action="{{ url_for('proceso_link_factura', proceso_id=proc.id) }}"
+                      onsubmit="return confirm('¿Desvincular la factura de este proceso?');">
+                    <input type="hidden" name="factura_id" value="">
+                    <button class="text-[11px] text-[#999] hover:text-red-600">Desvincular</button>
+                </form>
+            </div>
+            {% elif facturas_libres %}
+            <form method="post" action="{{ url_for('proceso_link_factura', proceso_id=proc.id) }}"
+                  class="flex items-center gap-2 text-sm">
+                <label class="text-xs text-[#6f6f6f]">Asociar factura:</label>
+                <select name="factura_id" class="flex-1 bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    {% for f in facturas_libres %}
+                    <option value="{{ f.id }}">{{ f.numero }} · {{ f.fecha }} · ${{ f.total | arg_currency }}</option>
+                    {% endfor %}
+                </select>
+                <button class="text-xs font-semibold bg-brand hover:bg-brand-hover text-brand-dark px-3 py-1 rounded-lg transition-colors">
+                    Asociar
+                </button>
+            </form>
+            {% else %}
+            <p class="text-xs text-[#999]">
+                No hay factura asociada.
+                <a href="{{ url_for('index') }}" class="text-brand hover:underline">Subir una desde Inicio</a>.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ─── PASO 4: CRUCE / INGRESO ─── -->
+    {% set hecho = proc.cruce_hecho_en is not none %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
+                    {% if hecho %}bg-emerald-50/50{% endif %}">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                {% if hecho %}bg-emerald-500 text-white{% else %}bg-[#e8e8e8] text-[#999]{% endif %}">
+                {% if hecho %}✓{% else %}4{% endif %}
+            </div>
+            <div class="flex-1">
+                <h3 class="font-semibold text-[#1e1e1e]">Cruce factura vs. ingreso</h3>
+                <p class="text-[11px] text-[#6f6f6f]">
+                    {% if hecho %}Conciliado el {{ proc.cruce_hecho_en.strftime('%d/%m/%Y %H:%M') }}
+                    {% else %}Verificar que lo facturado coincida con lo recibido{% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if hecho %}
+                <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='cruce') }}">
+                    <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
+                </form>
+                {% elif proc.invoice %}
+                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='cruce') }}">
+                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
+                        Marcar como conciliado
+                    </button>
+                </form>
+                {% else %}
+                <span class="text-[11px] text-[#bbb]">requiere factura</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="px-5 py-3">
+            {% if proc.invoice %}
+            <div class="flex items-center gap-3 text-sm">
+                <a href="{{ url_for('invoice_compare', invoice_id=proc.invoice.id) }}"
+                   class="text-xs text-brand hover:underline">Ir al cruce de esta factura →</a>
+                <a href="{{ url_for('show_results', invoice_id=proc.invoice.id) }}"
+                   class="text-xs text-brand hover:underline">Ver diferencias →</a>
+            </div>
+            {% else %}
+            <p class="text-xs text-[#999]">Primero registrá la factura.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ─── PASO 5: RECLAMO (opcional) ─── -->
+    {% set hecho = proc.reclamo_hecho_en is not none %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
+                    {% if hecho %}bg-emerald-50/50{% endif %}">
+            <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0
+                {% if hecho %}bg-emerald-500 text-white{% else %}bg-[#e8e8e8] text-[#999]{% endif %}">
+                {% if hecho %}✓{% else %}5{% endif %}
+            </div>
+            <div class="flex-1">
+                <h3 class="font-semibold text-[#1e1e1e]">
+                    Reclamo <span class="text-[10px] font-normal text-[#999]">(opcional)</span>
+                </h3>
+                <p class="text-[11px] text-[#6f6f6f]">
+                    {% if hecho %}Reclamo generado el {{ proc.reclamo_hecho_en.strftime('%d/%m/%Y %H:%M') }}
+                    {% else %}Si hay diferencias, generar reclamo al proveedor{% endif %}
+                </p>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if hecho %}
+                <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='reclamo') }}">
+                    <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
+                </form>
+                {% else %}
+                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='reclamo') }}">
+                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#f0f0f0] hover:bg-[#e5e5e5] text-[#333] transition-colors">
+                        Marcar como reclamado
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        <div class="px-5 py-3">
+            {% if proc.reclamo %}
+            <div class="flex items-center gap-3 text-sm">
+                <div class="flex-1">
+                    <p class="font-semibold text-[#1e1e1e]">Reclamo #{{ proc.reclamo.id }}</p>
+                    <p class="text-[11px] text-[#6f6f6f]">
+                        {{ proc.reclamo.fecha }} · Estado: {{ proc.reclamo.estado }}
+                    </p>
+                </div>
+                <a href="{{ url_for('view_claim', claim_id=proc.reclamo.id) }}"
+                   class="text-xs text-brand hover:underline">Ver reclamo →</a>
+            </div>
+            {% else %}
+            <p class="text-xs text-[#999]">Sin reclamo asociado.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ─── NOTAS ─── -->
+    <div class="bg-white border border-surface-border rounded-xl px-5 py-4">
+        <h3 class="font-semibold text-[#1e1e1e] text-sm mb-2">Notas</h3>
+        <form method="post" action="{{ url_for('proceso_notas', proceso_id=proc.id) }}" class="space-y-2">
+            <textarea name="notas" rows="3"
+                      placeholder="Observaciones, acuerdos, pendientes…"
+                      class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand resize-none">{{ proc.notas }}</textarea>
+            <div class="flex justify-end">
+                <button class="text-xs font-semibold bg-brand hover:bg-brand-hover text-brand-dark px-3 py-1.5 rounded-lg transition-colors">
+                    Guardar notas
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {% if proc.estado == 'CERRADO' %}
+    <div class="bg-[#f8f8f8] border border-[#ececec] rounded-xl px-5 py-3 text-xs text-[#6f6f6f] text-center">
+        Proceso cerrado el {{ proc.cerrado_en.strftime('%d/%m/%Y %H:%M') if proc.cerrado_en else '—' }}
+    </div>
+    {% endif %}
+
+</div>
+</div>
+{% endblock %}

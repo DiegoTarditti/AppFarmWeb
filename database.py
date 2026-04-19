@@ -291,6 +291,30 @@ class PedidoItem(Base):
     pedido = relationship('Pedido', back_populates='items')
 
 
+class ProcesoCompra(Base):
+    """Ciclo de compra: análisis → pedido → factura → cruce → (reclamo) → cierre."""
+    __tablename__ = 'procesos_compra'
+    id = Column(Integer, primary_key=True)
+    tipo = Column(String(20), nullable=False)             # 'laboratorio' | 'drogueria'
+    partner_id = Column(Integer, nullable=True)
+    partner_nombre = Column(String(200), nullable=False)
+    estado = Column(String(20), nullable=False, default='BORRADOR')
+    pedido_id = Column(Integer, ForeignKey('pedidos.id', ondelete='SET NULL'), nullable=True)
+    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
+    reclamo_id = Column(Integer, ForeignKey('reclamos.id', ondelete='SET NULL'), nullable=True)
+    analisis_periodo = Column(String(100))
+    analisis_hecho_en = Column(DateTime, nullable=True)
+    analisis_pasos_json = Column(Text, nullable=True)     # {modulos:{hecho,cant},ofertas:{...},...}
+    pedido_hecho_en = Column(DateTime, nullable=True)
+    factura_hecha_en = Column(DateTime, nullable=True)
+    cruce_hecho_en = Column(DateTime, nullable=True)
+    reclamo_hecho_en = Column(DateTime, nullable=True)
+    cerrado_en = Column(DateTime, nullable=True)
+    notas = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    actualizado_en = Column(DateTime, default=datetime.utcnow)
+
+
 class PagoAjusteCC(Base):
     """Pagos y ajustes de cuenta corriente de proveedores."""
     __tablename__ = 'pagos_ajustes_cc'
@@ -407,13 +431,14 @@ def init_db(database_url=None):
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
                                expire_on_commit=False)
     if not database_url.startswith('sqlite'):
-        # Limpia entradas stale en pg_type que bloquean CREATE TABLE
+        # Limpia entradas stale en pg_type / secuencias huérfanas que bloquean CREATE TABLE
         with engine.connect() as conn:
-            for tname in ('export_templates', 'ofertas_minimo'):
+            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra'):
                 conn.execute(text(f"""
                     DO $$ BEGIN
                         IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = '{tname}') THEN
                             DROP TYPE IF EXISTS {tname};
+                            EXECUTE 'DROP SEQUENCE IF EXISTS {tname}_id_seq CASCADE';
                         END IF;
                     END $$
                 """))
