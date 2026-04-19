@@ -222,16 +222,9 @@ async function searchProducto(q) {
     if (q.trim().length < 2) { dd.classList.add('hidden'); return; }
     searchTimeout = setTimeout(async () => {
         try {
-            const resp = await fetch('/api/productos');
-            const all = await resp.json();
-            const lower = q.toLowerCase();
-            const matches = all.filter(p =>
-                p.codigo_barra.includes(lower) ||
-                (p.descripcion || '').toLowerCase().includes(lower) ||
-                (p.alt1 || '').includes(lower) ||
-                (p.alt2 || '').includes(lower) ||
-                (p.alt3 || '').includes(lower)
-            ).slice(0, 15);
+            const resp = await fetch('/api/productos?limit=15&q=' + encodeURIComponent(q.trim()));
+            const body = await resp.json();
+            const matches = (body.data || []).slice(0, 15);
             if (!matches.length) {
                 dd.innerHTML = '<p class="px-3 py-2 text-xs text-[#999]">Sin resultados</p>';
             } else {
