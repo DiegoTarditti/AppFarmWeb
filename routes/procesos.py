@@ -3,6 +3,7 @@
 import json
 import os
 from datetime import datetime
+from helpers import now_ar
 from flask import render_template, request, redirect, url_for, flash, jsonify
 import database
 from database import ProcesoCompra, Pedido, Invoice, Claim, Laboratorio, Provider, AnalisisSesion
@@ -235,9 +236,9 @@ def init_app(app):
             if not proc:
                 return jsonify({'error': 'No encontrado'}), 404
             field = _paso_field(paso)
-            setattr(proc, field, datetime.utcnow())
+            setattr(proc, field, now_ar())
             _bump_estado(proc, ESTADO_POR_PASO[paso])
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -259,7 +260,7 @@ def init_app(app):
                 proc.estado = 'PEDIDO'
             else:
                 proc.estado = 'BORRADOR'
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -274,14 +275,14 @@ def init_app(app):
             if pedido_id:
                 proc.pedido_id = int(pedido_id)
                 if not proc.pedido_hecho_en:
-                    proc.pedido_hecho_en = datetime.utcnow()
+                    proc.pedido_hecho_en = now_ar()
                 _bump_estado(proc, 'PEDIDO')
                 pedido = session.get(Pedido, int(pedido_id))
                 if pedido and pedido.analisis_sesion_id and not proc.analisis_sesion_id:
                     proc.analisis_sesion_id = pedido.analisis_sesion_id
             else:
                 proc.pedido_id = None
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -296,11 +297,11 @@ def init_app(app):
             if factura_id:
                 proc.factura_id = int(factura_id)
                 if not proc.factura_hecha_en:
-                    proc.factura_hecha_en = datetime.utcnow()
+                    proc.factura_hecha_en = now_ar()
                 _bump_estado(proc, 'FACTURADO')
             else:
                 proc.factura_id = None
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -316,9 +317,9 @@ def init_app(app):
                 return jsonify({'error': 'No encontrado'}), 404
             proc.analisis_pasos_json = json.dumps(body)
             if not proc.analisis_hecho_en:
-                proc.analisis_hecho_en = datetime.utcnow()
+                proc.analisis_hecho_en = now_ar()
             _bump_estado(proc, 'BORRADOR')  # no sube estado, solo marca
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
             return jsonify({'ok': True})
 
@@ -331,7 +332,7 @@ def init_app(app):
                 flash('Proceso no encontrado.')
                 return redirect(url_for('procesos_list'))
             proc.notas = notas or None
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -342,9 +343,9 @@ def init_app(app):
             if not proc:
                 flash('Proceso no encontrado.')
                 return redirect(url_for('procesos_list'))
-            proc.cerrado_en = datetime.utcnow()
+            proc.cerrado_en = now_ar()
             proc.estado = 'CERRADO'
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -364,7 +365,7 @@ def init_app(app):
                 proc.estado = 'PEDIDO'
             else:
                 proc.estado = 'BORRADOR'
-            proc.actualizado_en = datetime.utcnow()
+            proc.actualizado_en = now_ar()
             session.commit()
         return redirect(url_for('proceso_detail', proceso_id=proceso_id))
 
@@ -411,7 +412,7 @@ def init_app(app):
                 partner_nombre=partner_nombre,
                 analisis_periodo=pedido.periodo or None,
                 pedido_id=pedido.id,
-                analisis_hecho_en=pedido.creado_en or datetime.utcnow(),
+                analisis_hecho_en=pedido.creado_en or now_ar(),
                 estado='BORRADOR',
                 notas=notas,
             )

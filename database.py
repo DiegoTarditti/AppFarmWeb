@@ -1,6 +1,12 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, DECIMAL, ForeignKey, Text, text, Boolean
+
+_AR_TZ = timezone(timedelta(hours=-3))
+
+def now_ar():
+    """Hora actual en Argentina (UTC-3), sin tzinfo para SQLAlchemy DateTime."""
+    return datetime.now(_AR_TZ).replace(tzinfo=None)
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 
 Base = declarative_base()
@@ -26,7 +32,7 @@ class Laboratorio(Base):
     __tablename__ = 'laboratorios'
     id = Column(Integer, primary_key=True)
     nombre = Column(String(150), nullable=False, unique=True)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
 
 
 class ExportTemplate(Base):
@@ -48,7 +54,7 @@ class OfertaMinimo(Base):
     rentabilidad    = Column(DECIMAL(6, 2))
     plazo_pago      = Column(String(100))
     grupo_id        = Column(Integer)
-    actualizado_en  = Column(DateTime, default=datetime.utcnow)
+    actualizado_en  = Column(DateTime, default=now_ar)
 
 
 class Provider(Base):
@@ -70,7 +76,7 @@ class InvoiceBatch(Base):
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=False)
     erp_filename = Column(String(200))
-    fecha = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(DateTime, default=now_ar)
     estado = Column(String(20), nullable=False, default='PENDIENTE')
     invoices = relationship('Invoice', back_populates='batch')
 
@@ -93,7 +99,7 @@ class Invoice(Base):
     erp_filename = Column(String(200))
     batch_id = Column(Integer, ForeignKey('invoice_batches.id'), nullable=True)
     conciliado = Column(Boolean, nullable=False, default=False)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     items = relationship('InvoiceItem', back_populates='invoice')
     batch = relationship('InvoiceBatch', back_populates='invoices')
 
@@ -145,7 +151,7 @@ class Claim(Base):
     numero_factura = Column(String(20))
     fecha = Column(Date, nullable=False)
     estado = Column(String(20), nullable=False, default='ABIERTO')
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     provider = relationship('Provider', back_populates='claims')
     factura = relationship('Invoice')
     items = relationship('ClaimItem', back_populates='claim')
@@ -173,7 +179,7 @@ class DescuentoCampana(Base):
     laboratorio_nombre = Column(String(150), nullable=False)
     fecha = Column(Date, nullable=True)
     observacion = Column(Text, nullable=True)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     proveedor = relationship('Provider')
     modulos = relationship('DescuentoModulo', back_populates='campana',
                            cascade='all, delete-orphan')
@@ -188,7 +194,7 @@ class DescuentoModulo(Base):
     nombre = Column(String(150))
     descuento_default = Column(DECIMAL(5, 2), nullable=True)  # legacy
     activo = Column(Integer, nullable=False, default=1)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     campana = relationship('DescuentoCampana', back_populates='modulos')
     items = relationship('DescuentoModuloItem', back_populates='modulo',
                          cascade='all, delete-orphan')
@@ -214,7 +220,7 @@ class BarcodeMapping(Base):
     codigo_barra_erp = Column(String(20), nullable=False)
     descripcion_factura = Column(String(150))
     descripcion_erp = Column(String(150))
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
 
 
 class Producto(Base):
@@ -232,7 +238,7 @@ class Producto(Base):
     monodroga = Column(String(200), nullable=True)
     presentacion = Column(String(500), nullable=True)
     accion_terapeutica = Column(String(200), nullable=True)
-    actualizado_en = Column(DateTime, default=datetime.utcnow)
+    actualizado_en = Column(DateTime, default=now_ar)
     ultima_compra = Column(Date, nullable=True)
 
 
@@ -243,7 +249,7 @@ class Modulo(Base):
     nombre = Column(String(200), nullable=False)
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     lista_nombre = Column(String(200), nullable=True)  # Nombre de la lista/importación a la que pertenece
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     activo = Column(Boolean, default=False, nullable=False, server_default='false')
     laboratorio = relationship('Laboratorio')
     packs = relationship('ModuloPack', back_populates='modulo', cascade='all, delete-orphan')
@@ -260,7 +266,7 @@ class ModuloPack(Base):
     desc_pct = Column(DECIMAL(5, 2), nullable=True)             # Descuento % del módulo (DESC.% del Excel)
     descripcion = Column(String(255))
     modulo_id = Column(Integer, ForeignKey('modulos.id'), nullable=True)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     modulo = relationship('Modulo', back_populates='packs')
 
 
@@ -272,7 +278,7 @@ class Pedido(Base):
     periodo = Column(String(100))
     n_days = Column(Integer)
     analisis_sesion_id = Column(Integer, ForeignKey('analisis_sesiones.id'), nullable=True)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     analizado_en = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=False, default='PENDIENTE')
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
@@ -314,8 +320,8 @@ class ProcesoCompra(Base):
     reclamo_hecho_en = Column(DateTime, nullable=True)
     cerrado_en = Column(DateTime, nullable=True)
     notas = Column(Text, nullable=True)
-    creado_en = Column(DateTime, default=datetime.utcnow)
-    actualizado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
+    actualizado_en = Column(DateTime, default=now_ar)
 
 
 class PagoAjusteCC(Base):
@@ -329,7 +335,7 @@ class PagoAjusteCC(Base):
     numero_comprobante = Column(String(30))
     observaciones = Column(Text)
     conciliado = Column(Boolean, nullable=False, default=False)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     proveedor = relationship('Provider')
 
 
@@ -339,11 +345,11 @@ class DocumentoPendiente(Base):
     id = Column(Integer, primary_key=True)
     filename = Column(String(300), nullable=False)
     ruta_completa = Column(String(500), nullable=False)
-    fecha_detectado = Column(DateTime, default=datetime.utcnow)
+    fecha_detectado = Column(DateTime, default=now_ar)
     estado = Column(String(20), nullable=False, default='PENDIENTE')  # PENDIENTE / PROCESADO
     proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=True)
     factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=True)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     proveedor = relationship('Provider')
     factura = relationship('Invoice')
 
@@ -365,7 +371,7 @@ class ProductAnalytics(Base):
     ventas_json = Column(Text, nullable=True)           # JSON: array de 12 valores mensuales
     start_month = Column(Integer, nullable=True)        # mes de inicio (1-12)
     n_days = Column(Integer, nullable=True)             # días del período analizado
-    actualizado_en = Column(DateTime, default=datetime.utcnow)
+    actualizado_en = Column(DateTime, default=now_ar)
 
 
 class AnalisisSesion(Base):
@@ -379,7 +385,7 @@ class AnalisisSesion(Base):
     n_days = Column(Integer, nullable=False)
     fuente = Column(String(20), nullable=False, default='pdf')  # pdf | xls | html | observer
     n_productos = Column(Integer, nullable=False, default=0)
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     laboratorio = relationship('Laboratorio')
 
 
@@ -390,7 +396,7 @@ class PlantillaExportacion(Base):
     proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=False)
     nombre = Column(String(100), nullable=False, default='Plantilla')
     extension = Column(String(10), nullable=False, default='txt')
-    creado_en = Column(DateTime, default=datetime.utcnow)
+    creado_en = Column(DateTime, default=now_ar)
     proveedor = relationship('Provider')
     campos = relationship('PlantillaCampo', back_populates='plantilla',
                           order_by='PlantillaCampo.col_inicio',

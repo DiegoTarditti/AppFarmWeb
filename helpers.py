@@ -2,8 +2,15 @@
 
 import os
 import re
+from datetime import datetime, timezone, timedelta
 import database
 from database import Producto
+
+AR_TZ = timezone(timedelta(hours=-3))
+
+def now_ar():
+    """Hora actual en Argentina (UTC-3), sin tzinfo para compatibilidad con SQLAlchemy DateTime."""
+    return datetime.now(AR_TZ).replace(tzinfo=None)
 
 # ── Constants ────────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ from parsers.sales_history import parse_sales_history_pdf
 from parsers.sales_history_xls import parse_sales_history_xls
 from parsers.sales_history_html import parse_sales_history_html
 from purchase_engine import analyze_purchase
-from helpers import UPLOAD_FOLDER, PURCHASE_FOLDER, get_config, _upsert_producto, _add_alt_barcode
+from helpers import UPLOAD_FOLDER, PURCHASE_FOLDER, get_config, _upsert_producto, _add_alt_barcode, now_ar
 
 
 def _analyze_sales_file(tmp_path, ext, n_days):
@@ -150,7 +150,7 @@ def _snapshot_product_analytics(results, laboratorio, start_month=4, n_days=35):
                 pa.ventas_json = json.dumps(ventas)
                 pa.start_month = start_month
                 pa.n_days = n_days
-            pa.actualizado_en = _dt.utcnow()
+            pa.actualizado_en = now_ar()
         session.commit()
 
 
@@ -917,7 +917,7 @@ def init_app(app):
             from datetime import datetime as _dt2
             dias_desde = None
             if pedido.creado_en:
-                dias_desde = (_dt2.utcnow() - pedido.creado_en).days
+                dias_desde = (now_ar() - pedido.creado_en).days
             data = {
                 'id': pedido.id,
                 'laboratorio': pedido.laboratorio,
@@ -981,7 +981,7 @@ def init_app(app):
                      for mp in session.query(ModuloPack).order_by(ModuloPack.ean_pack).all()]
             from datetime import datetime as _dt
             if not pedido.analizado_en:
-                pedido.analizado_en = _dt.utcnow()
+                pedido.analizado_en = now_ar()
                 session.commit()
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
             else:
