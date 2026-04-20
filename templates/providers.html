@@ -93,10 +93,10 @@
                  data-tipo="{{ p.tipo or 'drogueria' }}">
 
                 <!-- Vista normal -->
-                <div id="view-{{ p.id }}" class="flex items-center gap-4">
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2">
-                            <p class="font-semibold text-[#1e1e1e] truncate">{{ p.razon_social }}</p>
+                <div id="view-{{ p.id }}">
+                    <div class="mb-2">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <p class="font-semibold text-[#1e1e1e] text-base">{{ p.razon_social }}</p>
                             {% if p.tipo == 'laboratorio' %}
                             <span class="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 font-semibold">LAB</span>
                             {% elif p.tipo == 'otro' %}
@@ -111,7 +111,7 @@
                             cruce por {{ 'descripción' if p.match_strategy == 'descripcion' else 'código de barra' }}
                         </p>
                     </div>
-                    <div class="flex items-center gap-2 flex-shrink-0 text-xs text-[#6f6f6f]">
+                    <div class="flex items-center gap-1 flex-wrap text-xs text-[#6f6f6f]">
                         <a href="{{ url_for('provider_invoices', provider_id=p.id) }}"
                            class="flex items-center gap-1 hover:text-[#1e1e1e] transition-colors px-2 py-1 rounded-lg hover:bg-black/[0.04]">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
