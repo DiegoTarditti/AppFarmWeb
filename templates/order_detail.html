@@ -1640,6 +1640,7 @@ function openChart(barcode) {
     const modal = document.getElementById('hist-chart-modal');
     document.getElementById('hist-chart-title').textContent = '';
     document.getElementById('hist-chart-barcode').textContent = barcode;
+    document.getElementById('hist-chart-fecha').classList.add('hidden');
     document.getElementById('hist-chart-stats').innerHTML = '';
     document.getElementById('hist-chart-note').classList.add('hidden');
     document.getElementById('hist-chart-error').classList.add('hidden');
@@ -1656,6 +1657,11 @@ function openChart(barcode) {
                 return;
             }
             document.getElementById('hist-chart-title').textContent = data.nombre;
+            const fechaEl = document.getElementById('hist-chart-fecha');
+            if (data.analizado_en) {
+                fechaEl.querySelector('span').textContent = data.analizado_en;
+                fechaEl.classList.remove('hidden');
+            }
             renderHistChart(data);
         })
         .catch(err => {
@@ -1760,6 +1766,7 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') closeHistChart
             <div>
                 <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="hist-chart-title"></p>
                 <p class="text-xs text-[#999] font-mono mt-0.5" id="hist-chart-barcode"></p>
+                <p class="text-[10px] text-[#bbb] mt-0.5 hidden" id="hist-chart-fecha">Datos al <span></span></p>
             </div>
             <button onclick="closeHistChart()" class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">✕</button>
         </div>

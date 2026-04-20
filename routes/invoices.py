@@ -18,9 +18,9 @@ from helpers import (
 def process_upload(app):
     is_new = request.form.get('is_new_provider') == '1'
     erp_file = request.files.get('erp_excel')
-
-    if not erp_file or not allowed_file(erp_file.filename):
-        return {'error': 'Por favor cargue un archivo de informe ERP Excel válido.'}, 400
+    skip_erp = not erp_file or not erp_file.filename
+    if erp_file and erp_file.filename and not allowed_file(erp_file.filename):
+        return {'error': 'El archivo ERP Excel no es válido.'}, 400
 
     if is_new:
         razon_social = request.form.get('provider_name_new', '').strip()
@@ -43,11 +43,29 @@ def process_upload(app):
         if not proveedor_id:
             return {'error': 'Seleccioná un proveedor antes de cargar los archivos.'}, 400
 
+        with database.get_db() as session:
+            provider = session.get(database.Provider, int(proveedor_id))
+
+        if not provider:
+            return {'error': 'Proveedor no encontrado.'}, 400
+
         pdf_pendiente = request.form.get('pdf_pendiente_filename', '').strip()
+        pdf_from_folder = request.form.get('pdf_from_folder', '').strip()
         if pdf_pendiente:
             invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], secure_filename(pdf_pendiente))
             if not os.path.exists(invoice_path):
                 return {'error': 'El PDF pendiente ya no está disponible.'}, 400
+        elif pdf_from_folder:
+            ruta_base = (provider.ruta_facturas or '').strip()
+            if not ruta_base or not os.path.isdir(ruta_base):
+                return {'error': 'La carpeta de facturas del proveedor no está configurada o no existe.'}, 400
+            safe_name = secure_filename(pdf_from_folder)
+            src = os.path.join(ruta_base, safe_name)
+            if not os.path.isfile(src) or not src.lower().endswith('.pdf'):
+                return {'error': 'El PDF elegido no existe en la carpeta del proveedor.'}, 400
+            invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
+            import shutil
+            shutil.copy2(src, invoice_path)
         else:
             invoice_file = request.files.get('invoice_pdf')
             if not invoice_file or not allowed_file(invoice_file.filename):
@@ -55,30 +73,26 @@ def process_upload(app):
             invoice_filename = secure_filename(invoice_file.filename)
             invoice_path = os.path.join(app.config['UPLOAD_FOLDER'], invoice_filename)
             invoice_file.save(invoice_path)
-
-        with database.get_db() as session:
-            provider = session.get(database.Provider, int(proveedor_id))
-
-        if not provider:
-            return {'error': 'Proveedor no encontrado.'}, 400
         if not provider.parser_file:
             return {'error': f'El proveedor "{provider.razon_social}" no tiene parser configurado.'}, 400
 
         parser_file = provider.parser_file
 
-    erp_filename = secure_filename(erp_file.filename)
-    erp_path = os.path.join(app.config['UPLOAD_FOLDER'], erp_filename)
-    erp_file.save(erp_path)
+    erp_filename = None
+    erp_data = None
+    if not skip_erp:
+        erp_filename = secure_filename(erp_file.filename)
+        erp_path = os.path.join(app.config['UPLOAD_FOLDER'], erp_filename)
+        erp_file.save(erp_path)
+        try:
+            erp_data = parse_erp_excel(erp_path)
+        except Exception as e:
+            return {'error': f'Error al leer el Excel ERP: {e}. Asegurate de subir un archivo .xlsx válido.'}, 400
 
     try:
         invoice_data = parse_invoice_pdf(invoice_path, parser_file)
     except Exception as e:
         return {'error': f'Error al leer el PDF de factura: {e}'}, 400
-
-    try:
-        erp_data = parse_erp_excel(erp_path)
-    except Exception as e:
-        return {'error': f'Error al leer el Excel ERP: {e}. Asegurate de subir un archivo .xlsx válido.'}, 400
 
     if not invoice_data.get('items'):
         try:
@@ -91,7 +105,8 @@ def process_upload(app):
                                           tipo_comprobante=_tipo)
                 _inv.erp_filename = erp_filename
                 _session.commit()
-                save_erp_to_db(_session, erp_data)
+                if not skip_erp and erp_data:
+                    save_erp_to_db(_session, erp_data)
                 _invoice_id = _inv.id
         except Exception as e:
             return {'error': f'Error al guardar encabezado: {e}'}, 400
@@ -107,15 +122,19 @@ def process_upload(app):
                                          tipo_comprobante=tipo_comprobante)
             invoice.erp_filename = erp_filename
             session.commit()
-            save_erp_to_db(session, erp_data)
-            differences = compare_invoice_vs_erp(session, invoice.id)
-            save_differences(session, invoice.id, differences)
+            saved_differences = []
+            if not skip_erp and erp_data:
+                save_erp_to_db(session, erp_data)
+                differences = compare_invoice_vs_erp(session, invoice.id)
+                save_differences(session, invoice.id, differences)
+                saved_differences = get_saved_differences(session, invoice.id)
             try:
-                erp_rows = session.query(database.ErpStock).all()
-                _bulk_upsert_productos(session, [
-                    (e.codigo_barra, e.descripcion, float(e.precio_unitario) if e.precio_unitario else None, None)
-                    for e in erp_rows
-                ])
+                if not skip_erp:
+                    erp_rows = session.query(database.ErpStock).all()
+                    _bulk_upsert_productos(session, [
+                        (e.codigo_barra, e.descripcion, float(e.precio_unitario) if e.precio_unitario else None, None)
+                        for e in erp_rows
+                    ])
                 _prov = session.get(database.Provider, int(proveedor_id)) if proveedor_id else None
                 if not _prov or _prov.grabar_productos != 0:
                     inv_rows = session.query(database.InvoiceItem).filter_by(factura_id=invoice.id).all()
@@ -127,12 +146,12 @@ def process_upload(app):
             except Exception:
                 app.logger.warning('Error al upsert productos tras upload', exc_info=True)
                 session.rollback()
-            saved_differences = get_saved_differences(session, invoice.id)
     except Exception as e:
         return {'error': f'Error al procesar los datos: {e}'}, 400
 
     return {
         'invoice': invoice,
+        'skip_erp': skip_erp,
         'differences': [
             {
                 'id': d.id,
@@ -194,6 +213,9 @@ def init_app(app):
                     app.logger.warning('Error al actualizar doc pendiente', exc_info=True)
                     session.rollback()
 
+        if result.get('skip_erp'):
+            flash('Factura importada sin cruce con ERP.', 'success')
+            return redirect(url_for('invoice_items', invoice_id=result['invoice'].id))
         return redirect(url_for('compare_view', invoice_id=result['invoice'].id))
 
     @app.route('/api/upload', methods=['POST'])

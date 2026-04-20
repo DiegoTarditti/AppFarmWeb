@@ -298,6 +298,9 @@
             <div>
                 <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="chart-title"></p>
                 <p class="text-xs text-[#999] font-mono mt-0.5" id="chart-barcode"></p>
+                {% if analizado_en %}
+                <p class="text-[10px] text-[#bbb] mt-0.5">Datos al {{ analizado_en }}</p>
+                {% endif %}
             </div>
             <button onclick="closeChart()"
                 class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">

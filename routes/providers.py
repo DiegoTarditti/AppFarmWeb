@@ -406,6 +406,34 @@ def init_app(app):
 
     # ── Plantillas de exportación por proveedor ──────────────────────────────
 
+    @app.route('/api/provider/<int:provider_id>/folder-files', methods=['GET'])
+    def provider_folder_files(provider_id):
+        """Lista PDFs en la ruta_facturas configurada del proveedor."""
+        with database.get_db() as session:
+            prov = session.get(database.Provider, provider_id)
+            if not prov:
+                return jsonify({'error': 'Proveedor no encontrado.'}), 404
+            ruta = (prov.ruta_facturas or '').strip()
+            if not ruta:
+                return jsonify({'error': 'El proveedor no tiene carpeta configurada.'}), 400
+            if not os.path.isdir(ruta):
+                return jsonify({'error': f'La carpeta no existe o no es accesible: {ruta}'}), 400
+        try:
+            files = []
+            for name in os.listdir(ruta):
+                if not name.lower().endswith('.pdf'):
+                    continue
+                full = os.path.join(ruta, name)
+                try:
+                    st = os.stat(full)
+                    files.append({'name': name, 'size': st.st_size, 'mtime': int(st.st_mtime)})
+                except OSError:
+                    pass
+            files.sort(key=lambda f: f['mtime'], reverse=True)
+            return jsonify({'files': files, 'ruta': ruta})
+        except OSError as e:
+            return jsonify({'error': f'Error al leer carpeta: {e}'}), 500
+
     @app.route('/provider/<int:provider_id>/plantilla', methods=['GET', 'POST'])
     def provider_plantilla(provider_id):
         with database.get_db() as session:

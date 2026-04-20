@@ -4,6 +4,7 @@ import os
 import re
 import json
 import uuid
+from datetime import datetime
 from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
 from werkzeug.utils import secure_filename
 import database
@@ -299,7 +300,8 @@ def init_app(app):
         _mes_jan = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
         sm = data.get('start_month', 4)
         month_es = [_mes_jan[(sm - 1 + i) % 12] for i in range(12)]
-        return render_template('purchase_results.html', month_es=month_es, **data)
+        analizado_en = datetime.fromtimestamp(os.path.getmtime(json_path)).strftime('%d/%m/%Y')
+        return render_template('purchase_results.html', month_es=month_es, analizado_en=analizado_en, **data)
 
     @app.route('/purchase/export/<uid>/<fmt>', methods=['POST'])
     def purchase_export(uid, fmt):

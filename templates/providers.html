@@ -65,22 +65,26 @@
     {% endwith %}
 
     <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
-        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between gap-4 flex-wrap">
-            <p class="font-semibold text-[#1e1e1e]">
-                <span id="prov-count">{{ providers|length }}</span> proveedor<span id="prov-plural">{{ 'es' if providers|length != 1 }}</span>
+        <div class="px-6 py-4 border-b border-surface-border flex items-center gap-4 flex-wrap">
+            <p class="font-semibold text-[#1e1e1e] whitespace-nowrap">
+                <span id="prov-count" class="text-brand">{{ providers|length }}</span>
+                proveedor<span id="prov-plural">{{ 'es' if providers|length != 1 }}</span>
             </p>
-            <div class="flex items-center gap-2 flex-1 sm:flex-none sm:w-80">
+            <div class="relative flex-1 min-w-[240px]">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
+                </svg>
                 <input type="text" id="prov-search" placeholder="Buscar por nombre, CUIT o parser…"
                        oninput="filterProviders()"
-                       class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                <select id="prov-tipo" onchange="filterProviders()"
-                        class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                    <option value="">Todos</option>
-                    <option value="drogueria">Droguerías</option>
-                    <option value="laboratorio">Laboratorios</option>
-                    <option value="otro">Otros</option>
-                </select>
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
             </div>
+            <select id="prov-tipo" onchange="filterProviders()" title="Filtrar por tipo"
+                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand w-40">
+                <option value="">Todos los tipos</option>
+                <option value="drogueria">Droguerías</option>
+                <option value="laboratorio">Laboratorios</option>
+                <option value="otro">Otros</option>
+            </select>
         </div>
 
         {% if providers %}

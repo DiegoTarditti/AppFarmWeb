@@ -76,6 +76,7 @@
             <input type="hidden" name="proveedor_id" id="proveedor_id">
             <input type="hidden" name="pdf_pendiente_filename" value="{{ pdf_pendiente }}">
             <input type="hidden" name="doc_pendiente_id" value="{{ doc_pendiente_id }}">
+            <input type="hidden" name="pdf_from_folder" id="pdf_from_folder" value="">
 
             {% if pdf_pendiente %}
             <div class="flex items-center gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl px-4 py-3 text-sm">
@@ -98,13 +99,31 @@
                     <span class="text-[10px] text-brand font-medium ml-auto">Pre-cargado</span>
                 </div>
                 {% else %}
+                <!-- Botón elegir de carpeta configurada -->
+                <div id="folder-picker-wrap" class="hidden mb-2">
+                    <button type="button" onclick="toggleFolderPicker()"
+                            class="w-full flex items-center justify-between gap-2 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-medium rounded-lg transition-colors">
+                        <span class="flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/></svg>
+                            Elegir desde carpeta del proveedor
+                        </span>
+                        <span id="folder-picker-count" class="text-[10px] text-emerald-600"></span>
+                    </button>
+                    <div id="folder-picker-list" class="hidden mt-2 max-h-60 overflow-y-auto border border-surface-border rounded-lg bg-white divide-y divide-[#f0f0f0]"></div>
+                </div>
+                <!-- Selección desde carpeta -->
+                <div id="folder-pick-chip" class="hidden flex items-center gap-2 w-full bg-emerald-50 border border-emerald-300 rounded-lg px-3 py-2.5 text-sm mb-2">
+                    <svg class="w-4 h-4 text-emerald-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                    <span class="font-mono text-xs text-[#1e1e1e] flex-1 truncate" id="folder-pick-name"></span>
+                    <button type="button" onclick="clearFolderPick()" class="text-[#999] hover:text-red-500 text-xs">✕</button>
+                </div>
                 <div class="file-drop flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group"
                      onclick="pickPdf('pdf-input','lbl-pdf')">
                     <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                     </svg>
-                    <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar PDF</span>
-                    <input type="file" id="pdf-input" name="invoice_pdf" accept=".pdf" required class="hidden" onchange="setLabel(this,'lbl-pdf'); document.getElementById('btn-probar-existing').disabled = !this.files.length;">
+                    <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">O subir PDF desde tu equipo</span>
+                    <input type="file" id="pdf-input" name="invoice_pdf" accept=".pdf" class="hidden" onchange="setLabel(this,'lbl-pdf'); document.getElementById('btn-probar-existing').disabled = !this.files.length; clearFolderPick();">
                 </div>
                 {% endif %}
                 <p id="lbl-pdf" class="text-xs text-[#999] mt-1 ml-1"></p>
@@ -115,15 +134,15 @@
             </div>
 
             <div>
-                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Informe ERP Excel</label>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Informe ERP Excel <span class="text-[10px] normal-case tracking-normal text-[#999]">(opcional)</span></label>
                 <label class="file-drop flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
                     <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
                     <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel</span>
-                    <input type="file" name="erp_excel" accept=".xlsx,.xls" required class="hidden" onchange="setLabel(this,'lbl-erp')">
+                    <input type="file" id="erp-input" name="erp_excel" accept=".xlsx,.xls" class="hidden" onchange="setLabel(this,'lbl-erp')">
                 </label>
-                <p id="lbl-erp" class="text-xs text-[#999] mt-1 ml-1"></p>
+                <p id="lbl-erp" class="text-xs text-[#999] mt-1 ml-1">Si no lo cargás, la factura se guarda sin cruzar con stock.</p>
             </div>
 
             <!-- Tipo de comprobante -->
@@ -294,8 +313,67 @@ select.addEventListener('change', function () {
         }
         show('provider-info');
         show('upload-section');
+        cargarArchivosCarpeta(this.value, !!ruta);
     }
 });
+
+async function cargarArchivosCarpeta(provId, tieneRuta) {
+    const wrap = document.getElementById('folder-picker-wrap');
+    const list = document.getElementById('folder-picker-list');
+    const countEl = document.getElementById('folder-picker-count');
+    if (!wrap) return;
+    clearFolderPick();
+    list.classList.add('hidden');
+    list.innerHTML = '';
+    if (!tieneRuta) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    countEl.textContent = 'Cargando…';
+    try {
+        const resp = await fetch(`/api/provider/${provId}/folder-files`);
+        const data = await resp.json();
+        if (!resp.ok) {
+            countEl.textContent = data.error || 'Error';
+            return;
+        }
+        const files = data.files || [];
+        countEl.textContent = files.length ? `${files.length} PDF${files.length !== 1 ? 's' : ''}` : 'sin PDFs';
+        list.innerHTML = files.map(f => {
+            const dt = new Date(f.mtime * 1000);
+            const fstr = dt.toLocaleDateString('es-AR') + ' ' + dt.toLocaleTimeString('es-AR', {hour:'2-digit', minute:'2-digit'});
+            const kb = (f.size / 1024).toFixed(0);
+            return `<button type="button" onclick="seleccionarDeCarpeta(${JSON.stringify(f.name).replace(/"/g,'&quot;')})"
+                class="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-emerald-50 transition-colors">
+                <svg class="w-4 h-4 text-[#999] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                <span class="flex-1 text-xs font-mono text-[#1e1e1e] truncate">${f.name}</span>
+                <span class="text-[10px] text-[#999] flex-shrink-0">${fstr} · ${kb} KB</span>
+            </button>`;
+        }).join('') || '<p class="px-3 py-4 text-center text-xs text-[#999]">No hay PDFs en la carpeta.</p>';
+    } catch (e) {
+        countEl.textContent = 'Error de red';
+    }
+}
+
+function toggleFolderPicker() {
+    document.getElementById('folder-picker-list').classList.toggle('hidden');
+}
+
+function seleccionarDeCarpeta(nombre) {
+    document.getElementById('pdf_from_folder').value = nombre;
+    document.getElementById('folder-pick-name').textContent = nombre;
+    document.getElementById('folder-pick-chip').classList.remove('hidden');
+    document.getElementById('folder-picker-list').classList.add('hidden');
+    const pdfInp = document.getElementById('pdf-input');
+    if (pdfInp) { pdfInp.value = ''; document.getElementById('lbl-pdf').textContent = ''; }
+    const btn = document.getElementById('btn-probar-existing');
+    if (btn) btn.disabled = false;
+}
+
+function clearFolderPick() {
+    const h = document.getElementById('pdf_from_folder');
+    if (h) h.value = '';
+    const chip = document.getElementById('folder-pick-chip');
+    if (chip) chip.classList.add('hidden');
+}
 
 document.getElementById('new-pdf-input').addEventListener('change', function () {
     const btn = document.getElementById('btn-identify');
