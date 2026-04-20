@@ -1,10 +1,11 @@
 """Procesos de compra: ciclo análisis → pedido → factura → cruce → reclamo → cierre."""
 
 import json
+import os
 from datetime import datetime
 from flask import render_template, request, redirect, url_for, flash, jsonify
 import database
-from database import ProcesoCompra, Pedido, Invoice, Claim, Laboratorio, Provider
+from database import ProcesoCompra, Pedido, Invoice, Claim, Laboratorio, Provider, AnalisisSesion
 
 
 # ── Configuración de pasos ──────────────────────────────────────────────────
@@ -140,6 +141,8 @@ def init_app(app):
             pedido = session.get(Pedido, proc.pedido_id) if proc.pedido_id else None
             invoice = session.get(Invoice, proc.factura_id) if proc.factura_id else None
             reclamo = session.get(Claim, proc.reclamo_id) if proc.reclamo_id else None
+            sesion_id = proc.analisis_sesion_id or (pedido.analisis_sesion_id if pedido else None)
+            sesion = session.get(AnalisisSesion, sesion_id) if sesion_id else None
 
             analisis_pasos = {}
             if proc.analisis_pasos_json:
@@ -196,6 +199,10 @@ def init_app(app):
                     'fecha': invoice.fecha.strftime('%d/%m/%Y') if invoice.fecha else '',
                     'total': float(invoice.total or 0),
                     'tipo_comprobante': invoice.tipo_comprobante or 'FAC',
+                    'pdf_filename': invoice.pdf_filename or '',
+                    'pdf_disponible': bool(invoice.pdf_filename and os.path.exists(
+                        os.path.join(os.path.dirname(os.path.dirname(__file__)), 'uploads', invoice.pdf_filename)
+                    )),
                 } if invoice else None,
                 'reclamo': {
                     'id': reclamo.id, 'numero_factura': reclamo.numero_factura,
@@ -203,6 +210,16 @@ def init_app(app):
                     'fecha': reclamo.fecha.strftime('%d/%m/%Y') if reclamo.fecha else '',
                 } if reclamo else None,
                 'analisis_pasos': analisis_pasos,
+                'analisis_sesion': {
+                    'id': sesion.id,
+                    'laboratorio': sesion.laboratorio_nombre,
+                    'periodo': sesion.periodo or '',
+                    'farmacia': sesion.farmacia or '',
+                    'n_days': sesion.n_days,
+                    'fuente': sesion.fuente or 'pdf',
+                    'n_productos': sesion.n_productos,
+                    'creado_en': sesion.creado_en.strftime('%d/%m/%Y %H:%M') if sesion.creado_en else '',
+                } if sesion else None,
             }
 
         return render_template('proceso_detail.html', proc=data,
@@ -259,6 +276,9 @@ def init_app(app):
                 if not proc.pedido_hecho_en:
                     proc.pedido_hecho_en = datetime.utcnow()
                 _bump_estado(proc, 'PEDIDO')
+                pedido = session.get(Pedido, int(pedido_id))
+                if pedido and pedido.analisis_sesion_id and not proc.analisis_sesion_id:
+                    proc.analisis_sesion_id = pedido.analisis_sesion_id
             else:
                 proc.pedido_id = None
             proc.actualizado_en = datetime.utcnow()

@@ -7,7 +7,7 @@ import uuid
 from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
 from werkzeug.utils import secure_filename
 import database
-from database import Pedido, PedidoItem, Producto, Laboratorio, ModuloPack, ErpStock
+from database import Pedido, PedidoItem, Producto, Laboratorio, ModuloPack, ErpStock, AnalisisSesion
 from parsers.sales_history import parse_sales_history_pdf
 from parsers.sales_history_xls import parse_sales_history_xls
 from parsers.sales_history_html import parse_sales_history_html
@@ -66,12 +66,44 @@ def _analyze_sales_file(tmp_path, ext, n_days):
                                 start_month=parsed.get('start_month', 4),
                                 n_days=n_days)
 
+    fuente = ext if ext in ('pdf', 'xls', 'xlsx', 'html', 'htm') else 'pdf'
+    if fuente in ('xlsx', 'xls'):
+        fuente = 'xls'
+    sesion_id = _create_analisis_sesion(
+        laboratorio=parsed.get('laboratorio'),
+        periodo=parsed.get('periodo'),
+        farmacia=parsed.get('farmacia'),
+        n_days=n_days,
+        fuente=fuente,
+        n_productos=len(results),
+    )
+    data['sesion_id'] = sesion_id
+    with open(json_path, 'w', encoding='utf-8') as jf:
+        json.dump(data, jf, ensure_ascii=False)
+
     return {
         'uid': uid,
         'laboratorio': parsed.get('laboratorio') or '(sin laboratorio)',
         'periodo': parsed.get('periodo') or '',
         'count': len(results),
+        'sesion_id': sesion_id,
     }
+
+
+def _create_analisis_sesion(laboratorio, periodo, farmacia, n_days, fuente, n_productos):
+    """Crea un registro AnalisisSesion y retorna su id."""
+    with database.get_db() as session:
+        sesion = AnalisisSesion(
+            laboratorio_nombre=laboratorio or '',
+            periodo=periodo or '',
+            farmacia=farmacia or '',
+            n_days=n_days,
+            fuente=fuente,
+            n_productos=n_productos,
+        )
+        session.add(sesion)
+        session.commit()
+        return sesion.id
 
 
 def _snapshot_product_analytics(results, laboratorio, start_month=4, n_days=35):
@@ -514,6 +546,7 @@ def init_app(app):
                     farmacia=data.get('farmacia', ''),
                     periodo=data.get('periodo', ''),
                     n_days=data.get('n_days', 0),
+                    analisis_sesion_id=data.get('sesion_id'),
                     items=items,
                 )
                 session.add(pedido)

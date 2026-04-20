@@ -148,4 +148,5 @@ def init_app(app):
                 'start_month': pa.start_month or 4,
                 'n_days': pa.n_days or 35,
                 'sin_historial': len(ventas) == 0,
+                'analizado_en': pa.actualizado_en.strftime('%d/%m/%Y') if pa.actualizado_en else None,
             })

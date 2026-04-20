@@ -1,7 +1,7 @@
 """Invoice routes: upload, process_upload, parse-helper, compare, items, pick-fields, header."""
 
 import os
-from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
+from flask import render_template, request, redirect, url_for, flash, jsonify, make_response, send_from_directory
 from werkzeug.utils import secure_filename
 import database
 from data_extract import (parse_invoice_pdf, parse_erp_excel, compare_invoice_vs_erp,
@@ -149,6 +149,10 @@ def process_upload(app):
 
 
 def init_app(app):
+
+    @app.route('/uploads/pdf/<path:filename>')
+    def serve_invoice_pdf(filename):
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
     @app.route('/upload', methods=['POST'])
     def upload_files():

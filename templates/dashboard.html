@@ -216,6 +216,7 @@
             <div>
                 <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="chart-title"></p>
                 <p class="text-xs text-[#999] font-mono mt-0.5" id="chart-barcode"></p>
+                <p class="text-[10px] text-[#bbb] mt-0.5 hidden" id="chart-fecha">Datos al <span></span></p>
             </div>
             <button onclick="closeChart()"
                 class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">
@@ -359,6 +360,7 @@ function openChart(barcode) {
 
     document.getElementById('chart-title').textContent = '';
     document.getElementById('chart-barcode').textContent = barcode;
+    document.getElementById('chart-fecha').classList.add('hidden');
     statsEl.innerHTML = '';
     noteEl.classList.add('hidden');
     errorEl.classList.add('hidden');
@@ -377,6 +379,13 @@ function openChart(barcode) {
                 return;
             }
             document.getElementById('chart-title').textContent = data.nombre;
+            const fechaEl = document.getElementById('chart-fecha');
+            if (data.analizado_en) {
+                fechaEl.querySelector('span').textContent = data.analizado_en;
+                fechaEl.classList.remove('hidden');
+            } else {
+                fechaEl.classList.add('hidden');
+            }
             renderProductChart(data);
         })
         .catch(err => {

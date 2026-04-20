@@ -271,10 +271,12 @@ class Pedido(Base):
     farmacia = Column(String(200))
     periodo = Column(String(100))
     n_days = Column(Integer)
+    analisis_sesion_id = Column(Integer, ForeignKey('analisis_sesiones.id'), nullable=True)
     creado_en = Column(DateTime, default=datetime.utcnow)
     analizado_en = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=False, default='PENDIENTE')
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
+    analisis_sesion = relationship('AnalisisSesion')
 
 
 class PedidoItem(Base):
@@ -302,6 +304,7 @@ class ProcesoCompra(Base):
     pedido_id = Column(Integer, ForeignKey('pedidos.id', ondelete='SET NULL'), nullable=True)
     factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
     reclamo_id = Column(Integer, ForeignKey('reclamos.id', ondelete='SET NULL'), nullable=True)
+    analisis_sesion_id = Column(Integer, ForeignKey('analisis_sesiones.id'), nullable=True)
     analisis_periodo = Column(String(100))
     analisis_hecho_en = Column(DateTime, nullable=True)
     analisis_pasos_json = Column(Text, nullable=True)     # {modulos:{hecho,cant},ofertas:{...},...}
@@ -363,6 +366,21 @@ class ProductAnalytics(Base):
     start_month = Column(Integer, nullable=True)        # mes de inicio (1-12)
     n_days = Column(Integer, nullable=True)             # días del período analizado
     actualizado_en = Column(DateTime, default=datetime.utcnow)
+
+
+class AnalisisSesion(Base):
+    """Registro de cada ejecución de análisis de ventas."""
+    __tablename__ = 'analisis_sesiones'
+    id = Column(Integer, primary_key=True)
+    laboratorio_nombre = Column(String(150), nullable=False)
+    laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
+    periodo = Column(String(100))
+    farmacia = Column(String(200))
+    n_days = Column(Integer, nullable=False)
+    fuente = Column(String(20), nullable=False, default='pdf')  # pdf | xls | html | observer
+    n_productos = Column(Integer, nullable=False, default=0)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    laboratorio = relationship('Laboratorio')
 
 
 class PlantillaExportacion(Base):
@@ -719,6 +737,25 @@ def _pg_add_columns(conn):
             relleno CHAR(1) NOT NULL DEFAULT ' '
         )
     """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS analisis_sesiones (
+            id SERIAL PRIMARY KEY,
+            laboratorio_nombre VARCHAR(150) NOT NULL,
+            laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL,
+            periodo VARCHAR(100),
+            farmacia VARCHAR(200),
+            n_days INTEGER NOT NULL,
+            fuente VARCHAR(20) NOT NULL DEFAULT 'pdf',
+            n_productos INTEGER NOT NULL DEFAULT 0,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text(
+        "ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id) ON DELETE SET NULL"
+    ))
+    conn.execute(text(
+        "ALTER TABLE procesos_compra ADD COLUMN IF NOT EXISTS analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id) ON DELETE SET NULL"
+    ))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
@@ -921,6 +958,25 @@ def _sqlite_add_columns(conn):
             relleno CHAR(1) NOT NULL DEFAULT ' '
         )
     """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS analisis_sesiones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            laboratorio_nombre VARCHAR(150) NOT NULL,
+            laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL,
+            periodo VARCHAR(100),
+            farmacia VARCHAR(200),
+            n_days INTEGER NOT NULL,
+            fuente VARCHAR(20) NOT NULL DEFAULT 'pdf',
+            n_productos INTEGER NOT NULL DEFAULT 0,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    existing_ped = {row[1] for row in conn.execute(text("PRAGMA table_info(pedidos)"))}
+    if 'analisis_sesion_id' not in existing_ped:
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id)"))
+    existing_proc = {row[1] for row in conn.execute(text("PRAGMA table_info(procesos_compra)"))}
+    if 'analisis_sesion_id' not in existing_proc:
+        conn.execute(text("ALTER TABLE procesos_compra ADD COLUMN analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id)"))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",

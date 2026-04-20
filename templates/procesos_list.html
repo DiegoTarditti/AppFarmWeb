@@ -84,7 +84,9 @@
                             title="{{ step.paso|capitalize }}{{ ' · ' ~ step.fecha if step.fecha else '' }}">
                             {% if step.hecho %}✓{% else %}{{ loop.index }}{% endif %}
                         </div>
-                        <span class="text-[9px] text-[#999] uppercase">{{ step.paso[:4] }}</span>
+                        <span class="text-[9px] text-[#999] uppercase">
+                            {{ {'analisis':'Análisis','pedido':'Pedido','factura':'Factura','cruce':'Ingreso','reclamo':'Reclamo'}.get(step.paso, step.paso) }}
+                        </span>
                     </div>
                     {% if not loop.last %}
                     <div class="w-6 h-0.5 {% if step.hecho and p.pasos[loop.index].hecho %}bg-emerald-400{% else %}bg-[#e8e8e8]{% endif %} mt-[-14px]"></div>

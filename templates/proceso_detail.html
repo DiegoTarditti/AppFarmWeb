@@ -96,6 +96,24 @@
             </div>
         </div>
 
+        <!-- Ficha de sesión de análisis -->
+        {% if proc.analisis_sesion %}
+        {% set s = proc.analisis_sesion %}
+        <div class="px-5 py-2.5 border-b border-surface-border bg-[#fafafa] flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-[#555]">
+            <span class="font-semibold text-[#1e1e1e]">{{ s.laboratorio }}</span>
+            {% if s.periodo %}<span class="text-[#6f6f6f]">{{ s.periodo }}</span>{% endif %}
+            <span class="px-1.5 py-0.5 rounded bg-[#efefef] text-[#666] font-medium">{{ s.n_days }}d</span>
+            <span>{{ s.n_productos }} productos</span>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold
+                {% if s.fuente == 'observer' %}bg-violet-100 text-violet-700
+                {% elif s.fuente == 'xls' %}bg-emerald-100 text-emerald-700
+                {% else %}bg-sky-100 text-sky-700{% endif %}">
+                {{ s.fuente | upper }}
+            </span>
+            <span class="ml-auto text-[#999]">{{ s.creado_en }}</span>
+        </div>
+        {% endif %}
+
         <!-- Sub-pasos del análisis: módulos, ofertas, ofertas c/mín, sin deal -->
         {% if proc.analisis_pasos %}
         {% set sub = proc.analisis_pasos %}
@@ -272,6 +290,17 @@
                         {{ proc.invoice.fecha }} · ${{ proc.invoice.total | arg_currency }}
                     </p>
                 </div>
+                {% if proc.invoice.pdf_disponible %}
+                <a href="{{ url_for('serve_invoice_pdf', filename=proc.invoice.pdf_filename) }}"
+                   target="_blank"
+                   class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors">
+                    📄 Ver PDF
+                </a>
+                {% else %}
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#f0f0f0] text-[#999]">
+                    No disponible
+                </span>
+                {% endif %}
                 <a href="{{ url_for('invoice_items', invoice_id=proc.invoice.id) }}"
                    class="text-xs text-brand hover:underline">Ver ítems →</a>
                 <form method="post" action="{{ url_for('proceso_link_factura', proceso_id=proc.id) }}"
