@@ -349,9 +349,9 @@
             </div>
             <div class="flex items-center gap-2">
                 {% if proc.invoice %}
-                <a href="{{ url_for('compare_view', invoice_id=proc.invoice.id) }}"
+                <a href="{{ url_for('invoice_items', invoice_id=proc.invoice.id) }}"
                    class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
-                    Ir al cruce →
+                    Ver artículos →
                 </a>
                 {% else %}
                 <span class="text-[11px] text-[#bbb]">requiere factura</span>
@@ -361,9 +361,10 @@
                     <button class="text-[11px] text-[#999] hover:text-[#1e1e1e] px-2 py-1 transition-colors">Desmarcar</button>
                 </form>
                 {% elif proc.invoice %}
-                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='cruce') }}">
-                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
-                        Marcar conciliado
+                <form method="post" action="{{ url_for('proceso_marcar_paso', proceso_id=proc.id, paso='cruce') }}"
+                      onsubmit="return confirm('¿Saltear el control de ingreso y marcar como ingresado?');">
+                    <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#f0f0f0] hover:bg-[#e5e5e5] text-[#444] transition-colors">
+                        Saltar ingreso
                     </button>
                 </form>
                 {% endif %}
@@ -371,14 +372,20 @@
         </div>
         <div class="px-5 py-3">
             {% if proc.invoice %}
-            <div class="flex items-center gap-3 text-sm">
+            <div class="flex items-center gap-3 text-sm flex-wrap">
+                <a href="{{ url_for('invoice_items', invoice_id=proc.invoice.id) }}"
+                   class="text-xs text-brand hover:underline">Ver artículos de la factura →</a>
+                <span class="text-[#ccc]">·</span>
                 <a href="{{ url_for('compare_view', invoice_id=proc.invoice.id) }}"
-                   class="text-xs text-brand hover:underline">Ir al cruce de esta factura →</a>
+                   class="text-xs text-[#999] hover:text-brand hover:underline">Hacer cruce completo →</a>
+                {% if not hecho %}
+                <span class="text-[#ccc]">·</span>
                 <a href="{{ url_for('show_results', invoice_id=proc.invoice.id) }}"
-                   class="text-xs text-brand hover:underline">Ver diferencias →</a>
+                   class="text-xs text-[#999] hover:text-brand hover:underline">Ver diferencias →</a>
+                {% endif %}
             </div>
             {% else %}
-            <p class="text-xs text-[#999]">Primero registrá la factura.</p>
+            <p class="text-xs text-[#999]">Primero registrá la factura en el paso anterior.</p>
             {% endif %}
         </div>
     </div>
