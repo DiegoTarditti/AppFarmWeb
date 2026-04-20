@@ -412,11 +412,13 @@ def init_app(app):
                 partner_nombre=partner_nombre,
                 analisis_periodo=pedido.periodo or None,
                 pedido_id=pedido.id,
+                analisis_sesion_id=pedido.analisis_sesion_id,
                 analisis_hecho_en=pedido.creado_en or now_ar(),
                 estado='BORRADOR',
                 notas=notas,
             )
             session.add(proc)
+            pedido.estado = 'ENVIADO'
             session.commit()
             pid = proc.id
         flash('Pedido enviado a Procesos.')
