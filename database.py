@@ -419,15 +419,19 @@ class PlantillaCampo(Base):
 
 
 CAMPOS_SISTEMA = [
-    ('fijo',         'Valor fijo / constante'),
-    ('codigo_barra', 'Código de barra (EAN)'),
-    ('descripcion',  'Descripción del producto'),
-    ('cantidad',     'Cantidad total (mod+oferta+sin deal)'),
-    ('cant_modulo',  'Cantidad módulo'),
-    ('cant_oferta',  'Cantidad oferta'),
-    ('cant_nodeal',  'Cantidad sin deal'),
-    ('precio',       'Precio PVP'),
-    ('espacio',      'Espacio en blanco'),
+    ('fijo',            'Valor fijo / constante'),
+    ('codigo_barra',    'Código de barra (EAN)'),
+    ('descripcion',     'Descripción del producto'),
+    ('cantidad',        'Cantidad total (mod+oferta+sin deal)'),
+    ('cant_modulo',     'Cantidad módulo'),
+    ('cant_oferta',     'Cantidad oferta'),
+    ('cant_oferta_min', 'Cantidad oferta c/mín'),
+    ('cant_nodeal',     'Cantidad sin deal'),
+    ('precio',          'Precio PVP'),
+    ('erp_qty',         'Stock ERP'),
+    ('rotacion',        'Rotación'),
+    ('avg_monthly',     'Promedio mensual'),
+    ('espacio',         'Espacio en blanco'),
 ]
 
 

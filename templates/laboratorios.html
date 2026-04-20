@@ -251,13 +251,17 @@
 </div>
 
 <script>
+function _normFilter(s) {
+    return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
 function filterLabs() {
-    const q = document.getElementById('lab-filter').value.trim().toLowerCase();
+    const q = _normFilter(document.getElementById('lab-filter').value);
     const clearBtn = document.getElementById('lab-filter-clear');
     clearBtn.classList.toggle('hidden', !q);
     let visible = 0;
     document.querySelectorAll('.lab-row').forEach(row => {
-        const match = !q || row.dataset.nombre.includes(q);
+        const nombre = _normFilter(row.dataset.nombre);
+        const match = !q || nombre.includes(q);
         row.classList.toggle('hidden', !match);
         if (match) visible++;
     });

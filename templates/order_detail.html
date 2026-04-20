@@ -330,14 +330,17 @@
                         XLSX
                     </button>
                 </form>
+                {% if lab_plantilla %}
                 <form id="form-export-sum-plantilla" method="POST"
                       action="{{ url_for('order_export_plantilla', pedido_id=pedido.id) }}">
                     <input type="hidden" name="data" id="h-sum-plantilla-data">
                     <button type="button" id="btn-export-sum-plantilla" onclick="exportResumenPlantilla()"
+                            title="Exportar XLSX con columnas de la plantilla del laboratorio"
                             class="hidden flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                        Exportar plantilla
+                        Plantilla laboratorio
                     </button>
                 </form>
+                {% endif %}
                 {% if prov_plantilla %}
                 <button type="button" id="btn-export-plantilla" onclick="exportarPlantilla()"
                         class="hidden flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -1110,15 +1113,20 @@ function exportResumenPlantilla() {
 async function exportarPlantilla() {
     const rows = resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
-        let oferta = d.cant_oferta, nodeal = d.cant_nodeal;
+        let oferta = d.cant_oferta, oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
         document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
             const v = parseInt(inp.value) || 0;
-            if (inp.dataset.field === 'oferta')  oferta  = v;
-            if (inp.dataset.field === 'nodeal')  nodeal = v;
+            if (inp.dataset.field === 'oferta')      oferta     = v;
+            if (inp.dataset.field === 'oferta_min')  oferta_min = v;
+            if (inp.dataset.field === 'nodeal')      nodeal     = v;
         });
-        const total = d.cant_mod + oferta + nodeal;
+        const total = d.cant_mod + oferta + oferta_min + nodeal;
         return { ean, nombre: d.nombre, cantidad: total, cant_modulo: d.cant_mod,
-                 cant_oferta: oferta, cant_nodeal: nodeal, precio: d.pvp };
+                 cant_oferta: oferta, cant_oferta_min: oferta_min, cant_nodeal: nodeal,
+                 precio_pvp: d.pvp,
+                 erp_qty: d.erp_qty ?? '',
+                 rotacion: (d.rot && d.rot.rotacion) || '',
+                 avg_monthly: (d.rot && d.rot.avg) || 0 };
     });
     const resp = await fetch('{{ url_for("order_export_prov_plantilla", pedido_id=pedido.id) }}', {
         method: 'POST',

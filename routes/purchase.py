@@ -999,10 +999,16 @@ def init_app(app):
                 if _pl:
                     prov_plantilla = {'proveedor_id': _prov.id, 'nombre': _pl.nombre,
                                       'extension': _pl.extension}
+            lab_plantilla = None
+            if lab_obj:
+                _lt = session.get(database.ExportTemplate, lab_obj.id)
+                if _lt and _lt.columns_json:
+                    lab_plantilla = {'laboratorio_id': lab_obj.id}
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
                                    product_prices=product_prices,
-                                   prov_plantilla=prov_plantilla)
+                                   prov_plantilla=prov_plantilla,
+                                   lab_plantilla=lab_plantilla)
 
     @app.route('/order/<int:pedido_id>/save-module-matches', methods=['POST'])
     def order_save_module_matches(pedido_id):
@@ -1254,10 +1260,21 @@ def init_app(app):
                         val = str(int(row.get('cant_modulo', 0) or 0))
                     elif cs == 'cant_oferta':
                         val = str(int(row.get('cant_oferta', 0) or 0))
+                    elif cs == 'cant_oferta_min':
+                        val = str(int(row.get('cant_oferta_min', 0) or 0))
                     elif cs == 'cant_nodeal':
                         val = str(int(row.get('cant_nodeal', 0) or 0))
                     elif cs == 'precio':
                         val = str(row.get('precio_pvp', '') or '')
+                    elif cs == 'erp_qty':
+                        val = str(row.get('erp_qty', '') or '')
+                    elif cs == 'rotacion':
+                        val = str(row.get('rotacion', '') or '')
+                    elif cs == 'avg_monthly':
+                        _v = row.get('avg_monthly', 0) or 0
+                        val = str(int(round(float(_v)))) if _v else ''
+                    elif cs == 'espacio':
+                        val = ''
                     else:
                         val = ''
                     pad = (c.relleno or ' ')[0]
