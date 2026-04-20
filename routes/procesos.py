@@ -350,7 +350,11 @@ def init_app(app):
 
     @app.route('/pedido/<int:pedido_id>/enviar-a-proceso', methods=['POST'])
     def pedido_enviar_a_proceso(pedido_id):
-        """Crea un ProcesoCompra desde un Pedido guardado, o redirige al existente."""
+        """Crea un ProcesoCompra desde un Pedido guardado.
+        Permite elegir canal de ingreso: laboratorio (default) o droguería."""
+        canal = (request.form.get('canal') or 'laboratorio').strip()
+        drog_id = request.form.get('drogueria_id') or None
+
         with database.get_db() as session:
             pedido = session.get(Pedido, pedido_id)
             if not pedido:
@@ -362,15 +366,34 @@ def init_app(app):
                 flash(f'Este pedido ya está en el proceso #{existente.id}.')
                 return redirect(url_for('proceso_detail', proceso_id=existente.id))
 
-            lab = session.query(Laboratorio).filter_by(nombre=pedido.laboratorio).first()
+            if canal == 'drogueria':
+                if not drog_id:
+                    flash('Elegí la droguería por la que va a entrar el pedido.')
+                    return redirect(url_for('orders_list'))
+                prov = session.get(Provider, int(drog_id))
+                if not prov:
+                    flash('Droguería no encontrada.')
+                    return redirect(url_for('orders_list'))
+                partner_nombre = prov.razon_social
+                partner_id = prov.id
+                tipo = 'drogueria'
+                notas = f'Pedido generado para laboratorio: {pedido.laboratorio}'
+            else:
+                lab = session.query(Laboratorio).filter_by(nombre=pedido.laboratorio).first()
+                partner_nombre = pedido.laboratorio or '—'
+                partner_id = lab.id if lab else None
+                tipo = 'laboratorio'
+                notas = None
+
             proc = ProcesoCompra(
-                tipo='laboratorio',
-                partner_id=lab.id if lab else None,
-                partner_nombre=pedido.laboratorio or '—',
+                tipo=tipo,
+                partner_id=partner_id,
+                partner_nombre=partner_nombre,
                 analisis_periodo=pedido.periodo or None,
                 pedido_id=pedido.id,
                 analisis_hecho_en=pedido.creado_en or datetime.utcnow(),
                 estado='BORRADOR',
+                notas=notas,
             )
             session.add(proc)
             session.commit()

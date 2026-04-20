@@ -700,7 +700,9 @@ def init_app(app):
                         for it in p.items
                     ],
                 })
-            return render_template('orders_list.html', pedidos=result)
+            proveedores = [{'id': pv.id, 'nombre': pv.razon_social}
+                           for pv in session.query(database.Provider).order_by(database.Provider.razon_social).all()]
+            return render_template('orders_list.html', pedidos=result, proveedores=proveedores)
 
     @app.route('/order/<int:pedido_id>/delete', methods=['POST'])
     def order_delete(pedido_id):
