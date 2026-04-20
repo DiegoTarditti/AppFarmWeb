@@ -91,6 +91,7 @@
                 Exportar XLS
             </a>
         </div>
+        {% set tiene_erp = items | selectattr('precio_erp') | list | length > 0 %}
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-surface-head border-b border-surface-border">
@@ -101,9 +102,13 @@
                         <th class="px-3 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-36">Monodroga</th>
                         <th class="px-3 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-14">Cant.</th>
                         <th class="px-3 py-3 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-28">P. Unit.</th>
+                        {% if tiene_erp %}
                         <th class="px-3 py-3 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-28">P. ERP</th>
+                        {% endif %}
                         <th class="px-3 py-3 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-16">Dto. Fact.</th>
+                        {% if tiene_erp %}
                         <th class="px-3 py-3 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-16">Dto. Calc.</th>
+                        {% endif %}
                         <th class="px-3 py-3 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-28">Importe</th>
                         <th class="px-3 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-20">Lote</th>
                         <th class="px-3 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-20">Vto.</th>
@@ -128,14 +133,17 @@
                         <td class="px-3 py-2.5 text-right font-mono whitespace-nowrap {{ 'text-amber-700' if ns.calc else 'text-[#6f6f6f]' }}">
                             {% if ns.p_unit %}$ {{ ns.p_unit | arg_currency }}{% else %}—{% endif %}
                         </td>
+                        {% if tiene_erp %}
                         <td class="px-3 py-2.5 text-right font-mono text-[#6f6f6f] whitespace-nowrap">
                             {% if item.precio_erp and item.cantidad %}
                                 $ {{ (item.precio_erp / item.cantidad) | arg_currency }}
                             {% else %}—{% endif %}
                         </td>
+                        {% endif %}
                         <td class="px-3 py-2.5 text-right font-semibold whitespace-nowrap text-[#6f6f6f]">
                             {% if item.dto is not none %}{{ item.dto | round(2) }}%{% else %}—{% endif %}
                         </td>
+                        {% if tiene_erp %}
                         <td class="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
                             {% if ns.p_unit and item.precio_erp and item.precio_erp != 0 and item.cantidad %}
                                 {% set erp_unit = item.precio_erp / item.cantidad %}
@@ -153,6 +161,7 @@
                                 {% endif %}
                             {% else %}—{% endif %}
                         </td>
+                        {% endif %}
                         <td class="px-3 py-2.5 text-right font-mono text-[#1e1e1e] whitespace-nowrap">
                             {% if item.importe %}$ {{ item.importe | arg_currency }}{% else %}—{% endif %}
                         </td>
