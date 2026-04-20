@@ -461,7 +461,11 @@ def init_app(app):
                 return redirect(url_for('provider_plantilla', provider_id=provider_id))
 
             plantilla = session.query(database.PlantillaExportacion).filter_by(proveedor_id=provider_id).first()
+            max_line_len = 0
+            if plantilla and plantilla.campos:
+                max_line_len = max((c.col_inicio + c.longitud) for c in plantilla.campos)
             return render_template('provider_plantilla.html',
                                    provider=provider,
                                    plantilla=plantilla,
-                                   campos_sistema=database.CAMPOS_SISTEMA)
+                                   campos_sistema=database.CAMPOS_SISTEMA,
+                                   max_line_len=max_line_len)

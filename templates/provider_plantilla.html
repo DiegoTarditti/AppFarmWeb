@@ -87,7 +87,7 @@
             {% if plantilla and plantilla.campos %}
             <span class="text-xs text-[#999]">
                 Longitud total de línea:
-                <strong>{{ plantilla.campos | map(attribute='col_inicio') | list | zip(plantilla.campos | map(attribute='longitud') | list) | map('sum') | max }}</strong> chars
+                <strong>{{ max_line_len }}</strong> chars
             </span>
             {% endif %}
         </div>
@@ -142,8 +142,8 @@
                 {{ ns.line }}
             </div>
             <div class="font-mono text-[10px] text-[#bbb] overflow-x-auto whitespace-nowrap px-2 mt-0.5">
-                {% for i in range(0, (plantilla.campos | map(attribute='col_inicio') | list | zip(plantilla.campos | map(attribute='longitud') | list) | map('sum') | max) + 1) %}{{ (i // 10) if i % 10 == 0 else ' ' }}{% endfor %}
-                <br>{% for i in range(0, (plantilla.campos | map(attribute='col_inicio') | list | zip(plantilla.campos | map(attribute='longitud') | list) | map('sum') | max) + 1) %}{{ i % 10 }}{% endfor %}
+                {% for i in range(0, max_line_len + 1) %}{{ (i // 10) if i % 10 == 0 else ' ' }}{% endfor %}
+                <br>{% for i in range(0, max_line_len + 1) %}{{ i % 10 }}{% endfor %}
             </div>
         </div>
         {% else %}
