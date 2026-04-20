@@ -104,6 +104,9 @@
                             {% else %}
                             <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 font-semibold">DROG</span>
                             {% endif %}
+                            {% if p.has_plantilla %}
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300" title="Plantilla de exportación configurada">✓ PLANTILLA</span>
+                            {% endif %}
                         </div>
                         <p class="text-xs text-[#6f6f6f] mt-0.5 font-mono">
                             {% if p.cuit %}CUIT {{ p.cuit }} · {% endif %}

@@ -211,6 +211,7 @@ def init_app(app):
             if tipo_filter in ('drogueria', 'laboratorio', 'otro'):
                 q = q.filter(database.Provider.tipo == tipo_filter)
             providers = q.order_by(database.Provider.razon_social).all()
+            plantilla_ids = {pid for (pid,) in session.query(database.PlantillaExportacion.proveedor_id).all()}
             provider_data = []
             for p in providers:
                 q = session.query(database.Invoice)
@@ -234,6 +235,7 @@ def init_app(app):
                     'tipo': p.tipo or 'drogueria',
                     'invoice_count': invoice_count,
                     'claim_count': claim_count,
+                    'has_plantilla': p.id in plantilla_ids,
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 
