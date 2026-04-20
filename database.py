@@ -452,7 +452,7 @@ def init_db(database_url=None):
         # Limpia entradas stale en pg_type / secuencias huérfanas que bloquean CREATE TABLE
         # (puede pasar en Render u otros PG cuando un deploy previo crea pg_type pero no pg_class)
         with engine.connect() as conn:
-            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra'):
+            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra', 'analisis_sesiones'):
                 table_exists = conn.execute(
                     text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"),
                     {'t': tname}
