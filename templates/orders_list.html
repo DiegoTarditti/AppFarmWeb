@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "components/partner_selector.html" import partner_selector %}
 {% set nav_active = "compras" %}
 
 {% block title %}Pedidos guardados — Farmacia{% endblock %}
@@ -315,13 +316,9 @@
         </div>
 
         <div id="wrap-drog-select" class="hidden">
-            <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Droguería</label>
-            <select name="drogueria_id" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-                <option value="">— elegí la droguería —</option>
-                {% for pv in proveedores %}
-                <option value="{{ pv.id }}">{{ pv.nombre }}</option>
-                {% endfor %}
-            </select>
+            {{ partner_selector(tipo='drogueria', name='drogueria_id',
+                                label='Droguería',
+                                placeholder='Buscar droguería…') }}
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-2">
@@ -344,8 +341,8 @@ function abrirModalProceso(pedidoId, labNombre) {
     form.action = '/pedido/' + pedidoId + '/enviar-a-proceso';
     form.querySelector('input[name="canal"][value="laboratorio"]').checked = true;
     document.getElementById('wrap-drog-select').classList.add('hidden');
-    const drogSel = form.querySelector('select[name="drogueria_id"]');
-    if (drogSel) { drogSel.value = ''; drogSel.disabled = true; }
+    const drogHidden = form.querySelector('input[type="hidden"][name="drogueria_id"]');
+    if (drogHidden) { drogHidden.value = ''; drogHidden.disabled = true; }
     document.getElementById('modal-proceso').classList.remove('hidden');
 }
 function cerrarModalProceso() {
@@ -354,13 +351,13 @@ function cerrarModalProceso() {
 function onCanalChange() {
     const canal = document.querySelector('input[name="canal"]:checked').value;
     const wrap = document.getElementById('wrap-drog-select');
-    const sel = wrap.querySelector('select[name="drogueria_id"]');
+    const hidden = wrap.querySelector('input[type="hidden"][name="drogueria_id"]');
     if (canal === 'drogueria') {
         wrap.classList.remove('hidden');
-        sel.disabled = false;
+        if (hidden) hidden.disabled = false;
     } else {
         wrap.classList.add('hidden');
-        sel.disabled = true;
+        if (hidden) hidden.disabled = true;
     }
 }
 document.addEventListener('keydown', e => {
