@@ -540,6 +540,71 @@ def init_db(database_url=None):
             _pg_add_columns(conn)
         conn.commit()
 
+    # One-shot: importar plantillas legacy a la tabla plantillas nueva
+    _migrate_legacy_plantillas()
+
+
+def _migrate_legacy_plantillas():
+    """Copia ExportTemplate (lab XLSX) y PlantillaExportacion (prov TXT fijo)
+    a la tabla `plantillas` nueva. Idempotente: saltea si ya hay una plantilla
+    para la misma entidad con origen legacy (nombre empieza con '[legacy] ')."""
+    import json
+    session = SessionLocal()
+    try:
+        # Labs (ExportTemplate) → xlsx
+        for et in session.query(ExportTemplate).all():
+            exists = session.query(Plantilla).filter_by(
+                entidad_tipo='laboratorio', entidad_id=et.laboratorio_id,
+                nombre='[legacy] Plantilla XLSX'
+            ).first()
+            if exists:
+                continue
+            try:
+                cols = json.loads(et.columns_json or '[]')
+            except Exception:
+                cols = []
+            cfg = {'columnas': cols}
+            if et.custom_header:
+                cfg['custom_header'] = et.custom_header
+            session.add(Plantilla(
+                entidad_tipo='laboratorio', entidad_id=et.laboratorio_id,
+                nombre='[legacy] Plantilla XLSX', formato='xlsx',
+                tipo_doc='pedido', config_json=json.dumps(cfg),
+                es_default=True,
+            ))
+
+        # Proveedores/Droguerías (PlantillaExportacion) → txt_fijo
+        for pe in session.query(PlantillaExportacion).all():
+            prov = session.get(Provider, pe.proveedor_id)
+            tipo_ent = (prov.tipo if prov else 'drogueria') or 'drogueria'
+            nombre_new = '[legacy] ' + pe.nombre
+            exists = session.query(Plantilla).filter_by(
+                entidad_tipo=tipo_ent, entidad_id=pe.proveedor_id, nombre=nombre_new
+            ).first()
+            if exists:
+                continue
+            campos = [{
+                'campo': c.campo_sistema,
+                'col_inicio': c.col_inicio,
+                'longitud': c.longitud,
+                'alineacion': c.alineacion,
+                'relleno': c.relleno,
+                'valor_fijo': c.valor_fijo,
+                'nombre': c.nombre,
+            } for c in pe.campos]
+            cfg = {'campos': campos, 'extension': pe.extension, 'encoding': 'UTF-8', 'eol': 'LF'}
+            session.add(Plantilla(
+                entidad_tipo=tipo_ent, entidad_id=pe.proveedor_id,
+                nombre=nombre_new, formato='txt_fijo',
+                tipo_doc='pedido', config_json=json.dumps(cfg),
+                es_default=True,
+            ))
+        session.commit()
+    except Exception:
+        session.rollback()
+    finally:
+        session.close()
+
 
 def _pg_add_columns(conn):
     """Migraciones para PostgreSQL (soporta IF NOT EXISTS)."""

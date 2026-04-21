@@ -89,16 +89,6 @@ def init_app(app):
                                            .order_by(Plantilla.es_default.desc(), Plantilla.nombre).all()
             plantillas = [_plantilla_to_dict(p) for p in rows]
 
-            # Adapters read-only: sumá plantillas viejas para que no "desaparezcan"
-            if tipo == 'laboratorio':
-                et = session.get(ExportTemplate, id)
-                if et and et.columns_json and et.columns_json != '[]':
-                    plantillas.append(_adapter_old_lab(et))
-            else:
-                # drogueria + proveedor comparten proveedores.id
-                for pe in session.query(PlantillaExportacion).filter_by(proveedor_id=id).all():
-                    plantillas.append(_adapter_old_prov(pe))
-
         return render_template('plantillas_list.html',
                                entidad_tipo=tipo, entidad_id=id,
                                entidad_nombre=nombre, entidad_label=label,
