@@ -5,179 +5,278 @@
 
 {% block extra_head %}
     <style>
-        body { background-color: #edeae3; }
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #c9c5bb; }
-        ::-webkit-scrollbar-thumb:hover { background: #a9a59b; }
-        .section-card { background: #fff; border: 1px solid #e2ddd0; border-radius: 14px;
-                        transition: box-shadow .15s, border-color .15s, transform .15s; }
-        .section-card:hover { box-shadow: 0 8px 24px rgba(40,30,10,.08); border-color: #d4cdb9; transform: translateY(-1px); }
-        .section-card.clickable { cursor: pointer; }
-        .sub-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px;
-                    border-radius: 8px; font-size: 12px; font-weight: 500; color: #5a5548;
-                    border: 1px solid #e3ded1; background: #f6f2e8;
-                    text-decoration: none; transition: background .12s, color .12s, border-color .12s; }
-        .sub-link:hover { background: #efe9d8; color: #2a2620; border-color: #d8d1bd; }
-        .sub-link.primary { background: #EAB308; color: #1a1100; border-color: #CA8A04; font-weight: 600; }
-        .sub-link.primary:hover { background: #CA8A04; color: #1a1100; }
-        .sub-link.secondary { background: #e8eef4; color: #334155; border-color: #cbd5e1; font-weight: 500; }
-        .sub-link.secondary:hover { background: #dbe4ee; color: #1e293b; border-color: #94a3b8; }
+        ::-webkit-scrollbar-thumb { background: #a8d5ba; border-radius: 99px; }
+        ::-webkit-scrollbar-thumb:hover { background: #7fb99f; }
+
+        /* Hero entity cards */
+        .entity-card {
+            display: flex; flex-direction: column; gap: 14px;
+            padding: 22px;
+            border-radius: 18px;
+            border: 1px solid #cfe3d6;
+            background: #fff;
+            transition: transform .15s, box-shadow .15s, border-color .15s;
+        }
+        .entity-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(30,60,40,.10); border-color: #7fb99f; }
+        .entity-card .hero {
+            border-radius: 12px; padding: 18px;
+            display: flex; align-items: center; gap: 14px;
+            color: #fff;
+        }
+        .entity-card .hero .icon {
+            width: 44px; height: 44px; border-radius: 12px;
+            background: rgba(255,255,255,.22);
+            display:flex; align-items:center; justify-content:center;
+            flex-shrink: 0;
+        }
+        .entity-card .hero h2 { font-size: 18px; font-weight: 700; line-height: 1.1; }
+        .entity-card .hero p  { font-size: 11px; opacity: .85; margin-top: 2px; }
+        .entity-card.lab    .hero { background: #2E7D5B; }
+        .entity-card.drog   .hero { background: #7FB99F; }
+        .entity-card.prov   .hero { background: #F4C430; color: #1a1100; }
+        .entity-card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .entity-card .btn-main {
+            flex: 1; text-align: center;
+            background: #2E7D5B; color: #fff;
+            padding: 9px 12px; border-radius: 10px;
+            font-size: 13px; font-weight: 600;
+            transition: background .12s;
+        }
+        .entity-card .btn-main:hover { background: #1F5D40; }
+        .entity-card .btn-sub {
+            text-align: center;
+            background: #F0F7F3; color: #2E7D5B;
+            padding: 9px 10px; border-radius: 10px;
+            font-size: 12px; font-weight: 500;
+            border: 1px solid #D6ECDE;
+            transition: background .12s, border-color .12s;
+        }
+        .entity-card .btn-sub:hover { background: #D6ECDE; border-color: #7FB99F; }
+
+        /* Utility cards (segunda fila) */
+        .util-card {
+            background: #fff; border: 1px solid #cfe3d6; border-radius: 14px;
+            padding: 16px;
+            display:flex; flex-direction:column; gap:10px;
+            transition: box-shadow .15s, border-color .15s, transform .15s;
+            text-decoration: none; color: inherit;
+        }
+        .util-card:hover { box-shadow: 0 6px 18px rgba(30,60,40,.07); border-color: #7fb99f; transform: translateY(-1px); }
+        .util-card .icon-wrap { width: 36px; height: 36px; border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .util-card .title { font-weight: 600; font-size: 14px; color: #1e1e1e; }
+        .util-card .desc  { font-size: 11px; color: #6b8778; margin-top: 2px; line-height: 1.35; }
+        .util-card .sub-link { display:inline-flex; align-items:center; gap:4px;
+                               padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 500;
+                               background: #F0F7F3; color: #2E7D5B; border: 1px solid #D6ECDE; }
+        .util-card .sub-link:hover { background:#D6ECDE; }
+        .util-card .sub-link.strong { background:#2E7D5B; color:#fff; border-color:#2E7D5B; font-weight:600; }
+        .util-card .sub-link.strong:hover { background:#1F5D40; }
     </style>
 {% endblock %}
 
 {% block main %}
     <div class="flex-1 py-10 px-8 overflow-auto">
-        <div class="max-w-5xl mx-auto">
+        <div class="max-w-6xl mx-auto">
 
             <!-- Header -->
             <div class="mb-8">
                 <h1 class="text-2xl font-bold text-[#1e1e1e]">{{ config.farmacia_nombre }}</h1>
-                <p class="text-sm text-[#888] mt-1">Sistema de control de stock</p>
+                <p class="text-sm text-[#6b8778] mt-1">Elegí por dónde trabajar hoy</p>
             </div>
 
-            <!-- 6 section tiles -->
-            <div class="grid grid-cols-3 gap-5">
-
-                <!-- Proveedores -->
-                <a href="{{ url_for('providers_list') }}" class="section-card clickable p-5 flex flex-col gap-4 no-underline">
-                    <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="font-semibold text-[#1e1e1e]">Proveedores</p>
-                            <p class="text-xs text-[#888] mt-0.5">Gestión de proveedores, parsers y equivalencias de códigos</p>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <span class="sub-link secondary">Administrar →</span>
-                    </div>
-                </a>
-
-                <!-- Cuentas Corrientes -->
-                <a href="{{ url_for('cuentas_corrientes') }}" class="section-card clickable p-5 flex flex-col gap-4 no-underline">
-                    <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="font-semibold text-[#1e1e1e]">Cuentas Corrientes</p>
-                            <p class="text-xs text-[#888] mt-0.5">Saldos, pagos y movimientos por proveedor</p>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <span class="sub-link secondary">Ver cuentas →</span>
-                    </div>
-                </a>
+            <!-- 3 entity hero cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
 
                 <!-- Laboratorios -->
-                <div class="section-card p-5 flex flex-col gap-4">
-                    <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="entity-card lab">
+                    <div class="hero">
+                        <div class="icon">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                                      d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
                             </svg>
                         </div>
                         <div>
-                            <p class="font-semibold text-[#1e1e1e]">Laboratorios</p>
-                            <p class="text-xs text-[#888] mt-0.5">Módulos, packs y equivalencias de productos por laboratorio</p>
+                            <h2>Laboratorios</h2>
+                            <p>Módulos, ofertas y análisis de compra</p>
                         </div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <a href="{{ url_for('laboratorios_list') }}" class="sub-link primary">Ver laboratorios →</a>
-                        <a href="{{ url_for('modulo_packs_list') }}" class="sub-link secondary">Packs de módulos</a>
+                    <div class="actions">
+                        <a href="{{ url_for('laboratorios_list') }}" class="btn-main">Ver laboratorios →</a>
+                    </div>
+                    <div class="actions">
+                        <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn-sub flex-1">Procesos LAB</a>
+                        <a href="{{ url_for('modulo_packs_list') }}" class="btn-sub flex-1">Packs</a>
                     </div>
                 </div>
 
-                <!-- Control de Ingreso -->
-                <div class="section-card p-5 flex flex-col gap-4">
-                    <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <!-- Droguerías -->
+                <div class="entity-card drog">
+                    <div class="hero">
+                        <div class="icon">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                      d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
                             </svg>
                         </div>
                         <div>
-                            <p class="font-semibold text-[#1e1e1e]">Control de Ingreso</p>
-                            <p class="text-xs text-[#888] mt-0.5">Procesamiento de facturas, batch y reclamos a proveedores</p>
+                            <h2>Droguerías</h2>
+                            <p>Facturas, cuenta corriente y reclamos</p>
                         </div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <a href="{{ url_for('ingresos') }}" class="sub-link primary">Nueva factura</a>
-                        <a href="{{ url_for('batch_new') }}" class="sub-link secondary">Batch de facturas</a>
-                        <a href="{{ url_for('claims_list') }}" class="sub-link secondary">Reclamos</a>
+                    <div class="actions">
+                        <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn-main">Ver droguerías →</a>
+                    </div>
+                    <div class="actions">
+                        <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn-sub flex-1">Procesos DROG</a>
+                        <a href="{{ url_for('ingresos') }}" class="btn-sub flex-1">Nueva factura</a>
                     </div>
                 </div>
 
-                <!-- Compras -->
-                <div class="section-card p-5 flex flex-col gap-4">
-                    <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <!-- Proveedores -->
+                <div class="entity-card prov">
+                    <div class="hero">
+                        <div class="icon">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
                             </svg>
                         </div>
                         <div>
-                            <p class="font-semibold text-[#1e1e1e]">Compras</p>
-                            <p class="text-xs text-[#888] mt-0.5">Análisis de compras y pedidos</p>
+                            <h2>Proveedores</h2>
+                            <p>Distribuidores y otros partners</p>
                         </div>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                        <a href="{{ url_for('purchase_index') }}" class="sub-link primary">Análisis de ventas</a>
-                        <a href="{{ url_for('purchase_processed') }}" class="sub-link secondary">Procesadas</a>
-                        <a href="{{ url_for('orders_list') }}" class="sub-link secondary">Pedidos guardados</a>
+                    <div class="actions">
+                        <a href="{{ url_for('providers_list') }}?tipo=proveedor" class="btn-main">Ver proveedores →</a>
+                    </div>
+                    <div class="actions">
+                        <a href="{{ url_for('procesos_list') }}?tipo=proveedor" class="btn-sub flex-1">Procesos PROV</a>
+                        <a href="{{ url_for('claims_list') }}" class="btn-sub flex-1">Reclamos</a>
                     </div>
                 </div>
 
-                <!-- Productos -->
-                <a href="{{ url_for('productos_list') }}" class="section-card clickable p-5 flex flex-col gap-4 no-underline">
+            </div>
+
+            <!-- Utility row: acciones comunes -->
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-[#5a7a69] mb-3">Acciones frecuentes</h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+
+                <a href="{{ url_for('procesos_list') }}" class="util-card">
                     <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                        <div class="icon-wrap bg-[#E8F3ED]">
+                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
                             </svg>
                         </div>
                         <div>
-                            <p class="font-semibold text-[#1e1e1e]">Productos</p>
-                            <p class="text-xs text-[#888] mt-0.5">Catálogo master con códigos de barra y precios PVP</p>
+                            <p class="title">Procesos de compra</p>
+                            <p class="desc">Ciclo análisis → pedido → factura → cruce</p>
                         </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <span class="sub-link secondary">Ver catálogo →</span>
                     </div>
                 </a>
 
-                <!-- Configuración -->
-                <a href="{{ url_for('settings') }}" class="section-card clickable p-5 flex flex-col gap-4 no-underline">
+                <a href="{{ url_for('purchase_index') }}" class="util-card">
                     <div class="flex items-start gap-3">
-                        <div class="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-                            <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <div class="icon-wrap bg-[#E8F3ED]">
+                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 14l4-4 4 4 5-5"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="title">Análisis de compra</p>
+                            <p class="desc">Sugerencia de pedido desde ventas</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('ingresos') }}" class="util-card">
+                    <div class="flex items-start gap-3">
+                        <div class="icon-wrap bg-[#FFF7DC]">
+                            <svg class="w-5 h-5 text-[#B38A00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="title">Control de Ingreso</p>
+                            <p class="desc">Subir facturas y cruzar con ERP</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('cuentas_corrientes') }}" class="util-card">
+                    <div class="flex items-start gap-3">
+                        <div class="icon-wrap bg-[#E8F3ED]">
+                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="title">Cuentas Corrientes</p>
+                            <p class="desc">Saldos y pagos por proveedor</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('claims_list') }}" class="util-card">
+                    <div class="flex items-start gap-3">
+                        <div class="icon-wrap bg-[#FDE8E8]">
+                            <svg class="w-5 h-5 text-[#B91C1C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M4.93 19h14.14A2 2 0 0020.93 17l-7.07-12a2 2 0 00-3.72 0L3.07 17A2 2 0 004.93 19z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="title">Reclamos</p>
+                            <p class="desc">Diferencias pendientes y completadas</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('orders_list') }}" class="util-card">
+                    <div class="flex items-start gap-3">
+                        <div class="icon-wrap bg-[#E8F3ED]">
+                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="title">Pedidos guardados</p>
+                            <p class="desc">Análisis convertidos en pedidos</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('productos_list') }}" class="util-card">
+                    <div class="flex items-start gap-3">
+                        <div class="icon-wrap bg-[#F1F5F9]">
+                            <svg class="w-5 h-5 text-[#475569]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="title">Productos</p>
+                            <p class="desc">Catálogo master con códigos y PVP</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('settings') }}" class="util-card">
+                    <div class="flex items-start gap-3">
+                        <div class="icon-wrap bg-[#F3F4F6]">
+                            <svg class="w-5 h-5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                             </svg>
                         </div>
                         <div>
-                            <p class="font-semibold text-[#1e1e1e]">Configuración</p>
-                            <p class="text-xs text-[#888] mt-0.5">Nombre de la farmacia y ajustes generales del sistema</p>
+                            <p class="title">Configuración</p>
+                            <p class="desc">Ajustes del sistema</p>
                         </div>
-                    </div>
-                    <div class="flex flex-wrap gap-2">
-                        <span class="sub-link secondary">Ajustes →</span>
                     </div>
                 </a>
 
-            </div><!-- /grid -->
+            </div>
         </div>
     </div>
 {% endblock %}
