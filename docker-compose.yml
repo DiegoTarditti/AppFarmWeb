@@ -42,7 +42,7 @@ services:
     build: .
     restart: unless-stopped
     command: >
-      sh -c "pip install --quiet beautifulsoup4 lxml &&
+      sh -c "pip install --quiet beautifulsoup4 lxml flask-login &&
              gunicorn --bind 0.0.0.0:5000 --timeout 120 --workers 2 app:app"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/farmacia
