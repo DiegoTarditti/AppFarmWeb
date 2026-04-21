@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}Editar plantilla — {{ entidad_nombre }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pl-card { background:#fff; border:1px solid #cfe3d6; border-radius:14px; overflow:hidden; }
+  .pl-band { background:#1f2937; color:#F4C430; padding:14px 18px; border-bottom:3px solid #2E7D5B;
+             display:flex; align-items:center; justify-content:space-between; }
+  .pl-band h2 { font-weight:800; letter-spacing:.02em; font-size:16px; }
+  .pl-band .sub { color:#A8D5BA; font-size:12px; font-weight:600; }
+  .btn-primary { background:#F4C430; color:#1a1100; font-weight:800; padding:8px 14px; border-radius:10px;
+                 border:1px solid #c49800; transition:background .15s; cursor:pointer; }
+  .btn-primary:hover { background:#e0b022; }
+  .btn-secondary { background:#fff; color:#1F5D40; font-weight:700; padding:8px 14px; border-radius:10px;
+                   border:1px solid #2E7D5B; transition: background .15s; cursor:pointer; }
+  .btn-secondary:hover { background:#E8F3ED; }
+
+  .meta-grid { display:grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap:12px; }
+  .meta-grid label { font-size:11px; font-weight:800; color:#1F5D40; text-transform:uppercase;
+                     letter-spacing:.04em; display:block; margin-bottom:4px; }
+  .meta-grid input, .meta-grid select {
+    width:100%; background:#eef6f1; border:1px solid #cfe3d6; border-radius:8px;
+    padding:7px 10px; font-size:13px;
+  }
+
+  .col-pill { background:#E8F3ED; border:1.5px solid #2E7D5B; color:#1F5D40;
+              padding:6px 10px; border-radius:8px; font-size:12px; font-weight:700;
+              display:inline-flex; align-items:center; gap:6px;
+              user-select:none; }
+  .col-pill .handle { color:#2E7D5B; font-weight:900; cursor:grab; }
+  .col-pill .x { color:#991b1b; font-weight:900; cursor:pointer; padding:0 4px; border-radius:4px; }
+  .col-pill .x:hover { background:#fee2e2; }
+  .col-avail { background:#FFF7DC; border:1.5px dashed #F4C430; color:#92630b; cursor:pointer; }
+  .col-avail:hover { background:#fef3c7; }
+
+  .drop-zone { min-height:110px; background:#f7fbf8; border:2px dashed #cfe3d6;
+               border-radius:12px; padding:12px; display:flex; flex-wrap:wrap; gap:8px;
+               align-content:flex-start; }
+
+  .fw-table thead tr { background:#1f2937; }
+  .fw-table thead th { color:#F4C430; font-size:11px; font-weight:800; padding:8px 10px;
+                       text-transform:uppercase; letter-spacing:.04em; border:none; }
+  .fw-table td { padding:6px 8px; border-top:1px solid #e4efe8; }
+  .fw-table input, .fw-table select {
+    background:#eef6f1; border:1px solid #cfe3d6; border-radius:6px;
+    padding:4px 8px; font-size:12px; width:100%;
+  }
+
+  .tab-bar { display:flex; gap:6px; border-bottom:2px solid #e4efe8; margin-bottom:16px; }
+  .tab { padding:8px 16px; font-size:13px; font-weight:700; color:#5f6c64;
+         border-bottom:3px solid transparent; margin-bottom:-2px; cursor:pointer; }
+  .tab.active { color:#1F5D40; border-bottom-color:#F4C430; }
+
+  .save-toast { position:fixed; top:20px; right:20px; padding:10px 16px; border-radius:8px;
+                font-weight:700; font-size:13px; z-index:60; display:none; }
+  .save-toast.ok { background:#E8F3ED; color:#1F5D40; border:1px solid #2E7D5B; }
+  .save-toast.err { background:#fee2e2; color:#991b1b; border:1px solid #991b1b; }
+  .save-toast.show { display:block; }
+</style>
+{% endblock %}
+
+{% block main %}
+<main class="flex-1 p-6">
+<div class="max-w-6xl mx-auto">
+
+  <div class="text-xs text-[#5f6c64] mb-3">
+    <a href="/" class="hover:text-[#1F5D40]">Inicio</a> ›
+    <a href="{{ url_for('plantillas_list', tipo=entidad_tipo, id=entidad_id) }}" class="hover:text-[#1F5D40]">Plantillas de {{ entidad_nombre }}</a> ›
+    <span class="text-[#1F5D40] font-semibold">{{ plantilla.nombre }}</span>
+  </div>
+
+  <div class="pl-card">
+    <div class="pl-band">
+      <div>
+        <h2>EDITAR PLANTILLA</h2>
+        <div class="sub">{{ entidad_nombre }} · Formato {{ plantilla.formato | upper }} · Tipo {{ plantilla.tipo_doc }}</div>
+      </div>
+      <div class="flex gap-2">
+        <a class="btn-secondary" href="{{ url_for('plantillas_list', tipo=entidad_tipo, id=entidad_id) }}">← Volver</a>
+        <button class="btn-primary" onclick="guardar()">💾 Guardar</button>
+      </div>
+    </div>
+
+    <div class="p-5">
+
+      <div class="meta-grid mb-5">
+        <div>
+          <label>Nombre</label>
+          <input type="text" id="meta-nombre" value="{{ plantilla.nombre }}">
+        </div>
+        <div>
+          <label>Formato</label>
+          <input type="text" value="{{ plantilla.formato | upper }}" readonly style="background:#f3f4f6;">
+        </div>
+        <div>
+          <label>Tipo documento</label>
+          <select id="meta-tipo-doc">
+            <option value="pedido" {% if plantilla.tipo_doc|lower == 'pedido' %}selected{% endif %}>Pedido</option>
+            <option value="recepcion" {% if plantilla.tipo_doc|lower == 'recepción' %}selected{% endif %}>Recepción</option>
+            <option value="descuento" {% if plantilla.tipo_doc|lower == 'descuento' %}selected{% endif %}>Descuento</option>
+          </select>
+        </div>
+        <div>
+          <label>Predeterminada</label>
+          <select id="meta-default">
+            <option value="1" {% if plantilla.default %}selected{% endif %}>Sí ⭐</option>
+            <option value="0" {% if not plantilla.default %}selected{% endif %}>No</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <div class="tab active" data-tab="config" onclick="showTab(this,'config')">Configuración</div>
+        <div class="tab" data-tab="avanzado" onclick="showTab(this,'avanzado')">Avanzado</div>
+      </div>
+
+      <div id="tab-config">
+        {% if plantilla.formato == 'xlsx' or plantilla.formato == 'csv' %}
+        <div>
+          <div class="mb-3">
+            <h3 class="font-bold text-[#1F5D40]">Columnas</h3>
+            <p class="text-xs text-[#5f6c64]">Click en un campo disponible para agregarlo; × para quitar.</p>
+          </div>
+
+          <label class="text-[11px] font-bold text-[#1F5D40] uppercase tracking-wide block mb-2">Columnas activas</label>
+          <div class="drop-zone mb-4" id="cols-active"></div>
+
+          <label class="text-[11px] font-bold text-[#92630b] uppercase tracking-wide block mb-2">Campos disponibles</label>
+          <div class="flex flex-wrap gap-2" id="cols-avail"></div>
+        </div>
+        {% else %}
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="font-bold text-[#1F5D40]">Posiciones y longitudes</h3>
+              <p class="text-xs text-[#5f6c64]">Cada fila genera un campo de ancho fijo en cada línea.</p>
+            </div>
+            <button class="btn-secondary text-xs" onclick="addTxtCampo()">+ Agregar campo</button>
+          </div>
+
+          <table class="fw-table w-full">
+            <thead>
+              <tr>
+                <th class="text-left">Campo</th>
+                <th class="text-left w-24">Col. inicio</th>
+                <th class="text-left w-24">Longitud</th>
+                <th class="text-left w-24">Alineación</th>
+                <th class="text-left w-24">Relleno</th>
+                <th class="w-12"></th>
+              </tr>
+            </thead>
+            <tbody id="txt-campos"></tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+
+      <div id="tab-avanzado" class="hidden">
+        <h3 class="font-bold text-[#1F5D40] mb-3">Opciones avanzadas</h3>
+        <label class="flex items-start gap-3 p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] cursor-pointer mb-2">
+          <input type="checkbox" class="mt-1" id="adv-excl-ceros">
+          <div>
+            <div class="font-semibold text-sm text-[#1F5D40]">Excluir productos con cantidad 0</div>
+            <div class="text-xs text-[#5f6c64]">No incluir líneas donde la cantidad total sea cero.</div>
+          </div>
+        </label>
+        <label class="flex items-start gap-3 p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] cursor-pointer mb-2">
+          <input type="checkbox" class="mt-1" id="adv-totales">
+          <div>
+            <div class="font-semibold text-sm text-[#1F5D40]">Agregar línea de totales al final</div>
+            <div class="text-xs text-[#5f6c64]">Una fila con la suma total de unidades y monto.</div>
+          </div>
+        </label>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</main>
+
+<div class="save-toast" id="saveToast"></div>
+
+<script>
+  const FORMATO  = {{ plantilla.formato | tojson }};
+  const CONFIG   = {{ plantilla.config | tojson }};
+  const ENTIDAD_TIPO = {{ entidad_tipo | tojson }};
+  const ENTIDAD_ID   = {{ entidad_id | tojson }};
+  const PLANTILLA_ID = {{ plantilla.id | tojson }};
+
+  const FIELD_DEFS = [
+    {key:'codigo_barra',   label:'EAN'},
+    {key:'descripcion',    label:'Descripción'},
+    {key:'cantidad',       label:'Cantidad total'},
+    {key:'cant_modulo',    label:'Cantidad módulo'},
+    {key:'cant_oferta',    label:'Cantidad oferta'},
+    {key:'cant_oferta_min',label:'Cantidad oferta mín'},
+    {key:'cant_nodeal',    label:'Cantidad sin deal'},
+    {key:'precio',         label:'Precio PVP'},
+    {key:'erp_qty',        label:'Stock ERP'},
+    {key:'rotacion',       label:'Rotación'},
+    {key:'avg_monthly',    label:'Promedio mensual'},
+    {key:'espacio',        label:'Espacio en blanco'},
+  ];
+  const FIELD_LABEL = Object.fromEntries(FIELD_DEFS.map(f => [f.key, f.label]));
+
+  // state
+  let state = {};
+  if (FORMATO === 'xlsx' || FORMATO === 'csv') {
+    state.columnas = (CONFIG.columnas || []).slice();
+  } else {
+    state.campos = (CONFIG.campos || []).slice();
+    if (!state.campos.length) {
+      state.campos.push({campo:'codigo_barra', col_inicio:1, longitud:13, alineacion:'L', relleno:' '});
+    }
+  }
+  state.advanced = {
+    excl_ceros: !!(CONFIG.advanced && CONFIG.advanced.excl_ceros),
+    totales:    !!(CONFIG.advanced && CONFIG.advanced.totales),
+  };
+
+  function renderCols() {
+    const active = document.getElementById('cols-active');
+    const avail  = document.getElementById('cols-avail');
+    if (!active) return;
+    active.innerHTML = state.columnas.map((k, i) =>
+      `<div class="col-pill"><span class="handle">⠿</span>${FIELD_LABEL[k] || k}
+        <span class="x" onclick="removeCol(${i})">×</span></div>`
+    ).join('') || '<span class="text-xs text-[#999]">Sin columnas. Agregá desde abajo.</span>';
+    avail.innerHTML = FIELD_DEFS
+      .filter(f => !state.columnas.includes(f.key))
+      .map(f => `<div class="col-pill col-avail" onclick="addCol('${f.key}')">+ ${f.label}</div>`)
+      .join('');
+  }
+  function addCol(k) { state.columnas.push(k); renderCols(); }
+  function removeCol(i) { state.columnas.splice(i,1); renderCols(); }
+
+  function renderTxt() {
+    const tb = document.getElementById('txt-campos');
+    if (!tb) return;
+    tb.innerHTML = state.campos.map((c, i) => `
+      <tr>
+        <td><select onchange="state.campos[${i}].campo=this.value">
+          ${FIELD_DEFS.map(f => `<option value="${f.key}" ${c.campo===f.key?'selected':''}>${f.label}</option>`).join('')}
+        </select></td>
+        <td><input type="number" value="${c.col_inicio}" onchange="state.campos[${i}].col_inicio=parseInt(this.value)||0"></td>
+        <td><input type="number" value="${c.longitud}" onchange="state.campos[${i}].longitud=parseInt(this.value)||1"></td>
+        <td><select onchange="state.campos[${i}].alineacion=this.value">
+          <option value="L" ${c.alineacion==='L'?'selected':''}>Izquierda</option>
+          <option value="R" ${c.alineacion==='R'?'selected':''}>Derecha</option>
+        </select></td>
+        <td><select onchange="state.campos[${i}].relleno=this.value">
+          <option value=" " ${c.relleno===' '?'selected':''}>Espacio</option>
+          <option value="0" ${c.relleno==='0'?'selected':''}>Cero</option>
+        </select></td>
+        <td><a class="text-red-700 text-xs font-bold cursor-pointer" onclick="rmTxt(${i})">✕</a></td>
+      </tr>`).join('');
+  }
+  function addTxtCampo() {
+    state.campos.push({campo:'codigo_barra', col_inicio:1, longitud:10, alineacion:'L', relleno:' '});
+    renderTxt();
+  }
+  function rmTxt(i) { state.campos.splice(i,1); renderTxt(); }
+
+  function showTab(el, name) {
+    document.querySelectorAll('[id^="tab-"]').forEach(n => n.classList.add('hidden'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+  }
+
+  function toast(msg, ok=true) {
+    const t = document.getElementById('saveToast');
+    t.className = 'save-toast show ' + (ok ? 'ok' : 'err');
+    t.textContent = msg;
+    setTimeout(() => t.className = 'save-toast', 2500);
+  }
+
+  async function guardar() {
+    state.advanced.excl_ceros = document.getElementById('adv-excl-ceros').checked;
+    state.advanced.totales    = document.getElementById('adv-totales').checked;
+    const body = {
+      nombre: document.getElementById('meta-nombre').value,
+      tipo_doc: document.getElementById('meta-tipo-doc').value,
+      es_default: document.getElementById('meta-default').value === '1',
+      config: state,
+    };
+    try {
+      const url = `/partner/${ENTIDAD_TIPO}/${ENTIDAD_ID}/plantillas/${PLANTILLA_ID}/save`;
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) { toast('Error guardando', false); return; }
+      toast('✓ Guardado');
+    } catch (e) {
+      toast('Error de red: ' + e, false);
+    }
+  }
+
+  document.getElementById('adv-excl-ceros').checked = state.advanced.excl_ceros;
+  document.getElementById('adv-totales').checked    = state.advanced.totales;
+
+  if (FORMATO === 'xlsx' || FORMATO === 'csv') renderCols();
+  else renderTxt();
+</script>
+{% endblock %}

@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% block title %}Editar plantilla — {{ entidad_nombre }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  .pl-card { background:#fff; border:1px solid #cfe3d6; border-radius:14px; overflow:hidden; }
+  .pl-band { background:#1f2937; color:#F4C430; padding:14px 18px; border-bottom:3px solid #2E7D5B;
+             display:flex; align-items:center; justify-content:space-between; }
+  .pl-band h2 { font-weight:800; letter-spacing:.02em; font-size:16px; }
+  .pl-band .sub { color:#A8D5BA; font-size:12px; font-weight:600; }
+  .btn-primary { background:#F4C430; color:#1a1100; font-weight:800; padding:8px 14px; border-radius:10px;
+                 border:1px solid #c49800; transition:background .15s; }
+  .btn-primary:hover { background:#e0b022; }
+  .btn-secondary { background:#fff; color:#1F5D40; font-weight:700; padding:8px 14px; border-radius:10px;
+                   border:1px solid #2E7D5B; transition: background .15s; }
+  .btn-secondary:hover { background:#E8F3ED; }
+
+  .meta-grid { display:grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap:12px; }
+  .meta-grid label { font-size:11px; font-weight:800; color:#1F5D40; text-transform:uppercase;
+                     letter-spacing:.04em; display:block; margin-bottom:4px; }
+  .meta-grid input, .meta-grid select {
+    width:100%; background:#eef6f1; border:1px solid #cfe3d6; border-radius:8px;
+    padding:7px 10px; font-size:13px;
+  }
+
+  /* drag columns */
+  .col-pill { background:#E8F3ED; border:1.5px solid #2E7D5B; color:#1F5D40;
+              padding:6px 10px; border-radius:8px; font-size:12px; font-weight:700;
+              display:inline-flex; align-items:center; gap:6px; cursor:grab;
+              user-select:none; }
+  .col-pill .handle { color:#2E7D5B; font-weight:900; }
+  .col-pill .x { color:#991b1b; font-weight:900; cursor:pointer; padding:0 4px;
+                 border-radius:4px; }
+  .col-pill .x:hover { background:#fee2e2; }
+
+  .col-avail { background:#FFF7DC; border:1.5px dashed #F4C430; color:#92630b; }
+
+  .drop-zone { min-height:110px; background:#f7fbf8; border:2px dashed #cfe3d6;
+               border-radius:12px; padding:12px; display:flex; flex-wrap:wrap; gap:8px;
+               align-content:flex-start; }
+
+  /* txt fixed-width grid */
+  .fw-table thead tr { background:#1f2937; }
+  .fw-table thead th { color:#F4C430; font-size:11px; font-weight:800; padding:8px 10px;
+                       text-transform:uppercase; letter-spacing:.04em; border:none; }
+  .fw-table td { padding:6px 8px; border-top:1px solid #e4efe8; }
+  .fw-table input, .fw-table select {
+    background:#eef6f1; border:1px solid #cfe3d6; border-radius:6px;
+    padding:4px 8px; font-size:12px; width:100%;
+  }
+  .fw-ruler { font-family: ui-monospace, monospace; font-size:11px; color:#5f6c64;
+              background:#f3f4f6; border:1px solid #d1d5db; padding:6px 10px;
+              border-radius:6px; overflow-x:auto; white-space:nowrap; }
+
+  .tab-bar { display:flex; gap:6px; border-bottom:2px solid #e4efe8; margin-bottom:16px; }
+  .tab { padding:8px 16px; font-size:13px; font-weight:700; color:#5f6c64;
+         border-bottom:3px solid transparent; margin-bottom:-2px; cursor:pointer; }
+  .tab.active { color:#1F5D40; border-bottom-color:#F4C430; }
+
+  .preview-box { background:#0f172a; color:#A8D5BA; font-family: ui-monospace, monospace;
+                 font-size:11px; padding:14px; border-radius:10px;
+                 max-height:280px; overflow:auto; white-space:pre; }
+</style>
+{% endblock %}
+
+{% block main %}
+<main class="flex-1 p-6">
+<div class="max-w-6xl mx-auto">
+
+  {# breadcrumb #}
+  <div class="text-xs text-[#5f6c64] mb-3">
+    <a href="/" class="hover:text-[#1F5D40]">Inicio</a> ›
+    <a href="#" class="hover:text-[#1F5D40]">Laboratorios</a> ›
+    <a href="#" class="hover:text-[#1F5D40]">{{ entidad_nombre }}</a> ›
+    <a href="/mockup/plantillas/laboratorio" class="hover:text-[#1F5D40]">Plantillas</a> ›
+    <span class="text-[#1F5D40] font-semibold">{{ plantilla.nombre }}</span>
+  </div>
+
+  <div class="pl-card">
+    <div class="pl-band">
+      <div>
+        <h2>EDITAR PLANTILLA</h2>
+        <div class="sub">{{ entidad_nombre }} · Formato {{ plantilla.formato | upper }} · Tipo {{ plantilla.tipo_doc }}</div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn-secondary">← Volver</button>
+        <button class="btn-primary">💾 Guardar</button>
+      </div>
+    </div>
+
+    <div class="p-5">
+
+      {# metadata #}
+      <div class="meta-grid mb-5">
+        <div>
+          <label>Nombre</label>
+          <input type="text" value="{{ plantilla.nombre }}">
+        </div>
+        <div>
+          <label>Formato</label>
+          <select>
+            <option {% if plantilla.formato=='xlsx' %}selected{% endif %}>XLSX</option>
+            <option {% if plantilla.formato=='txt_fijo' %}selected{% endif %}>TXT ancho fijo</option>
+            <option {% if plantilla.formato=='csv' %}selected{% endif %}>CSV</option>
+          </select>
+        </div>
+        <div>
+          <label>Tipo documento</label>
+          <select>
+            <option {% if plantilla.tipo_doc=='Pedido' %}selected{% endif %}>Pedido</option>
+            <option {% if plantilla.tipo_doc=='Recepción' %}selected{% endif %}>Recepción</option>
+            <option {% if plantilla.tipo_doc=='Descuento' %}selected{% endif %}>Descuento</option>
+          </select>
+        </div>
+        <div>
+          <label>Predeterminada</label>
+          <select>
+            <option {% if plantilla.default %}selected{% endif %}>Sí ⭐</option>
+            <option {% if not plantilla.default %}selected{% endif %}>No</option>
+          </select>
+        </div>
+      </div>
+
+      {# tabs #}
+      <div class="tab-bar">
+        <div class="tab active" onclick="showTab('config')">Configuración</div>
+        <div class="tab" onclick="showTab('preview')">Preview</div>
+        <div class="tab" onclick="showTab('avanzado')">Avanzado</div>
+      </div>
+
+      <div id="tab-config">
+
+        {# ==================== XLSX ==================== #}
+        {% if plantilla.formato == 'xlsx' %}
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="font-bold text-[#1F5D40]">Columnas del Excel</h3>
+              <p class="text-xs text-[#5f6c64]">Arrastrá los campos desde abajo al orden deseado. Cada campo genera una columna.</p>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-[#1F5D40] font-semibold">
+              <input type="checkbox" checked> Primera fila como encabezado
+            </label>
+          </div>
+
+          <label class="text-[11px] font-bold text-[#1F5D40] uppercase tracking-wide block mb-2">Columnas activas</label>
+          <div class="drop-zone mb-4">
+            <div class="col-pill"><span class="handle">⠿</span>EAN<span class="x">×</span></div>
+            <div class="col-pill"><span class="handle">⠿</span>Descripción<span class="x">×</span></div>
+            <div class="col-pill"><span class="handle">⠿</span>Cantidad total<span class="x">×</span></div>
+            <div class="col-pill"><span class="handle">⠿</span>Cantidad módulos<span class="x">×</span></div>
+            <div class="col-pill"><span class="handle">⠿</span>Cantidad ofertas<span class="x">×</span></div>
+            <div class="col-pill"><span class="handle">⠿</span>Precio PVP<span class="x">×</span></div>
+          </div>
+
+          <label class="text-[11px] font-bold text-[#92630b] uppercase tracking-wide block mb-2">Campos disponibles (click para agregar)</label>
+          <div class="flex flex-wrap gap-2">
+            <div class="col-pill col-avail">+ Rotación mensual</div>
+            <div class="col-pill col-avail">+ Stock ERP</div>
+            <div class="col-pill col-avail">+ Código interno</div>
+            <div class="col-pill col-avail">+ Laboratorio</div>
+            <div class="col-pill col-avail">+ Fecha pedido</div>
+            <div class="col-pill col-avail">+ Subtotal</div>
+            <div class="col-pill col-avail">+ Cantidad sin deal</div>
+            <div class="col-pill col-avail">+ Cantidad oferta mínima</div>
+          </div>
+
+          <div class="mt-5 p-3 bg-[#E8F3ED] border border-[#2E7D5B] rounded-lg text-xs text-[#1F5D40]">
+            <strong>💡 Header personalizado:</strong> agregá filas fijas arriba del Excel (ej: datos de la farmacia,
+            número de cliente, fecha). <a href="#" class="underline">Configurar →</a>
+          </div>
+        </div>
+        {% endif %}
+
+        {# ==================== TXT FIJO ==================== #}
+        {% if plantilla.formato == 'txt_fijo' %}
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h3 class="font-bold text-[#1F5D40]">Posiciones y longitudes</h3>
+              <p class="text-xs text-[#5f6c64]">Cada línea del TXT contendrá los campos en la posición indicada, rellenados a la longitud exacta.</p>
+            </div>
+            <button class="btn-secondary text-xs">+ Agregar campo</button>
+          </div>
+
+          <div class="fw-ruler mb-3">|----+----0----+----1----+----2----+----3----+----4----+----5----+----6----+----7----+----8|</div>
+
+          <table class="fw-table w-full">
+            <thead>
+              <tr>
+                <th class="text-left">Campo</th>
+                <th class="text-left w-24">Col. inicio</th>
+                <th class="text-left w-24">Longitud</th>
+                <th class="text-left w-24">Alineación</th>
+                <th class="text-left w-24">Relleno</th>
+                <th class="text-left w-24">Orden</th>
+                <th class="w-12"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><select><option>EAN</option><option>Descripción</option><option>Cantidad</option></select></td>
+                <td><input type="number" value="1"></td>
+                <td><input type="number" value="13"></td>
+                <td><select><option>Izquierda</option><option>Derecha</option></select></td>
+                <td><select><option>Espacio</option><option>Cero</option></select></td>
+                <td><input type="number" value="1"></td>
+                <td><a class="act-del text-red-700 text-xs font-bold" href="#">✕</a></td>
+              </tr>
+              <tr>
+                <td><select><option>Cantidad total</option><option>EAN</option></select></td>
+                <td><input type="number" value="14"></td>
+                <td><input type="number" value="5"></td>
+                <td><select><option>Derecha</option><option>Izquierda</option></select></td>
+                <td><select><option>Cero</option><option>Espacio</option></select></td>
+                <td><input type="number" value="2"></td>
+                <td><a class="act-del text-red-700 text-xs font-bold" href="#">✕</a></td>
+              </tr>
+              <tr>
+                <td><select><option>Descripción</option></select></td>
+                <td><input type="number" value="19"></td>
+                <td><input type="number" value="40"></td>
+                <td><select><option>Izquierda</option></select></td>
+                <td><select><option>Espacio</option></select></td>
+                <td><input type="number" value="3"></td>
+                <td><a class="act-del text-red-700 text-xs font-bold" href="#">✕</a></td>
+              </tr>
+              <tr>
+                <td><select><option>Precio PVP</option></select></td>
+                <td><input type="number" value="59"></td>
+                <td><input type="number" value="10"></td>
+                <td><select><option>Derecha</option></select></td>
+                <td><select><option>Cero</option></select></td>
+                <td><input type="number" value="4"></td>
+                <td><a class="act-del text-red-700 text-xs font-bold" href="#">✕</a></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="mt-4 grid grid-cols-3 gap-3">
+            <div>
+              <label class="text-[11px] font-bold text-[#1F5D40] uppercase tracking-wide block mb-1">Separador de línea</label>
+              <select class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
+                <option>LF (\n)</option>
+                <option>CRLF (\r\n)</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[11px] font-bold text-[#1F5D40] uppercase tracking-wide block mb-1">Encoding</label>
+              <select class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
+                <option>UTF-8</option>
+                <option>Latin-1</option>
+                <option>CP850</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[11px] font-bold text-[#1F5D40] uppercase tracking-wide block mb-1">Longitud total línea</label>
+              <input type="number" value="68" readonly
+                     class="w-full bg-[#FFF7DC] border border-[#F4C430] rounded-lg px-3 py-1.5 text-sm font-bold text-[#92630b]">
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+
+      {# tab preview #}
+      <div id="tab-preview" class="hidden">
+        <h3 class="font-bold text-[#1F5D40] mb-2">Vista previa con datos reales</h3>
+        <p class="text-xs text-[#5f6c64] mb-3">Ejemplo con los primeros 5 ítems del último pedido de {{ entidad_nombre }}.</p>
+{% if plantilla.formato == 'xlsx' %}
+        <div class="preview-box">EAN            Descripción                              Cant   Mod  Ofe   PVP
+7791234567890  ASPIRINA 500MG x20 COMP                  24     12   12    2450.00
+7790987654321  BAYASPIRINA FORTE x20                     8      8    0    1890.50
+7798765432109  APIRETAL PEDIATRICO GOTAS                12      0   12    3200.00
+7791111222233  CAFIASPIRINA 500MG x16                   36     24   12    1875.00
+7794444555566  REDOXON MASTICABLE x30                   15     15    0    4500.00</div>
+{% else %}
+        <div class="preview-box">7791234567890 00024 ASPIRINA 500MG x20 COMP                    0000002450
+7790987654321 00008 BAYASPIRINA FORTE x20                      0000001890
+7798765432109 00012 APIRETAL PEDIATRICO GOTAS                  0000003200
+7791111222233 00036 CAFIASPIRINA 500MG x16                     0000001875
+7794444555566 00015 REDOXON MASTICABLE x30                     0000004500</div>
+{% endif %}
+        <button class="btn-secondary mt-3">📥 Descargar archivo de prueba</button>
+      </div>
+
+      {# tab avanzado #}
+      <div id="tab-avanzado" class="hidden">
+        <h3 class="font-bold text-[#1F5D40] mb-3">Opciones avanzadas</h3>
+        <div class="space-y-3">
+          <label class="flex items-start gap-3 p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] cursor-pointer">
+            <input type="checkbox" class="mt-1">
+            <div>
+              <div class="font-semibold text-sm text-[#1F5D40]">Generar header personalizado</div>
+              <div class="text-xs text-[#5f6c64]">Líneas fijas al comienzo del archivo (datos farmacia, nº cliente, etc.)</div>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] cursor-pointer">
+            <input type="checkbox" class="mt-1" checked>
+            <div>
+              <div class="font-semibold text-sm text-[#1F5D40]">Excluir productos con cantidad 0</div>
+              <div class="text-xs text-[#5f6c64]">No incluir líneas donde la cantidad total sea cero.</div>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] cursor-pointer">
+            <input type="checkbox" class="mt-1">
+            <div>
+              <div class="font-semibold text-sm text-[#1F5D40]">Agregar línea de totales al final</div>
+              <div class="text-xs text-[#5f6c64]">Una fila con la suma total de unidades y monto.</div>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] cursor-pointer">
+            <input type="checkbox" class="mt-1">
+            <div>
+              <div class="font-semibold text-sm text-[#1F5D40]">Nombre de archivo dinámico</div>
+              <div class="text-xs text-[#5f6c64]">Usar plantilla tipo <code>pedido_{fecha}_{entidad}.{ext}</code></div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</main>
+
+<script>
+  function showTab(name) {
+    ['config','preview','avanzado'].forEach(n => {
+      document.getElementById('tab-' + n).classList.add('hidden');
+    });
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    event.target.classList.add('active');
+  }
+</script>
+{% endblock %}

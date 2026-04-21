@@ -452,6 +452,22 @@ class PlantillaCampo(Base):
     plantilla = relationship('PlantillaExportacion', back_populates='campos')
 
 
+class Plantilla(Base):
+    """Plantilla unificada para las 3 entidades (laboratorio/drogueria/proveedor).
+    Reemplaza gradualmente ExportTemplate + PlantillaExportacion/PlantillaCampo.
+    config_json guarda columnas (xlsx) o lista de campos con col_inicio/longitud (txt_fijo)."""
+    __tablename__ = 'plantillas'
+    id = Column(Integer, primary_key=True)
+    entidad_tipo = Column(String(20), nullable=False)  # laboratorio | drogueria | proveedor
+    entidad_id = Column(Integer, nullable=False)
+    nombre = Column(String(100), nullable=False)
+    formato = Column(String(20), nullable=False, default='xlsx')  # xlsx | txt_fijo | csv
+    tipo_doc = Column(String(30), nullable=False, default='pedido')  # pedido | recepcion | descuento
+    config_json = Column(Text, nullable=False, default='{}')
+    es_default = Column(Boolean, nullable=False, default=False)
+    actualizada_en = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
 CAMPOS_SISTEMA = [
     ('fijo',            'Valor fijo / constante'),
     ('codigo_barra',    'Código de barra (EAN)'),
@@ -498,7 +514,8 @@ def init_db(database_url=None):
         with engine.connect() as conn:
             for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra',
                           'analisis_sesiones', 'usuarios',
-                          'plantillas_exportacion', 'plantilla_campos'):
+                          'plantillas_exportacion', 'plantilla_campos',
+                          'plantillas'):
                 table_exists = conn.execute(
                     text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"),
                     {'t': tname}

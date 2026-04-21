@@ -19,6 +19,7 @@ from routes import (
     obras_sociales,
     procesos,
     partners,
+    plantillas,
     auth_routes,
     observer,
     admin,
@@ -46,6 +47,7 @@ _modules = [
     obras_sociales,
     procesos,
     partners,
+    plantillas,
 ]
 
 
