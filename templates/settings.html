@@ -209,6 +209,31 @@
             </div>
         </div>
 
+        <!-- Keep-alive Render -->
+        <div class="bg-surface rounded-xl border border-surface-border p-6">
+            <h2 class="text-sm font-semibold text-[#1e1e1e] mb-1">Keep-alive Render</h2>
+            <p class="text-xs text-[#6f6f6f] mb-4">
+                Activar para que la app se auto-pingee y no se duerma en Render por inactividad.
+            </p>
+            <div class="flex items-center gap-6 flex-wrap">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                    <input type="hidden" name="keep_alive_enabled" value="0">
+                    <input type="checkbox" name="keep_alive_enabled" value="1"
+                           {% if config.keep_alive_enabled %}checked{% endif %}
+                           class="w-4 h-4 accent-brand">
+                    <span class="text-sm text-[#1e1e1e]">Activar self-ping</span>
+                </label>
+                <div class="flex items-center gap-2">
+                    <label for="ka-interval" class="text-xs text-[#6f6f6f]">Intervalo</label>
+                    <input id="ka-interval" type="number" name="keep_alive_interval_min" min="1" max="60"
+                           value="{{ config.keep_alive_interval_min or 10 }}"
+                           class="w-20 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <span class="text-xs text-[#6f6f6f]">min (1–60)</span>
+                </div>
+                <p class="text-[11px] text-[#999]">Endpoint: <code>/health_web</code></p>
+            </div>
+        </div>
+
         <div class="flex items-center justify-between">
             <a href="{{ url_for('admin_console') }}"
                class="inline-flex items-center gap-2 text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] bg-surface-input hover:bg-black/[0.06] border border-surface-border px-4 py-2 rounded-xl transition-colors">

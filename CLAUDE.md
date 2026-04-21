@@ -200,3 +200,39 @@ Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex
 
 ### Pendiente
 - Revisar si la plantilla de **módulos de descuento** (la que sube descuentos, distinta a modulo_packs) está desactualizada.
+
+## Arquitectura híbrida local ↔ Render
+
+La app corre en Render. Para operaciones que requieren acceso al filesystem de la farmacia (ej. PDFs en carpetas locales), usamos una app de escritorio local: `DockerPanel/`. Dos mecanismos complementarios:
+
+| | Agente pendientes (push) | HTTP Helper (pull) |
+|---|---|---|
+| Dirección | Local → Render | Render → Local |
+| Trigger | Botón "Subir PDFs a Render" en el panel | Fetch desde frontend Render |
+| Endpoint | POST `{render}/docs-pendientes/upload-api` | GET `localhost:5055/ping`, `/folder-files`, `/read-pdf` |
+
+Archivos en `DockerPanel/`:
+- `docker_panel.py` — GUI tkinter (comandos Docker, backup/restore, agente, helper HTTP embebido en thread)
+- `agente_pendientes.py` — script standalone CLI (subprocess desde el panel)
+- `agente_config.txt` — config local (carpeta/url/mover), **ignorado en git**
+
+Los bloques del HTTP helper dentro de `docker_panel.py` están marcados con `# === BEGIN HELPER HTTP (copy to unified panel) ===` / `# === END HELPER HTTP ===` para facilitar copiar entre máquinas. Son 5 bloques.
+
+## Plantillas de exportación — Laboratorio vs Proveedor
+
+Dos sistemas separados, **intencionalmente NO unificados**:
+
+| | Lab | Proveedor |
+|---|---|---|
+| Modelo | `ExportTemplate` | `PlantillaExportacion` + `PlantillaCampo` |
+| Formato | XLSX (columnas custom) | TXT ancho fijo (col_inicio, longitud, alineación, relleno) |
+| Config UI | `/laboratorio/<id>/export-template` | `/provider/<id>/plantilla` |
+| Export | `/order/<id>/export/plantilla` | `/order/<id>/export-prov-plantilla` |
+
+En order_detail.html (resumen) aparecen botones separados "Plantilla laboratorio" y "Plantilla proveedor" solo cuando la plantilla correspondiente existe.
+
+`CAMPOS_SISTEMA` (database.py) y `EXPORT_FIELDS` (routes/laboratorios.py) tienen el mismo set de campos (ean/codigo_barra, nombre/descripcion, total/cantidad, cant_modulo, cant_oferta, cant_oferta_min, cant_nodeal, precio/precio_pvp, erp_qty, rotacion, avg_monthly + fijo/espacio en proveedor).
+
+## Deploy Render — fix pg_type stale
+
+Antes de `Base.metadata.create_all(engine)` en `init_db` limpiamos tipos huérfanos en `pg_type` para tablas nuevas agregadas recientemente (lista whitelist en database.py). Esto evita `UniqueViolation` cuando un deploy anterior falló mid-stream con `CREATE TABLE`. Al agregar un modelo nuevo, sumá su `__tablename__` a esa lista.

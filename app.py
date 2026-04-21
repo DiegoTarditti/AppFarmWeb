@@ -1,4 +1,8 @@
 import os
+import threading
+import time
+from urllib.request import urlopen
+from urllib.error import URLError
 from flask import Flask
 from flask_cors import CORS
 import database
@@ -66,6 +70,29 @@ init_auth(app)
 
 from routes import register_routes
 register_routes(app)
+
+
+def _keep_alive_loop():
+    """Thread en background que pingea /health_web si keep_alive_enabled está on."""
+    base_url = os.environ.get('KEEP_ALIVE_URL', 'http://127.0.0.1:5000')
+    while True:
+        try:
+            with database.get_db() as session:
+                cfg = session.get(database.Config, 1)
+                enabled = bool(cfg and cfg.keep_alive_enabled)
+                interval = int(cfg.keep_alive_interval_min) if cfg else 10
+        except Exception:
+            enabled, interval = False, 10
+        interval = max(1, min(60, interval))
+        if enabled:
+            try:
+                urlopen(f'{base_url}/health_web', timeout=10).read()
+            except (URLError, OSError):
+                pass
+        time.sleep(interval * 60)
+
+
+threading.Thread(target=_keep_alive_loop, daemon=True).start()
 
 
 if __name__ == '__main__':

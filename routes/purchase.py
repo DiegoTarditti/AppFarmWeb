@@ -1252,10 +1252,21 @@ def init_app(app):
                         val = str(int(row.get('cant_modulo', 0) or 0))
                     elif cs == 'cant_oferta':
                         val = str(int(row.get('cant_oferta', 0) or 0))
+                    elif cs == 'cant_oferta_min':
+                        val = str(int(row.get('cant_oferta_min', 0) or 0))
                     elif cs == 'cant_nodeal':
                         val = str(int(row.get('cant_nodeal', 0) or 0))
                     elif cs == 'precio':
                         val = str(row.get('precio_pvp', '') or '')
+                    elif cs == 'erp_qty':
+                        val = str(row.get('erp_qty', '') or '')
+                    elif cs == 'rotacion':
+                        val = str(row.get('rotacion', '') or '')
+                    elif cs == 'avg_monthly':
+                        _v = row.get('avg_monthly', 0) or 0
+                        val = str(int(round(float(_v)))) if _v else ''
+                    elif cs == 'espacio':
+                        val = ''
                     else:
                         val = ''
                     pad = (c.relleno or ' ')[0]

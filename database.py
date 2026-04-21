@@ -26,6 +26,9 @@ class Config(Base):
     rot_media_min = Column(DECIMAL(6, 1), nullable=False, default=5.0)
     rot_media_tol = Column(DECIMAL(6, 1), nullable=False, default=0.0)
     rot_baja_tol = Column(DECIMAL(6, 1), nullable=False, default=0.0)
+    # Keep-alive: evitar que Render duerma el servicio vía self-ping periódico
+    keep_alive_enabled = Column(Boolean, nullable=False, default=False)
+    keep_alive_interval_min = Column(Integer, nullable=False, default=10)
 
 
 class Laboratorio(Base):
@@ -450,15 +453,19 @@ class PlantillaCampo(Base):
 
 
 CAMPOS_SISTEMA = [
-    ('fijo',         'Valor fijo / constante'),
-    ('codigo_barra', 'Código de barra (EAN)'),
-    ('descripcion',  'Descripción del producto'),
-    ('cantidad',     'Cantidad total (mod+oferta+sin deal)'),
-    ('cant_modulo',  'Cantidad módulo'),
-    ('cant_oferta',  'Cantidad oferta'),
-    ('cant_nodeal',  'Cantidad sin deal'),
-    ('precio',       'Precio PVP'),
-    ('espacio',      'Espacio en blanco'),
+    ('fijo',            'Valor fijo / constante'),
+    ('codigo_barra',    'Código de barra (EAN)'),
+    ('descripcion',     'Descripción del producto'),
+    ('cantidad',        'Cantidad total (mod+oferta+sin deal)'),
+    ('cant_modulo',     'Cantidad módulo'),
+    ('cant_oferta',     'Cantidad oferta'),
+    ('cant_oferta_min', 'Cantidad oferta c/mín'),
+    ('cant_nodeal',     'Cantidad sin deal'),
+    ('precio',          'Precio PVP'),
+    ('erp_qty',         'Stock ERP'),
+    ('rotacion',        'Rotación'),
+    ('avg_monthly',     'Promedio mensual'),
+    ('espacio',         'Espacio en blanco'),
 ]
 
 
@@ -489,7 +496,9 @@ def init_db(database_url=None):
         # Limpia entradas stale en pg_type / secuencias huérfanas que bloquean CREATE TABLE
         # (puede pasar en Render u otros PG cuando un deploy previo crea pg_type pero no pg_class)
         with engine.connect() as conn:
-            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra', 'analisis_sesiones', 'usuarios'):
+            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra',
+                          'analisis_sesiones', 'usuarios',
+                          'plantillas_exportacion', 'plantilla_campos'):
                 table_exists = conn.execute(
                     text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"),
                     {'t': tname}
@@ -626,6 +635,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_media_min DECIMAL(6,1) NOT NULL DEFAULT 5.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_media_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_baja_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
     conn.execute(text("ALTER TABLE descuento_modulos ADD COLUMN IF NOT EXISTS campana_id INTEGER REFERENCES descuento_campanas(id) ON DELETE CASCADE"))
     conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN codigo DROP NOT NULL"))
     conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN laboratorio DROP NOT NULL"))
