@@ -682,7 +682,8 @@ class DockerPanel(tk.Tk):
     # ── Agente pendientes ────────────────────────────────────────────────────
 
     def _get_agente_config_path(self):
-        return os.path.join(self.dir_var.get(), "docker_panel", "agente_config.txt")
+        # Config vive en la misma carpeta que este script (evita problemas de case en Windows)
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
 
     def _load_agente_config(self):
         """Carga carpeta y URL del agente desde archivo de config."""
@@ -847,7 +848,7 @@ class DockerPanel(tk.Tk):
             )
             return
 
-        script = os.path.join(self.dir_var.get(), "docker_panel", "agente_pendientes.py")
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_pendientes.py")
         if not os.path.isfile(script):
             self._append(f"  ✖  No se encontró {script}\n", "err")
             return
