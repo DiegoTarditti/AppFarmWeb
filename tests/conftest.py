@@ -29,8 +29,10 @@ def flask_app(init_test_db, tmp_path_factory):
 
     import routes.invoices as _inv
     import routes.claims as _claims
+    import routes.plantillas as _plant
     _inv.init_app(app)
     _claims.init_app(app)
+    _plant.init_app(app)
 
     return app
 
