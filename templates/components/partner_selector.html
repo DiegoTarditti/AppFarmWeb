@@ -101,7 +101,7 @@ window.PartnerSel = window.PartnerSel || (() => {
         chips.innerHTML = data.map(p =>
             `<button type="button" onmousedown="event.preventDefault()"
                 onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
-                class="text-[11px] bg-[#f3f3f3] hover:bg-brand hover:text-brand-dark border border-surface-border rounded-full px-2 py-0.5 transition-colors truncate max-w-[200px]"
+                class="text-[11px] bg-amber-50 text-amber-900 border border-amber-200 hover:bg-brand hover:text-brand-dark hover:border-brand rounded-full px-2 py-0.5 transition-colors truncate max-w-[200px]"
                 title="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</button>`
         ).join('');
     }
