@@ -1,0 +1,175 @@
+{# Overlay de análisis animado — incluible desde cualquier pantalla que procese un PDF.
+
+   Uso desde JS de la página contenedora:
+     AnalisisOverlay.mostrar(subtexto)   // muestra el modal
+     AnalisisOverlay.setPaso(n, estado, detalle)  // estado: 'pending'|'active'|'done'|'error'
+     AnalisisOverlay.setProgreso(pct)
+     AnalisisOverlay.setSubtexto(txt)
+     AnalisisOverlay.resultado({titulo, subtitulo, cta, href, tipo})
+                                       // tipo: 'success'|'warning'|'error'|'neutral'
+     AnalisisOverlay.cerrar()
+
+   Los pasos que vienen por defecto son 5:
+     1 Leyendo PDF · 2 Identificando encabezado · 3 Reconociendo proveedor
+     4 Probando parser · 5 Identificando productos
+   Si necesitás un paso 6 (ej. cruzando con ERP), la página puede mostrarlo
+   dinámicamente con AnalisisOverlay.agregarPaso(n, titulo, detalle).
+#}
+<style>
+@keyframes ao-fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ao-spin { to { transform: rotate(360deg); } }
+@keyframes ao-pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4); }
+    50%      { box-shadow: 0 0 0 12px rgba(234, 179, 8, 0); }
+}
+@keyframes ao-slideInCheck {
+    0%   { transform: scale(0) rotate(-180deg); opacity: 0; }
+    60%  { transform: scale(1.3) rotate(10deg); opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; }
+}
+.ao-step-card { opacity: 0.3; transition: opacity 0.4s ease; animation: ao-fadeInUp 0.4s ease both; }
+.ao-step-card.active, .ao-step-card.done, .ao-step-card.error { opacity: 1; }
+.ao-step-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all 0.3s ease;
+}
+.ao-step-card.pending .ao-step-icon { background: #e5e7eb; color: #9ca3af; }
+.ao-step-card.active  .ao-step-icon { background: #EAB308; color: #1a1100; animation: ao-pulseGlow 1.5s infinite; }
+.ao-step-card.done    .ao-step-icon { background: #10b981; color: white; }
+.ao-step-card.error   .ao-step-icon { background: #ef4444; color: white; }
+.ao-step-card.done .ao-step-icon svg { animation: ao-slideInCheck 0.5s ease; }
+.ao-spinner {
+    width: 16px; height: 16px; border: 2px solid #1a1100;
+    border-top-color: transparent; border-radius: 50%;
+    animation: ao-spin 0.8s linear infinite;
+}
+.ao-step-label { transition: color 0.3s ease; }
+.ao-step-card.pending .ao-step-label { color: #9ca3af; }
+.ao-step-card.active  .ao-step-label { color: #1e1e1e; font-weight: 600; }
+.ao-step-card.done    .ao-step-label { color: #10b981; font-weight: 600; }
+.ao-step-card.error   .ao-step-label { color: #ef4444; font-weight: 600; }
+.ao-result-flash { animation: ao-fadeInUp 0.5s ease both; animation-delay: 0.3s; }
+.ao-progress { height: 3px; background: #e5e7eb; border-radius: 99px; overflow: hidden; }
+.ao-progress > div {
+    height: 100%; background: linear-gradient(90deg, #EAB308, #f59e0b);
+    width: 0%; transition: width 0.6s ease;
+}
+</style>
+
+<div id="ao-overlay" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-7 shadow-2xl" style="animation: ao-fadeInUp 0.3s ease both;">
+        <div class="flex items-center gap-3 mb-5">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-brand to-amber-600 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            </div>
+            <div>
+                <p class="font-bold text-lg text-[#1e1e1e]" id="ao-title">Analizando factura</p>
+                <p class="text-xs text-[#6f6f6f]" id="ao-subtexto">Preparando…</p>
+            </div>
+        </div>
+
+        <div class="ao-progress mb-6"><div id="ao-progress-fill"></div></div>
+
+        <div class="space-y-3" id="ao-steps">
+            {% for step in [
+                {'n': 1, 'titulo': 'Leyendo PDF',             'detalle': 'extrayendo texto de las páginas'},
+                {'n': 2, 'titulo': 'Identificando encabezado','detalle': 'buscando razón social y CUIT'},
+                {'n': 3, 'titulo': 'Reconociendo proveedor',  'detalle': 'matcheando contra base de proveedores'},
+                {'n': 4, 'titulo': 'Probando parser',         'detalle': 'corriendo el parser del proveedor'},
+                {'n': 5, 'titulo': 'Identificando productos', 'detalle': 'contando ítems detectados'},
+            ] %}
+            <div class="ao-step-card pending flex items-center gap-3" id="ao-step-{{ step.n }}" style="animation-delay: {{ 0.05 + (step.n - 1) * 0.1 }}s">
+                <div class="ao-step-icon"><span class="text-sm font-bold">{{ step.n }}</span></div>
+                <div class="flex-1 min-w-0">
+                    <p class="ao-step-label text-sm">{{ step.titulo }}</p>
+                    <p class="text-[11px] text-[#9ca3af]" id="ao-step-{{ step.n }}-detail">{{ step.detalle }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <div id="ao-result" class="hidden mt-6 pt-5 border-t border-surface-border ao-result-flash">
+            <p id="ao-result-text" class="text-sm font-semibold text-[#1e1e1e] mb-1"></p>
+            <p id="ao-result-sub" class="text-xs text-[#6f6f6f] mb-4"></p>
+            <div class="flex gap-2">
+                <button id="ao-result-cancel" class="hidden flex-1 bg-[#f0f0f0] hover:bg-[#e5e5e5] text-[#444] font-semibold py-2.5 rounded-lg text-sm">
+                    Cerrar
+                </button>
+                <button id="ao-result-cta" class="flex-1 bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2.5 rounded-lg text-sm transition-colors">
+                    Continuar →
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const $ = (id) => document.getElementById(id);
+    function iconFor(estado, n) {
+        if (estado === 'active') return '<div class="ao-spinner"></div>';
+        if (estado === 'done')   return '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>';
+        if (estado === 'error')  return '<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>';
+        return '<span class="text-sm font-bold">' + n + '</span>';
+    }
+
+    window.AnalisisOverlay = {
+        mostrar(subtexto) {
+            // reset
+            for (let i = 1; i <= 10; i++) this.setPaso(i, 'pending');
+            this.setProgreso(0);
+            $('ao-result').classList.add('hidden');
+            if (subtexto) this.setSubtexto(subtexto);
+            $('ao-overlay').classList.remove('hidden');
+        },
+        cerrar() { $('ao-overlay').classList.add('hidden'); },
+        setSubtexto(txt) { $('ao-subtexto').textContent = txt; },
+        setProgreso(pct) { $('ao-progress-fill').style.width = pct + '%'; },
+        setPaso(n, estado, detalle) {
+            const el = $('ao-step-' + n);
+            if (!el) return;
+            el.classList.remove('pending', 'active', 'done', 'error');
+            el.classList.add(estado || 'pending');
+            el.querySelector('.ao-step-icon').innerHTML = iconFor(estado, n);
+            if (detalle != null) {
+                const d = $('ao-step-' + n + '-detail');
+                if (d) d.textContent = detalle;
+            }
+        },
+        agregarPaso(n, titulo, detalle) {
+            if ($('ao-step-' + n)) return;
+            const div = document.createElement('div');
+            div.className = 'ao-step-card pending flex items-center gap-3';
+            div.id = 'ao-step-' + n;
+            div.innerHTML = `
+                <div class="ao-step-icon"><span class="text-sm font-bold">${n}</span></div>
+                <div class="flex-1 min-w-0">
+                    <p class="ao-step-label text-sm">${titulo}</p>
+                    <p class="text-[11px] text-[#9ca3af]" id="ao-step-${n}-detail">${detalle || ''}</p>
+                </div>`;
+            $('ao-steps').appendChild(div);
+        },
+        resultado({ titulo, subtitulo, cta, href, tipo = 'success', onCancel }) {
+            $('ao-result').classList.remove('hidden');
+            $('ao-result-text').textContent = titulo;
+            $('ao-result-sub').textContent  = subtitulo || '';
+            const btn = $('ao-result-cta');
+            btn.textContent = cta || 'Continuar →';
+            btn.className = 'flex-1 font-semibold py-2.5 rounded-lg text-sm transition-colors ';
+            btn.className += (tipo === 'error')   ? 'bg-red-600 hover:bg-red-700 text-white' :
+                             (tipo === 'warning') ? 'bg-amber-500 hover:bg-amber-600 text-white' :
+                             'bg-brand hover:bg-brand-hover text-brand-dark';
+            btn.onclick = () => { if (href) window.location.href = href; };
+            const cancel = $('ao-result-cancel');
+            if (onCancel) {
+                cancel.classList.remove('hidden');
+                cancel.onclick = onCancel;
+            } else {
+                cancel.classList.add('hidden');
+            }
+        },
+        sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+    };
+})();
+</script>

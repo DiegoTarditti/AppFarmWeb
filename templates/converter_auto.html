@@ -1,42 +1,82 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Tabla detectada — {{ filename }}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>body { background:#f3f3f3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
-</head>
-<body class="min-h-screen">
+{% extends "base.html" %}
+{% set nav_active = "convertir" %}
+{% block title %}Tabla detectada — {{ filename }}{% endblock %}
+{% block main %}
+<style>
+.row-delete-btn { opacity: 0; transition: opacity 0.15s; }
+tr:hover .row-delete-btn { opacity: 1; }
+.row-hidden { display: none; }
+</style>
 
-<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
-    <div class="max-w-7xl mx-auto flex items-center justify-between">
-        <div>
-            <span class="font-bold text-sm">Detección automática</span>
-            <span class="ml-3 text-xs text-[#6f6f6f] font-mono">{{ filename }}</span>
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('converter_detectar', token=token) }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">Detección automática</h1>
+    <span class="text-xs text-[#999] font-mono">{{ filename }}</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    {% set es_fallback = source and 'palabras' in source.lower() %}
+
+    {% if es_fallback %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+        <div class="flex items-start gap-3">
+            <svg class="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <div class="flex-1">
+                <p class="font-semibold mb-1">El PDF no tiene tabla estructurada</p>
+                <p class="text-xs mb-3">
+                    pdfplumber no encontró una tabla con líneas o grilla. Lo que ves abajo son las palabras agrupadas por su posición vertical — va a incluir el encabezado, el pie, y las filas de ítems mezcladas.
+                </p>
+                <p class="text-xs font-semibold mb-1">Recomendado para este tipo de PDFs:</p>
+                <a href="{{ url_for('converter_pick', token=token) }}"
+                   class="inline-block mt-1 bg-amber-500 hover:bg-amber-600 text-white font-semibold text-xs px-3 py-1.5 rounded-lg">
+                    Enseñar el formato →
+                </a>
+                <span class="text-xs ml-2">te lleva al modo aprendizaje, que guarda un parser y sirve para todas las facturas futuras del proveedor.</span>
+            </div>
         </div>
-        <a href="{{ url_for('converter_helper', token=token) }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver</a>
     </div>
-</header>
+    {% endif %}
 
-<div class="max-w-7xl mx-auto px-6 py-6 space-y-4">
-    <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
-        <div class="flex items-center justify-between">
+    <div class="bg-white rounded-xl border border-surface-border p-4">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-3">
             <div>
                 <p class="font-semibold text-sm">{{ source }}</p>
-                <p class="text-xs text-[#6f6f6f]">{{ rows|length }} filas · Revisalas antes de exportar</p>
+                <p class="text-xs text-[#6f6f6f]"><span id="row-count">{{ rows|length }}</span> filas visibles de {{ rows|length }} · Revisalas antes de exportar</p>
             </div>
             <button onclick="exportXLSX()" class="px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Exportar XLSX ↓</button>
         </div>
+
+        <!-- Filtros -->
+        <div class="flex items-center gap-2 flex-wrap pt-3 border-t border-surface-border text-xs">
+            <span class="font-semibold text-[#6f6f6f]">Ocultar:</span>
+            <label class="flex items-center gap-1.5 cursor-pointer bg-[#fafafa] hover:bg-[#f0f0f0] border border-[#ececec] rounded-lg px-2 py-1">
+                <input type="checkbox" id="filter-short" onchange="aplicarFiltros()" class="accent-brand">
+                <span>filas con menos de <input type="number" id="filter-cols" value="3" min="1" max="20" onchange="aplicarFiltros()" class="w-10 text-center bg-white border border-[#e0e0e0] rounded px-1 py-0"> columnas</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer bg-[#fafafa] hover:bg-[#f0f0f0] border border-[#ececec] rounded-lg px-2 py-1">
+                <input type="checkbox" id="filter-nonum" onchange="aplicarFiltros()" class="accent-brand">
+                <span>filas sin ningún número</span>
+            </label>
+            <label class="flex items-center gap-1.5 cursor-pointer bg-[#fafafa] hover:bg-[#f0f0f0] border border-[#ececec] rounded-lg px-2 py-1">
+                <input type="checkbox" id="filter-start-alpha" onchange="aplicarFiltros()" class="accent-brand">
+                <span>filas que no empiezan con número</span>
+            </label>
+            <button onclick="deshacerBorrados()" class="ml-auto text-[#6f6f6f] hover:text-[#1e1e1e] px-2 py-1">Deshacer borrados</button>
+        </div>
     </div>
 
-    <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
-        <div class="overflow-x-auto max-h-[70vh] overflow-y-auto">
+    <div class="bg-white rounded-xl border border-surface-border overflow-hidden">
+        <div class="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table id="tbl" class="w-full text-xs border-collapse">
                 <tbody>
                 {% for row in rows %}
-                    <tr class="{{ 'bg-[#f5f5f5]' if loop.index0 % 2 else 'bg-white' }}">
+                    <tr class="{{ 'bg-[#f5f5f5]' if loop.index0 % 2 else 'bg-white' }} group" data-row="{{ loop.index0 }}">
+                        <td class="border border-[#e0e0e0] px-1 py-1 w-8 text-center sticky left-0 bg-inherit">
+                            <button onclick="borrarFila({{ loop.index0 }})" title="Quitar fila"
+                                    class="row-delete-btn text-red-500 hover:text-red-700 text-sm font-bold leading-none">×</button>
+                        </td>
+                        <td class="border border-[#e0e0e0] px-1 py-1 w-8 text-center text-[#bbb] sticky left-8 bg-inherit">{{ loop.index }}</td>
                     {% for cell in row %}
                         <td class="border border-[#e0e0e0] px-2 py-1 whitespace-nowrap">{{ cell or '' }}</td>
                     {% endfor %}
@@ -49,11 +89,52 @@
 </div>
 
 <script>
+const filasBorradas = new Set();
+
+function borrarFila(i) {
+    filasBorradas.add(i);
+    const tr = document.querySelector('tr[data-row="' + i + '"]');
+    if (tr) tr.classList.add('row-hidden');
+    actualizarContador();
+}
+function deshacerBorrados() {
+    filasBorradas.clear();
+    document.querySelectorAll('tr.row-hidden').forEach(tr => tr.classList.remove('row-hidden'));
+    aplicarFiltros();
+}
+function contarCelDatos(tr) {
+    // Excluye las 2 primeras tds (delete button y nro fila)
+    return Array.from(tr.querySelectorAll('td')).slice(2).filter(td => td.textContent.trim() !== '').length;
+}
+function aplicarFiltros() {
+    const minCols = parseInt(document.getElementById('filter-cols').value || '3');
+    const filtShort = document.getElementById('filter-short').checked;
+    const filtNoNum = document.getElementById('filter-nonum').checked;
+    const filtAlpha = document.getElementById('filter-start-alpha').checked;
+    document.querySelectorAll('#tbl tbody tr').forEach(tr => {
+        const idx = parseInt(tr.dataset.row);
+        if (filasBorradas.has(idx)) { tr.classList.add('row-hidden'); return; }
+        const cells = Array.from(tr.querySelectorAll('td')).slice(2).map(td => td.textContent.trim());
+        const joined = cells.join(' ');
+        let ocultar = false;
+        if (filtShort && contarCelDatos(tr) < minCols) ocultar = true;
+        if (filtNoNum && !/\d/.test(joined)) ocultar = true;
+        if (filtAlpha && cells[0] && !/^\d/.test(cells[0])) ocultar = true;
+        tr.classList.toggle('row-hidden', ocultar);
+    });
+    actualizarContador();
+}
+function actualizarContador() {
+    const total = document.querySelectorAll('#tbl tbody tr').length;
+    const visibles = document.querySelectorAll('#tbl tbody tr:not(.row-hidden)').length;
+    document.getElementById('row-count').textContent = visibles;
+}
+
 async function exportXLSX() {
-    const rows = Array.from(document.querySelectorAll('#tbl tr')).map(tr =>
-        Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())
+    const rows = Array.from(document.querySelectorAll('#tbl tr:not(.row-hidden)')).map(tr =>
+        Array.from(tr.querySelectorAll('td')).slice(2).map(td => td.textContent.trim())
     );
-    if (!rows.length) { alert('No hay filas.'); return; }
+    if (!rows.length) { alert('No hay filas visibles.'); return; }
     const maxCols = Math.max(...rows.map(r => r.length));
     const fields = Array.from({length: maxCols}, (_,i) => 'col_' + (i+1));
     const payload = rows.map(r => {
@@ -72,5 +153,4 @@ async function exportXLSX() {
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 </script>
-</body>
-</html>
+{% endblock %}

@@ -1,62 +1,99 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Convertir documentos</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>body { background:#f3f3f3; color:#1e1e1e; font-family:'Inter',sans-serif; }</style>
-</head>
-<body class="min-h-screen">
+{% extends "base.html" %}
+{% set nav_active = "convertir" %}
+{% block title %}Aprender parser de facturas{% endblock %}
+{% block main %}
 
-<header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
-    <div class="max-w-5xl mx-auto flex items-center justify-between">
-        <span class="font-bold text-sm">Convertir documentos</span>
-        <a href="{{ url_for('index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Inicio</a>
-    </div>
-</header>
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Aprender parser de facturas</h1>
+</div>
 
-{% with messages = get_flashed_messages() %}
-  {% for m in messages %}
-    <div class="max-w-5xl mx-auto mt-4 px-6">
-        <div class="rounded-lg px-4 py-3 text-sm bg-red-50 border border-red-200 text-red-800">{{ m }}</div>
-    </div>
-  {% endfor %}
-{% endwith %}
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
 
-<div class="max-w-5xl mx-auto px-6 py-6 space-y-6">
+    {% with messages = get_flashed_messages() %}
+    {% for m in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm bg-red-50 border border-red-200 text-red-800">{{ m }}</div>
+    {% endfor %}
+    {% endwith %}
 
-    <div class="bg-white rounded-xl border border-[#e0e0e0] p-6">
-        <p class="font-semibold text-sm mb-2">Subir un PDF para extraer</p>
-        <p class="text-xs text-[#6f6f6f] mb-4">Funciona con facturas, remitos, notas de crédito u otros documentos tabulares. Después podés exportarlo como XLSX para usar en cualquier proceso de importación.</p>
-        <form method="post" action="{{ url_for('converter_upload') }}" enctype="multipart/form-data" class="flex items-center gap-3">
-            <input type="file" name="document" accept=".pdf" required class="text-sm">
-            <button type="submit" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold">Subir y abrir selector</button>
-        </form>
+    <div class="bg-white rounded-xl border border-surface-border p-6">
+        <p class="font-semibold text-sm mb-1">Subí una factura PDF</p>
+        <p class="text-xs text-[#6f6f6f] mb-4">
+            Detectamos al proveedor por CUIT o razón social. Si ya tiene parser, probamos que funcione.
+            Si no, te ayudamos a enseñarle el formato y lo guardamos para siempre.
+        </p>
+
+        <!-- Paso 1: elegir archivo (dropzone) -->
+        <div id="paso-upload">
+            <label class="flex flex-col items-center justify-center h-24 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
+                <svg class="w-7 h-7 text-[#999] group-hover:text-brand mb-1.5 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+                <span class="text-sm text-[#888] group-hover:text-[#1e1e1e] transition-colors font-medium">Seleccionar PDF</span>
+                <span class="text-[11px] text-[#bbb] mt-0.5">clickeá o arrastrá el archivo</span>
+                <input type="file" accept=".pdf" required class="hidden" id="file-input">
+            </label>
+        </div>
+
+        <!-- Paso 2: archivo subido + botón procesar -->
+        <div id="paso-procesar" class="hidden space-y-3">
+            <div class="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                <div class="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs text-emerald-800 font-semibold">Archivo subido</p>
+                    <p class="text-sm font-mono text-[#1e1e1e] truncate" id="uploaded-name">—</p>
+                    <p class="text-[11px] text-[#6f6f6f]" id="uploaded-size">—</p>
+                </div>
+                <button type="button" onclick="resetUpload()" title="Elegir otro"
+                        class="text-[#999] hover:text-red-600 flex-shrink-0">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <button type="button" id="btn-procesar"
+                    class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2.5 rounded-lg text-sm transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                Procesar
+            </button>
+        </div>
+
+        <!-- Estado transitorio: subiendo -->
+        <div id="paso-subiendo" class="hidden flex items-center gap-3 p-3 bg-sky-50 border border-sky-200 rounded-lg">
+            <div class="ao-spinner" style="border-color: #0369a1; border-top-color: transparent; width: 18px; height: 18px;"></div>
+            <p class="text-sm text-sky-800 font-medium">Subiendo archivo…</p>
+        </div>
     </div>
 
     {% if files %}
-    <div class="bg-white rounded-xl border border-[#e0e0e0] p-6">
-        <p class="font-semibold text-sm mb-3">Documentos recientes</p>
+    <div class="bg-white rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-5 py-3 border-b border-surface-border">
+            <p class="font-semibold text-sm">PDFs analizados recientemente</p>
+        </div>
         <table class="w-full text-sm">
-            <thead class="bg-[#f0f0f0]">
-                <tr><th class="text-left px-3 py-2">Archivo</th><th class="text-left px-3 py-2">Tipo</th><th class="text-right px-3 py-2">Tamaño</th><th class="px-3 py-2"></th></tr>
+            <thead class="bg-surface-head">
+                <tr>
+                    <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Archivo</th>
+                    <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Proveedor detectado</th>
+                    <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Tamaño</th>
+                    <th class="px-3 py-2"></th>
+                </tr>
             </thead>
-            <tbody>
-            {% set tipo_labels = {'factura':'Factura','remito':'Remito','nc':'Nota de crédito','otro':'Otro'} %}
+            <tbody class="divide-y divide-surface-border">
             {% for f in files %}
-                <tr class="border-t border-[#e0e0e0]">
-                    <td class="px-3 py-2 font-mono text-xs">{{ f.name }}</td>
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-2 font-mono text-xs">{{ f.name[13:] if f.name|length > 13 else f.name }}</td>
                     <td class="px-3 py-2 text-xs">
-                        {% if f.tipo %}
-                        <span class="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">{{ tipo_labels.get(f.tipo, f.tipo) }}</span>
-                        {% else %}<span class="text-[#9ca3af]">—</span>{% endif %}
+                        {% if f.proveedor %}
+                        <span class="inline-block px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 font-semibold border border-emerald-200">{{ f.proveedor }}</span>
+                        {% if f.cuit %}<span class="ml-1 text-[#999]">{{ f.cuit }}</span>{% endif %}
+                        {% else %}
+                        <span class="text-[#9ca3af]">no detectado</span>
+                        {% endif %}
                     </td>
                     <td class="px-3 py-2 text-right text-xs">{{ (f.size/1024)|round(1) }} KB</td>
                     <td class="px-3 py-2 text-right">
-                        <a href="{{ url_for('converter_helper', token=f.name) }}" class="text-amber-600 hover:text-amber-800 text-xs font-semibold mr-3">Abrir →</a>
-                        <form method="post" action="{{ url_for('converter_delete', token=f.name) }}" class="inline" onsubmit="return confirm('¿Eliminar {{ f.name }}?');">
+                        <a href="{{ url_for('converter_detectar', token=f.name) }}" class="text-brand hover:underline text-xs font-semibold mr-3">Abrir →</a>
+                        <form method="post" action="{{ url_for('converter_delete', token=f.name) }}" class="inline" onsubmit="return confirm('¿Eliminar este PDF?');">
                             <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-semibold">Eliminar</button>
                         </form>
                     </td>
@@ -68,5 +105,122 @@
     {% endif %}
 
 </div>
-</body>
-</html>
+
+{% include '_analisis_overlay.html' %}
+
+<script>
+async function animarAnalisis(data) {
+    const AO = window.AnalisisOverlay;
+    AO.setPaso(1, 'active'); AO.setProgreso(15); await AO.sleep(700);
+    AO.setPaso(1, 'done', (data.n_lineas || 0) + ' líneas extraídas');
+
+    AO.setPaso(2, 'active'); AO.setProgreso(30); await AO.sleep(800);
+    const info = data.info || {};
+    let det2 = 'sin datos identificables';
+    if (info.razon_social && info.cuit) det2 = info.razon_social + ' · ' + info.cuit;
+    else if (info.razon_social) det2 = info.razon_social;
+    else if (info.cuit) det2 = 'CUIT: ' + info.cuit + ' (razón social en logo)';
+    AO.setPaso(2, 'done', det2);
+
+    AO.setPaso(3, 'active'); AO.setProgreso(50); await AO.sleep(700);
+    AO.setPaso(3, 'done', data.proveedor ? ('✓ ' + data.proveedor.razon_social + ' — ya registrado')
+                                         : 'proveedor nuevo');
+
+    AO.setPaso(4, 'active'); AO.setProgreso(70); await AO.sleep(900);
+    if (data.prueba && data.prueba.ok)      AO.setPaso(4, 'done', '✓ parser existente funciona');
+    else if (data.prueba)                   AO.setPaso(4, 'error', '✗ parser existente falló');
+    else                                    AO.setPaso(4, 'done', 'sin parser previo');
+
+    AO.setPaso(5, 'active'); AO.setProgreso(90); await AO.sleep(800);
+    const n = (data.prueba && data.prueba.n_items) || 0;
+    AO.setPaso(5, n > 0 ? 'done' : 'error',
+               n > 0 ? (n + ' producto' + (n === 1 ? '' : 's') + ' reconocido' + (n === 1 ? '' : 's'))
+                     : 'no se detectaron productos automáticamente');
+
+    AO.setProgreso(100); await AO.sleep(400);
+
+    // Resultado
+    let r;
+    if (data.prueba && data.prueba.ok) {
+        r = { titulo: '🎉 Listo. ' + data.prueba.n_items + ' ítems detectados.',
+              subtitulo: 'El parser funciona. Podés importar la factura normalmente o revisar el análisis.',
+              cta: 'Ver análisis →', tipo: 'success' };
+    } else if (data.proveedor && data.prueba && !data.prueba.ok) {
+        r = { titulo: '⚠️ El parser existente falló',
+              subtitulo: 'El layout de este proveedor cambió. Vamos a reentrenar el patrón.',
+              cta: 'Reentrenar patrón →', tipo: 'warning' };
+    } else if (data.proveedor) {
+        r = { titulo: '✓ Proveedor detectado',
+              subtitulo: data.proveedor.razon_social + ' está en la base pero no tiene parser.',
+              cta: 'Enseñar formato →', tipo: 'success' };
+    } else {
+        r = { titulo: '📝 Proveedor nuevo',
+              subtitulo: 'Vamos a aprender el formato y crearlo al final.',
+              cta: 'Empezar aprendizaje →', tipo: 'success' };
+    }
+    r.href = data.redirect;
+    AO.resultado(r);
+}
+
+let _uploadedToken = null;
+
+function resetUpload() {
+    _uploadedToken = null;
+    document.getElementById('file-input').value = '';
+    document.getElementById('paso-upload').classList.remove('hidden');
+    document.getElementById('paso-procesar').classList.add('hidden');
+    document.getElementById('paso-subiendo').classList.add('hidden');
+}
+
+document.getElementById('file-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Mostrar estado "subiendo"
+    document.getElementById('paso-upload').classList.add('hidden');
+    document.getElementById('paso-subiendo').classList.remove('hidden');
+
+    const fd = new FormData();
+    fd.append('document', file);
+
+    try {
+        const resp = await fetch('{{ url_for("converter_upload") }}', {
+            method: 'POST', body: fd, headers: { 'Accept': 'application/json' }
+        });
+        const up = await resp.json();
+        if (!up.ok) {
+            alert(up.error || 'Error al subir');
+            resetUpload();
+            return;
+        }
+        _uploadedToken = up.token;
+        // Mostrar paso 2: archivo subido + botón procesar
+        document.getElementById('paso-subiendo').classList.add('hidden');
+        document.getElementById('uploaded-name').textContent = file.name;
+        document.getElementById('uploaded-size').textContent = (up.size / 1024).toFixed(1) + ' KB';
+        document.getElementById('paso-procesar').classList.remove('hidden');
+    } catch (err) {
+        alert('Error de conexión: ' + err);
+        resetUpload();
+    }
+});
+
+document.getElementById('btn-procesar').addEventListener('click', async () => {
+    if (!_uploadedToken) return;
+
+    const AO = window.AnalisisOverlay;
+    AO.mostrar('procesando…');
+
+    try {
+        AO.setPaso(1, 'active'); AO.setProgreso(5);
+        const ana = await fetch('/converter/' + encodeURIComponent(_uploadedToken) + '/analizar', { method: 'POST' });
+        const data = await ana.json();
+        if (!data.ok) { alert(data.error || 'Error al analizar'); AO.cerrar(); return; }
+        await animarAnalisis(data);
+    } catch (err) {
+        alert('Error: ' + err);
+        AO.cerrar();
+    }
+});
+</script>
+{% endblock %}

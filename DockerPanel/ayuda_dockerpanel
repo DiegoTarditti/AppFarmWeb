@@ -1,0 +1,19 @@
+Listo. 8 bloques BEGIN KEEPALIVE RENDER agregados al panel (sintaxis Python OK):
+
+Imports + constantes (arriba): urllib.request/error, time, KEEPALIVE_DEFAULT_URL, KEEPALIVE_DEFAULT_MIN
+Lectura config en _load_agente_config (3 claves nuevas: keepalive, keepalive_url, keepalive_min)
+Escritura config en _save_agente_config
+Sección en el diálogo _config_agente con checkbox, URL y intervalo
+Arranque del thread en __init__
+Método _keepalive_loop — lee config en cada iteración, pingea, loguea en consola del panel
+Método _update_keepalive_label — refresca el indicador
+Label en status bar (junto al helper HTTP)
+Flujo:
+
+Abrís "⚙ Configurar agente..." → ves sección "KEEP-ALIVE RENDER" con checkbox + URL + intervalo
+Al guardar, el thread ya está corriendo — relee la config y arranca los pings
+En la status bar: ● keep-alive 10m (verde) u ○ keep-alive off (gris)
+Cada ping se loguea en la consola del panel: ⏱ 10:45 keep-alive → 200 (https://...)
+Ventaja sobre el self-ping del app: este SÍ genera tráfico externo contra Render → funciona en free tier para evitar sleep.
+
+Config en agente_config.txt (ya seteada):

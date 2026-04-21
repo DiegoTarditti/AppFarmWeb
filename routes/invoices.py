@@ -795,6 +795,8 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/compare')
     def compare_view(invoice_id):
+        from flask_login import current_user
+        import observer_source
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
             if not invoice:
@@ -809,9 +811,14 @@ def init_app(app):
                 item.codigo_barra: float(item.precio_unitario or 0)
                 for item in inv_items if item.codigo_barra
             }
+            # Flag para mostrar botón de ObServer (solo usuarios habilitados + observer online)
+            observer_disponible = False
+            if current_user.is_authenticated and current_user.rol in ('farmacia', 'dev', 'admin'):
+                observer_disponible = observer_source.observer_disponible()
             return render_template('compare.html', invoice=invoice,
                                    invoice_diffs=invoice_diffs, erp_items=erp_items,
-                                   inv_prices=inv_prices)
+                                   inv_prices=inv_prices,
+                                   observer_disponible=observer_disponible)
 
     @app.route('/invoice/<int:invoice_id>/apply-mapping', methods=['POST'])
     def apply_mapping(invoice_id):

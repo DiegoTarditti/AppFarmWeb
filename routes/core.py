@@ -45,6 +45,11 @@ def init_app(app):
                 cfg.rot_baja_tol = max(0.0, float(request.form.get('rot_baja_tol', 0.0)))
             except (ValueError, TypeError):
                 pass
+            cfg.keep_alive_enabled = request.form.get('keep_alive_enabled') == '1'
+            try:
+                cfg.keep_alive_interval_min = max(1, min(60, int(request.form.get('keep_alive_interval_min', 10))))
+            except (ValueError, TypeError):
+                pass
             session.commit()
         flash('Configuración guardada.')
         return redirect(url_for('settings'))
@@ -103,5 +108,12 @@ def init_app(app):
         return resp
 
     @app.route('/health')
+    @app.route('/health_web')
     def health():
-        return 'OK', 200
+        """Healthcheck usado por Render. Hace SELECT 1 para mantener viva la conexión DB."""
+        try:
+            with database.get_db() as session:
+                session.execute(database.text('SELECT 1'))
+            return 'OK', 200
+        except Exception as e:
+            return f'DB ERROR: {e}', 503

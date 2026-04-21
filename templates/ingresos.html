@@ -134,15 +134,17 @@
             </div>
 
             <div>
-                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Informe ERP Excel <span class="text-[10px] normal-case tracking-normal text-[#999]">(opcional)</span></label>
+                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                    Informe ERP Excel <span class="text-[10px] normal-case tracking-normal text-[#999]">(opcional)</span>
+                </label>
                 <label class="file-drop flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
                     <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                     </svg>
-                    <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel</span>
+                    <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel (o dejar vacío)</span>
                     <input type="file" id="erp-input" name="erp_excel" accept=".xlsx,.xls" class="hidden" onchange="setLabel(this,'lbl-erp')">
                 </label>
-                <p id="lbl-erp" class="text-xs text-[#999] mt-1 ml-1">Si no lo cargás, la factura se guarda sin cruzar con stock.</p>
+                <p id="lbl-erp" class="text-xs text-[#999] mt-1 ml-1">Si no lo cargás, la factura se guarda sin cruzar con stock. Después podés traer los datos desde ObServer en el paso de cruce.</p>
             </div>
 
             <!-- Tipo de comprobante -->
@@ -210,13 +212,15 @@
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Informe ERP Excel</label>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                        Informe ERP Excel <span class="text-[#aaa] normal-case">(opcional)</span>
+                    </label>
                     <label class="flex flex-col items-center justify-center w-full h-20 border border-dashed border-surface-border rounded-lg cursor-pointer hover:border-brand/60 hover:bg-black/[0.04] transition-all group">
                         <svg class="w-6 h-6 text-[#999] group-hover:text-brand mb-1 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                         </svg>
-                        <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel</span>
-                        <input type="file" name="erp_excel" accept=".xlsx,.xls" required class="hidden" onchange="setLabel(this,'lbl-new-erp')">
+                        <span class="text-xs text-[#888] group-hover:text-[#1e1e1e] transition-colors">Seleccionar Excel (o dejar vacío)</span>
+                        <input type="file" name="erp_excel" accept=".xlsx,.xls" class="hidden" onchange="setLabel(this,'lbl-new-erp')">
                     </label>
                     <p id="lbl-new-erp" class="text-xs text-[#999] mt-1 ml-1"></p>
                 </div>
