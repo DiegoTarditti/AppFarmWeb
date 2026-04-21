@@ -109,6 +109,47 @@ def init_app(app):
             data = [{'id': r.id, 'nombre': r.nombre} for r in rows]
         return jsonify({'data': data, 'tipo': tipo, 'q': q})
 
+    @app.route('/api/partners/create', methods=['POST'])
+    def api_partners_create():
+        body = request.get_json(silent=True) or {}
+        tipo = (body.get('tipo') or '').strip()
+        nombre = (body.get('nombre') or '').strip()
+        if tipo not in VALID_TIPOS:
+            return jsonify({'error': 'tipo inválido'}), 400
+        if len(nombre) < 2:
+            return jsonify({'error': 'nombre demasiado corto'}), 400
+
+        with database.get_db() as session:
+            try:
+                if tipo == 'laboratorio':
+                    existe = session.query(Laboratorio).filter(
+                        func.lower(Laboratorio.nombre) == nombre.lower()).first()
+                    if existe:
+                        return jsonify({'data': {'id': existe.id, 'nombre': existe.nombre},
+                                        'created': False})
+                    nuevo = Laboratorio(nombre=nombre)
+                    session.add(nuevo)
+                    session.commit()
+                    return jsonify({'data': {'id': nuevo.id, 'nombre': nuevo.nombre},
+                                    'created': True})
+
+                # drogueria | proveedor → Provider
+                prov_tipo = 'drogueria' if tipo == 'drogueria' else 'proveedor'
+                existe = session.query(Provider).filter(
+                    func.lower(Provider.razon_social) == nombre.lower(),
+                    Provider.tipo == prov_tipo).first()
+                if existe:
+                    return jsonify({'data': {'id': existe.id, 'nombre': existe.razon_social},
+                                    'created': False})
+                nuevo = Provider(razon_social=nombre, tipo=prov_tipo)
+                session.add(nuevo)
+                session.commit()
+                return jsonify({'data': {'id': nuevo.id, 'nombre': nuevo.razon_social},
+                                'created': True})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
+
     @app.route('/api/partners/top')
     def api_partners_top():
         tipo = (request.args.get('tipo') or '').strip()

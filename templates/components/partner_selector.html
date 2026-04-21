@@ -114,13 +114,22 @@ window.PartnerSel = window.PartnerSel || (() => {
             const resp = await fetch('/api/partners/search?tipo=' + tipo + '&limit=15&q=' + encodeURIComponent(q));
             const body = await resp.json();
             const data = body.data || [];
+            const qSafe = escapeHtml(q);
+            const qJson = JSON.stringify(q);
+            const createRow = `<button type="button" onmousedown="event.preventDefault()"
+                    onclick="PartnerSel.create('${uid}', ${qJson})"
+                    class="w-full text-left px-3 py-1.5 text-sm border-t border-surface-border bg-amber-50 hover:bg-brand hover:text-brand-dark transition-colors flex items-center gap-2">
+                    <span class="text-amber-700 font-bold">+</span>
+                    <span>Crear <strong>${qSafe}</strong> como nuevo</span>
+                </button>`;
             if (!data.length) {
-                box.innerHTML = '<p class="px-3 py-2 text-xs text-[#999]">Sin resultados</p>';
+                box.innerHTML = '<p class="px-3 py-2 text-xs text-[#999]">Sin resultados</p>' + createRow;
             } else {
                 box.innerHTML = data.map(p =>
-                    `<button type="button" onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
+                    `<button type="button" onmousedown="event.preventDefault()"
+                        onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-[#f3f3f3] transition-colors">${escapeHtml(p.nombre)}</button>`
-                ).join('');
+                ).join('') + createRow;
             }
             box.classList.remove('hidden');
         } catch (e) {
@@ -163,6 +172,32 @@ window.PartnerSel = window.PartnerSel || (() => {
             getEl(uid, 'chips').classList.remove('hidden');
             renderChips(uid);
             getEl(uid, 'txt').dispatchEvent(new CustomEvent('partner-clear', { bubbles: true }));
+        },
+        async create(uid, nombre) {
+            const wrap = getWrap(uid);
+            if (!wrap) return;
+            const tipo = wrap.dataset.tipo;
+            const nombreTrim = (nombre || '').trim();
+            if (nombreTrim.length < 2) return;
+            const label = { laboratorio: 'laboratorio', drogueria: 'droguería', proveedor: 'proveedor' }[tipo] || tipo;
+            if (!confirm(`¿Crear ${label} "${nombreTrim}"?`)) return;
+            try {
+                const resp = await fetch('/api/partners/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tipo, nombre: nombreTrim })
+                });
+                const body = await resp.json();
+                if (!resp.ok || !body.data) {
+                    alert('Error al crear: ' + (body.error || resp.status));
+                    return;
+                }
+                // Invalida cache del tipo así el nuevo aparece en chips futuros
+                delete topCache[tipo];
+                this.pick(uid, body.data.id, body.data.nombre);
+            } catch (e) {
+                alert('Error de red al crear: ' + e);
+            }
         },
         initAll() {
             document.querySelectorAll('.partner-selector').forEach(w => loadTop(w.dataset.uid));
