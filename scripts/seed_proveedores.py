@@ -109,6 +109,59 @@ def listar_parsers_proveedor():
     return list(por_cuit.values()) + list(por_razon.values())
 
 
+def seed_proveedores(ejecutar=False):
+    """Ejecuta el seed y retorna un dict con el resumen para mostrar al usuario.
+
+    Si ejecutar=False, solo calcula qué haría (dry-run).
+    Retorna: {'parsers': [...], 'crear': [...], 'actualizar': [...], 'saltar': [...], 'aplicado': bool}
+    """
+    parsers = listar_parsers_proveedor()
+    with get_db() as session:
+        todos_provs = session.query(Provider).all()
+        by_cuit = {p.cuit: p for p in todos_provs if p.cuit}
+        by_razon = {(p.razon_social or '').lower(): p for p in todos_provs if p.razon_social}
+
+        crear, actualizar, saltar = [], [], []
+        for pp in parsers:
+            prov = None
+            if pp['cuit']:
+                prov = by_cuit.get(pp['cuit'])
+            if not prov:
+                prov = by_razon.get(pp['razon_social'].lower())
+            if prov:
+                if prov.parser_file != pp['slug']:
+                    actualizar.append({'id': prov.id, 'razon_actual': prov.razon_social,
+                                       'parser_actual': prov.parser_file, 'slug': pp['slug'],
+                                       'cuit': pp['cuit']})
+                else:
+                    saltar.append({'id': prov.id, 'razon': prov.razon_social})
+            else:
+                crear.append(pp)
+
+        if ejecutar:
+            for pp in crear:
+                tipo = 'laboratorio' if 'LABORATORIO' in (pp['razon_social'] or '').upper() else 'drogueria'
+                prov = Provider(
+                    razon_social=pp['razon_social'][:100],
+                    cuit=pp['cuit'],
+                    parser_file=pp['slug'],
+                    tipo=tipo,
+                )
+                session.add(prov)
+            for item in actualizar:
+                prov = session.get(Provider, item['id'])
+                if prov:
+                    prov.parser_file = item['slug']
+                    if not prov.cuit and item['cuit']:
+                        prov.cuit = item['cuit']
+            session.commit()
+
+        return {
+            'parsers': parsers, 'crear': crear, 'actualizar': actualizar,
+            'saltar': saltar, 'aplicado': ejecutar,
+        }
+
+
 def main():
     parser = argparse.ArgumentParser(description='Seed de proveedores desde parsers existentes')
     parser.add_argument('--ejecutar', action='store_true', help='Crea/actualiza de verdad')

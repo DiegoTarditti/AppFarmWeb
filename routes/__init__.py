@@ -20,11 +20,13 @@ from routes import (
     procesos,
     auth_routes,
     observer,
+    admin,
 )
 
 _modules = [
     auth_routes,
     observer,
+    admin,
     core,
     providers,
     laboratorios,

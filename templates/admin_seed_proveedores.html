@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Seed de proveedores{% endblock %}
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3">
+    <a href="{{ url_for('admin_index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Admin</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">Seed de proveedores</h1>
+    {% if ejecutado %}
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">APLICADO</span>
+    {% else %}
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">DRY-RUN</span>
+    {% endif %}
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-3xl mx-auto space-y-4">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm border
+        {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
+        {% elif cat == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200
+        {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    <div class="bg-white border border-surface-border rounded-xl p-5">
+        <p class="font-semibold text-sm mb-3">Parsers detectados ({{ resultado.parsers | length }})</p>
+        <table class="w-full text-xs border-collapse">
+            <thead class="bg-surface-head">
+                <tr>
+                    <th class="text-left px-3 py-2 font-semibold text-[#6f6f6f]">Parser</th>
+                    <th class="text-left px-3 py-2 font-semibold text-[#6f6f6f]">Razón social</th>
+                    <th class="text-left px-3 py-2 font-semibold text-[#6f6f6f]">CUIT</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+            {% for p in resultado.parsers %}
+                <tr>
+                    <td class="px-3 py-1.5 font-mono text-[#6f6f6f]">{{ p.slug }}</td>
+                    <td class="px-3 py-1.5">{{ p.razon_social }}</td>
+                    <td class="px-3 py-1.5 font-mono text-[#6f6f6f]">{{ p.cuit or '—' }}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="grid grid-cols-3 gap-3">
+        <div class="bg-white border border-surface-border rounded-xl p-4 text-center">
+            <p class="text-[10px] uppercase tracking-wide text-[#999]">A crear</p>
+            <p class="text-2xl font-bold text-emerald-600">{{ resultado.crear | length }}</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4 text-center">
+            <p class="text-[10px] uppercase tracking-wide text-[#999]">A actualizar</p>
+            <p class="text-2xl font-bold text-sky-600">{{ resultado.actualizar | length }}</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4 text-center">
+            <p class="text-[10px] uppercase tracking-wide text-[#999]">Sin cambios</p>
+            <p class="text-2xl font-bold text-[#666]">{{ resultado.saltar | length }}</p>
+        </div>
+    </div>
+
+    {% if resultado.crear %}
+    <div class="bg-white border border-surface-border rounded-xl p-5">
+        <p class="font-semibold text-sm mb-3 text-emerald-700">
+            {{ 'Creados' if ejecutado else 'Se crearían' }}
+        </p>
+        <ul class="text-xs space-y-1">
+        {% for c in resultado.crear %}
+            <li class="flex items-center gap-3">
+                <span class="text-emerald-600">+</span>
+                <span class="font-semibold">{{ c.razon_social }}</span>
+                <span class="font-mono text-[#999]">{{ c.cuit or '—' }}</span>
+                <span class="font-mono text-xs text-sky-700 ml-auto">{{ c.slug }}</span>
+            </li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if resultado.actualizar %}
+    <div class="bg-white border border-surface-border rounded-xl p-5">
+        <p class="font-semibold text-sm mb-3 text-sky-700">
+            {{ 'Actualizados' if ejecutado else 'Se actualizarían' }}
+        </p>
+        <ul class="text-xs space-y-1">
+        {% for u in resultado.actualizar %}
+            <li>
+                <span class="font-semibold">[{{ u.id }}] {{ u.razon_actual }}</span>
+                · parser:
+                <span class="font-mono text-red-600 line-through">{{ u.parser_actual or '—' }}</span>
+                →
+                <span class="font-mono text-emerald-700">{{ u.slug }}</span>
+            </li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if not ejecutado and (resultado.crear or resultado.actualizar) %}
+    <form method="post" onsubmit="return confirm('¿Aplicar los cambios en la base de datos?');"
+          class="bg-white border border-amber-200 rounded-xl p-5">
+        <input type="hidden" name="ejecutar" value="1">
+        <p class="text-sm text-amber-900 mb-3">
+            Revisá la lista. Si está todo OK, aplicá los cambios.
+        </p>
+        <button type="submit"
+                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg text-sm">
+            Aplicar cambios
+        </button>
+    </form>
+    {% elif not ejecutado %}
+    <p class="text-sm text-[#6f6f6f] text-center py-4">
+        No hay nada que crear ni actualizar. Los proveedores ya están sincronizados.
+    </p>
+    {% endif %}
+
+</div>
+</div>
+{% endblock %}

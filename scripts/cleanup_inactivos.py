@@ -118,6 +118,39 @@ def laboratorios_con_movimiento(session):
     return con_mov
 
 
+def cleanup_inactivos(ejecutar=False, solo_proveedores=False, solo_laboratorios=False):
+    """Ejecuta el cleanup y retorna un dict con el resumen. Dry-run si ejecutar=False."""
+    resultado = {'proveedores': None, 'laboratorios': None, 'aplicado': ejecutar}
+    with get_db() as session:
+        if not solo_laboratorios:
+            con_mov = proveedores_con_movimiento(session)
+            todos = session.query(Provider).order_by(Provider.razon_social).all()
+            sin_mov = [p for p in todos if p.id not in con_mov]
+            resultado['proveedores'] = {
+                'total': len(todos), 'con_movimiento': len(con_mov),
+                'sin_movimiento': [{'id': p.id, 'razon_social': p.razon_social,
+                                    'cuit': p.cuit, 'tipo': p.tipo} for p in sin_mov],
+            }
+            if ejecutar and sin_mov:
+                for p in sin_mov:
+                    session.delete(p)
+                session.commit()
+
+        if not solo_proveedores:
+            con_mov = laboratorios_con_movimiento(session)
+            todos = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
+            sin_mov = [l for l in todos if l.id not in con_mov]
+            resultado['laboratorios'] = {
+                'total': len(todos), 'con_movimiento': len(con_mov),
+                'sin_movimiento': [{'id': l.id, 'nombre': l.nombre} for l in sin_mov],
+            }
+            if ejecutar and sin_mov:
+                for l in sin_mov:
+                    session.delete(l)
+                session.commit()
+    return resultado
+
+
 def main():
     parser = argparse.ArgumentParser(description='Limpia proveedores y laboratorios sin movimientos')
     parser.add_argument('--ejecutar', action='store_true',
