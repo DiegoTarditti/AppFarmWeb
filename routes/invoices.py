@@ -18,9 +18,9 @@ from helpers import (
 def process_upload(app):
     is_new = request.form.get('is_new_provider') == '1'
     erp_file = request.files.get('erp_excel')
-
-    if not erp_file or not allowed_file(erp_file.filename):
-        return {'error': 'Por favor cargue un archivo de informe ERP Excel válido.'}, 400
+    erp_omitido = not erp_file or not erp_file.filename
+    if not erp_omitido and not allowed_file(erp_file.filename):
+        return {'error': 'El archivo ERP no es un Excel válido.'}, 400
 
     if is_new:
         razon_social = request.form.get('provider_name_new', '').strip()
@@ -66,19 +66,24 @@ def process_upload(app):
 
         parser_file = provider.parser_file
 
-    erp_filename = secure_filename(erp_file.filename)
-    erp_path = os.path.join(app.config['UPLOAD_FOLDER'], erp_filename)
-    erp_file.save(erp_path)
+    if erp_omitido:
+        erp_filename = None
+        erp_data = []
+    else:
+        erp_filename = secure_filename(erp_file.filename)
+        erp_path = os.path.join(app.config['UPLOAD_FOLDER'], erp_filename)
+        erp_file.save(erp_path)
 
     try:
         invoice_data = parse_invoice_pdf(invoice_path, parser_file)
     except Exception as e:
         return {'error': f'Error al leer el PDF de factura: {e}'}, 400
 
-    try:
-        erp_data = parse_erp_excel(erp_path)
-    except Exception as e:
-        return {'error': f'Error al leer el Excel ERP: {e}. Asegurate de subir un archivo .xlsx válido.'}, 400
+    if not erp_omitido:
+        try:
+            erp_data = parse_erp_excel(erp_path)
+        except Exception as e:
+            return {'error': f'Error al leer el Excel ERP: {e}. Asegurate de subir un archivo .xlsx válido.'}, 400
 
     if not invoice_data.get('items'):
         try:
@@ -91,7 +96,8 @@ def process_upload(app):
                                           tipo_comprobante=_tipo)
                 _inv.erp_filename = erp_filename
                 _session.commit()
-                save_erp_to_db(_session, erp_data)
+                if not erp_omitido:
+                    save_erp_to_db(_session, erp_data)
                 _invoice_id = _inv.id
         except Exception as e:
             return {'error': f'Error al guardar encabezado: {e}'}, 400
@@ -107,9 +113,10 @@ def process_upload(app):
                                          tipo_comprobante=tipo_comprobante)
             invoice.erp_filename = erp_filename
             session.commit()
-            save_erp_to_db(session, erp_data)
-            differences = compare_invoice_vs_erp(session, invoice.id)
-            save_differences(session, invoice.id, differences)
+            if not erp_omitido:
+                save_erp_to_db(session, erp_data)
+                differences = compare_invoice_vs_erp(session, invoice.id)
+                save_differences(session, invoice.id, differences)
             try:
                 erp_rows = session.query(database.ErpStock).all()
                 _bulk_upsert_productos(session, [
@@ -773,6 +780,8 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/compare')
     def compare_view(invoice_id):
+        from flask_login import current_user
+        import observer_source
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
             if not invoice:
@@ -787,9 +796,14 @@ def init_app(app):
                 item.codigo_barra: float(item.precio_unitario or 0)
                 for item in inv_items if item.codigo_barra
             }
+            # Flag para mostrar botón de ObServer (solo usuarios habilitados + observer online)
+            observer_disponible = False
+            if current_user.is_authenticated and current_user.rol in ('farmacia', 'dev', 'admin'):
+                observer_disponible = observer_source.observer_disponible()
             return render_template('compare.html', invoice=invoice,
                                    invoice_diffs=invoice_diffs, erp_items=erp_items,
-                                   inv_prices=inv_prices)
+                                   inv_prices=inv_prices,
+                                   observer_disponible=observer_disponible)
 
     @app.route('/invoice/<int:invoice_id>/apply-mapping', methods=['POST'])
     def apply_mapping(invoice_id):

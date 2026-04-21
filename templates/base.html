@@ -92,9 +92,23 @@
                         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
                 </svg>
             </div>
-            <div class="brand-text">
+            <div class="brand-text flex-1 min-w-0">
                 <p class="text-sm font-bold text-white leading-tight">Control de Stock</p>
                 <p class="text-xs text-[#9ca3af]">{{ config.farmacia_nombre | default('Farmacia') }}</p>
+                {% if current_user.is_authenticated %}
+                <div class="mt-2 pt-2 border-t border-[#1f2937] flex items-center gap-1.5">
+                    <div class="w-5 h-5 rounded-full bg-brand flex items-center justify-center text-[9px] font-bold text-brand-dark flex-shrink-0">
+                        {{ (current_user.nombre_completo or current_user.username)[0] | upper }}
+                    </div>
+                    <p class="text-[11px] text-white truncate flex-1" title="{{ current_user.nombre_completo or current_user.username }} ({{ current_user.rol }})">
+                        {{ current_user.nombre_completo or current_user.username }}
+                    </p>
+                    <a href="{{ url_for('auth_logout') }}" title="Salir"
+                       class="text-[#9ca3af] hover:text-red-400 flex-shrink-0">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -190,7 +204,22 @@
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             Configuración
         </a>
+        {% if current_user.is_authenticated and current_user.rol in ('farmacia','dev','admin') %}
+        <a href="{{ url_for('observer_analizar') }}"
+           class="{{ nav_active_cls if nav_active == 'observer' else nav_link }}">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            ObServer <span class="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 font-semibold ml-auto">ONLINE</span>
+        </a>
+        {% endif %}
+        {% if tiene_permiso('usuarios', 'ver') %}
+        <a href="{{ url_for('usuarios_list') }}"
+           class="{{ nav_active_cls if nav_active == 'usuarios' else nav_link }}">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+            Usuarios
+        </a>
+        {% endif %}
     </nav>
+
     {% block sidebar_footer %}{% endblock %}
 </aside>
 

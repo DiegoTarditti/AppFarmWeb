@@ -18,9 +18,13 @@ from routes import (
     vademecum,
     obras_sociales,
     procesos,
+    auth_routes,
+    observer,
 )
 
 _modules = [
+    auth_routes,
+    observer,
     core,
     providers,
     laboratorios,

@@ -6,19 +6,63 @@ from database import Invoice, InvoiceItem, ErpStock, Provider, Claim, ClaimItem,
 
 def extract_provider_name_from_pdf(pdf_path):
     """Lee el encabezado del PDF y propone el nombre del proveedor."""
+    info = extract_provider_info_from_pdf(pdf_path)
+    return info.get('razon_social') or ''
+
+
+def extract_provider_info_from_pdf(pdf_path):
+    """Lee el encabezado del PDF y extrae razón social, CUIT, fecha y número.
+
+    Lo que se detecta se precarga en el modo aprendizaje para que el usuario
+    no tenga que re-seleccionar campos que ya fueron identificados.
+    """
     import pdfplumber
     import re
     with pdfplumber.open(pdf_path) as pdf:
         text = pdf.pages[0].extract_text() or ''
-    # Buscar en cada línea una razón social con forma jurídica reconocida.
-    # Usar espacio literal (no \s) para no cruzar líneas.
+
+    razon = None
     m = re.search(
         r'^([A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ ]+(?:S\.A\.|S\.R\.L\.|S\.A\.S\.|LTDA\.|S\.C\.))',
         text, re.MULTILINE
     )
     if m:
-        return m.group(1).strip()
-    return ''
+        razon = m.group(1).strip()
+
+    cuit = None
+    # CUIT argentino: 2 dígitos - 8 dígitos - 1 dígito (con o sin guiones, con o sin espacios)
+    # Priorizamos el primer CUIT de formato emisor (30-XXXXXXXX-X o 27/20/23)
+    for cm in re.finditer(r'\b(\d{2})[\-\s]?(\d{8})[\-\s]?(\d{1})\b', text):
+        candidato = f'{cm.group(1)}-{cm.group(2)}-{cm.group(3)}'
+        cuit = candidato
+        break
+
+    # Fecha: formatos DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY
+    fecha = None
+    for fm in re.finditer(r'\b(\d{2})[\/\-](\d{2})[\/\-](\d{2,4})\b', text):
+        d, mo, y = fm.group(1), fm.group(2), fm.group(3)
+        try:
+            di, mi = int(d), int(mo)
+            if 1 <= di <= 31 and 1 <= mi <= 12:
+                fecha = f'{d}/{mo}/{y if len(y) == 4 else "20" + y}'
+                break
+        except ValueError:
+            continue
+
+    # Número de factura / comprobante: patrones comunes en Arg
+    numero = None
+    patrones_num = [
+        r'(?:FACTURA|REMITO|COMPROBANTE)\s*[:\s]*([A-Z]?\s*\d{3,5}[\-\s]?\d{5,10})',
+        r'N[º°]\s*[:\s]*(\d{3,5}[\-\s]?\d{5,10})',
+        r'\b(\d{4}[\-\s]\d{8})\b',  # 0001-00001234
+    ]
+    for pat in patrones_num:
+        nm = re.search(pat, text, re.IGNORECASE)
+        if nm:
+            numero = re.sub(r'\s+', '-', nm.group(1).strip())
+            break
+
+    return {'razon_social': razon, 'cuit': cuit, 'fecha': fecha, 'numero': numero}
 
 
 def parse_invoice_pdf(pdf_path, parser_file):

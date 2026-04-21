@@ -181,6 +181,28 @@
                         {{ erp_items|length }}
                     </span>
                     {% endif %}
+                    {% if observer_disponible %}
+                    <form method="post" action="{{ url_for('observer_sync_factura', invoice_id=invoice.id) }}"
+                          class="ml-auto flex items-center gap-1.5"
+                          onsubmit="return confirmObserverSync(this);">
+                        <input type="text" name="comprobante" placeholder="Nº comprobante ObServer"
+                               value="{{ invoice.numero_factura or '' }}" required
+                               title="Número del comprobante de recepción en ObServer"
+                               class="text-[11px] bg-[#f5f5f5] border border-[#d0d0d0] rounded px-2 py-1 w-36 focus:outline-none focus:ring-1 focus:ring-violet-500">
+                        <button type="submit"
+                                class="flex items-center gap-1.5 text-[11px] font-semibold bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1 rounded-lg transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            Traer desde ObServer
+                        </button>
+                    </form>
+                    <script>
+                    function confirmObserverSync(form) {
+                        const nro = (form.querySelector('input[name="comprobante"]').value || '').trim();
+                        if (!nro) { alert('Ingresá el Nº de comprobante de ObServer.'); return false; }
+                        return confirm('Traer recepciones del comprobante "' + nro + '" desde ObServer?\n\nReemplaza los datos ERP actuales.');
+                    }
+                    </script>
+                    {% endif %}
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">

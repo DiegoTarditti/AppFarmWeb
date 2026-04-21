@@ -29,8 +29,9 @@
     </div>
 </header>
 
-<div class="max-w-7xl mx-auto px-6 py-6 flex gap-6">
+<div class="max-w-[1600px] mx-auto px-6 py-6">
 
+<div class="flex gap-6">
     <div class="w-1/2 shrink-0">
         <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
             <div class="px-4 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0]">
@@ -48,6 +49,7 @@
             <p class="text-xs text-[#6f6f6f] mb-2">Seleccioná texto en el PDF izquierdo y clickeá el campo.</p>
             <div class="flex flex-wrap gap-2" id="header-chips">
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="razon_social">Razón social</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="cuit">CUIT</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="numero">N°</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="fecha">Fecha</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="total">Total</button>
@@ -93,30 +95,53 @@
             <button onclick="resetSelections()" class="mt-2 text-xs text-[#6f6f6f] hover:text-red-600">Limpiar selecciones</button>
         </div>
 
-        <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
-            <p class="font-semibold text-sm mb-2">3. Inferir y probar</p>
-            <button onclick="inferPattern()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">Inferir patrón</button>
-            <div id="result" class="mt-3 hidden">
-                <div class="text-xs text-[#6f6f6f] mb-1">Patrón:</div>
-                <code id="pattern-out" class="block p-2 bg-[#1a1100] text-amber-200 rounded text-[10px] break-all mb-3"></code>
-                <div class="text-xs text-[#6f6f6f] mb-1">Filas detectadas: <span id="row-count">0</span></div>
-                <div id="preview" class="overflow-x-auto max-h-64 overflow-y-auto border border-[#e0e0e0] rounded text-xs"></div>
-                <button id="btn-export" onclick="exportXLSX()" class="mt-3 hidden px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
-                    Exportar XLSX ↓
-                </button>
-            </div>
-        </div>
-
     </div>
 </div>
 
+<!-- Sección 3: ancho completo para aprovechar la pantalla -->
+<div class="mt-6 bg-white rounded-xl border border-[#e0e0e0] p-5">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <p class="font-semibold text-sm">3. Inferir y probar</p>
+        <button onclick="inferPattern()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">Inferir patrón</button>
+    </div>
+    <div id="result" class="hidden">
+        <div class="text-xs text-[#6f6f6f] mb-1">Patrón:</div>
+        <code id="pattern-out" class="block p-2 bg-[#1a1100] text-amber-200 rounded text-[10px] break-all mb-3"></code>
+        <div class="flex items-center gap-3 mb-2 flex-wrap">
+            <span class="text-xs text-[#6f6f6f]">Filas detectadas: <span id="row-count" class="font-bold text-[#1e1e1e]">0</span></span>
+            <div id="calc-check" class="hidden text-xs px-3 py-1 rounded-lg border font-semibold"></div>
+        </div>
+        <div id="preview" class="overflow-x-auto max-h-[55vh] overflow-y-auto border border-[#e0e0e0] rounded text-xs"></div>
+        <div id="actions-row" class="mt-3 hidden flex flex-wrap gap-2">
+            <button id="btn-save-parser" onclick="guardarParser()" class="px-4 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-semibold">
+                💾 Guardar parser
+            </button>
+            <button id="btn-save-factura" onclick="guardarFactura()" class="px-4 py-2 text-xs rounded-lg bg-sky-600 hover:bg-sky-700 text-white font-semibold">
+                📄 Guardar como factura
+            </button>
+            <button id="btn-enviar-proceso" onclick="enviarAProceso()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">
+                🚀 Enviar a Proceso
+            </button>
+            <button id="btn-export" onclick="exportXLSX()" class="px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                Exportar XLSX ↓
+            </button>
+        </div>
+        <p id="save-status" class="mt-2 text-xs hidden"></p>
+    </div>
+</div>
+
+</div>
+
 <script>
-const state = { exampleLine: '', selections: [], lastRows: [], lastFields: [], header: {} };
+const HEADER_PRECARGADO = {{ header_precargado | default({}) | tojson }};
+const state = { exampleLine: '', selections: [], lastRows: [], lastFields: [],
+                header: Object.assign({}, HEADER_PRECARGADO),
+                autodetectados: new Set(Object.keys(HEADER_PRECARGADO || {})) };
 
 const DEFAULT_CHIPS = [
     ['codigo_barra','Código barra'], ['cantidad','Cantidad'], ['descripcion','Descripción'],
-    ['precio_unitario','Precio unit.'], ['dto','Dto %'], ['importe','Importe'],
-    ['lote','Lote'], ['vencimiento','Vencimiento']
+    ['precio_publico','Precio público'], ['dto','Dto %'], ['precio_unitario','Precio unit.'],
+    ['importe','Importe'], ['lote','Lote'], ['vencimiento','Vencimiento']
 ];
 
 function escapeHtml(s) { return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
@@ -139,6 +164,8 @@ function restoreDefaultChips() {
     state.selections=[]; renderExample(); renderSelections();
 }
 restoreDefaultChips();
+// Renderizar encabezado con valores autodetectados al cargar la página
+renderHeader();
 
 function generateChipsFromTitles() {
     const line = (document.getElementById('titles-line').value||'').trim();
@@ -175,22 +202,50 @@ function addCustomHChip() {
 
 document.getElementById('header-chips').addEventListener('click', (e) => {
     const btn = e.target.closest('.hchip'); if (!btn) return;
-    const sel = window.getSelection(); const txt = sel ? sel.toString().trim() : '';
-    if (!txt) { alert('Seleccioná texto en el PDF izquierdo.'); return; }
-    state.header[btn.dataset.field] = txt; renderHeader();
+    const field = btn.dataset.field;
+    const sel = window.getSelection();
+    const txt = sel ? sel.toString().trim() : '';
+    if (txt) {
+        state.header[field] = txt;
+    } else {
+        // Sin selección → permitir tipear manualmente (útil cuando el dato está en un logo)
+        const actual = state.header[field] || '';
+        const manual = prompt('Valor para "' + field + '" (no hay selección en el PDF, escribilo a mano):', actual);
+        if (manual === null) return; // cancel
+        const v = manual.trim();
+        if (!v) { delete state.header[field]; } else { state.header[field] = v; }
+    }
+    state.autodetectados.delete(field); // si pisaste el valor, ya no es AUTO
+    renderHeader();
 });
 
 function renderHeader() {
     const used = new Set(Object.keys(state.header));
     document.querySelectorAll('#header-chips .hchip').forEach(c => c.classList.toggle('used', used.has(c.dataset.field)));
-    document.getElementById('header-values').innerHTML = Object.keys(state.header).map(k =>
-        `<div class="flex justify-between items-center bg-[#f5f5f5] rounded px-2 py-1 gap-2">
-            <span class="font-semibold">${k}:</span>
+    document.getElementById('header-values').innerHTML = Object.keys(state.header).map(k => {
+        const isAuto = state.autodetectados.has(k);
+        const badge = isAuto ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-sky-100 text-sky-700 mr-1.5" title="Detectado automáticamente">AUTO</span>' : '';
+        return `<div class="flex justify-between items-center bg-[#f5f5f5] rounded px-2 py-1 gap-2">
+            <span class="font-semibold flex items-center">${badge}${k}:</span>
             <span class="font-mono flex-1 text-right">${escapeHtml(state.header[k])}</span>
+            <button onclick="editHeader('${k}')" title="Editar a mano" class="text-sky-600 hover:text-sky-800 px-1">✎</button>
             <button onclick="removeHeader('${k}')" class="text-red-600 hover:text-red-800 font-bold px-1">×</button>
-         </div>`).join('');
+         </div>`;
+    }).join('');
 }
-function removeHeader(k) { delete state.header[k]; renderHeader(); }
+function removeHeader(k) {
+    delete state.header[k];
+    state.autodetectados.delete(k);
+    renderHeader();
+}
+function editHeader(k) {
+    const v = prompt('Nuevo valor para "' + k + '":', state.header[k] || '');
+    if (v === null) return;
+    const t = v.trim();
+    if (!t) { delete state.header[k]; } else { state.header[k] = t; }
+    state.autodetectados.delete(k); // ya no es AUTO si lo editaste
+    renderHeader();
+}
 
 function useSelectionAsExample() {
     const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
@@ -273,24 +328,275 @@ async function inferPattern() {
     renderPreview();
 }
 
+// ── Clasificación y formateo de celdas según el nombre del campo ──
+function _tipoCampo(field) {
+    const f = (field || '').toLowerCase();
+    if (/(importe|monto|total|neto|iva|bruto|subtotal|precio|pvp|psl|costo|bonif)/.test(f)) return 'money';
+    if (/(dto|desc|descuento|porcentaje|pct|%)/.test(f)) return 'percent';
+    if (/(cantidad|unidades|cant|stock|cajas|bultos)/.test(f)) return 'int';
+    if (/(codigo_barra|ean|gtin|cuit|cuil|iibb)/.test(f)) return 'code'; // no tocar
+    return 'text';
+}
+function _parseArgNumber(s) {
+    if (s == null) return null;
+    const t = String(s).trim();
+    if (!t) return null;
+    // "1.234.567,89" → 1234567.89  |  "1234,56" → 1234.56  |  "1234.56" → 1234.56
+    const limpio = t.replace(/\s/g, '');
+    // Si tiene coma como último separador decimal → estilo argentino
+    if (/,/.test(limpio) && /,\d{1,3}$/.test(limpio)) {
+        return parseFloat(limpio.replace(/\./g, '').replace(',', '.'));
+    }
+    const n = parseFloat(limpio.replace(',', '.'));
+    return isNaN(n) ? null : n;
+}
+function _fmtArgMoney(n) {
+    if (n == null || isNaN(n)) return '';
+    const [i, d] = n.toFixed(2).split('.');
+    const ip = i.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return '$ ' + ip + ',' + d;
+}
+function _fmtArgInt(n) {
+    if (n == null || isNaN(n)) return '';
+    return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+function _fmtPct(n) {
+    if (n == null || isNaN(n)) return '';
+    return (Math.round(n * 100) / 100).toString().replace('.', ',') + ' %';
+}
+function _renderCell(field, raw) {
+    const val = raw || '';
+    const tipo = _tipoCampo(field);
+    if (tipo === 'text' || tipo === 'code' || !val) return escapeHtml(val);
+    const num = _parseArgNumber(val);
+    if (num == null) return escapeHtml(val);
+    let fmt;
+    if (tipo === 'money')   fmt = _fmtArgMoney(num);
+    else if (tipo === 'int')     fmt = _fmtArgInt(num);
+    else if (tipo === 'percent') fmt = _fmtPct(num);
+    else return escapeHtml(val);
+    // Tooltip con el raw para transparencia
+    return `<span title="raw: ${escapeHtml(val)}" class="text-[#1e1e1e]">${fmt}</span>`;
+}
+function _alignFor(field) {
+    const t = _tipoCampo(field);
+    return (t === 'money' || t === 'int' || t === 'percent') ? 'text-right' : 'text-left';
+}
+
 function renderPreview() {
     const fields = state.lastFields; const rows = state.lastRows;
     let html = '<table class="w-full border-collapse"><thead><tr class="bg-[#f0f0f0]"><th class="border border-[#e0e0e0] px-1"></th>';
-    fields.forEach(f => html += `<th class="border border-[#e0e0e0] px-2 py-1 text-left">${f}</th>`);
+    fields.forEach(f => html += `<th class="border border-[#e0e0e0] px-2 py-1 ${_alignFor(f)}">${f}</th>`);
     html += '</tr></thead><tbody>';
     rows.slice(0,100).forEach((r,i) => {
         html += `<tr class="${i%2?'bg-[#f5f5f5]':'bg-white'}"><td class="border border-[#e0e0e0] px-1 text-center"><button onclick="removeRow(${i})" class="text-red-600 hover:text-red-800 font-bold">×</button></td>`;
-        fields.forEach(f => html += `<td class="border border-[#e0e0e0] px-2 py-1 whitespace-nowrap">${escapeHtml(r[f]||'')}</td>`);
+        fields.forEach(f => html += `<td class="border border-[#e0e0e0] px-2 py-1 whitespace-nowrap font-mono ${_alignFor(f)}">${_renderCell(f, r[f])}</td>`);
         html += '</tr>';
     });
     html += '</tbody></table>';
     document.getElementById('preview').innerHTML = html;
     document.getElementById('row-count').textContent = rows.length;
-    const btn = document.getElementById('btn-export');
-    btn.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
+    const actionsRow = document.getElementById('actions-row');
+    actionsRow.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
+    verificarCalculo(rows, fields);
+}
+
+function _findField(fields, regex) {
+    return fields.find(f => regex.test(f.toLowerCase()));
+}
+
+function verificarCalculo(rows, fields) {
+    const chk = document.getElementById('calc-check');
+    chk.classList.add('hidden');
+    if (!rows.length) return;
+
+    const fCant  = _findField(fields, /^(cantidad|cant|unidades)$/);
+    const fUnit  = _findField(fields, /^(precio_unitario|precio_unit|unitario)$/);
+    const fImp   = _findField(fields, /^(importe|total|monto|subtotal|neto)$/);
+    const fPub   = _findField(fields, /^(precio_publico|precio_pub|precio|pvp|psl)$/);
+    const fDto   = _findField(fields, /^(dto|descuento|desc|desc_pct|porcentaje)$/);
+
+    if (!fCant || !fUnit || !fImp) {
+        chk.className = 'text-xs px-3 py-1 rounded-lg border font-semibold bg-[#f5f5f5] text-[#6f6f6f] border-[#e0e0e0]';
+        chk.textContent = '· No se puede verificar cálculo (faltan campos cantidad/unitario/importe)';
+        chk.classList.remove('hidden');
+        return;
+    }
+
+    // Tomar primera fila con los valores parseables
+    let sample = null;
+    for (const r of rows) {
+        const c = _parseArgNumber(r[fCant]);
+        const u = _parseArgNumber(r[fUnit]);
+        const t = _parseArgNumber(r[fImp]);
+        const p = fPub ? _parseArgNumber(r[fPub]) : null;
+        const d = fDto ? _parseArgNumber(r[fDto]) : null;
+        if (c != null && u != null && t != null) { sample = {c, u, t, p, d, r}; break; }
+    }
+    if (!sample) {
+        chk.className = 'text-xs px-3 py-1 rounded-lg border font-semibold bg-amber-50 text-amber-800 border-amber-200';
+        chk.textContent = '⚠ No se pudo parsear cantidad/unitario/importe de ninguna fila';
+        chk.classList.remove('hidden');
+        return;
+    }
+
+    // Verificación 1: unit × cant = total
+    const calcTotal = sample.c * sample.u;
+    const diffTotal = Math.abs(calcTotal - sample.t);
+    const tolTotal  = Math.max(0.02, sample.t * 0.005);
+    const totalOk = diffTotal <= tolTotal;
+
+    // Verificación 2: precio_publico × (1 - dto/100) = precio_unitario
+    let dtoOk = null, dtoMsg = '';
+    if (sample.p != null && sample.d != null && sample.p > 0) {
+        const calcUnit = sample.p * (1 - sample.d / 100);
+        const diffUnit = Math.abs(calcUnit - sample.u);
+        const tolUnit  = Math.max(0.02, sample.u * 0.005);
+        dtoOk = diffUnit <= tolUnit;
+        if (dtoOk) {
+            dtoMsg = ` · Dto OK (${_fmtArgMoney(sample.p)} − ${sample.d.toString().replace('.', ',')}% = ${_fmtArgMoney(sample.u)})`;
+        } else {
+            dtoMsg = ` · ✗ Dto no cierra: ${_fmtArgMoney(sample.p)} − ${sample.d}% = ${_fmtArgMoney(calcUnit)}, pero unit dice ${_fmtArgMoney(sample.u)}`;
+        }
+    }
+
+    // Mensaje final combinado
+    const okGlobal = totalOk && (dtoOk !== false);
+    let txt;
+    if (totalOk) {
+        txt = `✓ Unit × Cant = Total OK (${sample.c} × ${_fmtArgMoney(sample.u)} = ${_fmtArgMoney(sample.t)})${dtoMsg}`;
+    } else {
+        txt = `✗ Error: ${sample.c} × ${_fmtArgMoney(sample.u)} = ${_fmtArgMoney(calcTotal)}, pero importe dice ${_fmtArgMoney(sample.t)}${dtoMsg}`;
+    }
+    chk.className = 'text-xs px-3 py-1 rounded-lg border font-semibold ' +
+        (okGlobal ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  : 'bg-red-50 text-red-800 border-red-200');
+    chk.textContent = txt;
+    chk.classList.remove('hidden');
 }
 
 function removeRow(i) { state.lastRows.splice(i,1); renderPreview(); }
+
+async function guardarParser() {
+    const pattern = document.getElementById('pattern-out').textContent.trim();
+    if (!pattern) { alert('Primero inferí el patrón.'); return; }
+    if (!state.lastRows.length) { alert('El patrón no detecta filas.'); return; }
+
+    const providerId = {{ (proveedor_id or 'null') | tojson }};
+    const razonDetectada = {{ (proveedor_razon or '') | tojson }};
+
+    let providerName = razonDetectada;
+    let cuit = '';
+    if (!providerId) {
+        providerName = prompt('Nombre del proveedor para este parser:', razonDetectada || '');
+        if (!providerName || !providerName.trim()) return;
+        cuit = prompt('CUIT del proveedor (opcional):', '') || '';
+    }
+
+    const btn = document.getElementById('btn-save-parser');
+    const status = document.getElementById('save-status');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+
+    try {
+        const resp = await fetch('{{ url_for("converter_guardar_parser", token=token) }}', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                pattern: pattern,
+                fields: state.lastFields,
+                provider_id: providerId,
+                provider_name: providerName,
+                cuit: cuit,
+            })
+        });
+        const data = await resp.json();
+        status.classList.remove('hidden');
+        if (data.ok) {
+            status.textContent = '✓ ' + data.mensaje + ' — el proveedor ahora usa este parser automáticamente.';
+            status.className = 'mt-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5';
+            btn.textContent = '✓ Guardado';
+        } else {
+            status.textContent = 'Error: ' + (data.error || 'desconocido');
+            status.className = 'mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5';
+            btn.disabled = false;
+            btn.textContent = '💾 Guardar como parser';
+        }
+    } catch (e) {
+        status.classList.remove('hidden');
+        status.textContent = 'Error de conexión: ' + e;
+        status.className = 'mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5';
+        btn.disabled = false;
+        btn.textContent = '💾 Guardar como parser';
+    }
+}
+
+function _mostrarStatus(mensaje, tipo) {
+    const status = document.getElementById('save-status');
+    status.classList.remove('hidden');
+    status.textContent = mensaje;
+    const clases = {
+        success: 'mt-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5',
+        error:   'mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-2 py-1.5',
+        info:    'mt-2 text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded px-2 py-1.5',
+    };
+    status.className = clases[tipo] || clases.info;
+}
+
+async function guardarFactura() {
+    if (!state.lastRows.length) { alert('Primero inferí el patrón.'); return; }
+    if (!state.header.razon_social && !state.header.cuit) {
+        if (!confirm('No hay razón social ni CUIT en el encabezado. ¿Guardar la factura igual?')) return;
+    }
+    const btn = document.getElementById('btn-save-factura');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+        const resp = await fetch('{{ url_for("converter_guardar_factura", token=token) }}', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ header: state.header, rows: state.lastRows })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            _mostrarStatus('✓ ' + data.mensaje + ' — ', 'success');
+            const status = document.getElementById('save-status');
+            const a = document.createElement('a');
+            a.href = data.url_factura; a.target = '_blank';
+            a.className = 'underline font-semibold'; a.textContent = 'Ver factura';
+            status.appendChild(a);
+            btn.textContent = '✓ Guardada';
+        } else {
+            _mostrarStatus('Error: ' + (data.error || 'desconocido'), 'error');
+            btn.disabled = false; btn.textContent = '📄 Guardar como factura';
+        }
+    } catch (e) {
+        _mostrarStatus('Error de conexión: ' + e, 'error');
+        btn.disabled = false; btn.textContent = '📄 Guardar como factura';
+    }
+}
+
+async function enviarAProceso() {
+    if (!state.lastRows.length) { alert('Primero inferí el patrón.'); return; }
+    if (!state.header.razon_social && !state.header.cuit) {
+        if (!confirm('No hay razón social ni CUIT en el encabezado. ¿Enviar igual?')) return;
+    }
+    const btn = document.getElementById('btn-enviar-proceso');
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+        const resp = await fetch('{{ url_for("converter_enviar_a_proceso", token=token) }}', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ header: state.header, rows: state.lastRows })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            _mostrarStatus('✓ ' + data.mensaje + ' Redirigiendo…', 'success');
+            setTimeout(() => { window.location.href = data.url_proceso; }, 900);
+        } else {
+            _mostrarStatus('Error: ' + (data.error || 'desconocido'), 'error');
+            btn.disabled = false; btn.textContent = '🚀 Enviar a Proceso';
+        }
+    } catch (e) {
+        _mostrarStatus('Error de conexión: ' + e, 'error');
+        btn.disabled = false; btn.textContent = '🚀 Enviar a Proceso';
+    }
+}
 
 async function exportXLSX() {
     if (!state.lastRows.length) return;

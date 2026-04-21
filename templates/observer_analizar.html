@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% set nav_active = "observer" %}
+{% block title %}Analizar desde ObServer{% endblock %}
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Analizar ventas desde ObServer</h1>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-800">ONLINE</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-xl mx-auto bg-white border border-surface-border rounded-xl p-6">
+        <p class="text-xs text-[#6f6f6f] mb-5">
+            Los datos se consultan en vivo desde ObServer. No hace falta subir archivos.
+            Elegí el laboratorio y el período de análisis.
+        </p>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+        <div class="mb-4 px-3 py-2 rounded-lg text-xs border
+            {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
+            {% elif cat == 'warning' %}bg-amber-50 text-amber-800 border-amber-200
+            {% elif cat == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200
+            {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">{{ msg }}</div>
+        {% endfor %}
+        {% endwith %}
+
+        <form method="post" class="space-y-4">
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Laboratorio</label>
+                <select name="laboratorio" required
+                    class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <option value="">— seleccionar —</option>
+                    {% for l in laboratorios %}
+                    <option value="{{ l.nombre }}" {% if request.args.get('laboratorio') == l.nombre %}selected{% endif %}>
+                        {{ l.nombre }} ({{ l.n_articulos }} productos)
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Mes hasta</label>
+                    <select name="mes_hasta" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
+                        {% for i in range(1, 13) %}
+                        <option value="{{ i }}" {% if i == (request.form.get('mes_hasta') | int or 0) or (not request.form.get('mes_hasta') and i == 3) %}selected{% endif %}>{{ '%02d' | format(i) }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Año hasta</label>
+                    <input type="number" name="anio_hasta" value="2026" min="2020" max="2100"
+                           class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
+                </div>
+            </div>
+
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">
+                    Días a proyectar: <span id="n-days-display" class="text-brand">{{ n_days_default }}</span>
+                </label>
+                <input type="range" name="n_days" min="7" max="120" value="{{ n_days_default }}"
+                       oninput="document.getElementById('n-days-display').textContent = this.value"
+                       class="w-full">
+                <div class="flex justify-between text-[10px] text-[#999] mt-1">
+                    <span>7d</span><span>30d</span><span>60d</span><span>90d</span><span>120d</span>
+                </div>
+            </div>
+
+            <button type="submit"
+                class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2.5 rounded-lg text-sm transition-colors">
+                Analizar ventas
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

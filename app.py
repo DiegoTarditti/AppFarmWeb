@@ -24,6 +24,22 @@ def bloquear_descuentos():
         abort(404)
 
 
+@app.before_request
+def exigir_login():
+    from flask import request, redirect, url_for
+    from flask_login import current_user
+    # Rutas públicas (no requieren login)
+    rutas_publicas = {'auth_login', 'static', 'health'}
+    if request.endpoint in rutas_publicas or request.endpoint is None:
+        return None
+    if not current_user.is_authenticated:
+        return redirect(url_for('auth_login', next=request.path))
+    # Forzar cambio de password si corresponde
+    if current_user.debe_cambiar_password and request.endpoint not in ('auth_cambiar_password', 'auth_logout'):
+        return redirect(url_for('auth_cambiar_password'))
+    return None
+
+
 @app.template_filter('abs')
 def abs_filter(value):
     return abs(value)
@@ -44,6 +60,9 @@ def arg_currency(value):
         int_formatted = ch + int_formatted
     return f'{int_formatted},{dec_part}'
 
+
+from auth import init_auth
+init_auth(app)
 
 from routes import register_routes
 register_routes(app)

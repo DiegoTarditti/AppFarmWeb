@@ -374,6 +374,37 @@ class ProductAnalytics(Base):
     actualizado_en = Column(DateTime, default=now_ar)
 
 
+class Usuario(Base):
+    """Usuarios de la aplicación con rol y permisos."""
+    __tablename__ = 'usuarios'
+    id = Column(Integer, primary_key=True)
+    username = Column(String(50), nullable=False, unique=True)
+    email = Column(String(150))
+    password_hash = Column(String(255), nullable=False)
+    nombre_completo = Column(String(200))
+    rol = Column(String(20), nullable=False, default='remoto')   # farmacia | dev | remoto | admin
+    permisos_json = Column(Text, nullable=False, default='{}')   # {"facturas":"editar","stock":"ver",...}
+    activo = Column(Boolean, nullable=False, default=True)
+    debe_cambiar_password = Column(Boolean, nullable=False, default=False)
+    ultimo_login = Column(DateTime, nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+    def get_id(self):
+        return str(self.id)
+
+    @property
+    def is_authenticated(self):
+        return True
+
+    @property
+    def is_active(self):
+        return self.activo
+
+    @property
+    def is_anonymous(self):
+        return False
+
+
 class AnalisisSesion(Base):
     """Registro de cada ejecución de análisis de ventas."""
     __tablename__ = 'analisis_sesiones'
@@ -458,7 +489,7 @@ def init_db(database_url=None):
         # Limpia entradas stale en pg_type / secuencias huérfanas que bloquean CREATE TABLE
         # (puede pasar en Render u otros PG cuando un deploy previo crea pg_type pero no pg_class)
         with engine.connect() as conn:
-            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra', 'analisis_sesiones'):
+            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra', 'analisis_sesiones', 'usuarios'):
                 table_exists = conn.execute(
                     text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"),
                     {'t': tname}
@@ -762,6 +793,21 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE procesos_compra ADD COLUMN IF NOT EXISTS analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id) ON DELETE SET NULL"
     ))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            email VARCHAR(150),
+            password_hash VARCHAR(255) NOT NULL,
+            nombre_completo VARCHAR(200),
+            rol VARCHAR(20) NOT NULL DEFAULT 'remoto',
+            permisos_json TEXT NOT NULL DEFAULT '{}',
+            activo BOOLEAN NOT NULL DEFAULT TRUE,
+            debe_cambiar_password BOOLEAN NOT NULL DEFAULT FALSE,
+            ultimo_login TIMESTAMP,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
@@ -983,6 +1029,21 @@ def _sqlite_add_columns(conn):
     existing_proc = {row[1] for row in conn.execute(text("PRAGMA table_info(procesos_compra)"))}
     if 'analisis_sesion_id' not in existing_proc:
         conn.execute(text("ALTER TABLE procesos_compra ADD COLUMN analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            email VARCHAR(150),
+            password_hash VARCHAR(255) NOT NULL,
+            nombre_completo VARCHAR(200),
+            rol VARCHAR(20) NOT NULL DEFAULT 'remoto',
+            permisos_json TEXT NOT NULL DEFAULT '{}',
+            activo INTEGER NOT NULL DEFAULT 1,
+            debe_cambiar_password INTEGER NOT NULL DEFAULT 0,
+            ultimo_login TIMESTAMP,
+            creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
