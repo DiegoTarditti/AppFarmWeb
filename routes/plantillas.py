@@ -10,11 +10,7 @@ from datetime import datetime
 from flask import render_template, request, redirect, url_for, flash, jsonify, abort
 import database
 from database import Plantilla, Laboratorio, Provider, ExportTemplate, PlantillaExportacion, PlantillaCampo
-
-
-VALID_TIPOS = ('laboratorio', 'drogueria', 'proveedor')
-VALID_FORMATOS = ('xlsx', 'txt_fijo', 'csv')
-VALID_TIPOS_DOC = ('pedido', 'recepcion', 'descuento')
+from helpers import PARTNER_TIPOS as VALID_TIPOS, PLANTILLA_FORMATOS as VALID_FORMATOS, PLANTILLA_TIPOS_DOC as VALID_TIPOS_DOC
 
 
 def _entidad_nombre(session, tipo, id_):

@@ -20,6 +20,11 @@ ALLOWED_EXTENSIONS = {'pdf', 'xlsx', 'xls'}
 CONVERTER_DIR = os.path.join(UPLOAD_FOLDER, 'converter')
 PURCHASE_FOLDER = os.path.join(UPLOAD_FOLDER, 'purchase')
 
+# Las 3 entidades unificadas (ver project_entidades.md)
+PARTNER_TIPOS = ('laboratorio', 'drogueria', 'proveedor')
+PLANTILLA_FORMATOS = ('xlsx', 'txt_fijo', 'csv')
+PLANTILLA_TIPOS_DOC = ('pedido', 'recepcion', 'descuento')
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(CONVERTER_DIR, exist_ok=True)
 os.makedirs(PURCHASE_FOLDER, exist_ok=True)

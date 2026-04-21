@@ -8,9 +8,10 @@ from flask import request, jsonify
 from sqlalchemy import func
 import database
 from database import Laboratorio, Provider, Pedido, Invoice, ProcesoCompra
+from helpers import PARTNER_TIPOS
 
 
-VALID_TIPOS = {'laboratorio', 'drogueria', 'proveedor'}
+VALID_TIPOS = set(PARTNER_TIPOS)
 
 
 def _query_base(session, tipo):

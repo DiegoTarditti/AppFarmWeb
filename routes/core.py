@@ -12,41 +12,6 @@ def init_app(app):
     def index():
         return render_template('index.html', config=get_config())
 
-    @app.route('/mockup/plantillas/<tipo>')
-    def mockup_plantillas(tipo):
-        labels = {
-            'laboratorio': ('Laboratorio', 'Laboratorios', 'BAYER ARGENTINA'),
-            'drogueria':   ('Droguería',   'Droguerías',   'DROGUERÍA KELLERHOFF'),
-            'proveedor':   ('Proveedor',   'Proveedores',  'DISTRIBUIDORA DEL SUR'),
-        }
-        label, label_pl, nombre = labels.get(tipo, labels['laboratorio'])
-        plantillas = [
-            {'nombre': 'Pedido mensual — planilla Bayer', 'formato': 'xlsx',
-             'tipo_doc': 'Pedido', 'actualizada': '2026-04-18', 'default': True},
-            {'nombre': 'Pedido urgente (XLSX reducido)',  'formato': 'xlsx',
-             'tipo_doc': 'Pedido', 'actualizada': '2026-03-02', 'default': False},
-            {'nombre': 'Archivo TXT droguería ancho 80', 'formato': 'txt_fijo',
-             'tipo_doc': 'Pedido', 'actualizada': '2026-02-14', 'default': False},
-            {'nombre': 'Recepción — control facturas',   'formato': 'csv',
-             'tipo_doc': 'Recepción', 'actualizada': '2026-01-22', 'default': False},
-        ]
-        return render_template('mockup_plantillas.html',
-                               entidad_label=label, entidad_label_plural=label_pl,
-                               entidad_nombre=nombre, plantillas=plantillas)
-
-    @app.route('/mockup/plantilla-editor/<formato>')
-    def mockup_plantilla_editor(formato):
-        if formato not in ('xlsx', 'txt_fijo', 'csv'):
-            formato = 'xlsx'
-        plantilla = {
-            'nombre': 'Pedido mensual — planilla Bayer' if formato == 'xlsx' else 'Archivo TXT droguería ancho 80',
-            'formato': formato,
-            'tipo_doc': 'Pedido',
-            'default': formato == 'xlsx',
-        }
-        return render_template('mockup_plantilla_editor.html',
-                               entidad_nombre='BAYER ARGENTINA', plantilla=plantilla)
-
     @app.route('/ingresos')
     def ingresos():
         pdf_pendiente = request.args.get('pdf_pendiente', '')
