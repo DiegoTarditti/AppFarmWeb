@@ -65,6 +65,10 @@ window.PartnerSel = window.PartnerSel || (() => {
     const escapeHtml = s => String(s || '').replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     })[c]);
+    // JSON.stringify produce comillas dobles → rompen el atributo HTML onclick="..."
+    // Encodeamos las dobles como &quot; para que el HTML se parsee bien; al ejecutar
+    // el JS el navegador decodifica &quot; a " y queda un string válido.
+    const jsAttr = s => JSON.stringify(String(s || '')).replace(/"/g, '&quot;');
 
     function getEl(uid, suffix) { return document.getElementById(uid + '_' + suffix); }
     function getWrap(uid) { return document.querySelector('.partner-selector[data-uid="'+uid+'"]'); }
@@ -100,7 +104,7 @@ window.PartnerSel = window.PartnerSel || (() => {
         }
         chips.innerHTML = data.map(p =>
             `<button type="button" onmousedown="event.preventDefault()"
-                onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
+                onclick="PartnerSel.pick('${uid}', ${p.id}, ${jsAttr(p.nombre)})"
                 class="text-[11px] bg-amber-50 text-amber-900 border border-amber-200 hover:bg-brand hover:text-brand-dark hover:border-brand rounded-full px-2 py-0.5 transition-colors truncate max-w-[200px]"
                 title="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</button>`
         ).join('');
@@ -115,7 +119,7 @@ window.PartnerSel = window.PartnerSel || (() => {
             const body = await resp.json();
             const data = body.data || [];
             const qSafe = escapeHtml(q);
-            const qJson = JSON.stringify(q);
+            const qJson = jsAttr(q);
             const createRow = `<button type="button" onmousedown="event.preventDefault()"
                     onclick="PartnerSel.create('${uid}', ${qJson})"
                     class="w-full text-left px-3 py-1.5 text-sm border-t border-surface-border bg-amber-50 hover:bg-brand hover:text-brand-dark transition-colors flex items-center gap-2">
@@ -127,7 +131,7 @@ window.PartnerSel = window.PartnerSel || (() => {
             } else {
                 box.innerHTML = data.map(p =>
                     `<button type="button" onmousedown="event.preventDefault()"
-                        onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
+                        onclick="PartnerSel.pick('${uid}', ${p.id}, ${jsAttr(p.nombre)})"
                         class="w-full text-left px-3 py-1.5 text-sm hover:bg-[#f3f3f3] transition-colors">${escapeHtml(p.nombre)}</button>`
                 ).join('') + createRow;
             }
