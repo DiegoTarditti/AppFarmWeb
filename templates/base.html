@@ -27,6 +27,26 @@
     </script>
     <style>
         body { background-color: #D6ECDE; color: #1e1e1e; }
+
+        /* Encabezados de tabla: fondo oscuro, texto amber */
+        table thead {
+            background-color: #1f2937 !important;
+        }
+        table thead th {
+            background-color: #1f2937 !important;
+            color: #F4C430 !important;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            border-color: #111827 !important;
+        }
+        /* Para tablas sin thead pero con filas marcadas como header */
+        table tr.table-header, table tr.thead-row {
+            background-color: #1f2937 !important;
+        }
+        table tr.table-header th, table tr.table-header td,
+        table tr.thead-row th, table tr.thead-row td {
+            color: #F4C430 !important;
+        }
         ::-webkit-scrollbar { width: 5px; height: 5px; }
         ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
 
