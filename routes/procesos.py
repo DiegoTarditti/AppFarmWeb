@@ -101,7 +101,7 @@ def init_app(app):
         partner_nombre = (request.form.get('partner_nombre') or '').strip()
         periodo = (request.form.get('periodo') or '').strip()
 
-        if tipo not in ('laboratorio', 'drogueria'):
+        if tipo not in ('laboratorio', 'drogueria', 'proveedor'):
             flash('Tipo inválido.')
             return redirect(url_for('procesos_list'))
         if not partner_nombre:
@@ -112,6 +112,7 @@ def init_app(app):
                         lab = session.get(Laboratorio, int(partner_id))
                         partner_nombre = lab.nombre if lab else ''
                     else:
+                        # 'drogueria' o 'proveedor' → ambos viven en la tabla Provider
                         prov = session.get(Provider, int(partner_id))
                         partner_nombre = prov.razon_social if prov else ''
         if not partner_nombre:

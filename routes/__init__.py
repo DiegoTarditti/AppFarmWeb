@@ -18,6 +18,7 @@ from routes import (
     vademecum,
     obras_sociales,
     procesos,
+    partners,
     auth_routes,
     observer,
     admin,
@@ -44,6 +45,7 @@ _modules = [
     vademecum,
     obras_sociales,
     procesos,
+    partners,
 ]
 
 

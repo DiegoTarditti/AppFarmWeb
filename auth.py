@@ -104,6 +104,7 @@ def verificar_password(user, plain):
 def seed_admin_si_falta():
     """Crea usuario admin/cambiar123 si la tabla está vacía.
     Llamar desde init_db después de crear la tabla."""
+    from sqlalchemy.exc import IntegrityError
     with database.get_db() as session:
         existe = session.query(Usuario).first()
         if existe:
@@ -119,7 +120,11 @@ def seed_admin_si_falta():
             debe_cambiar_password=True,
         )
         session.add(admin)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            # Otro worker ganó la carrera — el admin ya existe.
+            session.rollback()
 
 
 def init_auth(app):

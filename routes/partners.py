@@ -1,0 +1,123 @@
+"""API unificada de partners (laboratorio | drogueria | proveedor).
+
+Sirve de base para reemplazar los ~12 selects dispersos por un único
+componente typeahead con chips de "más usados".
+"""
+
+from flask import request, jsonify
+from sqlalchemy import func
+import database
+from database import Laboratorio, Provider, Pedido, Invoice, ProcesoCompra
+
+
+VALID_TIPOS = {'laboratorio', 'drogueria', 'proveedor'}
+
+
+def _query_base(session, tipo):
+    """Devuelve query base de partners filtrada por tipo.
+    - 'laboratorio' → tabla Laboratorio
+    - 'drogueria'   → Provider filtrado por tipo='drogueria'
+    - 'proveedor'   → Provider filtrado por tipo='proveedor' (o distinto de drogueria)
+    Normaliza al shape {id, nombre}.
+    """
+    if tipo == 'laboratorio':
+        return session.query(Laboratorio.id.label('id'),
+                             Laboratorio.nombre.label('nombre'))
+    if tipo == 'drogueria':
+        return session.query(Provider.id.label('id'),
+                             Provider.razon_social.label('nombre')) \
+                      .filter(Provider.tipo == 'drogueria')
+    # proveedor "otro"
+    return session.query(Provider.id.label('id'),
+                         Provider.razon_social.label('nombre')) \
+                  .filter(Provider.tipo != 'drogueria')
+
+
+def _top_usados(session, tipo, n=10):
+    """Top N partners más usados. Cuenta apariciones en Pedido (para lab),
+    Invoice (para drogueria/proveedor) y ProcesoCompra (todos).
+    Fallback alfabético si no hay historia."""
+    top_ids = []
+
+    if tipo == 'laboratorio':
+        # Pedidos guardan laboratorio por nombre; contamos por nombre y
+        # después resolvemos el id.
+        rows = (session.query(Pedido.laboratorio, func.count(Pedido.id).label('c'))
+                .filter(Pedido.laboratorio.isnot(None))
+                .group_by(Pedido.laboratorio)
+                .order_by(func.count(Pedido.id).desc())
+                .limit(n * 2).all())
+        nombres = [r[0] for r in rows if r[0]]
+        if nombres:
+            top = (session.query(Laboratorio.id, Laboratorio.nombre)
+                   .filter(Laboratorio.nombre.in_(nombres)).all())
+            name_to_id = {l.nombre: l.id for l in top}
+            top_ids = [name_to_id[n_] for n_ in nombres if n_ in name_to_id][:n]
+    else:
+        # Invoice.proveedor_razon o ProcesoCompra.partner_id
+        rows = (session.query(ProcesoCompra.partner_id,
+                              func.count(ProcesoCompra.id).label('c'))
+                .filter(ProcesoCompra.tipo == tipo)
+                .filter(ProcesoCompra.partner_id.isnot(None))
+                .group_by(ProcesoCompra.partner_id)
+                .order_by(func.count(ProcesoCompra.id).desc())
+                .limit(n).all())
+        top_ids = [r[0] for r in rows]
+
+    # Completar con alfabéticos si falta
+    if len(top_ids) < n:
+        faltantes = n - len(top_ids)
+        q = _query_base(session, tipo)
+        if top_ids:
+            q = q.filter(~database.Laboratorio.id.in_(top_ids)) if tipo == 'laboratorio' \
+                else q.filter(~Provider.id.in_(top_ids))
+        extras = [r.id for r in q.order_by('nombre').limit(faltantes).all()]
+        top_ids.extend(extras)
+
+    if not top_ids:
+        return []
+
+    # Resolver nombre respetando el orden de top_ids
+    q = _query_base(session, tipo)
+    if tipo == 'laboratorio':
+        rows = q.filter(Laboratorio.id.in_(top_ids)).all()
+    else:
+        rows = q.filter(Provider.id.in_(top_ids)).all()
+    by_id = {r.id: r.nombre for r in rows}
+    return [{'id': i, 'nombre': by_id[i]} for i in top_ids if i in by_id]
+
+
+def init_app(app):
+
+    @app.route('/api/partners/search')
+    def api_partners_search():
+        tipo = (request.args.get('tipo') or '').strip()
+        q = (request.args.get('q') or '').strip()
+        try:
+            limit = min(int(request.args.get('limit') or 15), 50)
+        except ValueError:
+            limit = 15
+        if tipo not in VALID_TIPOS:
+            return jsonify({'error': 'tipo inválido'}), 400
+
+        with database.get_db() as session:
+            qs = _query_base(session, tipo)
+            if q:
+                name_col = Laboratorio.nombre if tipo == 'laboratorio' else Provider.razon_social
+                qs = qs.filter(name_col.ilike(f'%{q}%'))
+            rows = qs.order_by('nombre').limit(limit).all()
+            data = [{'id': r.id, 'nombre': r.nombre} for r in rows]
+        return jsonify({'data': data, 'tipo': tipo, 'q': q})
+
+    @app.route('/api/partners/top')
+    def api_partners_top():
+        tipo = (request.args.get('tipo') or '').strip()
+        try:
+            n = min(int(request.args.get('n') or 8), 20)
+        except ValueError:
+            n = 8
+        if tipo not in VALID_TIPOS:
+            return jsonify({'error': 'tipo inválido'}), 400
+        with database.get_db() as session:
+            data = _top_usados(session, tipo, n)
+        return jsonify({'data': data, 'tipo': tipo})

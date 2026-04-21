@@ -1,0 +1,175 @@
+{#
+  Macro reutilizable: selector typeahead de partner (lab | droguería | proveedor)
+  con chips de los más usados.
+
+  Uso:
+    {% from "components/partner_selector.html" import partner_selector %}
+    {{ partner_selector(tipo='laboratorio', name='partner_id', required=True,
+                        value='', value_nombre='', placeholder='Elegí un laboratorio…',
+                        top_n=8) }}
+
+  Parámetros:
+    tipo         → 'laboratorio' | 'drogueria' | 'proveedor'
+    name         → nombre del input hidden que recibe el id (default 'partner_id')
+    required     → bool (default False)
+    value        → id preseleccionado (default '')
+    value_nombre → nombre a mostrar si hay value (default '')
+    placeholder  → texto del input de búsqueda
+    top_n        → cantidad de chips arriba (default 8)
+    label        → label opcional arriba del input
+#}
+
+{% macro partner_selector(tipo, name='partner_id', required=False,
+                          value='', value_nombre='',
+                          placeholder='Buscar…', top_n=8, label='') %}
+{% set uid = 'psel_' ~ range(100000, 999999) | random %}
+<div class="partner-selector" data-tipo="{{ tipo }}" data-uid="{{ uid }}">
+    {% if label %}
+    <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">{{ label }}</label>
+    {% endif %}
+
+    <input type="hidden" name="{{ name }}" id="{{ uid }}_id" value="{{ value }}" {% if required %}required{% endif %}>
+
+    <div class="relative">
+        <input type="text" id="{{ uid }}_txt" autocomplete="off"
+               value="{{ value_nombre }}"
+               placeholder="{{ placeholder }}"
+               class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+               oninput="PartnerSel.onInput('{{ uid }}', this.value)"
+               onfocus="PartnerSel.onFocus('{{ uid }}')"
+               onblur="setTimeout(()=>PartnerSel.onBlur('{{ uid }}'), 200)">
+
+        <button type="button" onclick="PartnerSel.clear('{{ uid }}')"
+                id="{{ uid }}_clear"
+                class="{% if not value %}hidden{% endif %} absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] text-sm leading-none"
+                title="Limpiar">✕</button>
+
+        <div id="{{ uid }}_results" class="hidden absolute z-20 left-0 right-0 mt-1 bg-white border border-surface-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+        </div>
+    </div>
+
+    <div id="{{ uid }}_chips" class="flex flex-wrap gap-1 mt-2 {% if value %}hidden{% endif %}">
+        <span class="text-[10px] text-[#bbb] px-1">Cargando más usados…</span>
+    </div>
+</div>
+
+<script>
+/* Idempotente: el IIFE de abajo sólo se ejecuta la primera vez;
+   las renders siguientes caen al `|| window.PartnerSel` existente. */
+/* PartnerSel — helper global para todos los selectores de la página.
+   Cachea resultados de /api/partners/top y debounce-eja /api/partners/search. */
+window.PartnerSel = window.PartnerSel || (() => {
+    const debounceMap = {};
+    const topCache = {};
+
+    const escapeHtml = s => String(s || '').replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    })[c]);
+
+    function getEl(uid, suffix) { return document.getElementById(uid + '_' + suffix); }
+    function getWrap(uid) { return document.querySelector('.partner-selector[data-uid="'+uid+'"]'); }
+
+    async function loadTop(uid) {
+        const wrap = getWrap(uid);
+        if (!wrap) return [];
+        const tipo = wrap.dataset.tipo;
+        if (!topCache[tipo]) {
+            try {
+                const resp = await fetch('/api/partners/top?tipo=' + tipo + '&n=8');
+                const body = await resp.json();
+                topCache[tipo] = body.data || [];
+            } catch (e) {
+                topCache[tipo] = [];
+            }
+        }
+        // Siempre renderizar chips de este selector (idempotente)
+        if (!getEl(uid, 'id').value) renderChips(uid);
+        return topCache[tipo];
+    }
+
+    function renderChips(uid) {
+        const wrap = getWrap(uid);
+        if (!wrap) return;
+        const tipo = wrap.dataset.tipo;
+        const chips = getEl(uid, 'chips');
+        if (!chips) return;
+        const data = topCache[tipo] || [];
+        if (!data.length) {
+            chips.innerHTML = '<span class="text-[10px] text-[#bbb] px-1">Sin historia reciente, empezá a tipear…</span>';
+            return;
+        }
+        chips.innerHTML = data.map(p =>
+            `<button type="button" onmousedown="event.preventDefault()"
+                onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
+                class="text-[11px] bg-[#f3f3f3] hover:bg-brand hover:text-brand-dark border border-surface-border rounded-full px-2 py-0.5 transition-colors truncate max-w-[200px]"
+                title="${escapeHtml(p.nombre)}">${escapeHtml(p.nombre)}</button>`
+        ).join('');
+    }
+
+    async function doSearch(uid, q) {
+        const wrap = getWrap(uid);
+        const tipo = wrap.dataset.tipo;
+        const box = getEl(uid, 'results');
+        try {
+            const resp = await fetch('/api/partners/search?tipo=' + tipo + '&limit=15&q=' + encodeURIComponent(q));
+            const body = await resp.json();
+            const data = body.data || [];
+            if (!data.length) {
+                box.innerHTML = '<p class="px-3 py-2 text-xs text-[#999]">Sin resultados</p>';
+            } else {
+                box.innerHTML = data.map(p =>
+                    `<button type="button" onclick="PartnerSel.pick('${uid}', ${p.id}, ${JSON.stringify(p.nombre)})"
+                        class="w-full text-left px-3 py-1.5 text-sm hover:bg-[#f3f3f3] transition-colors">${escapeHtml(p.nombre)}</button>`
+                ).join('');
+            }
+            box.classList.remove('hidden');
+        } catch (e) {
+            box.innerHTML = '<p class="px-3 py-2 text-xs text-red-600">Error de búsqueda</p>';
+            box.classList.remove('hidden');
+        }
+    }
+
+    return {
+        onInput(uid, val) {
+            clearTimeout(debounceMap[uid]);
+            if (!val || val.trim().length < 1) {
+                getEl(uid, 'results').classList.add('hidden');
+                return;
+            }
+            debounceMap[uid] = setTimeout(() => doSearch(uid, val.trim()), 220);
+        },
+        onFocus(uid) {
+            loadTop(uid);
+            const txt = getEl(uid, 'txt');
+            if (txt.value.trim().length >= 1) doSearch(uid, txt.value.trim());
+        },
+        onBlur(uid) {
+            getEl(uid, 'results').classList.add('hidden');
+        },
+        pick(uid, id, nombre) {
+            getEl(uid, 'id').value = id;
+            getEl(uid, 'txt').value = nombre;
+            getEl(uid, 'results').classList.add('hidden');
+            getEl(uid, 'chips').classList.add('hidden');
+            getEl(uid, 'clear').classList.remove('hidden');
+            getEl(uid, 'txt').dispatchEvent(new CustomEvent('partner-pick', {
+                detail: { id, nombre }, bubbles: true
+            }));
+        },
+        clear(uid) {
+            getEl(uid, 'id').value = '';
+            getEl(uid, 'txt').value = '';
+            getEl(uid, 'clear').classList.add('hidden');
+            getEl(uid, 'chips').classList.remove('hidden');
+            renderChips(uid);
+            getEl(uid, 'txt').dispatchEvent(new CustomEvent('partner-clear', { bubbles: true }));
+        },
+        initAll() {
+            document.querySelectorAll('.partner-selector').forEach(w => loadTop(w.dataset.uid));
+        },
+        refresh(uid) { loadTop(uid); }
+    };
+})();
+document.addEventListener('DOMContentLoaded', () => window.PartnerSel.initAll());
+</script>
+{% endmacro %}

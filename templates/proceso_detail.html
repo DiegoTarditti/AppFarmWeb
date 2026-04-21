@@ -8,8 +8,12 @@
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <a href="{{ url_for('procesos_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Procesos</a>
     <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
-        {% if proc.tipo == 'laboratorio' %}bg-violet-100 text-violet-800{% else %}bg-sky-100 text-sky-800{% endif %}">
-        {{ 'LAB' if proc.tipo == 'laboratorio' else 'DROG' }}
+        {% if proc.tipo == 'laboratorio' %}bg-violet-100 text-violet-800
+        {% elif proc.tipo == 'drogueria' %}bg-sky-100 text-sky-800
+        {% else %}bg-[#e5e5e5] text-[#555]{% endif %}">
+        {% if proc.tipo == 'laboratorio' %}LAB
+        {% elif proc.tipo == 'drogueria' %}DROG
+        {% else %}PROV{% endif %}
     </span>
     <h1 class="text-base font-bold text-[#1e1e1e]">{{ proc.partner_nombre }}</h1>
     {% if proc.analisis_periodo %}
