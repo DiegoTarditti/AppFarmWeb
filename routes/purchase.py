@@ -928,6 +928,8 @@ def init_app(app):
                 'n_days': pedido.n_days,
                 'creado_en': pedido.creado_en.strftime('%d/%m/%Y %H:%M') if pedido.creado_en else '',
                 'dias_desde_analisis': dias_desde,
+                'analisis_json': pedido.analisis_json or '',
+                'analisis_guardado_en': pedido.analisis_guardado_en.strftime('%d/%m/%Y %H:%M') if pedido.analisis_guardado_en else '',
             }
             erp_stock_map = {
                 row.codigo_barra: int(row.cantidad or 0)
@@ -1030,6 +1032,41 @@ def init_app(app):
                                    prov_plantilla=prov_plantilla,
                                    lab_plantilla=lab_plantilla,
                                    plantillas_entidad=plantillas_entidad)
+
+    @app.route('/order/<int:pedido_id>/save-state', methods=['POST'])
+    def order_save_state(pedido_id):
+        """Persiste un snapshot JSON del análisis (módulos, ofertas, cantidades, resumen)."""
+        body = request.get_json(silent=True) or {}
+        with database.get_db() as session:
+            try:
+                pedido = session.get(Pedido, pedido_id)
+                if not pedido:
+                    return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+                import json as _json
+                pedido.analisis_json = _json.dumps(body, ensure_ascii=False)
+                pedido.analisis_guardado_en = now_ar()
+                session.commit()
+                return jsonify({'ok': True,
+                                'guardado_en': pedido.analisis_guardado_en.strftime('%d/%m/%Y %H:%M')})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'ok': False, 'error': str(e)}), 500
+
+    @app.route('/order/<int:pedido_id>/clear-state', methods=['POST'])
+    def order_clear_state(pedido_id):
+        """Borra el snapshot del análisis para arrancar de cero."""
+        with database.get_db() as session:
+            try:
+                pedido = session.get(Pedido, pedido_id)
+                if not pedido:
+                    return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+                pedido.analisis_json = None
+                pedido.analisis_guardado_en = None
+                session.commit()
+                return jsonify({'ok': True})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'ok': False, 'error': str(e)}), 500
 
     @app.route('/order/<int:pedido_id>/save-module-matches', methods=['POST'])
     def order_save_module_matches(pedido_id):
@@ -1341,6 +1378,23 @@ def init_app(app):
             periodo = (pedido.periodo or '').replace(' ', '_')
             lab = (pedido.laboratorio or 'pedido').replace(' ', '_')
 
+        def _norm_cols(raw):
+            """Normaliza columnas: acepta strings o dicts. Devuelve lista de dicts
+            con keys `field`, `label`, `enabled`."""
+            out = []
+            for c in (raw or []):
+                if isinstance(c, str):
+                    out.append({'field': c, 'label': c, 'enabled': True})
+                elif isinstance(c, dict):
+                    if not c.get('enabled', True):
+                        continue
+                    out.append({
+                        'field': c.get('field') or c.get('campo') or c.get('campo_sistema') or '',
+                        'label': c.get('label') or c.get('field') or c.get('campo') or '',
+                        'enabled': True,
+                    })
+            return [c for c in out if c['field']]
+
         def _val(row, field):
             # Mapeo de campo_sistema → key en rows construido por el front
             if field == 'fijo':            return ''
@@ -1388,12 +1442,13 @@ def init_app(app):
 
         if formato == 'csv':
             import csv as _csv
-            cols = [c for c in cfg.get('columnas', []) if c.get('enabled', True)]
+            cols = _norm_cols(cfg.get('columnas'))
             if not cols:
                 return jsonify({'error': 'Plantilla sin columnas activas'}), 400
             buf = StringIO()
-            w = _csv.writer(buf, delimiter=cfg.get('delimiter', ','))
-            w.writerow([c.get('label') or c.get('field') for c in cols])
+            delim = cfg.get('separador') or cfg.get('delimiter') or ','
+            w = _csv.writer(buf, delimiter=delim)
+            w.writerow([c['label'] for c in cols])
             for row in rows:
                 w.writerow([_val(row, c['field']) for c in cols])
             fname = f'{nombre_plant}_{lab}_{periodo}.csv'.replace(' ', '_')
@@ -1403,7 +1458,7 @@ def init_app(app):
         # xlsx (default)
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
-        cols = [c for c in cfg.get('columnas', []) if c.get('enabled', True)]
+        cols = _norm_cols(cfg.get('columnas'))
         if not cols:
             return jsonify({'error': 'Plantilla sin columnas activas'}), 400
         wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'Pedido'

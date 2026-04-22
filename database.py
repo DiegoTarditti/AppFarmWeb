@@ -284,6 +284,8 @@ class Pedido(Base):
     creado_en = Column(DateTime, default=now_ar)
     analizado_en = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=False, default='PENDIENTE')
+    analisis_json = Column(Text, nullable=True)
+    analisis_guardado_en = Column(DateTime, nullable=True)
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
     analisis_sesion = relationship('AnalisisSesion')
 
@@ -749,6 +751,8 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("ALTER TABLE pagos_ajustes_cc ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analizado_en TIMESTAMP"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_json TEXT"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_guardado_en TIMESTAMP"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS modulo_packs (
             id SERIAL PRIMARY KEY,
@@ -1124,6 +1128,10 @@ def _sqlite_add_columns(conn):
     existing_ped = {row[1] for row in conn.execute(text("PRAGMA table_info(pedidos)"))}
     if 'analisis_sesion_id' not in existing_ped:
         conn.execute(text("ALTER TABLE pedidos ADD COLUMN analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id)"))
+    if 'analisis_json' not in existing_ped:
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN analisis_json TEXT"))
+    if 'analisis_guardado_en' not in existing_ped:
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN analisis_guardado_en TIMESTAMP"))
     existing_proc = {row[1] for row in conn.execute(text("PRAGMA table_info(procesos_compra)"))}
     if 'analisis_sesion_id' not in existing_proc:
         conn.execute(text("ALTER TABLE procesos_compra ADD COLUMN analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id)"))

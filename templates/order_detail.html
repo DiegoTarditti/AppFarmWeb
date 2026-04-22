@@ -56,12 +56,42 @@
             <p class="text-xs text-[#6f6f6f]">{{ pedido.periodo }} · {{ pedido.n_days }}d · {{ pedido.productos | length }} productos</p>
         </div>
         <div class="ml-auto flex items-center gap-2">
+            <span id="save-status" class="text-[11px] text-[#6f6f6f] italic"></span>
+            <button type="button" onclick="saveAnalysisState()"
+                    class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
+                    title="Guardar el estado actual del análisis en la base de datos">
+                💾 Guardar análisis
+            </button>
             <a href="{{ url_for('orders_list') }}"
                class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1 transition-colors">
                 ← Volver a pedidos
             </a>
         </div>
     </div>
+
+    {% if pedido.analisis_json %}
+    <div id="restore-banner" class="bg-violet-50 border-l-4 border-violet-500 rounded-r-lg px-5 py-3 mx-4 mt-4 flex items-center gap-3 no-print">
+        <svg class="w-5 h-5 text-violet-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <div class="flex-1">
+            <p class="text-sm font-semibold text-violet-900">
+                Hay un análisis guardado del {{ pedido.analisis_guardado_en }}
+            </p>
+            <p class="text-xs text-violet-800">
+                Podés restaurarlo para seguir editando, o descartarlo y arrancar de cero.
+            </p>
+        </div>
+        <button type="button" onclick="restoreAnalysisState()"
+                class="text-xs bg-violet-700 hover:bg-violet-600 text-white font-medium px-3 py-1.5 rounded-lg transition-colors">
+            Restaurar
+        </button>
+        <button type="button" onclick="clearAnalysisState()"
+                class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium px-3 py-1.5 rounded-lg transition-colors">
+            Descartar
+        </button>
+    </div>
+    {% endif %}
 
     <div class="flex-1 overflow-auto px-4 py-4 space-y-4">
 
@@ -330,6 +360,11 @@
                         XLSX
                     </button>
                 </form>
+                {% if not plantillas_entidad %}
+                <span id="btn-sin-plantillas" class="hidden text-[11px] text-[#9ca3af] italic px-2 py-1.5">
+                    Sin plantillas
+                </span>
+                {% endif %}
                 {% if plantillas_entidad %}
                 <div id="btn-export-plantillas-wrap" class="hidden relative">
                     <button type="button" onclick="togglePlantillasMenu(event)"
@@ -434,6 +469,134 @@ let offResult      = [];
 let nodealResult   = [];
 let ofertasMinData = [];
 let offMinResult   = [];
+
+// === SAVE / RESTORE ANÁLISIS ===========================================
+function _collectManualQtys() {
+    const q = {};
+    document.querySelectorAll('input[data-ean][data-field]').forEach(inp => {
+        const ean = inp.dataset.ean, field = inp.dataset.field;
+        if (!q[ean]) q[ean] = {};
+        q[ean][field] = inp.value;
+    });
+    return q;
+}
+
+function _applyManualQtys(qtys) {
+    if (!qtys) return;
+    Object.keys(qtys).forEach(ean => {
+        Object.keys(qtys[ean]).forEach(field => {
+            document.querySelectorAll(`input[data-ean="${ean}"][data-field="${field}"]`).forEach(inp => {
+                inp.value = qtys[ean][field];
+            });
+        });
+    });
+}
+
+async function saveAnalysisState() {
+    const status = document.getElementById('save-status');
+    status.textContent = 'Guardando…';
+    const snap = {
+        v: 1,
+        modulesData, saldosPostMod, ofertasData, offResult, nodealResult,
+        ofertasMinData, offMinResult,
+        resumenAgr, resumenAgrEans,
+        manualQtys: _collectManualQtys(),
+    };
+    try {
+        const r = await fetch(`/order/{{ pedido.id }}/save-state`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(snap)
+        });
+        const d = await r.json();
+        if (d.ok) {
+            status.textContent = `Guardado ${d.guardado_en}`;
+            setTimeout(() => { status.textContent = ''; }, 4000);
+        } else {
+            status.textContent = 'Error: ' + (d.error || '?');
+        }
+    } catch (e) {
+        status.textContent = 'Error al guardar';
+    }
+}
+
+async function clearAnalysisState() {
+    if (!confirm('¿Descartar el análisis guardado?')) return;
+    const r = await fetch(`/order/{{ pedido.id }}/clear-state`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+        document.getElementById('restore-banner')?.remove();
+    } else {
+        alert('Error: ' + (d.error || '?'));
+    }
+}
+
+function restoreAnalysisState() {
+    const raw = {{ (pedido.analisis_json or '{}') | tojson }};
+    let snap;
+    try { snap = (typeof raw === 'string') ? JSON.parse(raw) : raw; }
+    catch (_) { alert('Snapshot corrupto'); return; }
+    if (!snap || !snap.v) { alert('Sin snapshot'); return; }
+
+    modulesData    = snap.modulesData    || [];
+    saldosPostMod  = snap.saldosPostMod  || {};
+    ofertasData    = snap.ofertasData    || [];
+    offResult      = snap.offResult      || [];
+    nodealResult   = snap.nodealResult   || [];
+    ofertasMinData = snap.ofertasMinData || [];
+    offMinResult   = snap.offMinResult   || [];
+    resumenAgr     = snap.resumenAgr     || {};
+    resumenAgrEans = snap.resumenAgrEans || [];
+
+    // Re-render cada paso en orden, habilitando cards y ocultando controles de upload
+    if (modulesData.length) {
+        try {
+            renderResumenModulos();
+            procesarModulos();
+            // Repoblar inputs modprop con las propuestas guardadas y recalcular saldos
+            modulesData.forEach((mod, mi) => {
+                const inp = document.getElementById(`modprop-${mi}`);
+                if (inp) {
+                    inp.value = mod.modulos_propuesta || 0;
+                    inp.disabled = true;
+                }
+                try { recalcModuloAll(mi); } catch (_) {}
+            });
+        } catch (_) {}
+        hide('modulos-body');
+        show('btn-reeditar-modulos');
+        hide('btn-confirmar-modulos'); hide('btn-saltar-modulos');
+        enable('card-ofertas');
+        document.getElementById('badge-1')?.classList.add('done');
+        document.getElementById('badge-2')?.classList.remove('waiting');
+        document.getElementById('modulos-status').textContent = '✓ Restaurado';
+    }
+    if (offResult.length || nodealResult.length || ofertasData.length) {
+        try { renderOfertasTable(); } catch (_) {}
+        enable('card-ofertas-min');
+        document.getElementById('badge-2')?.classList.add('done');
+        document.getElementById('badge-3')?.classList.remove('waiting');
+        document.getElementById('ofertas-status').textContent = '✓ Restaurado';
+    }
+    if (offMinResult.length || ofertasMinData.length) {
+        try { renderOfertasConMinimoTable(); } catch (_) {}
+        document.getElementById('badge-3')?.classList.add('done');
+        document.getElementById('ofertas-min-status').textContent = '✓ Restaurado';
+    }
+    if (resumenAgrEans.length) {
+        try { renderResumen(); } catch (_) {}
+        show('btn-export-sum-pdf'); show('btn-export-sum-xlsx');
+        show('btn-export-plantillas-wrap'); show('btn-sin-plantillas');
+        enable('card-resumen');
+        document.getElementById('badge-4')?.classList.remove('waiting');
+        document.getElementById('resumen-status').textContent = '✓ Restaurado';
+    }
+    _applyManualQtys(snap.manualQtys);
+    document.getElementById('restore-banner')?.remove();
+    document.getElementById('save-status').textContent = 'Análisis restaurado';
+    setTimeout(() => { document.getElementById('save-status').textContent = ''; }, 4000);
+}
+// =======================================================================
 
 function rotBadgeHtml(rot, avg) {
     if (!rot) return '<span class="text-[#ccc]">—</span>';
@@ -1581,6 +1744,7 @@ function confirmarOfertasConMinimo() {
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
     show('btn-export-plantillas-wrap');
+    show('btn-sin-plantillas');
     hide('btn-confirmar-ofertas-min');
     hide('btn-saltar-ofertas-min');
     document.getElementById('ofertas-min-status').textContent =
@@ -1598,6 +1762,7 @@ function saltarOfertasConMinimo() {
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
     show('btn-export-plantillas-wrap');
+    show('btn-sin-plantillas');
     document.getElementById('ofertas-min-status').textContent = 'Omitido';
     enable('card-resumen');
     document.getElementById('badge-3').classList.add('waiting');
