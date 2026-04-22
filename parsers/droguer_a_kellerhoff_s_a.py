@@ -7,6 +7,7 @@ Si el layout del proveedor cambia, reentrenar el patrón desde /converter.
 import re
 import pdfplumber
 from datetime import datetime
+from helpers import _normalize_quadrupled
 
 
 PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$"""
@@ -46,7 +47,7 @@ def parse_invoice_pdf(pdf_path):
     pages_text = []
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            pages_text.append(page.extract_text() or '')
+            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
     full_text = '\n'.join(pages_text)
 
     # Encabezado genérico

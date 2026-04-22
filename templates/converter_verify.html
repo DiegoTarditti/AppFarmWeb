@@ -12,41 +12,73 @@
 <div class="max-w-7xl mx-auto space-y-4">
 
     <!-- Header resumen -->
+    {% set _falta_prov = not proveedor.razon_social %}
+    {% set _falta_cuit = not proveedor.cuit %}
+    {% set _falta_num  = (not prueba.numero_factura) or prueba.numero_factura == 'SIN_NUMERO' %}
+    {% set _falta_fecha = not prueba.fecha %}
+    {% set _falta_total = not prueba.total %}
+    {% set _faltantes = [] %}
+    {% if _falta_prov %}{% set _ = _faltantes.append('Razón social') %}{% endif %}
+    {% if _falta_cuit %}{% set _ = _faltantes.append('CUIT') %}{% endif %}
+    {% if _falta_num %}{% set _ = _faltantes.append('N° factura') %}{% endif %}
+    {% if _falta_fecha %}{% set _ = _faltantes.append('Fecha') %}{% endif %}
+    {% if _falta_total %}{% set _ = _faltantes.append('Total') %}{% endif %}
+
+    {% if _faltantes %}
+    <div class="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-sm text-amber-900">
+        <div class="flex items-center gap-2 font-semibold mb-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            Atención: el parser no detectó estos campos
+        </div>
+        <p class="text-xs">{{ _faltantes | join(' · ') }} — podés completarlos manualmente antes de importar, o ajustar el parser.</p>
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+        <div class="bg-white rounded-xl border {% if _falta_prov or _falta_cuit %}border-amber-300{% else %}border-surface-border{% endif %} px-4 py-3">
             <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Proveedor</p>
-            <p class="font-semibold text-sm truncate">{{ proveedor.razon_social }}</p>
-            {% if proveedor.cuit %}<p class="text-[10px] font-mono text-[#6f6f6f]">{{ proveedor.cuit }}</p>{% endif %}
+            <p class="font-semibold text-sm truncate {% if _falta_prov %}text-amber-700{% endif %}">
+                {{ proveedor.razon_social or '⚠ Sin razón social' }}
+            </p>
+            {% if proveedor.cuit %}
+                <p class="text-[10px] font-mono text-[#6f6f6f]">{{ proveedor.cuit }}</p>
+            {% else %}
+                <p class="text-[10px] font-mono text-amber-700">⚠ Sin CUIT</p>
+            {% endif %}
         </div>
-        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+        <div class="bg-white rounded-xl border {% if _falta_num or _falta_fecha %}border-amber-300{% else %}border-surface-border{% endif %} px-4 py-3">
             <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">N° factura</p>
-            <p class="font-mono text-sm">{{ prueba.numero_factura or '—' }}</p>
-            <p class="text-[10px] text-[#6f6f6f]">Fecha: {{ prueba.fecha or '—' }}</p>
+            <p class="font-mono text-sm {% if _falta_num %}text-amber-700{% endif %}">
+                {{ prueba.numero_factura if not _falta_num else '⚠ no detectado' }}
+            </p>
+            <p class="text-[10px] {% if _falta_fecha %}text-amber-700{% else %}text-[#6f6f6f]{% endif %}">
+                Fecha: {{ prueba.fecha if not _falta_fecha else '⚠ no detectada' }}
+            </p>
         </div>
-        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+        <div class="bg-white rounded-xl border {% if _falta_total %}border-amber-300{% else %}border-surface-border{% endif %} px-4 py-3">
             <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Total del PDF</p>
-            <p class="font-semibold text-lg" id="pdf-total-label">
-                {% if prueba.total %}$ {{ '{:,.2f}'.format(prueba.total).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}
+            <p class="font-semibold text-lg {% if _falta_total %}text-amber-700{% endif %}" id="pdf-total-label">
+                {% if prueba.total %}$ {{ '{:,.2f}'.format(prueba.total).replace(',','X').replace('.',',').replace('X','.') }}{% else %}⚠ no detectado{% endif %}
             </p>
         </div>
     </div>
 
     <!-- Desglose de totales editable -->
-    <div class="bg-white rounded-xl border border-surface-border p-4">
-        <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Desglose de totales (editable)</p>
+    <div class="bg-amber-50 rounded-xl border border-amber-300 p-4">
+        <p class="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-3">Desglose de totales (editable)</p>
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Exento</span>
-                <input type="text" id="tot-exento" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
-            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Gravado</span>
-                <input type="text" id="tot-gravado" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
-            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">IVA 10,5 %</span>
-                <input type="text" id="tot-iva105" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
-            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">IVA 21 %</span>
-                <input type="text" id="tot-iva21" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
-            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Percepciones</span>
-                <input type="text" id="tot-percep" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
-            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Otros</span>
-                <input type="text" id="tot-otros" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-amber-800">Exento</span>
+                <input type="text" id="tot-exento" class="px-2 py-1 text-xs font-mono text-right bg-white border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-amber-800">Gravado</span>
+                <input type="text" id="tot-gravado" class="px-2 py-1 text-xs font-mono text-right bg-white border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-amber-800">IVA 10,5 %</span>
+                <input type="text" id="tot-iva105" class="px-2 py-1 text-xs font-mono text-right bg-white border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-amber-800">IVA 21 %</span>
+                <input type="text" id="tot-iva21" class="px-2 py-1 text-xs font-mono text-right bg-white border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-amber-800">Percepciones</span>
+                <input type="text" id="tot-percep" class="px-2 py-1 text-xs font-mono text-right bg-white border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-amber-800">Otros</span>
+                <input type="text" id="tot-otros" class="px-2 py-1 text-xs font-mono text-right bg-white border border-amber-300 rounded focus:ring-1 focus:ring-amber-500 focus:outline-none"></label>
         </div>
         <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-200">
             <div class="flex flex-col">
@@ -282,15 +314,25 @@ function render() {
         else { tMatch.textContent = `⚠ ${fmtMoney(Math.abs(diff))}`; tMatch.className = 'text-[10px] text-red-600 font-semibold'; }
     }
 
-    // Banner con contadores extra (Σ productos / Σ unidades)
+    // Banner con contadores como chips separados
     const b = document.getElementById('summary-banner');
     let sumUnidades = 0;
     state.rows.forEach(r => { const c = parseArg(r.cantidad); if (c != null) sumUnidades += c; });
-    b.innerHTML = `<strong>${nOk}</strong> OK · <strong class="text-amber-700">${nWarn}</strong> warn · <strong class="text-red-700">${nErr}</strong> error · Σ productos: <strong>${state.rows.length}</strong> · Σ unidades: <strong>${sumUnidades}</strong>`;
-    b.className = 'rounded-xl border px-4 py-3 text-sm ' +
-        (nErr > 0 ? 'bg-red-50 border-red-200 text-red-800' :
-         nWarn > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' :
-         'bg-emerald-50 border-emerald-200 text-emerald-800');
+    const chip = (label, cls) => `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-xs font-semibold ${cls}">${label}</span>`;
+    const okChip    = chip(`✓ ${nOk} OK`, 'bg-emerald-50 text-emerald-700 border-emerald-300');
+    const warnChip  = nWarn === 0
+        ? chip('Sin alertas', 'bg-emerald-50 text-emerald-700 border-emerald-300')
+        : chip(`⚠ ${nWarn} alerta${nWarn===1?'':'s'}`, 'bg-amber-100 text-amber-800 border-amber-300');
+    const errChip   = nErr === 0
+        ? chip('Sin errores', 'bg-emerald-50 text-emerald-700 border-emerald-300')
+        : chip(`✗ ${nErr} error${nErr===1?'':'es'}`, 'bg-red-100 text-red-800 border-red-300');
+    const prodChip  = chip(`Σ productos: ${state.rows.length}`, 'bg-slate-100 text-slate-800 border-slate-300');
+    const unidChip  = chip(`Σ unidades: ${sumUnidades}`, 'bg-slate-100 text-slate-800 border-slate-300');
+    b.innerHTML = `<div class="flex flex-wrap items-center gap-3">${okChip}${warnChip}${errChip}<span class="text-slate-300">|</span>${prodChip}${unidChip}</div>`;
+    b.className = 'rounded-xl border px-4 py-3 ' +
+        (nErr > 0 ? 'bg-red-50 border-red-200' :
+         nWarn > 0 ? 'bg-amber-50 border-amber-200' :
+         'bg-emerald-50 border-emerald-200');
 
     document.getElementById('btn-import').disabled = (state.rows.length === 0 || nErr > 0);
 }
@@ -337,47 +379,68 @@ function irAPrimerError() {
 }
 
 function autodetectarDesglose() {
-    // Busca en los 6 inputs los 2 con valor para Gravado/IVA (IVA ≈ Gravado × 21%)
-    // y deduce Exento = Total del PDF - (Gravado + IVA + Percepciones + Otros)
-    const t = readTotals();
     const total = PDF_TOTAL;
-    if (!total) { alert('No hay Total del PDF para deducir el desglose.'); return; }
+    const setInp = (id, val) => { document.getElementById(id).value = fmtArg(val); };
+    const getInp = (id) => parseArg(document.getElementById(id).value) || 0;
 
-    const moneys = [
-        {id:'tot-exento', n: t.exento, label:'Exento'},
-        {id:'tot-gravado', n: t.gravado, label:'Gravado'},
-        {id:'tot-iva105', n: t.iva105, label:'IVA 10,5'},
-        {id:'tot-iva21', n: t.iva21, label:'IVA 21'},
-        {id:'tot-percep', n: t.percep, label:'Percepciones'},
-        {id:'tot-otros', n: t.otros, label:'Otros'},
-    ];
-    // Si ningún input tiene valor, tomamos los del parser como punto de partida
-    const allZero = moneys.every(m => !m.n);
-    if (allZero && PARSED_TOTALS) {
-        if (PARSED_TOTALS.exento)  document.getElementById('tot-exento').value  = fmtArg(PARSED_TOTALS.exento);
-        if (PARSED_TOTALS.gravado) document.getElementById('tot-gravado').value = fmtArg(PARSED_TOTALS.gravado);
+    // Paso 1: si todo está vacío y el parser dio valores, sembramos desde parser
+    const t = readTotals();
+    const allEmpty = !t.exento && !t.gravado && !t.iva105 && !t.iva21 && !t.percep && !t.otros;
+    if (allEmpty && PARSED_TOTALS) {
+        if (PARSED_TOTALS.exento)  setInp('tot-exento',  PARSED_TOTALS.exento);
+        if (PARSED_TOTALS.gravado) setInp('tot-gravado', PARSED_TOTALS.gravado);
+        if (PARSED_TOTALS.percep)  setInp('tot-percep',  PARSED_TOTALS.percep);
+        // IVA en el slot correcto según rate
         if (PARSED_TOTALS.iva) {
-            // Si gravado > 0 probamos 21% vs 10,5% para asignar en el slot correcto
             const g = PARSED_TOTALS.gravado || 0;
             const iva = PARSED_TOTALS.iva;
             if (g > 0 && Math.abs(iva - g * 0.105) < Math.max(0.02, iva * 0.05)) {
-                document.getElementById('tot-iva105').value = fmtArg(iva);
+                setInp('tot-iva105', iva);
             } else {
-                document.getElementById('tot-iva21').value = fmtArg(iva);
+                setInp('tot-iva21', iva);
             }
         }
-        if (PARSED_TOTALS.percep) document.getElementById('tot-percep').value = fmtArg(PARSED_TOTALS.percep);
-        render();
-        return;
     }
-    // Si hay algunos cargados, deducir Exento como resto para cerrar con Total PDF
-    const restOfTotal = total - (t.gravado + t.iva105 + t.iva21 + t.percep + t.otros);
-    if (restOfTotal > 0 && !t.exento) {
-        document.getElementById('tot-exento').value = fmtArg(restOfTotal);
-        render();
-    } else {
-        alert('Ya están todos los campos cargados. Si no cierran, editalos a mano.');
+
+    // Paso 2: deducir IVA rate si hay gravado + iva en slot "incorrecto"
+    //         (parser a veces mete todo el IVA en iva_21 aunque sea 10,5)
+    const gravado = getInp('tot-gravado');
+    const iva105 = getInp('tot-iva105');
+    const iva21 = getInp('tot-iva21');
+    if (gravado > 0 && (iva21 > 0 || iva105 > 0) && !(iva105 > 0 && iva21 > 0)) {
+        const iva = iva21 || iva105;
+        const d105 = Math.abs(iva - gravado * 0.105);
+        const d21  = Math.abs(iva - gravado * 0.21);
+        const tol = Math.max(0.5, iva * 0.05);
+        if (d105 <= tol && d105 < d21) {
+            // Es IVA 10,5 — mover si estaba en el otro slot
+            if (iva21 > 0) { setInp('tot-iva105', iva21); setInp('tot-iva21', 0); document.getElementById('tot-iva21').value = ''; }
+        } else if (d21 <= tol && d21 < d105) {
+            if (iva105 > 0) { setInp('tot-iva21', iva105); document.getElementById('tot-iva105').value = ''; }
+        }
     }
+
+    // Paso 3: si conocemos Gravado pero falta IVA, calcular por default al 21%
+    //         (el user puede corregir a 10,5 a mano si corresponde)
+    if (gravado > 0 && iva105 === 0 && iva21 === 0) {
+        setInp('tot-iva21', gravado * 0.21);
+    }
+
+    // Paso 4: usar Total PDF como anclaje — deducir Exento o Percepciones como residuo
+    if (total && total > 0) {
+        const t2 = readTotals();
+        const sumConocido = t2.gravado + t2.iva105 + t2.iva21 + t2.percep + t2.otros;
+        const resto = total - sumConocido;
+        if (!t2.exento && resto > 0) {
+            setInp('tot-exento', resto);
+        } else if (t2.exento && !t2.percep && resto > 0) {
+            setInp('tot-percep', resto);
+        } else if (Math.abs(resto - t2.exento) < Math.max(1, total * 0.01)) {
+            // Todo cuadra, nada que hacer
+        }
+    }
+
+    render();
 }
 
 function aplicarSugerencia(i) {

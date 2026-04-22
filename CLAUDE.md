@@ -133,6 +133,36 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 | `pharmos.py` | Pharmos | 30-64266156-2 | descripcion (usa refs internas como barcode) |
 | `20_de_junio.py` | 20 de Junio | 23-17460511-4 | barcode |
 
+### ⚠ OBLIGATORIO: normalización de texto PDF
+
+**Todos los parsers (nuevos y existentes) deben usar `_normalize_quadrupled` de `helpers.py`** al extraer texto con pdfplumber. A pesar del nombre, hace **3 limpiezas** de artefactos comunes:
+
+1. **Caracteres cuadruplicados** (fuentes en negrita en 20 de Junio, etc.) — `"TTTTOOOOTTTTAAAALLLL"` → `"TOTAL"`
+2. **Letter-spacing** (cada carácter separado por un espacio) — `"G r a v a d o I V A"` → `"GravadoIVA"`. Dispara cuando hay ≥10 tokens cortos en secuencia.
+3. **Rellenos de puntos** (separadores visuales) — `"Base Exenta..........$"` → `"Base Exenta $"`. Dispara con 4+ puntos consecutivos.
+
+Las 3 son idempotentes en líneas normales (no afectan decimales como `1.234,56`).
+
+Pattern en **todos los parsers**:
+
+```python
+from helpers import _normalize_quadrupled
+
+def parse_invoice_pdf(pdf_path):
+    pages_text = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
+    full_text = '\n'.join(pages_text)
+    # ... regex sobre full_text
+```
+
+- El template del parser auto-generado (`_generar_codigo_parser` en `routes/converter.py`) ya lo incluye → cualquier parser nuevo lo hereda
+- Si escribís un parser manual, **no te olvides de agregar el import y llamarlo por cada página**
+- Si migrás un parser viejo que no lo tenía, agregalo — es seguro por default
+
+**Si descubrís otro artefacto recurrente de pdfplumber** (ej. rotaciones de caracteres, comillas raras, etc.), agregarlo como paso nuevo en `_normalize_quadrupled` en `helpers.py` — así automáticamente se propaga a todos los parsers que ya llaman a esta función.
+
 ### Formato Kellerhoff
 `BARCODE CANT DESC PRECIO_PUB %DTO PRECIO_UNIT IMPORTE` — regex con grupos.
 

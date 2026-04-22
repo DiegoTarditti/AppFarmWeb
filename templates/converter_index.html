@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% set nav_active = "convertir" %}
-{% block title %}Aprender parser de facturas{% endblock %}
+{% block title %}Aprender parser de documentos{% endblock %}
 {% block main %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3">
-    <h1 class="text-base font-bold text-[#1e1e1e]">Aprender parser de facturas</h1>
+    <h1 class="text-base font-bold text-[#1e1e1e]">Aprender parser de documentos</h1>
 </div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
@@ -16,9 +16,49 @@
     {% endwith %}
 
     <div class="bg-white rounded-xl border border-surface-border p-6">
-        <p class="font-semibold text-sm mb-1">Subí una factura PDF</p>
+        <p class="font-semibold text-sm mb-1">1. ¿Qué tipo de documento es?</p>
+        <p class="text-xs text-[#6f6f6f] mb-3">El tipo determina qué campos auto-detectamos y cómo se guarda.</p>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-2 mb-5" id="doc-type-chips">
+            <label class="cursor-pointer">
+                <input type="radio" name="doc_tipo" value="FAC" class="peer hidden" checked>
+                <div class="px-3 py-3 rounded-lg border-2 border-[#e0e0e0] text-xs text-center font-semibold text-[#6f6f6f] peer-checked:border-brand peer-checked:bg-amber-50 peer-checked:text-brand-dark hover:border-brand/50 transition-colors">
+                    <div class="text-lg mb-1">📄</div>
+                    Factura
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="doc_tipo" value="NCR" class="peer hidden">
+                <div class="px-3 py-3 rounded-lg border-2 border-[#e0e0e0] text-xs text-center font-semibold text-[#6f6f6f] peer-checked:border-rose-500 peer-checked:bg-rose-50 peer-checked:text-rose-800 hover:border-rose-300 transition-colors">
+                    <div class="text-lg mb-1">🧾</div>
+                    Nota crédito
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="doc_tipo" value="REM" class="peer hidden">
+                <div class="px-3 py-3 rounded-lg border-2 border-[#e0e0e0] text-xs text-center font-semibold text-[#6f6f6f] peer-checked:border-sky-500 peer-checked:bg-sky-50 peer-checked:text-sky-800 hover:border-sky-300 transition-colors">
+                    <div class="text-lg mb-1">📦</div>
+                    Remito
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="doc_tipo" value="DTO" class="peer hidden">
+                <div class="px-3 py-3 rounded-lg border-2 border-[#e0e0e0] text-xs text-center font-semibold text-[#6f6f6f] peer-checked:border-emerald-500 peer-checked:bg-emerald-50 peer-checked:text-emerald-800 hover:border-emerald-300 transition-colors">
+                    <div class="text-lg mb-1">🏷️</div>
+                    Planilla descuentos
+                </div>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="doc_tipo" value="OTRO" class="peer hidden">
+                <div class="px-3 py-3 rounded-lg border-2 border-[#e0e0e0] text-xs text-center font-semibold text-[#6f6f6f] peer-checked:border-slate-500 peer-checked:bg-slate-100 peer-checked:text-slate-800 hover:border-slate-400 transition-colors">
+                    <div class="text-lg mb-1">📋</div>
+                    Otro
+                </div>
+            </label>
+        </div>
+
+        <p class="font-semibold text-sm mb-1">2. Subí el documento (PDF)</p>
         <p class="text-xs text-[#6f6f6f] mb-4">
-            Detectamos al proveedor por CUIT o razón social. Si ya tiene parser, probamos que funcione.
+            Detectamos al emisor por CUIT o razón social. Si ya tiene parser, probamos que funcione.
             Si no, te ayudamos a enseñarle el formato y lo guardamos para siempre.
         </p>
 
@@ -182,6 +222,8 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
 
     const fd = new FormData();
     fd.append('document', file);
+    const tipo = document.querySelector('input[name="doc_tipo"]:checked')?.value || 'FAC';
+    fd.append('doc_tipo', tipo);
 
     try {
         const resp = await fetch('{{ url_for("converter_upload") }}', {

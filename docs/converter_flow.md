@@ -141,6 +141,71 @@ Misma lógica de validación + sugerencias (ej: si falta `precio_publico`, calcu
 2. **Cantidad capturada mal por selecciones sin literal entre capturas** — si dos capturas numéricas quedan adyacentes sin literal, se inserta `\s+` forzado.
 3. **Gravados (5 cols) ignorados por el regex primario** — segunda pasada con regex fallback.
 4. **Productos en falta momentánea parseados como ítems** — texto cortado antes del marker `*** PRODUCTOS EN FALTA`.
+5. **Caracteres cuadruplicados en negrita** (pdfplumber artifact) — `TTTTOOOOTTTTAAAALLLL` → `TOTAL`. Resuelto con `helpers._normalize_quadrupled`.
+
+## ⚠ Normalización obligatoria para parsers
+
+**Todos los parsers (nuevos y existentes) DEBEN usar `_normalize_quadrupled`.**
+
+```python
+from helpers import _normalize_quadrupled
+
+def parse_invoice_pdf(pdf_path):
+    pages_text = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
+    full_text = '\n'.join(pages_text)
+```
+
+### Qué hace la función (3 pasos)
+
+A pesar del nombre, aplica 3 limpiezas de artefactos comunes de pdfplumber:
+
+1. **Caracteres cuadruplicados** — `TTTTOOOOTTTTAAAALLLL` → `TOTAL` (chars repetidos ×4 en fuentes bold de ciertos PDFs como 20 de Junio)
+2. **Letter-spacing** — `G r a v a d o I V A` → `GravadoIVA` (dispara con ≥10 tokens de len ≤ 2 seguidos)
+3. **Rellenos de puntos** — `Subtotal Bruto................................$` → `Subtotal Bruto $` (4+ puntos consecutivos → espacio)
+
+Las 3 son **idempotentes en líneas normales**. No tocan `1.234,56` (decimal argentino) porque solo tiene 1 punto consecutivo.
+
+### Política para nuevos artefactos
+
+**Si aparece un artefacto nuevo de pdfplumber** (rotación de letras, comillas raras, guiones largos extraños, etc.), **agregarlo como paso nuevo dentro de `_normalize_quadrupled`** en `helpers.py`. No crear funciones separadas — así todos los parsers que ya llaman a esta función heredan la corrección automáticamente.
+
+### Lugares donde ya se aplica
+
+- Template del parser auto-generado (`_generar_codigo_parser` en `routes/converter.py`)
+- `converter_detectar` / `converter_pick` / `converter_infer` (los 3 lugares donde el converter lee PDF)
+- `parsers/droguer_a_kellerhoff_s_a.py` (existente)
+
+Al agregar/migrar un parser **verificá que esté el import + llamada por página**.
+
+## Pipeline automático al cargar /pick
+
+Al entrar a `/converter/<token>/pick`, JS corre `runAutoPipeline()` que en cascada:
+
+1. **Divide el texto en secciones** (encabezado / detalle / totales) si los markers están
+2. **Elige la 1ra línea con pinta de ítem** del detalle y la pone como fila de ejemplo
+3. **Auto-detecta matemáticamente** los campos de esa fila (cant × unit = imp, pub × (1-dto%) = unit)
+4. **Infiere el patrón** si quedaron al menos cantidad + importe asignados
+5. **Auto-detecta la fila de totales** del pie y corre la deducción matemática
+
+Muestra un **banner azul** arriba del panel derecho listando qué pasos funcionaron. El usuario revisa, corrige si algo quedó raro, y confirma.
+
+Si cualquier paso falla, corta la cascada sin romper la pantalla — el usuario completa a mano desde ese punto.
+
+### Campos que SÍ se auto-extraen por etiquetas (bajo riesgo)
+
+- `total`, `monto_exento`, `monto_gravado`, `iva_21`, `iva_105`, `percepciones` — labels inequívocos
+- `cantidad_total` — de "Unidades en comprob: N"
+- `numero`, `fecha` — de "FACTURA Nº:" / "FECHA:"
+
+### Campos que NO se auto-extraen (riesgo alto)
+
+- `razon_social` — en la factura aparecen DOS razones sociales: la del proveedor Y la del cliente (la farmacia). El usuario debe elegir con el chip cuál corresponde.
+- `cuit` — mismo problema: hay CUIT del proveedor + CUIT del cliente.
+
+Si algún día se quiere auto-extraer con más inteligencia, hay que buscar la razon_social que esté cerca del CUIT del header (primeras ~20 líneas) y explícitamente saltear líneas con "Cliente:", "Sr.", "Factura para", etc.
 
 ## Shortcuts / atajos de UI
 

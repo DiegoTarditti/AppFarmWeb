@@ -224,6 +224,63 @@ def _bulk_upsert_productos(session, items):
         session.add_all(new_prods)
 
 
+# ── Normalizador de texto PDF con caracteres cuadruplicados ───────────────
+# pdfplumber en ciertas fuentes/layouts (ej. 20 de Junio) cuadruplica cada
+# carácter de texto en negrita: "TOTAL" → "TTTTOOOOTTTTAAAALLLL". Detecta
+# líneas donde al menos un token es multi-char cuadruplicado y reduce esa
+# línea entera con `(.)\1{3} → \1`. No toca líneas normales.
+def _normalize_quadrupled(text):
+    import re as _re
+    out_lines = []
+    for line in text.split('\n'):
+        hit = False
+        # Detectar si la línea tiene tokens cuadruplicados (TTTTOOOO...) o un
+        # run largo de tokens cortos (letter-spacing "( G ) G r a v a d o...").
+        short_run = 0
+        max_short_run = 0
+        for tok in line.split():
+            if len(tok) < 8 or len(tok) % 4 != 0:
+                pass
+            else:
+                chunks = [tok[i:i+4] for i in range(0, len(tok), 4)]
+                if all(len(set(c)) == 1 for c in chunks) and len({c[0] for c in chunks}) >= 2:
+                    hit = True
+            if len(tok) <= 2:
+                short_run += 1
+                if short_run > max_short_run:
+                    max_short_run = short_run
+            else:
+                short_run = 0
+        if max_short_run >= 10:
+            hit = True  # letter-spacing significativo
+        if hit:
+            # 1) Reducir cuadruplicados: TTTTOOOO → TO
+            line = _re.sub(r'(.)\1{3}', r'\1', line)
+            # 2) Colapsar runs de ≥5 tokens cortos (letter-spacing):
+            #    `G r a v a d o` → `Gravado`
+            tokens = line.split(' ')
+            result, run = [], []
+            def _flush(res, r):
+                if len(r) >= 5:
+                    res.append(''.join(r))
+                else:
+                    res.extend(r)
+            for t in tokens:
+                if len(t) <= 2:
+                    run.append(t)
+                else:
+                    _flush(result, run); run = []
+                    result.append(t)
+            _flush(result, run)
+            line = ' '.join(result)
+        # 3) Colapsar rellenos de puntos (≥4 puntos seguidos) → espacio simple
+        #    `Subtotal Bruto................................$ 1.409.334,86` → `Subtotal Bruto $ 1.409.334,86`
+        #    Aplica siempre (no solo en líneas hit), es un artefacto común.
+        line = _re.sub(r'\.{4,}', ' ', line)
+        out_lines.append(line)
+    return '\n'.join(out_lines)
+
+
 # ── Pattern builder (used by invoices + converter) ──────────────────────────
 
 def _build_item_pattern(example_line, selections):

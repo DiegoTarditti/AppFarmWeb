@@ -21,9 +21,13 @@
 
 <header class="bg-white border-b border-[#e0e0e0] px-6 py-4">
     <div class="max-w-7xl mx-auto flex items-center justify-between">
-        <div>
+        <div class="flex items-center gap-3">
             <span class="font-bold text-sm">Generación de documentos</span>
-            <span class="ml-3 text-xs text-[#6f6f6f] font-mono">{{ filename }}</span>
+            {% set _dt = doc_tipo | default('FAC') %}
+            {% set _dt_label = {'FAC':'📄 Factura', 'NCR':'🧾 Nota de crédito', 'REM':'📦 Remito', 'DTO':'🏷️ Planilla descuentos', 'OTRO':'📋 Otro'} %}
+            {% set _dt_cls   = {'FAC':'bg-amber-100 text-amber-800 border-amber-300', 'NCR':'bg-rose-100 text-rose-800 border-rose-300', 'REM':'bg-sky-100 text-sky-800 border-sky-300', 'DTO':'bg-emerald-100 text-emerald-800 border-emerald-300', 'OTRO':'bg-slate-100 text-slate-800 border-slate-300'} %}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border {{ _dt_cls[_dt] }}">{{ _dt_label[_dt] }}</span>
+            <span class="text-xs text-[#6f6f6f] font-mono">{{ filename }}</span>
         </div>
         <a href="{{ url_for('converter_index') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver</a>
     </div>
@@ -64,7 +68,7 @@
     <div class="w-1/2 flex flex-col gap-4">
 
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
-            <p class="font-semibold text-sm mb-2">Encabezado (opcional)</p>
+            <p class="font-semibold text-sm mb-2">Encabezado</p>
             <p class="text-xs text-[#6f6f6f] mb-2">Seleccioná texto en el PDF izquierdo y clickeá el campo.</p>
             <div class="flex flex-wrap gap-2" id="header-chips">
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="razon_social">Razón social</button>
@@ -79,7 +83,8 @@
             <div id="header-values" class="mt-3 space-y-1 text-xs"></div>
         </div>
 
-        <!-- FILA DE TOTALES (pie de la factura) -->
+        <!-- FILA DE TOTALES (solo para facturas — otros tipos no tienen desglose fiscal) -->
+        {% if doc_tipo|default('FAC') in ['FAC', 'NCR'] %}
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
             <p class="font-semibold text-sm mb-2">Fila de totales (pie de la factura)</p>
             <div id="totals-box" class="p-3 bg-[#f5f5f5] rounded font-mono text-xs min-h-[40px] whitespace-pre-wrap break-all">
@@ -90,9 +95,38 @@
                 <button onclick="useSelectionAsTotals()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditTotals()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
                 <button onclick="autodetectarTotales()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta Cant.Un/Exento/Gravado/IVA/Percep/Total por relaciones matemáticas">🧮 Auto-detectar</button>
+                <button onclick="toggleCargaManualTotals()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Cuando el pie del PDF viene desprolijo, cargá los valores a mano">✍ Carga manual</button>
                 <span class="flex-1"></span>
                 <button onclick="unirTotalsMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold">⤏ Unir marcados</button>
                 <button onclick="resetTotalsAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">↺ Separar</button>
+            </div>
+
+            <!-- Panel de carga manual (oculto por default) -->
+            <div id="totals-manual-panel" class="hidden mt-3 p-3 bg-violet-50 border border-violet-300 rounded-lg">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-xs font-semibold text-violet-900 uppercase tracking-wide">Carga manual del pie</p>
+                    <button onclick="toggleCargaManualTotals()" class="text-xs text-violet-700 hover:text-violet-900">✕ cerrar</button>
+                </div>
+                <p class="text-[11px] text-violet-800 mb-3">Completá los valores a mano. Los campos vacíos no se asignan.</p>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">Cant. Un.</span>
+                        <input type="text" id="man-cantidad_total" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">Exento</span>
+                        <input type="text" id="man-monto_exento" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">Gravado</span>
+                        <input type="text" id="man-monto_gravado" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">IVA 10,5 %</span>
+                        <input type="text" id="man-iva_105" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">IVA 21 %</span>
+                        <input type="text" id="man-iva_21" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">Percepciones</span>
+                        <input type="text" id="man-percepciones" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                    <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-violet-700 font-semibold">Total</span>
+                        <input type="text" id="man-total" class="px-2 py-1 text-xs font-mono text-right bg-white border border-violet-300 rounded focus:ring-1 focus:ring-violet-500 focus:outline-none"></label>
+                </div>
+                <div class="mt-3 flex justify-end gap-2">
+                    <button onclick="guardarCargaManualTotals()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold">✓ Guardar valores</button>
+                </div>
             </div>
             <p class="text-[11px] text-[#6f6f6f] mt-2">Marcá el checkbox de cada bloque y clickeá el chip correspondiente.</p>
             <div class="mt-2 flex flex-wrap gap-2" id="totals-chips">
@@ -106,6 +140,7 @@
             </div>
             <button onclick="limpiarTotals()" class="mt-2 text-xs text-[#6f6f6f] hover:text-red-600">Limpiar fila de totales</button>
         </div>
+        {% endif %}
 
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
             <p class="font-semibold text-sm mb-2">Fila de ejemplo</p>
@@ -571,6 +606,40 @@ document.getElementById('totals-chips').addEventListener('click', (e) => {
     assignTotalsField(btn.dataset.field);
 });
 
+// ── Carga manual del pie (fallback cuando el PDF viene desprolijo) ──
+const MANUAL_FIELDS = ['cantidad_total','monto_exento','monto_gravado','iva_105','iva_21','percepciones','total'];
+function toggleCargaManualTotals() {
+    const panel = document.getElementById('totals-manual-panel');
+    if (panel.classList.contains('hidden')) {
+        // Pre-poblar inputs con los valores actuales del header (si los hay)
+        MANUAL_FIELDS.forEach(f => {
+            const el = document.getElementById('man-' + f);
+            if (el) el.value = state.header[f] || '';
+        });
+        panel.classList.remove('hidden');
+    } else {
+        panel.classList.add('hidden');
+    }
+}
+function guardarCargaManualTotals() {
+    let asignados = 0;
+    MANUAL_FIELDS.forEach(f => {
+        const el = document.getElementById('man-' + f);
+        const v = (el.value || '').trim();
+        if (v) {
+            state.header[f] = v;
+            state.autodetectados.delete(f);
+            state.totalsWas = state.totalsWas || {};
+            state.totalsWas[f] = true;
+            asignados++;
+        }
+    });
+    if (asignados === 0) { alert('No cargaste ningún valor.'); return; }
+    document.getElementById('totals-manual-panel').classList.add('hidden');
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+
 // ── Auto-detección de campos del pie por relaciones matemáticas ──
 // Busca: IVA = Gravado × 21%  (o × 10,5%)
 //        Total = Exento + Gravado + IVA + Percepciones
@@ -723,8 +792,208 @@ function restoreDefaultChips() {
     state.selections=[]; renderExample(); renderSelections(); validatePick();
 }
 restoreDefaultChips();
+
+// ── Auto-extracción de campos del pie por etiquetas conocidas ──
+// Corre al cargar la página sobre el texto ya normalizado del PDF.
+// Busca patrones como "Base Exenta $ 1.409.334,86" o "TOTAL NETO $ 1.416.381,53"
+// y pre-carga state.header.
+const FARMACIA_NOMBRE = {{ farmacia_nombre | default('') | tojson }};
+const DOC_TIPO = {{ doc_tipo | default('FAC') | tojson }};
+const DOC_CFG = {
+    FAC:  { impuestos: true,  totalesPie: true,  label: 'Factura' },
+    NCR:  { impuestos: true,  totalesPie: true,  label: 'Nota de crédito' },
+    REM:  { impuestos: false, totalesPie: false, label: 'Remito' },
+    DTO:  { impuestos: false, totalesPie: false, label: 'Planilla descuentos' },
+    OTRO: { impuestos: false, totalesPie: false, label: 'Otro' },
+}[DOC_TIPO] || { impuestos: false, totalesPie: false, label: 'Doc' };
+
+const LABEL_PATTERNS_FACTURA = [
+    // [fieldKey, regex con captura del valor]
+    ['total',          /(?:^|[\s\|])(?:TOTAL\s*NETO|Importe\s*Total|Total\s*\$|TOTAL\s*FACTURA)\b[^$]*?\$\s*([\d.,]+)/im],
+    ['monto_exento',   /(?:Base\s*Exenta|Monto\s*Exento|Exento)\b[^$]*?\$\s*([\d.,]+)/i],
+    ['monto_gravado',  /(?:Monto\s*Gravado|Neto\s*Gravado|Gravado\s*\$)\b[^$]*?\$\s*([\d.,]+)/i],
+    ['iva_21',         /(?:IVA\s*21\s*%?|I\.V\.A\.\s*21)\b[^$]*?\$\s*([\d.,]+)/i],
+    ['iva_105',        /(?:IVA\s*10[.,]?5\s*%?|I\.V\.A\.\s*10[.,]?5)\b[^$]*?\$\s*([\d.,]+)/i],
+    ['percepciones',   /(?:Percepci[oó]n(?:es)?\s*(?:IIBB|IVA)?[^$]{0,60})\$\s*([\d.,]+)/i],
+    ['cantidad_total', /Unidades\s*en\s*comprob[^\d]*(\d+)/i],
+    ['numero',         /(?:FACTURA|REMITO|COMPROBANTE|N[ºO°])\s*N?[º°]?\s*[:\s]\s*([\w\-\/]+)/i],
+    ['fecha',          /(?:FECHA|Fecha)\s*[:\s]\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i],
+];
+
+// Los patrones de impuestos/totales solo aplican si el tipo lo requiere.
+// Si el tipo no tiene impuestos (Remito, DTO, OTRO), solo usamos numero + fecha
+// (ya incluidos arriba). El filtrado efectivo se hace en autoExtraerEtiquetas.
+
+// Patrón especial: todos los matches de "razón social" y CUIT en el PDF.
+// Se escanean todos y se descarta el que matchea con el nombre de la farmacia.
+function _buscarRazonSocialProveedor(txt) {
+    const rx = /([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ &.]{5,}(?:S\.A\.?|S\.R\.L\.?|S\.A\.S\.?|LTDA\.?))/gm;
+    const matches = [...txt.matchAll(rx)].map(m => m[1].trim());
+    if (!matches.length) return null;
+    const farmNorm = (FARMACIA_NOMBRE || '').toLowerCase().trim();
+    // Filtrar razones que contengan fragmentos del nombre de la farmacia (o viceversa)
+    const filtered = matches.filter(r => {
+        if (!farmNorm) return true;
+        const rNorm = r.toLowerCase();
+        // Si el nombre de la farmacia aparece dentro de la razón o al revés → descartar
+        if (rNorm.includes(farmNorm) || farmNorm.includes(rNorm.replace(/\s*(s\.a\.?|s\.r\.l\.?|s\.a\.s\.?|ltda\.?)\s*$/i, '').trim())) return false;
+        return true;
+    });
+    // La primera razón social restante es la del proveedor (suele aparecer antes en el PDF)
+    return (filtered[0] || matches[0] || null);
+}
+function _buscarCuitProveedor(txt) {
+    const rx = /CUIT\s*[:\s]\s*(\d{2}-?\d{8}-?\d|\d{11})/gi;
+    const matches = [...txt.matchAll(rx)].map(m => m[1].replace(/\D/g, ''));
+    if (!matches.length) return null;
+    // Tomar el primer CUIT que NO sea 11 chars que matchee con el de la farmacia
+    // (no tenemos el CUIT de la farmacia guardado, así que tomamos simplemente el primero)
+    return matches[0];
+}
+function autoExtraerEtiquetas() {
+    const pdfBox = document.getElementById('pdf-text');
+    if (!pdfBox) return;
+    const txt = pdfBox.textContent || '';
+    if (!txt.trim()) return;
+    let n = 0;
+    // Solo extraer campos fiscales si el tipo de doc los requiere
+    const patterns = DOC_CFG.impuestos ? LABEL_PATTERNS_FACTURA : [];
+    patterns.forEach(([field, rx]) => {
+        if (state.header[field]) return; // no pisar
+        const m = txt.match(rx);
+        if (m && m[1]) {
+            state.header[field] = m[1].trim();
+            state.autodetectados.add(field);
+            n++;
+        }
+    });
+    // Razón social: primera encontrada que NO sea la farmacia
+    if (!state.header['razon_social']) {
+        const rs = _buscarRazonSocialProveedor(txt);
+        if (rs) { state.header['razon_social'] = rs; state.autodetectados.add('razon_social'); n++; }
+    }
+    // CUIT: primero encontrado (asume que el proveedor aparece antes que el cliente)
+    if (!state.header['cuit']) {
+        const cu = _buscarCuitProveedor(txt);
+        if (cu) { state.header['cuit'] = cu; state.autodetectados.add('cuit'); n++; }
+    }
+    if (n > 0 && typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+autoExtraerEtiquetas();
+
 // Renderizar encabezado con valores autodetectados al cargar la página
 renderHeader();
+
+// ── Pipeline automático al cargar ──
+// Corre pasos seguros en cascada. Si alguno falla, corta sin tocar lo siguiente.
+// El usuario ve todo ya pre-cargado y solo tiene que revisar + confirmar.
+function runAutoPipeline() {
+    const pdfBox = document.getElementById('pdf-text');
+    if (!pdfBox) return;
+    const txt = pdfBox.textContent || '';
+    if (!txt.trim()) return;
+
+    const log = [];
+    const _add = (ok, msg) => log.push({ok, msg});
+
+    // PASO 1: dividir en secciones (solo si hay markers)
+    try {
+        const parts = _splitPdfText(txt);
+        if (parts.split) {
+            document.getElementById('pdf-header').textContent = parts.header;
+            _renderDetailClickable(parts.detail);
+            document.getElementById('pdf-footer').textContent = parts.footer;
+            document.getElementById('pdf-full').classList.add('hidden');
+            document.getElementById('pdf-split').classList.remove('hidden');
+            document.getElementById('btn-split').textContent = '📄 Ver texto completo';
+            _add(true, 'Texto dividido en 3 secciones');
+
+            // PASO 2: primera línea del detalle que parezca ítem
+            const detailLines = parts.detail.split('\n').filter(l => l.trim());
+            const itemRx = /^\s*\d{7,14}\s+\d+\s+\S/;
+            const ejemplo = detailLines.find(l => itemRx.test(l));
+            if (ejemplo) {
+                state.exampleLine = ejemplo.trim();
+                state.selections = [];
+                state.tokens = tokenize(state.exampleLine);
+                state.groups = tokensToGroups(state.tokens);
+                renderExample(); renderSelections();
+                _add(true, `Fila de ejemplo: "${ejemplo.trim().slice(0, 40)}…"`);
+
+                // PASO 3: auto-detectar campos en la fila de ejemplo (silencioso)
+                try {
+                    const prevAlert = window.alert;
+                    window.alert = () => {};  // suprimir alerts
+                    autodetectarCampos();
+                    window.alert = prevAlert;
+                    if (state.selections.length >= 3) {
+                        _add(true, `Auto-detectados ${state.selections.length} campos`);
+                        // PASO 4: inferir patrón si hay los campos mínimos
+                        const campos = state.selections.map(s => s.field);
+                        const hayCantidad = campos.includes('cantidad');
+                        const hayImporte  = campos.includes('importe');
+                        if (hayCantidad && hayImporte) {
+                            inferPattern().then(() => {
+                                _add(true, `Patrón inferido — ${(state.lastRows||[]).length} filas`);
+                                mostrarAutoLog(log);
+                            }).catch(() => { mostrarAutoLog(log); });
+                            return;  // no llegar al log hasta que termine infer
+                        }
+                    }
+                } catch (e) { _add(false, 'Auto-detect de fila falló: ' + e.message); }
+            } else {
+                _add(false, 'No encontré línea con pinta de ítem en el detalle');
+            }
+
+            // PASO 5: auto-detectar totales desde el pie
+            try {
+                const footerLines = parts.footer.split('\n').filter(l => l.trim());
+                // Buscar línea que parezca tabla de totales (hoja + cant + varios moneys)
+                const totalsRx = /\d+\/\d+\s+\d+\s+[\d.,]+.*?[\d.,]+/;
+                const totLine = footerLines.find(l => totalsRx.test(l));
+                if (totLine) {
+                    state.totalsLine = totLine.trim();
+                    state.totalsTokens = tokenize(state.totalsLine);
+                    state.totalsGroups = tokensToGroups(state.totalsTokens);
+                    renderTotalsLine();
+                    const prevAlert = window.alert;
+                    window.alert = () => {};
+                    autodetectarTotales();
+                    window.alert = prevAlert;
+                    _add(true, 'Desglose de totales auto-detectado del pie');
+                }
+            } catch (e) { _add(false, 'Auto-detect de totales falló: ' + e.message); }
+        } else {
+            _add(false, 'No se pudo dividir el texto en secciones');
+        }
+    } catch (e) { _add(false, 'Pipeline falló: ' + e.message); }
+
+    mostrarAutoLog(log);
+}
+
+function mostrarAutoLog(log) {
+    if (!log.length) return;
+    // Banner arriba del panel derecho con el resumen
+    let html = '<div class="bg-sky-50 border border-sky-300 rounded-lg px-3 py-2 mb-3 text-xs">';
+    html += '<div class="flex items-center justify-between mb-1"><strong class="text-sky-900">🤖 Pre-procesado automático</strong>';
+    html += '<button onclick="this.closest(\'div.bg-sky-50\').remove()" class="text-sky-700 hover:text-sky-900">✕</button></div>';
+    html += '<ul class="space-y-0.5">';
+    log.forEach(e => {
+        const icon = e.ok ? '<span class="text-emerald-600">✓</span>' : '<span class="text-amber-600">⚠</span>';
+        html += `<li>${icon} ${e.msg}</li>`;
+    });
+    html += '</ul><p class="mt-1 text-[10px] text-sky-700">Revisá y editá lo que haga falta antes de guardar.</p></div>';
+    const target = document.querySelector('main .lg\\:col-span-2, #pdf-full')?.closest('.max-w-7xl, .grid, div');
+    const panel = document.getElementById('result');
+    if (panel && panel.parentElement) {
+        const bar = document.createElement('div');
+        bar.innerHTML = html;
+        panel.parentElement.insertBefore(bar.firstChild, panel.parentElement.firstChild);
+    }
+}
+
+// Arrancar pipeline con un pequeño delay para que el DOM quede listo
+setTimeout(runAutoPipeline, 200);
 
 function generateChipsFromTitles() {
     const line = (document.getElementById('titles-line').value||'').trim();

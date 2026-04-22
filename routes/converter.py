@@ -13,7 +13,7 @@ import json
 import re
 from flask import render_template, request, redirect, url_for, flash, jsonify, send_file
 from werkzeug.utils import secure_filename
-from helpers import CONVERTER_DIR, _build_item_pattern, PARSERS_FOLDER
+from helpers import CONVERTER_DIR, _build_item_pattern, PARSERS_FOLDER, _normalize_quadrupled
 import database
 from data_extract import extract_provider_info_from_pdf, parse_invoice_pdf
 
@@ -143,7 +143,14 @@ def init_app(app):
         fname = token + '_' + secure_filename(f.filename)
         path = os.path.join(CONVERTER_DIR, fname)
         f.save(path)
-        return jsonify({'ok': True, 'token': fname, 'size': os.path.getsize(path)})
+        # Guardar tipo de documento en meta (FAC por default)
+        doc_tipo = (request.form.get('doc_tipo') or 'FAC').upper().strip()
+        if doc_tipo not in ('FAC', 'NCR', 'REM', 'DTO', 'OTRO'):
+            doc_tipo = 'FAC'
+        meta = _converter_read_meta(fname) or {}
+        meta['doc_tipo'] = doc_tipo
+        _converter_write_meta(fname, meta)
+        return jsonify({'ok': True, 'token': fname, 'size': os.path.getsize(path), 'doc_tipo': doc_tipo})
 
     @app.route('/converter/<token>/analizar', methods=['POST'])
     def converter_analizar(token):
@@ -229,7 +236,7 @@ def init_app(app):
         pdf_lines = []
         with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
-                for line in (page.extract_text() or '').split('\n'):
+                for line in _normalize_quadrupled(page.extract_text() or '').split('\n'):
                     pdf_lines.append(line)
                     if len(pdf_lines) >= 60:
                         break
@@ -362,7 +369,7 @@ def init_app(app):
         pdf_text = ''
         with _plumber.open(path) as pdf:
             for page in pdf.pages:
-                pdf_text += (page.extract_text() or '') + '\n\n'
+                pdf_text += _normalize_quadrupled(page.extract_text() or '') + '\n\n'
         meta = _converter_read_meta(safe)
         # Reejecutar la detección siempre, para tener datos frescos
         # (evita depender del meta.json que puede ser de una versión anterior del extractor)
@@ -390,11 +397,15 @@ def init_app(app):
         })
         _converter_write_meta(safe, meta)
 
+        from helpers import get_config as _get_cfg
+        _cfg = _get_cfg()
         return render_template('converter_pick.html',
                                token=safe, pdf_text=pdf_text, filename=safe,
                                proveedor_razon=razon or '',
                                proveedor_id=meta.get('proveedor_id'),
-                               header_precargado=header_precargado)
+                               header_precargado=header_precargado,
+                               farmacia_nombre=_cfg.get('farmacia_nombre', ''),
+                               doc_tipo=meta.get('doc_tipo', 'FAC'))
 
     @app.route('/converter/<token>/infer', methods=['POST'])
     def converter_infer(token):
@@ -416,7 +427,7 @@ def init_app(app):
         pdf_text = ''
         with _plumber.open(path) as pdf:
             for page in pdf.pages:
-                pdf_text += (page.extract_text() or '') + '\n'
+                pdf_text += _normalize_quadrupled(page.extract_text() or '') + '\n'
 
         # Cortar el texto en marcadores de sección "sin stock" para no parsear faltantes
         items_text = pdf_text
@@ -798,6 +809,7 @@ Si el layout del proveedor cambia, reentrenar el patrón desde /converter.
 import re
 import pdfplumber
 from datetime import datetime
+from helpers import _normalize_quadrupled
 
 
 PATTERN = r"""{pattern}"""
@@ -828,7 +840,7 @@ def parse_invoice_pdf(pdf_path):
     pages_text = []
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            pages_text.append(page.extract_text() or '')
+            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
     full_text = '\\n'.join(pages_text)
 
     # Encabezado genérico
