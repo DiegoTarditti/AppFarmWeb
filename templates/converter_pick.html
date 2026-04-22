@@ -58,6 +58,7 @@
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_105">IVA 10,5 %</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_21">IVA 21 %</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="percepciones">Percepciones</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="cantidad_total" title="Cantidad total de unidades declarada en el pie de la factura">Cant. Un.</button>
             </div>
             <div class="mt-2 flex gap-2 items-center">
                 <input id="new-hfield-name" type="text" placeholder="Otro campo de encabezado" class="flex-1 text-xs px-2 py-1.5 border border-[#e0e0e0] rounded">
@@ -405,6 +406,29 @@ function renderHeader() {
             ${badge}
          </div>`);
     }
+
+    // Control: Σ cantidad ítems vs cantidad_total del header
+    if (state.header['cantidad_total'] != null && state.header['cantidad_total'] !== '') {
+        const declarada = _parseArgNumber(state.header['cantidad_total']);
+        const fCant = _findField(state.lastFields || [], /^(cantidad|cant|unidades)$/);
+        let sumCant = 0;
+        if (fCant) {
+            (state.lastRows || []).forEach(r => {
+                const v = _parseArgNumber(r[fCant]);
+                if (v != null) sumCant += v;
+            });
+        }
+        let badgeC = '', rowClsC = 'bg-[#D6ECDE] border border-[#7FB99F]';
+        if (declarada != null && declarada > 0) {
+            if (sumCant === declarada) { badgeC = '<span class="text-[10px] text-emerald-700 font-semibold">✓ coincide</span>'; }
+            else { badgeC = `<span class="text-[10px] text-red-700 font-semibold">⚠ declarada ${declarada} vs ítems ${sumCant}</span>`; rowClsC = 'bg-red-50 border border-red-200'; }
+        }
+        rows.push(`<div class="flex justify-between items-center ${rowClsC} rounded px-2 py-1 gap-2">
+            <span class="font-semibold flex items-center">Σ cant. ítems:</span>
+            <span class="font-mono flex-1 text-right">${sumCant}</span>
+            ${badgeC}
+         </div>`);
+    }
     document.getElementById('header-values').innerHTML = rows.join('');
 }
 function removeHeader(k) {
@@ -721,6 +745,9 @@ function renderPreview() {
         desgBox.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
         if (rows.length > 0) recalcDesglose();
     }
+
+    // Refrescar el header para actualizar el control Σ cant. ítems
+    if (typeof renderHeader === 'function') renderHeader();
 }
 
 function _onPreviewEdit(e) {
