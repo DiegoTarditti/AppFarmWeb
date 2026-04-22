@@ -206,7 +206,11 @@ def init_app(app):
                             ean_pack = item['ean']
                             if not ean_pack:
                                 continue
-                            existe = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
+                            # Dedup por (modulo_id, ean_pack): el mismo EAN
+                            # puede estar en distintos módulos, pero no duplicado
+                            # dentro del mismo.
+                            existe = session.query(ModuloPack).filter_by(
+                                ean_pack=ean_pack, modulo_id=modulo_actual.id).first()
                             if not existe:
                                 session.add(ModuloPack(
                                     ean_pack=ean_pack,
@@ -371,7 +375,12 @@ def init_app(app):
             return {'error': 'Datos incompletos'}, 400
         with database.get_db() as session:
             try:
-                existing = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
+                # Dedup por (modulo_id, ean_pack): el mismo EAN puede estar
+                # en distintos módulos.
+                q = session.query(ModuloPack).filter_by(ean_pack=ean_pack)
+                if modulo_id is not None:
+                    q = q.filter_by(modulo_id=int(modulo_id) if modulo_id else None)
+                existing = q.first()
                 if existing:
                     existing.ean_unidad = ean_unidad
                     existing.cantidad = cantidad
