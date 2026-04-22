@@ -156,8 +156,12 @@ def parse_modulos_xlsx(path):
                     modules.append(current)
                 current = {'nombre': nombre, 'items': []}
         else:
-            # Fila de ítem
-            if current is None:
+            # Fila de ítem — si el nombre del módulo en col[0] cambió respecto al
+            # current, abrir módulo nuevo (formato Siegfried donde el nombre se
+            # repite por cada fila, en vez de aparecer como cabecera separada).
+            if current is None or (nombre and nombre != current['nombre']):
+                if current is not None:
+                    modules.append(current)
                 current = {'nombre': nombre or 'SIN NOMBRE', 'items': []}
             current['items'].append({
                 'ean':         ean,

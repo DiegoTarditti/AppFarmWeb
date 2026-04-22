@@ -269,7 +269,7 @@ class ModuloPack(Base):
     """Pack de módulo: un EAN del proveedor equivale a N unidades de otro EAN del ERP."""
     __tablename__ = 'modulo_packs'
     id = Column(Integer, primary_key=True)
-    ean_pack = Column(String(30), unique=True, nullable=False)   # EAN del pack (proveedor/módulo)
+    ean_pack = Column(String(30), nullable=False)   # EAN del pack (proveedor/módulo)
     ean_unidad = Column(String(30), nullable=False)              # EAN de la unidad individual (ERP/pedido)
     cantidad = Column(Integer, nullable=False, default=1)        # Unidades individuales por pack
     cant_modulo = Column(Integer, nullable=True)                 # Cant. de packs en el módulo (CANT. del Excel)
@@ -787,6 +787,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE modulo_packs ADD COLUMN IF NOT EXISTS desc_pct DECIMAL(5,2)"))
     # Migrar datos viejos: cantidad almacenaba el CANT del Excel → mover a cant_modulo, resetear cantidad=1
     conn.execute(text("UPDATE modulo_packs SET cant_modulo = cantidad, cantidad = 1 WHERE cant_modulo IS NULL AND cantidad != 1"))
+    # Drop UNIQUE de ean_pack global: un EAN puede pertenecer a varios módulos
+    conn.execute(text("ALTER TABLE modulo_packs DROP CONSTRAINT IF EXISTS modulo_packs_ean_pack_key"))
     conn.execute(text(
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) NOT NULL DEFAULT 'drogueria'"
     ))
