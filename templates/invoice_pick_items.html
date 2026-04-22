@@ -79,9 +79,10 @@
 
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
             <div class="flex items-center justify-between mb-2">
-                <p class="font-semibold text-sm">2. Seleccioná texto dentro de la fila y asignalo a un campo</p>
+                <p class="font-semibold text-sm">2. Click en los tokens de la fila y asignalos a un campo</p>
                 <button onclick="toggleCustomFields()" class="text-xs text-sky-600 hover:text-sky-800">Personalizar campos ▾</button>
             </div>
+            <p class="text-[11px] text-[#6f6f6f] mb-2">Click en un token para seleccionarlo · click en adyacentes para extender · Shift+click para rango largo · después click al chip del campo.</p>
             <div id="custom-fields-panel" class="hidden mb-3 p-3 bg-[#f5f5f5] rounded border border-[#e0e0e0]">
                 <p class="text-xs text-[#6f6f6f] mb-1">Pegá la línea de títulos de columna del PDF (ej: <code>CÓDIGO CONCEPTO LOTE CANTIDAD...</code>) y generará un chip por cada palabra.</p>
                 <textarea id="titles-line" rows="2" class="w-full text-xs font-mono p-2 border border-[#e0e0e0] rounded" placeholder="CÓDIGO CONCEPTO LOTE CANTIDAD PCIO.UNIT DESCTO IMPORTE"></textarea>
@@ -130,9 +131,41 @@
 const state = {
     exampleLine: '',
     selections: [],  // {field, text, start, end}
+    tokens: [],      // [{text, start, end}] tokens no-whitespace
+    selectedTokens: new Set(),  // índices contiguos seleccionados con click
     lastRows: [],
     header: {}  // {razon_social, numero_factura, fecha, total}
 };
+
+function tokenize(line) {
+    const tokens = [];
+    const re = /\S+/g;
+    let m;
+    while ((m = re.exec(line)) !== null) {
+        tokens.push({text: m[0], start: m.index, end: m.index + m[0].length});
+    }
+    return tokens;
+}
+
+function toggleToken(idx, shift) {
+    const sel = state.selectedTokens;
+    if (sel.size === 0) { sel.add(idx); renderExample(); return; }
+    const arr = [...sel].sort((a,b)=>a-b);
+    const min = arr[0], max = arr[arr.length-1];
+    if (shift) {
+        const lo = Math.min(min, idx), hi = Math.max(max, idx);
+        sel.clear();
+        for (let i = lo; i <= hi; i++) sel.add(i);
+    } else if (sel.has(idx)) {
+        if (idx === min || idx === max) sel.delete(idx);
+        else { sel.clear(); sel.add(idx); }
+    } else if (idx === min - 1 || idx === max + 1) {
+        sel.add(idx);
+    } else {
+        sel.clear(); sel.add(idx);
+    }
+    renderExample();
+}
 
 document.getElementById('header-chips').addEventListener('click', (e) => {
     const btn = e.target.closest('.hchip');
@@ -172,6 +205,8 @@ function useSelectionAsExample() {
     if (!txt.trim()) { alert('Seleccioná una fila en el panel izquierdo primero.'); return; }
     state.exampleLine = txt.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').trim();
     state.selections = [];
+    state.tokens = tokenize(state.exampleLine);
+    state.selectedTokens = new Set();
     renderExample();
     renderSelections();
 }
@@ -179,17 +214,32 @@ function useSelectionAsExample() {
 function renderExample() {
     const box = document.getElementById('example-box');
     if (!state.exampleLine) { box.innerHTML = '<span class="text-[#9ca3af]">Seleccioná una fila…</span>'; return; }
-    // Highlight selections
+    const tokens = state.tokens || [];
+    if (!tokens.length) { box.textContent = state.exampleLine; return; }
     let html = '';
     let cursor = 0;
-    const sorted = [...state.selections].sort((a,b) => a.start - b.start);
-    for (const s of sorted) {
-        html += escapeHtml(state.exampleLine.slice(cursor, s.start));
-        html += `<mark title="${s.field}">${escapeHtml(state.exampleLine.slice(s.start, s.end))}</mark>`;
-        cursor = s.end;
-    }
-    html += escapeHtml(state.exampleLine.slice(cursor));
+    tokens.forEach((t, idx) => {
+        // whitespace anterior al token (literal)
+        if (t.start > cursor) html += escapeHtml(state.exampleLine.slice(cursor, t.start));
+        const assigned = state.selections.find(s => s.start <= t.start && s.end >= t.end);
+        const selected = state.selectedTokens.has(idx);
+        let cls = 'inline-block px-1 border rounded cursor-pointer transition-colors';
+        if (assigned)       cls += ' bg-emerald-100 border-emerald-400 text-emerald-800 hover:bg-emerald-200';
+        else if (selected)  cls += ' bg-sky-200 border-sky-500';
+        else                cls += ' bg-slate-50 hover:bg-sky-100 border-slate-300';
+        const title = assigned ? assigned.field : '';
+        html += `<span class="token ${cls}" data-idx="${idx}" title="${escapeHtml(title)}">${escapeHtml(t.text)}</span>`;
+        cursor = t.end;
+    });
+    // resto final (whitespace trailing si lo hubiera)
+    if (cursor < state.exampleLine.length) html += escapeHtml(state.exampleLine.slice(cursor));
     box.innerHTML = html;
+    box.querySelectorAll('.token').forEach(el => {
+        el.addEventListener('click', (e) => {
+            e.preventDefault();
+            toggleToken(parseInt(el.dataset.idx, 10), e.shiftKey);
+        });
+    });
 }
 
 function escapeHtml(s) {
@@ -229,6 +279,8 @@ function toggleEditExample() {
     } else {
         state.exampleLine = ta.value;
         state.selections = [];
+        state.tokens = tokenize(state.exampleLine);
+        state.selectedTokens = new Set();
         ta.classList.add('hidden');
         box.classList.remove('hidden');
         renderExample();
@@ -238,6 +290,7 @@ function toggleEditExample() {
 
 function resetSelections() {
     state.selections = [];
+    state.selectedTokens = new Set();
     renderExample();
     renderSelections();
 }
@@ -259,9 +312,25 @@ function findFreeOccurrence(text, exceptField) {
 
 function assignField(field) {
     if (!state.exampleLine) { alert('Primero elegí una fila de ejemplo.'); return; }
+
+    // Prioridad 1: tokens clickeados
+    if (state.selectedTokens && state.selectedTokens.size > 0) {
+        const idxs = [...state.selectedTokens].sort((a,b)=>a-b);
+        const first = state.tokens[idxs[0]];
+        const last  = state.tokens[idxs[idxs.length - 1]];
+        const txt = state.exampleLine.slice(first.start, last.end);
+        state.selections = state.selections.filter(s => s.field !== field);
+        state.selections.push({ field, text: txt, start: first.start, end: last.end });
+        state.selectedTokens.clear();
+        renderExample();
+        renderSelections();
+        return;
+    }
+
+    // Fallback: selección del navegador (comportamiento original)
     const sel = window.getSelection();
     const txt = sel ? sel.toString() : '';
-    if (!txt) { alert('Seleccioná un fragmento dentro del cuadro de la fila de ejemplo.'); return; }
+    if (!txt) { alert('Clickeá uno o más tokens (palabras) de la fila, o seleccioná texto con el mouse.'); return; }
     state.selections = state.selections.filter(s => s.field !== field);
     const idx = findFreeOccurrence(txt, field);
     if (idx < 0) { alert('No se encontró una posición libre para "' + txt + '". Puede estar ya usada por otro campo.'); return; }

@@ -288,6 +288,15 @@ def _build_item_pattern(example_line, selections):
                     pattern_opt += norm
                 else:
                     pattern_main += norm
+            elif prev_cap is not None and cap in (r'[\d.,]+', r'\d+', r'\S+') \
+                    and prev_cap in (r'[\d.,]+', r'\d+', r'\S+'):
+                # Dos capturas del mismo tipo sin literal entre ellas → sin un
+                # separador explícito, la primera greedy roba caracteres de la
+                # segunda. Forzamos \s+ para evitar el bug.
+                if opened_opt:
+                    pattern_opt += r'\s+'
+                else:
+                    pattern_main += r'\s+'
 
         if opened_opt:
             pattern_opt += '(' + cap + ')'
