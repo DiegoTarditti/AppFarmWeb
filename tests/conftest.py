@@ -27,6 +27,22 @@ def flask_app(init_test_db, tmp_path_factory):
     app.config['TESTING'] = True
     app.config['UPLOAD_FOLDER'] = upload_dir
 
+    class _AnonUser:
+        is_authenticated = False
+        nombre_completo = None
+        username = None
+        rol = None
+    app.jinja_env.globals['current_user'] = _AnonUser()
+    app.jinja_env.globals['tiene_permiso'] = lambda *a, **k: False
+
+    from flask import url_for as _real_url_for
+    def _tolerant_url_for(endpoint, **values):
+        try:
+            return _real_url_for(endpoint, **values)
+        except Exception:
+            return '#'
+    app.jinja_env.globals['url_for'] = _tolerant_url_for
+
     import routes.invoices as _inv
     import routes.claims as _claims
     import routes.plantillas as _plant

@@ -70,6 +70,9 @@ def escanear_y_subir(carpeta, url_base, mover=False):
             body, content_type = _build_multipart(paths)
             req = Request(endpoint, data=body, method='POST')
             req.add_header('Content-Type', content_type)
+            token = os.environ.get('AGENTE_TOKEN', '')
+            if token:
+                req.add_header('X-Agent-Token', token)
             resp = urlopen(req, timeout=120)
             data = json.loads(resp.read().decode('utf-8'))
             n = data.get('nuevos', 0)

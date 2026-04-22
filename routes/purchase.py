@@ -1004,11 +1004,32 @@ def init_app(app):
                 _lt = session.get(database.ExportTemplate, lab_obj.id)
                 if _lt and _lt.columns_json:
                     lab_plantilla = {'laboratorio_id': lab_obj.id}
+
+            # Unified Plantillas: laboratorio + proveedor/droguería asociado
+            plantillas_entidad = []
+            _filters = []
+            if lab_obj:
+                _filters.append(('laboratorio', lab_obj.id))
+            if _prov:
+                _filters.append((_prov.tipo or 'proveedor', _prov.id))
+            for _tipo, _eid in _filters:
+                rows = (session.query(database.Plantilla)
+                        .filter_by(entidad_tipo=_tipo, entidad_id=_eid)
+                        .order_by(database.Plantilla.es_default.desc(),
+                                  database.Plantilla.nombre).all())
+                for p in rows:
+                    plantillas_entidad.append({
+                        'id': p.id, 'nombre': p.nombre, 'formato': p.formato,
+                        'tipo_doc': p.tipo_doc, 'es_default': bool(p.es_default),
+                        'entidad_tipo': _tipo, 'entidad_id': _eid,
+                    })
+
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
                                    product_prices=product_prices,
                                    prov_plantilla=prov_plantilla,
-                                   lab_plantilla=lab_plantilla)
+                                   lab_plantilla=lab_plantilla,
+                                   plantillas_entidad=plantillas_entidad)
 
     @app.route('/order/<int:pedido_id>/save-module-matches', methods=['POST'])
     def order_save_module_matches(pedido_id):
@@ -1293,6 +1314,118 @@ def init_app(app):
             mimetype='text/plain',
             headers={'Content-Disposition': f'attachment; filename="{filename}"'}
         )
+
+    @app.route('/order/<int:pedido_id>/export-plantilla/<int:plantilla_id>', methods=['POST'])
+    def order_export_plantilla_unified(pedido_id, plantilla_id):
+        """Exporta usando la Plantilla unificada (xlsx | csv | txt_fijo)."""
+        import json as _json
+        from flask import Response, send_file
+        from io import BytesIO, StringIO
+
+        body = request.get_json(silent=True) or {}
+        rows = body.get('rows') or []
+
+        with database.get_db() as session:
+            pedido = session.get(database.Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'error': 'Pedido no encontrado'}), 404
+            plant = session.get(database.Plantilla, plantilla_id)
+            if not plant:
+                return jsonify({'error': 'Plantilla no encontrada'}), 404
+            try:
+                cfg = _json.loads(plant.config_json or '{}')
+            except Exception:
+                cfg = {}
+            formato = plant.formato
+            nombre_plant = plant.nombre
+            periodo = (pedido.periodo or '').replace(' ', '_')
+            lab = (pedido.laboratorio or 'pedido').replace(' ', '_')
+
+        def _val(row, field):
+            # Mapeo de campo_sistema → key en rows construido por el front
+            if field == 'fijo':            return ''
+            if field in ('codigo_barra',): return str(row.get('ean', '') or '')
+            if field in ('descripcion',):  return str(row.get('nombre', '') or '')
+            if field == 'cantidad':        return str(int(row.get('cantidad', row.get('total', 0)) or 0))
+            if field == 'cant_modulo':     return str(int(row.get('cant_modulo', 0) or 0))
+            if field == 'cant_oferta':     return str(int(row.get('cant_oferta', 0) or 0))
+            if field == 'cant_oferta_min': return str(int(row.get('cant_oferta_min', 0) or 0))
+            if field == 'cant_nodeal':     return str(int(row.get('cant_nodeal', 0) or 0))
+            if field == 'precio':          return str(row.get('precio_pvp', '') or '')
+            if field == 'erp_qty':         return str(row.get('erp_qty', '') or '')
+            if field == 'rotacion':        return str(row.get('rotacion', '') or '')
+            if field == 'avg_monthly':
+                v = row.get('avg_monthly', 0) or 0
+                return str(int(round(float(v)))) if v else ''
+            if field == 'espacio':         return ''
+            return str(row.get(field, '') or '')
+
+        if formato == 'txt_fijo':
+            campos = sorted(cfg.get('campos', []), key=lambda c: c.get('col_inicio', 0))
+            if not campos:
+                return jsonify({'error': 'Plantilla sin campos'}), 400
+            line_len = max(c.get('col_inicio', 0) + c.get('longitud', 0) for c in campos)
+            lines = []
+            for row in rows:
+                line = bytearray(b' ' * line_len)
+                for c in campos:
+                    cs = c.get('campo', c.get('campo_sistema', ''))
+                    val = c.get('valor_fijo', '') if cs == 'fijo' else _val(row, cs)
+                    pad = (c.get('relleno') or ' ')[0]
+                    lng = c.get('longitud', 0)
+                    align = c.get('alineacion', 'L')
+                    val = val[-lng:].rjust(lng, pad) if align == 'R' else val[:lng].ljust(lng, pad)
+                    start = c.get('col_inicio', 0)
+                    end = min(start + lng, line_len)
+                    encoded = val.encode('latin-1', errors='replace')[:end - start]
+                    line[start:start + len(encoded)] = encoded
+                lines.append(bytes(line).decode('latin-1'))
+            content = '\r\n'.join(lines) + '\r\n'
+            fname = f'{nombre_plant}_{lab}_{periodo}.txt'.replace(' ', '_')
+            return Response(content.encode(cfg.get('encoding', 'latin-1'), errors='replace'),
+                            mimetype='text/plain',
+                            headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+        if formato == 'csv':
+            import csv as _csv
+            cols = [c for c in cfg.get('columnas', []) if c.get('enabled', True)]
+            if not cols:
+                return jsonify({'error': 'Plantilla sin columnas activas'}), 400
+            buf = StringIO()
+            w = _csv.writer(buf, delimiter=cfg.get('delimiter', ','))
+            w.writerow([c.get('label') or c.get('field') for c in cols])
+            for row in rows:
+                w.writerow([_val(row, c['field']) for c in cols])
+            fname = f'{nombre_plant}_{lab}_{periodo}.csv'.replace(' ', '_')
+            return Response(buf.getvalue(), mimetype='text/csv',
+                            headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+
+        # xlsx (default)
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+        cols = [c for c in cfg.get('columnas', []) if c.get('enabled', True)]
+        if not cols:
+            return jsonify({'error': 'Plantilla sin columnas activas'}), 400
+        wb = openpyxl.Workbook(); ws = wb.active; ws.title = 'Pedido'
+        row_offset = 1
+        hdr_txt = cfg.get('custom_header')
+        if hdr_txt:
+            ws.cell(row=1, column=1, value=hdr_txt).font = Font(bold=True, size=12)
+            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cols))
+            row_offset = 2
+        hdr_fill = PatternFill('solid', fgColor='1e1e1e')
+        for ci, col in enumerate(cols, 1):
+            cell = ws.cell(row=row_offset, column=ci, value=col.get('label') or col['field'])
+            cell.font = Font(bold=True, color='FFFFFF', size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal='center')
+        for ri, row in enumerate(rows, row_offset + 1):
+            for ci, col in enumerate(cols, 1):
+                ws.cell(row=ri, column=ci, value=_val(row, col['field']) or None)
+        buf = BytesIO(); wb.save(buf); buf.seek(0)
+        fname = f'{nombre_plant}_{lab}_{periodo}.xlsx'.replace(' ', '_')
+        return send_file(buf, as_attachment=True, download_name=fname,
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     @app.route('/order/<int:pedido_id>/export/<step>/<fmt>', methods=['POST'])
     def order_export(pedido_id, step, fmt):

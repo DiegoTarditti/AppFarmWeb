@@ -509,27 +509,32 @@ def init_db(database_url=None):
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
                                expire_on_commit=False)
     if not database_url.startswith('sqlite'):
-        # Limpia entradas stale en pg_type / secuencias huérfanas que bloquean CREATE TABLE
-        # (puede pasar en Render u otros PG cuando un deploy previo crea pg_type pero no pg_class)
-        with engine.connect() as conn:
-            for tname in ('export_templates', 'ofertas_minimo', 'procesos_compra',
-                          'analisis_sesiones', 'usuarios',
-                          'plantillas_exportacion', 'plantilla_campos',
-                          'plantillas'):
-                table_exists = conn.execute(
-                    text("SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename = :t"),
-                    {'t': tname}
-                ).first()
-                if table_exists:
+        # Limpia zombies en pg_type / pg_class que bloquean CREATE TABLE con
+        # "duplicate key ... pg_type_typname_nsp_index". Puede pasar en Render
+        # cuando un deploy previo dejó un pg_type huérfano sin tabla real.
+        # Usamos AUTOCOMMIT para que cada DDL se confirme aunque el siguiente falle.
+        zombie_names = ('export_templates', 'ofertas_minimo', 'procesos_compra',
+                        'analisis_sesiones', 'usuarios',
+                        'plantillas_exportacion', 'plantilla_campos',
+                        'plantillas')
+        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+            for tname in zombie_names:
+                # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
+                real_table = conn.execute(text("""
+                    SELECT 1 FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = 'public' AND c.relname = :t AND c.relkind = 'r'
+                """), {'t': tname}).first()
+                if real_table:
                     continue
-                # Tabla no existe → limpiar cualquier zombie de pg_type / pg_class
-                for ddl in (f'DROP TYPE IF EXISTS "{tname}" CASCADE',
+                # No hay tabla real pero puede quedar pg_type / secuencia / vista huérfana.
+                for ddl in (f'DROP TABLE IF EXISTS "{tname}" CASCADE',
+                            f'DROP TYPE IF EXISTS "{tname}" CASCADE',
                             f'DROP SEQUENCE IF EXISTS "{tname}_id_seq" CASCADE'):
                     try:
                         conn.execute(text(ddl))
-                        conn.commit()
                     except Exception:
-                        conn.rollback()
+                        pass
     Base.metadata.create_all(engine)
     is_sqlite = database_url.startswith('sqlite')
     # Migraciones incrementales: agrega columnas nuevas si no existen

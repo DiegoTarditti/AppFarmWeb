@@ -63,6 +63,29 @@ RED      = "#F87171"
 YELLOW   = "#FBBF24"
 
 
+# ── Persistencia del último proyecto abierto ──────────────────────────────────
+
+def _last_project_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "last_project.txt")
+
+def _load_last_project():
+    p = _last_project_path()
+    if not os.path.isfile(p):
+        return ""
+    try:
+        with open(p, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return ""
+
+def _save_last_project(path):
+    try:
+        with open(_last_project_path(), "w", encoding="utf-8") as f:
+            f.write(path.strip())
+    except Exception:
+        pass
+
+
 # ── Diálogo de selección de proyecto ──────────────────────────────────────────
 
 class _StartupDialog(tk.Toplevel):
@@ -93,7 +116,10 @@ class _StartupDialog(tk.Toplevel):
         row = tk.Frame(self, bg=BG)
         row.pack(fill="x", padx=20)
 
-        _default = r"C:\AppFarmWeb" if os.path.isdir(r"C:\AppFarmWeb") else ""
+        _last = _load_last_project()
+        _default = _last if _last and os.path.isdir(_last) else (
+            r"C:\AppFarmWeb" if os.path.isdir(r"C:\AppFarmWeb") else ""
+        )
         self._path_var = tk.StringVar(value=_default)
         self._entry = tk.Entry(row, textvariable=self._path_var,
                                font=("Consolas", 9), bg=SURFACE, fg=FG,
@@ -144,6 +170,7 @@ class _StartupDialog(tk.Toplevel):
                 self._open_btn.config(text="Abrir de todas formas")
                 return
         self.result = d
+        _save_last_project(d)
         self.destroy()
 
     def _cancel(self):
@@ -177,6 +204,7 @@ class DockerPanel(tk.Tk):
         self._center_window(960, 660)
         self.deiconify()
         self._refresh_status()
+        self._revisar_carpeta()
 
         # Hilo worker permanente que consume la cola
         threading.Thread(target=self._queue_worker, daemon=True).start()
@@ -464,6 +492,25 @@ class DockerPanel(tk.Tk):
         self._keepalive_lbl.pack(side="right", padx=4)
         # === END KEEPALIVE RENDER ===
 
+        # Indicador de PDFs pendientes en carpeta local + botón Revisar
+        tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
+        self._carpeta_lbl = tk.Label(
+            self._status_bar,
+            text="📁 carpeta: sin configurar",
+            font=("Segoe UI", 8),
+            bg="#111113", fg=FG_DIM,
+            cursor="hand2",
+        )
+        self._carpeta_lbl.pack(side="right", padx=4)
+        self._carpeta_lbl.bind("<Button-1>", lambda _e: self._revisar_carpeta())
+        self._carpeta_btn = tk.Label(
+            self._status_bar, text="↻ Revisar",
+            font=("Segoe UI", 8, "bold"),
+            bg="#111113", fg=YELLOW, cursor="hand2",
+        )
+        self._carpeta_btn.pack(side="right", padx=4)
+        self._carpeta_btn.bind("<Button-1>", lambda _e: self._revisar_carpeta())
+
     def _refresh_status(self):
         """Consulta Docker en background y actualiza los indicadores."""
         threading.Thread(target=self._check_docker_status, daemon=True).start()
@@ -538,6 +585,30 @@ class DockerPanel(tk.Tk):
             self._status_time_lbl.config(text=f"actualizado {now}")
 
         self.after(0, _update)
+
+    def _revisar_carpeta(self):
+        """Escanea la carpeta configurada y muestra cuántos PDFs hay pendientes."""
+        carpeta = self._load_agente_config()[0]
+        lbl = self._carpeta_lbl
+        if not carpeta:
+            lbl.config(text="📁 carpeta: sin configurar", fg=FG_DIM)
+            return
+        if not os.path.isdir(carpeta):
+            lbl.config(text=f"📁 carpeta: no existe", fg=RED)
+            return
+        try:
+            pdfs = [f for f in os.listdir(carpeta)
+                    if f.lower().endswith('.pdf') and os.path.isfile(os.path.join(carpeta, f))]
+        except Exception as e:
+            lbl.config(text=f"📁 error: {e}", fg=RED)
+            return
+        n = len(pdfs)
+        if n == 0:
+            lbl.config(text="📁 carpeta: 0 PDFs", fg=FG_DIM)
+        else:
+            lbl.config(text=f"📁 {n} PDF{'s' if n != 1 else ''} pendiente{'s' if n != 1 else ''}",
+                       fg=GREEN)
+        self._append(f"  ↻ Revisado: {n} PDF(s) en {carpeta}\n", "dim")
 
     # ── Backup ────────────────────────────────────────────────────────────────
 
@@ -839,7 +910,7 @@ class DockerPanel(tk.Tk):
 
     def _run_agente_pendientes(self):
         """Ejecuta el agente de pendientes en background."""
-        carpeta, url, mover = self._load_agente_config()
+        carpeta, url, mover, *_ = self._load_agente_config()
         if not carpeta:
             messagebox.showwarning(
                 "Configurar agente",

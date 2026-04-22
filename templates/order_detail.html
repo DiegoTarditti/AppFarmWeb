@@ -330,23 +330,32 @@
                         XLSX
                     </button>
                 </form>
-                {% if lab_plantilla %}
-                <form id="form-export-sum-plantilla" method="POST"
-                      action="{{ url_for('order_export_plantilla', pedido_id=pedido.id) }}">
-                    <input type="hidden" name="data" id="h-sum-plantilla-data">
-                    <button type="button" id="btn-export-sum-plantilla" onclick="exportResumenPlantilla()"
-                            title="Exportar XLSX con columnas de la plantilla del laboratorio"
-                            class="hidden flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
-                        Plantilla laboratorio
+                {% if plantillas_entidad %}
+                <div id="btn-export-plantillas-wrap" class="hidden relative">
+                    <button type="button" onclick="togglePlantillasMenu(event)"
+                            class="flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        Plantilla ▾
                     </button>
-                </form>
-                {% endif %}
-                {% if prov_plantilla %}
-                <button type="button" id="btn-export-plantilla" onclick="exportarPlantilla()"
-                        class="hidden flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                        title="Exportar con plantilla: {{ prov_plantilla.nombre }}">
-                    Plantilla proveedor
-                </button>
+                    <div id="plantillas-menu"
+                         class="hidden absolute right-0 mt-1 w-64 bg-[#1f2937] border border-[#374151] rounded-lg shadow-xl z-50 py-1">
+                        {% for pl in plantillas_entidad %}
+                        <button type="button"
+                                onclick="exportPlantillaUnificada({{ pl.id }}, '{{ pl.formato }}')"
+                                class="w-full text-left px-3 py-2 text-xs text-white hover:bg-[#374151] flex items-center justify-between gap-2">
+                            <span class="truncate">
+                                {{ pl.nombre }}
+                                {% if pl.es_default %}<span class="ml-1 text-[9px] text-[#F4C430]">default</span>{% endif %}
+                            </span>
+                            <span class="text-[9px] px-1.5 py-0.5 rounded
+                                {% if pl.formato == 'xlsx' %}bg-emerald-800 text-emerald-200
+                                {% elif pl.formato == 'txt_fijo' %}bg-amber-800 text-amber-200
+                                {% else %}bg-gray-700 text-gray-200{% endif %}">
+                                {{ pl.formato }}
+                            </span>
+                        </button>
+                        {% endfor %}
+                    </div>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -1089,8 +1098,8 @@ function exportOfertas() {
     document.getElementById('form-export-off-xlsx').submit();
 }
 
-function exportResumenPlantilla() {
-    const exportData = resumenAgrEans.map(ean => {
+function _buildResumenRows() {
+    return resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
         let oferta = d.cant_oferta, oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
         document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
@@ -1100,46 +1109,52 @@ function exportResumenPlantilla() {
             if (inp.dataset.field === 'nodeal')      nodeal     = v;
         });
         const total = d.cant_mod + oferta + oferta_min + nodeal;
-        return { ean, nombre: d.nombre, erp_qty: d.erp_qty, rotacion: d.rot.rotacion || '',
-                 avg_monthly: d.rot.avg, precio_pvp: d.pvp, cant_modulo: d.cant_mod,
-                 cant_oferta: oferta, cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
-                 cant_pedida: d.cant_pedida, saldo: d.cant_pedida - total };
-    });
-    document.getElementById('h-sum-plantilla-data').value = JSON.stringify(exportData);
-    document.getElementById('form-export-sum-plantilla').submit();
-}
-
-{% if prov_plantilla %}
-async function exportarPlantilla() {
-    const rows = resumenAgrEans.map(ean => {
-        const d = resumenAgr[ean];
-        let oferta = d.cant_oferta, oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
-        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
-            const v = parseInt(inp.value) || 0;
-            if (inp.dataset.field === 'oferta')      oferta     = v;
-            if (inp.dataset.field === 'oferta_min')  oferta_min = v;
-            if (inp.dataset.field === 'nodeal')      nodeal     = v;
-        });
-        const total = d.cant_mod + oferta + oferta_min + nodeal;
-        return { ean, nombre: d.nombre, cantidad: total, cant_modulo: d.cant_mod,
-                 cant_oferta: oferta, cant_oferta_min: oferta_min, cant_nodeal: nodeal,
+        return { ean, nombre: d.nombre,
+                 cantidad: total, total,
+                 cant_modulo: d.cant_mod, cant_oferta: oferta,
+                 cant_oferta_min: oferta_min, cant_nodeal: nodeal,
                  precio_pvp: d.pvp,
                  erp_qty: d.erp_qty ?? '',
                  rotacion: (d.rot && d.rot.rotacion) || '',
-                 avg_monthly: (d.rot && d.rot.avg) || 0 };
+                 avg_monthly: (d.rot && d.rot.avg) || 0,
+                 cant_pedida: d.cant_pedida,
+                 saldo: d.cant_pedida - total };
     });
-    const resp = await fetch('{{ url_for("order_export_prov_plantilla", pedido_id=pedido.id) }}', {
+}
+
+function togglePlantillasMenu(ev) {
+    ev.stopPropagation();
+    const m = document.getElementById('plantillas-menu');
+    m.classList.toggle('hidden');
+    if (!m.classList.contains('hidden')) {
+        setTimeout(() => document.addEventListener('click', _closePlantillasMenu, { once: true }), 0);
+    }
+}
+function _closePlantillasMenu() {
+    document.getElementById('plantillas-menu').classList.add('hidden');
+}
+
+async function exportPlantillaUnificada(plantillaId, formato) {
+    _closePlantillasMenu();
+    const rows = _buildResumenRows();
+    const resp = await fetch(`/order/{{ pedido.id }}/export-plantilla/${plantillaId}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({rows, proveedor_id: {{ prov_plantilla.proveedor_id }} })
+        body: JSON.stringify({ rows })
     });
-    if (!resp.ok) { alert('Error al exportar plantilla'); return; }
+    if (!resp.ok) {
+        let msg = 'Error al exportar';
+        try { msg = (await resp.json()).error || msg; } catch (_) {}
+        alert(msg);
+        return;
+    }
     const blob = await resp.blob();
-    const ext  = '{{ prov_plantilla.extension }}';
-    const nom  = '{{ prov_plantilla.nombre }}';
+    const cd = resp.headers.get('Content-Disposition') || '';
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const fname = m ? m[1] : `export.${formato === 'txt_fijo' ? 'txt' : formato}`;
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `${nom}_{{ pedido.laboratorio }}_{{ pedido.periodo }}.${ext}`;
+    a.download = fname;
     a.click();
 }
 {% endif %}
@@ -1566,8 +1581,7 @@ function confirmarOfertasConMinimo() {
     renderResumen();
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
-    show('btn-export-sum-plantilla');
-    show('btn-export-plantilla');
+    show('btn-export-plantillas-wrap');
     hide('btn-confirmar-ofertas-min');
     hide('btn-saltar-ofertas-min');
     document.getElementById('ofertas-min-status').textContent =
@@ -1584,8 +1598,7 @@ function saltarOfertasConMinimo() {
     renderResumen();
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
-    show('btn-export-sum-plantilla');
-    show('btn-export-plantilla');
+    show('btn-export-plantillas-wrap');
     document.getElementById('ofertas-min-status').textContent = 'Omitido';
     enable('card-resumen');
     document.getElementById('badge-3').classList.add('waiting');

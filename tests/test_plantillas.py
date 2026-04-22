@@ -12,6 +12,7 @@ Plus migración legacy idempotente.
 """
 
 import json
+import uuid
 import pytest
 import database
 from database import (
@@ -30,7 +31,7 @@ def db_session():
 
 @pytest.fixture
 def lab(db_session):
-    lab = Laboratorio(nombre='LAB TEST')
+    lab = Laboratorio(nombre=f'LAB {uuid.uuid4().hex[:8]}')
     db_session.add(lab)
     db_session.commit()
     return lab
@@ -38,7 +39,8 @@ def lab(db_session):
 
 @pytest.fixture
 def drogueria(db_session):
-    prov = Provider(razon_social='DROG TEST', cuit='30-DROG-1', tipo='drogueria')
+    suffix = uuid.uuid4().hex[:8]
+    prov = Provider(razon_social=f'DROG {suffix}', cuit=f'30-{suffix}-1', tipo='drogueria')
     db_session.add(prov)
     db_session.commit()
     return prov

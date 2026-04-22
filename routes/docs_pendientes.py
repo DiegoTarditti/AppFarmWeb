@@ -76,6 +76,11 @@ def init_app(app):
     @app.route('/docs-pendientes/upload-api', methods=['POST'])
     def docs_pendientes_upload_api():
         """API para el agente local: recibe PDFs via multipart y devuelve JSON."""
+        expected = os.environ.get('AGENTE_TOKEN', '')
+        if expected:
+            sent = request.headers.get('X-Agent-Token', '')
+            if sent != expected:
+                return jsonify({'ok': False, 'error': 'token inválido'}), 401
         files = request.files.getlist('pdfs')
         if not files or not files[0].filename:
             return jsonify({'ok': False, 'error': 'No se recibieron archivos'}), 400
@@ -121,6 +126,24 @@ def init_app(app):
                 session.rollback()
                 flash(f'Error: {e}')
         return redirect(url_for('docs_pendientes'))
+
+    @app.route('/api/notifications')
+    def api_notifications():
+        """Notificaciones para la campanita del sidebar. Liviano — solo counts."""
+        with database.get_db() as session:
+            q = (session.query(database.DocumentoPendiente)
+                 .filter(database.DocumentoPendiente.estado == 'PENDIENTE')
+                 .order_by(database.DocumentoPendiente.fecha_detectado.desc()))
+            count = q.count()
+            ultimos = [{
+                'id': d.id,
+                'filename': d.filename,
+                'fecha': d.fecha_detectado.strftime('%d/%m %H:%M') if d.fecha_detectado else '',
+            } for d in q.limit(5).all()]
+        max_id = max((d['id'] for d in ultimos), default=0)
+        return jsonify({
+            'docs_pendientes': {'count': count, 'ultimos': ultimos, 'max_id': max_id},
+        })
 
     @app.route('/api/product/<barcode>/chart')
     def api_product_chart(barcode):

@@ -129,6 +129,31 @@
                     <p class="text-[11px] text-white truncate flex-1" title="{{ current_user.nombre_completo or current_user.username }} ({{ current_user.rol }})">
                         {{ current_user.nombre_completo or current_user.username }}
                     </p>
+                    <div class="relative flex-shrink-0">
+                        <button type="button" id="notif-bell" onclick="toggleNotifMenu(event)"
+                                class="text-[#9ca3af] hover:text-[#F4C430] relative" title="Notificaciones">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                      d="M15 17h5l-1.4-1.4A2 2 0 0118 14.17V11a6 6 0 10-12 0v3.17a2 2 0 01-.6 1.43L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                            </svg>
+                            <span id="notif-badge"
+                                  class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[13px] h-[13px] flex items-center justify-center px-1 leading-none">
+                            </span>
+                        </button>
+                        <div id="notif-menu"
+                             class="hidden absolute right-0 mt-2 w-72 bg-[#1f2937] border border-[#374151] rounded-lg shadow-xl z-[60]">
+                            <div class="px-3 py-2 border-b border-[#374151] text-[11px] font-semibold text-[#F4C430]">
+                                Notificaciones
+                            </div>
+                            <div id="notif-list" class="max-h-64 overflow-y-auto py-1">
+                                <div class="px-3 py-3 text-[11px] text-[#9ca3af]">Sin novedades.</div>
+                            </div>
+                            <a href="{{ url_for('docs_pendientes') }}"
+                               class="block px-3 py-2 border-t border-[#374151] text-[11px] text-center text-[#9ca3af] hover:text-white hover:bg-[#374151] rounded-b-lg">
+                                Ver documentos pendientes →
+                            </a>
+                        </div>
+                    </div>
                     <a href="{{ url_for('auth_logout') }}" title="Salir"
                        class="text-[#9ca3af] hover:text-red-400 flex-shrink-0">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
@@ -285,6 +310,73 @@ function toggleSidebar() {
 document.querySelectorAll('#mobile-sidebar nav a').forEach(a => {
     if (!a.title) a.title = a.textContent.trim();
 });
+
+// ── Notificaciones (campanita) ──────────────────────────────────────
+function toggleNotifMenu(ev) {
+    if (ev) ev.stopPropagation();
+    const menu = document.getElementById('notif-menu');
+    if (!menu) return;
+    menu.classList.toggle('hidden');
+    if (!menu.classList.contains('hidden')) {
+        const data = window._lastNotifData;
+        if (data && data.docs_pendientes && data.docs_pendientes.max_id) {
+            localStorage.setItem('lastSeenNotifId', data.docs_pendientes.max_id);
+            _paintNotifBadge(data);
+        }
+        setTimeout(() => document.addEventListener('click', _closeNotifMenu, { once: true }), 0);
+    }
+}
+function _closeNotifMenu(ev) {
+    const menu = document.getElementById('notif-menu');
+    if (!menu || menu.classList.contains('hidden')) return;
+    if (ev && menu.contains(ev.target)) {
+        document.addEventListener('click', _closeNotifMenu, { once: true });
+        return;
+    }
+    menu.classList.add('hidden');
+}
+function _paintNotifBadge(data) {
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    const dp = data.docs_pendientes || {count: 0, max_id: 0};
+    const lastSeen = parseInt(localStorage.getItem('lastSeenNotifId') || '0', 10);
+    const hasNew = dp.max_id > lastSeen && dp.count > 0;
+    if (hasNew) {
+        badge.textContent = dp.count > 99 ? '99+' : String(dp.count);
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+}
+function _renderNotifList(data) {
+    const list = document.getElementById('notif-list');
+    if (!list) return;
+    const ultimos = (data.docs_pendientes && data.docs_pendientes.ultimos) || [];
+    if (!ultimos.length) {
+        list.innerHTML = '<div class="px-3 py-3 text-[11px] text-[#9ca3af]">Sin documentos pendientes.</div>';
+        return;
+    }
+    list.innerHTML = ultimos.map(d => `
+        <a href="/docs-pendientes/${d.id}/procesar"
+           class="block px-3 py-2 hover:bg-[#374151] border-b border-[#374151] last:border-0">
+            <div class="text-[11px] text-white truncate" title="${d.filename}">${d.filename}</div>
+            <div class="text-[9px] text-[#9ca3af]">${d.fecha || ''}</div>
+        </a>`).join('');
+}
+async function _pollNotifs() {
+    try {
+        const r = await fetch('/api/notifications', {cache: 'no-store'});
+        if (!r.ok) return;
+        const data = await r.json();
+        window._lastNotifData = data;
+        _paintNotifBadge(data);
+        _renderNotifList(data);
+    } catch (_) { /* offline, retry next tick */ }
+}
+if (document.getElementById('notif-bell')) {
+    _pollNotifs();
+    setInterval(_pollNotifs, 60000);
+}
 </script>
 </body>
 </html>
