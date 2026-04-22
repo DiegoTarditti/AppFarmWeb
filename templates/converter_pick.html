@@ -70,6 +70,9 @@
             <div class="mt-2 flex gap-2">
                 <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
+                <span class="flex-1"></span>
+                <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
+                <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
             </div>
         </div>
 
@@ -135,8 +138,44 @@
 <script>
 const HEADER_PRECARGADO = {{ header_precargado | default({}) | tojson }};
 const state = { exampleLine: '', selections: [], lastRows: [], lastFields: [],
+                tokens: [], groups: [],
                 header: Object.assign({}, HEADER_PRECARGADO),
                 autodetectados: new Set(Object.keys(HEADER_PRECARGADO || {})) };
+
+function tokenize(line) {
+    const tokens = []; const re = /\S+/g; let m;
+    while ((m = re.exec(line)) !== null) tokens.push({text: m[0], start: m.index, end: m.index + m[0].length});
+    return tokens;
+}
+function tokensToGroups(tokens) {
+    return tokens.map(t => ({text: t.text, start: t.start, end: t.end, checked: false}));
+}
+function detectHint(text) {
+    const t = (text || '').trim(); if (!t) return null;
+    if (/%/.test(t)) return {label: '%', cls: 'bg-amber-100 text-amber-700 border-amber-300'};
+    if (/^\d{12,14}$/.test(t)) return {label: 'EAN?', cls: 'bg-sky-100 text-sky-700 border-sky-300'};
+    if (/^\d{1,3}(\.\d{3})+,\d{2}$/.test(t)) return {label: '$', cls: 'bg-rose-100 text-rose-700 border-rose-300'};
+    if (/^\d+,\d{1,3}$/.test(t)) return {label: '%/$', cls: 'bg-amber-100 text-amber-700 border-amber-300'};
+    if (/^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(t)) return {label: '📅', cls: 'bg-violet-100 text-violet-700 border-violet-300'};
+    if (/^\d{1,4}$/.test(t)) return {label: 'cant?', cls: 'bg-emerald-100 text-emerald-700 border-emerald-300'};
+    return null;
+}
+function toggleGroupCheck(idx) { state.groups[idx].checked = !state.groups[idx].checked; renderExample(); }
+function unirMarcados() {
+    const idxs = state.groups.map((g,i) => g.checked?i:-1).filter(i=>i>=0);
+    if (idxs.length < 2) { alert('Marcá al menos 2 bloques adyacentes.'); return; }
+    const min = Math.min(...idxs), max = Math.max(...idxs);
+    for (let i = min; i <= max; i++) {
+        if (!state.groups[i].checked) { alert('Los bloques marcados deben ser CONTIGUOS.'); return; }
+        const g = state.groups[i];
+        if (state.selections.some(s => s.start <= g.start && s.end >= g.end)) { alert('Hay un bloque ya asignado en el rango.'); return; }
+    }
+    const merged = { start: state.groups[min].start, end: state.groups[max].end,
+                     text: state.exampleLine.slice(state.groups[min].start, state.groups[max].end), checked: false };
+    state.groups.splice(min, max - min + 1, merged);
+    renderExample();
+}
+function resetAgrupamientos() { state.groups = tokensToGroups(state.tokens); renderExample(); }
 
 const DEFAULT_CHIPS = [
     ['codigo_barra','Código barra'], ['cantidad','Cantidad'], ['descripcion','Descripción'],
@@ -251,20 +290,42 @@ function useSelectionAsExample() {
     const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
     if (!txt.trim()) { alert('Seleccioná una fila.'); return; }
     state.exampleLine = txt.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim();
-    state.selections = []; renderExample(); renderSelections();
+    state.selections = [];
+    state.tokens = tokenize(state.exampleLine);
+    state.groups = tokensToGroups(state.tokens);
+    renderExample(); renderSelections();
 }
 
 function renderExample() {
     const box = document.getElementById('example-box');
     if (!state.exampleLine) { box.innerHTML = '<span class="text-[#9ca3af]">Seleccioná una fila…</span>'; return; }
-    let html = ''; let cursor = 0;
-    [...state.selections].sort((a,b)=>a.start-b.start).forEach(s => {
-        html += escapeHtml(state.exampleLine.slice(cursor, s.start));
-        html += `<mark title="${s.field}">${escapeHtml(state.exampleLine.slice(s.start, s.end))}</mark>`;
-        cursor = s.end;
+    const groups = state.groups || [];
+    if (!groups.length) { box.textContent = state.exampleLine; return; }
+    let html = '<div class="flex flex-col gap-1">';
+    groups.forEach((g, idx) => {
+        const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
+        let cls = 'group-row flex items-center gap-2 px-2 py-1.5 border rounded transition-colors';
+        if (assigned)       cls += ' bg-emerald-100 border-emerald-400 text-emerald-900';
+        else if (g.checked) cls += ' bg-sky-100 border-sky-500';
+        else                cls += ' bg-white border-slate-300 hover:bg-slate-50 cursor-pointer';
+        const hint = assigned ? null : detectHint(g.text);
+        const hintHtml = hint ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${hint.cls}">${escapeHtml(hint.label)}</span>` : '';
+        const title = assigned ? `Asignado a ${assigned.field}` : '';
+        html += `<label class="${cls}" data-idx="${idx}" title="${escapeHtml(title)}">
+            <input type="checkbox" ${g.checked?'checked':''} ${assigned?'disabled':''} class="gchk">
+            <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
+            ${hintHtml}
+            ${assigned ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assigned.field)}</span>` : ''}
+        </label>`;
     });
-    html += escapeHtml(state.exampleLine.slice(cursor));
+    html += '</div>';
     box.innerHTML = html;
+    box.querySelectorAll('.group-row .gchk').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const row = e.target.closest('.group-row');
+            toggleGroupCheck(parseInt(row.dataset.idx, 10));
+        });
+    });
 }
 
 function renderSelections() {
@@ -279,12 +340,22 @@ function renderSelections() {
 }
 
 function removeSelection(i) { state.selections.splice(i,1); renderExample(); renderSelections(); }
-function resetSelections() { state.selections=[]; renderExample(); renderSelections(); }
+function resetSelections() {
+    state.selections=[];
+    if (state.groups) state.groups.forEach(g => g.checked = false);
+    renderExample(); renderSelections();
+}
 
 function toggleEditExample() {
     const ta = document.getElementById('example-edit'); const box = document.getElementById('example-box');
     if (ta.classList.contains('hidden')) { ta.value = state.exampleLine; ta.classList.remove('hidden'); box.classList.add('hidden'); ta.focus(); }
-    else { state.exampleLine = ta.value; state.selections=[]; ta.classList.add('hidden'); box.classList.remove('hidden'); renderExample(); renderSelections(); }
+    else {
+        state.exampleLine = ta.value; state.selections=[];
+        state.tokens = tokenize(state.exampleLine);
+        state.groups = tokensToGroups(state.tokens);
+        ta.classList.add('hidden'); box.classList.remove('hidden');
+        renderExample(); renderSelections();
+    }
 }
 
 function findFreeOccurrence(text, exceptField) {
@@ -301,8 +372,27 @@ function findFreeOccurrence(text, exceptField) {
 
 function assignField(field) {
     if (!state.exampleLine) { alert('Elegí una fila primero.'); return; }
+
+    // Prioridad 1: bloques con checkbox marcados
+    const idxs = state.groups.map((g,i) => g.checked?i:-1).filter(i=>i>=0);
+    if (idxs.length > 0) {
+        const min = Math.min(...idxs), max = Math.max(...idxs);
+        for (let i = min; i <= max; i++) {
+            if (!state.groups[i].checked) { alert('Los bloques marcados deben ser contiguos. Unilos primero.'); return; }
+        }
+        const start = state.groups[min].start;
+        const end   = state.groups[max].end;
+        const txt   = state.exampleLine.slice(start, end);
+        state.selections = state.selections.filter(s => s.field !== field);
+        state.selections.push({ field, text: txt, start, end });
+        state.groups.forEach(g => g.checked = false);
+        renderExample(); renderSelections();
+        return;
+    }
+
+    // Fallback: selección con mouse
     const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
-    if (!txt) { alert('Seleccioná un fragmento dentro de la fila de ejemplo.'); return; }
+    if (!txt) { alert('Marcá los checkboxes de los bloques que querés asignar.'); return; }
     state.selections = state.selections.filter(s => s.field !== field);
     const idx = findFreeOccurrence(txt, field);
     if (idx < 0) { alert('No hay posición libre para ese texto.'); return; }
