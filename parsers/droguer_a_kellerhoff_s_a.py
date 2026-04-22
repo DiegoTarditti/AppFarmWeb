@@ -30,9 +30,9 @@ def parse_invoice_pdf(pdf_path):
         full_text, re.MULTILINE
     )
     cliente_m = re.search(r'Cliente:\s*(\d+)\s*-\s*(.+)', full_text)
-    # Pie: "N/N  total_unidades  exento  gravado  iva  perc  TOTAL"
+    # Pie: "N/N  total_unidades  exento  gravado  iva  percepciones  TOTAL"
     footer_m  = re.search(
-        r'^\d+/\d+\s+(\d+)\s+[\d.,]+\s+[\d.,]+\s+[\d.,]+\s+[\d.,]+\s+([\d.,]+)\s*$',
+        r'^\d+/\d+\s+(\d+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$',
         full_text, re.MULTILINE
     )
 
@@ -44,7 +44,11 @@ def parse_invoice_pdf(pdf_path):
     cliente_codigo  = cliente_m.group(1) if cliente_m else None
     cliente_razon   = cliente_m.group(2).strip() if cliente_m else None
     total_unidades  = int(footer_m.group(1)) if footer_m else None
-    total           = to_float(footer_m.group(2)) if footer_m else 0
+    monto_exento    = to_float(footer_m.group(2)) if footer_m else None
+    monto_gravado   = to_float(footer_m.group(3)) if footer_m else None
+    iva             = to_float(footer_m.group(4)) if footer_m else None
+    percepciones    = to_float(footer_m.group(5)) if footer_m else None
+    total           = to_float(footer_m.group(6)) if footer_m else 0
 
     # --- Items ---
     # Línea completa: barcode cant descripcion [WEB|TRZ] precio_pub %dto precio_unit importe
@@ -100,6 +104,10 @@ def parse_invoice_pdf(pdf_path):
         'cliente_codigo':      cliente_codigo,
         'cliente_razon':       cliente_razon,
         'total':               total,
+        'monto_exento':        monto_exento,
+        'monto_gravado':       monto_gravado,
+        'iva':                 iva,
+        'percepciones':        percepciones,
         'total_articulos':     len(items),
         'total_unidades':      total_unidades,
         'items':               items,

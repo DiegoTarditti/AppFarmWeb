@@ -94,6 +94,10 @@ def _probar_parser(parser_file, pdf_path):
             'numero_factura': data.get('numero_factura'),
             'fecha': str(data.get('fecha') or ''),
             'total': _f(data.get('total')),
+            'monto_exento':  _f(data.get('monto_exento')),
+            'monto_gravado': _f(data.get('monto_gravado')),
+            'iva':           _f(data.get('iva')),
+            'percepciones':  _f(data.get('percepciones')),
         }
     except Exception as e:
         return {'ok': False, 'error': str(e)}

@@ -12,7 +12,7 @@
 <div class="max-w-7xl mx-auto space-y-4">
 
     <!-- Header resumen -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
             <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Proveedor</p>
             <p class="font-semibold text-sm truncate">{{ proveedor.razon_social }}</p>
@@ -25,14 +25,44 @@
         </div>
         <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
             <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Total del PDF</p>
-            <p class="font-semibold text-sm" id="pdf-total-label">
+            <p class="font-semibold text-lg" id="pdf-total-label">
                 {% if prueba.total %}$ {{ '{:,.2f}'.format(prueba.total).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}
             </p>
         </div>
-        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
-            <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Total calculado</p>
-            <p class="font-semibold text-sm" id="calc-total-label">$ 0,00</p>
-            <p class="text-[10px]" id="total-match-badge"></p>
+    </div>
+
+    <!-- Desglose de totales editable -->
+    <div class="bg-white rounded-xl border border-surface-border p-4">
+        <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Desglose de totales (editable)</p>
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Exento</span>
+                <input type="text" id="tot-exento" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Gravado</span>
+                <input type="text" id="tot-gravado" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">IVA 10,5 %</span>
+                <input type="text" id="tot-iva105" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">IVA 21 %</span>
+                <input type="text" id="tot-iva21" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Percepciones</span>
+                <input type="text" id="tot-percep" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Otros</span>
+                <input type="text" id="tot-otros" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+        </div>
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-200">
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase tracking-wide text-[#999]">Σ importes ítems</span>
+                <span class="text-sm font-semibold font-mono" id="sum-items-label">—</span>
+                <span class="text-[10px]" id="items-vs-base-badge"></span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase tracking-wide text-[#999]">Total calculado (desglose)</span>
+                <span class="text-sm font-semibold font-mono" id="calc-total-label">—</span>
+                <span class="text-[10px]" id="total-match-badge"></span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase tracking-wide text-[#999]">Diferencia vs PDF</span>
+                <span class="text-sm font-semibold font-mono" id="diff-pdf-label">—</span>
+            </div>
         </div>
     </div>
 
@@ -85,11 +115,48 @@ const HEADER = {
     cuit: {{ proveedor.cuit | tojson }},
 };
 const PDF_TOTAL = {{ prueba.total | tojson }};
+const PARSED_TOTALS = {
+    exento:  {{ prueba.monto_exento | tojson }},
+    gravado: {{ prueba.monto_gravado | tojson }},
+    iva:     {{ prueba.iva | tojson }},
+    percep:  {{ prueba.percepciones | tojson }},
+};
 
 let state = { rows: [] };
 
+function fmtArg(n) {
+    if (n == null || isNaN(n)) return '';
+    return Number(n).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.').replace(/(\.\d{3}),/g, (m) => m);
+}
+
+function initTotals() {
+    // Inicializa los inputs desde los valores parseados.
+    // El parser entrega IVA total (no desglosado); lo metemos en IVA 21 por default.
+    document.getElementById('tot-exento').value  = fmtArg(PARSED_TOTALS.exento);
+    document.getElementById('tot-gravado').value = fmtArg(PARSED_TOTALS.gravado);
+    document.getElementById('tot-iva105').value  = '';
+    document.getElementById('tot-iva21').value   = fmtArg(PARSED_TOTALS.iva);
+    document.getElementById('tot-percep').value  = fmtArg(PARSED_TOTALS.percep);
+    document.getElementById('tot-otros').value   = '';
+    ['tot-exento','tot-gravado','tot-iva105','tot-iva21','tot-percep','tot-otros'].forEach(id => {
+        document.getElementById(id).addEventListener('input', render);
+    });
+}
+
+function readTotals() {
+    return {
+        exento:  parseArg(document.getElementById('tot-exento').value)  || 0,
+        gravado: parseArg(document.getElementById('tot-gravado').value) || 0,
+        iva105:  parseArg(document.getElementById('tot-iva105').value)  || 0,
+        iva21:   parseArg(document.getElementById('tot-iva21').value)   || 0,
+        percep:  parseArg(document.getElementById('tot-percep').value)  || 0,
+        otros:   parseArg(document.getElementById('tot-otros').value)   || 0,
+    };
+}
+
 function _clone(obj) { return JSON.parse(JSON.stringify(obj)); }
 function reiniciarFilas() { state.rows = _clone(INITIAL_ROWS); render(); }
+initTotals();
 reiniciarFilas();
 
 function fmtMoney(n) {
@@ -182,14 +249,34 @@ function render() {
         inp.addEventListener('blur',   onCellChange);
     });
 
-    // Totales
-    document.getElementById('calc-total-label').textContent = fmtMoney(sumTotal);
+    // Totales del desglose
+    const t = readTotals();
+    const base = t.exento + t.gravado;
+    const calcTotal = base + t.iva105 + t.iva21 + t.percep + t.otros;
+    document.getElementById('sum-items-label').textContent = fmtMoney(sumTotal);
+    document.getElementById('calc-total-label').textContent = fmtMoney(calcTotal);
+
+    // Check 1: Σ items ≈ exento + gravado
+    const iBadge = document.getElementById('items-vs-base-badge');
+    if (base > 0) {
+        const diffBase = Math.abs(sumTotal - base);
+        const tolBase = Math.max(1, base * 0.005);
+        if (diffBase <= tolBase) { iBadge.textContent = `✓ coincide con exento+gravado (${fmtMoney(base)})`; iBadge.className = 'text-[10px] text-emerald-600 font-semibold'; }
+        else { iBadge.textContent = `⚠ dif ${fmtMoney(diffBase)} vs base ${fmtMoney(base)}`; iBadge.className = 'text-[10px] text-red-600 font-semibold'; }
+    } else {
+        iBadge.textContent = '—'; iBadge.className = 'text-[10px] text-[#999]';
+    }
+
+    // Check 2: Total calculado vs TOTAL del PDF
     const tMatch = document.getElementById('total-match-badge');
+    const dLabel = document.getElementById('diff-pdf-label');
     if (PDF_TOTAL != null) {
-        const diff = Math.abs(sumTotal - PDF_TOTAL);
+        const diff = calcTotal - PDF_TOTAL;
         const tol = Math.max(1, PDF_TOTAL * 0.005);
-        if (diff <= tol) { tMatch.textContent = '✓ cierra con PDF'; tMatch.className = 'text-[10px] text-emerald-600 font-semibold'; }
-        else { tMatch.textContent = `⚠ dif ${fmtMoney(diff)}`; tMatch.className = 'text-[10px] text-red-600 font-semibold'; }
+        dLabel.textContent = (diff === 0 ? '$ 0,00' : (diff > 0 ? '+' : '−') + fmtMoney(Math.abs(diff)).replace('$ ', '$ '));
+        dLabel.className = 'text-sm font-semibold font-mono ' + (Math.abs(diff) <= tol ? 'text-emerald-700' : 'text-red-700');
+        if (Math.abs(diff) <= tol) { tMatch.textContent = '✓ cierra con PDF'; tMatch.className = 'text-[10px] text-emerald-600 font-semibold'; }
+        else { tMatch.textContent = `⚠ ${fmtMoney(Math.abs(diff))}`; tMatch.className = 'text-[10px] text-red-600 font-semibold'; }
     }
 
     // Banner
