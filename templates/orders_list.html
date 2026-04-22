@@ -85,7 +85,15 @@
 
                     <!-- Laboratorio + periodo -->
                     <div class="flex-1 min-w-0">
-                        <p class="text-sm font-semibold text-[#1e1e1e] truncate">{{ p.laboratorio }}</p>
+                        <div class="flex items-center gap-2">
+                            <p class="text-sm font-semibold text-[#1e1e1e] truncate">{{ p.laboratorio }}</p>
+                            {% if p.tiene_analisis_guardado %}
+                            <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                  title="Análisis guardado el {{ p.analisis_guardado_en }}">
+                                💾 Análisis
+                            </span>
+                            {% endif %}
+                        </div>
                         <p class="text-xs text-[#999]">{{ p.periodo }} · {{ p.n_days }}d</p>
                     </div>
 

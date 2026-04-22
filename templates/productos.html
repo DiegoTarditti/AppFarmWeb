@@ -86,9 +86,10 @@
                 <input id="new-pvp" type="number" min="0" step="0.01" placeholder="0"
                        class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm w-28 focus:outline-none focus:ring-1 focus:ring-brand">
             </div>
-            <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none mb-1.5">
+            <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none mb-1.5"
+                   title="Si marcás 'Es pack', recordá editar después el EAN alt. 1 con el código de la unidad individual.">
                 <input type="checkbox" id="new-pack" class="rounded">
-                Es pack
+                Es pack ⓘ
             </label>
             <button onclick="crearProducto()"
                     class="flex-shrink-0 bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-1.5 rounded-lg transition-colors">
@@ -131,7 +132,10 @@
                     <th class="text-left px-3 py-2" style="width:110px">EAN alt. 3</th>
                     <th class="text-left px-3 py-2" style="width:130px">Laboratorio</th>
                     <th class="text-right px-3 py-2" style="width:70px">P.PVP</th>
-                    <th class="text-center px-3 py-2" style="width:52px">Pack</th>
+                    <th class="text-center px-3 py-2" style="width:52px"
+                        title="Marcar si es un pack (ej: blíster x2, display x12). Si lo marcás, cargá en 'EAN alt. 1' el código de la unidad individual para que el auto-complete funcione en Módulos de descuento.">
+                        Pack ⓘ
+                    </th>
                     <th class="text-right px-3 py-2" style="width:80px">Actualizado</th>
                     <th class="px-3 py-2 rounded-tr-lg" style="width:56px"></th>
                 </tr>
@@ -190,6 +194,7 @@ function buildRow(p) {
         <td class="px-3 py-2 text-center">
             <input type="checkbox" ${p.es_pack ? 'checked' : ''}
                    onchange="togglePack(${p.id}, this.checked)"
+                   title="Si es pack, cargá el EAN de la unidad individual en 'EAN alt. 1' para que se auto-complete en Módulos de descuento."
                    class="w-3.5 h-3.5 accent-amber-500 cursor-pointer">
         </td>
         <td class="px-3 py-2 text-right text-[#999]">${escHtml(p.actualizado_en)}</td>

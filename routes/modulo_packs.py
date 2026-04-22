@@ -62,8 +62,14 @@ def init_app(app):
                             session.query(ModuloPack).filter(ModuloPack.modulo_id.is_(None))
                             .order_by(ModuloPack.ean_pack).all()]
 
-            prods_pack = [{'ean': p.codigo_barra, 'desc': p.descripcion or ''} for p in all_prods if p.es_pack]
-            prods_all  = [{'ean': p.codigo_barra, 'desc': p.descripcion or ''} for p in all_prods]
+            def _first_alt(p):
+                return p.codigo_barra_alt1 or p.codigo_barra_alt2 or p.codigo_barra_alt3 or ''
+            prods_pack = [{'ean': p.codigo_barra, 'desc': p.descripcion or '',
+                           'alt': _first_alt(p), 'is_pack': bool(p.es_pack)}
+                          for p in all_prods if p.es_pack]
+            prods_all  = [{'ean': p.codigo_barra, 'desc': p.descripcion or '',
+                           'alt': _first_alt(p), 'is_pack': bool(p.es_pack)}
+                          for p in all_prods]
             return render_template('modulo_packs.html',
                                    modulos=modulos, orphan_packs=orphan_packs,
                                    labs=[{'id': l.id, 'nombre': l.nombre} for l in labs],

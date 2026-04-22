@@ -362,12 +362,20 @@
                 <input type="hidden" id="add-pack-modulo-id">
                 <div class="flex gap-3 flex-wrap items-end">
                     <div class="flex flex-col gap-1 relative" style="width:220px">
-                        <label class="text-[10px] text-[#999] uppercase tracking-wide">EAN pack (módulo)</label>
+                        <div class="flex items-center justify-between">
+                            <label class="text-[10px] text-[#999] uppercase tracking-wide">EAN pack (módulo)</label>
+                            <label class="text-[10px] text-[#666] flex items-center gap-1 cursor-pointer select-none">
+                                <input type="checkbox" id="f-pack-only" checked onchange="filterDropdown('pack')"
+                                       class="accent-brand">
+                                Solo packs
+                            </label>
+                        </div>
                         <input id="f-ean-pack-search" type="text" placeholder="Buscar EAN pack…" autocomplete="off"
                                oninput="filterDropdown('pack')" onfocus="showDropdown('pack')"
                                class="bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-brand font-mono">
                         <input type="hidden" id="f-ean-pack">
-                        <div id="dd-pack" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-[#e0e0e0] rounded-lg shadow-lg z-20 max-h-48 overflow-y-auto text-xs"></div>
+                        <div id="dd-pack" class="hidden absolute top-full left-0 mt-1 bg-white border border-[#e0e0e0] rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto text-xs"
+                             style="min-width:420px;white-space:nowrap"></div>
                     </div>
                     <div class="flex flex-col gap-1 relative" style="width:220px">
                         <label class="text-[10px] text-[#999] uppercase tracking-wide">EAN unidad (ERP)</label>
@@ -405,13 +413,23 @@
 function buildDropdownItems(type, items) {
     const dd = document.getElementById('dd-' + type);
     dd.innerHTML = items.length
-        ? items.map(p => `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 font-mono" data-ean="${p.ean}" onclick="selectEan('${type}','${p.ean}','${p.desc.replace(/'/g,"\\'")}')"><span class="text-[#555]">${p.ean}</span><span class="ml-2 text-[#999] font-sans truncate">${p.desc}</span></div>`).join('')
+        ? items.map(p => {
+            const packBadge = p.is_pack ? '<span class="ml-2 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1 rounded">PACK</span>' : '';
+            const descEsc = (p.desc || '').replace(/'/g,"\\'");
+            return `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 font-mono" data-ean="${p.ean}" onclick="selectEan('${type}','${p.ean}','${descEsc}')"><span class="text-[#555]">${p.ean}</span><span class="ml-2 text-[#333] font-sans">${p.desc}</span>${packBadge}</div>`;
+        }).join('')
         : '<div class="px-3 py-2 text-[#bbb]">Sin resultados</div>';
     dd.classList.remove('hidden');
 }
 function filterDropdown(type) {
     const q = document.getElementById('f-ean-' + type + '-search').value.toLowerCase().trim();
-    const src = type === 'pack' ? PRODS_PACK : PRODS_ALL;
+    let src;
+    if (type === 'pack') {
+        const onlyPacks = document.getElementById('f-pack-only')?.checked;
+        src = onlyPacks ? PRODS_PACK : PRODS_ALL;
+    } else {
+        src = PRODS_ALL;
+    }
     buildDropdownItems(type, (q ? src.filter(p => p.ean.includes(q) || p.desc.toLowerCase().includes(q)) : src).slice(0, 50));
 }
 function showDropdown(type) { filterDropdown(type); }
@@ -419,7 +437,17 @@ function selectEan(type, ean, desc) {
     document.getElementById('f-ean-' + type + '-search').value = ean;
     document.getElementById('f-ean-' + type).value = ean;
     document.getElementById('dd-' + type).classList.add('hidden');
-    if (type === 'pack' && desc && !document.getElementById('f-desc').value) document.getElementById('f-desc').value = desc;
+    if (type === 'pack') {
+        if (desc && !document.getElementById('f-desc').value) document.getElementById('f-desc').value = desc;
+        // Auto-completar unidad si el pack tiene EAN equivalente cargado en productos
+        const prod = PRODS_ALL.find(p => p.ean === ean);
+        if (prod && prod.alt) {
+            const unidadProd = PRODS_ALL.find(p => p.ean === prod.alt);
+            const unidadDesc = unidadProd ? unidadProd.desc : '';
+            document.getElementById('f-ean-unidad-search').value = prod.alt;
+            document.getElementById('f-ean-unidad').value = prod.alt;
+        }
+    }
 }
 document.addEventListener('click', e => {
     ['pack','unidad'].forEach(t => {

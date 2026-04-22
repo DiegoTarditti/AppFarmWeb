@@ -721,6 +721,8 @@ def init_app(app):
                     'creado_en': p.creado_en.strftime('%d/%m/%Y %H:%M') if p.creado_en else '',
                     'analizado_en': p.analizado_en.strftime('%d/%m/%Y') if p.analizado_en else '',
                     'estado': p.estado,
+                    'tiene_analisis_guardado': bool(p.analisis_json),
+                    'analisis_guardado_en': p.analisis_guardado_en.strftime('%d/%m/%Y %H:%M') if p.analisis_guardado_en else '',
                     'n_productos': len(p.items),
                     'total_unidades': total_unidades,
                     'total_importe': total_importe,
