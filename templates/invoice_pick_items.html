@@ -71,9 +71,12 @@
                 <span class="text-[#9ca3af]">Seleccioná una fila en el panel izquierdo…</span>
             </div>
             <textarea id="example-edit" rows="3" class="mt-2 w-full p-2 text-xs font-mono border border-[#e0e0e0] rounded hidden" placeholder="Editá la fila si quedó texto de más…"></textarea>
-            <div class="mt-2 flex gap-2">
+            <div class="mt-2 flex gap-2 flex-wrap">
                 <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
+                <span class="flex-1"></span>
+                <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
+                <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
             </div>
         </div>
 
@@ -82,7 +85,7 @@
                 <p class="font-semibold text-sm">2. Click en los tokens de la fila y asignalos a un campo</p>
                 <button onclick="toggleCustomFields()" class="text-xs text-sky-600 hover:text-sky-800">Personalizar campos ▾</button>
             </div>
-            <p class="text-[11px] text-[#6f6f6f] mb-2">Click en un token para seleccionarlo · click en adyacentes para extender · Shift+click para rango largo · después click al chip del campo.</p>
+            <p class="text-[11px] text-[#6f6f6f] mb-2">Marcá el checkbox de cada bloque que querés asignar y hacé click en el chip del campo. Si un campo abarca varios bloques (ej. la descripción), marcá todos los contiguos y presioná <strong>Unir marcados</strong> primero.</p>
             <div id="custom-fields-panel" class="hidden mb-3 p-3 bg-[#f5f5f5] rounded border border-[#e0e0e0]">
                 <p class="text-xs text-[#6f6f6f] mb-1">Pegá la línea de títulos de columna del PDF (ej: <code>CÓDIGO CONCEPTO LOTE CANTIDAD...</code>) y generará un chip por cada palabra.</p>
                 <textarea id="titles-line" rows="2" class="w-full text-xs font-mono p-2 border border-[#e0e0e0] rounded" placeholder="CÓDIGO CONCEPTO LOTE CANTIDAD PCIO.UNIT DESCTO IMPORTE"></textarea>
@@ -107,6 +110,9 @@
             </div>
             <p class="text-[10px] text-[#6f6f6f] mt-1">Tip: campos con el mismo prefijo (ej. <code>descripcion</code> + <code>descripcion_2</code>) se concatenan al extraer.</p>
             <div id="selections" class="mt-3 space-y-1 text-xs"></div>
+            <div id="validate-box" class="mt-3 text-[11px] p-2 rounded border bg-slate-50 text-slate-600 border-slate-200">
+                Asigná <strong>cantidad</strong>, <strong>precio_unitario</strong> e <strong>importe</strong> para verificar antes de inferir.
+            </div>
             <button onclick="resetSelections()" class="mt-2 text-xs text-[#6f6f6f] hover:text-red-600">Limpiar selecciones</button>
         </div>
 
@@ -131,10 +137,10 @@
 const state = {
     exampleLine: '',
     selections: [],  // {field, text, start, end}
-    tokens: [],      // [{text, start, end}] tokens no-whitespace
-    selectedTokens: new Set(),  // índices contiguos seleccionados con click
+    tokens: [],      // tokens atómicos [{text, start, end}]
+    groups: [],      // agrupamientos actuales [{text, start, end, checked}]
     lastRows: [],
-    header: {}  // {razon_social, numero_factura, fecha, total}
+    header: {}
 };
 
 function tokenize(line) {
@@ -147,24 +153,123 @@ function tokenize(line) {
     return tokens;
 }
 
-function toggleToken(idx, shift) {
-    const sel = state.selectedTokens;
-    if (sel.size === 0) { sel.add(idx); renderExample(); return; }
-    const arr = [...sel].sort((a,b)=>a-b);
-    const min = arr[0], max = arr[arr.length-1];
-    if (shift) {
-        const lo = Math.min(min, idx), hi = Math.max(max, idx);
-        sel.clear();
-        for (let i = lo; i <= hi; i++) sel.add(i);
-    } else if (sel.has(idx)) {
-        if (idx === min || idx === max) sel.delete(idx);
-        else { sel.clear(); sel.add(idx); }
-    } else if (idx === min - 1 || idx === max + 1) {
-        sel.add(idx);
-    } else {
-        sel.clear(); sel.add(idx);
-    }
+function tokensToGroups(tokens) {
+    return tokens.map(t => ({text: t.text, start: t.start, end: t.end, checked: false}));
+}
+
+function detectHint(text) {
+    const t = (text || '').trim();
+    if (!t) return null;
+    // Porcentaje explícito (contiene %)
+    if (/%/.test(t)) return {label: '%', cls: 'bg-amber-100 text-amber-700 border-amber-300'};
+    // EAN: 12-14 dígitos puros
+    if (/^\d{12,14}$/.test(t)) return {label: 'EAN?', cls: 'bg-sky-100 text-sky-700 border-sky-300'};
+    // Moneda: con separador de miles o decimal coma  (ej 10.515,00)
+    if (/^\d{1,3}(\.\d{3})+,\d{2}$/.test(t)) return {label: '$', cls: 'bg-rose-100 text-rose-700 border-rose-300'};
+    // Decimal coma sin miles (ej 33,41) → probablemente % o precio chico
+    if (/^\d+,\d{1,3}$/.test(t)) return {label: '%/$', cls: 'bg-amber-100 text-amber-700 border-amber-300'};
+    // Fecha
+    if (/^\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}$/.test(t)) return {label: '📅', cls: 'bg-violet-100 text-violet-700 border-violet-300'};
+    // Entero chico → cant
+    if (/^\d{1,4}$/.test(t)) return {label: 'cant?', cls: 'bg-emerald-100 text-emerald-700 border-emerald-300'};
+    return null;
+}
+
+function toggleGroupCheck(idx) {
+    state.groups[idx].checked = !state.groups[idx].checked;
     renderExample();
+}
+
+function unirMarcados() {
+    const idxs = state.groups.map((g, i) => g.checked ? i : -1).filter(i => i >= 0);
+    if (idxs.length < 2) { alert('Marcá al menos 2 bloques adyacentes para unirlos.'); return; }
+    const min = Math.min(...idxs), max = Math.max(...idxs);
+    for (let i = min; i <= max; i++) {
+        if (!state.groups[i].checked) {
+            alert('Marcá bloques CONTIGUOS (sin huecos entre los que querés unir).'); return;
+        }
+        // no permitir unir si hay uno ya asignado en el medio
+        const g = state.groups[i];
+        const used = state.selections.some(s => s.start <= g.start && s.end >= g.end);
+        if (used) { alert('Hay un bloque ya asignado a un campo en el rango.'); return; }
+    }
+    const merged = {
+        start: state.groups[min].start,
+        end:   state.groups[max].end,
+        text:  state.exampleLine.slice(state.groups[min].start, state.groups[max].end),
+        checked: false,
+    };
+    state.groups.splice(min, max - min + 1, merged);
+    renderExample();
+}
+
+function resetAgrupamientos() {
+    state.groups = tokensToGroups(state.tokens);
+    renderExample();
+}
+
+// ── Validación del ejemplo (cant × unit = importe, y pub × (1-dto%) = unit) ──
+const _FIELD_ALIASES = {
+    cantidad:         ['cantidad', 'cant', 'qty'],
+    precio_unitario:  ['precio_unitario', 'precio_unit', 'pcio_unit', 'unitario', 'unit'],
+    importe:          ['importe', 'total', 'subtotal', 'monto'],
+    precio_publico:   ['precio_publico', 'precio_pub', 'pvp', 'precio_publ'],
+    dto:              ['dto', 'descuento', 'descto'],
+};
+function _pickBy(field, byField) {
+    for (const a of (_FIELD_ALIASES[field] || [field])) {
+        if (byField[a] !== undefined) return byField[a];
+    }
+    return null;
+}
+function _parseArg(s) {
+    if (s === null || s === undefined) return null;
+    const cleaned = String(s).replace(/[^\d.,\-]/g, '');
+    if (!cleaned) return null;
+    const n = cleaned.includes(',')
+        ? parseFloat(cleaned.replace(/\./g, '').replace(',', '.'))
+        : parseFloat(cleaned);
+    return isNaN(n) ? null : n;
+}
+function _fmtMoney(n) {
+    return '$ ' + n.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function validateExample() {
+    const box = document.getElementById('validate-box');
+    if (!box) return;
+    const byField = {};
+    state.selections.forEach(s => { byField[s.field] = s.text.trim(); });
+
+    const cant = _parseArg(_pickBy('cantidad', byField));
+    const unit = _parseArg(_pickBy('precio_unitario', byField));
+    const imp  = _parseArg(_pickBy('importe', byField));
+    const pub  = _parseArg(_pickBy('precio_publico', byField));
+    const dto  = _parseArg(_pickBy('dto', byField));
+
+    if (cant == null || unit == null || imp == null) {
+        box.innerHTML = 'Asigná <strong>cantidad</strong>, <strong>precio_unitario</strong> e <strong>importe</strong> para verificar antes de inferir.';
+        box.className = 'text-[11px] p-2 rounded border bg-slate-50 text-slate-600 border-slate-200';
+        return;
+    }
+
+    const calcTotal = cant * unit;
+    const totalOk = Math.abs(calcTotal - imp) <= Math.max(0.02, imp * 0.005);
+
+    let dtoMsg = '', dtoOk = null;
+    if (pub != null && dto != null && pub > 0) {
+        const calcUnit = pub * (1 - dto / 100);
+        dtoOk = Math.abs(calcUnit - unit) <= Math.max(0.02, unit * 0.005);
+        dtoMsg = dtoOk
+            ? ` · Dto OK (${_fmtMoney(pub)} − ${String(dto).replace('.', ',')}% = ${_fmtMoney(unit)})`
+            : ` · ✗ Dto no cierra: ${_fmtMoney(pub)} − ${dto}% = ${_fmtMoney(calcUnit)}, esperaba ${_fmtMoney(unit)}`;
+    }
+    const ok = totalOk && dtoOk !== false;
+    box.innerHTML = totalOk
+        ? `✓ ${cant} × ${_fmtMoney(unit)} = ${_fmtMoney(imp)}${dtoMsg}`
+        : `✗ ${cant} × ${_fmtMoney(unit)} = ${_fmtMoney(calcTotal)}, pero importe dice ${_fmtMoney(imp)}${dtoMsg}`;
+    box.className = 'text-xs p-2 rounded border font-semibold ' +
+        (ok ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : 'bg-red-50 text-red-800 border-red-200');
 }
 
 document.getElementById('header-chips').addEventListener('click', (e) => {
@@ -206,38 +311,40 @@ function useSelectionAsExample() {
     state.exampleLine = txt.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').trim();
     state.selections = [];
     state.tokens = tokenize(state.exampleLine);
-    state.selectedTokens = new Set();
+    state.groups = tokensToGroups(state.tokens);
     renderExample();
     renderSelections();
+    validateExample();
 }
 
 function renderExample() {
     const box = document.getElementById('example-box');
     if (!state.exampleLine) { box.innerHTML = '<span class="text-[#9ca3af]">Seleccioná una fila…</span>'; return; }
-    const tokens = state.tokens || [];
-    if (!tokens.length) { box.textContent = state.exampleLine; return; }
-    let html = '';
-    let cursor = 0;
-    tokens.forEach((t, idx) => {
-        // whitespace anterior al token (literal)
-        if (t.start > cursor) html += escapeHtml(state.exampleLine.slice(cursor, t.start));
-        const assigned = state.selections.find(s => s.start <= t.start && s.end >= t.end);
-        const selected = state.selectedTokens.has(idx);
-        let cls = 'inline-block px-1 border rounded cursor-pointer transition-colors';
-        if (assigned)       cls += ' bg-emerald-100 border-emerald-400 text-emerald-800 hover:bg-emerald-200';
-        else if (selected)  cls += ' bg-sky-200 border-sky-500';
-        else                cls += ' bg-slate-50 hover:bg-sky-100 border-slate-300';
-        const title = assigned ? assigned.field : '';
-        html += `<span class="token ${cls}" data-idx="${idx}" title="${escapeHtml(title)}">${escapeHtml(t.text)}</span>`;
-        cursor = t.end;
+    const groups = state.groups || [];
+    if (!groups.length) { box.textContent = state.exampleLine; return; }
+    let html = '<div class="flex flex-col gap-1">';
+    groups.forEach((g, idx) => {
+        const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
+        let cls = 'group-row flex items-center gap-2 px-2 py-1.5 border rounded transition-colors';
+        if (assigned)          cls += ' bg-emerald-100 border-emerald-400 text-emerald-900';
+        else if (g.checked)    cls += ' bg-sky-100 border-sky-500';
+        else                   cls += ' bg-white border-slate-300 hover:bg-slate-50 cursor-pointer';
+        const title = assigned ? `Asignado a ${assigned.field}` : '';
+        const hint = assigned ? null : detectHint(g.text);
+        const hintHtml = hint ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${hint.cls}">${escapeHtml(hint.label)}</span>` : '';
+        html += `<label class="${cls}" data-idx="${idx}" title="${escapeHtml(title)}">
+            <input type="checkbox" ${g.checked?'checked':''} ${assigned?'disabled':''} class="gchk">
+            <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
+            ${hintHtml}
+            ${assigned ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assigned.field)}</span>` : ''}
+        </label>`;
     });
-    // resto final (whitespace trailing si lo hubiera)
-    if (cursor < state.exampleLine.length) html += escapeHtml(state.exampleLine.slice(cursor));
+    html += '</div>';
     box.innerHTML = html;
-    box.querySelectorAll('.token').forEach(el => {
-        el.addEventListener('click', (e) => {
-            e.preventDefault();
-            toggleToken(parseInt(el.dataset.idx, 10), e.shiftKey);
+    box.querySelectorAll('.group-row .gchk').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const row = e.target.closest('.group-row');
+            toggleGroupCheck(parseInt(row.dataset.idx, 10));
         });
     });
 }
@@ -266,6 +373,7 @@ function removeSelection(i) {
     state.selections.splice(i, 1);
     renderExample();
     renderSelections();
+    validateExample();
 }
 
 function toggleEditExample() {
@@ -280,7 +388,7 @@ function toggleEditExample() {
         state.exampleLine = ta.value;
         state.selections = [];
         state.tokens = tokenize(state.exampleLine);
-        state.selectedTokens = new Set();
+        state.groups = tokensToGroups(state.tokens);
         ta.classList.add('hidden');
         box.classList.remove('hidden');
         renderExample();
@@ -290,9 +398,10 @@ function toggleEditExample() {
 
 function resetSelections() {
     state.selections = [];
-    state.selectedTokens = new Set();
+    state.groups.forEach(g => g.checked = false);
     renderExample();
     renderSelections();
+    validateExample();
 }
 
 function findFreeOccurrence(text, exceptField) {
@@ -313,30 +422,37 @@ function findFreeOccurrence(text, exceptField) {
 function assignField(field) {
     if (!state.exampleLine) { alert('Primero elegí una fila de ejemplo.'); return; }
 
-    // Prioridad 1: tokens clickeados
-    if (state.selectedTokens && state.selectedTokens.size > 0) {
-        const idxs = [...state.selectedTokens].sort((a,b)=>a-b);
-        const first = state.tokens[idxs[0]];
-        const last  = state.tokens[idxs[idxs.length - 1]];
-        const txt = state.exampleLine.slice(first.start, last.end);
+    // Prioridad 1: bloques con checkbox marcados
+    const idxs = state.groups.map((g, i) => g.checked ? i : -1).filter(i => i >= 0);
+    if (idxs.length > 0) {
+        const min = Math.min(...idxs), max = Math.max(...idxs);
+        for (let i = min; i <= max; i++) {
+            if (!state.groups[i].checked) {
+                alert('Los bloques marcados deben ser contiguos. Unilos primero o marcá solo contiguos.'); return;
+            }
+        }
+        const start = state.groups[min].start;
+        const end   = state.groups[max].end;
+        const txt   = state.exampleLine.slice(start, end);
         state.selections = state.selections.filter(s => s.field !== field);
-        state.selections.push({ field, text: txt, start: first.start, end: last.end });
-        state.selectedTokens.clear();
+        state.selections.push({ field, text: txt, start, end });
+        state.groups.forEach(g => g.checked = false);
         renderExample();
         renderSelections();
         return;
     }
 
-    // Fallback: selección del navegador (comportamiento original)
+    // Fallback: selección del navegador (drag con el mouse)
     const sel = window.getSelection();
     const txt = sel ? sel.toString() : '';
-    if (!txt) { alert('Clickeá uno o más tokens (palabras) de la fila, o seleccioná texto con el mouse.'); return; }
+    if (!txt) { alert('Marcá los checkboxes de los bloques que querés asignar.'); return; }
     state.selections = state.selections.filter(s => s.field !== field);
     const idx = findFreeOccurrence(txt, field);
-    if (idx < 0) { alert('No se encontró una posición libre para "' + txt + '". Puede estar ya usada por otro campo.'); return; }
+    if (idx < 0) { alert('No se encontró una posición libre para "' + txt + '".'); return; }
     state.selections.push({ field, text: txt, start: idx, end: idx + txt.length });
     renderExample();
     renderSelections();
+    validateExample();
 }
 
 document.getElementById('chips').addEventListener('click', (e) => {
@@ -381,6 +497,7 @@ function generateChipsFromTitles() {
     state.selections = [];
     renderExample();
     renderSelections();
+    validateExample();
 }
 
 const DEFAULT_CHIPS = [
@@ -396,6 +513,7 @@ function restoreDefaultChips() {
     state.selections = [];
     renderExample();
     renderSelections();
+    validateExample();
 }
 
 function addCustomChip() {
