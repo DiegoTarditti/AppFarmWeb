@@ -72,6 +72,7 @@ def parse_invoice_pdf(pdf_path):
             'codigo_barra':    m.group(1),
             'cantidad':        int(m.group(2)),
             'descripcion':     descripcion,
+            'precio_publico':  to_float(m.group(4)),
             'precio_unitario': to_float(m.group(6)),
             'dto':             dto,
             'importe':         to_float(m.group(7)),

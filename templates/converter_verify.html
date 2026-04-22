@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+{% set nav_active = "convertir" %}
+{% block title %}Verificar — {{ filename }}{% endblock %}
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('converter_detectar', token=token) }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">Verificar datos antes de importar</h1>
+    <span class="text-xs text-[#999] font-mono">{{ filename }}</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-7xl mx-auto space-y-4">
+
+    <!-- Header resumen -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+            <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Proveedor</p>
+            <p class="font-semibold text-sm truncate">{{ proveedor.razon_social }}</p>
+            {% if proveedor.cuit %}<p class="text-[10px] font-mono text-[#6f6f6f]">{{ proveedor.cuit }}</p>{% endif %}
+        </div>
+        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+            <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">N° factura</p>
+            <p class="font-mono text-sm">{{ prueba.numero_factura or '—' }}</p>
+            <p class="text-[10px] text-[#6f6f6f]">Fecha: {{ prueba.fecha or '—' }}</p>
+        </div>
+        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+            <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Total del PDF</p>
+            <p class="font-semibold text-sm" id="pdf-total-label">
+                {% if prueba.total %}$ {{ '{:,.2f}'.format(prueba.total).replace(',','X').replace('.',',').replace('X','.') }}{% else %}—{% endif %}
+            </p>
+        </div>
+        <div class="bg-white rounded-xl border border-surface-border px-4 py-3">
+            <p class="text-[10px] uppercase tracking-wider text-[#999] font-semibold">Total calculado</p>
+            <p class="font-semibold text-sm" id="calc-total-label">$ 0,00</p>
+            <p class="text-[10px]" id="total-match-badge"></p>
+        </div>
+    </div>
+
+    <!-- Banner summary -->
+    <div id="summary-banner" class="rounded-xl border px-4 py-3 text-sm">—</div>
+
+    <!-- Bulk actions -->
+    <div class="flex items-center gap-3 flex-wrap">
+        <button onclick="descartarErrores()" class="px-3 py-1.5 text-xs rounded bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold">Descartar filas con error</button>
+        <button onclick="reiniciarFilas()" class="px-3 py-1.5 text-xs rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold">↺ Revertir cambios</button>
+        <span class="flex-1"></span>
+        <button id="btn-import" onclick="confirmarImport()"
+                class="px-4 py-2 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-50">
+            Confirmar e importar →
+        </button>
+    </div>
+
+    <!-- Tabla de items -->
+    <div class="bg-white rounded-xl border border-surface-border overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+                <thead class="bg-slate-50 text-[10px] uppercase tracking-wide text-[#6f6f6f]">
+                    <tr>
+                        <th class="px-2 py-2 w-8"></th>
+                        <th class="px-2 py-2 text-left">EAN</th>
+                        <th class="px-2 py-2 text-left">Descripción</th>
+                        <th class="px-2 py-2 text-right w-16">Cant</th>
+                        <th class="px-2 py-2 text-right w-24">P. Público</th>
+                        <th class="px-2 py-2 text-right w-16">Dto %</th>
+                        <th class="px-2 py-2 text-right w-24">P. Unit</th>
+                        <th class="px-2 py-2 text-right w-24">Importe</th>
+                        <th class="px-2 py-2 text-center w-8"></th>
+                    </tr>
+                </thead>
+                <tbody id="items-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+</div>
+
+<script>
+const INITIAL_ROWS = {{ prueba.items_full | tojson }};
+const HEADER = {
+    numero_factura: {{ prueba.numero_factura | tojson }},
+    fecha: {{ prueba.fecha | tojson }},
+    total: {{ prueba.total | tojson }},
+    razon_social: {{ proveedor.razon_social | tojson }},
+    cuit: {{ proveedor.cuit | tojson }},
+};
+const PDF_TOTAL = {{ prueba.total | tojson }};
+
+let state = { rows: [] };
+
+function _clone(obj) { return JSON.parse(JSON.stringify(obj)); }
+function reiniciarFilas() { state.rows = _clone(INITIAL_ROWS); render(); }
+reiniciarFilas();
+
+function fmtMoney(n) {
+    if (n == null || isNaN(n)) return '—';
+    return '$ ' + Number(n).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function parseArg(s) {
+    if (s == null) return null;
+    const t = String(s).trim().replace(/[^\d.,\-]/g, '');
+    if (!t) return null;
+    const n = t.includes(',') ? parseFloat(t.replace(/\./g, '').replace(',', '.')) : parseFloat(t);
+    return isNaN(n) ? null : n;
+}
+
+function validateRow(r) {
+    // Devuelve { status: 'ok'|'warn'|'err', msgs: [...], calc: {...} }
+    const msgs = [];
+    const calc = {};
+    const cant = parseArg(r.cantidad);
+    const unit = parseArg(r.precio_unitario);
+    const imp  = parseArg(r.importe);
+    const pub  = parseArg(r.precio_publico);
+    const dto  = parseArg(r.dto);
+    if (cant == null || unit == null || imp == null) {
+        return {status: 'err', msgs: ['faltan campos obligatorios (cant/unit/importe)'], calc};
+    }
+    // Check 1: cant × unit ≈ importe
+    const calcTotal = cant * unit;
+    const totalOk = Math.abs(calcTotal - imp) <= Math.max(0.02, imp * 0.005);
+    calc.total = calcTotal;
+    if (!totalOk) msgs.push(`cant × unit = ${fmtMoney(calcTotal)} ≠ importe ${fmtMoney(imp)}`);
+    // Check 2: pub × (1 - dto%) ≈ unit
+    let dtoOk = null;
+    if (pub != null && dto != null && pub > 0) {
+        const calcUnit = pub * (1 - dto / 100);
+        dtoOk = Math.abs(calcUnit - unit) <= Math.max(0.02, unit * 0.005);
+        calc.unit = calcUnit;
+        if (!dtoOk) msgs.push(`pub − dto% = ${fmtMoney(calcUnit)} ≠ unit ${fmtMoney(unit)}`);
+    }
+    // Check 3: aproximación — si falta pub, calcularla desde unit y dto
+    if (pub == null && dto != null && unit != null && dto < 100) {
+        calc.pub_suggest = unit / (1 - dto / 100);
+    }
+    if (dto == null && pub != null && pub > 0 && unit != null) {
+        calc.dto_suggest = (1 - unit / pub) * 100;
+    }
+    const status = !totalOk ? 'err' : (dtoOk === false ? 'warn' : 'ok');
+    return {status, msgs, calc};
+}
+
+function render() {
+    const tbody = document.getElementById('items-body');
+    let html = '';
+    let sumTotal = 0;
+    let nOk = 0, nWarn = 0, nErr = 0;
+    state.rows.forEach((r, i) => {
+        const v = validateRow(r);
+        if (v.status === 'ok') nOk++;
+        else if (v.status === 'warn') nWarn++;
+        else nErr++;
+        const impNum = parseArg(r.importe);
+        if (impNum != null) sumTotal += impNum;
+        const bgRow = v.status === 'err' ? 'bg-red-50' : v.status === 'warn' ? 'bg-amber-50' : (i % 2 ? 'bg-slate-50' : 'bg-white');
+        const badge = v.status === 'ok' ? '<span class="text-emerald-600 text-base" title="OK">✓</span>'
+                    : v.status === 'warn' ? `<span class="text-amber-600 text-base" title="${v.msgs.join(' · ')}">⚠</span>`
+                    : `<span class="text-red-600 text-base" title="${v.msgs.join(' · ')}">✗</span>`;
+        const _inp = (field, num, w) => `<input type="text" data-i="${i}" data-f="${field}" value="${r[field] ?? ''}" class="w-full px-1 py-0.5 text-xs font-mono text-right bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded" style="min-width:${w||60}px">`;
+        html += `<tr class="${bgRow} border-t border-slate-100 hover:bg-sky-50">
+            <td class="px-2 py-1 text-center">${badge}</td>
+            <td class="px-2 py-1"><input type="text" data-i="${i}" data-f="codigo_barra" value="${r.codigo_barra ?? ''}" class="w-full px-1 py-0.5 text-xs font-mono bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded"></td>
+            <td class="px-2 py-1"><input type="text" data-i="${i}" data-f="descripcion" value="${(r.descripcion ?? '').replace(/"/g,'&quot;')}" class="w-full px-1 py-0.5 text-xs bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded"></td>
+            <td class="px-2 py-1 text-right">${_inp('cantidad', true, 40)}</td>
+            <td class="px-2 py-1 text-right">${_inp('precio_publico', true, 70)}</td>
+            <td class="px-2 py-1 text-right">${_inp('dto', true, 50)}</td>
+            <td class="px-2 py-1 text-right">${_inp('precio_unitario', true, 70)}</td>
+            <td class="px-2 py-1 text-right">${_inp('importe', true, 70)}</td>
+            <td class="px-2 py-1 text-center"><button onclick="eliminarFila(${i})" class="text-red-400 hover:text-red-700 font-bold" title="Eliminar">✕</button></td>
+        </tr>`;
+        if (v.calc.pub_suggest || v.calc.dto_suggest) {
+            html += `<tr class="bg-sky-50/50 border-t border-sky-100 text-[11px]"><td></td><td colspan="8" class="px-2 py-1 text-sky-700">
+                💡 Sugerencia: ${v.calc.pub_suggest ? 'P. Público ≈ <strong>'+fmtMoney(v.calc.pub_suggest)+'</strong>' : ''}
+                ${v.calc.dto_suggest ? 'Dto ≈ <strong>'+v.calc.dto_suggest.toFixed(2).replace('.',',')+' %</strong>' : ''}
+                <button onclick="aplicarSugerencia(${i})" class="ml-2 text-[10px] underline">aplicar</button>
+            </td></tr>`;
+        }
+    });
+    tbody.innerHTML = html;
+    tbody.querySelectorAll('input').forEach(inp => {
+        inp.addEventListener('change', onCellChange);
+        inp.addEventListener('blur',   onCellChange);
+    });
+
+    // Totales
+    document.getElementById('calc-total-label').textContent = fmtMoney(sumTotal);
+    const tMatch = document.getElementById('total-match-badge');
+    if (PDF_TOTAL != null) {
+        const diff = Math.abs(sumTotal - PDF_TOTAL);
+        const tol = Math.max(1, PDF_TOTAL * 0.005);
+        if (diff <= tol) { tMatch.textContent = '✓ cierra con PDF'; tMatch.className = 'text-[10px] text-emerald-600 font-semibold'; }
+        else { tMatch.textContent = `⚠ dif ${fmtMoney(diff)}`; tMatch.className = 'text-[10px] text-red-600 font-semibold'; }
+    }
+
+    // Banner
+    const b = document.getElementById('summary-banner');
+    b.innerHTML = `<strong>${nOk}</strong> OK · <strong class="text-amber-700">${nWarn}</strong> con warning · <strong class="text-red-700">${nErr}</strong> con error — total ${state.rows.length} filas`;
+    b.className = 'rounded-xl border px-4 py-3 text-sm ' +
+        (nErr > 0 ? 'bg-red-50 border-red-200 text-red-800' :
+         nWarn > 0 ? 'bg-amber-50 border-amber-200 text-amber-800' :
+         'bg-emerald-50 border-emerald-200 text-emerald-800');
+
+    document.getElementById('btn-import').disabled = (state.rows.length === 0 || nErr > 0);
+}
+
+function onCellChange(e) {
+    const i = parseInt(e.target.dataset.i, 10);
+    const f = e.target.dataset.f;
+    state.rows[i][f] = e.target.value;
+    render();
+}
+
+function eliminarFila(i) {
+    state.rows.splice(i, 1);
+    render();
+}
+
+function descartarErrores() {
+    state.rows = state.rows.filter(r => validateRow(r).status !== 'err');
+    render();
+}
+
+function aplicarSugerencia(i) {
+    const v = validateRow(state.rows[i]);
+    if (v.calc.pub_suggest) state.rows[i].precio_publico = v.calc.pub_suggest.toFixed(2).replace('.', ',');
+    if (v.calc.dto_suggest) state.rows[i].dto = v.calc.dto_suggest.toFixed(2).replace('.', ',');
+    render();
+}
+
+async function confirmarImport() {
+    const btn = document.getElementById('btn-import');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    try {
+        const resp = await fetch('{{ url_for("converter_verify_import", token=token) }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ rows: state.rows, header: HEADER, tipo_comprobante: 'FAC' })
+        });
+        const data = await resp.json();
+        if (data.error) { alert('Error: ' + data.error); btn.disabled = false; btn.textContent = 'Confirmar e importar →'; return; }
+        window.location.href = data.url_factura;
+    } catch(e) {
+        alert('Error: ' + e);
+        btn.disabled = false; btn.textContent = 'Confirmar e importar →';
+    }
+}
+</script>
+{% endblock %}

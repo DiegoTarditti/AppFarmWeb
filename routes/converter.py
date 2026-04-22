@@ -68,6 +68,10 @@ def _probar_parser(parser_file, pdf_path):
     try:
         data = parse_invoice_pdf(pdf_path, parser_file)
         items = data.get('items') or []
+        def _f(v):
+            if v is None: return None
+            try: return float(v)
+            except Exception: return None
         return {
             'ok': len(items) > 0,
             'n_items': len(items),
@@ -76,9 +80,20 @@ def _probar_parser(parser_file, pdf_path):
                  'cantidad': i.get('cantidad'), 'importe': i.get('importe')}
                 for i in items[:5]
             ],
+            'items_full': [{
+                'codigo_barra':    i.get('codigo_barra'),
+                'descripcion':     i.get('descripcion'),
+                'cantidad':        i.get('cantidad'),
+                'precio_publico':  _f(i.get('precio_publico')),
+                'dto':             _f(i.get('dto')),
+                'precio_unitario': _f(i.get('precio_unitario')),
+                'importe':         _f(i.get('importe')),
+                'lote':            i.get('lote'),
+                'vencimiento':     i.get('vencimiento'),
+            } for i in items],
             'numero_factura': data.get('numero_factura'),
             'fecha': str(data.get('fecha') or ''),
-            'total': data.get('total'),
+            'total': _f(data.get('total')),
         }
     except Exception as e:
         return {'ok': False, 'error': str(e)}
@@ -223,6 +238,55 @@ def init_app(app):
                                      'cuit': meta.get('proveedor_cuit')},
                                proveedor=proveedor, prueba=prueba,
                                pdf_lines=pdf_lines)
+
+    @app.route('/converter/<token>/verify', methods=['GET'])
+    def converter_verify(token):
+        """Pantalla de verificación: muestra todos los items parseados con
+        validación matemática por fila (cant × unit = importe, pub × (1-dto%) = unit)
+        y permite editarlos antes de confirmar el import."""
+        safe = secure_filename(token)
+        path = os.path.join(CONVERTER_DIR, safe)
+        if not os.path.exists(path):
+            flash('Documento no encontrado.')
+            return redirect(url_for('converter_index'))
+
+        meta = _converter_read_meta(safe)
+        proveedor = None
+        if meta.get('proveedor_id'):
+            with database.get_db() as session:
+                prov = session.get(database.Provider, meta['proveedor_id'])
+                if prov:
+                    proveedor = {'id': prov.id, 'razon_social': prov.razon_social,
+                                 'cuit': prov.cuit, 'parser_file': prov.parser_file}
+
+        if not proveedor or not proveedor.get('parser_file'):
+            flash('Este documento no tiene parser configurado — no hay nada para verificar.')
+            return redirect(url_for('converter_detectar', token=safe))
+
+        prueba = _probar_parser(proveedor['parser_file'], path)
+        if not prueba.get('ok'):
+            flash('El parser no devolvió ítems para verificar.')
+            return redirect(url_for('converter_detectar', token=safe))
+
+        return render_template('converter_verify.html',
+                               token=safe, filename=safe,
+                               proveedor=proveedor, prueba=prueba)
+
+    @app.route('/converter/<token>/verify/import', methods=['POST'])
+    def converter_verify_import(token):
+        """Recibe los items (posiblemente editados) y crea la factura real."""
+        body = request.get_json(silent=True) or {}
+        header = body.get('header', {}) or {}
+        rows   = body.get('rows', [])
+        tipo   = body.get('tipo_comprobante', 'FAC')
+        try:
+            inv_id, mensaje = _guardar_factura_desde_aprendizaje(token, header, rows, tipo)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'error': f'Error al guardar: {e}'}), 500
+        return jsonify({'ok': True, 'invoice_id': inv_id,
+                        'url_factura': url_for('invoice_items', invoice_id=inv_id)})
 
     @app.route('/converter/<token>/auto', methods=['GET'])
     def converter_auto(token):
