@@ -53,6 +53,11 @@
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="numero">N°</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="fecha">Fecha</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="total">Total</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="monto_exento">Exento</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="monto_gravado">Gravado</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_105">IVA 10,5 %</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_21">IVA 21 %</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="percepciones">Percepciones</button>
             </div>
             <div class="mt-2 flex gap-2 items-center">
                 <input id="new-hfield-name" type="text" placeholder="Otro campo de encabezado" class="flex-1 text-xs px-2 py-1.5 border border-[#e0e0e0] rounded">
@@ -115,12 +120,14 @@
         <code id="pattern-out" class="block p-2 bg-[#1a1100] text-amber-200 rounded text-[10px] break-all mb-3"></code>
         <div class="flex items-center gap-3 mb-2 flex-wrap">
             <span class="text-xs text-[#6f6f6f]">Filas detectadas: <span id="row-count" class="font-bold text-[#1e1e1e]">0</span></span>
+            <span id="preview-summary" class="text-xs text-[#555]"></span>
+            <button type="button" onclick="descartarErroresPreview()" class="text-[11px] px-2 py-1 rounded bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-semibold" title="Descarta todas las filas marcadas con ✗">Descartar filas con ✗</button>
             <div id="calc-check" class="hidden text-xs px-3 py-1 rounded-lg border font-semibold"></div>
         </div>
         <div id="preview" class="overflow-x-auto max-h-[55vh] overflow-y-auto border border-[#e0e0e0] rounded text-xs"></div>
 
         <!-- Desglose de totales -->
-        <div id="desglose-box" class="hidden mt-4 p-3 bg-white border border-[#e0e0e0] rounded-lg">
+        <div id="desglose-box" class="hidden mt-4 p-3 bg-mint-soft border border-mint rounded-lg">
             <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Desglose de totales (editable)</p>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                 <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Exento</span>
@@ -335,7 +342,31 @@ document.getElementById('header-chips').addEventListener('click', (e) => {
     }
     state.autodetectados.delete(field); // si pisaste el valor, ya no es AUTO
     renderHeader();
+    syncDesgloseFromHeader();
 });
+
+// Mapa: field del chip del header → id del input en el desglose
+const HEADER_TO_DESG = {
+    monto_exento:  'tot-exento',
+    monto_gravado: 'tot-gravado',
+    iva_105:       'tot-iva105',
+    iva_21:        'tot-iva21',
+    percepciones:  'tot-percep',
+    total:         'tot-esperado',
+};
+function syncDesgloseFromHeader() {
+    Object.entries(HEADER_TO_DESG).forEach(([field, inputId]) => {
+        const raw = state.header[field];
+        const el = document.getElementById(inputId);
+        if (!el) return;
+        if (raw == null || raw === '') return;
+        // No pisar si el user ya modificó a mano (input tiene foco)
+        if (document.activeElement === el) return;
+        el.value = raw;
+        _fmtMoneyInput(el);
+    });
+    if (typeof recalcDesglose === 'function') recalcDesglose();
+}
 
 function renderHeader() {
     const used = new Set(Object.keys(state.header));
@@ -548,23 +579,98 @@ function _renderCell(field, raw) {
     return `<span title="raw: ${escapeHtml(val)}" class="text-[#1e1e1e]">${fmt}</span>`;
 }
 function _alignFor(field) {
+    const f = (field || '').toLowerCase();
+    // Forzar alineación a la izquierda para descripciones / textos largos
+    if (/(descripcion|descripción|detalle|concepto|producto|articulo|nombre|razon|observacion|lote)/.test(f)) return 'text-left';
     const t = _tipoCampo(field);
     return (t === 'money' || t === 'int' || t === 'percent') ? 'text-right' : 'text-left';
 }
 
+function validateDetectedRow(r, fields) {
+    // Devuelve { status: 'ok'|'warn'|'err', msgs: [...] }
+    const fCant = _findField(fields, /^(cantidad|cant|unidades)$/);
+    const fUnit = _findField(fields, /^(precio_unitario|precio_unit|unitario)$/);
+    const fImp  = _findField(fields, /^(importe|total|monto|subtotal|neto)$/);
+    const fPub  = _findField(fields, /^(precio_publico|precio_pub|pvp)$/);
+    const fDto  = _findField(fields, /^(dto|descuento|descto)$/);
+    const msgs = [];
+    const MAX_VAL = 1e11;
+    const c = fCant ? _parseArgNumber(r[fCant]) : null;
+    const u = fUnit ? _parseArgNumber(r[fUnit]) : null;
+    const t = fImp  ? _parseArgNumber(r[fImp])  : null;
+    const p = fPub  ? _parseArgNumber(r[fPub])  : null;
+    const d = fDto  ? _parseArgNumber(r[fDto])  : null;
+
+    if (u != null && Math.abs(u) > MAX_VAL) msgs.push(`precio_unitario fuera de rango (${u})`);
+    if (t != null && Math.abs(t) > MAX_VAL) msgs.push(`importe fuera de rango (${t})`);
+    if (d != null && (d < -100 || d > 100)) msgs.push(`dto fuera de rango (${d})`);
+
+    let totalOk = null;
+    if (c != null && u != null && t != null) {
+        const calc = c * u;
+        totalOk = Math.abs(calc - t) <= Math.max(0.02, Math.abs(t) * 0.005);
+        if (!totalOk) msgs.push(`${c} × ${u} = ${calc.toFixed(2)} ≠ importe ${t}`);
+    }
+    let dtoOk = null;
+    if (p != null && d != null && u != null && p > 0) {
+        const calcU = p * (1 - d / 100);
+        dtoOk = Math.abs(calcU - u) <= Math.max(0.02, Math.abs(u) * 0.005);
+        if (!dtoOk) msgs.push(`pub − dto% = ${calcU.toFixed(2)} ≠ unit ${u}`);
+    }
+    const hasRange = msgs.some(m => /fuera de rango/.test(m));
+    const status = hasRange || totalOk === false ? 'err' : dtoOk === false ? 'warn' : 'ok';
+    return {status, msgs};
+}
+
+function _editableCell(i, f, val) {
+    const safeVal = String(val ?? '').replace(/"/g, '&quot;');
+    return `<input type="text" data-i="${i}" data-f="${f}" value="${safeVal}" class="prev-inp w-full bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded px-1 font-mono text-xs ${_alignFor(f)}">`;
+}
+
 function renderPreview() {
     const fields = state.lastFields; const rows = state.lastRows;
-    let html = '<table class="w-full border-collapse"><thead><tr class="bg-[#f0f0f0]"><th class="border border-[#e0e0e0] px-1"></th>';
+    let html = '<table class="w-full border-collapse"><thead><tr class="bg-[#f0f0f0]">'
+             + '<th class="border border-[#e0e0e0] px-1 w-6" title="Estado"></th>'
+             + '<th class="border border-[#e0e0e0] px-1 w-6"></th>';
     fields.forEach(f => html += `<th class="border border-[#e0e0e0] px-2 py-1 ${_alignFor(f)}">${f}</th>`);
     html += '</tr></thead><tbody>';
     rows.slice(0,100).forEach((r,i) => {
-        html += `<tr class="${i%2?'bg-[#f5f5f5]':'bg-white'}"><td class="border border-[#e0e0e0] px-1 text-center"><button onclick="removeRow(${i})" class="text-red-600 hover:text-red-800 font-bold">×</button></td>`;
-        fields.forEach(f => html += `<td class="border border-[#e0e0e0] px-2 py-1 whitespace-nowrap font-mono ${_alignFor(f)}">${_renderCell(f, r[f])}</td>`);
+        const v = validateDetectedRow(r, fields);
+        const tooltip = v.msgs.join(' · ');
+        const rowBg = v.status === 'err' ? 'bg-red-50 hover:bg-red-100'
+                    : v.status === 'warn' ? 'bg-amber-50 hover:bg-amber-100'
+                    : (i % 2 ? 'bg-[#f5f5f5]' : 'bg-white');
+        const badge = v.status === 'ok' ? '<span class="text-emerald-600">✓</span>'
+                    : v.status === 'warn' ? `<span class="text-amber-600" title="${escapeHtml(tooltip)}">⚠</span>`
+                    : `<span class="text-red-600 font-bold" title="${escapeHtml(tooltip)}">✗</span>`;
+        html += `<tr class="${rowBg}" title="${escapeHtml(tooltip)}">`
+             +  `<td class="border border-[#e0e0e0] px-1 text-center">${badge}</td>`
+             +  `<td class="border border-[#e0e0e0] px-1 text-center"><button onclick="removeRow(${i})" class="text-red-600 hover:text-red-800 font-bold" title="Borrar fila">×</button></td>`;
+        fields.forEach(f => html += `<td class="border border-[#e0e0e0] px-1 py-0.5 ${_alignFor(f)}">${_editableCell(i, f, r[f])}</td>`);
         html += '</tr>';
     });
     html += '</tbody></table>';
-    document.getElementById('preview').innerHTML = html;
+    const prev = document.getElementById('preview');
+    prev.innerHTML = html;
+    prev.querySelectorAll('.prev-inp').forEach(inp => {
+        inp.addEventListener('change', _onPreviewEdit);
+        inp.addEventListener('blur',   _onPreviewEdit);
+    });
     document.getElementById('row-count').textContent = rows.length;
+
+    // Resumen de estados
+    const counts = {ok:0, warn:0, err:0};
+    rows.forEach(r => counts[validateDetectedRow(r, fields).status]++);
+    const summary = document.getElementById('preview-summary');
+    if (summary) {
+        if (rows.length === 0) { summary.textContent = ''; }
+        else {
+            summary.innerHTML = `<strong class="text-emerald-700">${counts.ok}</strong> OK · `
+                              + `<strong class="text-amber-700">${counts.warn}</strong> warn · `
+                              + `<strong class="text-red-700">${counts.err}</strong> error`;
+        }
+    }
+
     const actionsRow = document.getElementById('actions-row');
     actionsRow.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
     verificarCalculo(rows, fields);
@@ -575,6 +681,23 @@ function renderPreview() {
         desgBox.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
         if (rows.length > 0) recalcDesglose();
     }
+}
+
+function _onPreviewEdit(e) {
+    const i = parseInt(e.target.dataset.i, 10);
+    const f = e.target.dataset.f;
+    if (isNaN(i) || !f) return;
+    state.lastRows[i][f] = e.target.value;
+    renderPreview();
+}
+
+function descartarErroresPreview() {
+    const fields = state.lastFields;
+    const before = state.lastRows.length;
+    state.lastRows = state.lastRows.filter(r => validateDetectedRow(r, fields).status !== 'err');
+    const removed = before - state.lastRows.length;
+    if (removed > 0) renderPreview();
+    else alert('No hay filas con ✗ para descartar.');
 }
 
 // ── Desglose de totales ──
@@ -632,15 +755,26 @@ function recalcDesglose() {
         totalBadge.textContent = ''; totalBadge.className = 'text-[10px] text-[#999]';
     }
 }
-// Listeners para recálculo en vivo
+// Formato moneda argentino en inputs del desglose (solo al salir del input,
+// para no molestar mientras se tipea).
+function _fmtMoneyInput(el) {
+    const n = _parseArgNumber(el.value);
+    if (n == null) { el.value = ''; return; }
+    el.value = Number(n).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+// Listeners para recálculo en vivo + formateo on blur
 ['tot-exento','tot-gravado','tot-iva105','tot-iva21','tot-percep','tot-otros','tot-esperado'].forEach(id => {
-    document.addEventListener('DOMContentLoaded', () => {
+    const bind = () => {
         const el = document.getElementById(id);
-        if (el) el.addEventListener('input', recalcDesglose);
-    });
-    // fallback si DOMContentLoaded ya pasó:
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', recalcDesglose);
+        if (!el) return;
+        el.addEventListener('input', recalcDesglose);
+        el.addEventListener('blur', () => { _fmtMoneyInput(el); recalcDesglose(); });
+        // formatear valor inicial si ya viene con algo
+        if (el.value) _fmtMoneyInput(el);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
 });
 
 function _findField(fields, regex) {

@@ -697,8 +697,21 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
             f'corregilas o descartalas antes de guardar. Ej: {detalle}{more}'
         )
 
+    # Desglose fiscal del header (exento/gravado/iva/percepciones/otros)
+    h_exento  = parse_num(header.get('monto_exento'))
+    h_gravado = parse_num(header.get('monto_gravado'))
+    h_iva105  = parse_num(header.get('iva_105'))
+    h_iva21   = parse_num(header.get('iva_21'))
+    h_percep  = parse_num(header.get('percepciones'))
+    h_otros   = parse_num(header.get('otros'))
+
     total_header = parse_num(header.get('total'))
-    total = total_header if total_header else total_items
+    # Prioridad para el total: suma desglose (si hay al menos 2 campos) > header.total > suma items
+    desglose_sum = None
+    desglose_campos = [h_exento, h_gravado, h_iva105, h_iva21, h_percep, h_otros]
+    if sum(1 for v in desglose_campos if v is not None) >= 2:
+        desglose_sum = sum((v or 0) for v in desglose_campos)
+    total = desglose_sum if desglose_sum else (total_header if total_header else total_items)
     sign = -1 if tipo_comprobante == 'NCR' else 1
 
     # Copiar PDF al upload folder para que sea accesible desde invoice_items
@@ -721,6 +734,12 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
             total_articulos=len(items_data),
             total_unidades=sum(i['cantidad'] for i in items_data),
             pdf_filename=pdf_dest_name,
+            monto_exento  = (h_exento  * sign) if h_exento  is not None else None,
+            monto_gravado = (h_gravado * sign) if h_gravado is not None else None,
+            iva_105       = (h_iva105  * sign) if h_iva105  is not None else None,
+            iva_21        = (h_iva21   * sign) if h_iva21   is not None else None,
+            percepciones  = (h_percep  * sign) if h_percep  is not None else None,
+            otros         = (h_otros   * sign) if h_otros   is not None else None,
         )
         session.add(inv)
         session.flush()

@@ -102,6 +102,13 @@ class Invoice(Base):
     erp_filename = Column(String(200))
     batch_id = Column(Integer, ForeignKey('invoice_batches.id'), nullable=True)
     conciliado = Column(Boolean, nullable=False, default=False)
+    # Desglose fiscal (opcional, cargado desde converter o /verify)
+    monto_exento  = Column(DECIMAL(14, 2), nullable=True)
+    monto_gravado = Column(DECIMAL(14, 2), nullable=True)
+    iva_105       = Column(DECIMAL(14, 2), nullable=True)
+    iva_21        = Column(DECIMAL(14, 2), nullable=True)
+    percepciones  = Column(DECIMAL(14, 2), nullable=True)
+    otros         = Column(DECIMAL(14, 2), nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     items = relationship('InvoiceItem', back_populates='invoice')
     batch = relationship('InvoiceBatch', back_populates='invoices')
@@ -737,6 +744,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_pack INTEGER NOT NULL DEFAULT 0"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW()"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
+    for _col in ('monto_exento', 'monto_gravado', 'iva_105', 'iva_21', 'percepciones', 'otros'):
+        conn.execute(text(f"ALTER TABLE facturas ADD COLUMN IF NOT EXISTS {_col} DECIMAL(14,2)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS pagos_ajustes_cc (
             id SERIAL PRIMARY KEY,
