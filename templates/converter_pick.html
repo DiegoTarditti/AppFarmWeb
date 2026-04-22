@@ -95,6 +95,9 @@
                 <button onclick="addCustomChip()" class="px-3 py-1.5 text-xs rounded bg-[#1a1100] text-white font-semibold">+ Campo extra</button>
             </div>
             <div id="selections" class="mt-3 space-y-1 text-xs"></div>
+            <div id="pick-validate-box" class="mt-3 text-[11px] p-2 rounded border bg-slate-50 text-slate-600 border-slate-200">
+                Asigná <strong>cantidad</strong>, <strong>precio unitario</strong> e <strong>importe</strong> para verificar antes de inferir.
+            </div>
             <button onclick="resetSelections()" class="mt-2 text-xs text-[#6f6f6f] hover:text-red-600">Limpiar selecciones</button>
         </div>
 
@@ -177,6 +180,52 @@ function unirMarcados() {
 }
 function resetAgrupamientos() { state.groups = tokensToGroups(state.tokens); renderExample(); }
 
+// ── Validación en vivo del ejemplo ──
+const _PICK_ALIASES = {
+    cantidad:        ['cantidad','cant','qty'],
+    precio_unitario: ['precio_unitario','precio_unit','pcio_unit','unitario','unit'],
+    importe:         ['importe','total','subtotal','monto'],
+    precio_publico:  ['precio_publico','precio_pub','pvp','precio_publ'],
+    dto:             ['dto','descuento','descto'],
+};
+function _pickByField(field, byField) {
+    for (const a of (_PICK_ALIASES[field] || [field])) if (byField[a] !== undefined) return byField[a];
+    return null;
+}
+function validatePick() {
+    const box = document.getElementById('pick-validate-box');
+    if (!box) return;
+    const byField = {};
+    state.selections.forEach(s => { byField[s.field] = s.text.trim(); });
+    const cant = _parseArgNumber(_pickByField('cantidad', byField));
+    const unit = _parseArgNumber(_pickByField('precio_unitario', byField));
+    const imp  = _parseArgNumber(_pickByField('importe', byField));
+    const pub  = _parseArgNumber(_pickByField('precio_publico', byField));
+    const dto  = _parseArgNumber(_pickByField('dto', byField));
+    if (cant == null || unit == null || imp == null) {
+        box.innerHTML = 'Asigná <strong>cantidad</strong>, <strong>precio unitario</strong> e <strong>importe</strong> para verificar antes de inferir.';
+        box.className = 'mt-3 text-[11px] p-2 rounded border bg-slate-50 text-slate-600 border-slate-200';
+        return;
+    }
+    const calcTotal = cant * unit;
+    const totalOk = Math.abs(calcTotal - imp) <= Math.max(0.02, imp * 0.005);
+    let dtoMsg = '', dtoOk = null;
+    if (pub != null && dto != null && pub > 0) {
+        const calcUnit = pub * (1 - dto / 100);
+        dtoOk = Math.abs(calcUnit - unit) <= Math.max(0.02, unit * 0.005);
+        dtoMsg = dtoOk
+            ? ` · Dto OK (${_fmtArgMoney(pub)} − ${String(dto).replace('.', ',')}% = ${_fmtArgMoney(unit)})`
+            : ` · ✗ Dto no cierra: ${_fmtArgMoney(pub)} − ${dto}% = ${_fmtArgMoney(calcUnit)}, esperaba ${_fmtArgMoney(unit)}`;
+    }
+    const ok = totalOk && dtoOk !== false;
+    box.innerHTML = totalOk
+        ? `✓ ${cant} × ${_fmtArgMoney(unit)} = ${_fmtArgMoney(imp)}${dtoMsg}`
+        : `✗ ${cant} × ${_fmtArgMoney(unit)} = ${_fmtArgMoney(calcTotal)}, pero importe dice ${_fmtArgMoney(imp)}${dtoMsg}`;
+    box.className = 'mt-3 text-xs p-2 rounded border font-semibold ' +
+        (ok ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+            : 'bg-red-50 text-red-800 border-red-200');
+}
+
 const DEFAULT_CHIPS = [
     ['codigo_barra','Código barra'], ['cantidad','Cantidad'], ['descripcion','Descripción'],
     ['precio_publico','Precio público'], ['dto','Dto %'], ['precio_unitario','Precio unit.'],
@@ -200,7 +249,7 @@ function _makeChip(field, label) {
 function restoreDefaultChips() {
     const c = document.getElementById('chips'); c.innerHTML='';
     DEFAULT_CHIPS.forEach(([f,l]) => c.appendChild(_makeChip(f,l)));
-    state.selections=[]; renderExample(); renderSelections();
+    state.selections=[]; renderExample(); renderSelections(); validatePick();
 }
 restoreDefaultChips();
 // Renderizar encabezado con valores autodetectados al cargar la página
@@ -214,7 +263,7 @@ function generateChipsFromTitles() {
         const f = _slug(tok); if (!f || seen.has(f)) return;
         seen.add(f); c.appendChild(_makeChip(f,tok));
     });
-    state.selections=[]; renderExample(); renderSelections();
+    state.selections=[]; renderExample(); renderSelections(); validatePick();
 }
 
 function toggleCustomFields() { document.getElementById('custom-fields-panel').classList.toggle('hidden'); }
@@ -293,7 +342,7 @@ function useSelectionAsExample() {
     state.selections = [];
     state.tokens = tokenize(state.exampleLine);
     state.groups = tokensToGroups(state.tokens);
-    renderExample(); renderSelections();
+    renderExample(); renderSelections(); validatePick();
 }
 
 function renderExample() {
@@ -339,11 +388,11 @@ function renderSelections() {
          </div>`).join('');
 }
 
-function removeSelection(i) { state.selections.splice(i,1); renderExample(); renderSelections(); }
+function removeSelection(i) { state.selections.splice(i,1); renderExample(); renderSelections(); validatePick(); }
 function resetSelections() {
     state.selections=[];
     if (state.groups) state.groups.forEach(g => g.checked = false);
-    renderExample(); renderSelections();
+    renderExample(); renderSelections(); validatePick();
 }
 
 function toggleEditExample() {
@@ -354,7 +403,7 @@ function toggleEditExample() {
         state.tokens = tokenize(state.exampleLine);
         state.groups = tokensToGroups(state.tokens);
         ta.classList.add('hidden'); box.classList.remove('hidden');
-        renderExample(); renderSelections();
+        renderExample(); renderSelections(); validatePick();
     }
 }
 
@@ -386,7 +435,7 @@ function assignField(field) {
         state.selections = state.selections.filter(s => s.field !== field);
         state.selections.push({ field, text: txt, start, end });
         state.groups.forEach(g => g.checked = false);
-        renderExample(); renderSelections();
+        renderExample(); renderSelections(); validatePick();
         return;
     }
 
@@ -397,7 +446,7 @@ function assignField(field) {
     const idx = findFreeOccurrence(txt, field);
     if (idx < 0) { alert('No hay posición libre para ese texto.'); return; }
     state.selections.push({ field, text: txt, start: idx, end: idx + txt.length });
-    renderExample(); renderSelections();
+    renderExample(); renderSelections(); validatePick();
 }
 
 document.getElementById('chips').addEventListener('click', (e) => {
