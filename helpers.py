@@ -323,6 +323,10 @@ def _build_item_pattern(example_line, selections):
                 pattern_main += _norm_literal(tail)
 
     pattern = pattern_main + (pattern_opt + r')?' if opened_opt else '')
+    # Anclar al fin de línea para evitar que el último [\d.,]+ absorba
+    # el primer número de la línea siguiente (bug de PHARMAMERICAN:
+    # precio_unit capturaba el EAN de la fila de abajo).
+    pattern += r'\s*$'
 
     def _base(name):
         return _re.sub(r'_\d+$', '', name or '')

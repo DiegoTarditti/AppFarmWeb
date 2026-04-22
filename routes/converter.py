@@ -418,16 +418,43 @@ def init_app(app):
             for page in pdf.pages:
                 pdf_text += (page.extract_text() or '') + '\n'
 
-        rx = re.compile(pattern, re.MULTILINE)
+        # Cortar el texto en marcadores de sección "sin stock" para no parsear faltantes
+        items_text = pdf_text
+        for marker in (r'\*\*\*\s*PRODUCTOS\s+EN\s+FALTA',):
+            m = re.search(marker, items_text)
+            if m:
+                items_text = items_text[:m.start()]
 
+        rx = re.compile(pattern, re.MULTILINE)
         rows = []
-        for m in rx.finditer(pdf_text):
+        matched_spans = set()
+        for m in rx.finditer(items_text):
+            matched_spans.add(m.start())
             row = {b: [] for b in base_fields}
             for i, f in enumerate(fields):
                 val = m.group(i + 1)
                 if val:
                     row[_base(f)].append(val)
             rows.append({b: re.sub(r'\s+', ' ', ' '.join(row[b]).strip()) for b in base_fields})
+
+        # Fallback: filas "gravadas" con solo 5 columnas (ean cant desc unit importe)
+        # Sólo si el pattern primario tenía al menos los campos mínimos.
+        min_ok = all(b in base_fields for b in ('codigo_barra', 'cantidad', 'descripcion', 'precio_unitario', 'importe'))
+        if min_ok:
+            GRAV = re.compile(
+                r'^(\d{7,14})\s+(\d+)\s+(.+?)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s*$',
+                re.MULTILINE
+            )
+            for m in GRAV.finditer(items_text):
+                if m.start() in matched_spans:
+                    continue
+                extra = {b: '' for b in base_fields}
+                extra['codigo_barra']    = m.group(1)
+                extra['cantidad']        = m.group(2)
+                extra['descripcion']     = re.sub(r'\s+(WEB|TRZ)\s*$', '', m.group(3)).strip()
+                extra['precio_unitario'] = m.group(4)
+                extra['importe']         = m.group(5)
+                rows.append(extra)
 
         return jsonify({'pattern': pattern, 'fields': base_fields, 'rows': rows})
 

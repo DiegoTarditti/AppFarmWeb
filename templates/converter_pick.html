@@ -294,10 +294,31 @@ function renderTotalsLine() {
     });
     html += '</div>';
     box.innerHTML = html;
+    box.querySelectorAll('.group-row').forEach(row => {
+        const idx = parseInt(row.dataset.idx, 10);
+        row.addEventListener('click', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const last = state.lastTotIdx;
+                if (last == null) { state.totalsGroups[idx].checked = true; }
+                else {
+                    const lo = Math.min(last, idx), hi = Math.max(last, idx);
+                    for (let i = lo; i <= hi; i++) {
+                        const g = state.totalsGroups[i];
+                        const asg = state.totalsAssign && Object.values(state.totalsAssign).some(a => a.gkey === `${g.start}-${g.end}`);
+                        if (!asg) g.checked = true;
+                    }
+                }
+                state.lastTotIdx = idx;
+                renderTotalsLine();
+            }
+        });
+    });
     box.querySelectorAll('.group-row .tgchk').forEach(cb => {
         cb.addEventListener('change', (e) => {
             const row = e.target.closest('.group-row');
             const idx = parseInt(row.dataset.idx, 10);
+            state.lastTotIdx = idx;
             state.totalsGroups[idx].checked = !state.totalsGroups[idx].checked;
             renderTotalsLine();
         });
@@ -632,10 +653,36 @@ function renderExample() {
     });
     html += '</div>';
     box.innerHTML = html;
+    box.querySelectorAll('.group-row').forEach(row => {
+        const idx = parseInt(row.dataset.idx, 10);
+        row.addEventListener('click', (e) => {
+            // Ctrl/Cmd+click → seleccionar rango desde lastExIdx hasta idx
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                const last = state.lastExIdx;
+                if (last == null) { state.groups[idx].checked = true; }
+                else {
+                    const lo = Math.min(last, idx), hi = Math.max(last, idx);
+                    for (let i = lo; i <= hi; i++) {
+                        const g = state.groups[i];
+                        const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
+                        if (!assigned) g.checked = true;
+                    }
+                }
+                state.lastExIdx = idx;
+                renderExample();
+                return;
+            }
+            // Click simple en el checkbox → el navegador toggle-a, interceptamos en change
+            if (e.target.tagName !== 'INPUT') return;
+        });
+    });
     box.querySelectorAll('.group-row .gchk').forEach(cb => {
         cb.addEventListener('change', (e) => {
             const row = e.target.closest('.group-row');
-            toggleGroupCheck(parseInt(row.dataset.idx, 10));
+            const idx = parseInt(row.dataset.idx, 10);
+            state.lastExIdx = idx;
+            toggleGroupCheck(idx);
         });
     });
 }
