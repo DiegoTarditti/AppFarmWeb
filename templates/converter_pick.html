@@ -547,26 +547,39 @@ function renderHeader() {
          </div>`);
     }
 
-    // Control: Σ cantidad ítems vs cantidad_total del header
-    if (state.header['cantidad_total'] != null && state.header['cantidad_total'] !== '') {
-        const declarada = _parseArgNumber(state.header['cantidad_total']);
+    // Control SIEMPRE visible cuando hay ítems detectados:
+    //   Σ productos = filas del preview (count)
+    //   Σ unidades  = suma de la columna cantidad
+    const hayItems = (state.lastRows || []).length > 0;
+    if (hayItems) {
+        const totalProductos = state.lastRows.length;
         const fCant = _findField(state.lastFields || [], /^(cantidad|cant|unidades)$/);
         let sumCant = 0;
         if (fCant) {
-            (state.lastRows || []).forEach(r => {
+            state.lastRows.forEach(r => {
                 const v = _parseArgNumber(r[fCant]);
                 if (v != null) sumCant += v;
             });
         }
-        let badgeC = '', rowClsC = 'bg-[#D6ECDE] border border-[#7FB99F]';
+        const declarada = _parseArgNumber(state.header['cantidad_total']);
+        let badgeProd = '';
+        let badgeUnid = '';
+        let rowProdCls = 'bg-[#D6ECDE] border border-[#7FB99F]';
+        let rowUnidCls = 'bg-[#D6ECDE] border border-[#7FB99F]';
         if (declarada != null && declarada > 0) {
-            if (sumCant === declarada) { badgeC = '<span class="text-[10px] text-emerald-700 font-semibold">✓ coincide</span>'; }
-            else { badgeC = `<span class="text-[10px] text-red-700 font-semibold">⚠ declarada ${declarada} vs ítems ${sumCant}</span>`; rowClsC = 'bg-red-50 border border-red-200'; }
+            // Comparar declarada contra UNIDADES (sum of cantidades)
+            if (sumCant === declarada) { badgeUnid = '<span class="text-[10px] text-emerald-700 font-semibold">✓ coincide con declarada</span>'; }
+            else { badgeUnid = `<span class="text-[10px] text-red-700 font-semibold">⚠ declarada ${declarada} vs procesado ${sumCant}</span>`; rowUnidCls = 'bg-red-50 border border-red-200'; }
         }
-        rows.push(`<div class="flex justify-between items-center ${rowClsC} rounded px-2 py-1 gap-2">
-            <span class="font-semibold flex items-center">Σ cant. ítems:</span>
+        rows.push(`<div class="flex justify-between items-center ${rowProdCls} rounded px-2 py-1 gap-2">
+            <span class="font-semibold">Σ productos:</span>
+            <span class="font-mono flex-1 text-right">${totalProductos}</span>
+            ${badgeProd}
+         </div>`);
+        rows.push(`<div class="flex justify-between items-center ${rowUnidCls} rounded px-2 py-1 gap-2">
+            <span class="font-semibold">Σ unidades:</span>
             <span class="font-mono flex-1 text-right">${sumCant}</span>
-            ${badgeC}
+            ${badgeUnid}
          </div>`);
     }
     document.getElementById('header-values').innerHTML = rows.join('');

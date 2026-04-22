@@ -9,8 +9,17 @@ import pdfplumber
 from datetime import datetime
 
 
-PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)"""
+PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$"""
 FIELDS = ['codigo_barra', 'cantidad', 'descripcion', 'precio_publico', 'dto', 'precio_unitario', 'importe']
+
+# Patrón secundario para la sección "PRODUCTOS GRAVADOS" (5 columnas: sin pub/dto)
+#   ean  cant  descripcion  precio_unit  importe
+PATTERN_GRAVADOS = r"""^(\d{7,14})\s+(\d+)\s+(.+?)\s+([\d.]+,\d{2})\s+([\d.]+,\d{2})\s*$"""
+
+# Marcadores de sección a cortar
+SECTION_CUT_MARKERS = [
+    r'\*\*\*\s*PRODUCTOS\s+EN\s+FALTA',     # sin stock — NO son items reales
+]
 
 
 def _to_float(s):
@@ -47,10 +56,20 @@ def parse_invoice_pdf(pdf_path):
     fecha = (datetime.strptime(fecha_m.group(1), '%d/%m/%Y').date()
              if fecha_m else datetime.today().date())
 
-    # Ítems desde el patrón aprendido
+    # Cortar el texto en el primer marcador de sección "sin stock / faltantes"
+    # para que esas líneas no se parseen como items reales.
+    items_text = full_text
+    for marker in SECTION_CUT_MARKERS:
+        m = re.search(marker, items_text)
+        if m:
+            items_text = items_text[:m.start()]
+
+    # Ítems desde el patrón aprendido (7 columnas con pub/dto)
     rx = re.compile(PATTERN, re.MULTILINE)
     items = []
-    for m in rx.finditer(full_text):
+    matched_spans = set()
+    for m in rx.finditer(items_text):
+        matched_spans.add(m.start())
         row = {}
         for i, f in enumerate(FIELDS):
             base = f.rstrip('0123456789_')
@@ -61,8 +80,25 @@ def parse_invoice_pdf(pdf_path):
             'codigo_barra': joined.get('codigo_barra', ''),
             'cantidad': _to_int(joined.get('cantidad', 0)),
             'descripcion': joined.get('descripcion', ''),
+            'precio_publico': _to_float(joined.get('precio_publico')),
+            'dto': _to_float(joined.get('dto')),
             'precio_unitario': _to_float(joined.get('precio_unitario')),
             'importe': _to_float(joined.get('importe')) or 0,
+        })
+
+    # Ítems de la sección "PRODUCTOS GRAVADOS" (5 columnas, sin pub/dto)
+    rx_grav = re.compile(PATTERN_GRAVADOS, re.MULTILINE)
+    for m in rx_grav.finditer(items_text):
+        if m.start() in matched_spans:
+            continue
+        items.append({
+            'codigo_barra':    m.group(1),
+            'cantidad':        _to_int(m.group(2)),
+            'descripcion':     re.sub(r'\s+(WEB|TRZ)\s*$', '', m.group(3)).strip(),
+            'precio_publico':  None,
+            'dto':             None,
+            'precio_unitario': _to_float(m.group(4)),
+            'importe':         _to_float(m.group(5)) or 0,
         })
 
     total_items = sum((it.get('importe') or 0) for it in items)
