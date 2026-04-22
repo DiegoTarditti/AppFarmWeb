@@ -233,6 +233,22 @@ En order_detail.html (resumen) aparecen botones separados "Plantilla laboratorio
 
 `CAMPOS_SISTEMA` (database.py) y `EXPORT_FIELDS` (routes/laboratorios.py) tienen el mismo set de campos (ean/codigo_barra, nombre/descripcion, total/cantidad, cant_modulo, cant_oferta, cant_oferta_min, cant_nodeal, precio/precio_pvp, erp_qty, rotacion, avg_monthly + fijo/espacio en proveedor).
 
+## Conversor de facturas (learn + verify)
+
+Flujo de aprendizaje de parsers PDF sin código, con validación matemática inline y edición row-by-row. Ver `docs/converter_flow.md` para el detalle completo.
+
+Highlights:
+- `/converter/<token>/pick` — aprendizaje: divide PDF en 3 secciones, tokeniza filas, asigna campos por chips o dropdown, 🧮 auto-detecta por math (cant×unit=importe, pub×(1-dto%)=unit, IVA = gravado × 21%)
+- `/converter/<token>/verify` — validación pre-import: row-by-row con badges ✓/⚠/✗, auto-recálculo al editar, desglose fiscal editable (Exento/Gravado/IVA10,5/IVA21/Percep/Otros), sugerencias automáticas para campos faltantes
+- Backend: `_build_item_pattern` (inferencia regex) + `_guardar_factura_desde_aprendizaje` (persist Invoice + breakdown fiscal)
+- Campos nuevos en `facturas`: `monto_exento, monto_gravado, iva_105, iva_21, percepciones, otros`
+
+Fixes críticos históricos:
+- `\s*$` al final del pattern generado (evita absorber EAN de fila siguiente)
+- `\s+` forzado entre capturas numéricas adyacentes sin literal
+- Segunda pasada con regex fallback para gravados (5 cols sin pub/dto)
+- Corte del texto antes de `*** PRODUCTOS EN FALTA` para no parsear faltantes
+
 ## Deploy Render — fix pg_type stale
 
 Antes de `Base.metadata.create_all(engine)` en `init_db` limpiamos tipos huérfanos en `pg_type` para tablas nuevas agregadas recientemente (lista whitelist en database.py). Esto evita `UniqueViolation` cuando un deploy anterior falló mid-stream con `CREATE TABLE`. Al agregar un modelo nuevo, sumá su `__tablename__` a esa lista.
