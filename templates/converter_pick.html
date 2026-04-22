@@ -118,6 +118,36 @@
             <div id="calc-check" class="hidden text-xs px-3 py-1 rounded-lg border font-semibold"></div>
         </div>
         <div id="preview" class="overflow-x-auto max-h-[55vh] overflow-y-auto border border-[#e0e0e0] rounded text-xs"></div>
+
+        <!-- Desglose de totales -->
+        <div id="desglose-box" class="hidden mt-4 p-3 bg-white border border-[#e0e0e0] rounded-lg">
+            <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide mb-3">Desglose de totales (editable)</p>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Exento</span>
+                    <input type="text" id="tot-exento" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Gravado</span>
+                    <input type="text" id="tot-gravado" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">IVA 10,5 %</span>
+                    <input type="text" id="tot-iva105" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">IVA 21 %</span>
+                    <input type="text" id="tot-iva21" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Percepciones</span>
+                    <input type="text" id="tot-percep" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+                <label class="flex flex-col gap-1"><span class="text-[10px] uppercase tracking-wide text-[#999]">Otros</span>
+                    <input type="text" id="tot-otros" class="px-2 py-1 text-xs font-mono text-right border border-slate-300 rounded focus:ring-1 focus:ring-sky-400 focus:outline-none"></label>
+            </div>
+            <div class="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-slate-200">
+                <div><span class="text-[10px] uppercase tracking-wide text-[#999]">Σ importes ítems</span>
+                    <p class="text-sm font-semibold font-mono" id="desg-sum">—</p>
+                    <p class="text-[10px]" id="desg-base-badge"></p></div>
+                <div><span class="text-[10px] uppercase tracking-wide text-[#999]">Total calculado</span>
+                    <p class="text-sm font-semibold font-mono" id="desg-total">—</p></div>
+                <div><span class="text-[10px] uppercase tracking-wide text-[#999]">Total esperado (editable)</span>
+                    <input type="text" id="tot-esperado" placeholder="del PDF" class="w-full px-2 py-1 text-sm font-mono text-right border border-slate-300 rounded">
+                    <p class="text-[10px]" id="desg-total-badge"></p></div>
+            </div>
+        </div>
+
         <div id="actions-row" class="mt-3 hidden flex flex-wrap gap-2">
             <button id="btn-save-parser" onclick="guardarParser()" class="px-4 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-semibold">
                 💾 Guardar parser
@@ -538,7 +568,80 @@ function renderPreview() {
     const actionsRow = document.getElementById('actions-row');
     actionsRow.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
     verificarCalculo(rows, fields);
+
+    // Mostrar / ocultar el desglose cuando hay filas
+    const desgBox = document.getElementById('desglose-box');
+    if (desgBox) {
+        desgBox.classList.toggle('hidden', !(rows.length > 0 && fields.length > 0));
+        if (rows.length > 0) recalcDesglose();
+    }
 }
+
+// ── Desglose de totales ──
+function _fmtMoneyLocal(n) {
+    if (n == null || isNaN(n)) return '—';
+    return '$ ' + Number(n).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+function _totInput(id) {
+    const el = document.getElementById(id);
+    return el ? (_parseArgNumber(el.value) || 0) : 0;
+}
+function _sumImportes() {
+    const fields = state.lastFields || [];
+    const rows   = state.lastRows || [];
+    const fImp = _findField(fields, /^(importe|total|monto|subtotal|neto)$/);
+    if (!fImp) return 0;
+    let s = 0;
+    rows.forEach(r => { const v = _parseArgNumber(r[fImp]); if (v != null) s += v; });
+    return s;
+}
+function recalcDesglose() {
+    const exento  = _totInput('tot-exento');
+    const gravado = _totInput('tot-gravado');
+    const iva105  = _totInput('tot-iva105');
+    const iva21   = _totInput('tot-iva21');
+    const percep  = _totInput('tot-percep');
+    const otros   = _totInput('tot-otros');
+    const base = exento + gravado;
+    const totalCalc = base + iva105 + iva21 + percep + otros;
+    const sumItems = _sumImportes();
+
+    document.getElementById('desg-sum').textContent = _fmtMoneyLocal(sumItems);
+    document.getElementById('desg-total').textContent = _fmtMoneyLocal(totalCalc);
+
+    // Badge: items vs base (exento + gravado)
+    const baseBadge = document.getElementById('desg-base-badge');
+    if (base > 0) {
+        const diff = Math.abs(sumItems - base);
+        const tol  = Math.max(1, base * 0.005);
+        if (diff <= tol) { baseBadge.textContent = `✓ coincide con exento+gravado (${_fmtMoneyLocal(base)})`; baseBadge.className = 'text-[10px] text-emerald-600 font-semibold'; }
+        else { baseBadge.textContent = `⚠ dif ${_fmtMoneyLocal(diff)} vs base ${_fmtMoneyLocal(base)}`; baseBadge.className = 'text-[10px] text-red-600 font-semibold'; }
+    } else {
+        baseBadge.textContent = ''; baseBadge.className = 'text-[10px] text-[#999]';
+    }
+
+    // Badge: total calc vs esperado
+    const totalBadge = document.getElementById('desg-total-badge');
+    const esperado = _parseArgNumber(document.getElementById('tot-esperado').value);
+    if (esperado != null && esperado > 0) {
+        const diff = totalCalc - esperado;
+        const tol  = Math.max(1, esperado * 0.005);
+        if (Math.abs(diff) <= tol) { totalBadge.textContent = `✓ cierra (dif ${_fmtMoneyLocal(Math.abs(diff))})`; totalBadge.className = 'text-[10px] text-emerald-600 font-semibold'; }
+        else { totalBadge.textContent = `⚠ dif ${diff>=0?'+':'−'}${_fmtMoneyLocal(Math.abs(diff))}`; totalBadge.className = 'text-[10px] text-red-600 font-semibold'; }
+    } else {
+        totalBadge.textContent = ''; totalBadge.className = 'text-[10px] text-[#999]';
+    }
+}
+// Listeners para recálculo en vivo
+['tot-exento','tot-gravado','tot-iva105','tot-iva21','tot-percep','tot-otros','tot-esperado'].forEach(id => {
+    document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', recalcDesglose);
+    });
+    // fallback si DOMContentLoaded ya pasó:
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', recalcDesglose);
+});
 
 function _findField(fields, regex) {
     return fields.find(f => regex.test(f.toLowerCase()));

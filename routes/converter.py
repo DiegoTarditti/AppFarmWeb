@@ -644,21 +644,58 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
             except ValueError:
                 continue
 
+    # Límites del DB: DECIMAL(14,2) → max ≈ 10^12. Rechazamos filas con
+    # valores absurdos antes de que Postgres explote.
+    MAX_VAL = 10**11  # 100 mil millones, suficiente para cualquier precio real
     items_data = []
     total_items = 0.0
-    for r in rows:
+    rows_malas = []
+    for i, r in enumerate(rows, 1):
         importe = parse_num(r.get('importe')) or 0
+        unit    = parse_num(r.get('precio_unitario'))
+        cant_n  = parse_int(r.get('cantidad'))
+        dto_n   = parse_num(r.get('dto'))
+
+        problemas = []
+        if unit is not None and abs(unit) > MAX_VAL:
+            problemas.append(f'precio_unitario fuera de rango ({unit:.2f})')
+        if abs(importe) > MAX_VAL:
+            problemas.append(f'importe fuera de rango ({importe:.2f})')
+        if dto_n is not None and (dto_n < -100 or dto_n > 100):
+            problemas.append(f'dto fuera de rango ({dto_n})')
+        # sanity: cant × unit vs importe (tolerancia generosa 2%)
+        if cant_n and unit is not None and importe:
+            calc = cant_n * unit
+            if abs(calc - importe) > max(1.0, abs(importe) * 0.02):
+                problemas.append(f'cant × unit = {calc:.2f} ≠ importe {importe:.2f}')
+
+        if problemas:
+            rows_malas.append((i, (r.get('codigo_barra') or '').strip(),
+                               (r.get('descripcion') or '').strip()[:50], problemas))
+            continue
+
         total_items += importe
         items_data.append({
             'codigo_barra': (r.get('codigo_barra') or '').strip()[:20],
-            'cantidad': parse_int(r.get('cantidad')),
+            'cantidad': cant_n,
             'descripcion': (r.get('descripcion') or '').strip()[:150],
-            'precio_unitario': parse_num(r.get('precio_unitario')),
-            'dto': parse_num(r.get('dto')),
+            'precio_unitario': unit,
+            'dto': dto_n,
             'importe': importe,
             'lote': (r.get('lote') or '').strip()[:30],
             'vencimiento': (r.get('vencimiento') or '').strip()[:20],
         })
+
+    if rows_malas:
+        detalle = '; '.join(
+            f'fila {i} ({cb or "s/cod"} · {desc}): {", ".join(p)}'
+            for i, cb, desc, p in rows_malas[:5]
+        )
+        more = f' y {len(rows_malas) - 5} más' if len(rows_malas) > 5 else ''
+        raise ValueError(
+            f'{len(rows_malas)} fila(s) con datos inválidos — '
+            f'corregilas o descartalas antes de guardar. Ej: {detalle}{more}'
+        )
 
     total_header = parse_num(header.get('total'))
     total = total_header if total_header else total_items
