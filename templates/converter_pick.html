@@ -52,19 +52,39 @@
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="cuit">CUIT</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="numero">N°</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="fecha">Fecha</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="total">Total</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="monto_exento">Exento</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="monto_gravado">Gravado</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_105">IVA 10,5 %</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_21">IVA 21 %</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="percepciones">Percepciones</button>
-                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="cantidad_total" title="Cantidad total de unidades declarada en el pie de la factura">Cant. Un.</button>
             </div>
             <div class="mt-2 flex gap-2 items-center">
                 <input id="new-hfield-name" type="text" placeholder="Otro campo de encabezado" class="flex-1 text-xs px-2 py-1.5 border border-[#e0e0e0] rounded">
                 <button onclick="addCustomHChip()" class="px-3 py-1.5 text-xs rounded bg-[#1a1100] text-white font-semibold">+ Campo</button>
             </div>
             <div id="header-values" class="mt-3 space-y-1 text-xs"></div>
+        </div>
+
+        <!-- FILA DE TOTALES (pie de la factura) -->
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
+            <p class="font-semibold text-sm mb-2">Fila de totales (pie de la factura)</p>
+            <div id="totals-box" class="p-3 bg-[#f5f5f5] rounded font-mono text-xs min-h-[40px] whitespace-pre-wrap break-all">
+                <span class="text-[#9ca3af]">Seleccioná la fila de totales del pie (Hoja/Cant/Exento/Gravado/IVA/Percep/TOTAL)…</span>
+            </div>
+            <textarea id="totals-edit" rows="2" class="mt-2 w-full p-2 text-xs font-mono border border-[#e0e0e0] rounded hidden"></textarea>
+            <div class="mt-2 flex gap-2 flex-wrap">
+                <button onclick="useSelectionAsTotals()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
+                <button onclick="toggleEditTotals()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
+                <span class="flex-1"></span>
+                <button onclick="unirTotalsMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold">⤏ Unir marcados</button>
+                <button onclick="resetTotalsAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">↺ Separar</button>
+            </div>
+            <p class="text-[11px] text-[#6f6f6f] mt-2">Marcá el checkbox de cada bloque y clickeá el chip correspondiente.</p>
+            <div class="mt-2 flex flex-wrap gap-2" id="totals-chips">
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="cantidad_total">Cant. Un.</button>
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="monto_exento">Exento</button>
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="monto_gravado">Gravado</button>
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_105">IVA 10,5 %</button>
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="iva_21">IVA 21 %</button>
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="percepciones">Percepciones</button>
+                <button class="tchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="total">Total</button>
+            </div>
+            <button onclick="limpiarTotals()" class="mt-2 text-xs text-[#6f6f6f] hover:text-red-600">Limpiar fila de totales</button>
         </div>
 
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
@@ -218,6 +238,126 @@ function unirMarcados() {
     renderExample();
 }
 function resetAgrupamientos() { state.groups = tokensToGroups(state.tokens); renderExample(); }
+
+// ── FILA DE TOTALES (pie de factura) ──
+state.totalsLine = '';
+state.totalsTokens = [];
+state.totalsGroups = [];
+
+function useSelectionAsTotals() {
+    const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
+    if (!txt.trim()) { alert('Seleccioná la fila de totales del PDF.'); return; }
+    state.totalsLine = txt.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').trim();
+    state.totalsTokens = tokenize(state.totalsLine);
+    state.totalsGroups = tokensToGroups(state.totalsTokens);
+    renderTotalsLine();
+}
+function toggleEditTotals() {
+    const ta = document.getElementById('totals-edit');
+    const box = document.getElementById('totals-box');
+    if (ta.classList.contains('hidden')) {
+        ta.value = state.totalsLine; ta.classList.remove('hidden'); box.classList.add('hidden'); ta.focus();
+    } else {
+        state.totalsLine = ta.value;
+        state.totalsTokens = tokenize(state.totalsLine);
+        state.totalsGroups = tokensToGroups(state.totalsTokens);
+        ta.classList.add('hidden'); box.classList.remove('hidden');
+        renderTotalsLine();
+    }
+}
+function renderTotalsLine() {
+    const box = document.getElementById('totals-box');
+    if (!state.totalsLine) { box.innerHTML = '<span class="text-[#9ca3af]">Seleccioná la fila de totales del pie…</span>'; return; }
+    const groups = state.totalsGroups || [];
+    if (!groups.length) { box.textContent = state.totalsLine; return; }
+    let html = '<div class="flex flex-col gap-1">';
+    // Mapeo inverso: qué header-field está asignado a cada rango (para pintar verde)
+    const asigns = {};
+    ['cantidad_total','monto_exento','monto_gravado','iva_105','iva_21','percepciones','total'].forEach(f => {
+        if (state.totalsAssign && state.totalsAssign[f]) asigns[state.totalsAssign[f].gkey] = f;
+    });
+    groups.forEach((g, idx) => {
+        const gkey = `${g.start}-${g.end}`;
+        const assignedField = asigns[gkey];
+        let cls = 'group-row flex items-center gap-2 px-2 py-1.5 border rounded transition-colors';
+        if (assignedField)     cls += ' bg-emerald-100 border-emerald-400 text-emerald-900';
+        else if (g.checked)    cls += ' bg-sky-100 border-sky-500';
+        else                   cls += ' bg-white border-slate-300 hover:bg-slate-50 cursor-pointer';
+        const hint = assignedField ? null : detectHint(g.text);
+        const hintHtml = hint ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${hint.cls}">${escapeHtml(hint.label)}</span>` : '';
+        html += `<label class="${cls}" data-idx="${idx}">
+            <input type="checkbox" ${g.checked?'checked':''} ${assignedField?'disabled':''} class="tgchk">
+            <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
+            ${hintHtml}
+            ${assignedField ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assignedField)}</span>` : ''}
+        </label>`;
+    });
+    html += '</div>';
+    box.innerHTML = html;
+    box.querySelectorAll('.group-row .tgchk').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            const row = e.target.closest('.group-row');
+            const idx = parseInt(row.dataset.idx, 10);
+            state.totalsGroups[idx].checked = !state.totalsGroups[idx].checked;
+            renderTotalsLine();
+        });
+    });
+}
+function unirTotalsMarcados() {
+    const idxs = state.totalsGroups.map((g,i) => g.checked?i:-1).filter(i=>i>=0);
+    if (idxs.length < 2) { alert('Marcá al menos 2 bloques adyacentes.'); return; }
+    const min = Math.min(...idxs), max = Math.max(...idxs);
+    for (let i = min; i <= max; i++) {
+        if (!state.totalsGroups[i].checked) { alert('Los bloques marcados deben ser CONTIGUOS.'); return; }
+    }
+    const merged = {
+        start: state.totalsGroups[min].start, end: state.totalsGroups[max].end,
+        text: state.totalsLine.slice(state.totalsGroups[min].start, state.totalsGroups[max].end),
+        checked: false,
+    };
+    state.totalsGroups.splice(min, max - min + 1, merged);
+    renderTotalsLine();
+}
+function resetTotalsAgrupamientos() { state.totalsGroups = tokensToGroups(state.totalsTokens); renderTotalsLine(); }
+function limpiarTotals() {
+    state.totalsLine = ''; state.totalsTokens = []; state.totalsGroups = [];
+    state.totalsAssign = {};
+    // Borrar los header fields que vinieron de la fila de totales
+    ['cantidad_total','monto_exento','monto_gravado','iva_105','iva_21','percepciones','total'].forEach(f => {
+        if (state.totalsWas && state.totalsWas[f]) { delete state.header[f]; state.autodetectados.delete(f); }
+    });
+    state.totalsWas = {};
+    renderTotalsLine();
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+
+function assignTotalsField(field) {
+    if (!state.totalsLine) { alert('Primero seleccioná la fila de totales.'); return; }
+    const idxs = state.totalsGroups.map((g,i) => g.checked?i:-1).filter(i=>i>=0);
+    if (idxs.length === 0) { alert('Marcá el checkbox del bloque a asignar.'); return; }
+    const min = Math.min(...idxs), max = Math.max(...idxs);
+    for (let i = min; i <= max; i++) {
+        if (!state.totalsGroups[i].checked) { alert('Los bloques deben ser contiguos. Unilos primero.'); return; }
+    }
+    const first = state.totalsGroups[min], last = state.totalsGroups[max];
+    const txt = state.totalsLine.slice(first.start, last.end).trim();
+    state.header[field] = txt;
+    state.autodetectados.delete(field);
+    state.totalsAssign = state.totalsAssign || {};
+    state.totalsAssign[field] = { gkey: `${first.start}-${last.end}` };
+    state.totalsWas = state.totalsWas || {};
+    state.totalsWas[field] = true;
+    // Desmarcar
+    state.totalsGroups.forEach(g => g.checked = false);
+    renderTotalsLine();
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+document.getElementById('totals-chips').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tchip'); if (!btn) return;
+    assignTotalsField(btn.dataset.field);
+});
 
 // ── Validación en vivo del ejemplo ──
 const _PICK_ALIASES = {
@@ -750,11 +890,46 @@ function renderPreview() {
     if (typeof renderHeader === 'function') renderHeader();
 }
 
+function _fmtFieldValue(field, n) {
+    if (n == null || isNaN(n)) return '';
+    const t = _tipoCampo(field);
+    if (t === 'int')     return String(Math.round(n));
+    if (t === 'percent') return n.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    if (t === 'money')   return n.toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    return String(n);
+}
+
 function _onPreviewEdit(e) {
     const i = parseInt(e.target.dataset.i, 10);
     const f = e.target.dataset.f;
     if (isNaN(i) || !f) return;
     state.lastRows[i][f] = e.target.value;
+
+    // Auto-recalc de derivados cuando se toca cant, pub, dto o unit
+    const fields = state.lastFields || [];
+    const fCant = _findField(fields, /^(cantidad|cant|unidades)$/);
+    const fUnit = _findField(fields, /^(precio_unitario|precio_unit|unitario)$/);
+    const fImp  = _findField(fields, /^(importe|total|monto|subtotal|neto)$/);
+    const fPub  = _findField(fields, /^(precio_publico|precio_pub|pvp)$/);
+    const fDto  = _findField(fields, /^(dto|descuento|descto)$/);
+
+    // pub o dto editado → recalcular precio_unitario
+    if ((f === fPub || f === fDto) && fUnit) {
+        const p = fPub ? _parseArgNumber(state.lastRows[i][fPub]) : null;
+        const d = fDto ? _parseArgNumber(state.lastRows[i][fDto]) : null;
+        if (p != null && d != null) {
+            state.lastRows[i][fUnit] = _fmtFieldValue(fUnit, p * (1 - d / 100));
+        }
+    }
+    // cant o unit editado (o derivado arriba) → recalcular importe
+    if ((f === fCant || f === fUnit || f === fPub || f === fDto) && fImp) {
+        const c = fCant ? _parseArgNumber(state.lastRows[i][fCant]) : null;
+        const u = fUnit ? _parseArgNumber(state.lastRows[i][fUnit]) : null;
+        if (c != null && u != null) {
+            state.lastRows[i][fImp] = _fmtFieldValue(fImp, c * u);
+        }
+    }
+
     renderPreview();
 }
 

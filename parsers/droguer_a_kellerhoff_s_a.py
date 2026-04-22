@@ -65,7 +65,30 @@ def parse_invoice_pdf(pdf_path):
             'importe': _to_float(joined.get('importe')) or 0,
         })
 
-    total = sum((it.get('importe') or 0) for it in items)
+    total_items = sum((it.get('importe') or 0) for it in items)
+
+    # Pie: "Hoja  Cant  Exento  Gravado  IVA_Inscrip  [Percep_IVA]  Percepciones  TOTAL"
+    # Percep_IVA es opcional — pdfplumber colapsa la columna si está vacía.
+    footer_m = re.search(
+        r'^\d+/\d+\s+(\d+)'                  # 1: cant un
+        r'\s+([\d.,]+)'                      # 2: monto exento
+        r'\s+([\d.,]+)'                      # 3: monto gravado
+        r'\s+([\d.,]+)'                      # 4: iva inscrip (10,5 o 21)
+        r'(?:\s+([\d.,]+))?'                 # 5: percepción iva (opcional)
+        r'\s+([\d.,]+)'                      # 6: percepciones
+        r'\s+([\d.,]+)\s*$',                 # 7: TOTAL
+        full_text, re.MULTILINE
+    )
+    total_unidades = monto_exento = monto_gravado = iva = percepciones = None
+    total = total_items
+    if footer_m:
+        total_unidades = int(footer_m.group(1))
+        monto_exento   = _to_float(footer_m.group(2))
+        monto_gravado  = _to_float(footer_m.group(3))
+        iva            = _to_float(footer_m.group(4))
+        perc_iva       = _to_float(footer_m.group(5)) or 0
+        percepciones   = (_to_float(footer_m.group(6)) or 0) + perc_iva
+        total          = _to_float(footer_m.group(7)) or total_items
 
     return {
         'numero_factura': numero_factura,
@@ -77,5 +100,10 @@ def parse_invoice_pdf(pdf_path):
         'cliente_razon': None,
         'total': total,
         'total_articulos': len(items),
+        'total_unidades': total_unidades,
+        'monto_exento': monto_exento,
+        'monto_gravado': monto_gravado,
+        'iva': iva,
+        'percepciones': percepciones,
         'items': items,
     }
