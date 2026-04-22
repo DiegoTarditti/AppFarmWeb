@@ -34,11 +34,30 @@
 <div class="flex gap-6">
     <div class="w-1/2 shrink-0">
         <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
-            <div class="px-4 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0]">
-                <p class="font-semibold text-sm">1. Elegí una fila de ejemplo</p>
-                <p class="text-xs text-[#6f6f6f] mt-0.5">Hacé triple-click sobre una línea o seleccionala entera.</p>
+            <div class="px-4 py-3 border-b border-[#e0e0e0] bg-[#f0f0f0] flex items-center justify-between flex-wrap gap-2">
+                <div>
+                    <p class="font-semibold text-sm">1. Elegí una fila de ejemplo</p>
+                    <p class="text-xs text-[#6f6f6f] mt-0.5">Hacé triple-click sobre una línea o seleccionala entera.</p>
+                </div>
+                <div class="flex items-center gap-1 text-[11px]">
+                    <button onclick="toggleSplit()" id="btn-split" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">📑 Dividir en secciones</button>
+                </div>
             </div>
-            <div id="pdf-text" class="p-4 overflow-y-auto max-h-[75vh]">{{ pdf_text }}</div>
+            <div id="pdf-full" class="p-4 overflow-y-auto max-h-[75vh]"><pre id="pdf-text" class="whitespace-pre-wrap">{{ pdf_text }}</pre></div>
+            <div id="pdf-split" class="hidden p-3 space-y-3 overflow-y-auto max-h-[75vh]">
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1">📄 Encabezado</p>
+                    <pre id="pdf-header" class="p-3 bg-amber-50 border border-amber-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[25vh] overflow-y-auto"></pre>
+                </div>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1">📋 Detalle (ítems)</p>
+                    <pre id="pdf-detail" class="p-3 bg-sky-50 border border-sky-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[35vh] overflow-y-auto"></pre>
+                </div>
+                <div>
+                    <p class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1">🧾 Totales (pie)</p>
+                    <pre id="pdf-footer" class="p-3 bg-emerald-50 border border-emerald-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[20vh] overflow-y-auto"></pre>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -70,6 +89,7 @@
             <div class="mt-2 flex gap-2 flex-wrap">
                 <button onclick="useSelectionAsTotals()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditTotals()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
+                <button onclick="autodetectarTotales()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta Cant.Un/Exento/Gravado/IVA/Percep/Total por relaciones matemáticas">🧮 Auto-detectar</button>
                 <span class="flex-1"></span>
                 <button onclick="unirTotalsMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold">⤏ Unir marcados</button>
                 <button onclick="resetTotalsAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">↺ Separar</button>
@@ -96,6 +116,7 @@
             <div class="mt-2 flex gap-2">
                 <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
+                <button onclick="autodetectarCampos()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta automáticamente cantidad, precio, importe, etc. por relaciones matemáticas">🧮 Auto-detectar</button>
                 <span class="flex-1"></span>
                 <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
                 <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
@@ -134,7 +155,16 @@
 <div class="mt-6 bg-white rounded-xl border border-[#e0e0e0] p-5">
     <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
         <p class="font-semibold text-sm">3. Inferir y probar</p>
-        <button onclick="inferPattern()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">Inferir patrón</button>
+        <div class="flex items-center gap-3">
+            <span id="infer-status" class="hidden flex items-center gap-2 text-xs text-amber-700 font-semibold">
+                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" opacity="0.25"></circle>
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.4 0 0 5.4 0 12h4z"></path>
+                </svg>
+                <span id="infer-status-text">Procesando…</span>
+            </span>
+            <button id="btn-inferir" onclick="inferPattern()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold disabled:opacity-60 disabled:cursor-wait">Inferir patrón</button>
+        </div>
     </div>
     <div id="result" class="hidden">
         <div class="text-xs text-[#6f6f6f] mb-1">Patrón:</div>
@@ -176,6 +206,9 @@
                     <p class="text-[10px]" id="desg-total-badge"></p></div>
             </div>
         </div>
+
+        <!-- Footer: mismo control del encabezado, replicado abajo para no scrollear -->
+        <div id="footer-values" class="mt-3 space-y-1 text-xs"></div>
 
         <div id="actions-row" class="mt-3 hidden flex flex-wrap gap-2">
             <button id="btn-save-parser" onclick="guardarParser()" class="px-4 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-700 text-white font-semibold">
@@ -239,6 +272,144 @@ function unirMarcados() {
 }
 function resetAgrupamientos() { state.groups = tokensToGroups(state.tokens); renderExample(); }
 
+function assignSingleExampleRow(idx, field) {
+    const g = state.groups[idx];
+    if (!g) return;
+    state.selections = state.selections.filter(s => s.field !== field);
+    state.selections.push({ field, text: g.text, start: g.start, end: g.end });
+    g.checked = false;
+    renderExample();
+    renderSelections();
+    if (typeof validatePick === 'function') validatePick();
+}
+
+function assignSingleTotalsRow(idx, field) {
+    const g = state.totalsGroups[idx];
+    if (!g) return;
+    state.header[field] = g.text.trim();
+    state.autodetectados.delete(field);
+    state.totalsAssign = state.totalsAssign || {};
+    state.totalsAssign[field] = { gkey: `${g.start}-${g.end}` };
+    state.totalsWas = state.totalsWas || {};
+    state.totalsWas[field] = true;
+    renderTotalsLine();
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+
+// ── Auto-detección de campos por relaciones matemáticas ──
+// Busca una terna (cant, unit, importe) donde cant × unit ≈ importe,
+// y una (pub, dto, unit) donde pub × (1 - dto/100) ≈ unit.
+// Luego asigna EAN (primer token de 12-14 dígitos), descripcion (tokens
+// de texto entre cant y pub/unit) y crea selections automáticamente.
+function autodetectarCampos() {
+    const line = state.exampleLine;
+    const toks = state.tokens || [];
+    if (!line || toks.length < 4) { alert('Primero usá una fila de ejemplo.'); return; }
+
+    const _isNum = (s) => {
+        const n = _parseArgNumber(s);
+        return (n != null && !isNaN(n)) ? n : null;
+    };
+    const _looksEan   = (s) => /^\d{12,14}$/.test(s);
+    const _looksInt   = (s, n) => /^\d{1,4}$/.test(s) && n >= 1 && n <= 9999;
+    const _looksMoney = (s) => /^\d{1,3}(\.\d{3})+,\d{2}$/.test(s) || /^\d+,\d{2}$/.test(s);
+    const _looksPct   = (s, n) => /^\d{1,2}(?:,\d{1,3})?$/.test(s) && n >= 0 && n <= 100;
+
+    // Clasificar tokens
+    const cls = toks.map(t => {
+        const txt = t.text, n = _isNum(txt);
+        return { t, text: txt, n,
+                 isEan:   _looksEan(txt),
+                 isInt:   n != null && _looksInt(txt, n),
+                 isMoney: n != null && _looksMoney(txt),
+                 isPct:   n != null && _looksPct(txt, n) };
+    });
+
+    // 1) Encontrar EAN (primer token que parece EAN)
+    const eanIdx = cls.findIndex(c => c.isEan);
+    if (eanIdx < 0) { alert('No encontré un código de barras (EAN 12-14 dígitos).'); return; }
+
+    // 2) Buscar triplete cant × unit = imp, con cant DESPUÉS del EAN, unit e imp monedas
+    const TOL = 0.02;
+    let best = null;
+    for (let i = eanIdx + 1; i < cls.length; i++) {
+        if (!cls[i].isInt) continue;
+        for (let j = i + 1; j < cls.length; j++) {
+            if (!cls[j].isMoney) continue;
+            for (let k = j + 1; k < cls.length; k++) {
+                if (!cls[k].isMoney) continue;
+                const calc = cls[i].n * cls[j].n;
+                if (Math.abs(calc - cls[k].n) <= Math.max(TOL, cls[k].n * 0.005)) {
+                    // Preferir cantidades pequeñas y triples en posición progresiva
+                    if (!best || (k - i) < (best.k - best.i)) best = {i, j, k};
+                }
+            }
+        }
+    }
+    if (!best) { alert('No pude deducir la relación cant × unit = importe.'); return; }
+    const cantIdx = best.i, unitIdx = best.j, impIdx = best.k;
+
+    // 3) Buscar pub × (1 - dto/100) = unit, con pub y dto ANTES del unit
+    let bestDto = null;
+    for (let p = eanIdx + 1; p < unitIdx; p++) {
+        if (!cls[p].isMoney) continue;
+        for (let d = p + 1; d < unitIdx; d++) {
+            if (!cls[d].isPct) continue;
+            const calc = cls[p].n * (1 - cls[d].n / 100);
+            if (Math.abs(calc - cls[unitIdx].n) <= Math.max(TOL, cls[unitIdx].n * 0.005)) {
+                bestDto = {p, d};
+                break;
+            }
+        }
+        if (bestDto) break;
+    }
+
+    // 4) Descripción: tokens entre cant (exclusivo) y el PRIMER campo numérico asignado después
+    const descStartIdx = cantIdx + 1;
+    const descEndIdx = (bestDto ? bestDto.p : unitIdx) - 1;
+
+    // 5) Armar selections
+    const newSels = [];
+    const push = (field, tokenIdx) => {
+        const tok = toks[tokenIdx];
+        newSels.push({ field, text: tok.text, start: tok.start, end: tok.end });
+    };
+    const pushRange = (field, iFrom, iTo) => {
+        if (iFrom > iTo) return;
+        const s = toks[iFrom].start, e = toks[iTo].end;
+        newSels.push({ field, text: line.slice(s, e), start: s, end: e });
+    };
+
+    push('codigo_barra', eanIdx);
+    push('cantidad', cantIdx);
+    if (descStartIdx <= descEndIdx) pushRange('descripcion', descStartIdx, descEndIdx);
+    if (bestDto) { push('precio_publico', bestDto.p); push('dto', bestDto.d); }
+    push('precio_unitario', unitIdx);
+    push('importe', impIdx);
+
+    // 6) Reemplazar grupos por uno solo fusionado para la descripción (visual feedback)
+    //    y commitear las selecciones
+    state.selections = newSels;
+    state.groups = tokensToGroups(state.tokens);
+    // Fusionar tokens de la descripción en un solo group, para que visualmente se vea
+    if (descStartIdx <= descEndIdx) {
+        const startTok = toks[descStartIdx], endTok = toks[descEndIdx];
+        const mergedText = line.slice(startTok.start, endTok.end);
+        // reemplazar los grupos en ese rango por uno solo
+        const gStart = state.groups.findIndex(g => g.start === startTok.start);
+        const gEnd   = state.groups.findIndex(g => g.end   === endTok.end);
+        if (gStart >= 0 && gEnd >= gStart) {
+            state.groups.splice(gStart, gEnd - gStart + 1, {
+                start: startTok.start, end: endTok.end, text: mergedText, checked: false
+            });
+        }
+    }
+    renderExample();
+    renderSelections();
+    if (typeof validatePick === 'function') validatePick();
+}
+
 // ── FILA DE TOTALES (pie de factura) ──
 state.totalsLine = '';
 state.totalsTokens = [];
@@ -265,6 +436,12 @@ function toggleEditTotals() {
         renderTotalsLine();
     }
 }
+function _availableTotalsChips() {
+    const used = new Set(Object.keys(state.totalsAssign || {}));
+    return [...document.querySelectorAll('#totals-chips .tchip')]
+        .map(c => ({field: c.dataset.field, label: c.textContent.trim()}))
+        .filter(c => !used.has(c.field));
+}
 function renderTotalsLine() {
     const box = document.getElementById('totals-box');
     if (!state.totalsLine) { box.innerHTML = '<span class="text-[#9ca3af]">Seleccioná la fila de totales del pie…</span>'; return; }
@@ -276,6 +453,9 @@ function renderTotalsLine() {
     ['cantidad_total','monto_exento','monto_gravado','iva_105','iva_21','percepciones','total'].forEach(f => {
         if (state.totalsAssign && state.totalsAssign[f]) asigns[state.totalsAssign[f].gkey] = f;
     });
+    const opts = _availableTotalsChips();
+    const optsHtml = '<option value="">asignar a…</option>' +
+        opts.map(o => `<option value="${escapeHtml(o.field)}">${escapeHtml(o.label)}</option>`).join('');
     groups.forEach((g, idx) => {
         const gkey = `${g.start}-${g.end}`;
         const assignedField = asigns[gkey];
@@ -285,15 +465,26 @@ function renderTotalsLine() {
         else                   cls += ' bg-white border-slate-300 hover:bg-slate-50 cursor-pointer';
         const hint = assignedField ? null : detectHint(g.text);
         const hintHtml = hint ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${hint.cls}">${escapeHtml(hint.label)}</span>` : '';
+        const rowSelect = assignedField ? '' :
+            `<select class="tot-row-sel text-[10px] border border-slate-300 bg-white rounded px-1 py-0.5" data-idx="${idx}">${optsHtml}</select>`;
         html += `<label class="${cls}" data-idx="${idx}">
             <input type="checkbox" ${g.checked?'checked':''} ${assignedField?'disabled':''} class="tgchk">
             <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
             ${hintHtml}
-            ${assignedField ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assignedField)}</span>` : ''}
+            ${assignedField ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assignedField)}</span>` : rowSelect}
         </label>`;
     });
     html += '</div>';
     box.innerHTML = html;
+    box.querySelectorAll('.tot-row-sel').forEach(sel => {
+        sel.addEventListener('click', e => e.stopPropagation());
+        sel.addEventListener('change', (e) => {
+            e.stopPropagation();
+            const field = e.target.value;
+            if (!field) return;
+            assignSingleTotalsRow(parseInt(e.target.dataset.idx, 10), field);
+        });
+    });
     box.querySelectorAll('.group-row').forEach(row => {
         const idx = parseInt(row.dataset.idx, 10);
         row.addEventListener('click', (e) => {
@@ -379,6 +570,86 @@ document.getElementById('totals-chips').addEventListener('click', (e) => {
     const btn = e.target.closest('.tchip'); if (!btn) return;
     assignTotalsField(btn.dataset.field);
 });
+
+// ── Auto-detección de campos del pie por relaciones matemáticas ──
+// Busca: IVA = Gravado × 21%  (o × 10,5%)
+//        Total = Exento + Gravado + IVA + Percepciones
+//        Cant. Un. = primer entero chico
+function autodetectarTotales() {
+    const line = state.totalsLine;
+    const toks = state.totalsTokens || [];
+    if (!line || toks.length < 3) { alert('Primero usá una fila de totales.'); return; }
+
+    // Clasificar tokens
+    const nums = toks.map((t, i) => ({i, t, n: _parseArgNumber(t.text)})).filter(x => x.n != null);
+    const moneys = nums.filter(x => /^\d{1,3}(\.\d{3})+,\d{2}$/.test(x.t.text) || /^\d+,\d{2}$/.test(x.t.text));
+    const smalls = nums.filter(x => /^\d{1,4}$/.test(x.t.text) && x.n >= 1 && x.n <= 9999);
+
+    if (moneys.length < 2) { alert('No hay suficientes valores monetarios en la fila.'); return; }
+
+    const TOL_ABS = 0.05;
+    const RATES = [{r: 0.21, field: 'iva_21'}, {r: 0.105, field: 'iva_105'}];
+
+    // 1) IVA = Gravado × rate
+    let pair = null;
+    for (const g of moneys) {
+        for (const iv of moneys) {
+            if (iv.i === g.i) continue;
+            for (const {r, field} of RATES) {
+                if (Math.abs(iv.n - g.n * r) <= Math.max(TOL_ABS, g.n * 0.005)) {
+                    pair = {gravado: g, iva: iv, ivaField: field};
+                    break;
+                }
+            }
+            if (pair) break;
+        }
+        if (pair) break;
+    }
+
+    // 2) Total = suma de los demás moneys (equivale a: el mayor == sum(rest))
+    let totalTok = null;
+    const sorted = [...moneys].sort((a, b) => b.n - a.n);
+    if (sorted.length >= 2) {
+        const biggest = sorted[0];
+        const restSum = moneys.reduce((s, x) => s + x.n, 0) - biggest.n;
+        if (Math.abs(restSum - biggest.n) <= Math.max(1, biggest.n * 0.005)) {
+            totalTok = biggest;
+        }
+    }
+
+    // 3) Identificar asignados para descartar de "remaining"
+    const used = new Set();
+    if (pair)     { used.add(pair.gravado.i); used.add(pair.iva.i); }
+    if (totalTok) used.add(totalTok.i);
+    const remaining = moneys.filter(x => !used.has(x.i)).sort((a, b) => b.n - a.n);
+    // remaining[0] = exento (mayor), remaining[1] = percepciones (menor)
+
+    // 4) Confirmar que podemos asignar algo útil
+    if (!pair && !totalTok) {
+        alert('No pude deducir relaciones. Asigná manualmente los campos.');
+        return;
+    }
+
+    // 5) Aplicar asignaciones
+    state.totalsAssign = state.totalsAssign || {};
+    state.totalsWas = state.totalsWas || {};
+    const pushField = (field, tok) => {
+        state.header[field] = tok.t.text;
+        state.autodetectados.delete(field);
+        state.totalsAssign[field] = {gkey: `${tok.t.start}-${tok.t.end}`};
+        state.totalsWas[field] = true;
+    };
+    if (smalls.length > 0)     pushField('cantidad_total', smalls[0]);
+    if (pair)                  { pushField('monto_gravado', pair.gravado); pushField(pair.ivaField, pair.iva); }
+    if (totalTok)              pushField('total', totalTok);
+    if (remaining.length >= 1) pushField('monto_exento', remaining[0]);
+    if (remaining.length >= 2) pushField('percepciones', remaining[1]);
+
+    state.totalsGroups.forEach(g => g.checked = false);
+    renderTotalsLine();
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
 
 // ── Validación en vivo del ejemplo ──
 const _PICK_ALIASES = {
@@ -603,7 +874,11 @@ function renderHeader() {
             ${badgeUnid}
          </div>`);
     }
-    document.getElementById('header-values').innerHTML = rows.join('');
+    const html = rows.join('');
+    document.getElementById('header-values').innerHTML = html;
+    // Espejo en el footer para consulta rápida sin subir
+    const footer = document.getElementById('footer-values');
+    if (footer) footer.innerHTML = html;
 }
 function removeHeader(k) {
     delete state.header[k];
@@ -629,11 +904,20 @@ function useSelectionAsExample() {
     renderExample(); renderSelections(); validatePick();
 }
 
+function _availableExampleChips() {
+    const used = new Set(state.selections.map(s => s.field));
+    return [...document.querySelectorAll('#chips .chip')]
+        .map(c => ({field: c.dataset.field, label: c.textContent.trim()}))
+        .filter(c => !used.has(c.field));
+}
 function renderExample() {
     const box = document.getElementById('example-box');
     if (!state.exampleLine) { box.innerHTML = '<span class="text-[#9ca3af]">Seleccioná una fila…</span>'; return; }
     const groups = state.groups || [];
     if (!groups.length) { box.textContent = state.exampleLine; return; }
+    const opts = _availableExampleChips();
+    const optsHtml = '<option value="">asignar a…</option>' +
+        opts.map(o => `<option value="${escapeHtml(o.field)}">${escapeHtml(o.label)}</option>`).join('');
     let html = '<div class="flex flex-col gap-1">';
     groups.forEach((g, idx) => {
         const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
@@ -644,15 +928,27 @@ function renderExample() {
         const hint = assigned ? null : detectHint(g.text);
         const hintHtml = hint ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${hint.cls}">${escapeHtml(hint.label)}</span>` : '';
         const title = assigned ? `Asignado a ${assigned.field}` : '';
+        const rowSelect = assigned ? '' :
+            `<select class="ex-row-sel text-[10px] border border-slate-300 bg-white rounded px-1 py-0.5" data-idx="${idx}">${optsHtml}</select>`;
         html += `<label class="${cls}" data-idx="${idx}" title="${escapeHtml(title)}">
             <input type="checkbox" ${g.checked?'checked':''} ${assigned?'disabled':''} class="gchk">
             <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
             ${hintHtml}
-            ${assigned ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assigned.field)}</span>` : ''}
+            ${assigned ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assigned.field)}</span>` : rowSelect}
         </label>`;
     });
     html += '</div>';
     box.innerHTML = html;
+    box.querySelectorAll('.ex-row-sel').forEach(sel => {
+        sel.addEventListener('click', e => e.stopPropagation());
+        sel.addEventListener('change', (e) => {
+            e.stopPropagation();
+            const field = e.target.value;
+            if (!field) return;
+            const idx = parseInt(e.target.dataset.idx, 10);
+            assignSingleExampleRow(idx, field);
+        });
+    });
     box.querySelectorAll('.group-row').forEach(row => {
         const idx = parseInt(row.dataset.idx, 10);
         row.addEventListener('click', (e) => {
@@ -765,16 +1061,36 @@ document.getElementById('chips').addEventListener('click', (e) => {
 
 async function inferPattern() {
     if (!state.exampleLine || !state.selections.length) { alert('Faltan datos.'); return; }
-    const resp = await fetch('{{ url_for("converter_infer", token=token) }}', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ example_line: state.exampleLine, selections: state.selections })
-    });
-    const data = await resp.json();
-    document.getElementById('result').classList.remove('hidden');
-    if (data.error) { document.getElementById('pattern-out').textContent = 'Error: ' + data.error; return; }
-    document.getElementById('pattern-out').textContent = data.pattern;
-    state.lastRows = data.rows || []; state.lastFields = data.fields || [];
-    renderPreview();
+    const status = document.getElementById('infer-status');
+    const statusTxt = document.getElementById('infer-status-text');
+    const btn = document.getElementById('btn-inferir');
+    if (status) status.classList.remove('hidden');
+    if (statusTxt) statusTxt.textContent = 'Procesando…';
+    if (btn) { btn.disabled = true; btn.textContent = 'Procesando…'; }
+    const t0 = performance.now();
+    try {
+        const resp = await fetch('{{ url_for("converter_infer", token=token) }}', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ example_line: state.exampleLine, selections: state.selections })
+        });
+        const data = await resp.json();
+        document.getElementById('result').classList.remove('hidden');
+        if (data.error) {
+            document.getElementById('pattern-out').textContent = 'Error: ' + data.error;
+            if (statusTxt) statusTxt.textContent = '✗ Error';
+            return;
+        }
+        document.getElementById('pattern-out').textContent = data.pattern;
+        state.lastRows = data.rows || []; state.lastFields = data.fields || [];
+        renderPreview();
+        const ms = Math.round(performance.now() - t0);
+        if (statusTxt) statusTxt.textContent = `✓ ${data.rows.length} filas en ${ms} ms`;
+        setTimeout(() => status && status.classList.add('hidden'), 2500);
+    } catch (e) {
+        if (statusTxt) statusTxt.textContent = '✗ ' + e.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Inferir patrón'; }
+    }
 }
 
 // ── Clasificación y formateo de celdas según el nombre del campo ──
@@ -1298,6 +1614,96 @@ async function exportXLSX() {
         a.href = url; a.download = '{{ filename }}.xlsx'.replace(/\.pdf\.xlsx$/i,'.xlsx');
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     } finally { btn.disabled = false; btn.textContent = 'Exportar XLSX ↓'; }
+}
+
+// ── División del texto del PDF en 3 secciones ──
+function _splitPdfText(text) {
+    const lines = text.split('\n');
+    const headerEndRegex = /\b(c[óo]digo|c[óo]d\.?\s*barra|cant(?:idad)?|ean|descripci[óo]n|concepto)\b/i;
+    const footerHintRegex = /(total\s*\$|^\s*total\s|subtotal|hoja\s+cant)/i;
+
+    let headerEnd = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (headerEndRegex.test(lines[i])) { headerEnd = i; break; }
+    }
+    let footerStart = -1;
+    for (let i = lines.length - 1; i > (headerEnd >= 0 ? headerEnd : 0); i--) {
+        if (footerHintRegex.test(lines[i])) { footerStart = i; break; }
+    }
+    // Si NO encontramos marcadores → no dividimos, todo en un solo bloque.
+    if (headerEnd < 0 || footerStart < 0) {
+        return { split: false, all: text };
+    }
+    // Ampliar el footer 1 línea hacia arriba si la anterior parece header tabular
+    if (footerStart > 0 && /hoja\s+cant|monto\s+exento|gravado/i.test(lines[footerStart - 1])) footerStart -= 1;
+    return {
+        split: true,
+        header: lines.slice(0, headerEnd + 1).join('\n'),
+        detail: lines.slice(headerEnd + 1, footerStart).join('\n'),
+        footer: lines.slice(footerStart).join('\n'),
+    };
+}
+function _renderDetailClickable(detailText) {
+    const box = document.getElementById('pdf-detail');
+    const lines = detailText.split('\n');
+    let html = '';
+    lines.forEach((ln, i) => {
+        const isEmpty = !ln.trim();
+        const cls = isEmpty
+            ? 'block opacity-40'
+            : 'detail-line block cursor-pointer hover:bg-sky-200 rounded px-1 -mx-1';
+        html += `<span class="${cls}" data-line="${i}" title="${isEmpty?'':'Click para usar como fila de ejemplo'}">${escapeHtml(ln) || '&nbsp;'}</span>\n`;
+    });
+    box.innerHTML = html;
+    box.querySelectorAll('.detail-line').forEach(el => {
+        el.addEventListener('click', () => {
+            const text = el.textContent.trim();
+            if (!text) return;
+            state.exampleLine = text;
+            state.selections = [];
+            state.tokens = tokenize(state.exampleLine);
+            state.groups = tokensToGroups(state.tokens);
+            renderExample();
+            renderSelections();
+            if (typeof validatePick === 'function') validatePick();
+            // Marcar visualmente la línea seleccionada
+            box.querySelectorAll('.detail-line').forEach(l => {
+                l.classList.remove('bg-emerald-200', 'font-bold');
+                l.querySelectorAll('.detail-check').forEach(c => c.remove());
+            });
+            el.classList.add('bg-emerald-200', 'font-bold');
+            const check = document.createElement('span');
+            check.className = 'detail-check text-emerald-700 font-bold ml-2';
+            check.textContent = '✓';
+            el.prepend(check);
+            // Scroll para que "Fila de ejemplo" quede visible
+            document.getElementById('example-box')?.scrollIntoView({behavior:'smooth', block:'center'});
+        });
+    });
+}
+
+function toggleSplit() {
+    const full = document.getElementById('pdf-full');
+    const split = document.getElementById('pdf-split');
+    const btn = document.getElementById('btn-split');
+    if (split.classList.contains('hidden')) {
+        const txt = document.getElementById('pdf-text').textContent;
+        const parts = _splitPdfText(txt);
+        if (!parts.split) {
+            alert('No encontré las palabras clave para dividir (código/cantidad/total). Se mantiene el texto completo.');
+            return;
+        }
+        document.getElementById('pdf-header').textContent = parts.header;
+        _renderDetailClickable(parts.detail);
+        document.getElementById('pdf-footer').textContent = parts.footer;
+        full.classList.add('hidden');
+        split.classList.remove('hidden');
+        btn.textContent = '📄 Ver texto completo';
+    } else {
+        full.classList.remove('hidden');
+        split.classList.add('hidden');
+        btn.textContent = '📑 Dividir en secciones';
+    }
 }
 </script>
 </body>
