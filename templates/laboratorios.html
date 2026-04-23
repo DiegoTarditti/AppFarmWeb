@@ -56,6 +56,10 @@
     <span class="text-xs text-[#6f6f6f]" id="lab-count">{{ laboratorios|length }} laboratorio{{ 's' if laboratorios|length != 1 }}</span>
     <span id="lab-count-filtered" class="text-xs text-[#6f6f6f] hidden"></span>
     <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('laboratorios_activos') }}"
+           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
+            Activar / desactivar
+        </a>
         <a href="{{ url_for('modulo_packs_list') }}"
            class="bg-brand hover:bg-brand-hover text-brand-dark text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors">
             Packs de módulos

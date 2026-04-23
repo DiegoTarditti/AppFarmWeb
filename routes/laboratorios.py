@@ -28,7 +28,9 @@ def init_app(app):
     def laboratorios_list():
         from sqlalchemy import func as _func
         with database.get_db() as session:
-            labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
+            labs = (session.query(Laboratorio)
+                    .filter(Laboratorio.activo == True)
+                    .order_by(Laboratorio.nombre).all())
             lab_ids   = [l.id     for l in labs]
             lab_names = [l.nombre for l in labs]
 
@@ -96,6 +98,29 @@ def init_app(app):
                 session.delete(lab)
                 session.commit()
         return redirect(url_for('laboratorios_list'))
+
+    @app.route('/laboratorios/activos', methods=['GET', 'POST'])
+    def laboratorios_activos():
+        """Pantalla admin para activar/desactivar laboratorios en bulk."""
+        with database.get_db() as session:
+            if request.method == 'POST':
+                activos_ids = set(int(x) for x in request.form.getlist('activo_ids') if x.isdigit())
+                todos = session.query(Laboratorio).all()
+                cambios = 0
+                for lab in todos:
+                    nuevo = lab.id in activos_ids
+                    if lab.activo != nuevo:
+                        lab.activo = nuevo
+                        cambios += 1
+                session.commit()
+                flash(f'{cambios} laboratorio(s) actualizado(s).')
+                return redirect(url_for('laboratorios_activos'))
+
+            labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
+            n_activos = sum(1 for l in labs if l.activo)
+            data = [{'id': l.id, 'nombre': l.nombre, 'activo': bool(l.activo)} for l in labs]
+        return render_template('laboratorios_activos.html',
+                               laboratorios=data, n_total=len(data), n_activos=n_activos)
 
     @app.route('/api/ofertas/preview', methods=['POST'])
     def api_ofertas_preview():

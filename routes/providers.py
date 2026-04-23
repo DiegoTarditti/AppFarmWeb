@@ -207,7 +207,7 @@ def init_app(app):
     def providers_list():
         tipo_filter = (request.args.get('tipo') or '').strip().lower()
         with database.get_db() as session:
-            q = session.query(database.Provider)
+            q = session.query(database.Provider).filter(database.Provider.activo == True)
             if tipo_filter in ('drogueria', 'laboratorio', 'otro'):
                 q = q.filter(database.Provider.tipo == tipo_filter)
             providers = q.order_by(database.Provider.razon_social).all()
@@ -395,6 +395,33 @@ def init_app(app):
                 session.delete(mapping)
                 session.commit()
         return redirect(url_for('provider_mappings', provider_id=provider_id))
+
+    @app.route('/providers/activos', methods=['GET', 'POST'])
+    def providers_activos():
+        """Pantalla admin para activar/desactivar proveedores en bulk."""
+        with database.get_db() as session:
+            if request.method == 'POST':
+                activos_ids = set(int(x) for x in request.form.getlist('activo_ids') if x.isdigit())
+                todos = session.query(database.Provider).all()
+                cambios = 0
+                for prov in todos:
+                    nuevo = prov.id in activos_ids
+                    if prov.activo != nuevo:
+                        prov.activo = nuevo
+                        cambios += 1
+                session.commit()
+                flash(f'{cambios} proveedor(es) actualizado(s).')
+                return redirect(url_for('providers_activos'))
+
+            provs = session.query(database.Provider).order_by(database.Provider.razon_social).all()
+            n_activos = sum(1 for p in provs if p.activo)
+            data = [{
+                'id': p.id, 'razon_social': p.razon_social,
+                'cuit': p.cuit or '', 'tipo': p.tipo or 'drogueria',
+                'activo': bool(p.activo),
+            } for p in provs]
+        return render_template('providers_activos.html',
+                               providers=data, n_total=len(data), n_activos=n_activos)
 
     @app.route('/provider/<int:provider_id>/mappings/delete-all', methods=['POST'])
     def delete_all_mappings(provider_id):

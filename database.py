@@ -35,6 +35,7 @@ class Laboratorio(Base):
     __tablename__ = 'laboratorios'
     id = Column(Integer, primary_key=True)
     nombre = Column(String(150), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -71,6 +72,7 @@ class Provider(Base):
     ruta_facturas = Column(String(500), nullable=True)
     grabar_productos = Column(Integer, nullable=False, default=1)
     tipo = Column(String(20), nullable=False, default='drogueria')
+    activo = Column(Boolean, nullable=False, default=True)
     claims = relationship('Claim', back_populates='provider')
 
 
@@ -652,6 +654,12 @@ def _pg_add_columns(conn):
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS grabar_productos INTEGER NOT NULL DEFAULT 1"
     ))
     conn.execute(text(
+        "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"
+    ))
+    conn.execute(text(
+        "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"
+    ))
+    conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL"
     ))
     conn.execute(text("""
@@ -1015,6 +1023,11 @@ def _sqlite_add_columns(conn):
     existing_prov = {row[1] for row in conn.execute(text("PRAGMA table_info(proveedores)"))}
     if 'grabar_productos' not in existing_prov:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN grabar_productos INTEGER NOT NULL DEFAULT 1"))
+    if 'activo' not in existing_prov:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN activo BOOLEAN NOT NULL DEFAULT 1"))
+    existing_lab = {row[1] for row in conn.execute(text("PRAGMA table_info(laboratorios)"))}
+    if 'activo' not in existing_lab:
+        conn.execute(text("ALTER TABLE laboratorios ADD COLUMN activo BOOLEAN NOT NULL DEFAULT 1"))
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'laboratorio_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN laboratorio_id INTEGER REFERENCES laboratorios(id)"))
