@@ -16,6 +16,158 @@ from purchase_engine import analyze_purchase
 from helpers import UPLOAD_FOLDER, PURCHASE_FOLDER, get_config, _upsert_producto, _add_alt_barcode, now_ar
 
 
+_PACK_PATTERN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
+
+
+def _detectar_packs_en_modulos(modules, session):
+    """Clasifica cada ítem del módulo combinando 3 señales independientes:
+
+      1. Destacado en amarillo en el Excel (criterio del vendedor).
+      2. Regex 'PACK X N' en la descripción (explícito, aporta cantidad).
+      3. Sin ventas históricas por ese EAN (un pack nunca se vende por su
+         propio código, se vende la unidad individual).
+
+    Un ítem es pack si tiene ≥1 señal. La confianza es proporcional a la
+    suma. Para cada pack detectado busca su unidad equivalente: prioriza
+    otro ítem del mismo módulo que SÍ tenga ventas y descripción base similar.
+
+    Cada candidato: {ean_pack, desc_pack, cantidad, ean_unidad_sug,
+                     desc_unidad_sug, fuente, modulo, destacado, tiene_regex,
+                     tuvo_ventas (del pack), confianza ('alta'|'media'|'baja')}
+    """
+    from database import ObsProducto, ObsVentaMensual, ModuloPack, Producto
+    ya_registrados = {ep for (ep,) in session.query(ModuloPack.ean_pack).all()}
+
+    # 1. Juntar todos los EANs del archivo para bulk lookup
+    todos_eans = set()
+    for mod in modules or []:
+        for it in mod.get('items') or mod.get('productos') or []:
+            e = (it.get('ean') or '').strip()
+            if e:
+                todos_eans.add(e)
+
+    # 2. Map EAN → observer_id via tabla productos local
+    ean_a_obs = dict(
+        session.query(Producto.codigo_barra, Producto.observer_id)
+        .filter(Producto.codigo_barra.in_(todos_eans),
+                Producto.observer_id.isnot(None)).all()
+    )
+
+    # 3. Set de observer_ids con ventas > 0 en los últimos 12 meses
+    from datetime import datetime
+    hoy = datetime.now()
+    obs_ids = {oid for oid in ean_a_obs.values() if oid}
+    con_ventas = set()
+    if obs_ids:
+        rows = (session.query(ObsVentaMensual.producto_observer)
+                .filter(ObsVentaMensual.producto_observer.in_(obs_ids),
+                        ObsVentaMensual.unidades > 0)
+                .distinct().all())
+        con_ventas = {r[0] for r in rows}
+
+    def tuvo_ventas(ean):
+        oid = ean_a_obs.get(ean)
+        if oid is None:  # Sin registro local: probablemente pack (nunca se vendió)
+            return False
+        return oid in con_ventas
+
+    candidatos = []
+    for mod in modules or []:
+        items = mod.get('items') or mod.get('productos') or []
+        for it in items:
+            desc = (it.get('desc') or it.get('descripcion') or '').strip()
+            ean_pack = (it.get('ean') or '').strip()
+            if not ean_pack or not desc or ean_pack in ya_registrados:
+                continue
+            destacado = bool(it.get('destacado'))
+            m = _PACK_PATTERN.search(desc)
+            sin_ventas = not tuvo_ventas(ean_pack)
+
+            # Requerimos al menos 1 señal fuerte.
+            senales = sum([destacado, bool(m), sin_ventas])
+            if senales == 0:
+                continue
+
+            # Cantidad: del regex si hay, sino None (user la completa)
+            try:
+                cantidad = int(m.group(1)) if m else None
+            except (ValueError, TypeError):
+                cantidad = None
+
+            # Confianza:
+            # - alta:  2+ señales
+            # - media: 1 señal fuerte (destacado o regex)
+            # - baja:  solo "sin ventas" (podría ser un producto nuevo que nadie vendió aún)
+            if senales >= 2:
+                confianza = 'alta'
+            elif destacado or m:
+                confianza = 'media'
+            else:
+                confianza = 'baja'
+
+            # Buscar unidad equivalente
+            base = re.sub(r'\s*\(?\s*PACK\s*X\s*\d+\s*\)?\s*', ' ', desc, flags=re.I).strip()
+            base_toks = {t for t in re.split(r'\s+', base.lower()) if len(t) >= 2}
+
+            unidad_ean = unidad_desc = None
+            fuente = 'none'
+            # Preferimos items del mismo módulo que SÍ tengan ventas
+            candidatos_unidad = []
+            for it2 in items:
+                d2 = (it2.get('desc') or it2.get('descripcion') or '').strip()
+                e2 = (it2.get('ean') or '').strip()
+                if not e2 or not d2 or e2 == ean_pack:
+                    continue
+                toks2 = {t for t in re.split(r'\s+', d2.lower()) if len(t) >= 2}
+                inter = base_toks & toks2
+                if len(inter) >= max(2, int(len(base_toks) * 0.5)):
+                    score = len(inter) / max(len(base_toks | toks2), 1)
+                    # Bonus si tuvo ventas (es la unidad que se vende)
+                    if tuvo_ventas(e2):
+                        score += 0.5
+                    candidatos_unidad.append((score, e2, d2))
+            if candidatos_unidad:
+                candidatos_unidad.sort(key=lambda x: -x[0])
+                unidad_ean, unidad_desc = candidatos_unidad[0][1], candidatos_unidad[0][2]
+                fuente = 'modulo'
+
+            # Fallback: obs_productos
+            if not unidad_ean and base_toks:
+                primer = next(iter(sorted(base_toks, key=len, reverse=True)), '')
+                if len(primer) >= 3:
+                    q = session.query(ObsProducto).filter(
+                        ObsProducto.descripcion.ilike(f'%{primer}%'),
+                        ObsProducto.fecha_baja.is_(None),
+                    ).limit(50).all()
+                    best, best_score = None, 0
+                    for op in q:
+                        toks_op = {t for t in re.split(r'\s+', op.descripcion.lower()) if len(t) >= 2}
+                        if not toks_op:
+                            continue
+                        score = len(base_toks & toks_op) / len(base_toks | toks_op)
+                        if score > best_score:
+                            best, best_score = op, score
+                    if best and best_score >= 0.4:
+                        unidad_ean = str(best.observer_id)
+                        unidad_desc = best.descripcion
+                        fuente = 'catalogo'
+
+            candidatos.append({
+                'ean_pack':        ean_pack,
+                'desc_pack':       desc,
+                'cantidad':        cantidad,
+                'ean_unidad_sug':  unidad_ean or '',
+                'desc_unidad_sug': unidad_desc or '',
+                'fuente':          fuente,
+                'modulo':          mod.get('nombre') or '',
+                'destacado':       destacado,
+                'tiene_regex':     bool(m),
+                'sin_ventas':      sin_ventas,
+                'confianza':       confianza,
+            })
+    return candidatos
+
+
 def _analyze_sales_file(tmp_path, ext, n_days):
     """Procesa un único archivo de estadística de ventas.
     Devuelve dict con uid/laboratorio/productos/periodo o {'error': str}."""
@@ -1211,12 +1363,55 @@ def init_app(app):
         f.save(tmp)
         try:
             modules = parse_modulos_xlsx(tmp)
-            return jsonify({'modules': modules})
+            destacados_count = sum(
+                1 for m in modules for it in m.get('items', []) if it.get('destacado')
+            )
+            with database.get_db() as session:
+                pack_candidates = _detectar_packs_en_modulos(modules, session)
+            return jsonify({
+                'modules': modules,
+                'pack_candidates': pack_candidates,
+                'destacados_count': destacados_count,
+                'total_items': sum(len(m.get('items', [])) for m in modules),
+            })
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         finally:
             try: os.remove(tmp)
             except OSError: pass
+
+    @app.route('/order/<int:pedido_id>/save-packs', methods=['POST'])
+    def order_save_packs(pedido_id):
+        """Guarda en modulo_packs los packs confirmados por el usuario.
+        Body: {packs: [{ean_pack, ean_unidad, cantidad, descripcion}]}"""
+        body = request.get_json(silent=True) or {}
+        packs = body.get('packs', [])
+        guardados = actualizados = 0
+        with database.get_db() as session:
+            for p in packs:
+                ean_pack = (p.get('ean_pack') or '').strip()
+                ean_unidad = (p.get('ean_unidad') or '').strip()
+                try:
+                    cantidad = int(p.get('cantidad') or 0)
+                except (ValueError, TypeError):
+                    cantidad = 0
+                if not ean_pack or not ean_unidad or cantidad <= 0:
+                    continue
+                existing = session.query(ModuloPack).filter_by(ean_pack=ean_pack).first()
+                if existing:
+                    existing.ean_unidad = ean_unidad
+                    existing.cantidad = cantidad
+                    existing.descripcion = (p.get('descripcion') or '')[:255] or existing.descripcion
+                    actualizados += 1
+                else:
+                    session.add(ModuloPack(
+                        ean_pack=ean_pack, ean_unidad=ean_unidad,
+                        cantidad=cantidad,
+                        descripcion=(p.get('descripcion') or '')[:255],
+                    ))
+                    guardados += 1
+            session.commit()
+        return jsonify({'guardados': guardados, 'actualizados': actualizados})
 
     @app.route('/order/<int:pedido_id>/parse-offers', methods=['POST'])
     def order_parse_offers(pedido_id):

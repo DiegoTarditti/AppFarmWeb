@@ -15,7 +15,14 @@ def init_app(app):
         with database.get_db() as session:
             all_prods = session.query(Producto).order_by(Producto.codigo_barra).all()
             prod_map = {p.codigo_barra: p for p in all_prods}
-            labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
+            # Solo labs que tienen al menos un módulo
+            labs_con_modulos = {
+                lid for (lid,) in session.query(Modulo.laboratorio_id)
+                .filter(Modulo.laboratorio_id.isnot(None)).distinct().all()
+            }
+            labs = (session.query(Laboratorio)
+                    .filter(Laboratorio.id.in_(labs_con_modulos))
+                    .order_by(Laboratorio.nombre).all()) if labs_con_modulos else []
 
             def _pack_dict(mp):
                 return {'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
@@ -79,7 +86,14 @@ def init_app(app):
     def modulo_packs_vista():
         with database.get_db() as session:
             prod_map = {p.codigo_barra: p for p in session.query(Producto).all()}
-            labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
+            # Solo labs que tienen al menos un módulo
+            labs_con_modulos = {
+                lid for (lid,) in session.query(Modulo.laboratorio_id)
+                .filter(Modulo.laboratorio_id.isnot(None)).distinct().all()
+            }
+            labs = (session.query(Laboratorio)
+                    .filter(Laboratorio.id.in_(labs_con_modulos))
+                    .order_by(Laboratorio.nombre).all()) if labs_con_modulos else []
             lab_filter = request.args.get('lab', '').strip()
 
             q = session.query(Modulo).outerjoin(Laboratorio).order_by(Laboratorio.nombre, Modulo.nombre)

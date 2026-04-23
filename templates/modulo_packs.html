@@ -493,6 +493,11 @@ function toggleModulo(id) {
 }
 
 function filtrarLab(lab) {
+    // Persistir para que sobreviva reloads
+    try {
+        if (lab === null) localStorage.removeItem('modulo_packs_lab');
+        else localStorage.setItem('modulo_packs_lab', lab);
+    } catch(e) {}
     // Actualizar pills
     document.querySelectorAll('.pill-lab').forEach(p => {
         p.classList.remove('bg-brand', 'text-brand-dark', 'border-brand');
@@ -616,6 +621,11 @@ function actualizarNombreLista() {
 }
 // Inicializar con la fecha actual y escuchar cambios del partner_selector
 document.addEventListener('DOMContentLoaded', () => {
+    // Restaurar filtro de lab persistido
+    try {
+        const saved = localStorage.getItem('modulo_packs_lab');
+        if (saved) filtrarLab(saved);
+    } catch(e) {}
     actualizarNombreLista();
     const w = document.getElementById('imp-lab-wrap');
     if (w) {

@@ -60,6 +60,42 @@ def _parse_float(val, default=0.0):
         return default
 
 
+def _es_amarillo(fg_hex):
+    """Detecta amarillo-ish por componentes RGB.
+    Un amarillo tiene R y G altos, B bajo."""
+    if not fg_hex or len(fg_hex) < 6:
+        return False
+    fg_hex = str(fg_hex).upper()
+    # ARGB (8 chars) o RGB (6 chars). Nos quedamos con los últimos 6.
+    rgb = fg_hex[-6:]
+    try:
+        r = int(rgb[0:2], 16)
+        g = int(rgb[2:4], 16)
+        b = int(rgb[4:6], 16)
+    except ValueError:
+        return False
+    # Amarillos: R y G altos (>= 200), B claramente menor (<=180)
+    # y no totalmente blanco (evitar FFFFFF)
+    return r >= 200 and g >= 200 and b <= 180 and not (r == 255 and g == 255 and b >= 230)
+
+
+def _row_destacada(row_cells):
+    """True si alguna celda con contenido tiene fondo amarillo.
+    row_cells es una tupla de openpyxl.Cell."""
+    for c in row_cells:
+        if c.value is None:
+            continue
+        fill = c.fill
+        if not fill or fill.patternType in (None, 'none'):
+            continue
+        fg = getattr(fill.fgColor, 'rgb', None)
+        if not fg:
+            continue
+        if _es_amarillo(str(fg)):
+            return True
+    return False
+
+
 def parse_modulos_xlsx(path):
     """
     Retorna lista de módulos:
@@ -67,12 +103,16 @@ def parse_modulos_xlsx(path):
         {
             'nombre': 'MOD. OPTAMOX DUO',
             'items': [
-                {'ean': '7793450121123', 'descripcion': '...', 'cant': 10, 'desc_pct': 7.0},
+                {'ean': '7793450121123', 'descripcion': '...', 'cant': 10, 'desc_pct': 7.0,
+                 'destacado': True/False},
                 ...
             ]
         },
         ...
     ]
+
+    'destacado' = True si la fila venía resaltada en amarillo en el Excel
+    (indicador visual que los laboratorios usan para marcar packs).
     """
     import openpyxl
     wb = openpyxl.load_workbook(path, data_only=True)
@@ -83,7 +123,9 @@ def parse_modulos_xlsx(path):
     modules = []
     current = None
 
-    for row in ws.iter_rows(min_row=1, values_only=True):
+    for row_cells in ws.iter_rows(min_row=1):
+        row = tuple(c.value for c in row_cells)
+        destacado = _row_destacada(row_cells)
         if not row or all(v is None for v in row):
             continue
 
@@ -133,6 +175,7 @@ def parse_modulos_xlsx(path):
                 'descripcion': desc,
                 'cant':        _parse_int(cant),
                 'desc_pct':    _parse_float(desc_pct),
+                'destacado':   destacado,
             })
             continue   # ← FORMAT B completamente manejado aquí
 
@@ -168,6 +211,7 @@ def parse_modulos_xlsx(path):
                 'descripcion': desc,
                 'cant':        _parse_int(cant),
                 'desc_pct':    _parse_float(desc_pct),
+                'destacado':   destacado,
             })
 
     if current is not None:

@@ -76,6 +76,7 @@
             <input type="hidden" name="proveedor_id" id="proveedor_id">
             <input type="hidden" name="pdf_pendiente_filename" value="{{ pdf_pendiente }}">
             <input type="hidden" name="doc_pendiente_id" value="{{ doc_pendiente_id }}">
+            <input type="hidden" name="proceso_id" value="{{ proceso_id }}">
             <input type="hidden" name="pdf_from_folder" id="pdf_from_folder" value="">
 
             {% if pdf_pendiente %}
@@ -202,6 +203,7 @@
                   method="post" action="{{ url_for('upload_files') }}" enctype="multipart/form-data">
                 <input type="hidden" name="is_new_provider" value="1">
                 <input type="hidden" name="pdf_temp_filename" id="pdf_temp_filename">
+                <input type="hidden" name="proceso_id" value="{{ proceso_id }}">
 
                 <div>
                     <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">Nombre del proveedor</label>

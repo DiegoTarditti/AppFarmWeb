@@ -213,9 +213,39 @@ def init_app(app):
                     app.logger.warning('Error al actualizar doc pendiente', exc_info=True)
                     session.rollback()
 
+        # Si viene de un proceso → asociar factura al proceso y avanzar pasos
+        proceso_id = request.form.get('proceso_id', type=int)
+        if proceso_id:
+            with database.get_db() as session:
+                try:
+                    proc = session.get(database.ProcesoCompra, proceso_id)
+                    if proc:
+                        inv = result['invoice']
+                        proc.factura_id = inv.id
+                        from helpers import now_ar
+                        if not proc.factura_hecha_en:
+                            proc.factura_hecha_en = now_ar()
+                        # avanzar estado
+                        _ESTADOS = ['BORRADOR', 'PEDIDO', 'FACTURADO', 'INGRESADO', 'CERRADO']
+                        if _ESTADOS.index(proc.estado or 'BORRADOR') < _ESTADOS.index('FACTURADO'):
+                            proc.estado = 'FACTURADO'
+                        proc.actualizado_en = now_ar()
+                        session.commit()
+                except Exception:
+                    session.rollback()
+                    app.logger.warning('No se pudo asociar factura a proceso', exc_info=True)
+
         if result.get('skip_erp'):
             flash('Factura importada sin cruce con ERP.', 'success')
+            if proceso_id:
+                return redirect(url_for('proceso_detail', proceso_id=proceso_id))
             return redirect(url_for('invoice_items', invoice_id=result['invoice'].id))
+        # Al cruce — pero si hay proceso, pasarlo para que el cruce también
+        # pueda completar paso 4.
+        if proceso_id:
+            return redirect(url_for('compare_view',
+                                    invoice_id=result['invoice'].id,
+                                    proceso_id=proceso_id))
         return redirect(url_for('compare_view', invoice_id=result['invoice'].id))
 
     @app.route('/api/upload', methods=['POST'])

@@ -696,14 +696,83 @@ async function uploadModulos(input) {
         const r = await fetch(PROD_URL_MODULES, { method: 'POST', body: fd });
         const d = await r.json();
         if (d.error) { alert('Error: ' + d.error); return; }
+
+        // Safeguard: si no hay productos destacados (packs), confirmar antes de seguir.
+        // Los laboratorios marcan los packs en amarillo; si llega sin marcas,
+        // probablemente el vendedor se olvidó y hay que resaltar manualmente antes.
+        if ((d.destacados_count ?? 0) === 0 && (d.total_items ?? 0) > 0) {
+            const sigue = confirm(
+                'No se detectaron productos destacados en amarillo (packs) en el Excel.\n\n' +
+                'Los laboratorios suelen resaltarlos; si el vendedor se olvidó, ' +
+                'abrí el Excel, marcá los packs en amarillo y volvé a subirlo.\n\n' +
+                '¿Continuar igual? (no se van a detectar packs automáticamente)'
+            );
+            if (!sigue) {
+                document.getElementById('modulos-status').textContent = 'Cancelado — agregá los packs destacados en el Excel.';
+                input.value = '';
+                return;
+            }
+        }
+
         modulesData = d.modules;
+        packCandidates = d.pack_candidates || [];
         renderModulosRaw();
         show('btn-procesar-modulos');
         show('btn-match-modulos');
         document.getElementById('modulos-status').textContent =
-            `${modulesData.length} módulos · ${modulesData.reduce((a,m)=>a+m.items.length,0)} ítems`;
+            `${modulesData.length} módulos · ${modulesData.reduce((a,m)=>a+m.items.length,0)} ítems` +
+            (d.destacados_count ? ` · ${d.destacados_count} packs detectados` : '');
+
+        // Si hay candidatos a pack, mostrar panel de revisión
+        if (packCandidates.length > 0) {
+            mostrarRevisionPacks(packCandidates);
+        }
     } catch(e) { alert('Error al subir: ' + e); }
     input.value = '';
+}
+
+let packCandidates = [];
+
+function mostrarRevisionPacks(candidatos) {
+    // Solo auto-guardamos los de ALTA confianza con sugerencia completa
+    const autoGuardables = candidatos.filter(c => c.confianza === 'alta' && c.ean_unidad_sug && c.cantidad);
+    const revisar = candidatos.filter(c => !autoGuardables.includes(c));
+
+    const señalTxt = c => {
+        const s = [];
+        if (c.destacado)   s.push('🟡');
+        if (c.tiene_regex) s.push('📝PACK X N');
+        if (c.sin_ventas)  s.push('🚫sin ventas');
+        return s.join(' ');
+    };
+
+    let msg = `Se detectaron ${candidatos.length} candidatos a pack:\n\n`;
+    if (autoGuardables.length) {
+        msg += `Alta confianza — 2+ señales, se guardan automáticamente (${autoGuardables.length}):\n`;
+        autoGuardables.forEach(c => {
+            msg += `  ${señalTxt(c)}  ${c.desc_pack}\n    → ${c.cantidad} u · unidad: ${c.desc_unidad_sug}\n`;
+        });
+    }
+    if (revisar.length) {
+        msg += `\nRequieren revisión manual (${revisar.length}):\n`;
+        revisar.forEach(c => {
+            msg += `  [${c.confianza}] ${señalTxt(c)}  ${c.desc_pack}\n`;
+            if (c.desc_unidad_sug) msg += `    sugerida: ${c.desc_unidad_sug}\n`;
+        });
+    }
+    msg += '\n¿Guardar los de alta confianza?';
+    if (confirm(msg) && autoGuardables.length) {
+        fetch(`{{ url_for('order_save_packs', pedido_id=pedido.id) }}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ packs: autoGuardables.map(c => ({
+                ean_pack: c.ean_pack, ean_unidad: c.ean_unidad_sug,
+                cantidad: c.cantidad, descripcion: c.desc_pack,
+            })) })
+        }).then(r => r.json()).then(res => {
+            alert(`Packs guardados: ${res.guardados} nuevos, ${res.actualizados} actualizados.\nRecargá la página para que se apliquen.`);
+        });
+    }
 }
 
 function renderModulosRaw() {
