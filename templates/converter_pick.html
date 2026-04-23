@@ -351,9 +351,15 @@ function autodetectarCampos() {
         return (n != null && !isNaN(n)) ? n : null;
     };
     const _looksEan   = (s) => /^\d{12,14}$/.test(s);
-    const _looksInt   = (s, n) => /^\d{1,4}$/.test(s) && n >= 1 && n <= 9999;
-    const _looksMoney = (s) => /^\d{1,3}(\.\d{3})+,\d{2}$/.test(s) || /^\d+,\d{2}$/.test(s);
-    const _looksPct   = (s, n) => /^\d{1,2}(?:,\d{1,3})?$/.test(s) && n >= 0 && n <= 100;
+    const _looksInt   = (s, n) => (n != null && n >= 1 && n <= 9999 && n === Math.floor(n)) &&
+                                  (/^\d{1,4}$/.test(s) || /^\d{1,4}\.00$/.test(s) /* "12.00" del OCR */);
+    const _looksMoney = (s) => (
+        /^\d{1,3}(\.\d{3})+,\d{2}$/.test(s) || /^\d+,\d{2}$/.test(s) ||      // AR
+        /^\d{1,3}(,\d{3})+\.\d{2}$/.test(s) || /^\d+\.\d{2}$/.test(s) ||     // EN/OCR
+        /^\d+,\d{3}\.\d{2}$/.test(s)                                          // OCR roto ($→5): 5598,760.33
+    );
+    const _looksPct   = (s, n) => n != null && n >= 0 && n <= 100 &&
+                                  (/^\d{1,2}(?:,\d{1,3})?$/.test(s) || /^\d{1,2}(?:\.\d{1,3})?$/.test(s));
 
     // Clasificar tokens
     const cls = toks.map(t => {
@@ -1457,15 +1463,20 @@ function _tipoCampo(field) {
 }
 function _parseArgNumber(s) {
     if (s == null) return null;
-    const t = String(s).trim();
+    const t = String(s).trim().replace(/\s/g, '').replace(/[^\d.,\-]/g, '');
     if (!t) return null;
-    // "1.234.567,89" → 1234567.89  |  "1234,56" → 1234.56  |  "1234.56" → 1234.56
-    const limpio = t.replace(/\s/g, '');
-    // Si tiene coma como último separador decimal → estilo argentino
-    if (/,/.test(limpio) && /,\d{1,3}$/.test(limpio)) {
-        return parseFloat(limpio.replace(/\./g, '').replace(',', '.'));
+    // Estilo ARGENTINO: 1.234.567,89 o 1234,56 (coma decimal al final)
+    if (/,\d{1,3}$/.test(t)) {
+        return parseFloat(t.replace(/\./g, '').replace(',', '.'));
     }
-    const n = parseFloat(limpio.replace(',', '.'));
+    // Estilo INGLÉS (OCR a menudo lo devuelve así): 1,234,567.89 o 12.00 o 1234.56
+    if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t) || /^-?\d+\.\d+$/.test(t)) {
+        return parseFloat(t.replace(/,/g, ''));
+    }
+    // Entero puro
+    if (/^-?\d+$/.test(t)) return parseFloat(t);
+    // Fallback
+    const n = parseFloat(t.replace(',', '.'));
     return isNaN(n) ? null : n;
 }
 function _fmtArgMoney(n) {

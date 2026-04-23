@@ -180,6 +180,66 @@ Las 3 son **idempotentes en líneas normales**. No tocan `1.234,56` (decimal arg
 
 Al agregar/migrar un parser **verificá que esté el import + llamada por página**.
 
+## OCR fallback para PDFs escaneados
+
+Cuando un PDF no tiene capa de texto (escaneado o exportado como imagen), `pdfplumber.extract_text()` devuelve string vacío.
+
+Helper: `helpers.extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=300)`
+
+Flujo:
+1. Intenta extract con pdfplumber
+2. Si el resultado tiene <50 chars útiles → corre Tesseract página por página (`--psm 6`)
+3. Guarda el resultado en `{pdf_path}.ocr.txt` (cache para no re-procesar)
+4. Post-procesa con `_clean_ocr_text` (strip líneas, colapsa espacios múltiples, reduce líneas vacías consecutivas)
+
+Lugares donde se aplica:
+- `converter_detectar`, `converter_pick`, `converter_infer`
+- Template del parser auto-generado (todos los parsers nuevos heredan)
+- `parsers/droguer_a_kellerhoff_s_a.py`
+
+En el UI del `/converter` el overlay muestra:
+- Durante procesamiento: si tarda >3s, subtexto cambia a "🔍 PDF escaneado detectado — aplicando OCR (puede tardar 10-30s)"
+- Al terminar: paso 1 del overlay indica `🔍 OCR aplicado · N líneas reconocidas`
+- Si después de OCR el texto sigue siendo vacío → bloquea avance, muestra error "PDF ilegible"
+
+## Formatos de número soportados (parser JS `_parseArgNumber`)
+
+| Entrada | Tipo | Resultado |
+|---|---|---|
+| `1.234.567,89` | Argentino clásico | `1234567.89` |
+| `1234,56` | Argentino sin miles | `1234.56` |
+| `1,234.56` | Inglés (OCR frecuente) | `1234.56` |
+| `1,234,567.89` | Inglés con miles | `1234567.89` |
+| `12.00` | Inglés cantidad/decimal | `12` |
+| `5598,760.33` | OCR roto (coma de miles faltante por `$→5/3`) | `5598760.33` |
+| `12345` | Entero | `12345` |
+
+El detector `_looksMoney` en `autodetectarCampos` acepta los 5 formatos de arriba + `^\d+,\d{3}\.\d{2}$` para el caso OCR roto.
+
+## Artefactos conocidos de pdfplumber + remedios
+
+| Artefacto | Ejemplo del texto extraído | Dónde aparece | Solución |
+|---|---|---|---|
+| **Caracteres cuadruplicados** | `TTTTOOOOTTTTAAAALLLL` (= `TOTAL`) | Fuentes bold en ciertos PDFs (20 de Junio) | `_normalize_quadrupled` reduce `(.)\1{3}` → `\1` cuando detecta ≥1 token multi-char ×4 en la línea |
+| **Letter-spacing** | `G r a v a d o I V A` (= `GravadoIVA`) | Mismas fuentes, texto legend en negrita | Si hay run de ≥10 tokens cortos (len ≤2), colapsa tokens ≥5 en uno solo |
+| **Rellenos de puntos** | `Subtotal Bruto................$ 1.409.334,86` | Separadores visuales en facturas | `\.{4,}` → ` ` (espacio simple); 1.234,56 no afectado porque tiene 1 solo punto |
+| **`$` confundido con `5`/`3`** | `$941,700.01` → `5598,760.33` (OCR) | Tesseract + fuentes de recibos | Regex "OCR roto" `^\d+,\d{3}\.\d{2}$` detecta el caso; el user corrige en `/verify` |
+| **`U` confundido con `0` o `1`** | `C.U.I.T.` → `C.0.1.T.` | OCR | Solo afecta labels, los regex de extracción son tolerantes (buscan `CUIT` exacto, pero si falla el user tipea a mano) |
+
+Si aparece un artefacto nuevo, extenderlo dentro de `_normalize_quadrupled` en `helpers.py` (no crear helpers separados).
+
+## Estrategia de fallback por situación
+
+| Situación | Camino ideal | Fallback 1 | Fallback 2 |
+|---|---|---|---|
+| PDF con texto limpio | pdfplumber directo | — | — |
+| PDF escaneado (sin texto) | OCR Tesseract `--psm 6` | Reducir DPI, reintentar | Mostrar "PDF ilegible", user usa otra herramienta |
+| Texto OCR con `$→5/3` | Auto-detect matemático con regex tolerante | User corrige en `/verify` editando celda | — |
+| Parser aprendido no matchea nueva factura | Regex fallback gravados (5 col) | User re-entrena en `/converter/<token>/pick` | Carga manual completa |
+| Campo `razon_social` / `cuit` ambiguo (proveedor vs cliente) | Filtro contra `Config.farmacia_nombre` (descarta el match de la farmacia) | Tomar el primero (proveedor usualmente aparece antes) | User asigna con chip |
+| Total del PDF no cierra con suma de ítems | Mostrar delta en `/verify` | User edita celdas hasta que cuadre | Descartar filas con error bulk |
+| Pie del PDF desprolijo / no se puede seleccionar tabla | Auto-detect matemático sobre tokens | Selección manual con chips | Botón **"✍ Carga manual"** — 7 inputs directos |
+
 ## Pipeline automático al cargar /pick
 
 Al entrar a `/converter/<token>/pick`, JS corre `runAutoPipeline()` que en cascada:
