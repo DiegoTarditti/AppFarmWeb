@@ -68,7 +68,10 @@
     <div class="w-1/2 flex flex-col gap-4">
 
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
-            <p class="font-semibold text-sm mb-1">Encabezado</p>
+            <div class="flex items-center justify-between mb-1">
+                <p class="font-semibold text-sm">Encabezado</p>
+                <button onclick="autoExtraerEtiquetas(true)" class="px-2 py-1 text-[11px] rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Re-scanear el texto del PDF buscando fecha, número, total, etc.">🧮 Auto-detectar</button>
+            </div>
             <p class="text-[11px] text-[#6f6f6f] mb-2">Seleccioná texto del PDF y clickeá el chip. Si el dato <strong>no aparece en el texto</strong> (ej: logo), clickeá el chip <strong>sin selección</strong> y te pide tipearlo a mano.</p>
             <p class="text-xs text-[#6f6f6f] mb-2">Seleccioná texto en el PDF izquierdo y clickeá el campo.</p>
             <div class="flex flex-wrap gap-2" id="header-chips">
@@ -362,14 +365,18 @@ function autodetectarCampos() {
                  isPct:   n != null && _looksPct(txt, n) };
     });
 
-    // 1) Encontrar EAN (primer token que parece EAN)
-    const eanIdx = cls.findIndex(c => c.isEan);
-    if (eanIdx < 0) { alert('No encontré un código de barras (EAN 12-14 dígitos).'); return; }
+    // Warnings acumulados — se muestran al final sin bloquear la asignación parcial
+    const warnings = [];
 
-    // 2) Buscar triplete cant × unit = imp, con cant DESPUÉS del EAN, unit e imp monedas
+    // 1) Encontrar EAN (primer token que parece EAN). Si no hay, igual seguimos.
+    const eanIdx = cls.findIndex(c => c.isEan);
+    if (eanIdx < 0) warnings.push('No encontré EAN (12-14 dígitos) — asignalo a mano');
+
+    // 2) Buscar triplete cant × unit = imp. Si no hay EAN, arrancamos desde el inicio.
     const TOL = 0.02;
+    const startFrom = eanIdx >= 0 ? eanIdx + 1 : 0;
     let best = null;
-    for (let i = eanIdx + 1; i < cls.length; i++) {
+    for (let i = startFrom; i < cls.length; i++) {
         if (!cls[i].isInt) continue;
         for (let j = i + 1; j < cls.length; j++) {
             if (!cls[j].isMoney) continue;
@@ -377,59 +384,76 @@ function autodetectarCampos() {
                 if (!cls[k].isMoney) continue;
                 const calc = cls[i].n * cls[j].n;
                 if (Math.abs(calc - cls[k].n) <= Math.max(TOL, cls[k].n * 0.005)) {
-                    // Preferir cantidades pequeñas y triples en posición progresiva
                     if (!best || (k - i) < (best.k - best.i)) best = {i, j, k};
                 }
             }
         }
     }
-    if (!best) { alert('No pude deducir la relación cant × unit = importe.'); return; }
-    const cantIdx = best.i, unitIdx = best.j, impIdx = best.k;
-
-    // 3) Buscar pub × (1 - dto/100) = unit, con pub y dto ANTES del unit
-    let bestDto = null;
-    for (let p = eanIdx + 1; p < unitIdx; p++) {
-        if (!cls[p].isMoney) continue;
-        for (let d = p + 1; d < unitIdx; d++) {
-            if (!cls[d].isPct) continue;
-            const calc = cls[p].n * (1 - cls[d].n / 100);
-            if (Math.abs(calc - cls[unitIdx].n) <= Math.max(TOL, cls[unitIdx].n * 0.005)) {
-                bestDto = {p, d};
-                break;
-            }
-        }
-        if (bestDto) break;
+    let cantIdx = -1, unitIdx = -1, impIdx = -1;
+    if (!best) {
+        warnings.push('No pude deducir cant × unit = importe — asignalos a mano');
+    } else {
+        cantIdx = best.i; unitIdx = best.j; impIdx = best.k;
     }
 
-    // 4) Descripción: tokens entre cant (exclusivo) y el PRIMER campo numérico asignado después
-    const descStartIdx = cantIdx + 1;
-    const descEndIdx = (bestDto ? bestDto.p : unitIdx) - 1;
+    // 3) Buscar pub × (1 - dto/100) = unit (solo si tenemos unit)
+    let bestDto = null;
+    if (unitIdx >= 0) {
+        const searchStart = eanIdx >= 0 ? eanIdx + 1 : 0;
+        for (let p = searchStart; p < unitIdx; p++) {
+            if (!cls[p].isMoney) continue;
+            for (let d = p + 1; d < unitIdx; d++) {
+                if (!cls[d].isPct) continue;
+                const calc = cls[p].n * (1 - cls[d].n / 100);
+                if (Math.abs(calc - cls[unitIdx].n) <= Math.max(TOL, cls[unitIdx].n * 0.005)) {
+                    bestDto = {p, d};
+                    break;
+                }
+            }
+            if (bestDto) break;
+        }
+    }
 
-    // 5) Armar selections
+    // 4) Descripción: tokens entre cant (exclusivo) y el PRIMER campo numérico asignado.
+    //    Si no hay cant, descripción arranca después del EAN.
+    let descStartIdx = -1, descEndIdx = -1;
+    if (cantIdx >= 0 || eanIdx >= 0) {
+        descStartIdx = (cantIdx >= 0 ? cantIdx : eanIdx) + 1;
+        const anchorAfterDesc = bestDto ? bestDto.p : (unitIdx >= 0 ? unitIdx : impIdx);
+        descEndIdx = (anchorAfterDesc >= 0 ? anchorAfterDesc : cls.length) - 1;
+    }
+
+    // 5) Armar selections solo con lo que pudimos detectar
     const newSels = [];
     const push = (field, tokenIdx) => {
+        if (tokenIdx < 0) return;
         const tok = toks[tokenIdx];
         newSels.push({ field, text: tok.text, start: tok.start, end: tok.end });
     };
     const pushRange = (field, iFrom, iTo) => {
-        if (iFrom > iTo) return;
+        if (iFrom < 0 || iTo < 0 || iFrom > iTo) return;
         const s = toks[iFrom].start, e = toks[iTo].end;
         newSels.push({ field, text: line.slice(s, e), start: s, end: e });
     };
 
     push('codigo_barra', eanIdx);
     push('cantidad', cantIdx);
-    if (descStartIdx <= descEndIdx) pushRange('descripcion', descStartIdx, descEndIdx);
+    if (descStartIdx >= 0 && descEndIdx >= 0 && descStartIdx <= descEndIdx) pushRange('descripcion', descStartIdx, descEndIdx);
     if (bestDto) { push('precio_publico', bestDto.p); push('dto', bestDto.d); }
     push('precio_unitario', unitIdx);
     push('importe', impIdx);
+
+    if (newSels.length === 0) {
+        alert('No pude detectar ningún campo. Asignalos a mano.');
+        return;
+    }
 
     // 6) Reemplazar grupos por uno solo fusionado para la descripción (visual feedback)
     //    y commitear las selecciones
     state.selections = newSels;
     state.groups = tokensToGroups(state.tokens);
     // Fusionar tokens de la descripción en un solo group, para que visualmente se vea
-    if (descStartIdx <= descEndIdx) {
+    if (descStartIdx >= 0 && descEndIdx >= 0 && descStartIdx <= descEndIdx) {
         const startTok = toks[descStartIdx], endTok = toks[descEndIdx];
         const mergedText = line.slice(startTok.start, endTok.end);
         // reemplazar los grupos en ese rango por uno solo
@@ -444,6 +468,13 @@ function autodetectarCampos() {
     renderExample();
     renderSelections();
     if (typeof validatePick === 'function') validatePick();
+
+    // Feedback final — combina éxitos y warnings
+    const campos = newSels.map(s => s.field).join(', ');
+    const exitoMsg = `✓ ${newSels.length} campo${newSels.length===1?'':'s'} detectado${newSels.length===1?'':'s'}: ${campos}`;
+    if (warnings.length) {
+        alert(exitoMsg + '\n\n⚠ Pendientes:\n- ' + warnings.join('\n- '));
+    }
 }
 
 // ── FILA DE TOTALES (pie de factura) ──
@@ -808,8 +839,14 @@ const DOC_CFG = {
     OTRO: { impuestos: false, totalesPie: false, label: 'Otro' },
 }[DOC_TIPO] || { impuestos: false, totalesPie: false, label: 'Doc' };
 
+// Patrones SIEMPRE aplicados (encabezado básico de cualquier documento)
+const LABEL_PATTERNS_BASE = [
+    ['numero',         /(?:FACTURA|REMITO|COMPROBANTE)\s*(?:N[roRO°º.]*\s*)?[:\s]\s*([\w\-\/]+)/i],
+    ['fecha',          /(?:FECHA|Fecha)[^0-9]{0,25}(\d{1,2}\/\d{1,2}\/\d{2,4})/i],
+];
+
+// Patrones adicionales solo para facturas/NCR (impuestos y totales)
 const LABEL_PATTERNS_FACTURA = [
-    // [fieldKey, regex con captura del valor]
     ['total',          /(?:^|[\s\|])(?:TOTAL\s*NETO|Importe\s*Total|Total\s*\$|TOTAL\s*FACTURA)\b[^$]*?\$\s*([\d.,]+)/im],
     ['monto_exento',   /(?:Base\s*Exenta|Monto\s*Exento|Exento)\b[^$]*?\$\s*([\d.,]+)/i],
     ['monto_gravado',  /(?:Monto\s*Gravado|Neto\s*Gravado|Gravado\s*\$)\b[^$]*?\$\s*([\d.,]+)/i],
@@ -817,8 +854,6 @@ const LABEL_PATTERNS_FACTURA = [
     ['iva_105',        /(?:IVA\s*10[.,]?5\s*%?|I\.V\.A\.\s*10[.,]?5)\b[^$]*?\$\s*([\d.,]+)/i],
     ['percepciones',   /(?:Percepci[oó]n(?:es)?\s*(?:IIBB|IVA)?[^$]{0,60})\$\s*([\d.,]+)/i],
     ['cantidad_total', /Unidades\s*en\s*comprob[^\d]*(\d+)/i],
-    ['numero',         /(?:FACTURA|REMITO|COMPROBANTE|N[ºO°])\s*N?[º°]?\s*[:\s]\s*([\w\-\/]+)/i],
-    ['fecha',          /(?:FECHA|Fecha)\s*[:\s]\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i],
 ];
 
 // Los patrones de impuestos/totales solo aplican si el tipo lo requiere.
@@ -851,16 +886,22 @@ function _buscarCuitProveedor(txt) {
     // (no tenemos el CUIT de la farmacia guardado, así que tomamos simplemente el primero)
     return matches[0];
 }
-function autoExtraerEtiquetas() {
+function autoExtraerEtiquetas(forceOverride) {
     const pdfBox = document.getElementById('pdf-text');
     if (!pdfBox) return;
     const txt = pdfBox.textContent || '';
-    if (!txt.trim()) return;
+    if (!txt.trim()) {
+        if (forceOverride) alert('No hay texto en el PDF.');
+        return;
+    }
     let n = 0;
     // Solo extraer campos fiscales si el tipo de doc los requiere
-    const patterns = DOC_CFG.impuestos ? LABEL_PATTERNS_FACTURA : [];
+    // Numero + Fecha SIEMPRE. Impuestos solo si el tipo lo requiere.
+    const patterns = DOC_CFG.impuestos
+        ? [...LABEL_PATTERNS_BASE, ...LABEL_PATTERNS_FACTURA]
+        : LABEL_PATTERNS_BASE;
     patterns.forEach(([field, rx]) => {
-        if (state.header[field]) return; // no pisar
+        if (state.header[field] && !forceOverride) return; // no pisar salvo force
         const m = txt.match(rx);
         if (m && m[1]) {
             state.header[field] = m[1].trim();
@@ -879,11 +920,15 @@ function autoExtraerEtiquetas() {
         if (cu) { state.header['cuit'] = cu; state.autodetectados.add('cuit'); n++; }
     }
     if (n > 0 && typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+    if (n > 0 && typeof renderHeader === 'function') renderHeader();
+    if (forceOverride) {
+        const msg = n > 0 ? `✓ ${n} campo${n===1?'':'s'} detectado${n===1?'':'s'} y actualizado${n===1?'':'s'}`
+                          : 'No se encontraron datos con los patrones conocidos.';
+        alert(msg);
+    }
 }
-autoExtraerEtiquetas();
-
-// Renderizar encabezado con valores autodetectados al cargar la página
-renderHeader();
+// NOTA: autoExtraerEtiquetas() y renderHeader() se llaman al final del script,
+// después de que HEADER_TO_DESG (usado por syncDesgloseFromHeader) esté declarado.
 
 // ── Pipeline automático al cargar ──
 // Corre pasos seguros en cascada. Si alguno falla, corta sin tocar lo siguiente.
@@ -993,8 +1038,8 @@ function mostrarAutoLog(log) {
     }
 }
 
-// Arrancar pipeline con un pequeño delay para que el DOM quede listo
-setTimeout(runAutoPipeline, 200);
+// NOTA: las llamadas iniciales (autoExtraerEtiquetas, renderHeader, runAutoPipeline)
+// se disparan al final del script, después de todas las declaraciones const.
 
 function generateChipsFromTitles() {
     const line = (document.getElementById('titles-line').value||'').trim();
@@ -1058,24 +1103,33 @@ function _promptManualHeaderValue(field, actual) {
     });
 }
 
-document.getElementById('header-chips').addEventListener('click', async (e) => {
-    const btn = e.target.closest('.hchip'); if (!btn) return;
-    const field = btn.dataset.field;
-    const sel = window.getSelection();
-    const txt = sel ? sel.toString().trim() : '';
-    if (txt) {
-        state.header[field] = txt;
-    } else {
-        // Sin selección → modal inline para escribir manualmente
-        const actual = state.header[field] || '';
-        const manual = await _promptManualHeaderValue(field, actual);
-        if (manual === null) return; // cancel
-        const v = manual.trim();
-        if (!v) { delete state.header[field]; } else { state.header[field] = v; }
+// Delegación a nivel document (bulletproof: funciona aunque #header-chips
+// todavía no exista o se re-renderice después)
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.hchip');
+    if (!btn) return;
+    // Solo reaccionar si está dentro de #header-chips (evitar otros chips)
+    if (!btn.closest('#header-chips')) return;
+    try {
+        const field = btn.dataset.field;
+        const sel = window.getSelection();
+        const txt = sel ? sel.toString().trim() : '';
+        if (txt) {
+            state.header[field] = txt;
+        } else {
+            const actual = state.header[field] || '';
+            const manual = await _promptManualHeaderValue(field, actual);
+            if (manual === null) return;
+            const v = manual.trim();
+            if (!v) { delete state.header[field]; } else { state.header[field] = v; }
+        }
+        state.autodetectados.delete(field);
+        renderHeader();
+        syncDesgloseFromHeader();
+    } catch (err) {
+        console.error('[header-chips click]', err);
+        alert('Error al procesar chip: ' + err.message);
     }
-    state.autodetectados.delete(field); // si pisaste el valor, ya no es AUTO
-    renderHeader();
-    syncDesgloseFromHeader();
 });
 
 // Mapa: field del chip del header → id del input en el desglose
@@ -2004,6 +2058,11 @@ function toggleSplit() {
         btn.textContent = '📑 Dividir en secciones';
     }
 }
+
+// ── Inicialización (al final para evitar TDZ de const) ──
+autoExtraerEtiquetas();
+renderHeader();
+setTimeout(runAutoPipeline, 200);
 </script>
 </body>
 </html>
