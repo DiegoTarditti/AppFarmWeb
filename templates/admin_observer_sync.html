@@ -6,20 +6,23 @@
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">Sincronización con ObServer</h1>
     {% if disponible %}
-        <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300">● conectado</span>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300"
+              title="Hay conexión TCP al SQL Server de ObServer (estás en la LAN de la farmacia)">● conectado · modo fuente</span>
     {% else %}
-        <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-semibold border border-red-300">● desconectado</span>
+        <span class="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold border border-sky-300"
+              title="Sin conexión a ObServer. Típico desde Render — solo lectura de las tablas obs_* ya replicadas.">● modo lectura (remoto)</span>
     {% endif %}
+    {% if disponible %}
     <div class="ml-auto">
         <form method="post" action="{{ url_for('observer_sync_run', entidad='todo') }}"
-              onsubmit="return confirm('Sincronizar TODAS las entidades en orden? Puede tardar varios minutos la primera vez (2.9M filas de productos).');">
+              onsubmit="return confirm('Vamos a actualizar toda la información desde ObServer: laboratorios, rubros, drogas, productos, stock y ventas.\n\nLa primera vez puede tardar varios minutos.\n\n¿Continuar?');">
             <button type="submit"
-                    class="bg-[#2E7D5B] hover:bg-[#1F5D40] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
-                    {% if not disponible %}disabled{% endif %}>
+                    class="bg-[#2E7D5B] hover:bg-[#1F5D40] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
                 Sync todo
             </button>
         </form>
     </div>
+    {% endif %}
 </div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
@@ -35,12 +38,34 @@
         {% endfor %}
     {% endwith %}
 
+    <!-- Config: meses de ventas a traer (persiste en configuracion) -->
+    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
+        <div class="flex-1 min-w-[240px]">
+            <p class="font-semibold text-sm text-[#1e1e1e]">Ventana de ventas a agregar</p>
+            <p class="text-xs text-[#666] mt-1">
+                <code class="font-mono">sync_ventas_mensuales</code> trae los últimos N meses de
+                <code class="font-mono">DW.ProductosVendidos</code> agrupados por (producto, año, mes).
+                Cambialo acá y se guarda en <code class="font-mono">configuracion.observer_ventas_meses</code>.
+            </p>
+        </div>
+        <form method="post" action="{{ url_for('observer_config_save') }}" class="flex items-center gap-2">
+            <input type="number" name="meses" value="{{ ventas_meses }}" min="1" max="120"
+                   class="w-24 bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-brand">
+            <span class="text-sm text-[#666]">meses</span>
+            <button type="submit"
+                    class="text-sm bg-[#E8F3ED] hover:bg-[#d7e9df] text-[#1F5D40] font-semibold px-3 py-1.5 rounded-lg border border-[#cfe3d6]">
+                Guardar
+            </button>
+        </form>
+    </div>
+
+    {% if disponible %}
     <div class="bg-white border border-surface-border rounded-xl p-4 text-sm text-[#555]">
-        <p><strong>Orden recomendado:</strong> laboratorios → rubros → subrubros → nombres_drogas → productos → stock.</p>
+        <p><strong>Orden recomendado:</strong> laboratorios → rubros → subrubros → nombres_drogas → productos → stock → ventas_mensuales.</p>
         <p class="mt-1 text-xs text-[#888]">Cada entidad tiene su propio botón si querés refrescar solo una. "Sync todo" las corre en el orden correcto (respeta FKs).</p>
     </div>
 
-    <!-- Push a Render -->
+    <!-- Push a Render (solo desde la LAN de la farmacia) -->
     <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
         <div class="flex-1 min-w-[240px]">
             <p class="font-semibold text-sm text-[#1e1e1e]">Replicar a Render</p>
@@ -53,13 +78,23 @@
             </p>
         </div>
         <form method="post" action="{{ url_for('observer_push_render') }}"
-              onsubmit="return confirm('Replicar a Render? TRUNCATE seguido de COPY en cada tabla obs_* — puede tardar 1-2 minutos.');">
+              onsubmit="return confirm('Vas a enviar a Render la última copia de ObServer (laboratorios, productos, stock, ventas). Esto reemplaza lo que haya allá.\n\nPuede tardar entre 1 y 2 minutos.\n\n¿Continuar?');">
             <button type="submit"
                     class="text-sm bg-[#F4C430] hover:bg-[#D9A91C] text-[#1a1100] font-bold px-4 py-1.5 rounded-lg transition-colors">
                 Push a Render
             </button>
         </form>
     </div>
+    {% else %}
+    <div class="bg-sky-50 border border-sky-200 rounded-xl p-4 text-sm text-sky-900">
+        <p class="font-semibold">Modo lectura: estás accediendo desde fuera de la LAN.</p>
+        <p class="mt-1 text-xs">
+            Sin conexión a ObServer (192.168.1.137) y sin origen local para pushear — los botones de sync y replicación quedaron ocultos.
+            Las tablas <code class="font-mono">obs_*</code> que ves acá las replica la PC de la farmacia usando "Push a Render".
+            El matcher y la pantalla de productos sin vincular sí funcionan porque trabajan sobre la DB actual.
+        </p>
+    </div>
+    {% endif %}
 
     <!-- Matcher -->
     <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
@@ -71,7 +106,7 @@
             </p>
         </div>
         <form method="post" action="{{ url_for('observer_match_productos') }}"
-              onsubmit="return confirm('Correr auto-match ahora? Vincula exactos y fuzzy ≥80%.');"
+              onsubmit="return confirm('Voy a intentar vincular automáticamente tus productos locales con los de ObServer, comparando nombres dentro de cada laboratorio.\n\nSe vinculan solo los que coincidan con bastante certeza; el resto queda para revisar a mano.\n\n¿Continuar?');"
               class="flex items-center gap-2">
             <input type="number" name="threshold" value="0.80" step="0.05" min="0.5" max="1.0"
                    title="Umbral Jaccard (0.80 = recomendado)"
@@ -100,7 +135,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock'] %}
+                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock', 'ventas_mensuales'] %}
                 <tr class="border-t border-surface-border">
                     <td class="px-4 py-3 font-semibold">{{ ent }}</td>
                     <td class="px-4 py-3 text-right font-mono">{{ '{:,}'.format(cuentas[ent]) }}</td>
@@ -138,5 +173,55 @@
     </div>
 
 </div>
+
+<!-- Overlay de "procesando" cuando cualquier form del panel se envía -->
+<div id="proc-overlay" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+    <div class="bg-white rounded-xl shadow-2xl px-6 py-5 flex items-center gap-4 max-w-sm">
+        <svg class="w-7 h-7 animate-spin text-[#2E7D5B]" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+        </svg>
+        <div>
+            <p class="font-semibold text-[#1e1e1e] text-sm" id="proc-overlay-title">Procesando…</p>
+            <p class="text-xs text-[#6f6f6f] mt-0.5" id="proc-overlay-sub">No cierres esta ventana.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// Muestra overlay + deshabilita botón al submitear cualquier form POST del panel
+document.querySelectorAll('form[method=post]').forEach(f => {
+    f.addEventListener('submit', function() {
+        const btn = f.querySelector('button[type=submit]');
+        const action = (f.getAttribute('action') || '').split('/').slice(-2).join('/');
+        const labels = {
+            'todo':               ['Sincronizando TODO desde ObServer', 'Labs → rubros → subrubros → drogas → productos → stock. Puede tardar varios minutos.'],
+            'push-render':        ['Replicando a Render', 'TRUNCATE + COPY de las 6 tablas. 1–2 minutos típico.'],
+            'match-productos':    ['Vinculando productos', 'Calculando matches por nombre dentro de cada laboratorio.'],
+        };
+        let title = 'Procesando…';
+        let sub = 'No cierres esta ventana.';
+        for (const key in labels) {
+            if (action.indexOf(key) !== -1) { title = labels[key][0]; sub = labels[key][1]; break; }
+        }
+        if (action.indexOf('observer-sync/') !== -1 && action.indexOf('todo') === -1) {
+            const ent = action.split('/').pop();
+            title = 'Sincronizando ' + ent;
+            sub = 'Leyendo de DW.* y upserteando en la tabla local.';
+            if (ent === 'ventas_mensuales') {
+                sub = 'Agregando DW.ProductosVendidos con GROUP BY en SQL Server. Puede tardar más que las demás.';
+            }
+        }
+        document.getElementById('proc-overlay-title').textContent = title;
+        document.getElementById('proc-overlay-sub').textContent = sub;
+        document.getElementById('proc-overlay').classList.remove('hidden');
+        if (btn) {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.style.cursor = 'wait';
+        }
+    });
+});
+</script>
 
 {% endblock %}

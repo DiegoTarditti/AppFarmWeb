@@ -11,6 +11,7 @@
         </span>
     </div>
     <div class="flex items-center gap-2">
+        {% if observer_disponible %}
         <form method="post" action="{{ url_for('laboratorios_sync_observer') }}"
               onsubmit="return confirm('Sincronizar laboratorios desde ObServer? Los nuevos se agregarán como inactivos.');">
             <button type="submit"
@@ -22,6 +23,7 @@
                 Sync ObServer
             </button>
         </form>
+        {% endif %}
         <a href="{{ url_for('laboratorios_list') }}"
            class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver al listado</a>
     </div>

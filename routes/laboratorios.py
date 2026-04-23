@@ -59,7 +59,9 @@ def init_app(app):
                 'ped_count':       ped_map.get(l.nombre, 0),
                 'analytics_count': analytics_map.get(l.nombre, 0),
             } for l in labs]
-        return render_template('laboratorios.html', laboratorios=data)
+        import observer_source
+        return render_template('laboratorios.html', laboratorios=data,
+                               observer_disponible=observer_source.observer_disponible())
 
     @app.route('/laboratorio/create', methods=['POST'])
     def laboratorio_create():
@@ -192,8 +194,10 @@ def init_app(app):
             n_activos = sum(1 for l in labs if l.activo)
             data = [{'id': l.id, 'nombre': l.nombre, 'activo': bool(l.activo),
                      'observer_id': l.observer_id} for l in labs]
+        import observer_source
         return render_template('laboratorios_activos.html',
-                               laboratorios=data, n_total=len(data), n_activos=n_activos)
+                               laboratorios=data, n_total=len(data), n_activos=n_activos,
+                               observer_disponible=observer_source.observer_disponible())
 
     @app.route('/api/ofertas/preview', methods=['POST'])
     def api_ofertas_preview():

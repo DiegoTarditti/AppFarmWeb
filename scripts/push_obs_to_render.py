@@ -31,6 +31,7 @@ TABLAS = [
     'obs_nombres_drogas',
     'obs_productos',
     'obs_stock',
+    'obs_ventas_mensuales',
 ]
 
 

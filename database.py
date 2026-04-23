@@ -29,6 +29,8 @@ class Config(Base):
     # Keep-alive: evitar que Render duerma el servicio vía self-ping periódico
     keep_alive_enabled = Column(Boolean, nullable=False, default=False)
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
+    # Observer: cuántos meses hacia atrás trae sync_ventas_mensuales
+    observer_ventas_meses = Column(Integer, nullable=False, default=16)
 
 
 class Laboratorio(Base):
@@ -101,6 +103,20 @@ class ObsStock(Base):
     maximo = Column(Integer, nullable=True)
     minimo = Column(Integer, nullable=True)
     sync_en = Column(DateTime, default=now_ar)
+
+
+class ObsVentaMensual(Base):
+    """Ventas agregadas por (farmacia, producto, año, mes). Cache local de un
+    GROUP BY sobre DW.ProductosVendidos — las vistas DW.* no traen esto agregado."""
+    __tablename__ = 'obs_ventas_mensuales'
+    id_farmacia       = Column(Integer, primary_key=True, autoincrement=False)
+    producto_observer = Column(Integer, ForeignKey('obs_productos.observer_id'), primary_key=True, autoincrement=False, index=True)
+    anio              = Column(Integer, primary_key=True, autoincrement=False)
+    mes               = Column(Integer, primary_key=True, autoincrement=False)
+    unidades          = Column(DECIMAL(14, 3), nullable=False, default=0)
+    monto             = Column(DECIMAL(14, 2), nullable=False, default=0)
+    transacciones     = Column(Integer, nullable=False, default=0)
+    sync_en           = Column(DateTime, default=now_ar)
 
 
 class ObsSyncLog(Base):
@@ -627,7 +643,7 @@ def init_db(database_url=None):
                         'plantillas', 'producto_precios_hist',
                         'obs_laboratorios', 'obs_rubros', 'obs_subrubros',
                         'obs_nombres_drogas', 'obs_productos', 'obs_stock',
-                        'obs_sync_log')
+                        'obs_sync_log', 'obs_ventas_mensuales')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
@@ -814,6 +830,21 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_sync_entidad ON obs_sync_log(entidad, ejecutado_en DESC)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_ventas_mensuales (
+            id_farmacia INTEGER NOT NULL,
+            producto_observer INTEGER NOT NULL REFERENCES obs_productos(observer_id),
+            anio INTEGER NOT NULL,
+            mes INTEGER NOT NULL,
+            unidades DECIMAL(14, 3) NOT NULL DEFAULT 0,
+            monto DECIMAL(14, 2) NOT NULL DEFAULT 0,
+            transacciones INTEGER NOT NULL DEFAULT 0,
+            sync_en TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (id_farmacia, producto_observer, anio, mes)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_vtas_anio_mes ON obs_ventas_mensuales(anio, mes)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     # Puente en productos
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))
@@ -1261,6 +1292,22 @@ def _sqlite_add_columns(conn):
             ejecutado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_ventas_mensuales (
+            id_farmacia INTEGER NOT NULL,
+            producto_observer INTEGER NOT NULL REFERENCES obs_productos(observer_id),
+            anio INTEGER NOT NULL,
+            mes INTEGER NOT NULL,
+            unidades DECIMAL(14, 3) NOT NULL DEFAULT 0,
+            monto DECIMAL(14, 2) NOT NULL DEFAULT 0,
+            transacciones INTEGER NOT NULL DEFAULT 0,
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id_farmacia, producto_observer, anio, mes)
+        )
+    """))
+    existing_cfg = {row[1] for row in conn.execute(text("PRAGMA table_info(configuracion)"))}
+    if 'observer_ventas_meses' not in existing_cfg:
+        conn.execute(text("ALTER TABLE configuracion ADD COLUMN observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'observer_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN observer_id INTEGER REFERENCES obs_productos(observer_id)"))

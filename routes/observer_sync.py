@@ -18,6 +18,7 @@ def init_app(app):
                 'nombres_drogas': session.query(database.ObsNombreDroga).count(),
                 'productos':    session.query(database.ObsProducto).count(),
                 'stock':        session.query(database.ObsStock).count(),
+                'ventas_mensuales': session.query(database.ObsVentaMensual).count(),
             }
             # Última ejecución por entidad
             ultimos = {}
@@ -28,8 +29,11 @@ def init_app(app):
                        .first())
                 ultimos[ent] = log
             disponible = observer_source.observer_disponible()
+            cfg = session.query(database.Config).first()
+            ventas_meses = cfg.observer_ventas_meses if cfg else 16
         return render_template('admin_observer_sync.html',
-                               cuentas=cuentas, ultimos=ultimos, disponible=disponible)
+                               cuentas=cuentas, ultimos=ultimos, disponible=disponible,
+                               ventas_meses=ventas_meses)
 
     @app.route('/admin/observer-sync/<entidad>', methods=['POST'])
     def observer_sync_run(entidad):
@@ -40,17 +44,18 @@ def init_app(app):
             return redirect(url_for('observer_sync_panel'))
 
         funcs_por_nombre = {
-            'laboratorios':   observer_source.sync_laboratorios,
-            'rubros':         observer_source.sync_rubros,
-            'subrubros':      observer_source.sync_subrubros,
-            'nombres_drogas': observer_source.sync_nombres_drogas,
-            'productos':      observer_source.sync_productos,
-            'stock':          observer_source.sync_stock,
+            'laboratorios':     observer_source.sync_laboratorios,
+            'rubros':           observer_source.sync_rubros,
+            'subrubros':        observer_source.sync_subrubros,
+            'nombres_drogas':   observer_source.sync_nombres_drogas,
+            'productos':        observer_source.sync_productos,
+            'stock':            observer_source.sync_stock,
+            'ventas_mensuales': observer_source.sync_ventas_mensuales,
         }
 
         # 'todo' corre en orden para respetar FKs
         orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                 'productos', 'stock']
+                 'productos', 'stock', 'ventas_mensuales']
 
         if entidad == 'todo':
             ents = orden
@@ -132,6 +137,23 @@ def init_app(app):
                 session.commit()
                 flash(f'Vinculado: {p.descripcion[:50]} → {obs.descripcion[:50]}', 'success')
         return redirect(url_for('productos_sin_vincular'))
+
+    @app.route('/admin/observer-config', methods=['POST'])
+    def observer_config_save():
+        """Guarda Config.observer_ventas_meses."""
+        try:
+            meses = max(1, min(120, int(request.form.get('meses', '16'))))
+        except ValueError:
+            meses = 16
+        with database.get_db() as session:
+            cfg = session.query(database.Config).first()
+            if cfg is None:
+                cfg = database.Config(id=1, farmacia_nombre='Farmacia')
+                session.add(cfg)
+            cfg.observer_ventas_meses = meses
+            session.commit()
+        flash(f'Config: sync_ventas_mensuales traerá {meses} meses.', 'success')
+        return redirect(url_for('observer_sync_panel'))
 
     @app.route('/admin/observer-push-render', methods=['POST'])
     def observer_push_render():

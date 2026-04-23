@@ -305,6 +305,104 @@ def sync_stock(session, id_farmacia=None):
     return {'upsert': n, 'duracion_ms': duracion, 'skipped': skipped}
 
 
+def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
+    """Agrega DW.ProductosVendidos por (IdProducto, Año, Mes) y upsertea en obs_ventas_mensuales.
+
+    Args:
+        session: SQLAlchemy session.
+        meses: cantidad de meses hacia atrás a sincronizar desde el mes actual inclusive.
+               Si None, lee OBSERVER_VENTAS_MESES del env (default 16).
+        id_farmacia: si None, usa OBSERVER_ID_FARMACIA del env.
+
+    Estrategia:
+    - Query con GROUP BY del lado SQL Server (mucho menos data que traer filas).
+    - Filtramos IdTipoOperacion='V' (solo ventas, no devoluciones/otros).
+    - Upsert por (id_farmacia, producto_observer, anio, mes).
+    - Skip filas cuyo IdProducto no esté en obs_productos local (FK).
+    """
+    from database import ObsVentaMensual, ObsProducto, now_ar
+    from datetime import datetime
+    t0 = time.time()
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+    if meses is None:
+        # Prioridad: Config.observer_ventas_meses → env → 16
+        from database import Config as _Cfg
+        row = session.query(_Cfg).first()
+        if row and row.observer_ventas_meses:
+            meses = int(row.observer_ventas_meses)
+        else:
+            try:
+                meses = int(os.environ.get('OBSERVER_VENTAS_MESES', '16'))
+            except ValueError:
+                meses = 16
+    meses = max(1, min(120, meses))
+
+    # Calcular (anio, mes) desde y hasta
+    ahora = datetime.now()
+    hasta_anio, hasta_mes = ahora.year, ahora.month
+    # Retroceder `meses - 1` para incluir el mes actual
+    m = hasta_mes - (meses - 1)
+    y = hasta_anio
+    while m <= 0:
+        m += 12
+        y -= 1
+    desde_anio, desde_mes = y, m
+    desde_key = desde_anio * 100 + desde_mes
+    hasta_key = hasta_anio * 100 + hasta_mes
+
+    ids_validos = {pid for (pid,) in session.query(ObsProducto.observer_id).all()}
+
+    conn = _connect(timeout=180)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = skipped = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdProducto,
+                       Anio = [Año],
+                       Mes,
+                       Unidades = SUM(Cantidad),
+                       Monto    = SUM(ImporteNeto),
+                       Trx      = COUNT(*)
+                FROM DW.ProductosVendidos
+                WHERE IdFarmacia = %d
+                  AND IdTipoOperacion = 'V'
+                  AND ([Año] * 100 + Mes) BETWEEN %d AND %d
+                GROUP BY IdProducto, [Año], Mes
+            """, (int(id_farmacia), int(desde_key), int(hasta_key)))
+            for r in cur.fetchall():
+                pid = int(r['IdProducto'])
+                if pid not in ids_validos:
+                    skipped += 1
+                    continue
+                pk = (int(id_farmacia), pid, int(r['Anio']), int(r['Mes']))
+                obj = session.get(ObsVentaMensual, pk)
+                if obj is None:
+                    obj = ObsVentaMensual(id_farmacia=pk[0], producto_observer=pk[1],
+                                          anio=pk[2], mes=pk[3])
+                    session.add(obj)
+                obj.unidades = r['Unidades'] or 0
+                obj.monto = r['Monto'] or 0
+                obj.transacciones = int(r['Trx'] or 0)
+                obj.sync_en = now_ar()
+                n += 1
+                if n % 5000 == 0:
+                    session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    extra = f'{meses} meses · {desde_key}-{hasta_key}'
+    if skipped:
+        extra += f' · {skipped} huerfanos'
+    _log_sync(session, 'ventas_mensuales', n, duracion, extra)
+    return {'upsert': n, 'duracion_ms': duracion, 'meses': meses, 'skipped': skipped}
+
+
 def _pick(cols, candidates, required=True):
     """Devuelve la primera columna de candidates que exista en cols (case-insensitive).
     Si required=True y no hay match, raises; si required=False devuelve None."""
