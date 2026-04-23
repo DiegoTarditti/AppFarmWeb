@@ -120,7 +120,7 @@ def init_app(app):
             flash('ObServer devolvió 0 laboratorios — revisá la query.', 'error')
             return redirect(url_for('laboratorios_list'))
 
-        nuevos = actualizados = vinculados = 0
+        nuevos = actualizados = vinculados = duplicados = 0
         with database.get_db() as session:
             existentes_por_obs = {l.observer_id: l for l in
                                   session.query(Laboratorio)
@@ -136,24 +136,36 @@ def init_app(app):
 
                 lab = existentes_por_obs.get(obs_id)
                 if lab:
-                    if lab.nombre != nom:
+                    # Evitar rename que choque contra otro nombre existente
+                    if lab.nombre != nom and nom.lower() not in existentes_por_nom:
+                        del existentes_por_nom[lab.nombre.lower()]
                         lab.nombre = nom
+                        existentes_por_nom[nom.lower()] = lab
                         actualizados += 1
                     continue
 
                 lab = existentes_por_nom.get(nom.lower())
                 if lab:
+                    # Segundo obs_id con mismo nombre → ignorar (duplicado en ObServer)
+                    if lab.observer_id and lab.observer_id != obs_id:
+                        duplicados += 1
+                        continue
                     lab.observer_id = obs_id
+                    existentes_por_obs[obs_id] = lab
                     vinculados += 1
                     continue
 
-                session.add(Laboratorio(nombre=nom, observer_id=obs_id, activo=False))
+                # Nuevo: insertar y registrarlo para dedup en esta misma corrida
+                nuevo = Laboratorio(nombre=nom, observer_id=obs_id, activo=False)
+                session.add(nuevo)
+                existentes_por_nom[nom.lower()] = nuevo
+                existentes_por_obs[obs_id] = nuevo
                 nuevos += 1
 
             session.commit()
 
         flash(f'Sync ObServer: {nuevos} nuevos (inactivos), {vinculados} vinculados, '
-              f'{actualizados} renombrados.')
+              f'{actualizados} renombrados, {duplicados} duplicados ignorados.')
         return redirect(url_for('laboratorios_activos'))
 
     @app.route('/laboratorios/activos', methods=['GET', 'POST'])

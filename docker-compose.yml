@@ -50,6 +50,15 @@ services:
       SECRET_KEY: replace-this-secret
       TZ: America/Argentina/Buenos_Aires
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Conexión a DB real de ObServer (SQL Server 2014). Si no seteás OBSERVER_HOST,
+      # observer_source.observer_disponible() devuelve False y el sync queda deshabilitado.
+      OBSERVER_HOST: ${OBSERVER_HOST:-}
+      OBSERVER_PORT: ${OBSERVER_PORT:-1433}
+      OBSERVER_USER: ${OBSERVER_USER:-}
+      OBSERVER_PASS: ${OBSERVER_PASS:-}
+      OBSERVER_DB:   ${OBSERVER_DB:-ObServerGestion}
+      OBSERVER_TDSVER: ${OBSERVER_TDSVER:-7.0}
+      OBSERVER_ID_FARMACIA: ${OBSERVER_ID_FARMACIA:-10525}
     ports:
       - "${WEB_PORT:-5000}:5000"
     depends_on:
