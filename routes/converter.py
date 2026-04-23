@@ -13,7 +13,7 @@ import json
 import re
 from flask import render_template, request, redirect, url_for, flash, jsonify, send_file
 from werkzeug.utils import secure_filename
-from helpers import CONVERTER_DIR, _build_item_pattern, PARSERS_FOLDER, _normalize_quadrupled
+from helpers import CONVERTER_DIR, _build_item_pattern, PARSERS_FOLDER, _normalize_quadrupled, extract_text_with_ocr_fallback
 import database
 from data_extract import extract_provider_info_from_pdf, parse_invoice_pdf
 
@@ -197,6 +197,8 @@ def init_app(app):
         }
         _converter_write_meta(safe, meta)
 
+        # ¿Se usó OCR? El fallback deja un archivo .ocr.txt al lado del PDF.
+        ocr_used = os.path.isfile(path + '.ocr.txt')
         return jsonify({
             'ok': True,
             'token': safe,
@@ -204,6 +206,7 @@ def init_app(app):
             'proveedor': proveedor,
             'prueba': prueba,
             'n_lineas': n_lineas,
+            'ocr_used': ocr_used,
             'redirect': url_for('converter_detectar', token=safe),
         })
 
@@ -234,14 +237,12 @@ def init_app(app):
         # Texto del PDF para referencia (primeras 40 líneas)
         import pdfplumber
         pdf_lines = []
-        with pdfplumber.open(path) as pdf:
-            for page in pdf.pages:
-                for line in _normalize_quadrupled(page.extract_text() or '').split('\n'):
-                    pdf_lines.append(line)
-                    if len(pdf_lines) >= 60:
-                        break
-                if len(pdf_lines) >= 60:
-                    break
+        # Usa OCR fallback si el PDF no tiene capa de texto
+        full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(path))
+        for line in full_text.split('\n'):
+            pdf_lines.append(line)
+            if len(pdf_lines) >= 60:
+                break
 
         return render_template('converter_detectar.html',
                                token=safe, filename=safe,
@@ -366,10 +367,8 @@ def init_app(app):
         if not os.path.exists(path):
             flash('Documento no encontrado.')
             return redirect(url_for('converter_index'))
-        pdf_text = ''
-        with _plumber.open(path) as pdf:
-            for page in pdf.pages:
-                pdf_text += _normalize_quadrupled(page.extract_text() or '') + '\n\n'
+        # Usa OCR fallback si el PDF no tiene capa de texto
+        pdf_text = _normalize_quadrupled(extract_text_with_ocr_fallback(path))
         meta = _converter_read_meta(safe)
         # Reejecutar la detección siempre, para tener datos frescos
         # (evita depender del meta.json que puede ser de una versión anterior del extractor)
@@ -425,9 +424,8 @@ def init_app(app):
 
         import pdfplumber as _plumber
         pdf_text = ''
-        with _plumber.open(path) as pdf:
-            for page in pdf.pages:
-                pdf_text += _normalize_quadrupled(page.extract_text() or '') + '\n'
+        # Usa OCR fallback si el PDF no tiene capa de texto
+        pdf_text = _normalize_quadrupled(extract_text_with_ocr_fallback(path))
 
         # Cortar el texto en marcadores de sección "sin stock" para no parsear faltantes
         items_text = pdf_text
@@ -809,7 +807,7 @@ Si el layout del proveedor cambia, reentrenar el patrón desde /converter.
 import re
 import pdfplumber
 from datetime import datetime
-from helpers import _normalize_quadrupled
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
 
 PATTERN = r"""{pattern}"""
@@ -837,11 +835,8 @@ def _to_int(s):
 
 
 def parse_invoice_pdf(pdf_path):
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
-    full_text = '\\n'.join(pages_text)
+    # OCR fallback si el PDF no tiene capa de texto (scanned).
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
 
     # Encabezado genérico
     numero_m = re.search(r'(?:FACTURA|REMITO|N[º°])\\s*[:\\s]*(\\S+)', full_text)

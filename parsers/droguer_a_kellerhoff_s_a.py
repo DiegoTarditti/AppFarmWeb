@@ -7,7 +7,7 @@ Si el layout del proveedor cambia, reentrenar el patrón desde /converter.
 import re
 import pdfplumber
 from datetime import datetime
-from helpers import _normalize_quadrupled
+from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
 
 PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$"""
@@ -44,11 +44,8 @@ def _to_int(s):
 
 
 def parse_invoice_pdf(pdf_path):
-    pages_text = []
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            pages_text.append(_normalize_quadrupled(page.extract_text() or ''))
-    full_text = '\n'.join(pages_text)
+    # OCR fallback si el PDF no tiene capa de texto (scanned).
+    full_text = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
 
     # Encabezado genérico
     numero_m = re.search(r'(?:FACTURA|REMITO|N[º°])\s*[:\s]*(\S+)', full_text)

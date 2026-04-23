@@ -229,6 +229,63 @@ def _bulk_upsert_productos(session, items):
 # carácter de texto en negrita: "TOTAL" → "TTTTOOOOTTTTAAAALLLL". Detecta
 # líneas donde al menos un token es multi-char cuadruplicado y reduce esa
 # línea entera con `(.)\1{3} → \1`. No toca líneas normales.
+# ── OCR fallback para PDFs escaneados (sin capa de texto) ──────────────────
+# Usa pytesseract (con tesseract-ocr + tesseract-ocr-spa instalados en Docker).
+# Cachea el resultado en "<pdf_path>.ocr.txt" para no re-procesar.
+def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=300):
+    """Intenta extraer texto con pdfplumber. Si el resultado es muy chico
+    (PDF escaneado), corre OCR sobre cada página y cachea el resultado.
+
+    Retorna el texto completo (todas las páginas unidas con \\n).
+    """
+    import os as _os
+    import pdfplumber as _pdfplumber
+    # 1) Intento rápido con pdfplumber
+    try:
+        with _pdfplumber.open(pdf_path) as pdf:
+            texto_plano = '\n'.join((p.extract_text() or '') for p in pdf.pages)
+    except Exception:
+        texto_plano = ''
+    if len(texto_plano.strip()) >= min_chars:
+        return texto_plano
+
+    # 2) Necesitamos OCR. Chequear cache.
+    cache_path = pdf_path + '.ocr.txt'
+    if _os.path.isfile(cache_path):
+        try:
+            with open(cache_path, 'r', encoding='utf-8') as f:
+                cached = f.read()
+            if cached.strip():
+                return cached
+        except OSError:
+            pass
+
+    # 3) Correr OCR página por página
+    try:
+        import pytesseract
+    except ImportError:
+        return texto_plano  # sin OCR disponible, devolvemos lo que haya
+
+    try:
+        paginas = []
+        with _pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages:
+                img = page.to_image(resolution=dpi).original
+                txt = pytesseract.image_to_string(img, lang=lang) or ''
+                paginas.append(txt)
+        texto_ocr = '\n'.join(paginas)
+    except Exception:
+        return texto_plano
+
+    # 4) Guardar cache
+    try:
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            f.write(texto_ocr)
+    except OSError:
+        pass
+    return texto_ocr
+
+
 def _normalize_quadrupled(text):
     import re as _re
     out_lines = []

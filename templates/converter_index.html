@@ -152,7 +152,13 @@
 async function animarAnalisis(data) {
     const AO = window.AnalisisOverlay;
     AO.setPaso(1, 'active'); AO.setProgreso(15); await AO.sleep(700);
-    AO.setPaso(1, 'done', (data.n_lineas || 0) + ' líneas extraídas');
+    const paso1Detalle = data.ocr_used
+        ? `🔍 OCR aplicado · ${data.n_lineas || 0} líneas reconocidas`
+        : `${data.n_lineas || 0} líneas extraídas`;
+    AO.setPaso(1, 'done', paso1Detalle);
+    if (data.ocr_used) {
+        AO.setSubtexto('PDF escaneado — se aplicó OCR para reconocer el texto');
+    }
 
     AO.setPaso(2, 'active'); AO.setProgreso(30); await AO.sleep(800);
     const info = data.info || {};
@@ -253,13 +259,20 @@ document.getElementById('btn-procesar').addEventListener('click', async () => {
     const AO = window.AnalisisOverlay;
     AO.mostrar('procesando…');
 
+    // Si el análisis tarda >3s, avisamos que puede ser OCR.
+    const ocrHintTimer = setTimeout(() => {
+        AO.setSubtexto('🔍 PDF escaneado detectado — aplicando OCR (puede tardar 10-30s)');
+    }, 3000);
+
     try {
         AO.setPaso(1, 'active'); AO.setProgreso(5);
         const ana = await fetch('/converter/' + encodeURIComponent(_uploadedToken) + '/analizar', { method: 'POST' });
+        clearTimeout(ocrHintTimer);
         const data = await ana.json();
         if (!data.ok) { alert(data.error || 'Error al analizar'); AO.cerrar(); return; }
         await animarAnalisis(data);
     } catch (err) {
+        clearTimeout(ocrHintTimer);
         alert('Error: ' + err);
         AO.cerrar();
     }
