@@ -79,8 +79,8 @@
             <select id="filter-tipo" onchange="filterTipo()"
                     class="text-xs bg-white border border-[#e0e0e0] rounded-lg px-2 py-1.5 text-[#555]">
                 <option value="">Todos</option>
-                <option value="C">Crónicos</option>
-                <option value="N">No crónicos</option>
+                <option value="C">Prom.Vtas</option>
+                <option value="N">Otros</option>
             </select>
         </div>
 
@@ -164,7 +164,7 @@
                                         <p class="font-medium">
                                             {{ it.descripcion }}
                                             {% if it.tipo == 'C' %}
-                                            <span class="inline-block ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200 align-middle">CRÓNICO</span>
+                                            <span class="inline-block ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200 align-middle" title="Ventas muy estables — el promedio histórico pesa más que la tendencia (amortigua al 20%)">Prom.Vtas</span>
                                             {% endif %}
                                         </p>
                                         <p class="text-xs font-mono text-[#9ca3af]">{{ it.codigo_barra }}</p>
@@ -319,7 +319,7 @@ function renderChart(p) {
             { label:'Rotación', value:rotLabels[rot]||rot, color:rotColors[rot]||'#888' },
             { label:'Stock', value:p.stock<=0?'agotado':p.stock, color:p.stock<=0?'#f87171':'#1e1e1e' },
             { label:'Cobertura', value:stockDays, color:'#888' },
-            { label:'Tipo', value: p.tipo==='C' ? 'Crónico' : 'Normal', color: p.tipo==='C' ? '#7c3aed' : '#888' },
+            { label:'Tipo', value: p.tipo==='C' ? 'Prom.Vtas' : 'Normal', color: p.tipo==='C' ? '#7c3aed' : '#888' },
         ];
         document.getElementById('chart-stats').innerHTML = stats.map(s => `
             <div class="bg-white rounded-lg px-3 py-2.5 text-center">
@@ -452,7 +452,7 @@ function renderChart(p) {
         { label:'Tendencia', value:`${slopeSign} ${Math.abs(slope).toFixed(1)}/m`, color:slopeColor },
         { label:'Stock', value:p.stock<=0?'agotado':p.stock, color:p.stock<=0?'#f87171':'#1e1e1e' },
         { label:'Cobertura', value:stockDays, color:'#888' },
-        { label:'Tipo', value: p.tipo==='C' ? 'Crónico' : 'Normal', color: p.tipo==='C' ? '#7c3aed' : '#888' },
+        { label:'Tipo', value: p.tipo==='C' ? 'Prom.Vtas' : 'Normal', color: p.tipo==='C' ? '#7c3aed' : '#888' },
     ];
     if (partialSold > 0) {
         stats.push({ label:`Mes actual (${daysElapsed}/${daysInMonth}d)`, value:`${partialSold} / ~${proratedFull}`, color:'#b45309' });

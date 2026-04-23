@@ -407,7 +407,7 @@ function renderProductChart(p) {
             {l:'Rotación', v:rotL[rot]||rot, c:rotC[rot]||'#888'},
             {l:'Stock', v:p.stock<=0?'agotado':p.stock, c:p.stock<=0?'#f87171':'#1e1e1e'},
             {l:'Cobertura', v:sd, c:'#888'},
-            {l:'Tipo', v:p.tipo==='C'?'Crónico':'Normal', c:p.tipo==='C'?'#7c3aed':'#888'},
+            {l:'Tipo', v:p.tipo==='C'?'Prom.Vtas':'Normal', c:p.tipo==='C'?'#7c3aed':'#888'},
         ].map(s => `<div class="bg-white rounded-lg px-3 py-2.5 text-center">
             <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p>
             <p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
@@ -524,7 +524,7 @@ function renderProductChart(p) {
         {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
         {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
         {l:'Cobertura',v:sd,c:'#888'},
-        {l:'Tipo',v:p.tipo==='C'?'Crónico':'Normal',c:p.tipo==='C'?'#7c3aed':'#888'},
+        {l:'Tipo',v:p.tipo==='C'?'Prom.Vtas':'Normal',c:p.tipo==='C'?'#7c3aed':'#888'},
     ];
     if (ps>0) stats.push({l:`Mes actual (${de}/${dim}d)`,v:`${ps} / ~${pf}`,c:'#b45309'});
     document.getElementById('chart-stats').innerHTML = stats.map(s => `

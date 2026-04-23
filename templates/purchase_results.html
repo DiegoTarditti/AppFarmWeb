@@ -110,8 +110,8 @@
             <select id="filter-tipo" onchange="filterTable()"
                     class="text-xs bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-[#6f6f6f] focus:outline-none focus:ring-1 focus:ring-brand">
                 <option value="">Todos los tipos</option>
-                <option value="C">Crónicos</option>
-                <option value="N">No crónicos</option>
+                <option value="C">Prom.Vtas</option>
+                <option value="N">Otros</option>
             </select>
 
             <!-- Guardar pedido -->
@@ -211,7 +211,7 @@
                         <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200">PACK</span>
                         {% endif %}
                         {% if p.tipo == 'C' %}
-                        <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200">CRÓNICO</span>
+                        <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-200" title="Ventas muy estables — el promedio histórico pesa más que la tendencia (amortigua al 20%)">Prom.Vtas</span>
                         {% endif %}
                     </div>
                 </td>
@@ -596,7 +596,7 @@ function openChart(idx) {
         { label: 'Cobertura', value: stockDays, color: '#888' },
         { label: 'Temporada 60d', value: `${seasonalLabel} (${seasonalPct > 0 ? '+' : ''}${seasonalPct}%)`, color: seasonalColor },
         { label: 'Pedido', value: p.order_qty, color: p.order_qty > 0 ? '#EAB308' : '#555' },
-        { label: 'Tipo', value: p.tipo === 'C' ? 'Crónico' : 'Normal', color: p.tipo === 'C' ? '#7c3aed' : '#888' },
+        { label: 'Tipo', value: p.tipo === 'C' ? 'Prom.Vtas' : 'Normal', color: p.tipo === 'C' ? '#7c3aed' : '#888' },
     ];
     if (partialSold > 0) {
         stats.push({
