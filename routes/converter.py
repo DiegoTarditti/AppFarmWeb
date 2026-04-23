@@ -376,7 +376,7 @@ def init_app(app):
         if not os.path.exists(path):
             return False
         os.remove(path)
-        for sidecar in (_converter_meta_path(safe), path + '.ocr.txt'):
+        for sidecar in (_converter_meta_path(safe), path + '.ocr.txt', path + '.vision.txt'):
             if os.path.exists(sidecar):
                 try:
                     os.remove(sidecar)
@@ -413,6 +413,70 @@ def init_app(app):
         flash(msg)
         return redirect(url_for('converter_index'))
 
+    @app.route('/converter/<token>/reocr-vision', methods=['POST'])
+    def converter_reocr_vision(token):
+        """Relee el PDF usando Claude (API Anthropic) en vez de Tesseract.
+        Guarda el texto en <pdf>.vision.txt — esa versión tiene prioridad al abrir /pick.
+        Usa base64 + document block. Modelo: Opus para máxima precisión."""
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        safe = secure_filename(token)
+        path = os.path.join(CONVERTER_DIR, safe)
+        if not os.path.exists(path):
+            return jsonify({'ok': False, 'error': 'Documento no encontrado.'}), 404
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+
+        import base64
+        with open(path, 'rb') as fh:
+            pdf_b64 = base64.standard_b64encode(fh.read()).decode('utf-8')
+
+        client = Anthropic(api_key=api_key)
+        prompt = (
+            "Sos un extractor de texto para facturas argentinas. Leé el PDF adjunto y devolvé TODO el texto visible, "
+            "preservando el orden natural de lectura (encabezado → ítems → totales). Reglas estrictas:\n"
+            "- NO omitas ítems, códigos, cantidades ni importes.\n"
+            "- Números en formato argentino: puntos como separador de miles y coma decimal ($49.896,69).\n"
+            "- Un ítem por línea. Separá columnas con espacios.\n"
+            "- Mantené etiquetas tal cual (CUIT, IVA 21%, Neto, Total, Sub Total, Percepciones, etc.).\n"
+            "- Si hay código de barras / EAN, incluilo completo.\n"
+            "- No agregues comentarios, no expliques, no envuelvas en markdown. Solo el texto plano del documento."
+        )
+        try:
+            resp = client.messages.create(
+                model='claude-opus-4-7',
+                max_tokens=8192,
+                messages=[{
+                    'role': 'user',
+                    'content': [
+                        {'type': 'document', 'source': {'type': 'base64', 'media_type': 'application/pdf', 'data': pdf_b64}},
+                        {'type': 'text', 'text': prompt},
+                    ],
+                }],
+            )
+        except Exception as e:
+            # Errores de API (sin crédito, key inválida, rate limit) caen acá.
+            msg = str(e)
+            return jsonify({'ok': False, 'error': f'Claude API: {msg}'}), 502
+
+        texto = ''.join(b.text for b in resp.content if getattr(b, 'type', '') == 'text').strip()
+        if not texto:
+            return jsonify({'ok': False, 'error': 'Claude devolvió respuesta vacía.'}), 502
+
+        with open(path + '.vision.txt', 'w', encoding='utf-8') as fh:
+            fh.write(texto)
+        # Pista para el UI: cuántas líneas, tokens aproximados
+        return jsonify({
+            'ok': True,
+            'n_lineas': len(texto.splitlines()),
+            'chars': len(texto),
+            'tokens_in': getattr(resp.usage, 'input_tokens', None),
+            'tokens_out': getattr(resp.usage, 'output_tokens', None),
+        })
+
     @app.route('/converter/<token>/pick', methods=['GET'])
     def converter_pick(token):
         """Modo aprendizaje: seleccionás partes de una fila ejemplo y el sistema infiere regex."""
@@ -422,8 +486,13 @@ def init_app(app):
         if not os.path.exists(path):
             flash('Documento no encontrado.')
             return redirect(url_for('converter_index'))
-        # Usa OCR fallback si el PDF no tiene capa de texto
-        pdf_text = _normalize_quadrupled(extract_text_with_ocr_fallback(path))
+        # Si hay re-OCR hecho con Claude Vision, preferirlo sobre pdfplumber/Tesseract.
+        vision_cache = path + '.vision.txt'
+        if os.path.isfile(vision_cache):
+            with open(vision_cache, 'r', encoding='utf-8') as fh:
+                pdf_text = _normalize_quadrupled(fh.read())
+        else:
+            pdf_text = _normalize_quadrupled(extract_text_with_ocr_fallback(path))
         meta = _converter_read_meta(safe)
         # Reejecutar la detección siempre, para tener datos frescos
         # (evita depender del meta.json que puede ser de una versión anterior del extractor)
@@ -459,7 +528,9 @@ def init_app(app):
                                proveedor_id=meta.get('proveedor_id'),
                                header_precargado=header_precargado,
                                farmacia_nombre=_cfg.get('farmacia_nombre', ''),
-                               doc_tipo=meta.get('doc_tipo', 'FAC'))
+                               doc_tipo=meta.get('doc_tipo', 'FAC'),
+                               claude_api_disponible=bool(os.environ.get('ANTHROPIC_API_KEY')),
+                               vision_cached=os.path.isfile(path + '.vision.txt'))
 
     @app.route('/converter/<token>/infer', methods=['POST'])
     def converter_infer(token):
