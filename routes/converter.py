@@ -460,7 +460,16 @@ def init_app(app):
         except Exception as e:
             # Errores de API (sin crédito, key inválida, rate limit) caen acá.
             msg = str(e)
-            return jsonify({'ok': False, 'error': f'Claude API: {msg}'}), 502
+            low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito en https://console.anthropic.com/settings/billing y volvé a intentar.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada. Generá una nueva en console.anthropic.com.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y probá de nuevo.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
 
         texto = ''.join(b.text for b in resp.content if getattr(b, 'type', '') == 'text').strip()
         if not texto:
