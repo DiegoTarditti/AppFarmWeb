@@ -417,6 +417,25 @@ class Usuario(Base):
         return False
 
 
+class ProductoPrecioHist(Base):
+    """Snapshot de precio por producto + proveedor en cada factura importada.
+    Append-only: cada fila es un punto histórico.
+    """
+    __tablename__ = 'producto_precios_hist'
+    id = Column(Integer, primary_key=True)
+    codigo_barra     = Column(String(20), nullable=False, index=True)
+    proveedor_id     = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=True, index=True)
+    proveedor_razon  = Column(String(150), nullable=True)  # fallback si no hay proveedor_id
+    fecha            = Column(Date, nullable=False, index=True)  # fecha de la factura
+    precio_publico   = Column(DECIMAL(14, 2), nullable=True)
+    dto_pct          = Column(DECIMAL(6, 2),  nullable=True)
+    precio_unitario  = Column(DECIMAL(14, 2), nullable=True)
+    importe          = Column(DECIMAL(14, 2), nullable=True)
+    factura_id       = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
+    tipo_comprobante = Column(String(5), nullable=True)  # FAC / NCR (para filtrar)
+    creado_en        = Column(DateTime, default=now_ar)
+
+
 class AnalisisSesion(Base):
     """Registro de cada ejecución de análisis de ventas."""
     __tablename__ = 'analisis_sesiones'

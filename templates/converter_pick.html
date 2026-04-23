@@ -276,6 +276,23 @@ const state = { exampleLine: '', selections: [], lastRows: [], lastFields: [],
                 header: Object.assign({}, HEADER_PRECARGADO),
                 autodetectados: new Set(Object.keys(HEADER_PRECARGADO || {})) };
 
+// Normaliza números del formato inglés al argentino (ANTES de tokenizar)
+// para que los detectores encuentren los valores directo sin conversiones.
+//   49,896.69  →  49.896,69
+//   1,234.56   →  1.234,56
+//   12.00      →  12,00
+//   21.0       →  21,0
+// Los números ya en formato AR (1.234,56) no se tocan.
+function _normalizarNumerosEnAr(line) {
+    // Regex: match tokens inglés: (\d{1,3}(,\d{3})+|\d+)\.\d{1,3}
+    // Con word boundaries para no afectar parte de texto
+    return line.replace(/\b(\d{1,3}(?:,\d{3})+|\d+)\.(\d{1,3})\b/g, (match, intPart, decPart) => {
+        // Cambiar comas (miles US) por puntos (miles AR) en la parte entera
+        const intAr = intPart.replace(/,/g, '.');
+        return intAr + ',' + decPart;
+    });
+}
+
 function tokenize(line) {
     const tokens = []; const re = /\S+/g; let m;
     while ((m = re.exec(line)) !== null) tokens.push({text: m[0], start: m.index, end: m.index + m[0].length});
@@ -310,6 +327,34 @@ function unirMarcados() {
     renderExample();
 }
 function resetAgrupamientos() { state.groups = tokensToGroups(state.tokens); renderExample(); }
+
+// Edita el texto de un token (útil para corregir errores de OCR antes de asignar)
+function editExampleTokenText(idx) {
+    const g = state.groups[idx];
+    if (!g) return;
+    const nuevo = prompt('Corregir el valor del token (ej. para arreglar errores de OCR):', g.text);
+    if (nuevo === null) return;
+    const v = nuevo.trim();
+    if (!v) { alert('Vacío no permitido. Usá el × si querés borrarlo.'); return; }
+    if (v === g.text) return;
+    // Reemplazar en exampleLine, re-tokenizar, preservar asignaciones previas
+    const before = state.exampleLine.slice(0, g.start);
+    const after  = state.exampleLine.slice(g.end);
+    state.exampleLine = before + v + after;
+    // Re-tokenizar y re-armar groups. Las asignaciones previas se mantienen
+    // solo si sus posiciones siguen correspondiendo a tokens existentes.
+    const oldSelections = state.selections;
+    state.tokens = tokenize(state.exampleLine);
+    state.groups = tokensToGroups(state.tokens);
+    // Limpiar selections que apuntan a texto que ya no existe
+    state.selections = oldSelections.filter(s => {
+        const t = state.tokens.find(tk => tk.start <= s.start && tk.end >= s.end);
+        return !!t;
+    });
+    renderExample();
+    renderSelections();
+    if (typeof validatePick === 'function') validatePick();
+}
 
 function assignSingleExampleRow(idx, field) {
     const g = state.groups[idx];
@@ -491,7 +536,7 @@ state.totalsGroups = [];
 function useSelectionAsTotals() {
     const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
     if (!txt.trim()) { alert('Seleccioná la fila de totales del PDF.'); return; }
-    state.totalsLine = txt.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').trim();
+    state.totalsLine = _normalizarNumerosEnAr(txt.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').trim());
     state.totalsTokens = tokenize(state.totalsLine);
     state.totalsGroups = tokensToGroups(state.totalsTokens);
     renderTotalsLine();
@@ -502,7 +547,7 @@ function toggleEditTotals() {
     if (ta.classList.contains('hidden')) {
         ta.value = state.totalsLine; ta.classList.remove('hidden'); box.classList.add('hidden'); ta.focus();
     } else {
-        state.totalsLine = ta.value;
+        state.totalsLine = _normalizarNumerosEnAr(ta.value);
         state.totalsTokens = tokenize(state.totalsLine);
         state.totalsGroups = tokensToGroups(state.totalsTokens);
         ta.classList.add('hidden'); box.classList.remove('hidden');
@@ -847,18 +892,23 @@ const DOC_CFG = {
 
 // Patrones SIEMPRE aplicados (encabezado básico de cualquier documento)
 const LABEL_PATTERNS_BASE = [
-    ['numero',         /(?:FACTURA|REMITO|COMPROBANTE)\s*(?:N[roRO°º.]*\s*)?[:\s]\s*([\w\-\/]+)/i],
+    // Número de factura/remito: busca formato AFIP (4+ dígitos - 6-10 dígitos)
+    // después de "Nro:", "N°:", "N:" o solo el formato si aparece único.
+    // Evita capturar basura OCR entre "FACTURA" y el número real.
+    ['numero',         /N[roº°o.]{0,3}[:\s]\s*(\d{3,5}-\d{6,10})/i],
     ['fecha',          /(?:FECHA|Fecha)[^0-9]{0,25}(\d{1,2}\/\d{1,2}\/\d{2,4})/i],
 ];
 
-// Patrones adicionales solo para facturas/NCR (impuestos y totales)
+// Patrones adicionales solo para facturas/NCR (impuestos y totales).
+// El `$` en el texto puede no estar (OCR lo come o lo confunde con 3/5),
+// por eso capturamos el número "suelto" después de la etiqueta.
 const LABEL_PATTERNS_FACTURA = [
-    ['total',          /(?:^|[\s\|])(?:TOTAL\s*NETO|Importe\s*Total|Total\s*\$|TOTAL\s*FACTURA)\b[^$]*?\$\s*([\d.,]+)/im],
-    ['monto_exento',   /(?:Base\s*Exenta|Monto\s*Exento|Exento)\b[^$]*?\$\s*([\d.,]+)/i],
-    ['monto_gravado',  /(?:Monto\s*Gravado|Neto\s*Gravado|Gravado\s*\$)\b[^$]*?\$\s*([\d.,]+)/i],
-    ['iva_21',         /(?:IVA\s*21\s*%?|I\.V\.A\.\s*21)\b[^$]*?\$\s*([\d.,]+)/i],
-    ['iva_105',        /(?:IVA\s*10[.,]?5\s*%?|I\.V\.A\.\s*10[.,]?5)\b[^$]*?\$\s*([\d.,]+)/i],
-    ['percepciones',   /(?:Percepci[oó]n(?:es)?\s*(?:IIBB|IVA)?[^$]{0,60})\$\s*([\d.,]+)/i],
+    ['total',          /(?:TOTAL\s*NETO|Importe\s*Total|TOTAL\s*FACTURA|^\s*TOTAL\b)[^\d\n]{0,15}\$?\s*([\d.,]+)/im],
+    ['monto_exento',   /(?:Base\s*Exenta|Monto\s*Exento|\bExento\b)[^\d\n]{0,15}\$?\s*([\d.,]+)/i],
+    ['monto_gravado',  /(?:Monto\s*Gravado|Neto\s*Gravado|\bGravado\b|\bNeto\b|SU[BE]\s*TOTAL)[^\d\n]{0,15}\$?\s*([\d.,]+)/i],
+    ['iva_21',         /(?:IVA\s*21\s*%?|I\.V\.A\.\s*21|Total\s*IVA)[^\d\n]{0,15}\$?\s*([\d.,]+)/i],
+    ['iva_105',        /(?:IVA\s*10[.,]?5\s*%?|I\.V\.A\.\s*10[.,]?5)[^\d\n]{0,15}\$?\s*([\d.,]+)/i],
+    ['percepciones',   /(?:Percepci[oó]n(?:es)?\s*(?:IIBB|IVA)?[^\d\n]{0,60})\$?\s*([\d.,]+)/i],
     ['cantidad_total', /Unidades\s*en\s*comprob[^\d]*(\d+)/i],
 ];
 
@@ -965,7 +1015,7 @@ function runAutoPipeline() {
             const itemRx = /^\s*\d{7,14}\s+\d+\s+\S/;
             const ejemplo = detailLines.find(l => itemRx.test(l));
             if (ejemplo) {
-                state.exampleLine = ejemplo.trim();
+                state.exampleLine = _normalizarNumerosEnAr(ejemplo.trim());
                 state.selections = [];
                 state.tokens = tokenize(state.exampleLine);
                 state.groups = tokensToGroups(state.tokens);
@@ -1004,7 +1054,7 @@ function runAutoPipeline() {
                 const totalsRx = /\d+\/\d+\s+\d+\s+[\d.,]+.*?[\d.,]+/;
                 const totLine = footerLines.find(l => totalsRx.test(l));
                 if (totLine) {
-                    state.totalsLine = totLine.trim();
+                    state.totalsLine = _normalizarNumerosEnAr(totLine.trim());
                     state.totalsTokens = tokenize(state.totalsLine);
                     state.totalsGroups = tokensToGroups(state.totalsTokens);
                     renderTotalsLine();
@@ -1256,7 +1306,7 @@ function editHeader(k) {
 function useSelectionAsExample() {
     const sel = window.getSelection(); const txt = sel ? sel.toString() : '';
     if (!txt.trim()) { alert('Seleccioná una fila.'); return; }
-    state.exampleLine = txt.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim();
+    state.exampleLine = _normalizarNumerosEnAr(txt.replace(/\r/g,'').replace(/[ \t]+\n/g,'\n').trim());
     state.selections = [];
     state.tokens = tokenize(state.exampleLine);
     state.groups = tokensToGroups(state.tokens);
@@ -1289,10 +1339,12 @@ function renderExample() {
         const title = assigned ? `Asignado a ${assigned.field}` : '';
         const rowSelect = assigned ? '' :
             `<select class="ex-row-sel text-[10px] border border-slate-300 bg-white rounded px-1 py-0.5" data-idx="${idx}">${optsHtml}</select>`;
+        const editBtn = assigned ? '' : `<button type="button" class="ex-row-edit text-[#999] hover:text-sky-600" data-idx="${idx}" title="Editar texto (útil si el OCR leyó mal)">✏️</button>`;
         html += `<label class="${cls}" data-idx="${idx}" title="${escapeHtml(title)}">
             <input type="checkbox" ${g.checked?'checked':''} ${assigned?'disabled':''} class="gchk">
             <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
             ${hintHtml}
+            ${editBtn}
             ${assigned ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assigned.field)}</span>` : rowSelect}
         </label>`;
     });
@@ -1306,6 +1358,13 @@ function renderExample() {
             if (!field) return;
             const idx = parseInt(e.target.dataset.idx, 10);
             assignSingleExampleRow(idx, field);
+        });
+    });
+    box.querySelectorAll('.ex-row-edit').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx, 10);
+            editExampleTokenText(idx);
         });
     });
     box.querySelectorAll('.group-row').forEach(row => {
@@ -1364,7 +1423,7 @@ function toggleEditExample() {
     const ta = document.getElementById('example-edit'); const box = document.getElementById('example-box');
     if (ta.classList.contains('hidden')) { ta.value = state.exampleLine; ta.classList.remove('hidden'); box.classList.add('hidden'); ta.focus(); }
     else {
-        state.exampleLine = ta.value; state.selections=[];
+        state.exampleLine = _normalizarNumerosEnAr(ta.value); state.selections=[];
         state.tokens = tokenize(state.exampleLine);
         state.groups = tokensToGroups(state.tokens);
         ta.classList.add('hidden'); box.classList.remove('hidden');
@@ -1984,7 +2043,9 @@ async function exportXLSX() {
 function _splitPdfText(text) {
     const lines = text.split('\n');
     const headerEndRegex = /\b(c[óo]digo|c[óo]d\.?\s*barra|cant(?:idad)?|ean|descripci[óo]n|concepto)\b/i;
-    const footerHintRegex = /(total\s*\$|^\s*total\s|subtotal|hoja\s+cant)/i;
+    // Markers típicos del pie: "Son Pesos:" (frase en letras), "TOTAL", "SUB TOTAL",
+    // "Hoja Cant", "Base Exenta", "Neto:", "Total IVA"
+    const footerHintRegex = /(son\s+pesos|total\s*\$|^\s*total\s|subtotal|su[be]\s*total|hoja\s+cant|base\s*exenta|^\s*neto\s*[:.]|total\s*iva)/i;
 
     let headerEnd = -1;
     for (let i = 0; i < lines.length; i++) {
@@ -2023,7 +2084,7 @@ function _renderDetailClickable(detailText) {
         el.addEventListener('click', () => {
             const text = el.textContent.trim();
             if (!text) return;
-            state.exampleLine = text;
+            state.exampleLine = _normalizarNumerosEnAr(text);
             state.selections = [];
             state.tokens = tokenize(state.exampleLine);
             state.groups = tokensToGroups(state.tokens);

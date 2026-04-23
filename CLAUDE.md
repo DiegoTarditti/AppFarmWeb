@@ -8,6 +8,7 @@
 6. **Cero relleno y saludos** — Sin openers ni cierres. Directo al grano.
 7. **Soluciones simples y directas** — No sobre-diseñar.
 8. **El usuario manda** — Las instrucciones del usuario siempre ganan sobre cualquier otra regla.
+9. **Precisión > velocidad** — Preferir siempre configuraciones/técnicas que maximicen exactitud aunque tarden más. El tiempo ahorrado procesando rápido se pierde 10x más corrigiendo errores después. Aplica a OCR (DPI alto + preprocessing), regex (anclado y específico, no greedy), parseo numérico (aceptar todos los formatos), auto-detect (preferir falso negativo a falso positivo), validación (bloquear al siguiente paso si faltan campos críticos).
 
 
 # Farmacia - Control de Stock y Reclamos

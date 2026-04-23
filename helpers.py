@@ -256,7 +256,21 @@ def _clean_ocr_text(txt):
     return '\n'.join(result)
 
 
-def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=300):
+def _preprocess_image_for_ocr(pil_img):
+    """Convierte a grayscale + auto-contraste + binarización para mejorar OCR.
+    Reduce errores tipo '$→2/3/5' que ocurren cuando Tesseract ve tonos grises
+    intermedios en vez de blanco puro y negro puro."""
+    try:
+        from PIL import ImageOps
+        img = pil_img.convert('L')                     # grayscale
+        img = ImageOps.autocontrast(img, cutoff=2)     # estirar contraste
+        img = img.point(lambda p: 255 if p > 170 else 0, mode='1')  # threshold → B/W
+        return img
+    except Exception:
+        return pil_img  # si falla cualquier cosa, devolvemos la original
+
+
+def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=400):
     """Intenta extraer texto con pdfplumber. Si el resultado es muy chico
     (PDF escaneado), corre OCR sobre cada página y cachea el resultado.
 
@@ -295,6 +309,7 @@ def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=300):
         with _pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
                 img = page.to_image(resolution=dpi).original
+                img = _preprocess_image_for_ocr(img)  # grayscale + binarización
                 # PSM 6: bloque uniforme de texto (mejor para facturas)
                 txt = pytesseract.image_to_string(img, lang=lang, config='--psm 6') or ''
                 paginas.append(txt)
