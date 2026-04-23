@@ -177,15 +177,10 @@ def init_app(app):
         if proveedor and proveedor.get('parser_file'):
             prueba = _probar_parser(proveedor['parser_file'], path)
 
-        # Paso 4: extraer primeras líneas del PDF para mostrar
-        import pdfplumber
-        n_lineas = 0
-        try:
-            with pdfplumber.open(path) as pdf:
-                for page in pdf.pages:
-                    n_lineas += len((page.extract_text() or '').split('\n'))
-        except Exception:
-            pass
+        # Paso 4: extraer texto completo (con OCR fallback si hace falta)
+        full_text = extract_text_with_ocr_fallback(path) or ''
+        n_lineas = len(full_text.split('\n')) if full_text.strip() else 0
+        text_chars = len(full_text.strip())
 
         meta = {
             'proveedor_razon': info.get('razon_social') or (proveedor or {}).get('razon_social', ''),
@@ -199,6 +194,18 @@ def init_app(app):
 
         # ¿Se usó OCR? El fallback deja un archivo .ocr.txt al lado del PDF.
         ocr_used = os.path.isfile(path + '.ocr.txt')
+
+        # Si después de OCR no hay texto usable, bloquear el avance
+        if text_chars < 50:
+            return jsonify({
+                'ok': False,
+                'error': ('No se pudo extraer texto del PDF' +
+                          (' (OCR intentado sin éxito)' if ocr_used else '') +
+                          '. Probá escanearlo con mejor resolución o convertirlo a PDF con texto (Acrobat → "Guardar como texto").'),
+                'ocr_used': ocr_used,
+                'text_chars': text_chars,
+            }), 200
+
         return jsonify({
             'ok': True,
             'token': safe,
@@ -207,6 +214,7 @@ def init_app(app):
             'prueba': prueba,
             'n_lineas': n_lineas,
             'ocr_used': ocr_used,
+            'text_chars': text_chars,
             'redirect': url_for('converter_detectar', token=safe),
         })
 

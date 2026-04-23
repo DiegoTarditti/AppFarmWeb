@@ -269,7 +269,24 @@ document.getElementById('btn-procesar').addEventListener('click', async () => {
         const ana = await fetch('/converter/' + encodeURIComponent(_uploadedToken) + '/analizar', { method: 'POST' });
         clearTimeout(ocrHintTimer);
         const data = await ana.json();
-        if (!data.ok) { alert(data.error || 'Error al analizar'); AO.cerrar(); return; }
+        if (!data.ok) {
+            // Si el error es por texto vacío (PDF ilegible), mostrar el paso 1 en rojo y NO avanzar
+            if (data.text_chars === 0 || (data.text_chars !== undefined && data.text_chars < 50)) {
+                AO.setPaso(1, 'error', data.ocr_used ? '🔍 OCR no logró reconocer texto' : '⚠ Sin texto en el PDF');
+                AO.setSubtexto(data.error || 'No se pudo extraer texto');
+                AO.setProgreso(100);
+                // Mostrar resultado de error con acción para volver
+                AO.resultado({
+                    titulo: '✗ PDF ilegible',
+                    subtitulo: data.error || 'No se pudo procesar el documento.',
+                    cta: 'Volver', href: '{{ url_for("converter_index") }}', tipo: 'error'
+                });
+                return;
+            }
+            alert(data.error || 'Error al analizar');
+            AO.cerrar();
+            return;
+        }
         await animarAnalisis(data);
     } catch (err) {
         clearTimeout(ocrHintTimer);
