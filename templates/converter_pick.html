@@ -68,7 +68,8 @@
     <div class="w-1/2 flex flex-col gap-4">
 
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
-            <p class="font-semibold text-sm mb-2">Encabezado</p>
+            <p class="font-semibold text-sm mb-1">Encabezado</p>
+            <p class="text-[11px] text-[#6f6f6f] mb-2">Seleccioná texto del PDF y clickeá el chip. Si el dato <strong>no aparece en el texto</strong> (ej: logo), clickeá el chip <strong>sin selección</strong> y te pide tipearlo a mano.</p>
             <p class="text-xs text-[#6f6f6f] mb-2">Seleccioná texto en el PDF izquierdo y clickeá el campo.</p>
             <div class="flex flex-wrap gap-2" id="header-chips">
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="razon_social">Razón social</button>
@@ -1028,7 +1029,36 @@ function addCustomHChip() {
     document.getElementById('header-chips').appendChild(b); inp.value='';
 }
 
-document.getElementById('header-chips').addEventListener('click', (e) => {
+function _promptManualHeaderValue(field, actual) {
+    // Modal inline: algunos browsers bloquean window.prompt(). Garantiza que siempre funcione.
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'fixed inset-0 bg-black/40 z-[70] flex items-center justify-center';
+        back.innerHTML = `
+            <div class="bg-white rounded-xl p-5 w-[420px] max-w-[92vw] shadow-2xl space-y-3">
+                <p class="font-semibold text-sm text-[#1e1e1e]">Valor para "<span class="font-mono">${field}</span>"</p>
+                <p class="text-[11px] text-[#6f6f6f]">El dato no está en el texto del PDF (ej. logo). Escribilo a mano:</p>
+                <input type="text" id="__pm_input" class="w-full px-3 py-2 border border-[#e0e0e0] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand" value="${(actual || '').replace(/"/g,'&quot;')}">
+                <div class="flex justify-end gap-2">
+                    <button type="button" id="__pm_cancel" class="px-3 py-1.5 text-xs rounded bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                    <button type="button" id="__pm_ok" class="px-3 py-1.5 text-xs rounded bg-brand hover:bg-brand-hover text-brand-dark font-semibold">Guardar</button>
+                </div>
+            </div>`;
+        document.body.appendChild(back);
+        const inp = document.getElementById('__pm_input');
+        inp.focus(); inp.select();
+        const close = (val) => { back.remove(); resolve(val); };
+        document.getElementById('__pm_ok').onclick = () => close(inp.value);
+        document.getElementById('__pm_cancel').onclick = () => close(null);
+        inp.addEventListener('keydown', (ev) => {
+            if (ev.key === 'Enter') close(inp.value);
+            if (ev.key === 'Escape') close(null);
+        });
+        back.addEventListener('click', (ev) => { if (ev.target === back) close(null); });
+    });
+}
+
+document.getElementById('header-chips').addEventListener('click', async (e) => {
     const btn = e.target.closest('.hchip'); if (!btn) return;
     const field = btn.dataset.field;
     const sel = window.getSelection();
@@ -1036,9 +1066,9 @@ document.getElementById('header-chips').addEventListener('click', (e) => {
     if (txt) {
         state.header[field] = txt;
     } else {
-        // Sin selección → permitir tipear manualmente (útil cuando el dato está en un logo)
+        // Sin selección → modal inline para escribir manualmente
         const actual = state.header[field] || '';
-        const manual = prompt('Valor para "' + field + '" (no hay selección en el PDF, escribilo a mano):', actual);
+        const manual = await _promptManualHeaderValue(field, actual);
         if (manual === null) return; // cancel
         const v = manual.trim();
         if (!v) { delete state.header[field]; } else { state.header[field] = v; }

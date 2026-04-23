@@ -232,6 +232,30 @@ def _bulk_upsert_productos(session, items):
 # ── OCR fallback para PDFs escaneados (sin capa de texto) ──────────────────
 # Usa pytesseract (con tesseract-ocr + tesseract-ocr-spa instalados en Docker).
 # Cachea el resultado en "<pdf_path>.ocr.txt" para no re-procesar.
+def _clean_ocr_text(txt):
+    """Post-procesa texto OCR: quita espacios y líneas extras."""
+    import re as _re
+    # 1) Strip por línea
+    lines = [l.rstrip() for l in (txt or '').split('\n')]
+    out = []
+    for l in lines:
+        # 2) Colapsar espacios/tabs múltiples dentro de la línea a uno
+        l = _re.sub(r'[ \t]+', ' ', l).strip()
+        out.append(l)
+    # 3) Colapsar 3+ líneas vacías a 1 sola
+    result = []
+    empty = 0
+    for l in out:
+        if not l:
+            empty += 1
+            if empty >= 2:
+                continue  # saltar línea vacía extra
+        else:
+            empty = 0
+        result.append(l)
+    return '\n'.join(result)
+
+
 def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=300):
     """Intenta extraer texto con pdfplumber. Si el resultado es muy chico
     (PDF escaneado), corre OCR sobre cada página y cachea el resultado.
@@ -271,9 +295,10 @@ def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=300):
         with _pdfplumber.open(pdf_path) as pdf:
             for page in pdf.pages:
                 img = page.to_image(resolution=dpi).original
-                txt = pytesseract.image_to_string(img, lang=lang) or ''
+                # PSM 6: bloque uniforme de texto (mejor para facturas)
+                txt = pytesseract.image_to_string(img, lang=lang, config='--psm 6') or ''
                 paginas.append(txt)
-        texto_ocr = '\n'.join(paginas)
+        texto_ocr = _clean_ocr_text('\n'.join(paginas))
     except Exception:
         return texto_plano
 
