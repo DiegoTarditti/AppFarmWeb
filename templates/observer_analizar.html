@@ -2,17 +2,21 @@
 {% set nav_active = "observer" %}
 {% block title %}Analizar desde ObServer{% endblock %}
 {% block main %}
-<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3">
-    <h1 class="text-base font-bold text-[#1e1e1e]">Analizar ventas desde ObServer</h1>
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    {% if proceso_id %}
+    <a href="{{ url_for('proceso_detail', proceso_id=proceso_id) }}"
+       class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Proceso #{{ proceso_id }}</a>
+    {% endif %}
+    <h1 class="text-base font-bold text-[#1e1e1e]">Análisis y proyección de compra</h1>
     <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-800">ONLINE</span>
+    {% if proceso_id %}
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">PASO 1 DEL PROCESO</span>
+    {% endif %}
 </div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6">
     <div class="max-w-xl mx-auto bg-white border border-surface-border rounded-xl p-6">
-        <p class="text-xs text-[#6f6f6f] mb-5">
-            Los datos se consultan en vivo desde ObServer. No hace falta subir archivos.
-            Elegí el laboratorio y el período de análisis.
-        </p>
+        <p class="text-xs text-[#6f6f6f] mb-5">Datos de ObServer en vivo.</p>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
@@ -31,32 +35,20 @@
                     class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
                     <option value="">— seleccionar —</option>
                     {% for l in laboratorios %}
-                    <option value="{{ l.nombre }}" {% if request.args.get('laboratorio') == l.nombre %}selected{% endif %}>
+                    <option value="{{ l.nombre }}"
+                            {% if lab_preseleccionado and l.nombre|lower == lab_preseleccionado|lower %}selected{% endif %}>
                         {{ l.nombre }} ({{ l.n_articulos }} productos)
                     </option>
                     {% endfor %}
                 </select>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Mes hasta</label>
-                    <select name="mes_hasta" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
-                        {% for i in range(1, 13) %}
-                        <option value="{{ i }}" {% if i == (request.form.get('mes_hasta') | int or 0) or (not request.form.get('mes_hasta') and i == 3) %}selected{% endif %}>{{ '%02d' | format(i) }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div>
-                    <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Año hasta</label>
-                    <input type="number" name="anio_hasta" value="2026" min="2020" max="2100"
-                           class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
-                </div>
+                {% if proceso_id %}
+                <input type="hidden" name="proceso_id" value="{{ proceso_id }}">
+                {% endif %}
             </div>
 
             <div>
                 <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">
-                    Días a proyectar: <span id="n-days-display" class="text-brand">{{ n_days_default }}</span>
+                    Cubrir pedido por <span id="n-days-display" class="text-brand">{{ n_days_default }}</span> días
                 </label>
                 <input type="range" name="n_days" min="7" max="120" value="{{ n_days_default }}"
                        oninput="document.getElementById('n-days-display').textContent = this.value"
@@ -64,11 +56,41 @@
                 <div class="flex justify-between text-[10px] text-[#999] mt-1">
                     <span>7d</span><span>30d</span><span>60d</span><span>90d</span><span>120d</span>
                 </div>
+                <p class="text-[11px] text-[#6f6f6f] mt-2">
+                    ¿Cuántos días querés que cubra el stock que vas a comprar? El sistema lo calcula
+                    multiplicando esto por el promedio diario de ventas.
+                </p>
+            </div>
+
+            <details class="text-xs text-[#6f6f6f]">
+                <summary class="cursor-pointer hover:text-[#1e1e1e] select-none">Ajustes avanzados</summary>
+                <div class="grid grid-cols-2 gap-3 mt-3">
+                    <div>
+                        <label class="block mb-1">Mes hasta</label>
+                        <select name="mes_hasta" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
+                            {% set mes_actual = (request.form.get('mes_hasta') | int) or (now.month if now else 4) %}
+                            {% for i in range(1, 13) %}
+                            <option value="{{ i }}" {% if i == mes_actual %}selected{% endif %}>{{ '%02d' | format(i) }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block mb-1">Año hasta</label>
+                        <input type="number" name="anio_hasta" value="{{ (now.year if now else 2026) }}" min="2020" max="2100"
+                               class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                </div>
+                <p class="mt-2">Por defecto se analiza hasta el mes actual. Cambialo solo si necesitás simular qué hubieras comprado en un mes pasado.</p>
+            </details>
+
+            <div class="text-[11px] text-[#888] bg-[#f8faf9] rounded-lg px-3 py-2 border border-[#e6efe9]">
+                Se analizan <strong>los últimos meses de ventas</strong> configurados en
+                <a href="{{ url_for('observer_sync_panel') }}" class="underline">Sync ObServer</a>.
             </div>
 
             <button type="submit"
                 class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2.5 rounded-lg text-sm transition-colors">
-                Analizar ventas
+                Analizar y proyectar
             </button>
         </form>
     </div>

@@ -464,12 +464,96 @@ def _pick(cols, candidates, required=True):
 # locales obs_* para no tener que pegarle a SQL Server en cada request.
 # ──────────────────────────────────────────────────────────────────────────
 
-def get_laboratorios_disponibles():
-    """Lee laboratorios del espejo local. El sync se hace por separado."""
-    from database import get_db, ObsLaboratorio
+def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
+    """Devuelve productos del laboratorio con ventas de 12 meses terminando en (anio_hasta, mes_hasta).
+
+    Formato compatible con lo que devolvían los parsers de sales_history:
+        [{'codigo_barra', 'nombre', 'precio_pvp', 'stock', 'ventas': [12 valores]}]
+
+    El 'codigo_barra' es el IdProducto de ObServer convertido a string. Hasta
+    que tengamos mapeo EAN↔IdProducto, esto permite trabajar pero los
+    matchings contra tabla productos se hacen por observer_id vía el puente.
+    """
+    from database import (get_db, ObsLaboratorio, ObsProducto,
+                          ObsStock, ObsVentaMensual)
+    cfg = _config()
+    id_farmacia = cfg['id_farmacia'] if cfg else int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+
+    # 12 meses hacia atrás desde (anio_hasta, mes_hasta)
+    meses = []
+    y, m = anio_hasta, mes_hasta
+    for _ in range(12):
+        meses.append((y, m))
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    meses.reverse()  # viejo → nuevo
+    desde_key = meses[0][0] * 100 + meses[0][1]
+    hasta_key = meses[-1][0] * 100 + meses[-1][1]
+
     with get_db() as session:
+        lab = (session.query(ObsLaboratorio)
+               .filter(ObsLaboratorio.descripcion == laboratorio).first())
+        if not lab:
+            return []
+
+        productos = (session.query(ObsProducto)
+                     .filter(ObsProducto.laboratorio_observer == lab.observer_id,
+                             ObsProducto.fecha_baja.is_(None))
+                     .all())
+        if not productos:
+            return []
+
+        prod_ids = [p.observer_id for p in productos]
+
+        ventas_rows = (session.query(ObsVentaMensual)
+                       .filter(ObsVentaMensual.id_farmacia == id_farmacia,
+                               ObsVentaMensual.producto_observer.in_(prod_ids),
+                               ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde_key,
+                               ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta_key)
+                       .all())
+        mapa_ventas = {}
+        for v in ventas_rows:
+            mapa_ventas.setdefault(v.producto_observer, {})[(v.anio, v.mes)] = float(v.unidades or 0)
+
+        stock_rows = (session.query(ObsStock)
+                      .filter(ObsStock.id_farmacia == id_farmacia,
+                              ObsStock.producto_observer.in_(prod_ids)).all())
+        mapa_stock = {s.producto_observer: int(s.stock_actual or 0) for s in stock_rows}
+
+        resultado = []
+        for p in productos:
+            v_mapa = mapa_ventas.get(p.observer_id, {})
+            ventas = [v_mapa.get((y, m), 0) for (y, m) in meses]
+            if sum(ventas) == 0 and mapa_stock.get(p.observer_id, 0) == 0:
+                continue  # sin ventas ni stock → lo filtramos
+            resultado.append({
+                'codigo_barra': str(p.observer_id),
+                'nombre': p.descripcion,
+                'precio_pvp': 0,  # TODO: cuando tengamos precio en DW
+                'stock': mapa_stock.get(p.observer_id, 0),
+                'ventas': ventas,
+            })
+        return resultado
+
+
+def get_laboratorios_disponibles():
+    """Lee laboratorios del espejo local con conteo real de productos."""
+    from sqlalchemy import func as _func
+    from database import get_db, ObsLaboratorio, ObsProducto
+    with get_db() as session:
+        conteo = dict(
+            session.query(ObsProducto.laboratorio_observer,
+                          _func.count(ObsProducto.observer_id))
+            .filter(ObsProducto.laboratorio_observer.isnot(None),
+                    ObsProducto.fecha_baja.is_(None))
+            .group_by(ObsProducto.laboratorio_observer).all()
+        )
         labs = (session.query(ObsLaboratorio)
                 .filter(ObsLaboratorio.fecha_baja.is_(None))
                 .order_by(ObsLaboratorio.descripcion).all())
-        return [{'nombre': l.descripcion, 'n_articulos': 0, 'observer_id': l.observer_id}
+        return [{'nombre': l.descripcion,
+                 'n_articulos': int(conteo.get(l.observer_id, 0)),
+                 'observer_id': l.observer_id}
                 for l in labs]

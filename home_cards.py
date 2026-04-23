@@ -24,8 +24,8 @@ ACCIONES_HOME = [
     },
     {
         'id': 'analisis',
-        'titulo': 'Análisis de compra',
-        'desc': 'Sugerencia de pedido desde ventas',
+        'titulo': 'Análisis y proyección',
+        'desc': 'Sugerencia de pedido según ventas y stock',
         'endpoint': 'purchase_index',
         'icono_path': 'M3 3v18h18M7 14l4-4 4 4 5-5',
         'bg_default': '#E8F3ED',

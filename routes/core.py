@@ -10,7 +10,14 @@ def init_app(app):
 
     @app.route('/')
     def index():
-        return render_template('index.html', config=get_config())
+        from flask_login import current_user
+        import home_cards as hc
+        with database.get_db() as session:
+            uid = current_user.id if current_user.is_authenticated else None
+            cards, _modo = hc.resolve_cards_para_usuario(session, uid)
+        # Solo visibles
+        cards = [c for c in cards if not c.get('oculto')]
+        return render_template('index.html', config=get_config(), acciones=cards)
 
     @app.route('/ingresos')
     def ingresos():

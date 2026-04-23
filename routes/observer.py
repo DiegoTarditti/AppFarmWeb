@@ -62,7 +62,13 @@ def init_app(app):
 
         if request.method == 'GET':
             labs = observer_source.get_laboratorios_disponibles()
-            return render_template('observer_analizar.html', laboratorios=labs, n_days_default=35)
+            lab_preseleccionado = (request.args.get('lab') or '').strip()
+            proceso_id = request.args.get('proceso', type=int)
+            return render_template('observer_analizar.html', laboratorios=labs,
+                                   n_days_default=35,
+                                   lab_preseleccionado=lab_preseleccionado,
+                                   proceso_id=proceso_id,
+                                   now=datetime.now())
 
         # POST: ejecutar análisis
         laboratorio = (request.form.get('laboratorio') or '').strip()
@@ -120,6 +126,7 @@ def init_app(app):
             'rot_media_tol': cfg['rot_media_tol'],
             'rot_baja_tol': cfg['rot_baja_tol'],
             'products': results,
+            'proceso_id': request.form.get('proceso_id', type=int),
         }
 
         # Registrar sesión con fuente='observer'

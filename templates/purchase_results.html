@@ -116,6 +116,7 @@
 
             <!-- Guardar pedido -->
             <form method="POST" action="{{ url_for('purchase_save_order', uid=uid) }}" id="form-save">
+                {% if proceso_id %}<input type="hidden" name="proceso_id" value="{{ proceso_id }}">{% endif %}
                 {% for p in products %}
                 <input type="hidden" name="qty_{{ loop.index0 }}" id="s-qty-{{ loop.index0 }}" value="{{ p.order_qty }}">
                 {% endfor %}

@@ -158,6 +158,14 @@ def init_app(app):
             session.add(proc)
             session.commit()
             pid = proc.id
+
+        # Para laboratorio: arrancar directo en Analizar Ventas con el lab precargado.
+        # Para droguería/proveedor: ir al detail (el flujo arranca desde factura).
+        if tipo == 'laboratorio':
+            import observer_source
+            if observer_source.observer_disponible():
+                return redirect(url_for('observer_analizar',
+                                        lab=partner_nombre, proceso=pid))
         return redirect(url_for('proceso_detail', proceso_id=pid))
 
     @app.route('/proceso/<int:proceso_id>')

@@ -556,7 +556,28 @@ def init_app(app):
                 session.add(pedido)
                 for it in items:
                     _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
+                session.flush()  # para tener pedido.id
+
+                # Si viene de un proceso → asociar + avanzar pasos 1 y 2
+                proceso_id = request.form.get('proceso_id', type=int) or data.get('proceso_id')
+                if proceso_id:
+                    proc = session.get(database.ProcesoCompra, proceso_id)
+                    if proc:
+                        proc.pedido_id = pedido.id
+                        if data.get('sesion_id'):
+                            proc.analisis_sesion_id = data.get('sesion_id')
+                        if not proc.analisis_hecho_en:
+                            proc.analisis_hecho_en = now_ar()
+                        if not proc.pedido_hecho_en:
+                            proc.pedido_hecho_en = now_ar()
+                        if proc.estado in ('BORRADOR', None):
+                            proc.estado = 'PEDIDO'
+                        proc.actualizado_en = now_ar()
                 session.commit()
+
+                if proceso_id:
+                    flash(f'Pedido guardado y asociado al proceso #{proceso_id}.', 'success')
+                    return redirect(url_for('proceso_detail', proceso_id=proceso_id))
                 flash(f'Pedido guardado: {len(items)} productos.')
                 return redirect(url_for('orders_list'))
             except Exception as e:

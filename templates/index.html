@@ -160,122 +160,33 @@
             </div>
 
             <!-- Utility row: acciones comunes -->
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-[#5a7a69] mb-3">Acciones frecuentes</h3>
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wide text-[#5a7a69]">Acciones frecuentes</h3>
+                <a href="{{ url_for('personalizar_home') }}"
+                   class="text-xs text-[#5a7a69] hover:text-[#1F5D40] flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                    Personalizar
+                </a>
+            </div>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-
-                <a href="{{ url_for('procesos_list') }}" class="util-card">
+                {% for card in acciones %}
+                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="util-card">
                     <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#E8F3ED]">
-                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+                        <div class="icon-wrap" style="background: {{ card.bg }};">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: {{ card.fg }};">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ card.icono_path }}"/>
                             </svg>
                         </div>
                         <div>
-                            <p class="title">Procesos de compra</p>
-                            <p class="desc">Ciclo análisis → pedido → factura → cruce</p>
+                            <p class="title">{{ card.titulo }}</p>
+                            <p class="desc">{{ card.desc }}</p>
                         </div>
                     </div>
                 </a>
-
-                <a href="{{ url_for('purchase_index') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#E8F3ED]">
-                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v18h18M7 14l4-4 4 4 5-5"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Análisis de compra</p>
-                            <p class="desc">Sugerencia de pedido desde ventas</p>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="{{ url_for('ingresos') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#FFF7DC]">
-                            <svg class="w-5 h-5 text-[#B38A00]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Control de Ingreso</p>
-                            <p class="desc">Subir facturas y cruzar con ERP</p>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="{{ url_for('cuentas_corrientes') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#E8F3ED]">
-                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Cuentas Corrientes</p>
-                            <p class="desc">Saldos y pagos por proveedor</p>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="{{ url_for('claims_list') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#FDE8E8]">
-                            <svg class="w-5 h-5 text-[#B91C1C]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M4.93 19h14.14A2 2 0 0020.93 17l-7.07-12a2 2 0 00-3.72 0L3.07 17A2 2 0 004.93 19z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Reclamos</p>
-                            <p class="desc">Diferencias pendientes y completadas</p>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="{{ url_for('orders_list') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#E8F3ED]">
-                            <svg class="w-5 h-5 text-[#2E7D5B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Pedidos guardados</p>
-                            <p class="desc">Análisis convertidos en pedidos</p>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="{{ url_for('productos_list') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#F1F5F9]">
-                            <svg class="w-5 h-5 text-[#475569]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Productos</p>
-                            <p class="desc">Catálogo master con códigos y PVP</p>
-                        </div>
-                    </div>
-                </a>
-
-                <a href="{{ url_for('settings') }}" class="util-card">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap bg-[#F3F4F6]">
-                            <svg class="w-5 h-5 text-[#6b7280]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">Configuración</p>
-                            <p class="desc">Ajustes del sistema</p>
-                        </div>
-                    </div>
-                </a>
-
+                {% endfor %}
             </div>
         </div>
     </div>

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% set nav_active = "home" %}
+{% block title %}Personalizar home{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Personalizar acciones frecuentes</h1>
+    <span class="text-xs text-[#6f6f6f]">Orden, color y visibilidad de las cards del home</span>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('index') }}"
+           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver al home</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-3xl mx-auto space-y-4">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm
+                {% if cat == 'error' %}bg-red-50 border border-red-200 text-red-800
+                {% else %}bg-emerald-50 border border-emerald-200 text-emerald-800{% endif %}">{{ m }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    <form method="post" id="prefs-form" class="space-y-4">
+
+        <!-- Modo -->
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-xs uppercase tracking-wide font-semibold text-[#6f6f6f] mb-2">Modo de orden</p>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="cursor-pointer">
+                    <input type="radio" name="modo" value="auto" class="peer hidden"
+                           {% if modo != 'fijo' %}checked{% endif %}>
+                    <div class="border-2 border-surface-border rounded-lg px-4 py-3 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 transition-colors">
+                        <p class="font-semibold text-sm">🧠 Automático</p>
+                        <p class="text-xs text-[#6f6f6f] mt-0.5">Las más usadas en los últimos 30 días aparecen primero.</p>
+                    </div>
+                </label>
+                <label class="cursor-pointer">
+                    <input type="radio" name="modo" value="fijo" class="peer hidden"
+                           {% if modo == 'fijo' %}checked{% endif %}>
+                    <div class="border-2 border-surface-border rounded-lg px-4 py-3 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 transition-colors">
+                        <p class="font-semibold text-sm">📌 Fijado</p>
+                        <p class="text-xs text-[#6f6f6f] mt-0.5">El orden que vos definís abajo, sin importar uso.</p>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Lista reordenable -->
+        <div class="bg-white border border-surface-border rounded-xl p-2">
+            <p class="px-3 py-2 text-xs text-[#6f6f6f]">
+                Arrastrá las cards para cambiar el orden. Cambiá el color del ícono con el selector. Ocultá las que no uses.
+            </p>
+            <ul id="card-list" class="space-y-1.5">
+                {% for c in cards %}
+                <li class="flex items-center gap-3 bg-[#f8faf9] border border-[#e6efe9] rounded-lg px-3 py-2.5 cursor-move"
+                    data-id="{{ c.id }}">
+                    <span class="text-[#999] select-none" title="Arrastrar">≡</span>
+                    <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 card-icon"
+                         style="background: {{ c.bg }};">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: {{ c.fg }};">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ c.icono_path }}"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-sm truncate">{{ c.titulo }}</p>
+                        <p class="text-[11px] text-[#6f6f6f] truncate">{{ c.desc }}</p>
+                    </div>
+                    <span class="text-[10px] text-[#888] font-mono hidden sm:block"
+                          title="Clicks en los últimos 30 días">{{ c.clicks_30d }} clicks</span>
+                    <label class="flex items-center gap-1 text-xs text-[#6f6f6f]">
+                        <span>Color</span>
+                        <input type="color" name="color_{{ c.id }}" value="{{ c.bg }}"
+                               class="w-7 h-7 border border-surface-border rounded cursor-pointer"
+                               onchange="this.parentElement.parentElement.querySelector('.card-icon').style.background = this.value">
+                    </label>
+                    <label class="flex items-center gap-1 text-xs text-[#6f6f6f]">
+                        <input type="checkbox" name="ocultos" value="{{ c.id }}"
+                               {% if c.oculto %}checked{% endif %} class="accent-red-600">
+                        Ocultar
+                    </label>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <input type="hidden" name="orden" id="orden-input" value="">
+
+        <div class="flex items-center justify-between">
+            <button type="submit" name="accion" value="reset"
+                    onclick="return confirm('Restablecer al default? Se pierden tu orden y colores personalizados.');"
+                    class="text-sm text-[#6f6f6f] hover:text-red-600 px-3 py-1.5 transition-colors">
+                Restablecer default
+            </button>
+            <div class="flex items-center gap-2">
+                <a href="{{ url_for('index') }}" target="_blank"
+                   class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5">
+                    Vista previa ↗
+                </a>
+                <button type="submit" name="accion" value="guardar"
+                        class="text-sm bg-[#2E7D5B] hover:bg-[#1F5D40] text-white font-semibold px-4 py-2 rounded-lg">
+                    Guardar
+                </button>
+            </div>
+        </div>
+
+    </form>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+const list = document.getElementById('card-list');
+const ordenInput = document.getElementById('orden-input');
+function actualizarOrden() {
+    const ids = [...list.querySelectorAll('[data-id]')].map(el => el.dataset.id);
+    ordenInput.value = ids.join(',');
+}
+new Sortable(list, {
+    animation: 150,
+    handle: 'li',
+    onEnd: () => {
+        // Al arrastrar pasamos automáticamente a modo fijo
+        const radioFijo = document.querySelector('input[name=modo][value=fijo]');
+        if (radioFijo) radioFijo.checked = true;
+        actualizarOrden();
+    }
+});
+actualizarOrden();
+// Guardar siempre con orden actualizado
+document.getElementById('prefs-form').addEventListener('submit', actualizarOrden);
+</script>
+{% endblock %}
