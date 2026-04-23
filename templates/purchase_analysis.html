@@ -22,6 +22,33 @@
     {% endif %}
     {% endwith %}
 
+    {% if observer_disponible %}
+    <div class="bg-gradient-to-br from-[#2E7D5B] to-[#1F5D40] rounded-xl p-6 mb-5 text-white shadow-lg">
+        <div class="flex items-start gap-3 mb-3">
+            <div class="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                </svg>
+            </div>
+            <div class="flex-1">
+                <p class="text-xs uppercase tracking-wide text-emerald-100 font-semibold">Paso 1 — recomendado</p>
+                <h2 class="font-bold text-lg mt-0.5">Primero examinemos las ventas</h2>
+                <p class="text-sm text-emerald-50 mt-1">
+                    Elegí un laboratorio y un período. Nos conectamos a ObServer y traemos las ventas en vivo — sin subir archivos.
+                </p>
+            </div>
+        </div>
+        <a href="{{ url_for('observer_analizar') }}"
+           class="block text-center bg-white text-[#1F5D40] font-bold text-sm py-2.5 rounded-lg hover:bg-emerald-50 transition-colors">
+            Analizar ventas desde ObServer →
+        </a>
+    </div>
+
+    <div class="text-xs uppercase tracking-wide text-[#888] font-semibold text-center my-4">
+        — o si preferís, subí un archivo —
+    </div>
+    {% endif %}
+
     <div class="bg-surface rounded-xl border border-surface-border p-8">
         <!-- Icon + title -->
         <div class="flex items-center gap-3 mb-6">
@@ -32,7 +59,7 @@
                 </svg>
             </div>
             <div>
-                <h1 class="text-lg font-bold text-[#1e1e1e]">An&aacute;lisis de ventas</h1>
+                <h1 class="text-lg font-bold text-[#1e1e1e]">{% if observer_disponible %}Analizar desde archivo{% else %}An&aacute;lisis de ventas{% endif %}</h1>
                 <p class="text-xs text-[#6f6f6f]">Evoluci&oacute;n de ventas por producto</p>
             </div>
         </div>

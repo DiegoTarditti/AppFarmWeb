@@ -496,6 +496,8 @@ class Usuario(Base):
     debe_cambiar_password = Column(Boolean, nullable=False, default=False)
     ultimo_login = Column(DateTime, nullable=True)
     creado_en = Column(DateTime, default=now_ar)
+    # {"modo":"auto|fijo","orden":[...ids],"colores":{id:"#xxx"},"ocultos":[...ids]}
+    preferencias_home_json = Column(Text, nullable=True)
 
     def get_id(self):
         return str(self.id)
@@ -511,6 +513,16 @@ class Usuario(Base):
     @property
     def is_anonymous(self):
         return False
+
+
+class HomeCardClick(Base):
+    """Tracking de clicks en las cards de 'Acciones frecuentes' del home.
+    Alimenta el modo Auto que rankea por uso reciente."""
+    __tablename__ = 'home_card_clicks'
+    id = Column(Integer, primary_key=True)
+    usuario_id = Column(Integer, ForeignKey('usuarios.id'), nullable=False, index=True)
+    card_id = Column(String(40), nullable=False, index=True)
+    clicked_at = Column(DateTime, default=now_ar, nullable=False, index=True)
 
 
 class ProductoPrecioHist(Base):
@@ -643,7 +655,8 @@ def init_db(database_url=None):
                         'plantillas', 'producto_precios_hist',
                         'obs_laboratorios', 'obs_rubros', 'obs_subrubros',
                         'obs_nombres_drogas', 'obs_productos', 'obs_stock',
-                        'obs_sync_log', 'obs_ventas_mensuales')
+                        'obs_sync_log', 'obs_ventas_mensuales',
+                        'home_card_clicks')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
@@ -845,6 +858,17 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_vtas_anio_mes ON obs_ventas_mensuales(anio, mes)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
+    conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS preferencias_home_json TEXT"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS home_card_clicks (
+            id SERIAL PRIMARY KEY,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            card_id VARCHAR(40) NOT NULL,
+            clicked_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hcc_user ON home_card_clicks(usuario_id, clicked_at DESC)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hcc_card ON home_card_clicks(card_id)"))
     # Puente en productos
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))
@@ -1308,6 +1332,17 @@ def _sqlite_add_columns(conn):
     existing_cfg = {row[1] for row in conn.execute(text("PRAGMA table_info(configuracion)"))}
     if 'observer_ventas_meses' not in existing_cfg:
         conn.execute(text("ALTER TABLE configuracion ADD COLUMN observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
+    existing_users = {row[1] for row in conn.execute(text("PRAGMA table_info(usuarios)"))}
+    if existing_users and 'preferencias_home_json' not in existing_users:
+        conn.execute(text("ALTER TABLE usuarios ADD COLUMN preferencias_home_json TEXT"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS home_card_clicks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+            card_id VARCHAR(40) NOT NULL,
+            clicked_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'observer_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN observer_id INTEGER REFERENCES obs_productos(observer_id)"))

@@ -35,13 +35,35 @@ def _bump_estado(proc, nuevo):
         proc.estado = nuevo
 
 
-def _serialize_list(proc):
+def _inferir_hecho(proc, session):
+    """Decide si cada paso está hecho combinando timestamps + asociaciones reales.
+
+    Esto es lo que hace 'auto-marcado': el usuario no necesita clickear 'Marcar
+    hecho' si ya subió factura / creó pedido / hizo cruce.
+    """
+    from database import StockDifference
+    tiene_diff_cruce = False
+    if proc.factura_id:
+        tiene_diff_cruce = session.query(StockDifference).filter_by(
+            factura_id=proc.factura_id).first() is not None
+    return {
+        'analisis': bool(proc.analisis_hecho_en) or proc.analisis_sesion_id is not None,
+        'pedido':   bool(proc.pedido_hecho_en)   or proc.pedido_id is not None,
+        'factura':  bool(proc.factura_hecha_en)  or proc.factura_id is not None,
+        'cruce':    bool(proc.cruce_hecho_en)    or tiene_diff_cruce,
+        'reclamo':  bool(proc.reclamo_hecho_en)  or proc.reclamo_id is not None,
+    }
+
+
+def _serialize_list(proc, session=None):
+    hechos_dict = _inferir_hecho(proc, session) if session else None
     pasos = []
     for p in PASOS:
         campo = 'factura_hecha_en' if p == 'factura' else f'{p}_hecho_en'
-        hecho = getattr(proc, campo, None)
-        pasos.append({'paso': p, 'hecho': bool(hecho),
-                      'fecha': hecho.strftime('%d/%m/%Y') if hecho else None})
+        ts = getattr(proc, campo, None)
+        hecho = hechos_dict[p] if hechos_dict is not None else bool(ts)
+        pasos.append({'paso': p, 'hecho': hecho,
+                      'fecha': ts.strftime('%d/%m/%Y') if ts else None})
     return {
         'id': proc.id, 'tipo': proc.tipo,
         'partner_nombre': proc.partner_nombre, 'estado': proc.estado,
@@ -74,7 +96,7 @@ def init_app(app):
             procs = base.order_by(ProcesoCompra.actualizado_en.desc()).all()
             if q_text:
                 procs = [p for p in procs if q_text in (p.partner_nombre or '').lower()]
-            data = [_serialize_list(p) for p in procs]
+            data = [_serialize_list(p, session) for p in procs]
 
             # Conteos para filtros
             counts = {est: 0 for est in ESTADOS_ORDEN}
@@ -88,11 +110,17 @@ def init_app(app):
             proveedores = [{'id': p.id, 'nombre': p.razon_social}
                            for p in session.query(Provider).order_by(Provider.razon_social).all()]
 
+            import observer_source
+            estado_ventas = observer_source.estado_ventas_mensuales(session)
+            observer_disponible = observer_source.observer_disponible()
+
         return render_template('procesos_list.html', procesos=data, counts=counts,
                                estado_filter=estado_filter, tipo_filter=tipo_filter,
                                q_text=q_text, total=len(data),
                                laboratorios=laboratorios, proveedores=proveedores,
-                               estados=ESTADOS_ORDEN)
+                               estados=ESTADOS_ORDEN,
+                               estado_ventas=estado_ventas,
+                               observer_disponible=observer_disponible)
 
     @app.route('/procesos/crear', methods=['POST'])
     def proceso_crear():
@@ -177,6 +205,8 @@ def init_app(app):
                                     'total': float(f.total or 0)}
                                    for f in query_f if f.id not in usados_f]
 
+            hechos = _inferir_hecho(proc, session)
+
             data = {
                 'id': proc.id, 'tipo': proc.tipo, 'partner_nombre': proc.partner_nombre,
                 'partner_id': proc.partner_id, 'estado': proc.estado,
@@ -189,6 +219,9 @@ def init_app(app):
                 'cruce_hecho_en': proc.cruce_hecho_en,
                 'reclamo_hecho_en': proc.reclamo_hecho_en,
                 'cerrado_en': proc.cerrado_en,
+                # Flags auto-calculados (verdadero si el paso está implícitamente hecho
+                # por tener el pedido/factura/etc asociado, aunque no haya timestamp)
+                'hechos': hechos,
                 'pedido': {
                     'id': pedido.id, 'periodo': pedido.periodo,
                     'laboratorio': pedido.laboratorio,

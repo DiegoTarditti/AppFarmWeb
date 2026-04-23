@@ -41,10 +41,35 @@ Si no existe esa tabla en ObServer, es un fix que tenemos que resolver del lado 
 - Confirmar si `DW.ProductosVendidos` tiene índice sobre `(FechaEstadistica, IdProducto)` o similar.
 - Si no, sugerir crear una vista agregada `DW.VentasMensualesPorLab` con: `IdLaboratorio, IdProducto, Año, Mes, UnidadesVendidas, ImporteTotal` — sería ideal para nuestro caso.
 
-### 4. Vista de recepciones de mercadería
-Hoy la app importa un Excel "ERP" para cruzar lo que llegó vs lo que vino en factura. Si ObServer guarda ingresos de mercadería, pedir exponer una vista `DW.Recepciones` con: `FechaRecepcion, ProveedorCuit, NumeroFactura, IdProducto, Cantidad, PrecioUnitario, Lote, Vencimiento`.
+### 4. Vista de ingresos/recepciones de mercadería
 
-Eso elimina el paso manual de subir el Excel ERP.
+Confirmado: **el usuario `usuarioDW` no ve ninguna vista con nombre `Ingreso*`, `Compra*`, `Recepcion*`, `Movimiento*`, etc.** en todo el server. Los datos sí existen (el ERP genera el reporte `rptIngresoEgresoMercaderia.xlsx` con todas las columnas necesarias), solo hay que exponerlos.
+
+**Pedido concreto**: crear una vista `DW.IngresosMercaderia` (o `DW.MovimientosMercaderia` si querés incluir también devoluciones/egresos en el mismo schema) con las columnas que el reporte del ERP ya calcula:
+
+| Columna sugerida | Qué contiene | Ya existe en el reporte |
+|---|---|---|
+| `IdIngreso` | PK interna | nro de orden "Ingreso" de la col 2 |
+| `IdFarmacia` | filtro por sucursal | — |
+| `FechaIngreso` | fecha de la operación | — (cabecera del reporte) |
+| `NumeroComprobante` | ej. `A001317854274` | sí (fila 14) |
+| `ProveedorCuit` | ej. `30-53975649-0` | sí (fila 12) |
+| `ProveedorNombre` | ej. `Kellerhoff` | sí (fila 11) |
+| `IdProducto` | FK a DW.Productos | — (el reporte usa descripción) |
+| `CodigoBarra` | EAN | sí (fila 33) |
+| `CantidadPedida` | "Pedido" | sí |
+| `CantidadRecibida` | "Recibido" | sí |
+| `CantidadEnFalta` | "En falta" | sí |
+| `CantidadDevuelta` | "Devueltas" | sí |
+| `CantidadNoEntregada` | "No entr." | sí |
+| `CantidadNoFacturada` | "No fact." | sí |
+| `PrecioCosto` | "Costo" | sí |
+| `PrecioVenta` | "Precio" | sí |
+| `StockAlMomento` | stock después del ingreso | sí |
+| `Lote` | (si el sistema lo registra) | — |
+| `Vencimiento` | (si el sistema lo registra) | — |
+
+Con esto, dejamos de subir el Excel ERP y el cruce factura↔ingreso se hace 100% automático desde ObServer. Hoy es un paso manual.
 
 ### 5. Permisos de lectura a vistas adicionales si hiciera falta
 El usuario `usuarioDW` solo ve el esquema `DW`. Si en el futuro queremos leer algo que esté fuera de ese esquema (ej. ingresos de mercadería que no se expusieron), pedir GRANT SELECT a esa vista específica.

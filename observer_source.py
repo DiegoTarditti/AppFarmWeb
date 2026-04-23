@@ -354,12 +354,23 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
     desde_key = desde_anio * 100 + desde_mes
     hasta_key = hasta_anio * 100 + hasta_mes
 
+    from sqlalchemy import text as _sqltext
     ids_validos = {pid for (pid,) in session.query(ObsProducto.observer_id).all()}
+
+    # Estrategia delete+insert: borramos el rango que vamos a re-traer y
+    # bulk-inserteamos. Idempotente, rápido y sin duplicados.
+    session.execute(_sqltext("""
+        DELETE FROM obs_ventas_mensuales
+        WHERE id_farmacia = :fid
+          AND (anio * 100 + mes) BETWEEN :d AND :h
+    """), {'fid': int(id_farmacia), 'd': int(desde_key), 'h': int(hasta_key)})
+    session.flush()
 
     conn = _connect(timeout=180)
     if conn is None:
         raise RuntimeError('ObServer no configurado')
     n = skipped = 0
+    ts = now_ar()
     try:
         with conn.cursor(as_dict=True) as cur:
             cur.execute("""
@@ -375,24 +386,28 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
                   AND ([Año] * 100 + Mes) BETWEEN %d AND %d
                 GROUP BY IdProducto, [Año], Mes
             """, (int(id_farmacia), int(desde_key), int(hasta_key)))
+            buffer = []
             for r in cur.fetchall():
                 pid = int(r['IdProducto'])
                 if pid not in ids_validos:
                     skipped += 1
                     continue
-                pk = (int(id_farmacia), pid, int(r['Anio']), int(r['Mes']))
-                obj = session.get(ObsVentaMensual, pk)
-                if obj is None:
-                    obj = ObsVentaMensual(id_farmacia=pk[0], producto_observer=pk[1],
-                                          anio=pk[2], mes=pk[3])
-                    session.add(obj)
-                obj.unidades = r['Unidades'] or 0
-                obj.monto = r['Monto'] or 0
-                obj.transacciones = int(r['Trx'] or 0)
-                obj.sync_en = now_ar()
+                buffer.append({
+                    'id_farmacia': int(id_farmacia),
+                    'producto_observer': pid,
+                    'anio': int(r['Anio']),
+                    'mes': int(r['Mes']),
+                    'unidades': r['Unidades'] or 0,
+                    'monto': r['Monto'] or 0,
+                    'transacciones': int(r['Trx'] or 0),
+                    'sync_en': ts,
+                })
                 n += 1
-                if n % 5000 == 0:
-                    session.flush()
+                if len(buffer) >= 2000:
+                    session.execute(ObsVentaMensual.__table__.insert(), buffer)
+                    buffer.clear()
+            if buffer:
+                session.execute(ObsVentaMensual.__table__.insert(), buffer)
     finally:
         conn.close()
     duracion = int((time.time() - t0) * 1000)
@@ -401,6 +416,35 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
         extra += f' · {skipped} huerfanos'
     _log_sync(session, 'ventas_mensuales', n, duracion, extra)
     return {'upsert': n, 'duracion_ms': duracion, 'meses': meses, 'skipped': skipped}
+
+
+def estado_ventas_mensuales(session, dias_fresco=7):
+    """Devuelve dict con estado de frescura de obs_ventas_mensuales.
+
+    {
+      'estado': 'fresco' | 'viejo' | 'nunca',
+      'ultimo_sync': datetime o None,
+      'dias': int,
+      'filas': int,
+      'mensaje': str,
+    }
+    """
+    from database import ObsSyncLog, ObsVentaMensual, now_ar
+    filas = session.query(ObsVentaMensual).count()
+    ultimo = (session.query(ObsSyncLog)
+              .filter(ObsSyncLog.entidad == 'ventas_mensuales')
+              .order_by(ObsSyncLog.ejecutado_en.desc()).first())
+    if not ultimo or filas == 0:
+        return {'estado': 'nunca', 'ultimo_sync': None, 'dias': None, 'filas': 0,
+                'mensaje': 'Todavía no se importaron ventas desde ObServer.'}
+    delta = (now_ar() - ultimo.ejecutado_en).days
+    if delta <= dias_fresco:
+        return {'estado': 'fresco', 'ultimo_sync': ultimo.ejecutado_en, 'dias': delta,
+                'filas': filas,
+                'mensaje': f'Estadísticas al día — última actualización hace {delta} día(s).'}
+    return {'estado': 'viejo', 'ultimo_sync': ultimo.ejecutado_en, 'dias': delta,
+            'filas': filas,
+            'mensaje': f'Estadísticas desactualizadas — última sincronización hace {delta} día(s).'}
 
 
 def _pick(cols, candidates, required=True):

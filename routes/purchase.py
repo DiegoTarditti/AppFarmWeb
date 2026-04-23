@@ -159,7 +159,9 @@ def init_app(app):
 
     @app.route('/purchase')
     def purchase_index():
-        return render_template('purchase_analysis.html')
+        import observer_source
+        return render_template('purchase_analysis.html',
+                               observer_disponible=observer_source.observer_disponible())
 
     @app.route('/purchase/analyze', methods=['POST'])
     def purchase_analyze():

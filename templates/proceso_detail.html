@@ -59,7 +59,7 @@
     #}
 
     <!-- ─── PASO 1: ANÁLISIS DE VENTAS ─── -->
-    {% set hecho = proc.analisis_hecho_en is not none %}
+    {% set hecho = proc.hechos.analisis %}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
                     {% if hecho %}bg-emerald-50/50{% endif %}">
@@ -156,7 +156,7 @@
     </div>
 
     <!-- ─── PASO 2: PEDIDO ─── -->
-    {% set hecho = proc.pedido_hecho_en is not none %}
+    {% set hecho = proc.hechos.pedido %}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
                     {% if hecho %}bg-emerald-50/50{% endif %}">
@@ -238,7 +238,7 @@
     </div>
 
     <!-- ─── PASO 3: FACTURA ─── -->
-    {% set hecho = proc.factura_hecha_en is not none %}
+    {% set hecho = proc.hechos.factura %}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
                     {% if hecho %}bg-emerald-50/50{% endif %}">
@@ -336,7 +336,7 @@
     </div>
 
     <!-- ─── PASO 4: CRUCE / INGRESO ─── -->
-    {% set hecho = proc.cruce_hecho_en is not none %}
+    {% set hecho = proc.hechos.cruce %}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
                     {% if hecho %}bg-emerald-50/50{% endif %}">
@@ -395,7 +395,7 @@
     </div>
 
     <!-- ─── PASO 5: RECLAMO (opcional) ─── -->
-    {% set hecho = proc.reclamo_hecho_en is not none %}
+    {% set hecho = proc.hechos.reclamo %}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="flex items-center gap-3 px-5 py-3 border-b border-surface-border
                     {% if hecho %}bg-emerald-50/50{% endif %}">

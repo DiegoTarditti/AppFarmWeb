@@ -80,6 +80,9 @@ def init_app(app):
                     break  # si falla una, no seguir con las que dependen
 
         flash('Sync ObServer — ' + ' · '.join(resultados), 'success')
+        next_url = (request.form.get('next') or '').strip()
+        if next_url and next_url.startswith('/'):
+            return redirect(next_url)
         return redirect(url_for('observer_sync_panel'))
 
     @app.route('/admin/observer-match-productos', methods=['POST'])

@@ -24,6 +24,7 @@ from routes import (
     observer,
     observer_sync,
     admin,
+    home_cards,
 )
 
 _modules = [
@@ -31,6 +32,7 @@ _modules = [
     observer,
     observer_sync,
     admin,
+    home_cards,
     core,
     providers,
     laboratorios,
