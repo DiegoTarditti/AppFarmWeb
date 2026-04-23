@@ -366,6 +366,22 @@ class DockerPanel(tk.Tk):
         btn_cfg.bind("<Enter>", lambda e: btn_cfg.config(bg=BORDER))
         btn_cfg.bind("<Leave>", lambda e: btn_cfg.config(bg=SURFACE))
 
+        # ── Sync desde Render ──
+        tk.Label(left, text="DATA DE RENDER", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
+
+        btn_pull = tk.Button(
+            left, text="🔄  Traer DB de Render",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1a3a2a", fg="#7fff9f",
+            activebackground="#2a4a3a", activeforeground="#7fff9f",
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=self._run_pull_render
+        )
+        btn_pull.pack(fill="x", pady=2)
+        btn_pull.bind("<Enter>", lambda e: btn_pull.config(bg="#2a5a3a"))
+        btn_pull.bind("<Leave>", lambda e: btn_pull.config(bg="#1a3a2a"))
+
         tk.Frame(left, bg=BORDER, height=1).pack(fill="x", pady=8)
 
         tk.Button(left, text="⛔  Detener proceso",
@@ -973,6 +989,35 @@ class DockerPanel(tk.Tk):
         self._queue.put(("cmd", cmd))
         self._update_queue_badge()
         self._append(f"  ↳ agente encolado: {carpeta} → {url}\n", "dim")
+
+    def _run_pull_render(self):
+        """Corre scripts/pull_from_render.py del proyecto actual.
+        Reemplaza toda la DB local por un snapshot fresco de Render."""
+        proyecto = self.dir_var.get()
+        if not proyecto or not os.path.isdir(proyecto):
+            self._append("  ✖  Seleccioná primero el directorio del proyecto.\n", "err")
+            return
+
+        script = os.path.join(proyecto, "scripts", "pull_from_render.py")
+        if not os.path.isfile(script):
+            self._append(f"  ✖  No se encontró {script}\n", "err")
+            return
+
+        if not messagebox.askyesno(
+            "Traer DB de Render",
+            "Se va a REEMPLAZAR toda la data local por el snapshot de Render.\n"
+            "Perdés cualquier prueba local que hayas hecho.\n\n"
+            "Esto tarda ~1 minuto. Después se reinicia el contenedor web.\n\n"
+            "¿Continuar?",
+            parent=self
+        ):
+            return
+
+        # Encadenamos el pull + restart web en una sola shell (cwd = proyecto)
+        cmd = f'python "{script}" && docker-compose restart web'
+        self._queue.put(("cmd", cmd))
+        self._update_queue_badge()
+        self._append("  ↳ pull de Render encolado (dump + restore + restart)\n", "dim")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
