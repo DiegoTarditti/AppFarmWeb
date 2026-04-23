@@ -99,6 +99,63 @@ def init_app(app):
                 session.commit()
         return redirect(url_for('laboratorios_list'))
 
+    @app.route('/laboratorios/sync-observer', methods=['POST'])
+    def laboratorios_sync_observer():
+        """Sincroniza laboratorios desde ObServer (DW.Laboratorios).
+
+        Estrategia:
+        - Si existe lab local con mismo observer_id → update nombre.
+        - Si no y existe lab con mismo nombre (case-insensitive) → asocia observer_id.
+        - Si no existe → crea con activo=False (escondido hasta marcarlo).
+        """
+        from sqlalchemy import func as _func
+        import observer_source
+
+        if not observer_source.observer_disponible():
+            flash('ObServer no está disponible. Verificá la conexión.', 'error')
+            return redirect(url_for('laboratorios_list'))
+
+        remotos = observer_source.get_laboratorios_dw()
+        if not remotos:
+            flash('ObServer devolvió 0 laboratorios — revisá la query.', 'error')
+            return redirect(url_for('laboratorios_list'))
+
+        nuevos = actualizados = vinculados = 0
+        with database.get_db() as session:
+            existentes_por_obs = {l.observer_id: l for l in
+                                  session.query(Laboratorio)
+                                  .filter(Laboratorio.observer_id.isnot(None)).all()}
+            existentes_por_nom = {l.nombre.lower(): l for l in
+                                  session.query(Laboratorio).all()}
+
+            for r in remotos:
+                obs_id = r['id']
+                nom = r['nombre']
+                if not nom:
+                    continue
+
+                lab = existentes_por_obs.get(obs_id)
+                if lab:
+                    if lab.nombre != nom:
+                        lab.nombre = nom
+                        actualizados += 1
+                    continue
+
+                lab = existentes_por_nom.get(nom.lower())
+                if lab:
+                    lab.observer_id = obs_id
+                    vinculados += 1
+                    continue
+
+                session.add(Laboratorio(nombre=nom, observer_id=obs_id, activo=False))
+                nuevos += 1
+
+            session.commit()
+
+        flash(f'Sync ObServer: {nuevos} nuevos (inactivos), {vinculados} vinculados, '
+              f'{actualizados} renombrados.')
+        return redirect(url_for('laboratorios_activos'))
+
     @app.route('/laboratorios/activos', methods=['GET', 'POST'])
     def laboratorios_activos():
         """Pantalla admin para activar/desactivar laboratorios en bulk."""
@@ -118,7 +175,8 @@ def init_app(app):
 
             labs = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
             n_activos = sum(1 for l in labs if l.activo)
-            data = [{'id': l.id, 'nombre': l.nombre, 'activo': bool(l.activo)} for l in labs]
+            data = [{'id': l.id, 'nombre': l.nombre, 'activo': bool(l.activo),
+                     'observer_id': l.observer_id} for l in labs]
         return render_template('laboratorios_activos.html',
                                laboratorios=data, n_total=len(data), n_activos=n_activos)
 

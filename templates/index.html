@@ -144,15 +144,15 @@
                             </svg>
                         </div>
                         <div>
-                            <h2>Proveedores</h2>
-                            <p>Distribuidores y otros partners</p>
+                            <h2>Otros</h2>
+                            <p>Proveedores que no son droguería ni laboratorio</p>
                         </div>
                     </div>
                     <div class="actions">
-                        <a href="{{ url_for('providers_list') }}?tipo=proveedor" class="btn-main">Ver proveedores →</a>
+                        <a href="{{ url_for('providers_list') }}?tipo=otro" class="btn-main">Ver otros →</a>
                     </div>
                     <div class="actions">
-                        <a href="{{ url_for('procesos_list') }}?tipo=proveedor" class="btn-sub flex-1">Procesos PROV</a>
+                        <a href="{{ url_for('procesos_list') }}?tipo=otro" class="btn-sub flex-1">Procesos</a>
                         <a href="{{ url_for('claims_list') }}" class="btn-sub flex-1">Reclamos</a>
                     </div>
                 </div>

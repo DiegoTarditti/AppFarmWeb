@@ -36,6 +36,7 @@ class Laboratorio(Base):
     id = Column(Integer, primary_key=True)
     nombre = Column(String(150), nullable=False, unique=True)
     activo = Column(Boolean, nullable=False, default=True)
+    observer_id = Column(Integer, nullable=True, unique=True)
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -660,6 +661,9 @@ def _pg_add_columns(conn):
         "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"
     ))
     conn.execute(text(
+        "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS observer_id INTEGER UNIQUE"
+    ))
+    conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL"
     ))
     conn.execute(text("""
@@ -690,11 +694,16 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_baja_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"
     ))
+    # Asegurar columnas keep_alive antes del INSERT (si la tabla ya existe sin ellas,
+    # el INSERT explota con NOT NULL porque no les ponemos valor).
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
     conn.execute(text(
         "INSERT INTO configuracion "
         "(id, farmacia_nombre, umbral_pico, umbral_baja, umbral_tendencia, "
-        " rot_alta_min, rot_alta_tol, rot_media_min, rot_media_tol, rot_baja_tol) "
-        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0) "
+        " rot_alta_min, rot_alta_tol, rot_media_min, rot_media_tol, rot_baja_tol, "
+        " keep_alive_enabled, keep_alive_interval_min) "
+        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0, FALSE, 10) "
         "ON CONFLICT DO NOTHING"
     ))
     conn.execute(text(
@@ -1028,6 +1037,8 @@ def _sqlite_add_columns(conn):
     existing_lab = {row[1] for row in conn.execute(text("PRAGMA table_info(laboratorios)"))}
     if 'activo' not in existing_lab:
         conn.execute(text("ALTER TABLE laboratorios ADD COLUMN activo BOOLEAN NOT NULL DEFAULT 1"))
+    if 'observer_id' not in existing_lab:
+        conn.execute(text("ALTER TABLE laboratorios ADD COLUMN observer_id INTEGER UNIQUE"))
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'laboratorio_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN laboratorio_id INTEGER REFERENCES laboratorios(id)"))

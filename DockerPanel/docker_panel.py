@@ -481,6 +481,18 @@ class DockerPanel(tk.Tk):
         self._helper_lbl.pack(side="right", padx=4)
         # === END HELPER HTTP ===
 
+        # Browser: puerto HTTP del contenedor web (click abre en navegador)
+        tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
+        self._browser_lbl = tk.Label(
+            self._status_bar,
+            text="○ browser —",
+            font=("Segoe UI", 8, "bold"),
+            bg="#111113", fg=FG_DIM, cursor="hand2",
+        )
+        self._browser_lbl.pack(side="right", padx=4)
+        self._browser_lbl.bind("<Button-1>", lambda e: self._open_browser())
+        self._browser_port = None
+
         # === BEGIN KEEPALIVE RENDER (copy to unified panel) ===
         tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
         self._keepalive_lbl = tk.Label(
@@ -562,6 +574,22 @@ class DockerPanel(tk.Tk):
         except Exception:
             db_has_image = False
 
+        # Puerto del browser (si web está running)
+        browser_port = None
+        if 'web' in running_services:
+            try:
+                r_port = subprocess.run(
+                    "docker-compose port web 5000",
+                    shell=True, cwd=cwd,
+                    capture_output=True, text=True, timeout=10
+                )
+                # Output: "0.0.0.0:5001" o similar
+                out = r_port.stdout.strip()
+                if ':' in out:
+                    browser_port = out.rsplit(':', 1)[-1].strip()
+            except Exception:
+                pass
+
         def _update():
             for name in ("web", "db"):
                 dot, lbl = self._status_indicators[name]
@@ -581,10 +609,24 @@ class DockerPanel(tk.Tk):
                     dot.config(fg=YELLOW)
                     lbl.config(fg=YELLOW)
 
+            # Browser: verde con puerto si web arriba, gris si no
+            self._browser_port = browser_port
+            if browser_port:
+                self._browser_lbl.config(text=f"● browser :{browser_port}", fg=GREEN)
+            else:
+                self._browser_lbl.config(text="○ browser —", fg=FG_DIM)
+
             now = datetime.datetime.now().strftime("%H:%M:%S")
             self._status_time_lbl.config(text=f"actualizado {now}")
 
         self.after(0, _update)
+
+    def _open_browser(self):
+        """Abre http://localhost:<puerto> en el navegador default."""
+        if not self._browser_port:
+            return
+        import webbrowser
+        webbrowser.open(f"http://localhost:{self._browser_port}")
 
     def _revisar_carpeta(self):
         """Escanea la carpeta configurada y muestra cuántos PDFs hay pendientes."""

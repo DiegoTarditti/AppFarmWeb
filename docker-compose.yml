@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:15
+    image: postgres:17
     restart: unless-stopped
     command: postgres -c timezone=UTC -c log_timezone=UTC
     environment:
@@ -19,7 +19,7 @@ services:
       retries: 10
 
   observer_db:
-    image: postgres:15
+    image: postgres:17
     restart: unless-stopped
     command: postgres -c timezone=UTC -c log_timezone=UTC
     environment:
@@ -51,7 +51,7 @@ services:
       TZ: America/Argentina/Buenos_Aires
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     ports:
-      - "${WEB_PORT:-5001}:5000"
+      - "${WEB_PORT:-5000}:5000"
     depends_on:
       db:
         condition: service_healthy

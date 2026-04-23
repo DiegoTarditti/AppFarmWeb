@@ -1,221 +1,139 @@
-"""Capa de acceso a la DB de ObServer (o su simulación en docker).
+"""Capa de acceso a la DB real de ObServer (SQL Server 2014).
 
-Expone funciones que devuelven datos en el formato que el resto de la app ya usa,
-para que sea intercambiable con la fuente de archivos (PDF/Excel).
+Lee de las vistas DW.* vía pymssql. Las conexiones se abren y cierran por query
+(el pool de pymssql no es thread-safe y no compensa para el caudal que manejamos).
 
-Si OBSERVER_DATABASE_URL no está seteado, todas las funciones devuelven
-observer_disponible()=False y cada consulta retorna None o lista vacía.
+Config vía env vars (en docker-compose.yml / .env):
+
+    OBSERVER_HOST=192.168.1.137
+    OBSERVER_PORT=54572         # puerto TCP dinámico o fijo de la instancia
+    OBSERVER_USER=usuarioDW
+    OBSERVER_PASS=...
+    OBSERVER_DB=ObServerGestion
+    OBSERVER_TDSVER=7.0         # SQL Server 2014 requiere TDS 7.0 via FreeTDS
+    OBSERVER_ID_FARMACIA=10525  # filtro por sucursal para vistas multi-farmacia
+
+Si OBSERVER_HOST no está seteado, `observer_disponible()` devuelve False
+y todas las funciones devuelven listas vacías (no rompe la app si no hay acceso).
 """
-
 import os
 import logging
-from contextlib import contextmanager
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker
+
+try:
+    import pymssql
+except ImportError:
+    pymssql = None
 
 _log = logging.getLogger(__name__)
 
-_engine = None
-_Session = None
-_url = None
+# Forzar versión TDS antes de cualquier conexión
+os.environ.setdefault('TDSVER', os.environ.get('OBSERVER_TDSVER', '7.0'))
 
 
-def _init():
-    global _engine, _Session, _url
-    _url = os.environ.get('OBSERVER_DATABASE_URL')
-    if not _url:
-        return
-    if _url.startswith('postgres://'):
-        _url = _url.replace('postgres://', 'postgresql://', 1)
-    _engine = create_engine(_url, echo=False, future=True, pool_pre_ping=True)
-    _Session = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
+def _config():
+    """Lee config de entorno. Devuelve dict o None si falta algo obligatorio."""
+    host = os.environ.get('OBSERVER_HOST', '').strip()
+    if not host or pymssql is None:
+        return None
+    return {
+        'host':      host,
+        'port':      int(os.environ.get('OBSERVER_PORT', '1433')),
+        'user':      os.environ.get('OBSERVER_USER', '').strip(),
+        'password':  os.environ.get('OBSERVER_PASS', '').strip(),
+        'database':  os.environ.get('OBSERVER_DB', 'ObServerGestion').strip(),
+        'id_farmacia': int(os.environ.get('OBSERVER_ID_FARMACIA', '10525')),
+    }
 
 
-_init()
-
-
-@contextmanager
-def _session():
-    if _Session is None:
-        yield None
-        return
-    s = _Session()
-    try:
-        yield s
-    finally:
-        s.close()
+def _connect(timeout=10):
+    """Abre una conexión nueva. Llamador debe cerrarla."""
+    cfg = _config()
+    if not cfg:
+        return None
+    return pymssql.connect(
+        server=cfg['host'], port=cfg['port'],
+        user=cfg['user'], password=cfg['password'],
+        database=cfg['database'],
+        timeout=timeout, login_timeout=timeout,
+    )
 
 
 def observer_disponible():
-    """True si la DB de ObServer responde a un ping simple."""
-    if _engine is None:
+    """True si la DB responde a un ping simple en <5s."""
+    if not _config():
         return False
     try:
-        with _engine.connect() as conn:
-            conn.execute(text('SELECT 1'))
-        return True
+        conn = _connect(timeout=5)
+        if conn is None:
+            return False
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            return True
+        finally:
+            conn.close()
     except Exception as e:
         _log.warning('ObServer no responde: %s', e)
         return False
 
 
+# ───────────────────────────────────────────────────────────────────────────
+# Laboratorios
+# ───────────────────────────────────────────────────────────────────────────
+
+def get_laboratorios_dw():
+    """Devuelve todos los laboratorios activos de DW.Laboratorios.
+
+    Lista de dicts con: {'id': int, 'nombre': str}. Lista vacía si no hay conexión.
+    """
+    conn = _connect()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdLaboratorio, Descripcion
+                FROM DW.Laboratorios
+                WHERE FechaBaja IS NULL
+                ORDER BY Descripcion
+            """)
+            return [{'id': int(r['IdLaboratorio']),
+                     'nombre': (r['Descripcion'] or '').strip()}
+                    for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ───────────────────────────────────────────────────────────────────────────
+# Stubs — se implementan en fases siguientes cuando las use alguna ruta
+# ───────────────────────────────────────────────────────────────────────────
+
+def get_laboratorios_disponibles():
+    """Alias legacy. Devuelve solo nombres para los dropdowns existentes."""
+    return [{'nombre': l['nombre'], 'n_articulos': 0} for l in get_laboratorios_dw()]
+
+
 def get_articulo(codigo_barra):
-    """Devuelve dict con datos maestros del artículo o None."""
-    if not codigo_barra:
-        return None
-    with _session() as s:
-        if s is None:
-            return None
-        row = s.execute(text("""
-            SELECT codigo_barra, descripcion, laboratorio, monodroga,
-                   presentacion, accion_terapeutica, precio_pvp, stock_actual
-            FROM articulos WHERE codigo_barra = :ean
-        """), {'ean': codigo_barra}).first()
-        if not row:
-            return None
-        return {
-            'codigo_barra': row.codigo_barra, 'descripcion': row.descripcion,
-            'laboratorio': row.laboratorio, 'monodroga': row.monodroga,
-            'presentacion': row.presentacion, 'accion_terapeutica': row.accion_terapeutica,
-            'precio_pvp': float(row.precio_pvp or 0), 'stock': int(row.stock_actual or 0),
-        }
+    """TODO Fase 5 (mapeo EAN↔IdProducto)."""
+    return None
 
 
 def get_ventas_12_meses(codigo_barra, anio_hasta, mes_hasta):
-    """Devuelve lista de 12 unidades mensuales terminando en (anio_hasta, mes_hasta).
-    Los meses sin ventas devuelven 0. El orden es del más viejo al más nuevo.
-    """
-    if not codigo_barra:
-        return [0] * 12
-    # Calcular los 12 (año, mes) hacia atrás
-    meses = []
-    y, m = anio_hasta, mes_hasta
-    for _ in range(12):
-        meses.append((y, m))
-        m -= 1
-        if m == 0:
-            m = 12
-            y -= 1
-    meses.reverse()  # del más viejo al más nuevo
-
-    with _session() as s:
-        if s is None:
-            return [0] * 12
-        rows = s.execute(text("""
-            SELECT anio, mes, unidades FROM ventas_mensuales
-            WHERE codigo_barra = :ean AND (anio, mes) IN :tuplas
-        """).bindparams().execution_options(), {
-            'ean': codigo_barra, 'tuplas': tuple(meses)
-        }).all() if False else None
-        # Fallback con query más portable
-        rows = s.execute(text("""
-            SELECT anio, mes, unidades FROM ventas_mensuales
-            WHERE codigo_barra = :ean
-              AND (anio * 100 + mes) BETWEEN :desde AND :hasta
-        """), {
-            'ean': codigo_barra,
-            'desde': meses[0][0] * 100 + meses[0][1],
-            'hasta': meses[-1][0] * 100 + meses[-1][1],
-        }).all()
-        mapa = {(r.anio, r.mes): int(r.unidades or 0) for r in rows}
-        return [mapa.get((y, m), 0) for (y, m) in meses]
+    """TODO Fase 2. Hoy devuelve ceros para no romper callers."""
+    return [0] * 12
 
 
 def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
-    """Devuelve lista de productos del laboratorio con sus ventas 12 meses.
-    Formato compatible con lo que devuelve el parser de sales_history.
-    """
-    if not laboratorio:
-        return []
-    # Reutilizar cálculo de meses
-    meses = []
-    y, m = anio_hasta, mes_hasta
-    for _ in range(12):
-        meses.append((y, m))
-        m -= 1
-        if m == 0:
-            m = 12
-            y -= 1
-    meses.reverse()
-    desde_key = meses[0][0] * 100 + meses[0][1]
-    hasta_key = meses[-1][0] * 100 + meses[-1][1]
-
-    with _session() as s:
-        if s is None:
-            return []
-        arts = s.execute(text("""
-            SELECT codigo_barra, descripcion, precio_pvp, stock_actual
-            FROM articulos WHERE laboratorio = :lab
-            ORDER BY descripcion
-        """), {'lab': laboratorio}).all()
-        if not arts:
-            return []
-        eans = [a.codigo_barra for a in arts]
-        rows = s.execute(text("""
-            SELECT codigo_barra, anio, mes, unidades
-            FROM ventas_mensuales
-            WHERE codigo_barra = ANY(:eans)
-              AND (anio * 100 + mes) BETWEEN :desde AND :hasta
-        """), {'eans': eans, 'desde': desde_key, 'hasta': hasta_key}).all()
-        ventas_por_ean = {}
-        for r in rows:
-            ventas_por_ean.setdefault(r.codigo_barra, {})[(r.anio, r.mes)] = int(r.unidades or 0)
-        productos = []
-        for a in arts:
-            v_mapa = ventas_por_ean.get(a.codigo_barra, {})
-            ventas = [v_mapa.get((y, m), 0) for (y, m) in meses]
-            productos.append({
-                'codigo_barra': a.codigo_barra,
-                'nombre': a.descripcion,
-                'precio_pvp': float(a.precio_pvp or 0),
-                'stock': int(a.stock_actual or 0),
-                'ventas': ventas,
-            })
-        return productos
-
-
-def get_laboratorios_disponibles():
-    """Lista de laboratorios con al menos un producto en ObServer."""
-    with _session() as s:
-        if s is None:
-            return []
-        rows = s.execute(text("""
-            SELECT laboratorio, COUNT(*) AS n_articulos
-            FROM articulos WHERE laboratorio IS NOT NULL AND laboratorio <> ''
-            GROUP BY laboratorio ORDER BY laboratorio
-        """)).all()
-        return [{'nombre': r.laboratorio, 'n_articulos': int(r.n_articulos)} for r in rows]
+    """TODO Fase 2 (ventas por lab desde DW.ProductosVendidos)."""
+    return []
 
 
 def get_recepciones_factura(numero_factura, proveedor_cuit=None):
-    """Devuelve los ítems recepcionados de una factura (para el cruce)."""
-    if not numero_factura:
-        return []
-    with _session() as s:
-        if s is None:
-            return []
-        params = {'numero': numero_factura}
-        q = """
-            SELECT codigo_barra, descripcion, cantidad, precio_unitario,
-                   lote, vencimiento, fecha_recepcion
-            FROM recepciones WHERE numero_factura = :numero
-        """
-        if proveedor_cuit:
-            q += " AND proveedor_cuit = :cuit"
-            params['cuit'] = proveedor_cuit
-        q += " ORDER BY descripcion"
-        rows = s.execute(text(q), params).all()
-        return [{
-            'codigo_barra': r.codigo_barra, 'descripcion': r.descripcion,
-            'cantidad': int(r.cantidad or 0),
-            'precio_unitario': float(r.precio_unitario or 0),
-            'lote': r.lote or '',
-            'vencimiento': r.vencimiento.strftime('%d/%m/%Y') if r.vencimiento else '',
-            'fecha_recepcion': r.fecha_recepcion.strftime('%d/%m/%Y') if r.fecha_recepcion else '',
-        } for r in rows]
+    """TODO Fase 4. No hay vista de recepciones expuesta aún."""
+    return []
 
 
 def get_stock(codigo_barra):
-    """Stock actual de un producto según ObServer."""
-    art = get_articulo(codigo_barra)
-    return art['stock'] if art else None
+    """TODO Fase 3. Requiere mapeo EAN↔IdProducto."""
+    return None
