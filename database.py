@@ -544,7 +544,7 @@ def init_db(database_url=None):
         zombie_names = ('export_templates', 'ofertas_minimo', 'procesos_compra',
                         'analisis_sesiones', 'usuarios',
                         'plantillas_exportacion', 'plantilla_campos',
-                        'plantillas')
+                        'plantillas', 'producto_precios_hist')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
@@ -925,6 +925,25 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE procesos_compra ADD COLUMN IF NOT EXISTS analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id) ON DELETE SET NULL"
     ))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS producto_precios_hist (
+            id SERIAL PRIMARY KEY,
+            codigo_barra VARCHAR(20) NOT NULL,
+            proveedor_id INTEGER REFERENCES proveedores(id) ON DELETE CASCADE,
+            proveedor_razon VARCHAR(150),
+            fecha DATE NOT NULL,
+            precio_publico DECIMAL(14,2),
+            dto_pct DECIMAL(6,2),
+            precio_unitario DECIMAL(14,2),
+            importe DECIMAL(14,2),
+            factura_id INTEGER REFERENCES facturas(id) ON DELETE SET NULL,
+            tipo_comprobante VARCHAR(5),
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_codigo_barra ON producto_precios_hist (codigo_barra)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_proveedor    ON producto_precios_hist (proveedor_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_fecha        ON producto_precios_hist (fecha)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id SERIAL PRIMARY KEY,

@@ -105,13 +105,23 @@
     </div>
 
     {% if files %}
+    <form method="post" action="{{ url_for('converter_delete_bulk') }}" id="bulk-form"
+          onsubmit="return confirmBulkDelete();">
     <div class="bg-white rounded-xl border border-surface-border overflow-hidden">
-        <div class="px-5 py-3 border-b border-surface-border">
+        <div class="px-5 py-3 border-b border-surface-border flex items-center justify-between">
             <p class="font-semibold text-sm">PDFs analizados recientemente</p>
+            <button type="submit" id="btn-bulk-delete"
+                    class="hidden items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg>
+                Eliminar seleccionados (<span id="bulk-count">0</span>)
+            </button>
         </div>
         <table class="w-full text-sm">
             <thead class="bg-surface-head">
                 <tr>
+                    <th class="px-3 py-2 w-8 text-center">
+                        <input type="checkbox" id="bulk-all" class="cursor-pointer accent-red-600" title="Seleccionar todos">
+                    </th>
                     <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Archivo</th>
                     <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Proveedor detectado</th>
                     <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Tamaño</th>
@@ -121,6 +131,9 @@
             <tbody class="divide-y divide-surface-border">
             {% for f in files %}
                 <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-2 text-center">
+                        <input type="checkbox" name="tokens" value="{{ f.name }}" class="bulk-item cursor-pointer accent-red-600">
+                    </td>
                     <td class="px-3 py-2 font-mono text-xs">{{ f.name[13:] if f.name|length > 13 else f.name }}</td>
                     <td class="px-3 py-2 text-xs">
                         {% if f.proveedor %}
@@ -131,17 +144,18 @@
                         {% endif %}
                     </td>
                     <td class="px-3 py-2 text-right text-xs">{{ (f.size/1024)|round(1) }} KB</td>
-                    <td class="px-3 py-2 text-right">
+                    <td class="px-3 py-2 text-right whitespace-nowrap">
                         <a href="{{ url_for('converter_detectar', token=f.name) }}" class="text-brand hover:underline text-xs font-semibold mr-3">Abrir →</a>
-                        <form method="post" action="{{ url_for('converter_delete', token=f.name) }}" class="inline" onsubmit="return confirm('¿Eliminar este PDF?');">
-                            <button type="submit" class="text-red-600 hover:text-red-800 text-xs font-semibold">Eliminar</button>
-                        </form>
+                        <button type="button" class="text-red-600 hover:text-red-800 text-xs font-semibold"
+                                onclick="deleteSingle('{{ f.name }}')">Eliminar</button>
                     </td>
                 </tr>
             {% endfor %}
             </tbody>
         </table>
     </div>
+    </form>
+    <form method="post" id="single-delete-form" class="hidden"></form>
     {% endif %}
 
 </div>
@@ -218,9 +232,68 @@ function resetUpload() {
     document.getElementById('paso-subiendo').classList.add('hidden');
 }
 
+// Limpiar el value del input ANTES de abrir el picker. Sin esto, si el user
+// elige el mismo archivo 2 veces seguidas, el evento 'change' no se dispara
+// (el browser considera que no cambió) → "no hace nada al elegir el archivo".
+document.getElementById('file-input').addEventListener('click', (e) => {
+    e.target.value = '';
+});
+
+function _mostrarModalDuplicado(filename, token) {
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'fixed inset-0 bg-black/50 z-[80] flex items-center justify-center';
+        back.innerHTML = `
+            <div class="bg-white rounded-xl p-6 w-[460px] max-w-[92vw] shadow-2xl space-y-4">
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01M5 19h14a2 2 0 001.84-2.75L13.73 4a2 2 0 00-3.46 0L3.16 16.25A2 2 0 005 19z"/></svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-sm text-[#1e1e1e]">Ya existe este archivo</p>
+                        <p class="text-xs text-[#6f6f6f] mt-1 font-mono truncate">${filename}</p>
+                    </div>
+                </div>
+                <p class="text-xs text-[#6f6f6f]">Ya subiste un PDF con el mismo nombre anteriormente. ¿Qué querés hacer?</p>
+                <div class="space-y-2">
+                    <button type="button" data-action="open" class="w-full text-left px-3 py-2.5 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-900 text-xs font-semibold transition-colors">
+                        → Abrir el existente <span class="font-normal text-[11px] text-sky-700">(continuar donde quedé)</span>
+                    </button>
+                    <button type="button" data-action="replace" class="w-full text-left px-3 py-2.5 rounded-lg border border-[#e0e0e0] bg-white hover:bg-[#f5f5f5] text-[#1e1e1e] text-xs font-semibold transition-colors">
+                        ↻ Subir de nuevo <span class="font-normal text-[11px] text-[#6f6f6f]">(crear otra versión)</span>
+                    </button>
+                    <button type="button" data-action="cancel" class="w-full text-left px-3 py-2.5 rounded-lg border border-[#e0e0e0] bg-white hover:bg-red-50 hover:border-red-200 text-[#6f6f6f] hover:text-red-700 text-xs font-semibold transition-colors">
+                        ✕ Descartar
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(back);
+        back.querySelectorAll('button[data-action]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                back.remove();
+                resolve(btn.dataset.action);
+            });
+        });
+    });
+}
+
 document.getElementById('file-input').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+
+    // Chequear si ya existe un PDF con el mismo nombre.
+    try {
+        const dup = await fetch('/converter/check-duplicate?name=' + encodeURIComponent(file.name));
+        const dj = await dup.json();
+        if (dj.exists && dj.token) {
+            const action = await _mostrarModalDuplicado(dj.nombre || file.name, dj.token);
+            if (action === 'cancel') { resetUpload(); return; }
+            if (action === 'open')   { window.location.href = '/converter/' + encodeURIComponent(dj.token) + '/detectar'; return; }
+            // 'replace' → caer al flujo normal de upload (el backend genera token nuevo)
+        }
+    } catch (err) {
+        console.warn('[check-duplicate] falló, sigo con el upload:', err);
+    }
 
     // Mostrar estado "subiendo"
     document.getElementById('paso-upload').classList.add('hidden');
@@ -248,10 +321,53 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
         document.getElementById('uploaded-size').textContent = (up.size / 1024).toFixed(1) + ' KB';
         document.getElementById('paso-procesar').classList.remove('hidden');
     } catch (err) {
-        alert('Error de conexión: ' + err);
+        console.error('[upload] fallo', err);
+        alert('Error al subir el archivo: ' + (err.message || err) + '\n\nSi el problema persiste, recargá la página.');
         resetUpload();
     }
 });
+
+// --- Selección múltiple / eliminar por lote ---
+function _bulkUpdateUI() {
+    const checked = document.querySelectorAll('.bulk-item:checked');
+    const btn = document.getElementById('btn-bulk-delete');
+    const count = document.getElementById('bulk-count');
+    if (!btn) return;
+    if (checked.length > 0) {
+        btn.classList.remove('hidden');
+        btn.classList.add('inline-flex');
+        count.textContent = checked.length;
+    } else {
+        btn.classList.add('hidden');
+        btn.classList.remove('inline-flex');
+    }
+    // Sincronizar el "select all" (indeterminate si es parcial)
+    const all = document.getElementById('bulk-all');
+    const total = document.querySelectorAll('.bulk-item').length;
+    if (all) {
+        all.checked = checked.length === total && total > 0;
+        all.indeterminate = checked.length > 0 && checked.length < total;
+    }
+}
+document.querySelectorAll('.bulk-item').forEach(cb => cb.addEventListener('change', _bulkUpdateUI));
+const _bulkAll = document.getElementById('bulk-all');
+if (_bulkAll) {
+    _bulkAll.addEventListener('change', (e) => {
+        document.querySelectorAll('.bulk-item').forEach(cb => { cb.checked = e.target.checked; });
+        _bulkUpdateUI();
+    });
+}
+function confirmBulkDelete() {
+    const n = document.querySelectorAll('.bulk-item:checked').length;
+    if (n === 0) return false;
+    return confirm(`¿Eliminar ${n} documento${n === 1 ? '' : 's'}? No se puede deshacer.`);
+}
+function deleteSingle(token) {
+    if (!confirm('¿Eliminar este PDF?')) return;
+    const f = document.getElementById('single-delete-form');
+    f.action = '/converter/' + encodeURIComponent(token) + '/delete';
+    f.submit();
+}
 
 document.getElementById('btn-procesar').addEventListener('click', async () => {
     if (!_uploadedToken) return;

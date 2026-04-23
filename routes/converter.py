@@ -125,6 +125,25 @@ def init_app(app):
             pass
         return render_template('converter_index.html', files=files[:20])
 
+    @app.route('/converter/check-duplicate', methods=['GET'])
+    def converter_check_duplicate():
+        """Chequea si ya existe un PDF subido con el mismo nombre original.
+        Se usa desde el frontend antes de subir para preguntar continuar/descartar."""
+        name = request.args.get('name', '').strip()
+        if not name:
+            return jsonify({'exists': False})
+        safe = secure_filename(name)
+        try:
+            for fn in os.listdir(CONVERTER_DIR):
+                if fn.endswith('.meta.json'):
+                    continue
+                # Los archivos se guardan como "<token12>_<safe_filename>"
+                if fn.endswith('_' + safe):
+                    return jsonify({'exists': True, 'token': fn, 'nombre': name})
+        except OSError:
+            pass
+        return jsonify({'exists': False})
+
     @app.route('/converter/upload', methods=['POST'])
     def converter_upload():
         """Guarda el PDF y devuelve el token. El análisis se dispara desde JS
@@ -351,19 +370,47 @@ def init_app(app):
                                rows=rows, source=source,
                                proveedor_razon=meta.get('proveedor_razon', ''))
 
+    def _converter_delete_one(safe):
+        """Elimina un PDF del converter y todos sus sidecars (.meta.json, .ocr.txt)."""
+        path = os.path.join(CONVERTER_DIR, safe)
+        if not os.path.exists(path):
+            return False
+        os.remove(path)
+        for sidecar in (_converter_meta_path(safe), path + '.ocr.txt'):
+            if os.path.exists(sidecar):
+                try:
+                    os.remove(sidecar)
+                except OSError:
+                    pass
+        return True
+
     @app.route('/converter/<token>/delete', methods=['POST'])
     def converter_delete(token):
         safe = secure_filename(token)
-        path = os.path.join(CONVERTER_DIR, safe)
-        if os.path.exists(path):
-            try:
-                os.remove(path)
-                mp = _converter_meta_path(safe)
-                if os.path.exists(mp):
-                    os.remove(mp)
+        try:
+            if _converter_delete_one(safe):
                 flash('Documento eliminado.')
-            except Exception as e:
-                flash(f'Error al eliminar: {e}')
+        except Exception as e:
+            flash(f'Error al eliminar: {e}')
+        return redirect(url_for('converter_index'))
+
+    @app.route('/converter/delete-bulk', methods=['POST'])
+    def converter_delete_bulk():
+        tokens = request.form.getlist('tokens')
+        if not tokens:
+            flash('No seleccionaste ningún documento.')
+            return redirect(url_for('converter_index'))
+        ok, fail = 0, 0
+        for t in tokens:
+            try:
+                if _converter_delete_one(secure_filename(t)):
+                    ok += 1
+            except Exception:
+                fail += 1
+        msg = f'{ok} documento{"s" if ok != 1 else ""} eliminado{"s" if ok != 1 else ""}.'
+        if fail:
+            msg += f' {fail} con error.'
+        flash(msg)
         return redirect(url_for('converter_index'))
 
     @app.route('/converter/<token>/pick', methods=['GET'])

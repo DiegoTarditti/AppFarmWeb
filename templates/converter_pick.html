@@ -79,6 +79,17 @@
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="cuit">CUIT</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="numero">N°</button>
                 <button class="hchip px-3 py-1.5 text-xs rounded-full bg-slate-100 hover:bg-slate-200 font-semibold" data-field="fecha">Fecha</button>
+                {% if doc_tipo|default('FAC') in ['FAC', 'NCR'] %}
+                <span class="w-full h-0 my-0.5"></span>
+                <span class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold self-center mr-1">Control matemático:</span>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="cantidad_total" title="Cantidad de unidades (sumatoria)">Cant. Un.</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="monto_exento">Exento</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="monto_gravado">Gravado</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="iva_105">IVA 10,5 %</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="iva_21">IVA 21 %</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="percepciones">Percepciones</button>
+                <button class="hchip px-3 py-1.5 text-xs rounded-full bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold" data-field="total">Total</button>
+                {% endif %}
             </div>
             <div class="mt-2 flex gap-2 items-center">
                 <input id="new-hfield-name" type="text" placeholder="Otro campo de encabezado" class="flex-1 text-xs px-2 py-1.5 border border-[#e0e0e0] rounded">
