@@ -1,7 +1,7 @@
 import importlib
 import pandas as pd
 from datetime import datetime
-from database import Invoice, InvoiceItem, ErpStock, Provider, Claim, ClaimItem, StockDifference, BarcodeMapping, Producto
+from database import Invoice, InvoiceItem, ErpStock, Provider, Claim, ClaimItem, StockDifference, BarcodeMapping, Producto, ProductoPrecioHist
 
 
 def extract_provider_name_from_pdf(pdf_path):
@@ -232,8 +232,9 @@ def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobant
     )
     session.add(invoice)
     session.flush()
-    get_or_create_provider(session, invoice.proveedor_razon, invoice.proveedor_cuit,
-                           invoice.proveedor_domicilio)
+    prov = get_or_create_provider(session, invoice.proveedor_razon, invoice.proveedor_cuit,
+                                  invoice.proveedor_domicilio)
+    prov_id = prov.id if prov is not None else None
     for item in invoice_data['items']:
         pu = item.get('precio_unitario')
         im = item.get('importe')
@@ -249,6 +250,21 @@ def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobant
             lote=item.get('lote'),
             vencimiento=item.get('vencimiento')
         ))
+        # Snapshot de precio histórico (append-only). Solo si hay codigo_barra.
+        cb = item.get('codigo_barra')
+        if cb and invoice.fecha:
+            session.add(ProductoPrecioHist(
+                codigo_barra=cb,
+                proveedor_id=prov_id,
+                proveedor_razon=invoice.proveedor_razon,
+                fecha=invoice.fecha,
+                precio_publico=item.get('precio_publico'),
+                dto_pct=item.get('dto'),
+                precio_unitario=pu,      # sin signo → el precio por unidad es positivo
+                importe=im,
+                factura_id=invoice.id,
+                tipo_comprobante=tipo_comprobante,
+            ))
     session.commit()
     session.refresh(invoice)
     return invoice

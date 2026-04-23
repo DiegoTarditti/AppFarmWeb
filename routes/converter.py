@@ -914,6 +914,16 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
         )
         session.add(inv)
         session.flush()
+        # Resolver proveedor_id por CUIT o razón social (si existe).
+        prov_id = None
+        prov_cuit = (header.get('cuit') or '').strip()
+        prov_razon = (header.get('razon_social') or '').strip()
+        if prov_cuit:
+            p = session.query(database.Provider).filter_by(cuit=prov_cuit).first()
+            if p: prov_id = p.id
+        if not prov_id and prov_razon:
+            p = session.query(database.Provider).filter_by(razon_social=prov_razon).first()
+            if p: prov_id = p.id
         for it in items_data:
             session.add(database.InvoiceItem(
                 factura_id=inv.id,
@@ -926,6 +936,21 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
                 lote=it['lote'] or None,
                 vencimiento=it['vencimiento'] or None,
             ))
+            # Snapshot histórico de precio
+            cb = (it['codigo_barra'] or '').strip()
+            if cb and fecha:
+                session.add(database.ProductoPrecioHist(
+                    codigo_barra=cb,
+                    proveedor_id=prov_id,
+                    proveedor_razon=prov_razon or None,
+                    fecha=fecha,
+                    precio_publico=it.get('precio_publico'),
+                    dto_pct=it.get('dto'),
+                    precio_unitario=it.get('precio_unitario'),
+                    importe=it.get('importe'),
+                    factura_id=inv.id,
+                    tipo_comprobante=tipo_comprobante,
+                ))
         session.commit()
         return inv.id, f'Factura {inv.numero_factura} guardada con {len(items_data)} ítems.'
 

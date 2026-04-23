@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Historial de precios — {{ producto.descripcion if producto else ean }}{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+{% endblock %}
+
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+            <h1 class="text-base font-bold text-[#1e1e1e]">Historial de precios</h1>
+            {% if producto %}
+            <p class="text-sm text-[#6f6f6f] mt-0.5">{{ producto.descripcion }}
+                <span class="font-mono text-xs">· EAN {{ producto.codigo_barra }}</span>
+                {% if producto.laboratorio %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-800 text-xs font-semibold">{{ producto.laboratorio }}</span>{% endif %}
+                {% if producto.precio_pvp %}<span class="ml-2 text-xs">PVP: <strong>${{ '{:,.2f}'.format(producto.precio_pvp).replace(',','X').replace('.',',').replace('X','.') }}</strong></span>{% endif %}
+            </p>
+            {% else %}
+            <p class="text-sm text-[#6f6f6f] mt-0.5">EAN <span class="font-mono">{{ ean }}</span> — producto no registrado en la tabla master</p>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('productos_list') }}" class="text-xs text-sky-600 hover:underline">← Volver a productos</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+
+    <div id="loading" class="text-center text-sm text-[#6f6f6f] py-10">Cargando historial…</div>
+
+    <div id="empty" class="hidden bg-white rounded-xl border border-surface-border p-8 text-center">
+        <p class="text-sm text-[#6f6f6f]">No hay compras registradas para este producto aún.</p>
+        <p class="text-xs text-[#9ca3af] mt-2">Los snapshots de precio se generan automáticamente al procesar facturas que incluyan este EAN.</p>
+    </div>
+
+    <div id="content" class="hidden space-y-5">
+
+        <!-- Resumen por proveedor -->
+        <div class="bg-white rounded-xl border border-surface-border overflow-hidden">
+            <div class="px-5 py-3 border-b border-surface-border flex items-center justify-between">
+                <p class="font-semibold text-sm">Comparación por proveedor</p>
+                <span class="text-xs text-[#6f6f6f]" id="resumen-meta"></span>
+            </div>
+            <table class="w-full text-sm">
+                <thead class="bg-surface-head">
+                    <tr>
+                        <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Proveedor</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Último precio</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Mín.</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Máx.</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Variación</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Compras</th>
+                        <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Última fecha</th>
+                    </tr>
+                </thead>
+                <tbody id="resumen-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+
+        <!-- Gráfico -->
+        <div class="bg-white rounded-xl border border-surface-border p-5">
+            <p class="font-semibold text-sm mb-3">Evolución del precio unitario</p>
+            <div style="height:340px"><canvas id="chart"></canvas></div>
+        </div>
+
+        <!-- Detalle histórico -->
+        <div class="bg-white rounded-xl border border-surface-border overflow-hidden">
+            <div class="px-5 py-3 border-b border-surface-border">
+                <p class="font-semibold text-sm">Detalle de compras (<span id="detalle-count">0</span>)</p>
+            </div>
+            <table class="w-full text-sm">
+                <thead class="bg-surface-head">
+                    <tr>
+                        <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Fecha</th>
+                        <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Proveedor</th>
+                        <th class="text-center px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Tipo</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">P. Público</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Dto %</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">P. Unit.</th>
+                        <th class="text-right px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Importe</th>
+                        <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">EAN</th>
+                        <th class="text-left px-3 py-2 text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Factura</th>
+                    </tr>
+                </thead>
+                <tbody id="detalle-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const EAN = {{ ean|tojson }};
+
+function fmtMoney(v) {
+    if (v === null || v === undefined) return '<span class="text-[#9ca3af]">—</span>';
+    return '$' + Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPct(v) {
+    if (v === null || v === undefined) return '<span class="text-[#9ca3af]">—</span>';
+    const cls = v > 0 ? 'text-red-600' : v < 0 ? 'text-emerald-600' : 'text-[#6f6f6f]';
+    const sign = v > 0 ? '+' : '';
+    return `<span class="${cls} font-semibold">${sign}${v.toFixed(2)}%</span>`;
+}
+function fmtFecha(s) {
+    if (!s) return '—';
+    const [y, m, d] = s.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+const COLORS = ['#EAB308','#3B82F6','#EF4444','#10B981','#8B5CF6','#F59E0B','#EC4899','#06B6D4','#84CC16','#F97316'];
+
+async function cargar() {
+    const resp = await fetch('/api/precios/' + encodeURIComponent(EAN));
+    const data = await resp.json();
+    document.getElementById('loading').classList.add('hidden');
+    if (!data.ok || data.detalle.length === 0) {
+        document.getElementById('empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('content').classList.remove('hidden');
+
+    // Resumen
+    const resumenBody = document.getElementById('resumen-body');
+    resumenBody.innerHTML = data.resumen.map((r, i) => `
+        <tr class="hover:bg-black/[0.02]">
+            <td class="px-3 py-2 text-xs font-semibold" style="border-left: 3px solid ${COLORS[i % COLORS.length]}">${r.proveedor}</td>
+            <td class="px-3 py-2 text-right text-xs font-mono font-semibold">${fmtMoney(r.ultimo_precio)}</td>
+            <td class="px-3 py-2 text-right text-xs font-mono text-[#6f6f6f]">${fmtMoney(r.min)}</td>
+            <td class="px-3 py-2 text-right text-xs font-mono text-[#6f6f6f]">${fmtMoney(r.max)}</td>
+            <td class="px-3 py-2 text-right text-xs">${fmtPct(r.variacion_pct)}</td>
+            <td class="px-3 py-2 text-right text-xs">${r.n_puntos}</td>
+            <td class="px-3 py-2 text-xs text-[#6f6f6f]">${fmtFecha(r.ultimo_fecha)}</td>
+        </tr>
+    `).join('');
+    document.getElementById('resumen-meta').textContent = `${data.resumen.length} proveedor${data.resumen.length === 1 ? '' : 'es'} · ${data.detalle.length} compra${data.detalle.length === 1 ? '' : 's'}`;
+
+    // Gráfico
+    const datasets = Object.entries(data.series).map(([prov, pts], i) => ({
+        label: prov,
+        data: pts.sort((a, b) => a.x.localeCompare(b.x)),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS[i % COLORS.length] + '33',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+        tension: 0.1,
+    }));
+    new Chart(document.getElementById('chart').getContext('2d'), {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => fmtFecha(items[0].parsed.x ? new Date(items[0].parsed.x).toISOString().slice(0,10) : items[0].label),
+                        label: (ctx) => ctx.dataset.label + ': $' + Number(ctx.parsed.y).toLocaleString('es-AR', { minimumFractionDigits: 2 }),
+                    },
+                },
+            },
+            scales: {
+                x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } }, grid: { color: '#f0f0f0' } },
+                y: { beginAtZero: false, ticks: { callback: v => '$' + Number(v).toLocaleString('es-AR') }, grid: { color: '#f0f0f0' } },
+            },
+        },
+    });
+
+    // Detalle (desc por fecha)
+    const detalle = [...data.detalle].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+    document.getElementById('detalle-count').textContent = detalle.length;
+    document.getElementById('detalle-body').innerHTML = detalle.map(d => `
+        <tr class="hover:bg-black/[0.02]">
+            <td class="px-3 py-2 text-xs">${fmtFecha(d.fecha)}</td>
+            <td class="px-3 py-2 text-xs">${d.proveedor}</td>
+            <td class="px-3 py-2 text-center text-xs">
+                <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${d.tipo_comprobante === 'NCR' ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'}">${d.tipo_comprobante || 'FAC'}</span>
+            </td>
+            <td class="px-3 py-2 text-right text-xs font-mono">${fmtMoney(d.precio_publico)}</td>
+            <td class="px-3 py-2 text-right text-xs font-mono">${d.dto_pct !== null ? d.dto_pct.toFixed(2) + '%' : '—'}</td>
+            <td class="px-3 py-2 text-right text-xs font-mono font-semibold">${fmtMoney(d.precio_unitario)}</td>
+            <td class="px-3 py-2 text-right text-xs font-mono text-[#6f6f6f]">${fmtMoney(d.importe)}</td>
+            <td class="px-3 py-2 text-xs font-mono text-[#6f6f6f]">${d.codigo_barra}</td>
+            <td class="px-3 py-2 text-xs">${d.factura_id ? `<a href="/invoice/${d.factura_id}/items" class="text-sky-600 hover:underline">#${d.factura_id}</a>` : '—'}</td>
+        </tr>
+    `).join('');
+}
+cargar();
+</script>
+
+{% endblock %}

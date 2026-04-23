@@ -1,8 +1,8 @@
-"""Producto routes: list, CRUD, API."""
+"""Producto routes: list, CRUD, API + análisis histórico de precios."""
 
 from flask import render_template, request, jsonify
 import database
-from database import Producto, Laboratorio
+from database import Producto, Laboratorio, ProductoPrecioHist
 from helpers import _find_producto
 
 
@@ -175,3 +175,106 @@ def init_app(app):
             session.delete(prod)
             session.commit()
             return {'ok': True}
+
+    # ─── Análisis histórico de precios ───────────────────────────────────────
+
+    @app.route('/precios/<ean>')
+    def precios_historico(ean):
+        """Pantalla de análisis histórico de precio para un EAN."""
+        ean = (ean or '').strip()
+        with database.get_db() as session:
+            prod = _find_producto(session, ean)
+            producto_info = None
+            if prod:
+                producto_info = {
+                    'id': prod.id,
+                    'codigo_barra': prod.codigo_barra,
+                    'descripcion': prod.descripcion or '',
+                    'precio_pvp': float(prod.precio_pvp) if prod.precio_pvp else None,
+                    'laboratorio': prod.laboratorio.nombre if prod.laboratorio else '',
+                }
+        return render_template('precios_historico.html', ean=ean, producto=producto_info)
+
+    @app.route('/api/precios/<ean>')
+    def api_precios_historico(ean):
+        """Devuelve la serie de precios históricos de un EAN agrupada por proveedor.
+        Incluye EANs alternativos si el producto los tiene mapeados."""
+        from sqlalchemy import or_
+        ean = (ean or '').strip()
+        if not ean:
+            return jsonify({'ok': False, 'error': 'EAN vacío'}), 400
+
+        with database.get_db() as session:
+            # Colectar todos los EANs equivalentes (principal + alts) del producto.
+            eans = {ean}
+            prod = _find_producto(session, ean)
+            if prod:
+                for alt in (prod.codigo_barra, prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3):
+                    if alt: eans.add(alt)
+
+            rows = (session.query(ProductoPrecioHist)
+                    .filter(ProductoPrecioHist.codigo_barra.in_(list(eans)))
+                    .order_by(ProductoPrecioHist.fecha.asc(), ProductoPrecioHist.id.asc())
+                    .all())
+
+            # Agrupar por proveedor_razon (o proveedor_id si existe)
+            series = {}
+            detalle = []
+            for r in rows:
+                key = r.proveedor_razon or (f'Proveedor #{r.proveedor_id}' if r.proveedor_id else 'Sin proveedor')
+                pu = float(r.precio_unitario) if r.precio_unitario is not None else None
+                fecha_str = r.fecha.strftime('%Y-%m-%d') if r.fecha else None
+                if key not in series:
+                    series[key] = []
+                if pu is not None and fecha_str:
+                    series[key].append({'x': fecha_str, 'y': pu})
+                detalle.append({
+                    'id': r.id,
+                    'fecha': fecha_str,
+                    'proveedor': key,
+                    'codigo_barra': r.codigo_barra,
+                    'precio_publico': float(r.precio_publico) if r.precio_publico is not None else None,
+                    'dto_pct': float(r.dto_pct) if r.dto_pct is not None else None,
+                    'precio_unitario': pu,
+                    'importe': float(r.importe) if r.importe is not None else None,
+                    'factura_id': r.factura_id,
+                    'tipo_comprobante': r.tipo_comprobante,
+                })
+
+            # Resumen por proveedor: último precio, mínimo, máximo, variación
+            resumen = []
+            for prov, pts in series.items():
+                if not pts: continue
+                precios = [p['y'] for p in pts]
+                ultimo = pts[-1]
+                primero = pts[0]
+                variacion = None
+                if primero['y'] and ultimo['y']:
+                    variacion = round((ultimo['y'] - primero['y']) / primero['y'] * 100, 2)
+                resumen.append({
+                    'proveedor': prov,
+                    'n_puntos': len(pts),
+                    'primer_fecha': primero['x'],
+                    'primer_precio': primero['y'],
+                    'ultimo_fecha': ultimo['x'],
+                    'ultimo_precio': ultimo['y'],
+                    'min': min(precios),
+                    'max': max(precios),
+                    'variacion_pct': variacion,
+                })
+            resumen.sort(key=lambda r: r['ultimo_precio'])
+
+            return jsonify({
+                'ok': True,
+                'ean': ean,
+                'eans_equivalentes': sorted(eans),
+                'producto': {
+                    'codigo_barra': prod.codigo_barra,
+                    'descripcion': prod.descripcion or '',
+                    'precio_pvp': float(prod.precio_pvp) if prod and prod.precio_pvp else None,
+                    'laboratorio': prod.laboratorio.nombre if prod and prod.laboratorio else '',
+                } if prod else None,
+                'series': series,
+                'resumen': resumen,
+                'detalle': detalle,
+            })

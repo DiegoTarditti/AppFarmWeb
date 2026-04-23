@@ -944,6 +944,37 @@ def _pg_add_columns(conn):
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_codigo_barra ON producto_precios_hist (codigo_barra)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_proveedor    ON producto_precios_hist (proveedor_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_fecha        ON producto_precios_hist (fecha)"))
+    # Backfill: si la tabla está vacía pero hay facturas cargadas, generar snapshots
+    # desde los InvoiceItem existentes. Se ejecuta una sola vez.
+    try:
+        hay_precios = conn.execute(text("SELECT 1 FROM producto_precios_hist LIMIT 1")).first()
+        if not hay_precios:
+            conn.execute(text("""
+                INSERT INTO producto_precios_hist
+                    (codigo_barra, proveedor_id, proveedor_razon, fecha,
+                     dto_pct, precio_unitario, importe, factura_id, tipo_comprobante)
+                SELECT
+                    fi.codigo_barra,
+                    p.id,
+                    f.proveedor_razon,
+                    f.fecha,
+                    fi.dto,
+                    CASE WHEN f.tipo_comprobante = 'NCR' THEN -fi.precio_unitario ELSE fi.precio_unitario END,
+                    CASE WHEN f.tipo_comprobante = 'NCR' THEN -fi.importe         ELSE fi.importe         END,
+                    f.id,
+                    f.tipo_comprobante
+                FROM factura_items fi
+                JOIN facturas f ON f.id = fi.factura_id
+                LEFT JOIN proveedores p ON (
+                    (p.cuit IS NOT NULL AND p.cuit = f.proveedor_cuit)
+                    OR (p.cuit IS NULL AND p.razon_social = f.proveedor_razon)
+                )
+                WHERE fi.codigo_barra IS NOT NULL AND fi.codigo_barra <> ''
+                  AND f.fecha IS NOT NULL
+            """))
+    except Exception:
+        # Si falla el backfill (ej: columnas faltantes en tablas viejas), no bloquear el boot.
+        pass
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id SERIAL PRIMARY KEY,
