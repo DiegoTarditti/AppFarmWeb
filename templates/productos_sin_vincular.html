@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Productos sin vincular — ObServer{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Vincular productos con ObServer</h1>
+    <span class="text-xs text-[#6f6f6f]">
+        {{ total_sin }} sin vincular · {{ total_con }} vinculados
+    </span>
+    <div class="ml-auto flex items-center gap-2">
+        <form method="post" action="{{ url_for('observer_match_productos') }}"
+              onsubmit="return confirm('Correr auto-match ahora? Vincula los que matchean exacto o fuzzy ≥80%.');">
+            <button type="submit"
+                    class="text-sm bg-[#2E7D5B] hover:bg-[#1F5D40] text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                Auto-match
+            </button>
+        </form>
+        <a href="{{ url_for('observer_sync_panel') }}"
+           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e]">← Panel ObServer</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-3">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm
+                {% if cat == 'error' %}bg-red-50 border border-red-200 text-red-800
+                {% elif cat == 'success' %}bg-emerald-50 border border-emerald-200 text-emerald-800
+                {% else %}bg-amber-50 border border-amber-300 text-amber-800{% endif %}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    <div class="bg-white border border-surface-border rounded-xl p-4 text-sm text-[#555]">
+        Mostrando los primeros 200 productos sin vincular.
+        Para cada uno, los candidatos de ObServer se filtran por el laboratorio del producto local
+        (si está vinculado) y se ordenan por similitud de nombre.
+        Si el laboratorio local no está vinculado primero a ObServer, no se puede buscar candidatos.
+    </div>
+
+    {% if not productos %}
+    <div class="bg-white border border-dashed border-surface-border rounded-xl px-6 py-12 text-center text-sm text-[#999]">
+        🎉 Todos los productos están vinculados.
+    </div>
+    {% endif %}
+
+    {% for p in productos %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 bg-[#f8faf9] border-b border-[#e6efe9] flex items-center gap-3 flex-wrap">
+            <span class="font-mono text-xs text-[#666]">{{ p.codigo_barra }}</span>
+            <span class="font-semibold text-sm">{{ p.descripcion }}</span>
+            {% if p.laboratorio %}
+                <span class="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 font-semibold">
+                    {{ p.laboratorio }}
+                </span>
+                {% if not p.lab_observer %}
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold">
+                        lab sin vincular
+                    </span>
+                {% endif %}
+            {% else %}
+                <span class="text-xs text-[#999]">sin laboratorio</span>
+            {% endif %}
+        </div>
+        {% if p.candidatos %}
+        <div class="divide-y divide-surface-border">
+            {% for c in p.candidatos %}
+            <div class="px-4 py-2 flex items-center gap-3 hover:bg-[#f8faf9]">
+                <span class="text-xs font-mono text-[#999] w-14">{{ c.score * 100 }}%</span>
+                <span class="flex-1 text-sm">{{ c.descripcion }}</span>
+                {% if c.codigo_alfabeta %}
+                    <span class="text-xs text-[#888] font-mono">alfabeta {{ c.codigo_alfabeta }}</span>
+                {% endif %}
+                <span class="text-xs text-[#888] font-mono">obs#{{ c.observer_id }}</span>
+                <form method="post" action="{{ url_for('producto_vincular', producto_id=p.id, observer_id=c.observer_id) }}">
+                    <button type="submit"
+                            class="text-xs bg-[#E8F3ED] hover:bg-[#d7e9df] text-[#1F5D40] font-semibold px-3 py-1 rounded-lg border border-[#cfe3d6]">
+                        Vincular
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="px-4 py-3 text-xs text-[#999]">Sin candidatos — revisá que el laboratorio esté vinculado.</div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+</div>
+{% endblock %}

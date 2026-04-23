@@ -59,6 +59,8 @@ services:
       OBSERVER_DB:   ${OBSERVER_DB:-ObServerGestion}
       OBSERVER_TDSVER: ${OBSERVER_TDSVER:-7.0}
       OBSERVER_ID_FARMACIA: ${OBSERVER_ID_FARMACIA:-10525}
+      # External URL del Postgres de Render. Usada por el job que replica obs_*.
+      RENDER_DATABASE_URL: ${RENDER_DATABASE_URL:-}
     ports:
       - "${WEB_PORT:-5000}:5000"
     depends_on:

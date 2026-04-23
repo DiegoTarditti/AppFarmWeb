@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Sync ObServer — Admin{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Sincronización con ObServer</h1>
+    {% if disponible %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold border border-emerald-300">● conectado</span>
+    {% else %}
+        <span class="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800 font-semibold border border-red-300">● desconectado</span>
+    {% endif %}
+    <div class="ml-auto">
+        <form method="post" action="{{ url_for('observer_sync_run', entidad='todo') }}"
+              onsubmit="return confirm('Sincronizar TODAS las entidades en orden? Puede tardar varios minutos la primera vez (2.9M filas de productos).');">
+            <button type="submit"
+                    class="bg-[#2E7D5B] hover:bg-[#1F5D40] text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                    {% if not disponible %}disabled{% endif %}>
+                Sync todo
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, m in messages %}
+        <div class="rounded-lg px-4 py-3 text-sm
+                    {% if cat == 'error' %}bg-red-50 border border-red-200 text-red-800
+                    {% elif cat == 'success' %}bg-emerald-50 border border-emerald-200 text-emerald-800
+                    {% else %}bg-amber-50 border border-amber-300 text-amber-800{% endif %}">
+            {{ m }}
+        </div>
+        {% endfor %}
+    {% endwith %}
+
+    <div class="bg-white border border-surface-border rounded-xl p-4 text-sm text-[#555]">
+        <p><strong>Orden recomendado:</strong> laboratorios → rubros → subrubros → nombres_drogas → productos → stock.</p>
+        <p class="mt-1 text-xs text-[#888]">Cada entidad tiene su propio botón si querés refrescar solo una. "Sync todo" las corre en el orden correcto (respeta FKs).</p>
+    </div>
+
+    <!-- Push a Render -->
+    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
+        <div class="flex-1 min-w-[240px]">
+            <p class="font-semibold text-sm text-[#1e1e1e]">Replicar a Render</p>
+            <p class="text-xs text-[#666] mt-1">
+                Copia las 6 tablas <code class="font-mono">obs_*</code> locales + el bridge
+                <code class="font-mono">productos.observer_id</code> (matcheando por EAN)
+                a la DB externa de Render. <strong>TRUNCATE + COPY FROM</strong> — reemplaza lo que haya
+                en Render. Requiere <code class="font-mono">RENDER_DATABASE_URL</code> seteada en el
+                <code class="font-mono">.env</code>.
+            </p>
+        </div>
+        <form method="post" action="{{ url_for('observer_push_render') }}"
+              onsubmit="return confirm('Replicar a Render? TRUNCATE seguido de COPY en cada tabla obs_* — puede tardar 1-2 minutos.');">
+            <button type="submit"
+                    class="text-sm bg-[#F4C430] hover:bg-[#D9A91C] text-[#1a1100] font-bold px-4 py-1.5 rounded-lg transition-colors">
+                Push a Render
+            </button>
+        </form>
+    </div>
+
+    <!-- Matcher -->
+    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
+        <div class="flex-1 min-w-[240px]">
+            <p class="font-semibold text-sm text-[#1e1e1e]">Vincular productos locales con ObServer</p>
+            <p class="text-xs text-[#666] mt-1">
+                Arma el puente <code class="font-mono">productos.observer_id</code> por matching de nombre dentro del laboratorio.
+                Requiere que laboratorios locales ya tengan <code>observer_id</code> (corré "Sync ObServer" en <a href="{{ url_for('laboratorios_list') }}" class="text-[#1F5D40] underline">/laboratorios</a> primero).
+            </p>
+        </div>
+        <form method="post" action="{{ url_for('observer_match_productos') }}"
+              onsubmit="return confirm('Correr auto-match ahora? Vincula exactos y fuzzy ≥80%.');"
+              class="flex items-center gap-2">
+            <input type="number" name="threshold" value="0.80" step="0.05" min="0.5" max="1.0"
+                   title="Umbral Jaccard (0.80 = recomendado)"
+                   class="w-20 bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <button type="submit"
+                    class="text-sm bg-[#2E7D5B] hover:bg-[#1F5D40] text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    {% if not disponible %}disabled{% endif %}>
+                Auto-match
+            </button>
+        </form>
+        <a href="{{ url_for('productos_sin_vincular') }}"
+           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
+            Revisar sin vincular →
+        </a>
+    </div>
+
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5]">
+                <tr class="text-left">
+                    <th class="px-4 py-3 font-semibold">Entidad</th>
+                    <th class="px-4 py-3 font-semibold text-right">Filas locales</th>
+                    <th class="px-4 py-3 font-semibold">Última ejecución</th>
+                    <th class="px-4 py-3 font-semibold text-right">Duración</th>
+                    <th class="px-4 py-3 font-semibold w-32">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock'] %}
+                <tr class="border-t border-surface-border">
+                    <td class="px-4 py-3 font-semibold">{{ ent }}</td>
+                    <td class="px-4 py-3 text-right font-mono">{{ '{:,}'.format(cuentas[ent]) }}</td>
+                    <td class="px-4 py-3 text-xs text-[#666]">
+                        {% if ultimos[ent] %}
+                            {{ ultimos[ent].ejecutado_en.strftime('%d/%m/%Y %H:%M') }}
+                            <span class="text-[#999]"> · {{ ultimos[ent].filas_upsert }} filas</span>
+                            {% if ultimos[ent].error %}
+                                <div class="text-red-600 mt-1">{{ ultimos[ent].error[:120] }}</div>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-[#999]">nunca</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-right font-mono text-xs text-[#666]">
+                        {% if ultimos[ent] and ultimos[ent].duracion_ms %}
+                            {{ ultimos[ent].duracion_ms }} ms
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        <form method="post" action="{{ url_for('observer_sync_run', entidad=ent) }}">
+                            <button type="submit"
+                                    class="text-xs bg-[#E8F3ED] hover:bg-[#d7e9df] text-[#1F5D40] font-semibold px-3 py-1.5 rounded-lg border border-[#cfe3d6] transition-colors w-full"
+                                    {% if not disponible %}disabled{% endif %}>
+                                Sync
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+{% endblock %}

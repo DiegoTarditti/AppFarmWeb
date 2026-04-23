@@ -101,24 +101,27 @@ def init_app(app):
 
     @app.route('/laboratorios/sync-observer', methods=['POST'])
     def laboratorios_sync_observer():
-        """Sincroniza laboratorios desde ObServer (DW.Laboratorios).
+        """Vincula laboratorios locales con el espejo obs_laboratorios.
 
+        Asume que /admin/observer-sync ya pobló obs_laboratorios desde ObServer.
         Estrategia:
         - Si existe lab local con mismo observer_id → update nombre.
         - Si no y existe lab con mismo nombre (case-insensitive) → asocia observer_id.
         - Si no existe → crea con activo=False (escondido hasta marcarlo).
         """
-        from sqlalchemy import func as _func
-        import observer_source
+        labs_remotos = []
+        with database.get_db() as _s_read:
+            for obs in (_s_read.query(database.ObsLaboratorio)
+                        .filter(database.ObsLaboratorio.fecha_baja.is_(None))
+                        .order_by(database.ObsLaboratorio.descripcion).all()):
+                labs_remotos.append({'id': obs.observer_id, 'nombre': obs.descripcion})
 
-        if not observer_source.observer_disponible():
-            flash('ObServer no está disponible. Verificá la conexión.', 'error')
-            return redirect(url_for('laboratorios_list'))
+        if not labs_remotos:
+            flash('El espejo obs_laboratorios está vacío. Corré el sync general primero en /admin/observer-sync.',
+                  'error')
+            return redirect(url_for('observer_sync_panel'))
 
-        remotos = observer_source.get_laboratorios_dw()
-        if not remotos:
-            flash('ObServer devolvió 0 laboratorios — revisá la query.', 'error')
-            return redirect(url_for('laboratorios_list'))
+        remotos = labs_remotos
 
         nuevos = actualizados = vinculados = duplicados = 0
         with database.get_db() as session:

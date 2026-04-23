@@ -40,6 +40,80 @@ class Laboratorio(Base):
     creado_en = Column(DateTime, default=now_ar)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Espejo de ObServer (solo las vistas DW.* que usa la app).
+# La PK en cada tabla es el `observer_id` real de ObServer. Sync periódico
+# desde observer_source; estas tablas nunca se editan desde la UI.
+# ──────────────────────────────────────────────────────────────────────────
+
+class ObsLaboratorio(Base):
+    __tablename__ = 'obs_laboratorios'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.Laboratorios.IdLaboratorio
+    descripcion = Column(String(150), nullable=False)
+    fecha_baja  = Column(DateTime, nullable=True)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsRubro(Base):
+    __tablename__ = 'obs_rubros'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.Rubros.IdRubro
+    descripcion = Column(String(150), nullable=False)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsSubrubro(Base):
+    __tablename__ = 'obs_subrubros'
+    observer_id    = Column(Integer, primary_key=True, autoincrement=False)  # DW.Subrubros.IdSubrubro
+    descripcion    = Column(String(150), nullable=False)
+    rubro_observer = Column(Integer, ForeignKey('obs_rubros.observer_id'), nullable=True)
+    sync_en        = Column(DateTime, default=now_ar)
+
+
+class ObsNombreDroga(Base):
+    __tablename__ = 'obs_nombres_drogas'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.NombresDrogas.IdNombresDrogas
+    descripcion = Column(String(300), nullable=False)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsProducto(Base):
+    __tablename__ = 'obs_productos'
+    observer_id            = Column(Integer, primary_key=True, autoincrement=False)  # DW.Productos.IdProducto
+    descripcion            = Column(String(200), nullable=False)
+    laboratorio_observer   = Column(Integer, ForeignKey('obs_laboratorios.observer_id'), nullable=True, index=True)
+    subrubro_observer      = Column(Integer, ForeignKey('obs_subrubros.observer_id'), nullable=True)
+    nombre_droga_observer  = Column(Integer, ForeignKey('obs_nombres_drogas.observer_id'), nullable=True)
+    codigo_alfabeta        = Column(String(10), nullable=True, index=True)
+    troquel                = Column(Integer, nullable=True)
+    cantidad_envase        = Column(DECIMAL(10, 3), nullable=True)
+    es_habilitado_venta    = Column(Boolean, nullable=False, default=True)
+    requiere_cadena_frio   = Column(Boolean, nullable=False, default=False)
+    fecha_baja             = Column(DateTime, nullable=True)
+    sync_en                = Column(DateTime, default=now_ar)
+
+
+class ObsStock(Base):
+    """Stock actual por farmacia + producto (DW.StockFarmaciasProductos)."""
+    __tablename__ = 'obs_stock'
+    id_farmacia = Column(Integer, primary_key=True, autoincrement=False)
+    producto_observer = Column(Integer, ForeignKey('obs_productos.observer_id'), primary_key=True, autoincrement=False, index=True)
+    stock_actual = Column(Integer, nullable=False, default=0)
+    maximo = Column(Integer, nullable=True)
+    minimo = Column(Integer, nullable=True)
+    sync_en = Column(DateTime, default=now_ar)
+
+
+class ObsSyncLog(Base):
+    """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
+    __tablename__ = 'obs_sync_log'
+    id = Column(Integer, primary_key=True)
+    entidad = Column(String(40), nullable=False, index=True)   # 'laboratorios', 'productos', etc.
+    filas_upsert = Column(Integer, nullable=False, default=0)
+    duracion_ms = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+    ejecutado_en = Column(DateTime, default=now_ar)
+
+
 class ExportTemplate(Base):
     __tablename__ = 'export_templates'
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
@@ -248,6 +322,9 @@ class Producto(Base):
     precio_pvp = Column(DECIMAL(14, 2))
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     laboratorio = relationship('Laboratorio')
+    # Puente a ObServer: único nexo entre EAN (local) y IdProducto (ObServer)
+    observer_id = Column(Integer, ForeignKey('obs_productos.observer_id'), nullable=True, index=True)
+    obs_producto = relationship('ObsProducto')
     monodroga = Column(String(200), nullable=True)
     presentacion = Column(String(500), nullable=True)
     accion_terapeutica = Column(String(200), nullable=True)
@@ -547,7 +624,10 @@ def init_db(database_url=None):
         zombie_names = ('export_templates', 'ofertas_minimo', 'procesos_compra',
                         'analisis_sesiones', 'usuarios',
                         'plantillas_exportacion', 'plantilla_campos',
-                        'plantillas', 'producto_precios_hist')
+                        'plantillas', 'producto_precios_hist',
+                        'obs_laboratorios', 'obs_rubros', 'obs_subrubros',
+                        'obs_nombres_drogas', 'obs_productos', 'obs_stock',
+                        'obs_sync_log')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
@@ -663,6 +743,80 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS observer_id INTEGER UNIQUE"
     ))
+    # Espejo de ObServer: tablas obs_*
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_laboratorios (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(150) NOT NULL,
+            fecha_baja TIMESTAMP,
+            sync_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_rubros (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(150) NOT NULL,
+            sync_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_subrubros (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(150) NOT NULL,
+            rubro_observer INTEGER REFERENCES obs_rubros(observer_id),
+            sync_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_nombres_drogas (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(300) NOT NULL,
+            sync_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_productos (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(200) NOT NULL,
+            laboratorio_observer INTEGER REFERENCES obs_laboratorios(observer_id),
+            subrubro_observer INTEGER REFERENCES obs_subrubros(observer_id),
+            nombre_droga_observer INTEGER REFERENCES obs_nombres_drogas(observer_id),
+            codigo_alfabeta VARCHAR(10),
+            troquel INTEGER,
+            cantidad_envase DECIMAL(10, 3),
+            es_habilitado_venta BOOLEAN NOT NULL DEFAULT TRUE,
+            requiere_cadena_frio BOOLEAN NOT NULL DEFAULT FALSE,
+            fecha_baja TIMESTAMP,
+            sync_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_prod_lab ON obs_productos(laboratorio_observer)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_prod_alfabeta ON obs_productos(codigo_alfabeta)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_stock (
+            id_farmacia INTEGER NOT NULL,
+            producto_observer INTEGER NOT NULL REFERENCES obs_productos(observer_id),
+            stock_actual INTEGER NOT NULL DEFAULT 0,
+            maximo INTEGER,
+            minimo INTEGER,
+            sync_en TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (id_farmacia, producto_observer)
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_sync_log (
+            id SERIAL PRIMARY KEY,
+            entidad VARCHAR(40) NOT NULL,
+            filas_upsert INTEGER NOT NULL DEFAULT 0,
+            duracion_ms INTEGER,
+            error TEXT,
+            ejecutado_en TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_sync_entidad ON obs_sync_log(entidad, ejecutado_en DESC)"))
+    # Puente en productos
+    conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))
     conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL"
     ))
@@ -1039,6 +1193,77 @@ def _sqlite_add_columns(conn):
         conn.execute(text("ALTER TABLE laboratorios ADD COLUMN activo BOOLEAN NOT NULL DEFAULT 1"))
     if 'observer_id' not in existing_lab:
         conn.execute(text("ALTER TABLE laboratorios ADD COLUMN observer_id INTEGER UNIQUE"))
+    # Espejo ObServer
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_laboratorios (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(150) NOT NULL,
+            fecha_baja TIMESTAMP,
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_rubros (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(150) NOT NULL,
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_subrubros (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(150) NOT NULL,
+            rubro_observer INTEGER REFERENCES obs_rubros(observer_id),
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_nombres_drogas (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(300) NOT NULL,
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_productos (
+            observer_id INTEGER PRIMARY KEY,
+            descripcion VARCHAR(200) NOT NULL,
+            laboratorio_observer INTEGER REFERENCES obs_laboratorios(observer_id),
+            subrubro_observer INTEGER REFERENCES obs_subrubros(observer_id),
+            nombre_droga_observer INTEGER REFERENCES obs_nombres_drogas(observer_id),
+            codigo_alfabeta VARCHAR(10),
+            troquel INTEGER,
+            cantidad_envase DECIMAL(10, 3),
+            es_habilitado_venta BOOLEAN NOT NULL DEFAULT 1,
+            requiere_cadena_frio BOOLEAN NOT NULL DEFAULT 0,
+            fecha_baja TIMESTAMP,
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_stock (
+            id_farmacia INTEGER NOT NULL,
+            producto_observer INTEGER NOT NULL REFERENCES obs_productos(observer_id),
+            stock_actual INTEGER NOT NULL DEFAULT 0,
+            maximo INTEGER,
+            minimo INTEGER,
+            sync_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id_farmacia, producto_observer)
+        )
+    """))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS obs_sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entidad VARCHAR(40) NOT NULL,
+            filas_upsert INTEGER NOT NULL DEFAULT 0,
+            duracion_ms INTEGER,
+            error TEXT,
+            ejecutado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """))
+    existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
+    if 'observer_id' not in existing_prod:
+        conn.execute(text("ALTER TABLE productos ADD COLUMN observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'laboratorio_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN laboratorio_id INTEGER REFERENCES laboratorios(id)"))

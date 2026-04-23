@@ -22,12 +22,14 @@ from routes import (
     plantillas,
     auth_routes,
     observer,
+    observer_sync,
     admin,
 )
 
 _modules = [
     auth_routes,
     observer,
+    observer_sync,
     admin,
     core,
     providers,
