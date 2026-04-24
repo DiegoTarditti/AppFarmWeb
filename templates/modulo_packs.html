@@ -487,15 +487,57 @@ document.addEventListener('click', e => {
 });
 
 // ── Dropdown para edición de EAN unidad ────────────────────────────
+let _searchTimeouts = {};
 function filterEditDropdown(packId) {
     const search = document.getElementById('edit-ean-unidad-search-' + packId);
     const dd = document.getElementById('dd-edit-unidad-' + packId);
-    const q = search.value.toLowerCase().trim();
-    const filtered = (q ? PRODS_ALL.filter(p => p.ean.includes(q) || p.desc.toLowerCase().includes(q)) : PRODS_ALL).slice(0, 50);
-    dd.innerHTML = filtered.length
-        ? filtered.map(p => `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 flex items-center gap-2" onclick="selectEditEan(${packId},'${p.ean}','${p.desc.replace(/'/g,"\\'")}')"><span class="font-mono text-[#555] flex-shrink-0">${p.ean}</span><span class="text-[#888] truncate">${p.desc}</span></div>`).join('')
-        : '<div class="px-3 py-2 text-[#bbb]">Sin resultados</div>';
+    const q = search.value.trim();
     dd.classList.remove('hidden');
+
+    // Feedback inmediato con resultados locales mientras esperamos el fetch
+    const qLow = q.toLowerCase();
+    const localHits = q.length < 2 ? [] :
+        PRODS_ALL.filter(p => (p.ean && p.ean.includes(q)) ||
+                              (p.desc && p.desc.toLowerCase().includes(qLow)))
+                 .slice(0, 15)
+                 .map(p => ({ean: p.ean, desc: p.desc, fuente: 'local'}));
+    renderDropdownResults(packId, dd, localHits, q.length < 2);
+
+    if (q.length < 2) return;
+
+    // Debounce 250ms para que no dispare por cada tecla
+    clearTimeout(_searchTimeouts[packId]);
+    _searchTimeouts[packId] = setTimeout(() => {
+        fetch('/api/packs/buscar-unidad?q=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => {
+                renderDropdownResults(packId, dd, data.results || [], false);
+            })
+            .catch(() => {});
+    }, 250);
+}
+
+function renderDropdownResults(packId, dd, results, loadingHint) {
+    if (loadingHint) {
+        dd.innerHTML = '<div class="px-3 py-2 text-[#bbb]">Escribí al menos 2 letras…</div>';
+        return;
+    }
+    if (!results.length) {
+        dd.innerHTML = '<div class="px-3 py-2 text-[#bbb]">Buscando…</div>';
+        return;
+    }
+    dd.innerHTML = results.map(p => {
+        const safeDesc = (p.desc || '').replace(/'/g, "\\'");
+        const badge = p.fuente === 'observer'
+            ? '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 flex-shrink-0">OBS</span>'
+            : '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 flex-shrink-0">LOCAL</span>';
+        return `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 flex items-center gap-2"
+                     onclick="selectEditEan(${packId},'${p.ean}','${safeDesc}')">
+                    ${badge}
+                    <span class="font-mono text-[#555] flex-shrink-0 text-[11px]">${p.ean}</span>
+                    <span class="text-[#555] truncate">${p.desc}</span>
+                </div>`;
+    }).join('');
 }
 function selectEditEan(packId, ean, desc) {
     document.getElementById('edit-ean-unidad-search-' + packId).value = ean;
