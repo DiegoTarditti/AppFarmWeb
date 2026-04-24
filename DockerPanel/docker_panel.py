@@ -228,6 +228,7 @@ class DockerPanel(tk.Tk):
         self._auto_sync_last_ok = None
         self._auto_sync_last_error = None
         self._auto_sync_fallos = 0
+        self._sync_overlay = None
         threading.Thread(target=self._auto_sync_loop, daemon=True).start()
         self.after(500, self._update_autosync_label)
         # === END AUTO-SYNC ===
@@ -1301,6 +1302,80 @@ class DockerPanel(tk.Tk):
                     return
                 time.sleep(1)
 
+    def _mostrar_overlay_sync(self, titulo='Sincronizando…', sub='Esto puede tardar unos minutos.'):
+        """Muestra un overlay modal centrado mientras corre el sync.
+        Se debe llamar con self.after(0, ...) porque tkinter no es thread-safe."""
+        try:
+            if getattr(self, '_sync_overlay', None) is not None and self._sync_overlay.winfo_exists():
+                return
+        except Exception:
+            pass
+        ov = tk.Toplevel(self)
+        ov.title('')
+        ov.configure(bg=BG)
+        ov.transient(self)
+        ov.resizable(False, False)
+        ov.protocol('WM_DELETE_WINDOW', lambda: None)  # no se cierra con X
+        ov.overrideredirect(True)
+        # Centrar sobre el panel
+        self.update_idletasks()
+        w, h = 420, 130
+        px = self.winfo_rootx() + (self.winfo_width() - w) // 2
+        py = self.winfo_rooty() + (self.winfo_height() - h) // 2
+        ov.geometry(f'{w}x{h}+{px}+{py}')
+
+        frame = tk.Frame(ov, bg=BG, padx=24, pady=20,
+                         highlightbackground=BORDER, highlightthickness=2)
+        frame.pack(fill='both', expand=True)
+        self._sync_overlay_title = tk.Label(frame, text=titulo,
+                                             font=('Segoe UI', 11, 'bold'),
+                                             bg=BG, fg='#c9a3ff')
+        self._sync_overlay_title.pack(anchor='w')
+        self._sync_overlay_sub = tk.Label(frame, text=sub,
+                                           font=('Segoe UI', 9),
+                                           bg=BG, fg=FG_DIM, wraplength=360,
+                                           justify='left')
+        self._sync_overlay_sub.pack(anchor='w', pady=(4, 0))
+        self._sync_overlay_dots = tk.Label(frame, text='●○○',
+                                            font=('Segoe UI', 14, 'bold'),
+                                            bg=BG, fg='#c9a3ff')
+        self._sync_overlay_dots.pack(anchor='w', pady=(10, 0))
+        self._sync_overlay = ov
+        # Animación de puntitos
+        self._sync_overlay_step = 0
+        self._animar_overlay()
+
+    def _animar_overlay(self):
+        try:
+            if self._sync_overlay is None or not self._sync_overlay.winfo_exists():
+                return
+            frames = ['●○○', '○●○', '○○●', '○●○']
+            self._sync_overlay_dots.config(text=frames[self._sync_overlay_step % len(frames)])
+            self._sync_overlay_step += 1
+            self.after(300, self._animar_overlay)
+        except Exception:
+            pass
+
+    def _actualizar_overlay(self, titulo=None, sub=None):
+        """Actualiza texto mientras el overlay está visible."""
+        try:
+            if self._sync_overlay is None or not self._sync_overlay.winfo_exists():
+                return
+            if titulo is not None:
+                self._sync_overlay_title.config(text=titulo)
+            if sub is not None:
+                self._sync_overlay_sub.config(text=sub)
+        except Exception:
+            pass
+
+    def _cerrar_overlay_sync(self):
+        try:
+            if self._sync_overlay is not None and self._sync_overlay.winfo_exists():
+                self._sync_overlay.destroy()
+        except Exception:
+            pass
+        self._sync_overlay = None
+
     def _ejecutar_auto_sync(self, cfg=None, automatico=False):
         """Ejecuta un sync ahora llamando al endpoint /api/auto-sync de la app local.
         Bloquea con lock para que 2 invocaciones no se pisen."""
@@ -1309,6 +1384,40 @@ class DockerPanel(tk.Tk):
             self.after(0, self._append,
                        "  ⏳ auto-sync: ya hay uno en curso, skip\n", "dim")
             return
+        # Mostrar overlay + thread de polling para actualizar el estado en vivo
+        poll_stop = threading.Event()
+        if not automatico:
+            self.after(0, self._mostrar_overlay_sync,
+                       'Sincronizando ObServer → Render',
+                       'Iniciando…')
+
+            def _polling():
+                labels = {
+                    'laboratorios':     ('1/9', 'Trayendo laboratorios…'),
+                    'rubros':           ('2/9', 'Trayendo rubros…'),
+                    'subrubros':        ('3/9', 'Trayendo subrubros…'),
+                    'nombres_drogas':   ('4/9', 'Trayendo nombres de drogas…'),
+                    'productos':        ('5/9', 'Trayendo productos (122k) — ~50s…'),
+                    'stock':            ('6/9', 'Trayendo stock de productos — ~15s…'),
+                    'ventas_mensuales': ('7/9', 'Trayendo ventas mensuales — ~25s…'),
+                    'match_productos':  ('8/9', 'Auto-match EAN ↔ IdProducto…'),
+                    'push_render':      ('9/9', 'Replicando a Render (COPY) — ~90s…'),
+                }
+                status_url = (cfg or self._load_auto_sync_config()).get('url', '').rstrip('/') + '/api/auto-sync/status'
+                while not poll_stop.is_set():
+                    try:
+                        with urllib.request.urlopen(status_url, timeout=3) as r:
+                            st = json.loads(r.read().decode('utf-8', errors='replace'))
+                        paso = st.get('paso_actual')
+                        if paso and paso in labels:
+                            idx, texto = labels[paso]
+                            self.after(0, self._actualizar_overlay,
+                                       f'Sincronizando · paso {idx}',
+                                       texto)
+                    except Exception:
+                        pass
+                    poll_stop.wait(2)
+            threading.Thread(target=_polling, daemon=True).start()
         try:
             if cfg is None:
                 cfg = self._load_auto_sync_config()
@@ -1365,8 +1474,11 @@ class DockerPanel(tk.Tk):
                 self.after(0, self._append,
                            f"  ✗ auto-sync conexión falló ({self._auto_sync_fallos}x): {e}\n", "err")
         finally:
+            poll_stop.set()
             self._auto_sync_lock.release()
             self.after(0, self._update_autosync_label)
+            if not automatico:
+                self.after(0, self._cerrar_overlay_sync)
 
     def _config_autosync(self):
         """Diálogo para configurar el auto-sync: enabled, horarios, URL, token."""

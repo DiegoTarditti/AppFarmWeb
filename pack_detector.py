@@ -144,6 +144,10 @@ def detectar_packs(modules, session, saltear_registrados=True):
                     ).limit(50).all()
                     best, best_score = None, 0
                     for op in q:
+                        # Saltear candidatos que también parecen pack (evita
+                        # sugerir "CIRIAX OTIC... (PACK)" como unidad de otro pack)
+                        if any(p.search(op.descripcion or '') for p in PACK_PATTERNS):
+                            continue
                         toks_op = {t for t in re.split(r'\s+', op.descripcion.lower()) if len(t) >= 2}
                         if not toks_op:
                             continue

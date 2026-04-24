@@ -204,6 +204,53 @@ def init_app(app):
         resp.headers['Content-Disposition'] = 'attachment; filename="plantilla_modulos.xlsx"'
         return resp
 
+    @app.route('/api/packs/buscar-unidad')
+    def api_packs_buscar_unidad():
+        """Búsqueda combinada productos locales + obs_productos para el dropdown
+        del Buscar equivalente. Excluye candidatos que parecen pack (descripción
+        con 'PACK X N').
+
+        Query: ?q=amoxidal  (mínimo 2 chars)
+        Respuesta: {results: [{ean, desc, fuente: 'local'|'observer'}]}
+        """
+        import re as _re
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'results': []})
+        q_low = q.lower()
+        PACK_RE = _re.compile(r'\bPACK\s*X\s*\d+\b', _re.IGNORECASE)
+        out = []
+        with database.get_db() as session:
+            # Locales (tienen EAN real)
+            locales = (session.query(database.Producto)
+                       .filter(database.Producto.codigo_barra.ilike(f'%{q}%') |
+                               database.Producto.descripcion.ilike(f'%{q}%'))
+                       .limit(30).all())
+            for p in locales:
+                if not p.descripcion or PACK_RE.search(p.descripcion):
+                    continue
+                out.append({'ean': p.codigo_barra, 'desc': p.descripcion or '',
+                            'fuente': 'local'})
+            # Obs_productos (usamos observer_id como pseudo-EAN)
+            eans_vistos = {r['ean'] for r in out}
+            obs = (session.query(database.ObsProducto)
+                   .filter(database.ObsProducto.descripcion.ilike(f'%{q}%'),
+                           database.ObsProducto.fecha_baja.is_(None))
+                   .limit(30).all())
+            for o in obs:
+                if not o.descripcion or PACK_RE.search(o.descripcion):
+                    continue
+                ean = str(o.observer_id)
+                if ean in eans_vistos:
+                    continue
+                out.append({'ean': ean, 'desc': o.descripcion,
+                            'fuente': 'observer'})
+        # Orden: primero los que el q matchea en desc al inicio
+        out.sort(key=lambda r: (0 if r['desc'].lower().startswith(q_low) else 1,
+                                r['fuente'] == 'observer',
+                                len(r['desc'])))
+        return jsonify({'results': out[:40]})
+
     @app.route('/modulo-packs/importar', methods=['POST'])
     def modulo_packs_importar():
         """Importa módulos desde un XLSX (formato Roemmers o plantilla propia).

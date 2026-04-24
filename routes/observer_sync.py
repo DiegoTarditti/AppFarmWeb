@@ -258,6 +258,7 @@ def init_app(app):
             }
             with database.get_db() as session:
                 for ent in orden:
+                    _SYNC_ESTADO['paso_actual'] = ent
                     try:
                         stats = funcs[ent](session)
                         session.commit()
@@ -274,6 +275,7 @@ def init_app(app):
 
             # Paso 3: auto-match productos (opcional)
             if not skip_match:
+                _SYNC_ESTADO['paso_actual'] = 'match_productos'
                 try:
                     with database.get_db() as session:
                         stats = observer_matcher.match_productos(session, threshold=0.80)
@@ -290,6 +292,7 @@ def init_app(app):
 
             # Paso 4: push a Render (opcional)
             if not skip_push:
+                _SYNC_ESTADO['paso_actual'] = 'push_render'
                 render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
                 if not render_url:
                     resultado['pasos'].append({
@@ -319,6 +322,7 @@ def init_app(app):
 
         finally:
             _SYNC_ESTADO['en_curso'] = False
+            _SYNC_ESTADO['paso_actual'] = None
             _SYNC_LOCK.release()
 
     @app.route('/api/auto-sync/status')
@@ -326,6 +330,7 @@ def init_app(app):
         """Devuelve el estado del lock y última corrida (sin ejecutar nada)."""
         return jsonify({
             'en_curso': _SYNC_ESTADO['en_curso'],
+            'paso_actual': _SYNC_ESTADO.get('paso_actual'),
             'ultimo_inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()
                               if _SYNC_ESTADO['ultimo_inicio'] else None,
             'ultimo_fin': _SYNC_ESTADO['ultimo_fin'].isoformat()
