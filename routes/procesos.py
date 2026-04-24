@@ -112,7 +112,9 @@ def init_app(app):
 
             import observer_source
             estado_ventas = observer_source.estado_ventas_mensuales(session)
-            observer_disponible = observer_source.observer_disponible()
+            # Para habilitar el flujo "ir directo a análisis" basta con tener datos
+            # locales en obs_ventas_mensuales (no hace falta conexión SQL Server).
+            observer_disponible = observer_source.observer_analisis_disponible()
 
         return render_template('procesos_list.html', procesos=data, counts=counts,
                                estado_filter=estado_filter, tipo_filter=tipo_filter,
@@ -163,7 +165,7 @@ def init_app(app):
         # Para droguería/proveedor: ir al detail (el flujo arranca desde factura).
         if tipo == 'laboratorio':
             import observer_source
-            if observer_source.observer_disponible():
+            if observer_source.observer_analisis_disponible():
                 return redirect(url_for('observer_analizar',
                                         lab=partner_nombre, proceso=pid))
         return redirect(url_for('proceso_detail', proceso_id=pid))

@@ -184,8 +184,8 @@ def init_app(app):
         if not _user_tiene_observer(current_user):
             flash('Tu usuario no tiene acceso a ObServer.', 'error')
             return redirect(url_for('index'))
-        if not observer_source.observer_disponible():
-            flash('ObServer no está disponible. Usá el análisis por archivo mientras tanto.', 'error')
+        if not observer_source.observer_analisis_disponible():
+            flash('No hay datos de ventas para analizar. Corré el sync desde la PC de la farmacia.', 'error')
             return redirect(url_for('purchase_index'))
 
         if request.method == 'GET':

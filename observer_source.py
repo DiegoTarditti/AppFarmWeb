@@ -73,6 +73,23 @@ def observer_disponible():
         return False
 
 
+def observer_analisis_disponible():
+    """True si hay datos locales de ventas para hacer análisis, o si SQL Server responde.
+
+    La primera opción cubre el caso típico: farmacia sincroniza ObServer → los datos
+    están en obs_* (locales o bajados vía pull_from_render). Para ANALIZAR no hace
+    falta tener conexión viva a SQL Server.
+    """
+    try:
+        from database import get_db, ObsVentaMensual
+        with get_db() as s:
+            if s.query(ObsVentaMensual).limit(1).first():
+                return True
+    except Exception as e:
+        _log.warning('No pude chequear obs_ventas_mensuales: %s', e)
+    return observer_disponible()
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Syncs — cada función abre su propia conexión al source y recibe la session
 # local como parámetro para el upsert. Devuelve dict con stats.
