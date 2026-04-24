@@ -24,18 +24,26 @@ import sys
 import time
 
 
-def _read_env(path='.env'):
-    """Lee .env sin dependencias externas."""
+def _read_env(path=None):
+    """Lee .env sin dependencias externas. Busca primero en CWD, después en la raíz del proyecto."""
+    if path is None:
+        # Raíz del proyecto: un nivel arriba de scripts/
+        proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        candidatos = [os.path.join(os.getcwd(), '.env'),
+                      os.path.join(proj_root, '.env')]
+    else:
+        candidatos = [path]
     out = {}
-    if not os.path.exists(path):
-        return out
-    with open(path, encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#') or '=' not in line:
-                continue
-            k, v = line.split('=', 1)
-            out[k.strip()] = v.strip().strip('"').strip("'")
+    for p in candidatos:
+        if os.path.exists(p):
+            with open(p, encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or '=' not in line:
+                        continue
+                    k, v = line.split('=', 1)
+                    out[k.strip()] = v.strip().strip('"').strip("'")
+            break
     return out
 
 
