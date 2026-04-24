@@ -77,6 +77,29 @@ def main():
     size_mb = os.path.getsize(tmp_dump) / 1024 / 1024
     print(f'   OK - {size_mb:.1f} MB en {time.time() - t0:.1f}s')
 
+    # pg_dump 18 emite comandos psql \restrict/\unrestrict que psql 15 no entiende.
+    # Los filtramos antes de restaurar. IMPORTANTE: modo binario para no corromper
+    # los bloques COPY (tabs y newlines son byte-significativos dentro de COPY).
+    print('   Filtrando comandos incompatibles con psql 15...')
+    filtrado = tmp_dump + '.filtered'
+    skipped = 0
+    # Settings de pg17+ que pg15 no reconoce.
+    set_incompatibles = (b'transaction_timeout',)
+    with open(tmp_dump, 'rb') as fi, open(filtrado, 'wb') as fo:
+        for line in fi:
+            s = line.lstrip()
+            if s.startswith(b'\\restrict') or s.startswith(b'\\unrestrict'):
+                skipped += 1
+                continue
+            # SET transaction_timeout = 0;
+            if s.startswith(b'SET ') and any(p in s for p in set_incompatibles):
+                skipped += 1
+                continue
+            fo.write(line)
+    os.remove(tmp_dump)
+    os.replace(filtrado, tmp_dump)
+    print(f'   OK - {skipped} líneas removidas')
+
     print('2/3 Reseteando Postgres local...')
     r = subprocess.run(
         ['docker', 'exec', 'appfarmweb-db-1', 'psql', '-U', 'postgres', '-d', 'farmacia',
@@ -95,7 +118,8 @@ def main():
     subprocess.run(['docker', 'cp', tmp_dump, 'appfarmweb-db-1:/tmp/render_dump_pull.sql'], check=True)
     r = subprocess.run(
         ['docker', 'exec', 'appfarmweb-db-1', 'psql', '-U', 'postgres', '-d', 'farmacia',
-         '-f', '/tmp/render_dump_pull.sql', '-q', '--single-transaction'],
+         '-f', '/tmp/render_dump_pull.sql', '-q', '--single-transaction',
+         '-v', 'ON_ERROR_STOP=1'],
         capture_output=True, text=True,
     )
     # psql suele devolver 0 aun con warnings; mostramos últimas líneas
@@ -105,10 +129,11 @@ def main():
             print(f'   {L}')
     if r.returncode != 0:
         print(f'   ERROR restore (code {r.returncode})')
+        print(f'   El dump quedó en {tmp_dump} y /tmp/render_dump_pull.sql dentro del container para debug.')
         sys.exit(4)
     print(f'   OK en {time.time() - t0:.1f}s')
 
-    # Limpieza
+    # Limpieza solo en éxito
     try: os.remove(tmp_dump)
     except OSError: pass
     subprocess.run(

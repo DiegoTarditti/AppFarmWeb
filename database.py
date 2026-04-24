@@ -938,12 +938,14 @@ def _pg_add_columns(conn):
     # el INSERT explota con NOT NULL porque no les ponemos valor).
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    # Asegurar DEFAULT en observer_ventas_meses (si se agregó sin default en versiones previas).
+    conn.execute(text("ALTER TABLE configuracion ALTER COLUMN observer_ventas_meses SET DEFAULT 16"))
     conn.execute(text(
         "INSERT INTO configuracion "
         "(id, farmacia_nombre, umbral_pico, umbral_baja, umbral_tendencia, "
         " rot_alta_min, rot_alta_tol, rot_media_min, rot_media_tol, rot_baja_tol, "
-        " keep_alive_enabled, keep_alive_interval_min) "
-        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0, FALSE, 10) "
+        " keep_alive_enabled, keep_alive_interval_min, observer_ventas_meses) "
+        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0, FALSE, 10, 16) "
         "ON CONFLICT DO NOTHING"
     ))
     conn.execute(text(

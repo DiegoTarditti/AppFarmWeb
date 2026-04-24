@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:17
+    image: postgres:15
     restart: unless-stopped
     command: postgres -c timezone=UTC -c log_timezone=UTC
     environment:
@@ -19,7 +19,7 @@ services:
       retries: 10
 
   observer_db:
-    image: postgres:17
+    image: postgres:15
     restart: unless-stopped
     command: postgres -c timezone=UTC -c log_timezone=UTC
     environment:

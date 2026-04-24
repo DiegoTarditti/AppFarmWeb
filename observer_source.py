@@ -434,9 +434,13 @@ def estado_ventas_mensuales(session, dias_fresco=7):
     ultimo = (session.query(ObsSyncLog)
               .filter(ObsSyncLog.entidad == 'ventas_mensuales')
               .order_by(ObsSyncLog.ejecutado_en.desc()).first())
-    if not ultimo or filas == 0:
+    if filas == 0:
         return {'estado': 'nunca', 'ultimo_sync': None, 'dias': None, 'filas': 0,
                 'mensaje': 'Todavía no se importaron ventas desde ObServer.'}
+    if not ultimo:
+        # Hay datos pero no hay log (ej. se importaron desde otra máquina vía pull).
+        return {'estado': 'fresco', 'ultimo_sync': None, 'dias': 0, 'filas': filas,
+                'mensaje': f'{filas} filas de ventas disponibles (origen externo).'}
     delta = (now_ar() - ultimo.ejecutado_en).days
     if delta <= dias_fresco:
         return {'estado': 'fresco', 'ultimo_sync': ultimo.ejecutado_en, 'dias': delta,
