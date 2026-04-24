@@ -33,7 +33,8 @@ def exigir_login():
     from flask import request, redirect, url_for
     from flask_login import current_user
     # Rutas públicas (no requieren login)
-    rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api'}
+    rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api',
+                      'api_auto_sync', 'api_auto_sync_status'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
     if not current_user.is_authenticated:
