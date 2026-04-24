@@ -12,6 +12,25 @@ def now_ar():
     """Hora actual en Argentina (UTC-3), sin tzinfo para compatibilidad con SQLAlchemy DateTime."""
     return datetime.now(AR_TZ).replace(tzinfo=None)
 
+
+def detectar_entorno():
+    """Detecta dónde está corriendo la app. Retorna dict con:
+      - codigo: 'render' | 'local' | 'local_render_db'
+      - label:  'PROD' | 'LOCAL' | 'LOCAL→PROD'
+      - color:  color hex para el badge/topbar
+    """
+    # Render setea estas env vars automáticamente en sus servicios
+    if os.environ.get('RENDER') or os.environ.get('RENDER_INSTANCE_ID'):
+        return {'codigo': 'render', 'label': 'PROD', 'color': '#16A34A',
+                'descripcion': 'Producción (Render)'}
+    # Docker local apuntando a la DB de Render (escenario dev remoto)
+    db_url = os.environ.get('DATABASE_URL', '')
+    if 'render.com' in db_url or 'oregon-postgres' in db_url:
+        return {'codigo': 'local_render_db', 'label': 'LOCAL→PROD', 'color': '#EF4444',
+                'descripcion': 'Local apuntando a DB de Render (cuidado)'}
+    return {'codigo': 'local', 'label': 'LOCAL', 'color': '#F59E0B',
+            'descripcion': 'Docker local'}
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'uploads')

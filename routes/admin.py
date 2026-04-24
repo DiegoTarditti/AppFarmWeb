@@ -5,8 +5,9 @@
 
 import os
 import sys
-from flask import render_template, request, redirect, url_for, flash
+from flask import render_template, request, redirect, url_for, flash, jsonify
 from auth import requiere_permiso
+import database
 
 # Path hack para poder importar scripts/
 _SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
@@ -53,3 +54,41 @@ def init_app(app):
             flash(f'Borrados {borrados_p} proveedores y {borrados_l} laboratorios.', 'success')
         return render_template('admin_cleanup_inactivos.html',
                                resultado=resultado, ejecutado=ejecutar)
+
+    @app.route('/api/dockerpanel-info')
+    def api_dockerpanel_info():
+        """Devuelve la ruta configurada del DockerPanel para que el widget sepa qué abrir.
+        No requiere permiso admin — cualquier usuario logueado puede leer solo la ruta."""
+        with database.get_db() as session:
+            cfg = session.get(database.Config, 1)
+            ruta = (cfg.dockerpanel_ruta or '').strip() if cfg else ''
+        return jsonify({'ruta': ruta or None})
+
+    @app.route('/admin/reset-datos', methods=['GET', 'POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def admin_reset_datos():
+        """Reset de datos operativos agrupados por módulo (dry-run + ejecución con checkboxes)."""
+        from reset_datos import calcular_dry_run, ejecutar_reset, GRUPOS
+        logs = None
+        if request.method == 'POST':
+            seleccion = request.form.getlist('grupo')
+            confirmacion = (request.form.get('confirmacion') or '').strip()
+            if confirmacion != 'BORRAR':
+                flash('Escribí BORRAR en el campo de confirmación para ejecutar.', 'error')
+            elif not seleccion:
+                flash('No seleccionaste ningún grupo.', 'warning')
+            else:
+                try:
+                    logs = ejecutar_reset(seleccion)
+                    flash(f'Reset ejecutado. {len(logs)} operaciones completadas.', 'success')
+                except Exception as e:
+                    flash(f'Error: {e}', 'error')
+                    return redirect(url_for('admin_reset_datos'))
+        conteos = calcular_dry_run()
+        # Orden estable de grupos para la UI
+        grupos_lista = [
+            (key, GRUPOS[key], conteos.get(key, {'total': 0, 'detalle': []}))
+            for key in GRUPOS
+        ]
+        return render_template('admin_reset_datos.html',
+                               grupos=grupos_lista, logs=logs)

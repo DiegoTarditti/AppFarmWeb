@@ -234,6 +234,21 @@
             </div>
         </div>
 
+        <!-- DockerPanel -->
+        <div class="bg-surface rounded-xl border border-surface-border p-5 sm:p-6">
+            <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wider block mb-1.5">
+                Ruta del DockerPanel (solo PC farmacia)
+            </label>
+            <p class="text-xs text-[#6f6f6f] mb-3">
+                Archivo ejecutable o script que arranca el DockerPanel. Cuando el widget detecta que el panel no está activo,
+                muestra esta ruta al usuario para que la ejecute. Ej: <code class="font-mono text-[10px]">C:\AppFarmWeb\DockerPanel\lanzar_panel.bat</code>
+            </p>
+            <input type="text" name="dockerpanel_ruta"
+                   value="{{ config.dockerpanel_ruta or '' }}"
+                   placeholder="C:\ruta\al\docker_panel.bat (o .pyw)"
+                   class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+
         <div class="flex items-center justify-between">
             <a href="{{ url_for('admin_console') }}"
                class="inline-flex items-center gap-2 text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] bg-surface-input hover:bg-black/[0.06] border border-surface-border px-4 py-2 rounded-xl transition-colors">

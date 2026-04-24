@@ -68,6 +68,12 @@ def arg_currency(value):
 from auth import init_auth
 init_auth(app)
 
+# Exponer detección de entorno en todos los templates
+from helpers import detectar_entorno
+@app.context_processor
+def _inyectar_entorno():
+    return {'entorno': detectar_entorno()}
+
 from routes import register_routes
 register_routes(app)
 

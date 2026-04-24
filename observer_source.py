@@ -522,6 +522,17 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                               ObsStock.producto_observer.in_(prod_ids)).all())
         mapa_stock = {s.producto_observer: int(s.stock_actual or 0) for s in stock_rows}
 
+        # Puente EAN ↔ IdProducto: traer el codigo_barra real de la tabla
+        # local `productos` cuando esté vinculada por observer_id.
+        # Si un producto de ObServer no está vinculado, queda sin EAN (None)
+        # — así el cliente puede detectarlo y resolver la vinculación.
+        from database import Producto
+        ean_por_observer = {
+            obs_id: cb for (obs_id, cb) in session.query(
+                Producto.observer_id, Producto.codigo_barra
+            ).filter(Producto.observer_id.in_(prod_ids)).all() if cb
+        }
+
         resultado = []
         for p in productos:
             v_mapa = mapa_ventas.get(p.observer_id, {})
@@ -529,7 +540,9 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
             if sum(ventas) == 0 and mapa_stock.get(p.observer_id, 0) == 0:
                 continue  # sin ventas ni stock → lo filtramos
             resultado.append({
-                'codigo_barra': str(p.observer_id),
+                'codigo_barra': ean_por_observer.get(p.observer_id) or '',
+                'observer_id': p.observer_id,
+                'sin_vincular': p.observer_id not in ean_por_observer,
                 'nombre': p.descripcion,
                 'precio_pvp': 0,  # TODO: cuando tengamos precio en DW
                 'stock': mapa_stock.get(p.observer_id, 0),

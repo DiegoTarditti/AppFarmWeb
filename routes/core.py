@@ -59,6 +59,8 @@ def init_app(app):
                 cfg.keep_alive_interval_min = max(1, min(60, int(request.form.get('keep_alive_interval_min', 10))))
             except (ValueError, TypeError):
                 pass
+            dockerpanel_ruta = (request.form.get('dockerpanel_ruta') or '').strip()
+            cfg.dockerpanel_ruta = dockerpanel_ruta or None
             session.commit()
         flash('Configuración guardada.')
         return redirect(url_for('settings'))

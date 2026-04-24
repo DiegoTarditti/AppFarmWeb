@@ -90,10 +90,10 @@
         <h2 class="text-lg font-bold text-[#1e1e1e]">Nuevo usuario</h2>
         <div>
             <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Usuario</label>
-            <input type="text" name="username" required pattern="[A-Za-z0-9_]{3,50}"
+            <input type="text" name="username" id="new-username" required pattern="[A-Za-z0-9_]{3,50}"
                    title="3 a 50 caracteres: letras, números o guion bajo. Sin espacios ni tildes."
                    class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
-            <p class="text-[11px] text-[#999] mt-1">Solo letras, números y <code>_</code>. Sin espacios ni tildes.</p>
+            <p class="text-[11px] text-[#999] mt-1" id="new-username-hint">Se propone automáticamente según el rol. Podés cambiarlo.</p>
         </div>
         <div>
             <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Nombre completo</label>
@@ -107,11 +107,38 @@
         </div>
         <div>
             <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Rol</label>
-            <select name="rol" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
+            <select name="rol" id="new-rol" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
                 {% for r in roles %}<option value="{{ r }}" {% if r == 'farmacia' %}selected{% endif %}>{{ r }}</option>{% endfor %}
             </select>
             <p class="text-[10px] text-[#999] mt-1">Los permisos se asignan automáticamente según el rol. Podés refinarlos después.</p>
         </div>
+
+        <script>
+        // Autocompletado: proponer username según rol seleccionado, evitando duplicados
+        (function () {
+            const USERNAMES_EXISTENTES = {{ usuarios | map(attribute='username') | list | tojson }};
+            const selRol = document.getElementById('new-rol');
+            const inpUser = document.getElementById('new-username');
+            const ROLES_SUGERIDOS = {{ roles | tojson }};
+            let _editadoManual = false;
+            inpUser.addEventListener('input', () => { _editadoManual = true; });
+
+            function proponerUsername(rol) {
+                if (_editadoManual && inpUser.value.trim()) return;
+                let base = rol.toLowerCase();
+                let candidato = base;
+                let i = 2;
+                while (USERNAMES_EXISTENTES.includes(candidato)) {
+                    candidato = base + i;
+                    i++;
+                }
+                inpUser.value = candidato;
+            }
+            selRol.addEventListener('change', e => proponerUsername(e.target.value));
+            // Precargar al abrir el modal
+            proponerUsername(selRol.value);
+        })();
+        </script>
         <div>
             <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Contraseña inicial</label>
             <input type="password" name="password" required minlength="6"

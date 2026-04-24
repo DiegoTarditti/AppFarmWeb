@@ -26,7 +26,23 @@
         }
     </script>
     <style>
+        {% if entorno.codigo == 'local' %}
+        /* LOCAL: patrón de rayas sutiles amarillas para diferenciar de prod */
+        body { background-color: #D6ECDE; color: #1e1e1e;
+               background-image: repeating-linear-gradient(-45deg,
+                   transparent, transparent 40px,
+                   rgba(245, 158, 11, 0.04) 40px,
+                   rgba(245, 158, 11, 0.04) 80px); }
+        {% elif entorno.codigo == 'local_render_db' %}
+        /* LOCAL→PROD: rojo sutil de advertencia porque tocás data real */
+        body { background-color: #FEE2E2; color: #1e1e1e;
+               background-image: repeating-linear-gradient(-45deg,
+                   transparent, transparent 40px,
+                   rgba(239, 68, 68, 0.08) 40px,
+                   rgba(239, 68, 68, 0.08) 80px); }
+        {% else %}
         body { background-color: #D6ECDE; color: #1e1e1e; }
+        {% endif %}
 
         /* Encabezados de tabla: fondo oscuro, texto amber */
         table thead {
@@ -72,6 +88,131 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body class="min-h-screen flex font-sans">
+
+<!-- ── Widget DockerPanel: estado + acción (solo visible en localhost) ── -->
+<div id="dp-widget" class="hidden fixed top-3 right-3 z-[70]">
+    <!-- Estado: activo (puntito verde discreto) -->
+    <div id="dp-activo" class="hidden bg-white border border-emerald-300 rounded-full px-3 py-1.5 shadow-sm flex items-center gap-2 text-xs">
+        <span class="relative flex h-2.5 w-2.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+        </span>
+        <span class="font-semibold text-emerald-800">Panel activo</span>
+    </div>
+    <!-- Estado: inactivo (cartelito ámbar con acción) -->
+    <div id="dp-inactivo" class="hidden bg-white border-2 border-amber-400 rounded-xl px-3 py-2 shadow-lg flex items-center gap-2.5 text-xs max-w-xs">
+        <div class="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        </div>
+        <div class="flex-1 min-w-0">
+            <p class="font-semibold text-amber-900">Panel inactivo</p>
+            <p class="text-[10px] text-amber-800 leading-tight">sync ObServer en pausa</p>
+        </div>
+        <button type="button" id="dp-btn-abrir"
+                class="bg-amber-500 hover:bg-amber-600 text-white font-semibold text-[11px] px-2.5 py-1.5 rounded-lg">
+            Abrir
+        </button>
+    </div>
+</div>
+
+<!-- Modal: instrucciones para abrir el panel -->
+<div id="dp-modal" class="hidden fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4"
+     onclick="if(event.target===this) this.classList.add('hidden')">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <div class="flex items-start gap-3 mb-4">
+            <div class="w-10 h-10 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-bold text-[#1e1e1e]">Abrir DockerPanel</p>
+                <p class="text-xs text-[#6f6f6f]">El panel es una app local que mantiene la sync con ObServer</p>
+            </div>
+            <button type="button" onclick="document.getElementById('dp-modal').classList.add('hidden')"
+                    class="text-[#999] hover:text-[#1e1e1e]">✕</button>
+        </div>
+        <div id="dp-modal-body" class="space-y-3 text-sm">
+            <!-- Se rellena dinámicamente -->
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    // Solo chequear si se accede por localhost/127 (en Render no aplica)
+    const host = window.location.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1') return;
+    // Y solo para roles con acceso operativo (los remotos no deben ver este widget)
+    const rol = {{ (current_user.rol if current_user.is_authenticated else '') | tojson }};
+    if (!['farmacia', 'dev', 'admin'].includes(rol)) return;
+
+    const widget   = document.getElementById('dp-widget');
+    const activo   = document.getElementById('dp-activo');
+    const inactivo = document.getElementById('dp-inactivo');
+    const modal    = document.getElementById('dp-modal');
+    const modalBody = document.getElementById('dp-modal-body');
+    const HELPER_URL = 'http://localhost:5055/ping';
+    let _rutaPanel = null;
+
+    // Traer la ruta configurada desde el server
+    fetch('/api/dockerpanel-info', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) _rutaPanel = d.ruta || null; })
+        .catch(_ => {});
+
+    async function chequearHelper() {
+        widget.classList.remove('hidden');
+        try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 1500);
+            const r = await fetch(HELPER_URL, { signal: ctrl.signal });
+            clearTimeout(t);
+            if (r.ok) {
+                activo.classList.remove('hidden');
+                inactivo.classList.add('hidden');
+                return;
+            }
+        } catch (_) { /* no responde */ }
+        activo.classList.add('hidden');
+        inactivo.classList.remove('hidden');
+    }
+
+    document.getElementById('dp-btn-abrir').addEventListener('click', () => {
+        // Render contenido del modal según tenga o no ruta configurada
+        if (_rutaPanel) {
+            modalBody.innerHTML = `
+                <p class="text-xs text-[#555]">Ruta configurada del panel:</p>
+                <div class="flex items-center gap-2 bg-[#fafafa] border border-[#ececec] rounded-lg px-3 py-2">
+                    <code class="text-xs font-mono text-[#1e1e1e] flex-1 break-all">${_rutaPanel}</code>
+                    <button type="button" onclick="navigator.clipboard.writeText(${JSON.stringify(_rutaPanel)}); this.textContent='✓ Copiado'; setTimeout(()=>this.textContent='Copiar',1500);"
+                            class="text-xs font-semibold bg-brand hover:bg-brand-hover text-brand-dark px-2.5 py-1 rounded">
+                        Copiar
+                    </button>
+                </div>
+                <div class="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-900 space-y-1">
+                    <p class="font-semibold">Para abrirlo:</p>
+                    <ol class="list-decimal ml-4 space-y-0.5">
+                        <li>Presioná <kbd class="font-mono bg-white px-1 rounded border border-sky-300">Win + R</kbd></li>
+                        <li>Pegá la ruta (<kbd class="font-mono bg-white px-1 rounded border border-sky-300">Ctrl + V</kbd>)</li>
+                        <li>Presioná Enter</li>
+                    </ol>
+                </div>`;
+        } else {
+            modalBody.innerHTML = `
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+                    <p class="font-semibold mb-1">Ruta no configurada</p>
+                    <p>Configurá la ruta del DockerPanel en Configuración y te muestro acá cómo abrirlo.</p>
+                </div>
+                <a href="/settings" class="block bg-brand hover:bg-brand-hover text-brand-dark text-center font-semibold text-sm py-2 rounded-lg">
+                    Ir a Configuración →
+                </a>`;
+        }
+        modal.classList.remove('hidden');
+    });
+
+    chequearHelper();
+    setInterval(chequearHelper, 30000);  // re-check cada 30s
+})();
+</script>
 
 {% if nav_active != 'inicio' %}
 <script>
@@ -119,7 +260,12 @@
                 </svg>
             </div>
             <div class="brand-text flex-1 min-w-0">
-                <p class="text-sm font-bold text-[#F4C430] leading-tight">Control de Stock</p>
+                <div class="flex items-center gap-1.5">
+                    <p class="text-sm font-bold text-[#F4C430] leading-tight">Control de Stock</p>
+                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded"
+                          style="background-color: {{ entorno.color }}; color: #fff;"
+                          title="{{ entorno.descripcion }}">{{ entorno.label }}</span>
+                </div>
                 <p class="text-xs text-[#9ca3af]">{{ config.farmacia_nombre | default('Farmacia') }}</p>
                 {% if current_user.is_authenticated %}
                 <div class="mt-2 pt-2 border-t border-[#1f2937] flex items-center gap-1.5">

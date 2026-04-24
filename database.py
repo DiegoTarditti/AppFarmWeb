@@ -29,6 +29,8 @@ class Config(Base):
     # Keep-alive: evitar que Render duerma el servicio vía self-ping periódico
     keep_alive_enabled = Column(Boolean, nullable=False, default=False)
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
+    # Ruta local al ejecutable del DockerPanel (solo usada desde localhost)
+    dockerpanel_ruta = Column(String(500), nullable=True)
     # Observer: cuántos meses hacia atrás trae sync_ventas_mensuales
     observer_ventas_meses = Column(Integer, nullable=False, default=16)
 
@@ -339,7 +341,10 @@ class Producto(Base):
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     laboratorio = relationship('Laboratorio')
     # Puente a ObServer: único nexo entre EAN (local) y IdProducto (ObServer)
-    observer_id = Column(Integer, ForeignKey('obs_productos.observer_id'), nullable=True, index=True)
+    # unique=True: un observer_id NO puede estar asignado a más de un producto local.
+    # NULL permitido múltiple (productos todavía no vinculados a ObServer).
+    observer_id = Column(Integer, ForeignKey('obs_productos.observer_id'),
+                         nullable=True, unique=True, index=True)
     obs_producto = relationship('ObsProducto')
     monodroga = Column(String(200), nullable=True)
     presentacion = Column(String(500), nullable=True)
@@ -872,6 +877,24 @@ def _pg_add_columns(conn):
     # Puente en productos
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))
+    # UNIQUE partial index: un observer_id no puede estar asignado a dos productos locales.
+    # Partial (WHERE observer_id IS NOT NULL) permite múltiples NULL (productos sin vincular).
+    # Antes de crear, chequear si hay duplicados para no romper el startup.
+    dup = conn.execute(text(
+        "SELECT observer_id, COUNT(*) AS n FROM productos "
+        "WHERE observer_id IS NOT NULL GROUP BY observer_id HAVING COUNT(*) > 1 LIMIT 1"
+    )).first()
+    if dup:
+        import logging
+        logging.getLogger(__name__).warning(
+            'productos.observer_id tiene duplicados (ej: observer_id=%s aparece %s veces). '
+            'No se crea el UNIQUE INDEX hasta resolverlos.', dup[0], dup[1]
+        )
+    else:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_productos_observer_id "
+            "ON productos(observer_id) WHERE observer_id IS NOT NULL"
+        ))
     conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL"
     ))
@@ -978,6 +1001,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_baja_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS dockerpanel_ruta VARCHAR(500)"))
     conn.execute(text("ALTER TABLE descuento_modulos ADD COLUMN IF NOT EXISTS campana_id INTEGER REFERENCES descuento_campanas(id) ON DELETE CASCADE"))
     conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN codigo DROP NOT NULL"))
     conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN laboratorio DROP NOT NULL"))
@@ -1346,6 +1370,16 @@ def _sqlite_add_columns(conn):
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'observer_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN observer_id INTEGER REFERENCES obs_productos(observer_id)"))
+    # Unique partial index sobre observer_id (compatible con SQLite y PostgreSQL)
+    dup = conn.execute(text(
+        "SELECT observer_id FROM productos WHERE observer_id IS NOT NULL "
+        "GROUP BY observer_id HAVING COUNT(*) > 1 LIMIT 1"
+    )).first()
+    if not dup:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_productos_observer_id "
+            "ON productos(observer_id) WHERE observer_id IS NOT NULL"
+        ))
     existing_prod = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'laboratorio_id' not in existing_prod:
         conn.execute(text("ALTER TABLE productos ADD COLUMN laboratorio_id INTEGER REFERENCES laboratorios(id)"))
@@ -1370,7 +1404,8 @@ def _sqlite_add_columns(conn):
                          ('rot_alta_tol', 'DECIMAL(6,1) NOT NULL DEFAULT 0.0'),
                          ('rot_media_min', 'DECIMAL(6,1) NOT NULL DEFAULT 5.0'),
                          ('rot_media_tol', 'DECIMAL(6,1) NOT NULL DEFAULT 0.0'),
-                         ('rot_baja_tol', 'DECIMAL(6,1) NOT NULL DEFAULT 0.0')]:
+                         ('rot_baja_tol', 'DECIMAL(6,1) NOT NULL DEFAULT 0.0'),
+                         ('dockerpanel_ruta', 'VARCHAR(500)')]:
         if col not in existing_cfg:
             conn.execute(text(f"ALTER TABLE configuracion ADD COLUMN {col} {typedef}"))
 

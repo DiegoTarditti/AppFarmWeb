@@ -1,8 +1,16 @@
 """Rutas admin para sincronizar el espejo local con ObServer."""
+import os
+import threading
+from datetime import datetime
 from flask import render_template, redirect, url_for, flash, request, jsonify
 import database
 import observer_source
 import observer_matcher
+
+# Lock para evitar que 2 syncs corran en paralelo (auto + manual que se pisan)
+_SYNC_LOCK = threading.Lock()
+_SYNC_ESTADO = {'en_curso': False, 'ultimo_inicio': None, 'ultimo_fin': None,
+                'ultimo_resultado': None}
 
 
 def init_app(app):
@@ -189,3 +197,138 @@ def init_app(app):
                 session.commit()
                 flash('Desvinculado.', 'success')
         return redirect(url_for('productos_sin_vincular'))
+
+    @app.route('/api/auto-sync', methods=['POST'])
+    def api_auto_sync():
+        """Endpoint JSON para el DockerPanel (cron automático).
+
+        Ejecuta en cascada: sync ObServer → productos local → push a Render.
+        Devuelve JSON con el detalle de cada paso. Protegido por lock para
+        evitar ejecuciones paralelas.
+
+        Query params opcionales:
+          - skip_push=1    → no pushear a Render (solo sync local)
+          - skip_match=1   → no correr auto-matcher
+
+        Header opcional de autenticación:
+          - X-Auto-Sync-Token    → si está seteada AUTO_SYNC_TOKEN env var
+        """
+        # Autenticación simple por token (evita que cualquiera invoque el sync)
+        expected = os.environ.get('AUTO_SYNC_TOKEN', '').strip()
+        if expected:
+            sent = request.headers.get('X-Auto-Sync-Token', '').strip()
+            if sent != expected:
+                return jsonify({'ok': False, 'error': 'token inválido'}), 401
+
+        # Lock: si hay otro sync corriendo, rechazar
+        if not _SYNC_LOCK.acquire(blocking=False):
+            return jsonify({
+                'ok': False, 'error': 'sync en curso',
+                'ultimo_inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()
+                                  if _SYNC_ESTADO['ultimo_inicio'] else None,
+            }), 409
+
+        try:
+            _SYNC_ESTADO['en_curso'] = True
+            _SYNC_ESTADO['ultimo_inicio'] = datetime.now()
+
+            skip_push  = request.args.get('skip_push') == '1'
+            skip_match = request.args.get('skip_match') == '1'
+
+            resultado = {'pasos': [], 'inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()}
+
+            # Paso 1: verificar que ObServer esté disponible
+            if not observer_source.observer_disponible():
+                resultado['pasos'].append({'paso': 'observer_ping',
+                                            'ok': False, 'error': 'ObServer no disponible'})
+                resultado['ok'] = False
+                return jsonify(resultado), 503
+
+            # Paso 2: sync entidades ObServer → DB local
+            orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
+                     'productos', 'stock', 'ventas_mensuales']
+            funcs = {
+                'laboratorios':     observer_source.sync_laboratorios,
+                'rubros':           observer_source.sync_rubros,
+                'subrubros':        observer_source.sync_subrubros,
+                'nombres_drogas':   observer_source.sync_nombres_drogas,
+                'productos':        observer_source.sync_productos,
+                'stock':            observer_source.sync_stock,
+                'ventas_mensuales': observer_source.sync_ventas_mensuales,
+            }
+            with database.get_db() as session:
+                for ent in orden:
+                    try:
+                        stats = funcs[ent](session)
+                        session.commit()
+                        resultado['pasos'].append({
+                            'paso': ent, 'ok': True,
+                            'upsert': stats.get('upsert', 0),
+                            'ms': stats.get('duracion_ms', 0),
+                        })
+                    except Exception as e:
+                        session.rollback()
+                        resultado['pasos'].append({'paso': ent, 'ok': False, 'error': str(e)})
+                        resultado['ok'] = False
+                        return jsonify(resultado), 500
+
+            # Paso 3: auto-match productos (opcional)
+            if not skip_match:
+                try:
+                    with database.get_db() as session:
+                        stats = observer_matcher.match_productos(session, threshold=0.80)
+                        session.commit()
+                    resultado['pasos'].append({
+                        'paso': 'match_productos', 'ok': True,
+                        'linked_exact': stats.get('linked_exact', 0),
+                        'linked_fuzzy': stats.get('linked_fuzzy', 0),
+                        'sin_match':    stats.get('sin_match', 0),
+                    })
+                except Exception as e:
+                    resultado['pasos'].append({'paso': 'match_productos', 'ok': False, 'error': str(e)})
+                    # No abortamos si el match falla, seguimos con el push
+
+            # Paso 4: push a Render (opcional)
+            if not skip_push:
+                render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
+                if not render_url:
+                    resultado['pasos'].append({
+                        'paso': 'push_render', 'ok': False,
+                        'error': 'RENDER_DATABASE_URL no configurada',
+                    })
+                else:
+                    try:
+                        from scripts.push_obs_to_render import push
+                        res = push(render_url=render_url)
+                        total_filas = sum(v['filas'] for v in res.values() if isinstance(v, dict))
+                        resultado['pasos'].append({
+                            'paso': 'push_render', 'ok': True,
+                            'total_filas': total_filas,
+                            'ms': res.get('TOTAL_MS', 0),
+                        })
+                    except Exception as e:
+                        resultado['pasos'].append({'paso': 'push_render', 'ok': False, 'error': str(e)})
+                        resultado['ok'] = False
+                        return jsonify(resultado), 500
+
+            resultado['ok'] = True
+            resultado['fin'] = datetime.now().isoformat()
+            _SYNC_ESTADO['ultimo_fin'] = datetime.now()
+            _SYNC_ESTADO['ultimo_resultado'] = resultado
+            return jsonify(resultado)
+
+        finally:
+            _SYNC_ESTADO['en_curso'] = False
+            _SYNC_LOCK.release()
+
+    @app.route('/api/auto-sync/status')
+    def api_auto_sync_status():
+        """Devuelve el estado del lock y última corrida (sin ejecutar nada)."""
+        return jsonify({
+            'en_curso': _SYNC_ESTADO['en_curso'],
+            'ultimo_inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()
+                              if _SYNC_ESTADO['ultimo_inicio'] else None,
+            'ultimo_fin': _SYNC_ESTADO['ultimo_fin'].isoformat()
+                           if _SYNC_ESTADO['ultimo_fin'] else None,
+            'ultimo_resultado': _SYNC_ESTADO.get('ultimo_resultado'),
+        })
