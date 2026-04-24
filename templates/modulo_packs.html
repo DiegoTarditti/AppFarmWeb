@@ -656,8 +656,14 @@ async function importarModulos() {
         const r = await fetch('/modulo-packs/importar', { method: 'POST', body: fd });
         const d = await r.json();
         if (d.error) { msgEl.textContent = 'Error: ' + d.error; msgEl.classList.add('text-red-500'); return; }
-        msgEl.textContent = `✓ ${d.modulos_creados} pack(s) creado(s), ${d.packs_agregados} producto(s) importado(s).`;
+        msgEl.textContent = `✓ ${d.modulos_creados} módulo(s), ${d.packs_agregados} ítem(s) importado(s)` +
+                            (d.packs_auto_detectados ? `, ${d.packs_auto_detectados} pack(s) detectado(s)` : '') + '.';
         msgEl.classList.add('text-green-600');
+        // Persistir filtro por el lab al que se importó, para ver los módulos nuevos directo
+        try {
+            const labNombre = _labNombreDe('imp-lab-wrap');
+            if (labNombre) localStorage.setItem('modulo_packs_lab', labNombre);
+        } catch(e) {}
         setTimeout(() => location.reload(), 1500);
     } catch(e) {
         msgEl.textContent = 'Error de conexión.'; msgEl.classList.add('text-red-500');

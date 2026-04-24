@@ -24,13 +24,30 @@ def init_app(app):
                     .filter(Laboratorio.id.in_(labs_con_modulos))
                     .order_by(Laboratorio.nombre).all()) if labs_con_modulos else []
 
+            # Fallback para descripciones desde obs_productos (cuando la unidad
+            # sugerida viene del catálogo general, ean_unidad = str(observer_id))
+            ean_unidades = {mp.ean_unidad for mp in session.query(database.ModuloPack.ean_unidad).all()}
+            # Detectar ean_unidad que no está en productos locales → probablemente es observer_id
+            obs_candidates = [e for e in ean_unidades if e and e.isdigit() and len(e) <= 7 and e not in prod_map]
+            obs_desc_map = {}
+            if obs_candidates:
+                obs_rows = session.query(database.ObsProducto.observer_id, database.ObsProducto.descripcion).filter(
+                    database.ObsProducto.observer_id.in_([int(x) for x in obs_candidates])
+                ).all()
+                obs_desc_map = {str(oid): desc for oid, desc in obs_rows}
+
+            def _desc_unidad(mp):
+                if mp.ean_unidad in prod_map:
+                    return prod_map[mp.ean_unidad].descripcion or ''
+                return obs_desc_map.get(mp.ean_unidad, '')
+
             def _pack_dict(mp):
                 return {'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
                         'cantidad': mp.cantidad,
                         'cant_modulo': mp.cant_modulo,
                         'desc_pct': float(mp.desc_pct) if mp.desc_pct is not None else None,
                         'desc_pack':   mp.descripcion or '',
-                        'desc_unidad': (prod_map[mp.ean_unidad].descripcion or '') if mp.ean_unidad in prod_map else '',
+                        'desc_unidad': _desc_unidad(mp),
                         'prod_unidad_id': prod_map[mp.ean_unidad].id if mp.ean_unidad in prod_map else None,
                         'modulo_id': mp.modulo_id}
 
@@ -189,8 +206,16 @@ def init_app(app):
 
     @app.route('/modulo-packs/importar', methods=['POST'])
     def modulo_packs_importar():
-        """Importa módulos desde un XLSX (formato Roemmers o plantilla propia)."""
+        """Importa módulos desde un XLSX (formato Roemmers o plantilla propia).
+
+        Detecta automáticamente los packs usando:
+          - filas destacadas en amarillo en el Excel
+          - patrón 'PACK X N' en la descripción
+          - ausencia de ventas históricas por ese EAN
+        Los detectados se guardan con ean_unidad + cantidad sugeridos.
+        Los no-pack se guardan con ean_unidad=ean_pack y cantidad=1 (como antes)."""
         from parsers.modulos_xlsx import parse_modulos_xlsx
+        from pack_detector import detectar_packs
         f = request.files.get('file')
         lab_id = request.form.get('lab_id') or None
         lista_nombre = (request.form.get('lista_nombre') or '').strip() or None
@@ -204,8 +229,27 @@ def init_app(app):
                     modules = parse_modulos_xlsx(tmp)
                     if not modules:
                         return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
+
+                    # Detectar packs. Dos niveles:
+                    #  - completo: cantidad del regex + unidad sugerida → auto
+                    #  - parcial: solo cantidad detectada (sin equivalencia) → marcamos
+                    #    igual como pack (cantidad > 1) con ean_unidad=ean_pack,
+                    #    el usuario completa la equivalencia después.
+                    packs_detectados = detectar_packs(modules, session, saltear_registrados=False)
+                    pack_map = {}
+                    for p in packs_detectados:
+                        if p['confianza'] == 'baja':
+                            continue
+                        cant = p.get('cantidad')
+                        if not cant:
+                            # Sin cantidad del regex: no podemos inferir tamaño
+                            # del pack, dejamos para revisión manual
+                            continue
+                        pack_map[p['ean_pack']] = p
+
                     creados = 0
                     packs_agregados = 0
+                    packs_auto = 0
                     for mod in modules:
                         nombre_mod = mod['nombre']
                         modulo_actual = session.query(Modulo).filter_by(nombre=nombre_mod, lista_nombre=lista_nombre).first()
@@ -220,24 +264,39 @@ def init_app(app):
                             ean_pack = item['ean']
                             if not ean_pack:
                                 continue
-                            # Dedup por (modulo_id, ean_pack): el mismo EAN
-                            # puede estar en distintos módulos, pero no duplicado
-                            # dentro del mismo.
                             existe = session.query(ModuloPack).filter_by(
                                 ean_pack=ean_pack, modulo_id=modulo_actual.id).first()
-                            if not existe:
-                                session.add(ModuloPack(
-                                    ean_pack=ean_pack,
-                                    ean_unidad=ean_pack,
-                                    cantidad=1,
-                                    descripcion=item.get('descripcion', ''),
-                                    cant_modulo=item.get('cant'),
-                                    desc_pct=item.get('desc_pct'),
-                                    modulo_id=modulo_actual.id,
-                                ))
-                                packs_agregados += 1
+                            if existe:
+                                continue
+
+                            det = pack_map.get(ean_pack)
+                            if det:
+                                # Si no hay unidad sugerida, ponemos ean_pack
+                                # (marca el pack pero queda pendiente de
+                                # completar la equivalencia a mano)
+                                ean_u = det['ean_unidad_sug'] or ean_pack
+                                cant = det['cantidad']
+                                packs_auto += 1
+                            else:
+                                ean_u = ean_pack   # no es pack → relación 1:1
+                                cant = 1
+
+                            session.add(ModuloPack(
+                                ean_pack=ean_pack,
+                                ean_unidad=ean_u,
+                                cantidad=cant,
+                                descripcion=item.get('descripcion', ''),
+                                cant_modulo=item.get('cant'),
+                                desc_pct=item.get('desc_pct'),
+                                modulo_id=modulo_actual.id,
+                            ))
+                            packs_agregados += 1
                     session.commit()
-                    return jsonify({'ok': True, 'modulos_creados': creados, 'packs_agregados': packs_agregados})
+                    return jsonify({'ok': True,
+                                    'modulos_creados': creados,
+                                    'packs_agregados': packs_agregados,
+                                    'packs_auto_detectados': packs_auto,
+                                    'packs_pendientes_revision': len(packs_detectados) - packs_auto})
                 except Exception as e:
                     session.rollback()
                     return jsonify({'error': str(e)}), 500
