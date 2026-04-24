@@ -154,6 +154,222 @@ def init_app(app):
                                q=q, lab_id=lab_id, labs=labs,
                                per_page=per_page)
 
+    @app.route('/estadisticas/drogas')
+    @login_required
+    def estadisticas_drogas():
+        """Estadísticas de ventas agregadas por monodroga.
+
+        Para cada droga muestra: #laboratorios que la ofrecen, #productos distintos,
+        unidades 3m, unidades 12m y monto 12m. Paginado y con buscador por nombre."""
+        from sqlalchemy import func as _f, or_ as _or, case as _case
+        from datetime import datetime
+        q = (request.args.get('q') or '').strip()
+        try:
+            page = max(1, int(request.args.get('page', '1')))
+        except ValueError:
+            page = 1
+        per_page = 40
+        offset = (page - 1) * per_page
+
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        hoy = datetime.now()
+
+        def _ym_hace(n):
+            y, m = hoy.year, hoy.month - n
+            while m <= 0:
+                m += 12
+                y -= 1
+            return y * 100 + m
+        desde_3m = _ym_hace(2)
+        desde_12m = _ym_hace(11)
+        hasta = hoy.year * 100 + hoy.month
+        ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
+
+        with database.get_db() as session:
+            # Agregados por nombre_droga a través de obs_productos + obs_ventas_mensuales.
+            # Sólo traemos drogas que tuvieron al menos alguna venta en los últimos 12m.
+            base_q = (session.query(
+                        database.ObsProducto.nombre_droga_observer.label('droga_id'),
+                        _f.count(_f.distinct(database.ObsProducto.laboratorio_observer)).label('labs'),
+                        _f.count(_f.distinct(database.ObsProducto.observer_id)).label('prods'),
+                        _f.sum(_case(
+                            (ym_expr.between(desde_3m, hasta), database.ObsVentaMensual.unidades),
+                            else_=0,
+                        )).label('u3m'),
+                        _f.sum(database.ObsVentaMensual.unidades).label('u12m'),
+                        _f.sum(database.ObsVentaMensual.monto).label('m12m'))
+                    .join(database.ObsVentaMensual,
+                          database.ObsVentaMensual.producto_observer == database.ObsProducto.observer_id)
+                    .filter(database.ObsProducto.nombre_droga_observer.isnot(None),
+                            database.ObsProducto.fecha_baja.is_(None),
+                            database.ObsVentaMensual.id_farmacia == id_farmacia,
+                            ym_expr.between(desde_12m, hasta))
+                    .group_by(database.ObsProducto.nombre_droga_observer))
+
+            # Filtro por nombre si hay q — resolvemos los ids que matchean
+            if q:
+                like = f'%{q}%'
+                matching_ids = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
+                                .filter(database.ObsNombreDroga.descripcion.ilike(like)).all()]
+                if not matching_ids:
+                    return render_template('estadisticas_drogas.html',
+                                           drogas=[], total=0, page=1, last_page=1,
+                                           q=q, per_page=per_page)
+                base_q = base_q.filter(database.ObsProducto.nombre_droga_observer.in_(matching_ids))
+
+            sub = base_q.subquery()
+            total = session.query(_f.count()).select_from(sub).scalar() or 0
+
+            rows = (base_q.order_by(_f.sum(database.ObsVentaMensual.unidades).desc())
+                    .offset(offset).limit(per_page).all())
+
+            droga_ids = [r.droga_id for r in rows]
+            nombres = dict(session.query(database.ObsNombreDroga.observer_id,
+                                         database.ObsNombreDroga.descripcion)
+                           .filter(database.ObsNombreDroga.observer_id.in_(droga_ids)).all()) if droga_ids else {}
+
+            drogas = []
+            for r in rows:
+                drogas.append({
+                    'id':       r.droga_id,
+                    'nombre':   nombres.get(r.droga_id) or f'#{r.droga_id}',
+                    'labs':     int(r.labs or 0),
+                    'prods':    int(r.prods or 0),
+                    'u3m':      float(r.u3m or 0),
+                    'u12m':     float(r.u12m or 0),
+                    'm12m':     float(r.m12m or 0),
+                })
+
+        last_page = max(1, (total + per_page - 1) // per_page)
+        return render_template('estadisticas_drogas.html',
+                               drogas=drogas, total=total,
+                               page=page, last_page=last_page,
+                               q=q, per_page=per_page)
+
+    @app.route('/api/droga/<int:droga_id>/ventas-mensuales')
+    @login_required
+    def api_droga_ventas_mensuales(droga_id):
+        """Devuelve totales mensuales (unidades, monto) de los últimos 12 meses
+        agregando todos los productos de la droga."""
+        from sqlalchemy import func as _f
+        from datetime import datetime
+
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        hoy = datetime.now()
+
+        # Generar (year, month) de los últimos 12 meses hasta el actual
+        meses = []
+        y, m = hoy.year, hoy.month
+        for _ in range(12):
+            meses.append((y, m))
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+        meses.reverse()
+        desde_ym = meses[0][0] * 100 + meses[0][1]
+        hasta_ym = meses[-1][0] * 100 + meses[-1][1]
+
+        with database.get_db() as session:
+            nombre_row = session.get(database.ObsNombreDroga, droga_id)
+            nombre = nombre_row.descripcion if nombre_row else f'#{droga_id}'
+
+            ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
+            rows = (session.query(
+                        database.ObsVentaMensual.anio,
+                        database.ObsVentaMensual.mes,
+                        _f.sum(database.ObsVentaMensual.unidades).label('u'),
+                        _f.sum(database.ObsVentaMensual.monto).label('m'))
+                    .join(database.ObsProducto,
+                          database.ObsProducto.observer_id == database.ObsVentaMensual.producto_observer)
+                    .filter(database.ObsProducto.nombre_droga_observer == droga_id,
+                            database.ObsVentaMensual.id_farmacia == id_farmacia,
+                            ym_expr.between(desde_ym, hasta_ym))
+                    .group_by(database.ObsVentaMensual.anio, database.ObsVentaMensual.mes).all())
+
+            datos = {(r.anio, r.mes): (float(r.u or 0), float(r.m or 0)) for r in rows}
+
+        labels = [f'{m:02d}/{y}' for (y, m) in meses]
+        unidades = [datos.get((y, m), (0, 0))[0] for (y, m) in meses]
+        monto = [datos.get((y, m), (0, 0))[1] for (y, m) in meses]
+        return jsonify({'nombre': nombre, 'labels': labels,
+                        'unidades': unidades, 'monto': monto})
+
+    @app.route('/api/droga/<int:droga_id>/productos')
+    @login_required
+    def api_droga_productos(droga_id):
+        """Devuelve los productos de la droga, agrupados por laboratorio,
+        con stock actual y unidades 3m/12m."""
+        from sqlalchemy import func as _f
+        from datetime import datetime
+
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        hoy = datetime.now()
+
+        def _ym_hace(n):
+            y, m = hoy.year, hoy.month - n
+            while m <= 0:
+                m += 12
+                y -= 1
+            return y * 100 + m
+        desde_3m = _ym_hace(2)
+        desde_12m = _ym_hace(11)
+        hasta = hoy.year * 100 + hoy.month
+
+        with database.get_db() as session:
+            productos = (session.query(database.ObsProducto)
+                         .filter(database.ObsProducto.nombre_droga_observer == droga_id,
+                                 database.ObsProducto.fecha_baja.is_(None))
+                         .order_by(database.ObsProducto.descripcion).all())
+
+            obs_ids = [p.observer_id for p in productos]
+            if not obs_ids:
+                return jsonify({'grupos': []})
+
+            labs_map = dict(session.query(database.ObsLaboratorio.observer_id,
+                                          database.ObsLaboratorio.descripcion).all())
+
+            stock_map = dict(session.query(database.ObsStock.producto_observer,
+                                           database.ObsStock.stock_actual)
+                             .filter(database.ObsStock.id_farmacia == id_farmacia,
+                                     database.ObsStock.producto_observer.in_(obs_ids)).all())
+
+            ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
+            rows_3m = dict(session.query(
+                    database.ObsVentaMensual.producto_observer,
+                    _f.sum(database.ObsVentaMensual.unidades))
+                .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                        database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                        ym_expr.between(desde_3m, hasta))
+                .group_by(database.ObsVentaMensual.producto_observer).all())
+
+            rows_12m = dict(session.query(
+                    database.ObsVentaMensual.producto_observer,
+                    _f.sum(database.ObsVentaMensual.unidades))
+                .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                        database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                        ym_expr.between(desde_12m, hasta))
+                .group_by(database.ObsVentaMensual.producto_observer).all())
+
+            # Agrupar por lab
+            por_lab = {}
+            for p in productos:
+                lab_id = p.laboratorio_observer or 0
+                lab_nombre = labs_map.get(lab_id) or '— sin lab —'
+                por_lab.setdefault(lab_id, {'lab': lab_nombre, 'productos': []})
+                por_lab[lab_id]['productos'].append({
+                    'observer_id': p.observer_id,
+                    'descripcion': p.descripcion,
+                    'stock':       int(stock_map.get(p.observer_id, 0) or 0),
+                    'u3m':         float(rows_3m.get(p.observer_id, 0) or 0),
+                    'u12m':        float(rows_12m.get(p.observer_id, 0) or 0),
+                })
+
+            # Orden: labs con más productos arriba
+            grupos = sorted(por_lab.values(), key=lambda g: -len(g['productos']))
+
+        return jsonify({'grupos': grupos})
+
     @app.route('/observer/status')
     @login_required
     def observer_status():

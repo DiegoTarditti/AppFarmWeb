@@ -56,7 +56,14 @@
                 <tr class="hover:bg-black/[0.02]">
                     <td class="px-3 py-2 text-[#1e1e1e]">{{ p.descripcion }}</td>
                     <td class="px-3 py-2 text-xs text-[#555]">{{ p.laboratorio }}</td>
-                    <td class="px-3 py-2 text-[11px] text-[#888] truncate max-w-[280px]" title="{{ p.monodroga }}">{{ p.monodroga }}</td>
+                    <td class="px-3 py-2 text-[11px] text-[#888] truncate max-w-[280px]" title="{{ p.monodroga }}">
+                        {% if p.monodroga %}
+                        <a href="{{ url_for('estadisticas_drogas', q=p.monodroga) }}"
+                           class="hover:text-violet-700 hover:underline">{{ p.monodroga }}</a>
+                        {% else %}
+                        <span>—</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-2 text-right {% if p.stock > 0 %}font-semibold text-emerald-700{% else %}text-[#bbb]{% endif %}">{{ p.stock }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ p.prom_3m if p.prom_3m else '—' }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ p.prom_12m if p.prom_12m else '—' }}</td>
