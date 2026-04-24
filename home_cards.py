@@ -77,6 +77,15 @@ ACCIONES_HOME = [
         'fg_default': '#475569',
     },
     {
+        'id': 'catalogo_observer',
+        'titulo': 'Catálogo ObServer',
+        'desc': 'Los 122k productos con ventas, stock y lab',
+        'endpoint': 'obs_productos',
+        'icono_path': 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
+        'bg_default': '#EDE9FE',
+        'fg_default': '#7C3AED',
+    },
+    {
         'id': 'config',
         'titulo': 'Configuración',
         'desc': 'Ajustes del sistema',

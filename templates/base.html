@@ -179,12 +179,15 @@
     document.getElementById('dp-btn-abrir').addEventListener('click', () => {
         // Render contenido del modal según tenga o no ruta configurada
         if (_rutaPanel) {
+            const ruta = _rutaPanel;
+            // Escape HTML básico para meter la ruta sin riesgo en el DOM
+            const rutaEsc = ruta.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
             modalBody.innerHTML = `
                 <p class="text-xs text-[#555]">Ruta configurada del panel:</p>
                 <div class="flex items-center gap-2 bg-[#fafafa] border border-[#ececec] rounded-lg px-3 py-2">
-                    <code class="text-xs font-mono text-[#1e1e1e] flex-1 break-all">${_rutaPanel}</code>
-                    <button type="button" onclick="navigator.clipboard.writeText(${JSON.stringify(_rutaPanel)}); this.textContent='✓ Copiado'; setTimeout(()=>this.textContent='Copiar',1500);"
-                            class="text-xs font-semibold bg-brand hover:bg-brand-hover text-brand-dark px-2.5 py-1 rounded">
+                    <code class="text-xs font-mono text-[#1e1e1e] flex-1 min-w-0 break-all">${rutaEsc}</code>
+                    <button type="button" id="dp-copy-btn"
+                            class="text-xs font-semibold bg-brand hover:bg-brand-hover text-brand-dark px-2.5 py-1 rounded flex-shrink-0">
                         Copiar
                     </button>
                 </div>
@@ -196,6 +199,14 @@
                         <li>Presioná Enter</li>
                     </ol>
                 </div>`;
+            // Conectar el botón Copiar sin escaping-hell
+            const btn = document.getElementById('dp-copy-btn');
+            if (btn) btn.addEventListener('click', () => {
+                navigator.clipboard.writeText(ruta).then(() => {
+                    btn.textContent = '✓ Copiado';
+                    setTimeout(() => { btn.textContent = 'Copiar'; }, 1500);
+                }).catch(() => { btn.textContent = 'Error'; });
+            });
         } else {
             modalBody.innerHTML = `
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">

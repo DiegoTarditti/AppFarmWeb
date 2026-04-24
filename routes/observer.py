@@ -26,6 +26,134 @@ def _user_tiene_observer(user):
 
 def init_app(app):
 
+    @app.route('/obs/productos')
+    @login_required
+    def obs_productos():
+        """Catálogo completo ObServer (122k) con ventas + stock + laboratorio + monodroga.
+        Solo lectura, paginado, sin tocar la tabla `productos` local."""
+        from sqlalchemy import func as _f, or_ as _or
+        from datetime import datetime
+        q = (request.args.get('q') or '').strip()
+        lab_id = request.args.get('lab_id', type=int)
+        try:
+            page = max(1, int(request.args.get('page', '1')))
+        except ValueError:
+            page = 1
+        per_page = 50
+        offset = (page - 1) * per_page
+
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+
+        with database.get_db() as session:
+            base = (session.query(database.ObsProducto)
+                    .filter(database.ObsProducto.fecha_baja.is_(None)))
+            if q:
+                like = f'%{q}%'
+                base = base.filter(_or(
+                    database.ObsProducto.descripcion.ilike(like),
+                    database.ObsProducto.codigo_alfabeta.ilike(like),
+                ))
+            if lab_id:
+                base = base.filter(database.ObsProducto.laboratorio_observer == lab_id)
+
+            total = base.count()
+            productos = (base.order_by(database.ObsProducto.descripcion)
+                         .offset(offset).limit(per_page).all())
+
+            obs_ids = [p.observer_id for p in productos]
+
+            # Resolver laboratorios y drogas en batch
+            labs_map = dict(
+                session.query(database.ObsLaboratorio.observer_id,
+                              database.ObsLaboratorio.descripcion).all()
+            )
+            drogas_map = dict(
+                session.query(database.ObsNombreDroga.observer_id,
+                              database.ObsNombreDroga.descripcion).all()
+            )
+
+            # Stock actual
+            stock_map = {}
+            if obs_ids:
+                for po, sa in (session.query(
+                        database.ObsStock.producto_observer,
+                        database.ObsStock.stock_actual)
+                        .filter(database.ObsStock.id_farmacia == id_farmacia,
+                                database.ObsStock.producto_observer.in_(obs_ids)).all()):
+                    stock_map[po] = int(sa or 0)
+
+            # Agregados de ventas: total 3m y 12m
+            ventas_3m = ventas_12m = {}
+            if obs_ids:
+                hoy = datetime.now()
+                # Mes actual y 2 atrás = 3m; 11 atrás = 12m (ym como int yyyymm)
+                def _ym_hace(n):
+                    y, m = hoy.year, hoy.month - n
+                    while m <= 0:
+                        m += 12
+                        y -= 1
+                    return y * 100 + m
+                desde_3m = _ym_hace(2)
+                desde_12m = _ym_hace(11)
+                hasta = hoy.year * 100 + hoy.month
+
+                rows = (session.query(
+                        database.ObsVentaMensual.producto_observer,
+                        _f.sum(database.ObsVentaMensual.unidades).label('u'))
+                        .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                                database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                                (database.ObsVentaMensual.anio * 100 +
+                                 database.ObsVentaMensual.mes).between(desde_3m, hasta))
+                        .group_by(database.ObsVentaMensual.producto_observer).all())
+                ventas_3m = {po: float(u or 0) for po, u in rows}
+
+                rows = (session.query(
+                        database.ObsVentaMensual.producto_observer,
+                        _f.sum(database.ObsVentaMensual.unidades).label('u'))
+                        .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                                database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                                (database.ObsVentaMensual.anio * 100 +
+                                 database.ObsVentaMensual.mes).between(desde_12m, hasta))
+                        .group_by(database.ObsVentaMensual.producto_observer).all())
+                ventas_12m = {po: float(u or 0) for po, u in rows}
+
+            # EAN del bridge local (opcional)
+            ean_map = dict(
+                session.query(database.Producto.observer_id,
+                              database.Producto.codigo_barra)
+                .filter(database.Producto.observer_id.in_(obs_ids)).all()
+            ) if obs_ids else {}
+
+            data = []
+            for p in productos:
+                v3 = ventas_3m.get(p.observer_id, 0)
+                v12 = ventas_12m.get(p.observer_id, 0)
+                data.append({
+                    'observer_id':  p.observer_id,
+                    'ean':          ean_map.get(p.observer_id) or '',
+                    'codigo_alfabeta': p.codigo_alfabeta or '',
+                    'descripcion':  p.descripcion,
+                    'laboratorio':  labs_map.get(p.laboratorio_observer) or '—',
+                    'monodroga':    drogas_map.get(p.nombre_droga_observer) or '',
+                    'stock':        stock_map.get(p.observer_id, 0),
+                    'prom_3m':      round(v3 / 3, 1),
+                    'prom_12m':     round(v12 / 12, 1),
+                    'total_3m':     v3,
+                    'total_12m':    v12,
+                })
+
+            # Labs para el dropdown
+            labs = (session.query(database.ObsLaboratorio)
+                    .filter(database.ObsLaboratorio.fecha_baja.is_(None))
+                    .order_by(database.ObsLaboratorio.descripcion).all())
+
+        last_page = max(1, (total + per_page - 1) // per_page)
+        return render_template('obs_productos.html',
+                               productos=data, total=total,
+                               page=page, last_page=last_page,
+                               q=q, lab_id=lab_id, labs=labs,
+                               per_page=per_page)
+
     @app.route('/observer/status')
     @login_required
     def observer_status():
