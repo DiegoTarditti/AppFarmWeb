@@ -32,6 +32,13 @@ TABLAS = [
     'obs_productos',
     'obs_stock',
     'obs_ventas_mensuales',
+    # Clientes / Obras Sociales (FKs: convenios→OS, planes→convenios, clientes→grupos+categorias)
+    'obs_grupos_clientes',
+    'obs_categorias_clientes',
+    'obs_obras_sociales',
+    'obs_convenios',
+    'obs_planes',
+    'obs_clientes',
 ]
 
 

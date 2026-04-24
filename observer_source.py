@@ -272,6 +272,209 @@ def sync_productos(session):
     return {'upsert': n, 'duracion_ms': duracion}
 
 
+def sync_grupos_clientes(session):
+    from database import ObsGrupoCliente, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdGrupoCliente, Descripcion, FechaBaja FROM DW.GruposClientes")
+            for r in cur.fetchall():
+                _upsert_obs(
+                    session, ObsGrupoCliente, 'observer_id',
+                    int(r['IdGrupoCliente']),
+                    descripcion=(r['Descripcion'] or '').strip() or '(sin descripcion)',
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'grupos_clientes', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_categorias_clientes(session):
+    from database import ObsCategoriaCliente, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdCategoriaCliente, Descripcion, FechaBaja FROM DW.CategoriasClientes")
+            for r in cur.fetchall():
+                _upsert_obs(
+                    session, ObsCategoriaCliente, 'observer_id',
+                    int(r['IdCategoriaCliente']),
+                    descripcion=(r['Descripcion'] or '').strip() or '(sin descripcion)',
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'categorias_clientes', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_obras_sociales(session):
+    from database import ObsObraSocial, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdObraSocial, Descripcion, FechaBaja FROM DW.ObrasSociales")
+            for r in cur.fetchall():
+                _upsert_obs(
+                    session, ObsObraSocial, 'observer_id',
+                    int(r['IdObraSocial']),
+                    descripcion=(r['Descripcion'] or '').strip() or '(sin descripcion)',
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'obras_sociales', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_convenios(session):
+    from database import ObsConvenio, ObsObraSocial, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    os_validas = {i for (i,) in session.query(ObsObraSocial.observer_id).all()}
+    n = skipped = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdConvenio, Descripcion, IdObraSocial, FechaBaja FROM DW.Convenios")
+            for r in cur.fetchall():
+                os_id = int(r['IdObraSocial']) if r['IdObraSocial'] is not None else None
+                if os_id is not None and os_id not in os_validas:
+                    os_id = None
+                    skipped += 1
+                _upsert_obs(
+                    session, ObsConvenio, 'observer_id',
+                    int(r['IdConvenio']),
+                    descripcion=(r['Descripcion'] or '').strip() or None,
+                    obra_social_observer=os_id,
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'convenios', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion, 'skipped_fk': skipped}
+
+
+def sync_planes(session):
+    from database import ObsPlan, ObsConvenio, now_ar
+    t0 = time.time()
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    conv_validos = {i for (i,) in session.query(ObsConvenio.observer_id).all()}
+    n = skipped = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdPlan, Descripcion, IdConvenio, Habilitado, FechaBaja FROM DW.Planes")
+            for r in cur.fetchall():
+                conv_id = int(r['IdConvenio']) if r['IdConvenio'] is not None else None
+                if conv_id is not None and conv_id not in conv_validos:
+                    conv_id = None
+                    skipped += 1
+                _upsert_obs(
+                    session, ObsPlan, 'observer_id',
+                    int(r['IdPlan']),
+                    descripcion=(r['Descripcion'] or '').strip() or '(sin descripcion)',
+                    convenio_observer=conv_id,
+                    habilitado=bool(r['Habilitado']),
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'planes', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion, 'skipped_fk': skipped}
+
+
+def sync_clientes(session, id_farmacia=None):
+    """Sync DW.Clientes. Requiere obs_grupos_clientes + obs_categorias_clientes sincronizados.
+    84k filas: commit parcial cada 5000."""
+    from database import ObsCliente, ObsGrupoCliente, ObsCategoriaCliente, now_ar
+    t0 = time.time()
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+
+    grupos_validos = {i for (i,) in session.query(ObsGrupoCliente.observer_id).all()}
+    cats_validas = {i for (i,) in session.query(ObsCategoriaCliente.observer_id).all()}
+
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdCliente, ApellidoNombre, Documento_Tipo, Documento_Numero,
+                       Domicilio_CodigoPostal, Domicilio_Direccion, Localidad,
+                       IdProvincia, IdGrupoCliente, IdCategoriaCliente,
+                       IdFarmacia, Telefono
+                FROM DW.Clientes
+            """)
+            for r in cur.fetchall():
+                gid = int(r['IdGrupoCliente']) if r['IdGrupoCliente'] is not None else None
+                if gid is not None and gid not in grupos_validos:
+                    gid = None
+                cid = int(r['IdCategoriaCliente']) if r['IdCategoriaCliente'] is not None else None
+                if cid is not None and cid not in cats_validas:
+                    cid = None
+                _upsert_obs(
+                    session, ObsCliente, 'observer_id',
+                    int(r['IdCliente']),
+                    apellido_nombre=(r['ApellidoNombre'] or '').strip() or '(sin nombre)',
+                    documento_tipo=(r['Documento_Tipo'] or '').strip() or None,
+                    documento_numero=int(r['Documento_Numero']) if r['Documento_Numero'] is not None else None,
+                    domicilio_cp=(r['Domicilio_CodigoPostal'] or '').strip() or None,
+                    domicilio_direccion=(r['Domicilio_Direccion'] or '').strip() or None,
+                    localidad=(r['Localidad'] or '').strip() or None,
+                    provincia=(r['IdProvincia'] or '').strip() or None,
+                    grupo_observer=gid,
+                    categoria_observer=cid,
+                    id_farmacia=int(r['IdFarmacia']),
+                    telefono=(r['Telefono'] or '').strip() or None,
+                    sync_en=now_ar(),
+                )
+                n += 1
+                if n % 5000 == 0:
+                    session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'clientes', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
 def sync_stock(session, id_farmacia=None):
     """Sync DW.StockFarmaciasProductos. Requiere obs_productos poblado primero.
     Si id_farmacia=None usa OBSERVER_ID_FARMACIA del env."""

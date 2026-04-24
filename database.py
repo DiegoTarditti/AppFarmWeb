@@ -121,6 +121,83 @@ class ObsVentaMensual(Base):
     sync_en           = Column(DateTime, default=now_ar)
 
 
+class ObsGrupoCliente(Base):
+    __tablename__ = 'obs_grupos_clientes'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.GruposClientes.IdGrupoCliente
+    descripcion = Column(String(100), nullable=False)
+    fecha_baja  = Column(DateTime, nullable=True)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsCategoriaCliente(Base):
+    __tablename__ = 'obs_categorias_clientes'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.CategoriasClientes.IdCategoriaCliente
+    descripcion = Column(String(100), nullable=False)
+    fecha_baja  = Column(DateTime, nullable=True)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsObraSocial(Base):
+    __tablename__ = 'obs_obras_sociales'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.ObrasSociales.IdObraSocial
+    descripcion = Column(String(150), nullable=False)
+    fecha_baja  = Column(DateTime, nullable=True)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsConvenio(Base):
+    __tablename__ = 'obs_convenios'
+    observer_id         = Column(Integer, primary_key=True, autoincrement=False)  # DW.Convenios.IdConvenio
+    descripcion         = Column(String(200), nullable=True)
+    obra_social_observer = Column(Integer, ForeignKey('obs_obras_sociales.observer_id'), nullable=True, index=True)
+    fecha_baja          = Column(DateTime, nullable=True)
+    sync_en             = Column(DateTime, default=now_ar)
+
+
+class ObsPlan(Base):
+    __tablename__ = 'obs_planes'
+    observer_id       = Column(Integer, primary_key=True, autoincrement=False)  # DW.Planes.IdPlan
+    descripcion       = Column(String(150), nullable=False)
+    convenio_observer = Column(Integer, ForeignKey('obs_convenios.observer_id'), nullable=True, index=True)
+    habilitado        = Column(Boolean, nullable=False, default=True)
+    fecha_baja        = Column(DateTime, nullable=True)
+    sync_en           = Column(DateTime, default=now_ar)
+
+
+class ObsCliente(Base):
+    __tablename__ = 'obs_clientes'
+    observer_id           = Column(Integer, primary_key=True, autoincrement=False)  # DW.Clientes.IdCliente
+    apellido_nombre       = Column(String(100), nullable=False)
+    documento_tipo        = Column(String(3),  nullable=True)
+    documento_numero      = Column(Integer,    nullable=True, index=True)
+    domicilio_cp          = Column(String(10), nullable=True)
+    domicilio_direccion   = Column(String(100), nullable=True)
+    localidad             = Column(String(100), nullable=True)
+    provincia             = Column(String(1),  nullable=True)
+    grupo_observer        = Column(Integer, ForeignKey('obs_grupos_clientes.observer_id'), nullable=True, index=True)
+    categoria_observer    = Column(Integer, ForeignKey('obs_categorias_clientes.observer_id'), nullable=True, index=True)
+    id_farmacia           = Column(Integer, nullable=False)
+    telefono              = Column(String(35), nullable=True)
+    sync_en               = Column(DateTime, default=now_ar)
+
+
+class Cliente(Base):
+    """Extensión local editable de ObsCliente (notas, contacto, tags).
+    Se vincula 1:1 por observer_id al cliente de ObServer."""
+    __tablename__ = 'clientes'
+    id = Column(Integer, primary_key=True)
+    observer_id = Column(Integer, ForeignKey('obs_clientes.observer_id'),
+                         nullable=False, unique=True, index=True)
+    notas = Column(Text, nullable=True)
+    tags = Column(String(200), nullable=True)  # comma-separated
+    whatsapp = Column(String(30), nullable=True)
+    email = Column(String(120), nullable=True)
+    fecha_nacimiento = Column(Date, nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+    actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
+    obs_cliente = relationship('ObsCliente')
+
+
 class ObsSyncLog(Base):
     """Log de cada corrida de sync por entidad (última ejecución + resultados)."""
     __tablename__ = 'obs_sync_log'
@@ -671,7 +748,10 @@ def init_db(database_url=None):
                         'obs_laboratorios', 'obs_rubros', 'obs_subrubros',
                         'obs_nombres_drogas', 'obs_productos', 'obs_stock',
                         'obs_sync_log', 'obs_ventas_mensuales',
-                        'home_card_clicks')
+                        'home_card_clicks',
+                        'obs_grupos_clientes', 'obs_categorias_clientes',
+                        'obs_obras_sociales', 'obs_convenios', 'obs_planes',
+                        'obs_clientes', 'clientes')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.

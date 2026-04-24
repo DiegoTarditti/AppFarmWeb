@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+{% block title %}Catálogo de Obras Sociales{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Catálogo de Obras Sociales</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ '{:,}'.format(total) }} OSs</span>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-teal-100 text-teal-800">OBS</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+    <form method="get" class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-3">
+        <div class="relative flex-1 min-w-[240px]">
+            <input type="text" name="q" value="{{ q or '' }}"
+                   placeholder="Buscar por nombre…"
+                   class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        </div>
+        <button type="submit" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg">Filtrar</button>
+        {% if q %}<a href="{{ url_for('obras_sociales_catalogo') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>{% endif %}
+    </form>
+
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2">Obra Social</th>
+                    <th class="text-right px-3 py-2 w-24">Convenios</th>
+                    <th class="text-right px-3 py-2 w-24">Planes</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for o in obras %}
+                <tr class="hover:bg-black/[0.02] cursor-pointer" onclick="window.location='{{ url_for('obra_social_catalogo_detail', observer_id=o.observer_id) }}'">
+                    <td class="px-3 py-2 text-[#1e1e1e]">{{ o.descripcion }}</td>
+                    <td class="px-3 py-2 text-right {% if o.n_convenios > 0 %}font-semibold{% else %}text-[#bbb]{% endif %}">{{ o.n_convenios }}</td>
+                    <td class="px-3 py-2 text-right {% if o.n_planes > 0 %}font-semibold{% else %}text-[#bbb]{% endif %}">{{ o.n_planes }}</td>
+                </tr>
+                {% endfor %}
+                {% if not obras %}
+                <tr><td colspan="3" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if last_page > 1 %}
+    <div class="flex items-center justify-center gap-2 text-sm">
+        {% set base_qs = 'q=' ~ (q or '') %}
+        {% if page > 1 %}<a href="?{{ base_qs }}&page={{ page - 1 }}" class="px-3 py-1.5 rounded-lg border border-surface-border hover:bg-[#f5f5f5]">← Anterior</a>{% endif %}
+        <span class="text-[#6f6f6f]">Página <strong>{{ page }}</strong> de {{ last_page }}</span>
+        {% if page < last_page %}<a href="?{{ base_qs }}&page={{ page + 1 }}" class="px-3 py-1.5 rounded-lg border border-surface-border hover:bg-[#f5f5f5]">Siguiente →</a>{% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

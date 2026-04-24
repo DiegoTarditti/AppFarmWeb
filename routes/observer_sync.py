@@ -52,18 +52,26 @@ def init_app(app):
             return redirect(url_for('observer_sync_panel'))
 
         funcs_por_nombre = {
-            'laboratorios':     observer_source.sync_laboratorios,
-            'rubros':           observer_source.sync_rubros,
-            'subrubros':        observer_source.sync_subrubros,
-            'nombres_drogas':   observer_source.sync_nombres_drogas,
-            'productos':        observer_source.sync_productos,
-            'stock':            observer_source.sync_stock,
-            'ventas_mensuales': observer_source.sync_ventas_mensuales,
+            'laboratorios':         observer_source.sync_laboratorios,
+            'rubros':               observer_source.sync_rubros,
+            'subrubros':            observer_source.sync_subrubros,
+            'nombres_drogas':       observer_source.sync_nombres_drogas,
+            'productos':            observer_source.sync_productos,
+            'stock':                observer_source.sync_stock,
+            'ventas_mensuales':     observer_source.sync_ventas_mensuales,
+            'grupos_clientes':      observer_source.sync_grupos_clientes,
+            'categorias_clientes':  observer_source.sync_categorias_clientes,
+            'obras_sociales':       observer_source.sync_obras_sociales,
+            'convenios':            observer_source.sync_convenios,
+            'planes':               observer_source.sync_planes,
+            'clientes':             observer_source.sync_clientes,
         }
 
         # 'todo' corre en orden para respetar FKs
         orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                 'productos', 'stock', 'ventas_mensuales']
+                 'productos', 'stock', 'ventas_mensuales',
+                 'grupos_clientes', 'categorias_clientes',
+                 'obras_sociales', 'convenios', 'planes', 'clientes']
 
         if entidad == 'todo':
             ents = orden
@@ -246,15 +254,23 @@ def init_app(app):
 
             # Paso 2: sync entidades ObServer → DB local
             orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                     'productos', 'stock', 'ventas_mensuales']
+                     'productos', 'stock', 'ventas_mensuales',
+                     'grupos_clientes', 'categorias_clientes',
+                     'obras_sociales', 'convenios', 'planes', 'clientes']
             funcs = {
-                'laboratorios':     observer_source.sync_laboratorios,
-                'rubros':           observer_source.sync_rubros,
-                'subrubros':        observer_source.sync_subrubros,
-                'nombres_drogas':   observer_source.sync_nombres_drogas,
-                'productos':        observer_source.sync_productos,
-                'stock':            observer_source.sync_stock,
-                'ventas_mensuales': observer_source.sync_ventas_mensuales,
+                'laboratorios':         observer_source.sync_laboratorios,
+                'rubros':               observer_source.sync_rubros,
+                'subrubros':            observer_source.sync_subrubros,
+                'nombres_drogas':       observer_source.sync_nombres_drogas,
+                'productos':            observer_source.sync_productos,
+                'stock':                observer_source.sync_stock,
+                'ventas_mensuales':     observer_source.sync_ventas_mensuales,
+                'grupos_clientes':      observer_source.sync_grupos_clientes,
+                'categorias_clientes':  observer_source.sync_categorias_clientes,
+                'obras_sociales':       observer_source.sync_obras_sociales,
+                'convenios':            observer_source.sync_convenios,
+                'planes':               observer_source.sync_planes,
+                'clientes':             observer_source.sync_clientes,
             }
             with database.get_db() as session:
                 for ent in orden:
