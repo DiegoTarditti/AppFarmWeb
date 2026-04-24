@@ -346,6 +346,8 @@ class Producto(Base):
     observer_id = Column(Integer, ForeignKey('obs_productos.observer_id'),
                          nullable=True, unique=True, index=True)
     obs_producto = relationship('ObsProducto')
+    # Código Alfabeta (vademécum). Bridge robusto con obs_productos.codigo_alfabeta.
+    codigo_alfabeta = Column(String(10), nullable=True, index=True)
     monodroga = Column(String(200), nullable=True)
     presentacion = Column(String(500), nullable=True)
     accion_terapeutica = Column(String(200), nullable=True)
@@ -1087,6 +1089,12 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS accion_terapeutica VARCHAR(200)"
     ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS codigo_alfabeta VARCHAR(10)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_productos_alfabeta ON productos(codigo_alfabeta)"
+    ))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS product_analytics (
             codigo_barra VARCHAR(20) PRIMARY KEY,
@@ -1523,6 +1531,9 @@ def _sqlite_add_columns(conn):
         conn.execute(text("ALTER TABLE productos ADD COLUMN presentacion VARCHAR(500)"))
     if 'accion_terapeutica' not in existing_prod3:
         conn.execute(text("ALTER TABLE productos ADD COLUMN accion_terapeutica VARCHAR(200)"))
+    if 'codigo_alfabeta' not in existing_prod3:
+        conn.execute(text("ALTER TABLE productos ADD COLUMN codigo_alfabeta VARCHAR(10)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_alfabeta ON productos(codigo_alfabeta)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS product_analytics (
             codigo_barra VARCHAR(20) PRIMARY KEY,

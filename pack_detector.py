@@ -155,7 +155,7 @@ def detectar_packs(modules, session, saltear_registrados=True):
                         if score > best_score:
                             best, best_score = op, score
                     if best and best_score >= 0.4:
-                        unidad_ean = str(best.observer_id)
+                        unidad_ean = f'OBS:{best.observer_id}'
                         unidad_desc = best.descripcion
                         fuente = 'catalogo'
 

@@ -141,11 +141,12 @@ def _find_producto(session, codigo_barra):
     ).first()
 
 
-def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, laboratorio_id=None, fecha_compra=None):
+def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
     """Crea o actualiza un producto en la tabla productos."""
     if not codigo_barra:
         return
     codigo_barra = str(codigo_barra).strip()
+    codigo_alfabeta = str(codigo_alfabeta).strip() if codigo_alfabeta else None
     prod = _find_producto(session, codigo_barra)
     if prod:
         if descripcion and not prod.descripcion:
@@ -156,6 +157,8 @@ def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, labora
             prod.laboratorio_id = laboratorio_id
         if fecha_compra and (not prod.ultima_compra or fecha_compra > prod.ultima_compra):
             prod.ultima_compra = fecha_compra
+        if codigo_alfabeta and not prod.codigo_alfabeta:
+            prod.codigo_alfabeta = codigo_alfabeta
         from datetime import datetime as _dt; prod.actualizado_en = _dt.utcnow()
     else:
         session.add(Producto(
@@ -164,6 +167,7 @@ def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, labora
             precio_pvp=precio_pvp,
             laboratorio_id=laboratorio_id,
             ultima_compra=fecha_compra,
+            codigo_alfabeta=codigo_alfabeta,
         ))
 
 

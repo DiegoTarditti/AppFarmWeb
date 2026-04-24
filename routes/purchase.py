@@ -683,8 +683,16 @@ def init_app(app):
                         qty = 0
                     if qty > 0:
                         precio = float(p.get('precio_pvp') or 0)
+                        cb = (p.get('codigo_barra') or '').strip()
+                        obs_id = p.get('observer_id')
+                        # Bootstrap: si no hay EAN pero sí observer_id, usar pseudo-EAN
+                        # para que módulos/packs/plantillas funcionen antes de tener
+                        # factura. El EAN real lo completa el matcher al ingresar la
+                        # primera factura con ese producto.
+                        if not cb and obs_id:
+                            cb = f'OBS:{obs_id}'
                         items.append(PedidoItem(
-                            codigo_barra=p.get('codigo_barra', ''),
+                            codigo_barra=cb,
                             nombre=p.get('nombre', ''),
                             cantidad=qty,
                             precio_pvp=precio,
@@ -708,6 +716,21 @@ def init_app(app):
                 session.add(pedido)
                 for it in items:
                     _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
+                    # Si usamos pseudo-EAN, atar el bridge productos.observer_id →
+                    # obs_productos para que el catálogo local quede vinculado.
+                    if it.codigo_barra.startswith('OBS:'):
+                        try:
+                            obs_id = int(it.codigo_barra[4:])
+                        except (ValueError, TypeError):
+                            continue
+                        prod = session.query(Producto).filter_by(codigo_barra=it.codigo_barra).first()
+                        if prod and not prod.observer_id:
+                            ya_tomado = session.query(Producto.id).filter(
+                                Producto.observer_id == obs_id,
+                                Producto.id != prod.id,
+                            ).first()
+                            if not ya_tomado:
+                                prod.observer_id = obs_id
                 session.flush()  # para tener pedido.id
 
                 # Si viene de un proceso → asociar + avanzar pasos 1 y 2

@@ -27,14 +27,21 @@ def init_app(app):
             # Fallback para descripciones desde obs_productos (cuando la unidad
             # sugerida viene del catálogo general, ean_unidad = str(observer_id))
             ean_unidades = {mp.ean_unidad for mp in session.query(database.ModuloPack.ean_unidad).all()}
-            # Detectar ean_unidad que no está en productos locales → probablemente es observer_id
-            obs_candidates = [e for e in ean_unidades if e and e.isdigit() and len(e) <= 7 and e not in prod_map]
+            # ean_unidad con prefijo 'OBS:' = observer_id directo al catálogo ObServer
+            obs_candidates = [e for e in ean_unidades if e and e.startswith('OBS:') and e not in prod_map]
             obs_desc_map = {}
             if obs_candidates:
-                obs_rows = session.query(database.ObsProducto.observer_id, database.ObsProducto.descripcion).filter(
-                    database.ObsProducto.observer_id.in_([int(x) for x in obs_candidates])
-                ).all()
-                obs_desc_map = {str(oid): desc for oid, desc in obs_rows}
+                obs_ids = []
+                for e in obs_candidates:
+                    try:
+                        obs_ids.append(int(e[4:]))
+                    except (ValueError, TypeError):
+                        pass
+                if obs_ids:
+                    obs_rows = session.query(database.ObsProducto.observer_id, database.ObsProducto.descripcion).filter(
+                        database.ObsProducto.observer_id.in_(obs_ids)
+                    ).all()
+                    obs_desc_map = {f'OBS:{oid}': desc for oid, desc in obs_rows}
 
             def _desc_unidad(mp):
                 if mp.ean_unidad in prod_map:
@@ -240,7 +247,7 @@ def init_app(app):
             for o in obs:
                 if not o.descripcion or PACK_RE.search(o.descripcion):
                     continue
-                ean = str(o.observer_id)
+                ean = f'OBS:{o.observer_id}'
                 if ean in eans_vistos:
                     continue
                 out.append({'ean': ean, 'desc': o.descripcion,

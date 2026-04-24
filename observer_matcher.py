@@ -66,10 +66,15 @@ def match_productos(session, threshold=0.80, commit_each=500):
     # Indice por lab: normalizado → lista de (observer_id, desc, tokens)
     # Cargamos todos los obs_productos a memoria (122k filas, manejable).
     index_por_lab = defaultdict(list)
+    # Indice por codigo_alfabeta → observer_id (bridge preferente si existe
+    # en el producto local; más confiable que matchear por descripción).
+    index_alfabeta = {}
     for obs in session.query(ObsProducto).all():
         entry = (obs.observer_id, obs.descripcion, _normalize(obs.descripcion),
                  _tokens(obs.descripcion))
         index_por_lab[obs.laboratorio_observer].append(entry)
+        if obs.codigo_alfabeta:
+            index_alfabeta[obs.codigo_alfabeta.strip()] = obs.observer_id
 
     # Indice exacto por lab: (normalizado) → list of obs_ids
     exacto_por_lab = defaultdict(lambda: defaultdict(list))
@@ -81,11 +86,22 @@ def match_productos(session, threshold=0.80, commit_each=500):
     pendientes = (session.query(Producto)
                   .filter(Producto.observer_id.is_(None)).all())
 
-    stats = dict(procesados=0, linked_exact=0, linked_fuzzy=0,
+    stats = dict(procesados=0, linked_alfabeta=0, linked_exact=0, linked_fuzzy=0,
                  sin_match=0, ambiguos=0, sin_lab=0)
 
     for p in pendientes:
         stats['procesados'] += 1
+
+        # 0. Match por codigo_alfabeta: es 1:1 y deterministico.
+        if p.codigo_alfabeta:
+            obs_id_alfa = index_alfabeta.get(p.codigo_alfabeta.strip())
+            if obs_id_alfa:
+                p.observer_id = obs_id_alfa
+                stats['linked_alfabeta'] += 1
+                if stats['procesados'] % commit_each == 0:
+                    session.flush()
+                continue
+
         if not p.descripcion:
             stats['sin_match'] += 1
             continue
