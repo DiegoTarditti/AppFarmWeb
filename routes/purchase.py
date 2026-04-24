@@ -887,6 +887,12 @@ def init_app(app):
             for p in pedidos:
                 total_unidades = sum(it.cantidad for it in p.items)
                 total_importe = sum(float(it.subtotal or 0) for it in p.items)
+                # Resolver nombre de la droguería si el canal ya fue elegido
+                canal_partner_nombre = None
+                if p.canal == 'drogueria' and p.partner_id:
+                    _prov = session.get(database.Provider, p.partner_id)
+                    if _prov:
+                        canal_partner_nombre = _prov.razon_social
                 result.append({
                     'id': p.id,
                     'laboratorio': p.laboratorio,
@@ -898,6 +904,8 @@ def init_app(app):
                     'estado': p.estado,
                     'tiene_analisis_guardado': bool(p.analisis_json),
                     'analisis_guardado_en': p.analisis_guardado_en.strftime('%d/%m/%Y %H:%M') if p.analisis_guardado_en else '',
+                    'canal': p.canal,
+                    'canal_partner_nombre': canal_partner_nombre,
                     'n_productos': len(p.items),
                     'total_unidades': total_unidades,
                     'total_importe': total_importe,
@@ -1107,6 +1115,9 @@ def init_app(app):
                 'dias_desde_analisis': dias_desde,
                 'analisis_json': pedido.analisis_json or '',
                 'analisis_guardado_en': pedido.analisis_guardado_en.strftime('%d/%m/%Y %H:%M') if pedido.analisis_guardado_en else '',
+                'canal': pedido.canal or '',
+                'partner_id': pedido.partner_id,
+                'canal_elegido_en': pedido.canal_elegido_en.strftime('%d/%m/%Y %H:%M') if pedido.canal_elegido_en else '',
             }
             erp_stock_map = {
                 row.codigo_barra: int(row.cantidad or 0)
@@ -1184,13 +1195,25 @@ def init_app(app):
                 if _lt and _lt.columns_json:
                     lab_plantilla = {'laboratorio_id': lab_obj.id}
 
-            # Unified Plantillas: laboratorio + proveedor/droguería asociado
+            # Unified Plantillas: se filtra según el canal decidido del pedido.
+            # - Si canal='drogueria' + partner_id: solo plantillas de esa droguería.
+            # - Si canal='laboratorio': solo plantillas del lab fabricante.
+            # - Sin canal decidido: todas las que podrían aplicar (lab + cualquier prov asociado),
+            #   como fallback para que el user vea opciones antes de decidir.
             plantillas_entidad = []
             _filters = []
-            if lab_obj:
+            if pedido.canal == 'drogueria' and pedido.partner_id:
+                _prov_canal = session.get(database.Provider, pedido.partner_id)
+                if _prov_canal:
+                    _filters.append((_prov_canal.tipo or 'drogueria', _prov_canal.id))
+            elif pedido.canal == 'laboratorio' and lab_obj:
                 _filters.append(('laboratorio', lab_obj.id))
-            if _prov:
-                _filters.append((_prov.tipo or 'proveedor', _prov.id))
+            else:
+                # Sin canal decidido: mostrar todas las opciones
+                if lab_obj:
+                    _filters.append(('laboratorio', lab_obj.id))
+                if _prov:
+                    _filters.append((_prov.tipo or 'proveedor', _prov.id))
             for _tipo, _eid in _filters:
                 rows = (session.query(database.Plantilla)
                         .filter_by(entidad_tipo=_tipo, entidad_id=_eid)
@@ -1203,12 +1226,19 @@ def init_app(app):
                         'entidad_tipo': _tipo, 'entidad_id': _eid,
                     })
 
+            # Droguerías disponibles para elegir como canal
+            droguerias = [{'id': p.id, 'razon_social': p.razon_social}
+                          for p in (session.query(database.Provider)
+                                    .filter(database.Provider.tipo == 'drogueria')
+                                    .order_by(database.Provider.razon_social).all())]
+
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,
                                    tol_config=tol_config, modulo_packs=packs,
                                    product_prices=product_prices,
                                    prov_plantilla=prov_plantilla,
                                    lab_plantilla=lab_plantilla,
-                                   plantillas_entidad=plantillas_entidad)
+                                   plantillas_entidad=plantillas_entidad,
+                                   droguerias=droguerias)
 
     @app.route('/order/<int:pedido_id>/save-state', methods=['POST'])
     def order_save_state(pedido_id):
@@ -1571,6 +1601,60 @@ def init_app(app):
             mimetype='text/plain',
             headers={'Content-Disposition': f'attachment; filename="{filename}"'}
         )
+
+    @app.route('/order/<int:pedido_id>/canal', methods=['POST'])
+    def order_set_canal(pedido_id):
+        """Setea el canal de compra del pedido: laboratorio (directo) o droguería.
+
+        Body JSON:
+          {canal: 'laboratorio'|'drogueria', partner_id: int|null}
+        """
+        body = request.get_json(silent=True) or {}
+        canal = (body.get('canal') or '').strip()
+        if canal not in ('laboratorio', 'drogueria', ''):
+            return jsonify({'error': 'canal inválido'}), 400
+        partner_id = body.get('partner_id')
+        try:
+            partner_id = int(partner_id) if partner_id else None
+        except (ValueError, TypeError):
+            return jsonify({'error': 'partner_id inválido'}), 400
+
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'error': 'Pedido no encontrado'}), 404
+            if canal == 'drogueria' and not partner_id:
+                return jsonify({'error': 'Para canal=drogueria hace falta partner_id'}), 400
+            # Resolver partner si corresponde
+            partner_nombre = None
+            if canal == 'drogueria':
+                prov = session.get(database.Provider, partner_id)
+                if not prov:
+                    return jsonify({'error': 'Droguería no encontrada'}), 404
+                partner_nombre = prov.razon_social
+            elif canal == 'laboratorio':
+                # El partner es el laboratorio fabricante.
+                # Si existe en Laboratorio, resolvemos; si no, queda solo el string.
+                lab = (session.query(Laboratorio)
+                       .filter_by(nombre=pedido.laboratorio).first())
+                if lab:
+                    partner_id = lab.id
+                    partner_nombre = lab.nombre
+                else:
+                    partner_id = None
+                    partner_nombre = pedido.laboratorio
+            pedido.canal = canal or None
+            pedido.partner_id = partner_id
+            pedido.canal_elegido_en = now_ar() if canal else None
+            session.commit()
+            return jsonify({
+                'ok': True,
+                'canal': pedido.canal,
+                'partner_id': pedido.partner_id,
+                'partner_nombre': partner_nombre,
+                'canal_elegido_en': pedido.canal_elegido_en.isoformat()
+                                    if pedido.canal_elegido_en else None,
+            })
 
     @app.route('/order/<int:pedido_id>/export-plantilla/<int:plantilla_id>', methods=['POST'])
     def order_export_plantilla_unified(pedido_id, plantilla_id):

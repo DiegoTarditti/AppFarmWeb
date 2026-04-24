@@ -389,6 +389,14 @@ class Pedido(Base):
     periodo = Column(String(100))
     n_days = Column(Integer)
     analisis_sesion_id = Column(Integer, ForeignKey('analisis_sesiones.id'), nullable=True)
+    # Canal de compra: 'laboratorio' (directo) o 'drogueria' (vía proveedor).
+    # None = todavía no decidido. Se setea al elegir droguería o lab en el resumen.
+    canal = Column(String(12), nullable=True)
+    # partner_id apunta a proveedores.id cuando canal='drogueria', o al lab cuando canal='laboratorio'
+    # (en la tabla proveedores si el lab está registrado; de lo contrario queda None y se usa
+    # el campo `laboratorio` como identificador).
+    partner_id = Column(Integer, nullable=True, index=True)
+    canal_elegido_en = Column(DateTime, nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     analizado_en = Column(DateTime, nullable=True)
     estado = Column(String(20), nullable=False, default='PENDIENTE')
@@ -1031,6 +1039,10 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analizado_en TIMESTAMP"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_json TEXT"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS analisis_guardado_en TIMESTAMP"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal VARCHAR(12)"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS partner_id INTEGER"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal_elegido_en TIMESTAMP"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_partner_id ON pedidos(partner_id)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS modulo_packs (
             id SERIAL PRIMARY KEY,
@@ -1578,6 +1590,13 @@ def _sqlite_add_columns(conn):
         conn.execute(text("ALTER TABLE pedidos ADD COLUMN analisis_json TEXT"))
     if 'analisis_guardado_en' not in existing_ped:
         conn.execute(text("ALTER TABLE pedidos ADD COLUMN analisis_guardado_en TIMESTAMP"))
+    if 'canal' not in existing_ped:
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN canal VARCHAR(12)"))
+    if 'partner_id' not in existing_ped:
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN partner_id INTEGER"))
+    if 'canal_elegido_en' not in existing_ped:
+        conn.execute(text("ALTER TABLE pedidos ADD COLUMN canal_elegido_en TIMESTAMP"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_partner_id ON pedidos(partner_id)"))
     existing_proc = {row[1] for row in conn.execute(text("PRAGMA table_info(procesos_compra)"))}
     if 'analisis_sesion_id' not in existing_proc:
         conn.execute(text("ALTER TABLE procesos_compra ADD COLUMN analisis_sesion_id INTEGER REFERENCES analisis_sesiones(id)"))

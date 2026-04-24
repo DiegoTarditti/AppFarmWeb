@@ -85,10 +85,21 @@
 
                     <!-- Laboratorio + periodo -->
                     <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <p class="text-sm font-semibold text-[#1e1e1e] truncate">{{ p.laboratorio }}</p>
+                            {% if p.canal == 'laboratorio' %}
+                            <span class="inline-flex items-center text-[10px] font-semibold bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                  title="Canal elegido: directo al laboratorio">
+                                ↗ DIRECTO
+                            </span>
+                            {% elif p.canal == 'drogueria' %}
+                            <span class="inline-flex items-center text-[10px] font-semibold bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                  title="Se comprará vía droguería {{ p.canal_partner_nombre or '—' }}">
+                                → {{ p.canal_partner_nombre or 'DROGUERÍA' }}
+                            </span>
+                            {% endif %}
                             {% if p.tiene_analisis_guardado %}
-                            <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                            <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
                                   title="Análisis guardado el {{ p.analisis_guardado_en }}">
                                 💾 Análisis
                             </span>

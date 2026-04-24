@@ -414,10 +414,9 @@ def init_app(app):
     @app.route('/pedido/<int:pedido_id>/enviar-a-proceso', methods=['POST'])
     def pedido_enviar_a_proceso(pedido_id):
         """Crea un ProcesoCompra desde un Pedido guardado.
-        Permite elegir canal de ingreso: laboratorio (default) o droguería."""
-        canal = (request.form.get('canal') or 'laboratorio').strip()
-        drog_id = request.form.get('drogueria_id') or None
-
+        Si el pedido ya tiene canal+partner_id decidido (desde el paso 4 del análisis),
+        los usa directamente. Si no, acepta canal y drogueria_id del form.
+        """
         with database.get_db() as session:
             pedido = session.get(Pedido, pedido_id)
             if not pedido:
@@ -428,6 +427,15 @@ def init_app(app):
             if existente:
                 flash(f'Este pedido ya está en el proceso #{existente.id}.')
                 return redirect(url_for('proceso_detail', proceso_id=existente.id))
+
+            # Preferir lo que el pedido ya tiene guardado (paso 4 del análisis)
+            if pedido.canal:
+                canal = pedido.canal
+                drog_id = pedido.partner_id if canal == 'drogueria' else None
+            else:
+                # Fallback al form tradicional (orders_list)
+                canal = (request.form.get('canal') or 'laboratorio').strip()
+                drog_id = request.form.get('drogueria_id') or None
 
             if canal == 'drogueria':
                 if not drog_id:
@@ -447,6 +455,12 @@ def init_app(app):
                 partner_id = lab.id if lab else None
                 tipo = 'laboratorio'
                 notas = None
+
+            # Si el pedido no tenía canal persistido, lo guardamos ahora para congruencia
+            if not pedido.canal:
+                pedido.canal = canal
+                pedido.partner_id = partner_id
+                pedido.canal_elegido_en = now_ar()
 
             proc = ProcesoCompra(
                 tipo=tipo,
