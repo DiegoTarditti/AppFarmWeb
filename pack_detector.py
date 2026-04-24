@@ -9,7 +9,34 @@ Un ítem es pack si tiene ≥1 señal. Confianza = cantidad de señales.
 """
 import re
 
-PACK_PATTERN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
+# Patrones alternativos para detectar "este producto es un pack de N unidades":
+#   - "PACK X 10"
+#   - "PACK 4 EST" / "PACK 4 ESTUCHES"
+#   - "(PACK X 20)"
+#   - "X 10 ESTUCHES" al final
+PACK_PATTERNS = [
+    re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE),
+    re.compile(r'\bPACK\s+(\d+)\s*EST(?:UCHES?)?\b', re.IGNORECASE),
+    re.compile(r'\bX\s*(\d+)\s*EST(?:UCHES?)?\b', re.IGNORECASE),
+]
+
+
+def _match_pack(desc):
+    """Prueba todos los patrones. Devuelve (match, cantidad_int) o (None, None)."""
+    if not desc:
+        return None, None
+    for pat in PACK_PATTERNS:
+        m = pat.search(desc)
+        if m:
+            try:
+                return m, int(m.group(1))
+            except (ValueError, TypeError):
+                continue
+    return None, None
+
+
+# Compatibilidad con código viejo
+PACK_PATTERN = PACK_PATTERNS[0]
 
 
 def detectar_packs(modules, session, saltear_registrados=True):
@@ -66,17 +93,12 @@ def detectar_packs(modules, session, saltear_registrados=True):
             if not ean_pack or not desc or ean_pack in ya_registrados:
                 continue
             destacado = bool(it.get('destacado'))
-            m = PACK_PATTERN.search(desc)
+            m, cantidad = _match_pack(desc)
             sin_ventas = not tuvo_ventas(ean_pack)
 
             senales = sum([destacado, bool(m), sin_ventas])
             if senales == 0:
                 continue
-
-            try:
-                cantidad = int(m.group(1)) if m else None
-            except (ValueError, TypeError):
-                cantidad = None
 
             if senales >= 2:
                 confianza = 'alta'
@@ -85,7 +107,12 @@ def detectar_packs(modules, session, saltear_registrados=True):
             else:
                 confianza = 'baja'
 
-            base = re.sub(r'\s*\(?\s*PACK\s*X\s*\d+\s*\)?\s*', ' ', desc, flags=re.I).strip()
+            # Remover todos los sufijos pack conocidos para obtener el "nombre base"
+            base = desc
+            base = re.sub(r'\s*\(?\s*PACK\s*X\s*\d+\s*\)?\s*', ' ', base, flags=re.I)
+            base = re.sub(r'\s*PACK\s+\d+\s*EST(?:UCHES?)?\s*', ' ', base, flags=re.I)
+            base = re.sub(r'\s*X\s*\d+\s*EST(?:UCHES?)?\s*$', ' ', base, flags=re.I)
+            base = base.strip()
             base_toks = {t for t in re.split(r'\s+', base.lower()) if len(t) >= 2}
 
             unidad_ean = unidad_desc = None

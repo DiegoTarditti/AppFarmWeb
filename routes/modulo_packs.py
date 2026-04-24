@@ -230,21 +230,25 @@ def init_app(app):
                     if not modules:
                         return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
 
-                    # Detectar packs. Dos niveles:
-                    #  - completo: cantidad del regex + unidad sugerida → auto
-                    #  - parcial: solo cantidad detectada (sin equivalencia) → marcamos
-                    #    igual como pack (cantidad > 1) con ean_unidad=ean_pack,
-                    #    el usuario completa la equivalencia después.
+                    # Detectar packs. Criterios:
+                    #  - alta/media con cantidad del regex → auto con cant real
+                    #  - destacado en amarillo pero sin cantidad → cant=2 placeholder
+                    #    (el user edita después). El amarillo lo marcó el vendedor,
+                    #    es la señal más fuerte.
+                    #  - baja (solo sin_ventas) → revisión manual, no auto
                     packs_detectados = detectar_packs(modules, session, saltear_registrados=False)
                     pack_map = {}
                     for p in packs_detectados:
                         if p['confianza'] == 'baja':
                             continue
-                        cant = p.get('cantidad')
-                        if not cant:
-                            # Sin cantidad del regex: no podemos inferir tamaño
-                            # del pack, dejamos para revisión manual
-                            continue
+                        if not p.get('cantidad'):
+                            if p.get('destacado'):
+                                # Placeholder: está marcado como pack pero sin
+                                # cantidad definida. cant=2 para que supere 1
+                                # y se trate como pack en el front.
+                                p = dict(p, cantidad=2)
+                            else:
+                                continue
                         pack_map[p['ean_pack']] = p
 
                     creados = 0
