@@ -370,7 +370,7 @@ class DockerPanel(tk.Tk):
         tk.Label(left, text="DATA DE RENDER", font=("Segoe UI", 8, "bold"),
                  bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
 
-        btn_pull = tk.Button(
+        self.btn_pull = tk.Button(
             left, text="🔄  Traer DB de Render",
             font=("Segoe UI", 9, "bold"),
             bg="#1a3a2a", fg="#7fff9f",
@@ -378,9 +378,9 @@ class DockerPanel(tk.Tk):
             relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
             command=self._run_pull_render
         )
-        btn_pull.pack(fill="x", pady=2)
-        btn_pull.bind("<Enter>", lambda e: btn_pull.config(bg="#2a5a3a"))
-        btn_pull.bind("<Leave>", lambda e: btn_pull.config(bg="#1a3a2a"))
+        self.btn_pull.pack(fill="x", pady=2)
+        self.btn_pull.bind("<Enter>", lambda e: (self.btn_pull.config(bg="#2a5a3a") if str(self.btn_pull['state']) == 'normal' else None))
+        self.btn_pull.bind("<Leave>", lambda e: (self.btn_pull.config(bg="#1a3a2a") if str(self.btn_pull['state']) == 'normal' else None))
 
         tk.Frame(left, bg=BORDER, height=1).pack(fill="x", pady=8)
 
@@ -1015,9 +1015,20 @@ class DockerPanel(tk.Tk):
 
         # Encadenamos el pull + restart web en una sola shell (cwd = proyecto)
         cmd = f'python "{script}" && docker-compose restart web'
+        self._set_pull_running(True)
         self._queue.put(("cmd", cmd))
+        self._queue.put(("cb", lambda: self._set_pull_running(False)))
         self._update_queue_badge()
         self._append("  ↳ pull de Render encolado (dump + restore + restart)\n", "dim")
+
+    def _set_pull_running(self, running):
+        """Cambia el botón 'Traer DB de Render' a estado procesando/normal."""
+        if running:
+            self.btn_pull.config(text="⏳  Procesando… (~1 min)",
+                                 state="disabled", bg="#3a3a1a", fg="#ffef8f")
+        else:
+            self.btn_pull.config(text="🔄  Traer DB de Render",
+                                 state="normal", bg="#1a3a2a", fg="#7fff9f")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -1135,6 +1146,11 @@ class DockerPanel(tk.Tk):
                 self._run_backup(payload)
             elif kind == "restore":
                 self._run_restore(payload)
+            elif kind == "cb":
+                try:
+                    self.after(0, payload)
+                except Exception:
+                    pass
             self._queue.task_done()
             self.after(0, self._update_queue_badge)
 
