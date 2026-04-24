@@ -22,6 +22,7 @@ import urllib.parse
 import urllib.request
 import urllib.error
 import time
+import socket
 
 HELPER_PORT = 5055
 HELPER_ALLOWED_ORIGINS = {
@@ -220,6 +221,17 @@ class DockerPanel(tk.Tk):
         self.after(500, self._update_keepalive_label)
         # === END KEEPALIVE RENDER ===
 
+        # === BEGIN AUTO-SYNC (cron ObServer → Render) ===
+        self._auto_sync_stop = threading.Event()
+        self._auto_sync_lock = threading.Lock()
+        self._auto_sync_last_run = None
+        self._auto_sync_last_ok = None
+        self._auto_sync_last_error = None
+        self._auto_sync_fallos = 0
+        threading.Thread(target=self._auto_sync_loop, daemon=True).start()
+        self.after(500, self._update_autosync_label)
+        # === END AUTO-SYNC ===
+
     def _ask_project_dir(self):
         dlg = _StartupDialog(self)
         return dlg.result
@@ -382,6 +394,37 @@ class DockerPanel(tk.Tk):
         self.btn_pull.bind("<Enter>", lambda e: (self.btn_pull.config(bg="#2a5a3a") if str(self.btn_pull['state']) == 'normal' else None))
         self.btn_pull.bind("<Leave>", lambda e: (self.btn_pull.config(bg="#1a3a2a") if str(self.btn_pull['state']) == 'normal' else None))
 
+        # === BEGIN AUTO-SYNC (cron ObServer → Render) ===
+        tk.Label(left, text="SYNC AUTOMÁTICO", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
+
+        btn_sync_now = tk.Button(
+            left, text="🔄  Sincronizar ahora",
+            font=("Segoe UI", 9, "bold"),
+            bg="#2a1a3a", fg="#c9a3ff",
+            activebackground="#3a2a4a", activeforeground="#c9a3ff",
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=lambda: threading.Thread(
+                target=self._ejecutar_auto_sync, daemon=True
+            ).start()
+        )
+        btn_sync_now.pack(fill="x", pady=2)
+        btn_sync_now.bind("<Enter>", lambda e: btn_sync_now.config(bg="#4a3a5a"))
+        btn_sync_now.bind("<Leave>", lambda e: btn_sync_now.config(bg="#2a1a3a"))
+
+        btn_sync_cfg = tk.Button(
+            left, text="⚙  Configurar auto-sync…",
+            font=("Segoe UI", 9),
+            bg=SURFACE, fg=FG,
+            activebackground=BORDER, activeforeground=FG,
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=self._config_autosync
+        )
+        btn_sync_cfg.pack(fill="x", pady=2)
+        btn_sync_cfg.bind("<Enter>", lambda e: btn_sync_cfg.config(bg=BORDER))
+        btn_sync_cfg.bind("<Leave>", lambda e: btn_sync_cfg.config(bg=SURFACE))
+        # === END AUTO-SYNC ===
+
         tk.Frame(left, bg=BORDER, height=1).pack(fill="x", pady=8)
 
         tk.Button(left, text="⛔  Detener proceso",
@@ -519,6 +562,19 @@ class DockerPanel(tk.Tk):
         )
         self._keepalive_lbl.pack(side="right", padx=4)
         # === END KEEPALIVE RENDER ===
+
+        # === BEGIN AUTO-SYNC (cron ObServer → Render) ===
+        tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
+        self._autosync_lbl = tk.Label(
+            self._status_bar,
+            text="○ auto-sync off",
+            font=("Segoe UI", 8),
+            bg="#111113", fg=FG_DIM,
+            cursor="hand2",
+        )
+        self._autosync_lbl.pack(side="right", padx=4)
+        self._autosync_lbl.bind("<Button-1>", lambda e: self._config_autosync())
+        # === END AUTO-SYNC ===
 
         # Indicador de PDFs pendientes en carpeta local + botón Revisar
         tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
@@ -849,6 +905,8 @@ class DockerPanel(tk.Tk):
     def _save_agente_config(self, carpeta, url, mover, keepalive=False,
                              keepalive_url=KEEPALIVE_DEFAULT_URL,
                              keepalive_min=KEEPALIVE_DEFAULT_MIN):
+        # Preservar config de auto-sync que puede haberse guardado por separado
+        auto_sync_cfg = self._load_auto_sync_config()
         cfg_path = self._get_agente_config_path()
         with open(cfg_path, "w", encoding="utf-8") as f:
             f.write(f"carpeta={carpeta}\n")
@@ -859,6 +917,71 @@ class DockerPanel(tk.Tk):
             f.write(f"keepalive_url={keepalive_url}\n")
             f.write(f"keepalive_min={keepalive_min}\n")
             # === END KEEPALIVE RENDER ===
+            # === BEGIN AUTO-SYNC ===
+            f.write(f"autosync_enabled={'true' if auto_sync_cfg['enabled'] else 'false'}\n")
+            f.write(f"autosync_horas={auto_sync_cfg['horas']}\n")
+            f.write(f"autosync_arranque_min={auto_sync_cfg['arranque_min']}\n")
+            f.write(f"autosync_url={auto_sync_cfg['url']}\n")
+            f.write(f"autosync_token={auto_sync_cfg['token']}\n")
+            if auto_sync_cfg.get('last_run'):
+                f.write(f"autosync_last_run={auto_sync_cfg['last_run']}\n")
+            # === END AUTO-SYNC ===
+
+    # === BEGIN AUTO-SYNC ===
+    def _load_auto_sync_config(self):
+        """Devuelve dict con la config del cron de sync automático."""
+        cfg_path = self._get_agente_config_path()
+        cfg = {
+            'enabled': False,
+            'horas': '06,09,12,15,18,00',          # horarios fijos (HH), separados por coma
+            'arranque_min': 180,                    # al abrir el panel, sync si pasaron >N min
+            'url': 'http://localhost:5000',         # base URL de la app local
+            'token': '',                            # X-Auto-Sync-Token opcional
+            'last_run': None,                       # ISO datetime del último sync exitoso
+        }
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("autosync_enabled="):
+                        cfg['enabled'] = line.split("=", 1)[1].lower() in ("true", "1", "si")
+                    elif line.startswith("autosync_horas="):
+                        cfg['horas'] = line.split("=", 1)[1]
+                    elif line.startswith("autosync_arranque_min="):
+                        try: cfg['arranque_min'] = max(15, int(line.split("=", 1)[1]))
+                        except ValueError: pass
+                    elif line.startswith("autosync_url="):
+                        cfg['url'] = line.split("=", 1)[1]
+                    elif line.startswith("autosync_token="):
+                        cfg['token'] = line.split("=", 1)[1]
+                    elif line.startswith("autosync_last_run="):
+                        cfg['last_run'] = line.split("=", 1)[1]
+        return cfg
+
+    def _save_auto_sync_config(self, **changes):
+        """Actualiza solo los campos provistos del bloque auto-sync."""
+        current = self._load_auto_sync_config()
+        current.update(changes)
+        # Reusar _save_agente_config para reescribir el archivo entero.
+        # Necesitamos los otros bloques tal cual están ahora.
+        carpeta, url, mover, ka, ka_url, ka_min = self._load_agente_config()
+        # Guardar de forma manual para incluir los cambios del auto-sync
+        cfg_path = self._get_agente_config_path()
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            f.write(f"carpeta={carpeta}\n")
+            f.write(f"url={url}\n")
+            f.write(f"mover={'true' if mover else 'false'}\n")
+            f.write(f"keepalive={'true' if ka else 'false'}\n")
+            f.write(f"keepalive_url={ka_url}\n")
+            f.write(f"keepalive_min={ka_min}\n")
+            f.write(f"autosync_enabled={'true' if current['enabled'] else 'false'}\n")
+            f.write(f"autosync_horas={current['horas']}\n")
+            f.write(f"autosync_arranque_min={current['arranque_min']}\n")
+            f.write(f"autosync_url={current['url']}\n")
+            f.write(f"autosync_token={current['token']}\n")
+            if current.get('last_run'):
+                f.write(f"autosync_last_run={current['last_run']}\n")
+    # === END AUTO-SYNC ===
 
     def _config_agente(self):
         """Abre diálogo para configurar carpeta y URL del agente."""
@@ -1113,6 +1236,251 @@ class DockerPanel(tk.Tk):
         else:
             self._keepalive_lbl.config(text="○ keep-alive off", fg=FG_DIM)
     # === END KEEPALIVE RENDER ===
+
+    # === BEGIN AUTO-SYNC (cron ObServer → Render) ===
+    def _auto_sync_debe_correr_ahora(self, cfg, ahora=None):
+        """Determina si corresponde correr un sync ahora.
+
+        Retorna (bool, motivo). Razones posibles:
+          - 'horario': la hora actual coincide con alguna de cfg['horas'] y
+                        no corrimos en esa hora todavía.
+          - 'arranque': nunca corrimos o último sync hace más de arranque_min.
+        """
+        import datetime as _dt
+        ahora = ahora or _dt.datetime.now()
+        last_run_str = cfg.get('last_run')
+        last_run = None
+        if last_run_str:
+            try:
+                last_run = _dt.datetime.fromisoformat(last_run_str)
+            except ValueError:
+                last_run = None
+
+        # Al arranque: si nunca corrió o pasaron muchos minutos
+        arr_min = int(cfg.get('arranque_min', 180))
+        if not last_run:
+            # Nunca hubo sync — arranque forzoso
+            return True, 'primer sync'
+        delta_min = (ahora - last_run).total_seconds() / 60
+        if delta_min >= arr_min:
+            return True, f'último sync hace {int(delta_min)} min'
+
+        # Por horario: si la hora actual coincide con alguna configurada
+        # y no corrimos ya en esa hora del día.
+        horas = [int(h.strip()) for h in cfg.get('horas', '').split(',')
+                 if h.strip().isdigit()]
+        hora_actual = ahora.hour
+        if hora_actual in horas:
+            # Ya corrimos esta misma hora del día?
+            if last_run.date() == ahora.date() and last_run.hour == hora_actual:
+                return False, 'ya corrido esta hora'
+            # Si la última corrida fue ayer o anteayer en la misma hora, igual corremos
+            return True, f'horario {hora_actual:02d}:00'
+        return False, f'esperando próximo horario (ahora {hora_actual:02d}:xx)'
+
+    def _auto_sync_loop(self):
+        """Thread que cada minuto chequea si corresponde correr el sync."""
+        import datetime as _dt
+        # Pequeña espera inicial para que el panel termine de arrancar
+        time.sleep(15)
+        while not self._auto_sync_stop.is_set():
+            try:
+                cfg = self._load_auto_sync_config()
+                if cfg['enabled']:
+                    debe, motivo = self._auto_sync_debe_correr_ahora(cfg)
+                    if debe:
+                        self.after(0, self._append,
+                                   f"  🔄 auto-sync disparado ({motivo})\n", "dim")
+                        self._ejecutar_auto_sync(cfg, automatico=True)
+            except Exception as e:
+                self.after(0, self._append, f"  ⚠ auto-sync loop error: {e}\n", "err")
+            self.after(0, self._update_autosync_label)
+            # Sleep 60s en chunks de 1s para salir rápido
+            for _ in range(60):
+                if self._auto_sync_stop.is_set():
+                    return
+                time.sleep(1)
+
+    def _ejecutar_auto_sync(self, cfg=None, automatico=False):
+        """Ejecuta un sync ahora llamando al endpoint /api/auto-sync de la app local.
+        Bloquea con lock para que 2 invocaciones no se pisen."""
+        import datetime as _dt
+        if not self._auto_sync_lock.acquire(blocking=False):
+            self.after(0, self._append,
+                       "  ⏳ auto-sync: ya hay uno en curso, skip\n", "dim")
+            return
+        try:
+            if cfg is None:
+                cfg = self._load_auto_sync_config()
+            url = (cfg.get('url') or '').strip().rstrip('/')
+            if not url:
+                self.after(0, self._append,
+                           "  ⚠ auto-sync: falta config autosync_url\n", "err")
+                return
+            endpoint = url + '/api/auto-sync'
+            token = (cfg.get('token') or '').strip()
+            ts_inicio = _dt.datetime.now()
+            self._auto_sync_last_run = ts_inicio
+            self.after(0, self._append,
+                       f"  🔄 {ts_inicio.strftime('%H:%M')} auto-sync → {endpoint}\n", "dim")
+            try:
+                data = b''
+                headers = {'User-Agent': 'DockerPanel-AutoSync',
+                           'Content-Type': 'application/json'}
+                if token:
+                    headers['X-Auto-Sync-Token'] = token
+                req = urllib.request.Request(endpoint, data=data,
+                                             headers=headers, method='POST')
+                with urllib.request.urlopen(req, timeout=600) as r:
+                    body = r.read().decode('utf-8', errors='replace')
+                try:
+                    result = json.loads(body)
+                except Exception:
+                    result = {'ok': r.getcode() == 200, 'raw': body[:200]}
+                if result.get('ok'):
+                    self._auto_sync_last_ok = _dt.datetime.now()
+                    self._auto_sync_fallos = 0
+                    pasos = result.get('pasos', [])
+                    resumen = ' · '.join(
+                        f"{p.get('paso')}:{p.get('upsert') or p.get('total_filas') or '✓'}"
+                        for p in pasos if p.get('ok')
+                    )
+                    self.after(0, self._append,
+                               f"  ✓ auto-sync OK — {resumen}\n", "ok")
+                    # Persistir last_run
+                    self._save_auto_sync_config(
+                        last_run=self._auto_sync_last_ok.isoformat()
+                    )
+                else:
+                    self._auto_sync_fallos += 1
+                    self._auto_sync_last_error = result.get('error') or 'falló'
+                    pasos_fail = [p for p in result.get('pasos', []) if not p.get('ok')]
+                    detalle = '; '.join(f"{p.get('paso')}: {p.get('error')}" for p in pasos_fail)
+                    self.after(0, self._append,
+                               f"  ✗ auto-sync FALLÓ ({self._auto_sync_fallos}x) — {detalle or self._auto_sync_last_error}\n",
+                               "err")
+            except (urllib.error.URLError, OSError, socket.timeout) as e:
+                self._auto_sync_fallos += 1
+                self._auto_sync_last_error = str(e)
+                self.after(0, self._append,
+                           f"  ✗ auto-sync conexión falló ({self._auto_sync_fallos}x): {e}\n", "err")
+        finally:
+            self._auto_sync_lock.release()
+            self.after(0, self._update_autosync_label)
+
+    def _config_autosync(self):
+        """Diálogo para configurar el auto-sync: enabled, horarios, URL, token."""
+        cfg = self._load_auto_sync_config()
+
+        dlg = tk.Toplevel(self)
+        dlg.title("Configurar auto-sync ObServer → Render")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        # Enabled
+        enabled_var = tk.BooleanVar(value=cfg['enabled'])
+        tk.Checkbutton(dlg, text="Activar sincronización automática",
+                       variable=enabled_var, font=("Segoe UI", 10, "bold"),
+                       bg=BG, fg=FG, selectcolor=SURFACE,
+                       activebackground=BG, activeforeground=FG).pack(
+                           anchor="w", padx=16, pady=(14, 8))
+
+        # Horarios
+        tk.Label(dlg, text="Horarios diarios (HH separado por coma):",
+                 font=("Segoe UI", 9, "bold"), bg=BG, fg=FG).pack(anchor="w", padx=16)
+        horas_var = tk.StringVar(value=cfg['horas'])
+        tk.Entry(dlg, textvariable=horas_var, font=("Consolas", 9),
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(fill="x", padx=16, pady=(2, 2))
+        tk.Label(dlg, text="Ej: 06,09,12,15,18,00 — corre en cada una de esas horas.",
+                 font=("Segoe UI", 8), bg=BG, fg=FG_DIM
+                 ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        # Al arranque
+        tk.Label(dlg, text="Al abrir el panel, sincronizar si pasaron más de N minutos:",
+                 font=("Segoe UI", 9, "bold"), bg=BG, fg=FG).pack(anchor="w", padx=16)
+        arr_var = tk.StringVar(value=str(cfg['arranque_min']))
+        tk.Entry(dlg, textvariable=arr_var, font=("Consolas", 9), width=8,
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(anchor="w", padx=16, pady=(2, 8))
+
+        # URL de la app
+        tk.Label(dlg, text="URL base de la app (Flask):",
+                 font=("Segoe UI", 9, "bold"), bg=BG, fg=FG).pack(anchor="w", padx=16)
+        url_var = tk.StringVar(value=cfg['url'] or 'http://localhost:5000')
+        tk.Entry(dlg, textvariable=url_var, font=("Consolas", 9),
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(fill="x", padx=16, pady=(2, 8))
+
+        # Token opcional
+        tk.Label(dlg, text="Token X-Auto-Sync-Token (opcional):",
+                 font=("Segoe UI", 9, "bold"), bg=BG, fg=FG).pack(anchor="w", padx=16)
+        token_var = tk.StringVar(value=cfg['token'])
+        tk.Entry(dlg, textvariable=token_var, font=("Consolas", 9),
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4, show="•"
+                 ).pack(fill="x", padx=16, pady=(2, 12))
+
+        # Estado actual
+        if cfg.get('last_run'):
+            tk.Label(dlg, text=f"Último sync exitoso: {cfg['last_run']}",
+                     font=("Segoe UI", 8), bg=BG, fg=FG_DIM
+                     ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        def guardar():
+            try:
+                arr_min = max(15, int(arr_var.get()))
+            except ValueError:
+                arr_min = 180
+            self._save_auto_sync_config(
+                enabled=bool(enabled_var.get()),
+                horas=(horas_var.get() or '').strip(),
+                arranque_min=arr_min,
+                url=(url_var.get() or '').strip(),
+                token=(token_var.get() or '').strip(),
+            )
+            self._update_autosync_label()
+            dlg.destroy()
+
+        btn_row = tk.Frame(dlg, bg=BG)
+        btn_row.pack(fill="x", padx=16, pady=(0, 14))
+        tk.Button(btn_row, text="Cancelar", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=FG_DIM, activebackground=BORDER,
+                  activeforeground=FG, relief="flat", cursor="hand2",
+                  command=dlg.destroy).pack(side="right", padx=(6, 0))
+        tk.Button(btn_row, text="Guardar", font=("Segoe UI", 9, "bold"),
+                  bg=BRAND, fg="#1a1100", activebackground="#D9A91C",
+                  activeforeground="#1a1100", relief="flat", cursor="hand2",
+                  command=guardar).pack(side="right")
+
+        dlg.update_idletasks()
+        w, h = dlg.winfo_reqwidth(), dlg.winfo_reqheight()
+        x = self.winfo_x() + (self.winfo_width() - w) // 2
+        y = self.winfo_y() + (self.winfo_height() - h) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+    def _update_autosync_label(self):
+        """Refresca el indicador de auto-sync en la status bar."""
+        if not hasattr(self, "_autosync_lbl"):
+            return
+        try:
+            cfg = self._load_auto_sync_config()
+        except Exception:
+            return
+        if not cfg['enabled']:
+            self._autosync_lbl.config(text="○ auto-sync off", fg=FG_DIM)
+            return
+        if self._auto_sync_fallos >= 3:
+            self._autosync_lbl.config(
+                text=f"● auto-sync {self._auto_sync_fallos} fallos", fg=RED)
+            return
+        if self._auto_sync_last_ok:
+            mins = int((datetime.datetime.now() - self._auto_sync_last_ok).total_seconds() / 60)
+            self._autosync_lbl.config(
+                text=f"● auto-sync · último hace {mins}m", fg=GREEN)
+        else:
+            self._autosync_lbl.config(text="● auto-sync · pendiente", fg="#EAB308")
+    # === END AUTO-SYNC ===
 
     # === BEGIN HELPER HTTP (copy to unified panel) ===
     def _set_helper_status(self, ok, err=None):
