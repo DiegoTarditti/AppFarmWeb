@@ -511,6 +511,262 @@
 
 {% block after_main %}{% endblock %}
 
+{% if current_user.is_authenticated %}
+<!-- ── Botón "?" flotante + drawer del manual ──────────────────────────── -->
+<button type="button" id="help-fab" title="Manual de usuario (?)"
+        class="fixed bottom-3 right-3 z-[55] w-11 h-11 rounded-full bg-brand hover:bg-brand-hover
+               text-brand-dark font-bold text-lg shadow-lg flex items-center justify-center
+               transition-transform hover:scale-105">
+    ?
+</button>
+
+<div id="help-backdrop" class="hidden fixed inset-0 bg-black/40 z-[90]"></div>
+
+<aside id="help-drawer"
+       class="fixed top-0 right-0 z-[100] h-screen w-full sm:w-[480px] lg:w-[560px]
+              bg-white shadow-2xl translate-x-full transition-transform duration-200
+              flex flex-col">
+    <!-- Header -->
+    <div class="flex items-center justify-between px-4 py-3 border-b border-[#ececec] bg-[#1f2937] text-white flex-shrink-0">
+        <div class="flex items-center gap-2 min-w-0">
+            <svg class="w-5 h-5 text-[#F4C430] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.5M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z"/>
+            </svg>
+            <p id="help-title" class="text-sm font-semibold truncate">Manual de usuario</p>
+        </div>
+        <div class="flex items-center gap-1">
+            <button type="button" id="help-toc-toggle" title="Índice"
+                    class="lg:hidden w-8 h-8 flex items-center justify-center rounded hover:bg-white/[0.1]">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <button type="button" id="help-close" title="Cerrar"
+                    class="w-8 h-8 flex items-center justify-center rounded hover:bg-white/[0.1] text-lg">
+                ✕
+            </button>
+        </div>
+    </div>
+
+    <div class="flex-1 flex min-h-0 overflow-hidden">
+        <!-- TOC izquierda (lg+) -->
+        <nav id="help-toc" class="hidden lg:block w-44 flex-shrink-0 border-r border-[#ececec] overflow-y-auto bg-[#fafafa] text-xs">
+            <div class="p-3 space-y-3">
+                <div class="text-[10px] font-bold uppercase text-[#888]">Cargando…</div>
+            </div>
+        </nav>
+        <!-- Contenido del .md -->
+        <article id="help-content" class="flex-1 overflow-y-auto px-5 py-4 prose prose-sm max-w-none">
+            <p class="text-xs text-[#888]">Cargando manual…</p>
+        </article>
+    </div>
+</aside>
+
+<style>
+    /* Mini "prose" sin Tailwind Typography (no está en CDN sin plugin). */
+    #help-content h1 { font-size: 1.25rem; font-weight: 700; margin: 0 0 .75rem; color: #1e1e1e; }
+    #help-content h2 { font-size: 1.05rem; font-weight: 700; margin: 1.25rem 0 .5rem; color: #1e1e1e;
+                       border-bottom: 1px solid #ececec; padding-bottom: .25rem; }
+    #help-content h3 { font-size: .95rem; font-weight: 600; margin: 1rem 0 .35rem; color: #2E7D5B; }
+    #help-content p { margin: .5rem 0; line-height: 1.55; color: #333; font-size: .8125rem; }
+    #help-content ul, #help-content ol { margin: .35rem 0 .75rem 1.25rem; font-size: .8125rem; color: #333; }
+    #help-content li { margin: .15rem 0; line-height: 1.5; }
+    #help-content code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: .75rem;
+                         font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; }
+    #help-content pre { background: #1f2937; color: #e5e7eb; padding: .65rem .8rem; border-radius: 6px;
+                        overflow-x: auto; font-size: .72rem; margin: .5rem 0; }
+    #help-content pre code { background: transparent; color: inherit; padding: 0; font-size: inherit; }
+    #help-content a { color: #2E7D5B; text-decoration: underline; }
+    #help-content a:hover { color: #1F5D40; }
+    #help-content table { width: 100%; border-collapse: collapse; margin: .65rem 0; font-size: .75rem; }
+    #help-content table th, #help-content table td { border: 1px solid #e5e7eb; padding: .35rem .5rem; text-align: left; }
+    #help-content table thead { background-color: #f3f4f6 !important; }
+    #help-content table thead th { background-color: #f3f4f6 !important; color: #1f2937 !important; font-weight: 600; }
+    #help-content blockquote { border-left: 3px solid #F4C430; background: #FFFAEB; padding: .35rem .75rem;
+                               margin: .5rem 0; color: #5b4500; font-size: .8125rem; }
+    #help-content hr { border: 0; border-top: 1px solid #ececec; margin: 1rem 0; }
+
+    #help-toc .help-toc-grupo { font-size: 10px; font-weight: 700; text-transform: uppercase;
+                                color: #6b7280; margin-top: .75rem; padding: 0 .25rem; }
+    #help-toc .help-toc-grupo:first-child { margin-top: 0; }
+    #help-toc a.help-toc-item { display: block; padding: .25rem .5rem; border-radius: 4px;
+                                color: #333; line-height: 1.3; cursor: pointer; }
+    #help-toc a.help-toc-item:hover { background: #e8f3ed; color: #1F5D40; }
+    #help-toc a.help-toc-item.active { background: #2E7D5B; color: white; font-weight: 600; }
+
+    #help-drawer.is-open { transform: translateX(0); }
+    #help-toc.is-mobile-open { display: block; position: absolute; top: 49px; left: 0; bottom: 0;
+                               width: 220px; background: white; box-shadow: 4px 0 12px rgba(0,0,0,.1); z-index: 5; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<script>
+(function () {
+    const fab       = document.getElementById('help-fab');
+    const drawer    = document.getElementById('help-drawer');
+    const backdrop  = document.getElementById('help-backdrop');
+    const closeBtn  = document.getElementById('help-close');
+    const tocToggle = document.getElementById('help-toc-toggle');
+    const toc       = document.getElementById('help-toc');
+    const content   = document.getElementById('help-content');
+    const titulo    = document.getElementById('help-title');
+
+    // Mapeo URL pathname → sección por defecto del manual.
+    // Match por prefijo del primer segmento, fallback al README.
+    const URL_MAP = [
+        [/^\/orders/,           'pantallas/pedidos_guardados'],
+        [/^\/order\//,          'pantallas/indicadores_pedido'],
+        [/^\/laboratorios/,     'flujos/01_analizar_laboratorio'],
+        [/^\/proceso/,          'pantallas/procesos_compra'],
+        [/^\/upload|^\/invoice/,'flujos/03_subir_factura'],
+        [/^\/results|^\/claim/, 'flujos/04_cruce_y_reclamo'],
+        [/^\/purchase/,         'flujos/05_proceso_compra'],
+        [/^\/estadisticas\/drogas/, 'pantallas/estadisticas_drogas'],
+        [/^\/obs\/productos/,   'pantallas/catalogo_observer'],
+        [/^\/clientes/,         'pantallas/clientes'],
+        [/^\/obras-sociales|^\/os/, 'pantallas/obras_sociales'],
+        [/^\/admin\/observer/,  'admin/observer_sync'],
+        [/^\/admin/,            'admin/reset_datos'],
+        [/^\/plantillas/,       'admin/plantillas_exportacion'],
+        [/^\/productos\/sin-vincular/, 'admin/vincular_productos'],
+    ];
+
+    function seccionPorDefecto() {
+        const path = window.location.pathname;
+        for (const [re, sec] of URL_MAP) {
+            if (re.test(path)) return sec;
+        }
+        return 'README';
+    }
+
+    let _indexLoaded = false;
+    let _seccionActual = null;
+
+    async function abrirDrawer(seccion) {
+        backdrop.classList.remove('hidden');
+        drawer.classList.add('is-open');
+        if (!_indexLoaded) {
+            await cargarIndice();
+            _indexLoaded = true;
+        }
+        await cargarSeccion(seccion || seccionPorDefecto());
+    }
+
+    function cerrarDrawer() {
+        drawer.classList.remove('is-open');
+        backdrop.classList.add('hidden');
+        toc.classList.remove('is-mobile-open');
+    }
+
+    async function cargarIndice() {
+        try {
+            const r = await fetch('/api/help/_index', { credentials: 'same-origin' });
+            if (!r.ok) throw new Error('index ' + r.status);
+            const d = await r.json();
+            renderTOC(d.grupos || {});
+        } catch (e) {
+            toc.innerHTML = '<div class="p-3 text-[10px] text-red-700">Error cargando índice.</div>';
+        }
+    }
+
+    const GRUPO_LABELS = {
+        raiz:       'Empezar',
+        flujos:     'Flujos',
+        pantallas:  'Pantallas',
+        admin:      'Administración',
+    };
+
+    function renderTOC(grupos) {
+        const orden = ['raiz', 'flujos', 'pantallas', 'admin'];
+        const otros = Object.keys(grupos).filter(g => !orden.includes(g));
+        const ordenFinal = [...orden.filter(g => grupos[g]), ...otros];
+        let html = '<div class="p-2 space-y-0.5">';
+        for (const g of ordenFinal) {
+            const items = grupos[g] || [];
+            if (!items.length) continue;
+            html += `<div class="help-toc-grupo">${GRUPO_LABELS[g] || g}</div>`;
+            for (const it of items) {
+                if (it.section === 'TODO') continue; // skip docs internos
+                html += `<a class="help-toc-item" data-section="${it.section}">${it.titulo}</a>`;
+            }
+        }
+        html += '</div>';
+        toc.innerHTML = html;
+        toc.querySelectorAll('a.help-toc-item').forEach(a => {
+            a.addEventListener('click', () => {
+                cargarSeccion(a.dataset.section);
+                toc.classList.remove('is-mobile-open');
+            });
+        });
+    }
+
+    async function cargarSeccion(seccion) {
+        _seccionActual = seccion;
+        marcarActivoEnTOC(seccion);
+        content.innerHTML = '<p class="text-xs text-[#888]">Cargando…</p>';
+        try {
+            const r = await fetch('/api/help/' + encodeURIComponent(seccion), { credentials: 'same-origin' });
+            const d = await r.json();
+            if (window.marked) {
+                content.innerHTML = window.marked.parse(d.md || '');
+            } else {
+                content.textContent = d.md || '';
+            }
+            // Interceptar links internos a otros .md del manual
+            content.querySelectorAll('a[href]').forEach(a => {
+                const href = a.getAttribute('href');
+                if (!href || href.startsWith('http')) return;
+                if (href.endsWith('.md') || href.includes('.md#')) {
+                    a.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        // Resolver path relativo a la sección actual
+                        const target = resolverRelativo(_seccionActual, href);
+                        cargarSeccion(target);
+                    });
+                }
+            });
+            content.scrollTop = 0;
+            const h = content.querySelector('h1');
+            titulo.textContent = h ? h.textContent : 'Manual';
+        } catch (e) {
+            content.innerHTML = '<p class="text-xs text-red-700">Error cargando la sección.</p>';
+        }
+    }
+
+    function resolverRelativo(seccionActual, href) {
+        // Quita anchor y .md
+        let h = href.replace(/^\.\//, '').replace(/#.*$/, '').replace(/\.md$/, '');
+        if (h.startsWith('/')) return h.slice(1);
+        const base = seccionActual.split('/').slice(0, -1);
+        const partes = h.split('/');
+        for (const p of partes) {
+            if (p === '..') base.pop();
+            else if (p && p !== '.') base.push(p);
+        }
+        return base.join('/');
+    }
+
+    function marcarActivoEnTOC(seccion) {
+        toc.querySelectorAll('a.help-toc-item').forEach(a => {
+            a.classList.toggle('active', a.dataset.section === seccion);
+        });
+    }
+
+    fab.addEventListener('click', () => abrirDrawer());
+    closeBtn.addEventListener('click', cerrarDrawer);
+    backdrop.addEventListener('click', cerrarDrawer);
+    tocToggle.addEventListener('click', () => toc.classList.toggle('is-mobile-open'));
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && drawer.classList.contains('is-open')) cerrarDrawer();
+        // Atajo: Shift + ? abre el drawer
+        if (e.key === '?' && e.shiftKey && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) {
+            abrirDrawer();
+            e.preventDefault();
+        }
+    });
+})();
+</script>
+{% endif %}
+
 <script>
 // Cerrar sidebar mobile al clickear un link
 document.querySelectorAll('#mobile-sidebar a').forEach(a => {

@@ -11,7 +11,36 @@ DOCS_ROOT = os.path.join(
 )
 
 
+def _listar_md(root):
+    """Devuelve lista de paths relativos a `root` de todos los .md ordenados."""
+    out = []
+    for dirpath, _dirs, files in os.walk(root):
+        for f in files:
+            if not f.endswith('.md'):
+                continue
+            full = os.path.join(dirpath, f)
+            rel = os.path.relpath(full, root).replace('\\', '/')
+            out.append(rel)
+    return sorted(out)
+
+
 def init_app(app):
+
+    @app.route('/api/help/_index')
+    @login_required
+    def api_help_index():
+        """Devuelve el árbol del manual agrupado por carpeta para el drawer."""
+        items = _listar_md(DOCS_ROOT)
+        # Agrupar por primer segmento (raiz, flujos, pantallas, admin)
+        grupos = {}
+        for rel in items:
+            parts = rel.split('/')
+            grupo = parts[0] if len(parts) > 1 else 'raiz'
+            grupos.setdefault(grupo, []).append({
+                'section': rel.replace('.md', ''),
+                'titulo': parts[-1].replace('.md', '').replace('_', ' '),
+            })
+        return jsonify({'grupos': grupos})
 
     @app.route('/api/help/')
     @app.route('/api/help/<path:section>')

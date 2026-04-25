@@ -11,6 +11,7 @@ from routes import (
     cuentas,
     dashboard,
     docs_pendientes,
+    help as help_module,
     home_cards,
     invoices,
     laboratorios,
@@ -56,6 +57,7 @@ _modules = [
     partners,
     plantillas,
     ofertas_import,
+    help_module,
 ]
 
 
