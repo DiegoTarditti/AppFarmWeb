@@ -117,7 +117,9 @@ def init_app(app):
             stats = observer_matcher.match_productos(session, threshold=threshold)
             session.commit()
         flash(f'Auto-match completo — {stats["procesados"]} procesados · '
-              f'{stats["linked_exact"]} exactos · {stats["linked_fuzzy"]} fuzzy · '
+              f'{stats["linked_exact"]} exactos · '
+              f'{stats.get("linked_superset", 0)} superset · '
+              f'{stats["linked_fuzzy"]} fuzzy · '
               f'{stats["ambiguos"]} ambiguos · {stats["sin_match"]} sin match · '
               f'{stats["sin_lab"]} sin laboratorio.', 'success')
         return redirect(url_for('observer_sync_panel'))
@@ -309,14 +311,16 @@ def init_app(app):
                             session.commit()
                         clog.set_mensaje(
                             f'exact={stats.get("linked_exact", 0)} '
+                            f'super={stats.get("linked_superset", 0)} '
                             f'fuzzy={stats.get("linked_fuzzy", 0)} '
                             f'sin={stats.get("sin_match", 0)}'
                         )
                     resultado['pasos'].append({
                         'paso': 'match_productos', 'ok': True,
-                        'linked_exact': stats.get('linked_exact', 0),
-                        'linked_fuzzy': stats.get('linked_fuzzy', 0),
-                        'sin_match':    stats.get('sin_match', 0),
+                        'linked_exact':    stats.get('linked_exact', 0),
+                        'linked_superset': stats.get('linked_superset', 0),
+                        'linked_fuzzy':    stats.get('linked_fuzzy', 0),
+                        'sin_match':       stats.get('sin_match', 0),
                     })
                 except Exception as e:
                     resultado['pasos'].append({'paso': 'match_productos', 'ok': False, 'error': str(e)})

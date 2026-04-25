@@ -1,12 +1,17 @@
-"""Matcher entre productos locales (EAN) y obs_productos (IdProducto).
+"""Matcher bulk entre productos locales (EAN) y obs_productos (IdProducto).
 
-Estrategia:
-1. Para cada producto local con observer_id NULL:
-   a. Si su Laboratorio local tiene observer_id, limita candidatos a obs_productos
-      del mismo laboratorio_observer. Si no, busca global.
-   b. Aplica match por nombre normalizado (exacto, después tokens).
-2. Si hay match único → setea productos.observer_id.
-3. Si no hay match o hay varios con mismo score → lo deja sin vincular para revisión manual.
+Es el único matcher del sistema que NO delega en `producto_matcher.match_producto`
+item por item: la performance del job (30k locales × 122k obs) requiere precargar
+tokens del catálogo ObServer una sola vez. Por eso reimplementa la cascada con un
+índice in-memory.
+
+Cascada (alineada con `producto_matcher`):
+1. Match por `codigo_alfabeta` (1:1, determinístico).
+2. Descripción exacta normalizada dentro del lab.
+3. Tokens superset: tokens del producto local ⊆ tokens del obsproducto.
+4. Jaccard fuzzy dentro del lab (threshold).
+
+Si hay empate de scores en (4) → ambiguo (no vincula, deja para revisión manual).
 
 Las primitivas de texto (normalizar/tokens/jaccard) vienen de `producto_matcher`
 para tener UNA fuente de verdad en todo el sistema.
@@ -27,7 +32,8 @@ def match_productos(session, threshold=0.80, commit_each=500):
         commit_each: cada N productos procesados hace un flush.
 
     Returns:
-        dict con stats: {'procesados', 'linked_exact', 'linked_fuzzy',
+        dict con stats: {'procesados', 'linked_alfabeta', 'linked_exact',
+                         'linked_superset', 'linked_fuzzy',
                          'sin_match', 'ambiguos', 'sin_lab'}
     """
     from database import Laboratorio, ObsProducto, Producto
@@ -61,7 +67,8 @@ def match_productos(session, threshold=0.80, commit_each=500):
     pendientes = (session.query(Producto)
                   .filter(Producto.observer_id.is_(None)).all())
 
-    stats = dict(procesados=0, linked_alfabeta=0, linked_exact=0, linked_fuzzy=0,
+    stats = dict(procesados=0, linked_alfabeta=0, linked_exact=0,
+                 linked_superset=0, linked_fuzzy=0,
                  sin_match=0, ambiguos=0, sin_lab=0)
 
     for p in pendientes:
@@ -106,12 +113,26 @@ def match_productos(session, threshold=0.80, commit_each=500):
             stats['ambiguos'] += 1
             continue
 
-        # 2. Fuzzy dentro del lab (si hay lab); si no hay lab, no fuzzy global
+        # 2-3. Estrategias por descripción (solo dentro del lab)
         if lab_obs is None:
             stats['sin_match'] += 1
             continue
 
         candidatos = index_por_lab.get(lab_obs, [])
+
+        # 2. Tokens superset: input ⊆ obs. Si exactamente 1 candidato lo cumple,
+        #    es match de alta confianza (alineado con matcher central).
+        if toks_p:
+            supersets = [obs_id for obs_id, _desc, _norm, toks_o in candidatos
+                         if toks_o and toks_p.issubset(toks_o)]
+            if len(supersets) == 1:
+                p.observer_id = supersets[0]
+                stats['linked_superset'] += 1
+                if stats['procesados'] % commit_each == 0:
+                    session.flush()
+                continue
+
+        # 3. Fuzzy: mejor Jaccard dentro del lab.
         mejor = None
         mejor_score = 0.0
         empate = False
