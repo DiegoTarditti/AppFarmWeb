@@ -1,5 +1,7 @@
 # App de Control de Stock para Farmacia
 
+[![CI](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml/badge.svg?branch=desarrollo)](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml)
+
 Esta aplicación es un prototipo para cargar facturas en PDF y reportes ERP en Excel, extraer datos, comparar inventarios y generar un informe de diferencias.
 
 ## Tecnología

@@ -638,6 +638,76 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
     return {'upsert': n, 'duracion_ms': duracion, 'meses': meses, 'skipped': skipped}
 
 
+def estado_syncs(session):
+    """Devuelve estado de frescura de cada entidad sincronizable.
+
+    Para cada entidad: { 'estado', 'horas', 'ultimo_sync', 'filas', 'mensaje' }
+    Estado: 'ok' | 'warning' | 'error' | 'nunca' | 'externo'
+
+    Thresholds (horas):
+        - ventas_mensuales:  warn 24h,  err 72h   (crítico para análisis)
+        - stock:             warn 24h,  err 72h
+        - productos:         warn 168h, err 720h  (1 sem / 1 mes)
+        - laboratorios:      warn 720h, err 2160h (1 mes / 3 meses)
+        - clientes:          warn 168h, err 720h
+    """
+    from database import (ObsSyncLog, ObsVentaMensual, ObsStock, ObsProducto,
+                          ObsLaboratorio, ObsCliente, now_ar)
+
+    config = [
+        ('ventas_mensuales', ObsVentaMensual, 24,   72,   'Ventas mensuales'),
+        ('stock',            ObsStock,        24,   72,   'Stock'),
+        ('productos',        ObsProducto,     168,  720,  'Productos'),
+        ('laboratorios',     ObsLaboratorio,  720,  2160, 'Laboratorios'),
+        ('clientes',         ObsCliente,      168,  720,  'Clientes'),
+    ]
+
+    ahora = now_ar()
+    out = {}
+    for entidad, Modelo, warn_h, err_h, label in config:
+        filas = session.query(Modelo).count()
+        ultimo = (session.query(ObsSyncLog)
+                  .filter(ObsSyncLog.entidad == entidad)
+                  .order_by(ObsSyncLog.ejecutado_en.desc()).first())
+
+        if filas == 0:
+            out[entidad] = {'label': label, 'estado': 'nunca', 'horas': None,
+                            'ultimo_sync': None, 'filas': 0,
+                            'mensaje': f'{label}: nunca se sincronizó.'}
+            continue
+        if not ultimo:
+            # Hay datos pero no hay log (ej. pull_from_render)
+            out[entidad] = {'label': label, 'estado': 'externo', 'horas': None,
+                            'ultimo_sync': None, 'filas': filas,
+                            'mensaje': f'{label}: {filas:,} filas (origen externo, sin log local).'}
+            continue
+        delta_h = (ahora - ultimo.ejecutado_en).total_seconds() / 3600
+        if delta_h >= err_h:
+            estado = 'error'
+        elif delta_h >= warn_h:
+            estado = 'warning'
+        else:
+            estado = 'ok'
+        out[entidad] = {
+            'label':       label,
+            'estado':      estado,
+            'horas':       round(delta_h, 1),
+            'ultimo_sync': ultimo.ejecutado_en.isoformat(),
+            'filas':       filas,
+            'mensaje':     f'{label}: última sync hace {_fmt_delta(delta_h)} ({filas:,} filas).',
+        }
+    return out
+
+
+def _fmt_delta(horas):
+    if horas < 1:
+        return f'{int(horas * 60)} min'
+    if horas < 24:
+        return f'{int(horas)}h'
+    dias = int(horas / 24)
+    return f'{dias} día{"s" if dias != 1 else ""}'
+
+
 def estado_ventas_mensuales(session, dias_fresco=7):
     """Devuelve dict con estado de frescura de obs_ventas_mensuales.
 

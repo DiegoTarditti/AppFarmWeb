@@ -89,6 +89,17 @@
 </head>
 <body class="min-h-screen flex font-sans">
 
+<!-- ── Banner Sync ObServer (visible si algún sync está atrasado) ── -->
+<div id="sync-banner" class="hidden fixed top-0 left-0 right-0 z-[60] px-4 py-2 text-sm flex items-center gap-3 shadow-md">
+    <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M5.07 19h13.86a2 2 0 001.74-2.99l-6.93-12.01a2 2 0 00-3.48 0L3.34 16.01A2 2 0 005.07 19z"/>
+    </svg>
+    <p id="sync-banner-msg" class="flex-1 truncate"></p>
+    <a href="/admin/observer-sync" class="text-[11px] font-semibold underline hover:no-underline flex-shrink-0">Ver detalle</a>
+    <button type="button" onclick="document.getElementById('sync-banner').classList.add('hidden')"
+            class="text-lg leading-none px-1 hover:opacity-70 flex-shrink-0">✕</button>
+</div>
+
 <!-- ── Widget DockerPanel: estado + acción (solo visible en localhost) ── -->
 <div id="dp-widget" class="hidden fixed bottom-3 left-3 z-[70]">
     <!-- Estado: activo (puntito verde discreto) -->
@@ -222,6 +233,61 @@
 
     chequearHelper();
     setInterval(chequearHelper, 30000);  // re-check cada 30s
+})();
+</script>
+
+<!-- ── Sync ObServer status banner ── -->
+<script>
+(function () {
+    const rol = {{ (current_user.rol if current_user.is_authenticated else '') | tojson }};
+    if (!['farmacia', 'dev', 'admin'].includes(rol)) return;
+
+    // Persistir dismiss por 1 hora
+    const DISMISS_KEY = 'syncBannerDismiss';
+    const dismissed = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
+    if (dismissed && (Date.now() - dismissed) < 3600000) return;
+
+    fetch('/api/sync-status', { credentials: 'same-origin' })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+            if (!d) return;
+            // Sólo mostrar banner si hay error o nunca-syncado de alguna entidad crítica
+            const criticas = ['ventas_mensuales', 'stock'];
+            const problemas = [];
+            for (const key of criticas) {
+                const e = (d.entidades || {})[key];
+                if (!e) continue;
+                if (e.estado === 'error' || e.estado === 'nunca') {
+                    problemas.push({ key, ...e, severity: 'error' });
+                } else if (e.estado === 'warning') {
+                    problemas.push({ key, ...e, severity: 'warning' });
+                }
+            }
+            if (!problemas.length) return;
+
+            const banner = document.getElementById('sync-banner');
+            const msg = document.getElementById('sync-banner-msg');
+            const peor = problemas.find(p => p.severity === 'error') || problemas[0];
+
+            if (peor.severity === 'error') {
+                banner.className = 'fixed top-0 left-0 right-0 z-[60] px-4 py-2 text-sm flex items-center gap-3 shadow-md bg-red-600 text-white';
+            } else {
+                banner.className = 'fixed top-0 left-0 right-0 z-[60] px-4 py-2 text-sm flex items-center gap-3 shadow-md bg-amber-500 text-white';
+            }
+            const labels = problemas.map(p => p.label).join(', ');
+            const txt = problemas.length === 1
+                ? peor.mensaje
+                : `Sync atrasado en: ${labels}`;
+            msg.textContent = txt;
+            banner.classList.remove('hidden');
+        })
+        .catch(_ => {});
+
+    // Override del botón cerrar para guardar dismiss
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('#sync-banner button');
+        if (btn) localStorage.setItem(DISMISS_KEY, Date.now().toString());
+    });
 })();
 </script>
 

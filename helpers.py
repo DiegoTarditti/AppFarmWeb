@@ -245,6 +245,9 @@ def _bulk_upsert_productos(session, items):
             prod_map[bc] = new_prod
     if new_prods:
         session.add_all(new_prods)
+        # Flush para que una llamada subsiguiente vea estos productos en el SELECT
+        # y no intente insertarlos de nuevo (evita UNIQUE violation en codigo_barra).
+        session.flush()
 
 
 # ── Normalizador de texto PDF con caracteres cuadruplicados ───────────────

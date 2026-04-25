@@ -18,6 +18,19 @@ def init_test_db():
     )
 
 
+@pytest.fixture(autouse=True)
+def _limpiar_tablas_entre_tests():
+    """Trunca todas las tablas antes de cada test para aislar."""
+    yield
+    s = database.SessionLocal()
+    try:
+        for table in reversed(database.Base.metadata.sorted_tables):
+            s.execute(table.delete())
+        s.commit()
+    finally:
+        s.close()
+
+
 @pytest.fixture(scope='session')
 def flask_app(init_test_db, tmp_path_factory):
     upload_dir = str(tmp_path_factory.mktemp('uploads'))
@@ -34,6 +47,13 @@ def flask_app(init_test_db, tmp_path_factory):
         rol = None
     app.jinja_env.globals['current_user'] = _AnonUser()
     app.jinja_env.globals['tiene_permiso'] = lambda *a, **k: False
+
+    # Mock del context processor `entorno` (que en producción se inyecta desde app.py)
+    class _Entorno:
+        codigo = 'test'
+        label = 'Test'
+        color = '#888'
+    app.jinja_env.globals['entorno'] = _Entorno()
 
     from flask import url_for as _real_url_for
     def _tolerant_url_for(endpoint, **values):

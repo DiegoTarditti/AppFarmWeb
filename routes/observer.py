@@ -581,6 +581,32 @@ def init_app(app):
         return jsonify({'droga_id': droga_id, 'droga_nombre': nombre_droga,
                         'labs': resultados})
 
+    @app.route('/api/sync-status')
+    @login_required
+    def api_sync_status():
+        """Estado de frescura de cada sync de ObServer.
+
+        Devuelve: { entidades: {...}, peor_estado: 'ok|warning|error|nunca|externo',
+                    cualquier_atrasado: bool }
+        """
+        with database.get_db() as session:
+            estados = observer_source.estado_syncs(session)
+
+        # Peor estado para el badge global (orden de severidad)
+        prioridad = {'error': 4, 'nunca': 3, 'warning': 2, 'externo': 1, 'ok': 0}
+        peor = 'ok'
+        for e in estados.values():
+            if prioridad.get(e['estado'], 0) > prioridad.get(peor, 0):
+                peor = e['estado']
+
+        cualquier_atrasado = any(e['estado'] in ('error', 'warning', 'nunca')
+                                  for e in estados.values())
+        return jsonify({
+            'entidades':           estados,
+            'peor_estado':         peor,
+            'cualquier_atrasado':  cualquier_atrasado,
+        })
+
     @app.route('/observer/status')
     @login_required
     def observer_status():
