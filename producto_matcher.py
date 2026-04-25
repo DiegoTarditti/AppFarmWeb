@@ -644,6 +644,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
         session = database.SessionLocal()
     try:
         # Fase 1: matchear contra `productos` local SIN fallback observer.
+        # incluir_candidatos=False porque el bulk no los usa (la UI los pide
+        # aparte via /import-candidatos). Eso ahorra una pasada por item.
         results = [
             match_producto(
                 ean=it.get('ean'),
@@ -652,6 +654,7 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 laboratorio_id=laboratorio_id,
                 target=target,
                 incluir_observer=False,
+                incluir_candidatos=False,
                 precio_referencia=it.get('precio'),
                 cantidad_envase=it.get('cantidad_envase'),
                 monodroga=it.get('monodroga'),
@@ -660,7 +663,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
             for it in items
         ]
 
-        # Fase 2: fallback observer en bulk con UNA precarga del pool.
+        # Fase 2: fallback observer en bulk con UNA precarga + UNA tokenización
+        # del pool. Inline (no via match_producto) para evitar N×M tokenizaciones.
         if target == 'producto':
             no_match_idx = [i for i, r in enumerate(results) if r.producto is None]
             if no_match_idx:
@@ -674,25 +678,83 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 obs_q = obs_q.filter(database.ObsProducto.fecha_baja.is_(None))
                 obs_pool = obs_q.all()
 
+                # Pre-tokenizar UNA sola vez todo el pool. Estructuras:
+                # - obs_index: lista de (obj, norm, tokens, alfabeta)
+                # - by_norm: dict normalizado → list of obs (para descripcion exacta)
+                # - by_alfabeta: dict alfabeta → obs (para alfabeta exacto)
+                obs_index = []
+                by_norm = {}
+                by_alfabeta = {}
+                for obs in obs_pool:
+                    desc = obs.descripcion or ''
+                    norm = normalizar_texto(desc)
+                    toks = tokens_significativos(desc)
+                    alf = (obs.codigo_alfabeta or '').strip() or None
+                    obs_index.append((obs, norm, toks, alf))
+                    if norm:
+                        by_norm.setdefault(norm, []).append(obs)
+                    if alf:
+                        by_alfabeta[alf] = obs
+
+                threshold_obs = 0.80
                 for i in no_match_idx:
                     it = items[i]
-                    res = match_producto(
-                        ean=None,
-                        codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
-                        descripcion=it.get('descripcion'),
-                        laboratorio_id=lab_obs_id,
-                        target='obs_producto',
-                        pool=obs_pool,
-                        incluir_observer=False,
-                        threshold=0.80,
-                        incluir_candidatos=False,
-                        precio_referencia=it.get('precio'),
-                        session=session,
-                    )
-                    if res.producto is not None:
-                        # Mantener formato consistente: marcar la estrategia
-                        # con sufijo _obs y agregar warning match_observer.
-                        res.estrategia = (res.estrategia or 'fuzzy_global') + '_obs'
+                    desc_in = it.get('descripcion') or ''
+                    if not desc_in.strip():
+                        continue
+                    alf_in = (it.get('codigo_alfabeta') or it.get('codigo') or '').strip() or None
+
+                    res = MatchResult()
+                    encontrado = None
+                    estrategia = ''
+
+                    # 1. alfabeta exacto
+                    if alf_in and alf_in in by_alfabeta:
+                        encontrado = by_alfabeta[alf_in]
+                        estrategia = 'alfabeta_exacto'
+                        score = 1.0
+
+                    # 2. descripcion exacta
+                    if not encontrado:
+                        norm_in = normalizar_texto(desc_in)
+                        hits = by_norm.get(norm_in, [])
+                        if len(hits) == 1:
+                            encontrado = hits[0]
+                            estrategia = 'descripcion_exacta'
+                            score = 1.0
+
+                    # 3. tokens superset / fuzzy
+                    if not encontrado:
+                        toks_in = tokens_significativos(desc_in)
+                        if toks_in:
+                            mejor = None
+                            mejor_score = 0.0
+                            empate = False
+                            supersets = []
+                            for obs, _norm, toks_o, _alf in obs_index:
+                                if toks_o and toks_in.issubset(toks_o):
+                                    supersets.append(obs)
+                                s = jaccard(toks_in, toks_o)
+                                if s > mejor_score:
+                                    mejor = obs
+                                    mejor_score = s
+                                    empate = False
+                                elif s == mejor_score and s > 0:
+                                    empate = True
+                            if len(supersets) == 1:
+                                encontrado = supersets[0]
+                                estrategia = 'tokens_superset'
+                                score = 0.95
+                            elif mejor and mejor_score >= threshold_obs and not empate:
+                                encontrado = mejor
+                                estrategia = 'fuzzy_lab' if lab_obs_id else 'fuzzy_global'
+                                score = mejor_score
+
+                    if encontrado is not None:
+                        res.producto = encontrado
+                        res.score = score
+                        res.estrategia = estrategia + '_obs'
+                        res.confianza = _confianza(score)
                         res.warnings.append('match_observer')
                         results[i] = res
 
