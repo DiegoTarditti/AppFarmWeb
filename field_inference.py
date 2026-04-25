@@ -471,6 +471,24 @@ def relacion_aritmetica(values, contexto='item', tol_rel=0.005, tol_abs=0.05):
                         return out
         return out
 
+    if contexto == 'pub_dto':
+        # Solo busca pub × (1 - dto/100) ≈ unit (sin requerir cant_unit_imp).
+        for i, vi in nums:
+            for j, vj in nums:
+                if i == j or not (0 <= vj <= 100):
+                    continue
+                for k, vk in nums:
+                    if k in (i, j):
+                        continue
+                    if _eq(vi * (1 - vj / 100), vk):
+                        out.append({
+                            'tipo': 'pub_dto_unit',
+                            'indices': {'precio_publico': i, 'dto': j, 'precio_unitario': k},
+                            'formula': f'{vi} × (1−{vj}%) = {vk}',
+                        })
+                        return out
+        return out
+
     if contexto == 'totales':
         # iva = gravado × rate
         for rate, campo_iva in ((0.21, 'iva_21'), (0.105, 'iva_105')):
@@ -503,3 +521,129 @@ def relacion_aritmetica(values, contexto='item', tol_rel=0.005, tol_abs=0.05):
         return out
 
     return out
+
+
+# ── Detección completa de fila de factura ──────────────────────────────────
+# Reemplaza el algoritmo JS `autodetectarCampos` de templates/converter_pick.html.
+# Usable también desde cualquier wizard que necesite detectar campos por
+# contenido y matemática sobre tokens (no solo facturas).
+
+def detectar_campos_factura(tokens):
+    """Asigna campos a tokens de una fila de factura por contenido + matemática.
+
+    Cascada:
+    1. EAN: primer token con 12-14 dígitos.
+    2. Triplete `cant × unit ≈ importe`: cant entero corto seguido de dos
+       valores money cuyo producto cierra dentro de 0.5%.
+    3. Par `pub × (1 - dto/100) = unit`: para detectar precio_publico y dto%.
+    4. Descripción: tokens entre cant (excl.) y el primer numérico asignado.
+
+    Args:
+        tokens: lista de strings (tokens de la línea, en orden).
+
+    Returns:
+        dict {
+            'asignaciones': {campo: idx_o_rango},
+            'tipos': [tipo_por_token],
+            'warnings': [str]
+        }
+        Donde rango se expresa como [start, end] (incluyente).
+    """
+    if not tokens:
+        return {'asignaciones': {}, 'tipos': [], 'warnings': []}
+
+    # 1. Tipar cada token
+    cls = []
+    for i, t in enumerate(tokens):
+        n = parsear_numero_ar(t)
+        cls.append({
+            'i': i,
+            'text': t,
+            'n': n,
+            'es_ean': validar_ean(t) and len(str(t).strip()) >= 12,
+            'es_int_corto': (n is not None and 1 <= n <= 9999 and n == int(n)
+                             and bool(re.match(r'^\d{1,4}(?:\.0+)?$', str(t).strip()))),
+            'es_money': bool(_RE_MONEY_AR.match(str(t).strip())
+                             or _RE_MONEY_EN.match(str(t).strip())),
+            'es_pct': (n is not None and 0 <= n <= 100
+                       and (str(t).strip().endswith('%')
+                            or bool(_RE_PCT_AR.match(str(t).strip())))),
+        })
+    tipos = [
+        'ean' if c['es_ean'] else
+        'int' if c['es_int_corto'] else
+        'pct' if c['es_pct'] else
+        'money' if c['es_money'] else
+        ('text' if cls[i]['n'] is None else 'money')
+        for i, c in enumerate(cls)
+    ]
+    asign = {}
+    warnings = []
+
+    # 2. EAN
+    ean_idx = next((i for i, c in enumerate(cls) if c['es_ean']), -1)
+    if ean_idx < 0:
+        warnings.append('No encontré EAN (12-14 dígitos)')
+    else:
+        asign['codigo_barra'] = ean_idx
+
+    # 3. Triplete cant×unit=imp (más cercano: minimizar k-i).
+    TOL = 0.02
+    start_from = ean_idx + 1 if ean_idx >= 0 else 0
+    best = None
+    for i in range(start_from, len(cls)):
+        if not cls[i]['es_int_corto']:
+            continue
+        for j in range(i + 1, len(cls)):
+            if not cls[j]['es_money']:
+                continue
+            for k in range(j + 1, len(cls)):
+                if not cls[k]['es_money']:
+                    continue
+                vi, vj, vk = cls[i]['n'], cls[j]['n'], cls[k]['n']
+                calc = vi * vj
+                if abs(calc - vk) <= max(TOL, abs(vk) * 0.005):
+                    if best is None or (k - i) < (best['k'] - best['i']):
+                        best = {'i': i, 'j': j, 'k': k}
+    if best is None:
+        warnings.append('No pude deducir cant × unit = importe')
+    else:
+        asign['cantidad'] = best['i']
+        asign['precio_unitario'] = best['j']
+        asign['importe'] = best['k']
+
+    # 4. Par pub × (1 - dto%) = unit (solo si tenemos unit)
+    if 'precio_unitario' in asign:
+        unit_idx = asign['precio_unitario']
+        unit_n = cls[unit_idx]['n']
+        for p in range(start_from, unit_idx):
+            if not cls[p]['es_money']:
+                continue
+            for d in range(p + 1, unit_idx):
+                if not cls[d]['es_pct']:
+                    continue
+                vp, vd = cls[p]['n'], cls[d]['n']
+                if abs(vp * (1 - vd / 100) - unit_n) <= max(TOL, abs(unit_n) * 0.005):
+                    asign['precio_publico'] = p
+                    asign['dto'] = d
+                    break
+            if 'precio_publico' in asign:
+                break
+
+    # 5. Descripción: rango entre cant (excl.) y el primer asignado siguiente.
+    cant_idx = asign.get('cantidad')
+    if cant_idx is not None or ean_idx >= 0:
+        desc_start = (cant_idx if cant_idx is not None else ean_idx) + 1
+        # ancla = pub si lo encontramos, sino unit, sino imp.
+        anchor = asign.get('precio_publico')
+        if anchor is None:
+            anchor = asign.get('precio_unitario')
+        if anchor is None:
+            anchor = asign.get('importe')
+        if anchor is None:
+            anchor = len(cls)
+        desc_end = anchor - 1
+        if desc_start <= desc_end:
+            asign['descripcion'] = [desc_start, desc_end]
+
+    return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}

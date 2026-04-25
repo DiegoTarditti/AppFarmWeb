@@ -51,15 +51,21 @@ _STOPWORDS = {
     'sobre', 'sobres', 'frasco', 'frascos',
     'pol', 'polvo',
     'iny', 'inyectable',
-    'recubierto', 'rec', 'recubiertos',
+    'recubierto', 'rec', 'recubiertos', 'recubiertas',
     'efervescente', 'efe', 'efervescentes',
     'mast', 'masticable', 'masticables',
-    'lib', 'liberacion', 'prolongada',
+    'lib', 'liberacion', 'prolongada', 'lp',
+    # Características de comprimido (no aportan diferenciación)
+    'ran', 'ranurado', 'ranurados', 'ranurada', 'ranuradas',
+    'bi', 'bicapa', 'tri', 'tricapa',
+    'ap', 'ar', 'sr', 'cr', 'xr',          # liberación: AP, AR, SR, CR, XR
+    'blister', 'blisters', 'bl',
+    'ps', 'p',                              # p.bl. (perlas blister)
     # Unidades de medida
-    'mg', 'gr', 'g', 'ml', 'l', 'mcg', 'ui', 'mui',
+    'mg', 'gr', 'g', 'ml', 'l', 'mcg', 'ui', 'mui', 'kg',
     # Conectores/cantidad
     'x', 'un', 'unid', 'unidades', 'uds',
-    'oral', 'tópico', 'topico',
+    'oral', 'tópico', 'topico', 'topica', 'sublingual',
 }
 
 
@@ -616,10 +622,18 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
             if key not in mejor_por_id or c['score'] > mejor_por_id[key]['score']:
                 mejor_por_id[key] = c
         out = sorted(mejor_por_id.values(), key=lambda x: -x['score'])
-        # Aplicar threshold mínimo: si NINGUNO supera el umbral, devolver [].
-        # Si ALGUNO lo supera, mostrar todos los que sí (los basura quedan
-        # cortados aunque el primero sea bueno).
-        out = [c for c in out if c['score'] >= threshold_min]
+        # Threshold adaptativo: cortar candidatos muy lejos del mejor.
+        # Si el top es 1.00 → exigir ≥ 0.85.
+        # Si el top es 0.75 → exigir ≥ 0.60 (max(threshold_min, 0.60)).
+        # Si el top es 0.50 → exigir ≥ 0.50.
+        # Idea: solo mostrar los que están en una banda cercana al mejor.
+        # Reduce ruido como ATENIX/FILTEN apareciendo cuando el mejor es BIATRIX.
+        if out:
+            top_score = out[0]['score']
+            threshold_efectivo = max(threshold_min, top_score - 0.15)
+            out = [c for c in out if c['score'] >= threshold_efectivo]
+        else:
+            out = []
         return out[:top]
     finally:
         if own_session:

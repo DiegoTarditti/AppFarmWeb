@@ -180,3 +180,36 @@ class TestRelacionAritmetica:
         # 1×2=2 (que también está) → no es exact triplete con i<j<k consecutivo de los tipos correctos
         # Acepta cualquier resultado: sólo nos aseguramos que no crashee
         assert isinstance(tipos, list)
+
+
+class TestDetectarCamposFactura:
+    def test_fila_simple(self):
+        fila = ['7793450121123', '5', 'TAFIROL', '1', 'g', 'COM', 'x', '50',
+                '1500,00', '7500,00']
+        res = fi.detectar_campos_factura(fila)
+        a = res['asignaciones']
+        assert a['codigo_barra'] == 0
+        assert a['cantidad'] == 1
+        assert a['precio_unitario'] == 8
+        assert a['importe'] == 9
+        assert a['descripcion'] == [2, 7]
+
+    def test_fila_con_dto(self):
+        fila = ['7793450121123', '10', 'TAFIROL', 'COM', '50',
+                '100,00', '20', '80,00', '800,00']
+        res = fi.detectar_campos_factura(fila)
+        a = res['asignaciones']
+        assert a['precio_publico'] == 5
+        assert a['dto'] == 6
+        assert a['precio_unitario'] == 7
+        assert a['importe'] == 8
+
+    def test_sin_ean(self):
+        fila = ['5', 'TAFIROL', '1500,00', '7500,00']
+        res = fi.detectar_campos_factura(fila)
+        assert 'codigo_barra' not in res['asignaciones']
+        assert any('EAN' in w for w in res['warnings'])
+
+    def test_fila_vacia(self):
+        res = fi.detectar_campos_factura([])
+        assert res['asignaciones'] == {}
