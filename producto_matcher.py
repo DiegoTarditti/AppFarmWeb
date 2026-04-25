@@ -442,6 +442,33 @@ def match_producto(*,
                     result.confianza = _confianza(result.score)
                     result.warnings.append('match_otro_lab')
 
+            # Estrategia 8: fallback al catálogo ObServer (Alfabeta) cuando
+            # nada matcheó en `productos` local. Útil porque el catálogo
+            # local suele estar incompleto y obs_productos tiene Alfabeta
+            # entero. Re-llamamos a match_producto con target='obs_producto'.
+            if not result.producto and target == 'producto' and pool is None:
+                # Mapear lab local → lab observer si está vinculado.
+                lab_obs_id = None
+                if laboratorio_id:
+                    lab_local = session.get(database.Laboratorio, laboratorio_id)
+                    lab_obs_id = getattr(lab_local, 'observer_id', None) if lab_local else None
+                obs_res = match_producto(
+                    ean=None,                  # obs_productos no tiene EAN
+                    codigo_alfabeta=codigo_alfabeta,
+                    descripcion=descripcion,
+                    laboratorio_id=lab_obs_id,
+                    target='obs_producto',
+                    threshold=max(threshold, 0.85),
+                    incluir_candidatos=False,
+                    session=session,
+                )
+                if obs_res.producto is not None:
+                    result.producto = obs_res.producto
+                    result.score = obs_res.score
+                    result.estrategia = obs_res.estrategia + '_obs'
+                    result.confianza = obs_res.confianza
+                    result.warnings.append('match_observer')
+
         # Cross-check de precio si hay match
         if result.producto and precio_referencia is not None:
             try:

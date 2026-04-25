@@ -288,23 +288,36 @@ def init_app(app):
                 entry['_candidatos_top'] = res.candidatos_top
                 stats['not_found'] += 1
             else:
-                entry['_match_descripcion_local'] = res.producto.descripcion or ''
-                entry['_producto_id'] = res.producto.id
+                p = res.producto
+                entry['_match_descripcion_local'] = p.descripcion or ''
+                # Producto local tiene `id`; ObsProducto tiene `observer_id`.
+                entry['_producto_id'] = getattr(p, 'id', None)
+                entry['_observer_id'] = getattr(p, 'observer_id', None)
                 entry['_estrategia'] = res.estrategia
                 entry['_score'] = res.score
                 entry['_confianza'] = res.confianza
+                # Si matcheó contra obs y no había codigo_alfabeta, lo adoptamos
+                # para que el guardado lo use como `codigo`.
+                if 'match_observer' in res.warnings:
+                    if not entry.get('codigo') and getattr(p, 'codigo_alfabeta', None):
+                        entry['codigo'] = p.codigo_alfabeta
 
                 if 'precio_variacion_alta' in res.warnings:
                     entry['_status'] = 'warning'
                     var = res.debug.get('variacion_precio')
                     entry['_motivo'] = f'Variación de precio {var:+.1f}%' if var is not None else 'Variación alta'
                     stats['warning'] += 1
-                elif res.estrategia in ('fuzzy_lab', 'fuzzy_global',
-                                         'fuzzy_otro_lab', 'tokens_superset'):
+                elif (res.estrategia in ('fuzzy_lab', 'fuzzy_global',
+                                          'fuzzy_otro_lab', 'tokens_superset')
+                      or res.estrategia.endswith('_obs')):
                     entry['_status'] = 'fuzzy'
-                    nota_lab = ' [otro lab]' if res.estrategia == 'fuzzy_otro_lab' else ''
+                    nota = ''
+                    if res.estrategia == 'fuzzy_otro_lab':
+                        nota = ' [otro lab]'
+                    elif res.estrategia.endswith('_obs'):
+                        nota = ' [ObServer/Alfabeta]'
                     entry['_motivo'] = (
-                        f'Match por descripción{nota_lab} (score {res.score:.2f}). '
+                        f'Match por descripción{nota} (score {res.score:.2f}). '
                         f'Local: "{(res.producto.descripcion or "")[:80]}"'
                     )
                     stats['fuzzy'] += 1
@@ -312,7 +325,8 @@ def init_app(app):
                     entry['_status'] = 'ok'
                     stats['ok'] += 1
 
-                if res.producto.precio_pvp in (None, 0) and it.get('precio') is not None:
+                pp = getattr(res.producto, 'precio_pvp', None)
+                if pp in (None, 0) and it.get('precio') is not None:
                     entry['_motivo_info'] = 'Sin precio previo en catálogo'
                     stats['sin_precio_previo'] += 1
 
