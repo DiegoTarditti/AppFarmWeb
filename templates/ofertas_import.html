@@ -92,19 +92,31 @@
             </div>
         </div>
 
-        <div id="mapping-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"></div>
-        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 mb-4">
-            <strong>💡 Tip:</strong> si Excel guardó el descuento como <code>0.2</code> en vez de <code>20</code>, no te preocupes: el sistema lo convierte automáticamente a 20% al guardar (cualquier valor entre 0 y 1 se trata como fracción).
+        <!-- Wrapper de mapeo: solo visible en sub-paso 2b -->
+        <div id="mapping-wrapper" class="hidden">
+            <h3 class="text-xs font-semibold text-[#1e1e1e] mb-2 mt-2">Mapeá las columnas seleccionadas a los campos del sistema:</h3>
+            <div id="mapping-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"></div>
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 mb-4">
+                <strong>💡 Tip:</strong> si Excel guardó el descuento como <code>0.2</code> en vez de <code>20</code>, no te preocupes: el sistema lo convierte automáticamente a 20% al guardar (cualquier valor entre 0 y 1 se trata como fracción).
+            </div>
         </div>
-        <div class="flex justify-between gap-2">
+
+        <div class="flex justify-between gap-2 items-center flex-wrap">
             <button type="button" id="btn-back-1"
                     class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">
                 ← Subir otro archivo
             </button>
-            <button type="button" id="btn-next-2"
-                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm">
-                Continuar →
-            </button>
+            <div class="flex items-center gap-2">
+                <!-- Solo visible en sub-paso 2b -->
+                <button type="button" id="btn-back-cols"
+                        class="hidden text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">
+                    ← Volver a columnas
+                </button>
+                <button type="button" id="btn-next-2"
+                        class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm">
+                    Continuar →
+                </button>
+            </div>
         </div>
     </div>
 
@@ -242,6 +254,7 @@ let _mapping = {};
 let _items = [];
 let _step = 1;
 let _columnasActivas = new Set();   // índices de columnas seleccionadas en el snapshot
+let _panel2Mode = 'select';         // 'select' = elegir columnas, 'map' = mapear a campos
 
 function setStep(n) {
     _step = n;
@@ -314,10 +327,8 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         _mapping = data.mapping || {};
         // Por default todas las columnas seleccionadas; el user puede destildar.
         _columnasActivas = new Set(_headers.map((_, i) => i));
-        renderSnapshot();
-        renderMapping();
-        recalcularItems();
         setStep(2);
+        setPanel2Mode('select');     // sub-paso 2a: elegir columnas
     } catch (err) {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-2';
@@ -325,46 +336,56 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
 });
 
 function renderSnapshot() {
-    // Header: checkbox + número + nombre. Las columnas destildadas se atenúan
-    // y se sacan de los dropdowns de mapeo + del cálculo de items.
+    // En modo 'select': muestro TODAS las columnas con checkboxes.
+    // En modo 'map':    muestro SOLO las columnas seleccionadas (sin checkboxes).
+    const mostrarTodas = _panel2Mode === 'select';
+    const indices = _headers.map((_, i) => i).filter(i => mostrarTodas || _columnasActivas.has(i));
+
     document.getElementById('snapshot-header').innerHTML =
-        _headers.map((h, i) => {
+        indices.map(i => {
+            const h = _headers[i];
             const activa = _columnasActivas.has(i);
             const dim = activa ? '' : 'opacity-40';
             const strike = activa ? '' : 'line-through';
-            return `<th class="px-2 py-1.5 text-left whitespace-nowrap ${dim}" data-col="${i}">
-                <label class="flex items-center gap-1.5 cursor-pointer select-none" title="${activa ? 'Destildar para descartar esta columna' : 'Tildar para incluir esta columna'}">
-                    <input type="checkbox" class="col-toggle w-3.5 h-3.5 accent-violet-600 cursor-pointer" data-col="${i}" ${activa ? 'checked' : ''}>
-                    <span class="text-violet-700 font-bold">${i + 1}.</span>
-                    <span class="${strike}">${escapeHtml(h) || '<i class="text-[#bbb]">(sin nombre)</i>'}</span>
-                </label>
+            if (mostrarTodas) {
+                return `<th class="px-2 py-1.5 text-left whitespace-nowrap ${dim}" data-col="${i}">
+                    <label class="flex items-center gap-1.5 cursor-pointer select-none" title="${activa ? 'Destildar para descartar esta columna' : 'Tildar para incluir esta columna'}">
+                        <input type="checkbox" class="col-toggle w-3.5 h-3.5 accent-violet-600 cursor-pointer" data-col="${i}" ${activa ? 'checked' : ''}>
+                        <span class="text-violet-700 font-bold">${i + 1}.</span>
+                        <span class="${strike}">${escapeHtml(h) || '<i class="text-[#bbb]">(sin nombre)</i>'}</span>
+                    </label>
+                </th>`;
+            }
+            return `<th class="px-2 py-1.5 text-left whitespace-nowrap" data-col="${i}">
+                <span class="text-violet-700 font-bold">${i + 1}.</span> ${escapeHtml(h) || '<i class="text-[#bbb]">(sin nombre)</i>'}
             </th>`;
         }).join('');
 
-    document.querySelectorAll('#snapshot-header .col-toggle').forEach(cb => {
-        cb.addEventListener('change', (e) => {
-            e.stopPropagation();
-            const i = parseInt(cb.dataset.col, 10);
-            if (cb.checked) {
-                _columnasActivas.add(i);
-            } else {
-                _columnasActivas.delete(i);
-                // Si algún campo del sistema apuntaba a esta columna, desasignarlo.
-                for (const [campo, idx] of Object.entries(_mapping)) {
-                    if (idx === i) delete _mapping[campo];
+    if (mostrarTodas) {
+        document.querySelectorAll('#snapshot-header .col-toggle').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                e.stopPropagation();
+                const i = parseInt(cb.dataset.col, 10);
+                if (cb.checked) {
+                    _columnasActivas.add(i);
+                } else {
+                    _columnasActivas.delete(i);
+                    for (const [campo, idx] of Object.entries(_mapping)) {
+                        if (idx === i) delete _mapping[campo];
+                    }
                 }
-            }
-            renderSnapshot();
-            renderMapping();
-            recalcularItems();
+                renderSnapshot();
+                renderMapping();
+                recalcularItems();
+                actualizarBotonContinuar();
+            });
         });
-    });
+    }
 
-    // Cuerpo: primeras 5 filas, columnas inactivas atenuadas.
     const body = document.getElementById('snapshot-body');
     const sample = _rows.slice(0, 5);
     body.innerHTML = sample.map(row => {
-        const cells = _headers.map((_, i) => {
+        const cells = indices.map(i => {
             const v = i < row.length ? row[i] : '';
             const display = v === '' || v == null ? '<span class="text-[#bbb]">—</span>' : escapeHtml(v).slice(0, 60);
             const dim = _columnasActivas.has(i) ? '' : 'opacity-40';
@@ -373,7 +394,44 @@ function renderSnapshot() {
         return `<tr>${cells}</tr>`;
     }).join('');
     if (_rows.length === 0) {
-        body.innerHTML = '<tr><td colspan="' + _headers.length + '" class="px-2 py-3 text-center text-[#999]">Sin filas</td></tr>';
+        body.innerHTML = '<tr><td colspan="' + indices.length + '" class="px-2 py-3 text-center text-[#999]">Sin filas</td></tr>';
+    }
+}
+
+function setPanel2Mode(modo) {
+    _panel2Mode = modo;
+    const wrapMap     = document.getElementById('mapping-wrapper');
+    const btnNext     = document.getElementById('btn-next-2');
+    const btnBackCols = document.getElementById('btn-back-cols');
+    const btnAll      = document.getElementById('btn-cols-all');
+    const btnNone     = document.getElementById('btn-cols-none');
+    if (modo === 'select') {
+        wrapMap.classList.add('hidden');
+        btnBackCols.classList.add('hidden');
+        btnAll.parentElement.classList.remove('hidden');
+        btnNext.textContent = 'Mapear campos →';
+    } else {
+        wrapMap.classList.remove('hidden');
+        btnBackCols.classList.remove('hidden');
+        btnAll.parentElement.classList.add('hidden');
+        btnNext.textContent = 'Continuar →';
+    }
+    renderSnapshot();
+    renderMapping();
+    actualizarBotonContinuar();
+}
+
+function actualizarBotonContinuar() {
+    const btn = document.getElementById('btn-next-2');
+    if (_panel2Mode === 'select') {
+        btn.disabled = _columnasActivas.size === 0;
+        btn.classList.toggle('opacity-40', btn.disabled);
+        btn.classList.toggle('cursor-not-allowed', btn.disabled);
+    } else {
+        const tieneId = _mapping.ean != null || _mapping.codigo != null;
+        btn.disabled = !tieneId;
+        btn.classList.toggle('opacity-40', btn.disabled);
+        btn.classList.toggle('cursor-not-allowed', btn.disabled);
     }
 }
 
@@ -423,9 +481,10 @@ function renderMapping() {
             if (v === '') delete _mapping[campo];
             else _mapping[campo] = parseInt(v, 10);
             document.getElementById('map-info').textContent =
-                `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
+                `${Object.keys(_mapping).length}/${CAMPOS.length} campos mapeados · ${_columnasActivas.size}/${_headers.length} columnas seleccionadas`;
             actualizarAlertaDuplicados();
             recalcularItems();
+            actualizarBotonContinuar();
         });
         // Hover sobre el dropdown highlightea la columna en el snapshot
         sel.addEventListener('focus', () => {
@@ -539,6 +598,14 @@ document.getElementById('preview-body').addEventListener('click', (e) => {
 // Navegación entre pasos
 document.getElementById('btn-back-1').addEventListener('click', () => setStep(1));
 document.getElementById('btn-next-2').addEventListener('click', () => {
+    if (_panel2Mode === 'select') {
+        if (_columnasActivas.size === 0) {
+            alert('Tildá al menos una columna para continuar.');
+            return;
+        }
+        setPanel2Mode('map');
+        return;
+    }
     if (!_mapping.ean && !_mapping.codigo) {
         alert('Tenés que mapear al menos EAN o Código.');
         return;
@@ -546,7 +613,11 @@ document.getElementById('btn-next-2').addEventListener('click', () => {
     renderPreview();
     setStep(3);
 });
-document.getElementById('btn-back-2').addEventListener('click', () => setStep(2));
+document.getElementById('btn-back-cols').addEventListener('click', () => setPanel2Mode('select'));
+document.getElementById('btn-back-2').addEventListener('click', () => {
+    setStep(2);
+    setPanel2Mode('map');     // al volver del paso 3, volvemos al sub-paso de mapeo
+});
 document.getElementById('btn-next-3').addEventListener('click', async () => {
     if (_items.length === 0) {
         alert('No hay items válidos para importar.');
