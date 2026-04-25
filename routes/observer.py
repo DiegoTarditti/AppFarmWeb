@@ -735,10 +735,13 @@ def init_app(app):
             labs = observer_source.get_laboratorios_disponibles()
             lab_preseleccionado = (request.args.get('lab') or '').strip()
             proceso_id = request.args.get('proceso', type=int)
+            with database.get_db() as _s:
+                estados_sync = observer_source.estado_syncs(_s)
             return render_template('observer_analizar.html', laboratorios=labs,
                                    n_days_default=35,
                                    lab_preseleccionado=lab_preseleccionado,
                                    proceso_id=proceso_id,
+                                   estados_sync=estados_sync,
                                    now=datetime.now())
 
         # POST: ejecutar análisis
