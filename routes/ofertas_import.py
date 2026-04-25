@@ -53,8 +53,7 @@ def init_app(app):
             f.save(tmp.name)
             tmp_path = tmp.name
         try:
-            from parsers.ofertas_xlsx import parse_ofertas_xlsx
-            items = parse_ofertas_xlsx(tmp_path)
+            preview = _previsualizar_xlsx(tmp_path)
         except Exception as e:
             return jsonify({'error': f'Error al parsear: {e}'}), 500
         finally:
@@ -63,30 +62,65 @@ def init_app(app):
             except OSError:
                 pass
 
-        if not items:
-            return jsonify({
-                'error': 'No se detectaron items en el archivo. ¿El formato es correcto?',
-                'items': [],
-            }), 400
-
-        # Detectar qué campos vinieron poblados (para mostrar en UI solo las
-        # columnas relevantes y no llenar de "—" todo).
-        campos_presentes = set()
-        for it in items:
-            campos_presentes.update(it.keys())
-
         return jsonify({
-            'items': items,
-            'count': len(items),
-            'campos_presentes': sorted(campos_presentes),
+            **preview,
             'filename': f.filename,
         })
+
+
+def _previsualizar_xlsx(path):
+    """Devuelve datos CRUDOS del Excel + mapping propuesto. El frontend hace
+    el resto (remapeo manual + render de tabla)."""
+    import openpyxl
+    from parsers.ofertas_xlsx import _detectar_columnas, _norm
+
+    wb = openpyxl.load_workbook(path, data_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
+                'count_filas': 0}
+
+    mapping, header_idx = _detectar_columnas(rows)
+
+    # Si encontramos header, esa es la fila de headers. Si no, generamos labels
+    # genéricos "Col 1", "Col 2", ...
+    if header_idx is not None:
+        headers = [str(c) if c is not None else '' for c in rows[header_idx]]
+        data_rows = rows[header_idx + 1:]
+    else:
+        # Sin header detectado — usar la primera fila NO vacía como referencia
+        # para conocer cuántas columnas hay.
+        first_row = next((r for r in rows if r), tuple())
+        headers = [f'Col {i+1}' for i in range(len(first_row))]
+        data_rows = rows
+
+    # Limitar tamaño de la respuesta (preview, no todos los datos para guardar)
+    # Para guardar después, el frontend re-mapea las rows que ya tiene.
+    rows_serializadas = []
+    for row in data_rows:
+        if not row:
+            continue
+        rows_serializadas.append([
+            (str(c) if c is not None else '') for c in row
+        ])
+
+    return {
+        'headers': headers,
+        'rows': rows_serializadas,
+        'mapping': mapping,  # {'ean': 2, 'descripcion': 3, ...}
+        'header_row': header_idx,
+        'count_filas': len(rows_serializadas),
+    }
 
     @app.route('/api/ofertas/import-guardar', methods=['POST'])
     @login_required
     def api_ofertas_import_guardar():
-        """Recibe items editados + laboratorio_id, upsertea en OfertaMinimo.
-        Body JSON: { laboratorio_id, items: [{ean, codigo?, descripcion?, ...}], reemplazar?: bool }
+        """Recibe items mapeados + laboratorio_id, upsertea en OfertaMinimo.
+        Body JSON: { laboratorio_id, items: [...], reemplazar?: bool }
+
+        Items pueden venir con descuentos en formato decimal Excel (0.2 = 20%);
+        el sistema lo normaliza a enteros (×100 si entre 0 y 1).
         """
         data = request.get_json(silent=True) or {}
         try:
@@ -96,6 +130,18 @@ def init_app(app):
         items = data.get('items') or []
         if not isinstance(items, list) or not items:
             return jsonify({'error': 'items vacío'}), 400
+
+        # Normalizar % de Excel: si valor entre 0 y 1, asumir formato fracción y x100.
+        for it in items:
+            for k in ('descuento_psl', 'rentabilidad'):
+                v = it.get(k)
+                if v is not None and v != '':
+                    try:
+                        f = float(str(v).replace(',', '.'))
+                        if 0 < f < 1:
+                            it[k] = f * 100
+                    except (ValueError, TypeError):
+                        pass
         # Si reemplazar=True, primero borramos las ofertas vigentes del lab.
         reemplazar = bool(data.get('reemplazar'))
 

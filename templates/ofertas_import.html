@@ -3,70 +3,165 @@
 {% block title %}Importar ofertas{% endblock %}
 {% block main %}
 
+<style>
+    .step-num { width: 28px; height: 28px; border-radius: 50%;
+                display: inline-flex; align-items: center; justify-content: center;
+                font-size: 13px; font-weight: 700; flex-shrink: 0; }
+    .step-num.active { background: #EAB308; color: #1a1100; }
+    .step-num.done { background: #4ade80; color: #14532d; }
+    .step-num.pending { background: #e0e0e0; color: #888; }
+    .step-line { flex: 1; height: 2px; background: #e0e0e0; margin: 0 8px; }
+    .step-line.done { background: #4ade80; }
+</style>
+
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">Importar ofertas</h1>
-    <span class="text-xs text-[#6f6f6f]">XLSX. PDF/foto en próxima iteración.</span>
+    <span class="text-xs text-[#6f6f6f]">XLSX</span>
 </div>
 
-<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4 max-w-6xl mx-auto w-full">
+<div class="flex-1 overflow-auto p-4 sm:p-6 max-w-5xl mx-auto w-full">
 
-    <!-- Paso 1: subir archivo -->
-    <div id="step-upload" class="bg-white border border-surface-border rounded-xl p-5">
+    <!-- Stepper -->
+    <div class="flex items-center mb-6">
+        <div class="flex items-center gap-2">
+            <span id="num-1" class="step-num active">1</span>
+            <span id="lbl-1" class="text-xs font-semibold text-[#1e1e1e]">Subir</span>
+        </div>
+        <div id="line-1" class="step-line"></div>
+        <div class="flex items-center gap-2">
+            <span id="num-2" class="step-num pending">2</span>
+            <span id="lbl-2" class="text-xs text-[#888]">Mapear columnas</span>
+        </div>
+        <div id="line-2" class="step-line"></div>
+        <div class="flex items-center gap-2">
+            <span id="num-3" class="step-num pending">3</span>
+            <span id="lbl-3" class="text-xs text-[#888]">Revisar items</span>
+        </div>
+        <div id="line-3" class="step-line"></div>
+        <div class="flex items-center gap-2">
+            <span id="num-4" class="step-num pending">4</span>
+            <span id="lbl-4" class="text-xs text-[#888]">Confirmar</span>
+        </div>
+    </div>
+
+    <!-- ============= PASO 1: Subir ============= -->
+    <div id="panel-1" class="bg-white border border-surface-border rounded-xl p-5">
         <h2 class="text-sm font-semibold text-[#1e1e1e] mb-2">1. Subir archivo</h2>
         <p class="text-xs text-[#6f6f6f] mb-4">
-            Excel del proveedor con columnas tipo: EAN, Código, Descripción, Cantidad mínima, Descuento %, Plazo de pago, Grupo. El sistema detecta los headers automáticamente.
+            Excel del proveedor con columnas tipo: EAN, Código, Descripción, Cantidad mínima, Descuento %, Plazo, Grupo. El sistema detecta los headers automáticamente y te deja remapear si lo hace mal.
         </p>
         <input type="file" id="file-input" accept=".xlsx,.xls"
                class="block w-full text-sm border border-surface-border rounded-lg px-3 py-2 file:bg-brand file:text-brand-dark file:font-semibold file:rounded-md file:border-0 file:px-3 file:py-1 file:mr-3 file:cursor-pointer">
         <button type="button" id="btn-parse"
                 class="mt-3 bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg text-sm">
-            Analizar archivo
+            Analizar archivo →
         </button>
         <p id="upload-status" class="text-xs text-[#888] mt-2"></p>
     </div>
 
-    <!-- Paso 2: preview + asignar lab -->
-    <div id="step-preview" class="hidden bg-white border border-surface-border rounded-xl p-5">
-        <div class="flex items-center justify-between mb-3 flex-wrap gap-3">
-            <div>
-                <h2 class="text-sm font-semibold text-[#1e1e1e]">2. Revisar y asignar laboratorio</h2>
-                <p class="text-xs text-[#6f6f6f]">
-                    <span id="preview-count">0</span> ofertas detectadas. Editá cualquier celda haciendo click en ella.
-                </p>
-            </div>
-            <div class="flex items-center gap-2 flex-wrap">
-                <select id="lab-select" class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm min-w-[200px]">
-                    <option value="">— Asignar a laboratorio —</option>
-                    {% for l in laboratorios %}
-                    <option value="{{ l.id }}">{{ l.nombre }}</option>
-                    {% endfor %}
-                </select>
-                <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer">
-                    <input type="checkbox" id="reemplazar" class="w-4 h-4 accent-brand">
-                    Reemplazar ofertas existentes del lab
-                </label>
-                <button type="button" id="btn-guardar"
-                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-1.5 rounded-lg text-sm">
-                    💾 Guardar
-                </button>
-            </div>
+    <!-- ============= PASO 2: Mapear columnas ============= -->
+    <div id="panel-2" class="hidden bg-white border border-surface-border rounded-xl p-5">
+        <div class="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+            <h2 class="text-sm font-semibold text-[#1e1e1e]">2. Mapear columnas detectadas</h2>
+            <p class="text-xs text-[#6f6f6f]"><strong id="map-info"></strong></p>
         </div>
+        <p class="text-xs text-[#6f6f6f] mb-3">
+            El sistema detectó automáticamente las columnas. Revisá y corregí si algo está mal.
+            Las columnas que no apliquen, dejalas en <em>"(ninguno)"</em>.
+        </p>
+        <div id="mapping-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"></div>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 mb-4">
+            <strong>💡 Tip:</strong> si Excel guardó el descuento como <code>0.2</code> en vez de <code>20</code>, no te preocupes: el sistema lo convierte automáticamente a 20% al guardar (cualquier valor entre 0 y 1 se trata como fracción).
+        </div>
+        <div class="flex justify-between gap-2">
+            <button type="button" id="btn-back-1"
+                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">
+                ← Subir otro archivo
+            </button>
+            <button type="button" id="btn-next-2"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm">
+                Continuar →
+            </button>
+        </div>
+    </div>
 
-        <div class="overflow-x-auto">
-            <table class="w-full text-xs border border-surface-border rounded-lg">
-                <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888]">
+    <!-- ============= PASO 3: Revisar items ============= -->
+    <div id="panel-3" class="hidden bg-white border border-surface-border rounded-xl p-5">
+        <div class="flex items-baseline justify-between mb-2 flex-wrap gap-2">
+            <h2 class="text-sm font-semibold text-[#1e1e1e]">3. Revisar y corregir items</h2>
+            <p class="text-xs text-[#6f6f6f]"><strong id="preview-count">0</strong> ofertas válidas</p>
+        </div>
+        <p class="text-xs text-[#6f6f6f] mb-3">
+            Editá cualquier celda con click. ✕ elimina la fila. Mostramos las primeras 100 filas; al guardar se guardan todas.
+        </p>
+
+        <div class="overflow-x-auto max-h-[500px] overflow-y-auto border border-surface-border rounded-lg">
+            <table class="w-full text-xs">
+                <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888] sticky top-0">
                     <tr id="preview-header"></tr>
                 </thead>
                 <tbody id="preview-body" class="divide-y divide-surface-border"></tbody>
             </table>
         </div>
 
+        <div class="flex justify-between gap-2 mt-4">
+            <button type="button" id="btn-back-2"
+                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">
+                ← Volver al mapeo
+            </button>
+            <button type="button" id="btn-next-3"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm">
+                Continuar →
+            </button>
+        </div>
+    </div>
+
+    <!-- ============= PASO 4: Confirmar ============= -->
+    <div id="panel-4" class="hidden bg-white border border-surface-border rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">4. Confirmar e importar</h2>
+
+        <div class="bg-[#fafafa] rounded-lg p-4 mb-4">
+            <p class="text-xs text-[#888] mb-1">Resumen</p>
+            <p class="text-sm text-[#1e1e1e]">
+                Vas a importar <strong id="confirm-count">0</strong> ofertas
+                a <strong id="confirm-lab">—</strong>.
+            </p>
+            <p id="confirm-modo" class="text-xs text-[#6f6f6f] mt-1"></p>
+        </div>
+
+        <div class="space-y-3">
+            <div>
+                <label class="text-xs font-semibold text-[#555] block mb-1">Laboratorio destino</label>
+                <select id="lab-select" class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm w-full max-w-md">
+                    <option value="">— Elegí un laboratorio —</option>
+                    {% for l in laboratorios %}
+                    <option value="{{ l.id }}">{{ l.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-[#1e1e1e] cursor-pointer">
+                <input type="checkbox" id="reemplazar" class="w-4 h-4 accent-brand">
+                <span>Reemplazar todas las ofertas existentes del laboratorio</span>
+                <span class="text-[11px] text-[#888]">(si destildás, se hace upsert por EAN/código)</span>
+            </label>
+        </div>
+
+        <div class="flex justify-between gap-2 mt-6">
+            <button type="button" id="btn-back-3"
+                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">
+                ← Volver a revisar
+            </button>
+            <button type="button" id="btn-guardar"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 py-2 rounded-lg text-sm">
+                ✓ Confirmar e importar
+            </button>
+        </div>
         <p id="save-status" class="text-xs text-[#888] mt-3"></p>
     </div>
 
-    <!-- Paso 3: resultado -->
-    <div id="step-result" class="hidden bg-emerald-50 border border-emerald-300 rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-emerald-900 mb-2">3. ✓ Importación completa</h2>
+    <!-- ============= RESULTADO ============= -->
+    <div id="panel-done" class="hidden bg-emerald-50 border border-emerald-300 rounded-xl p-5">
+        <h2 class="text-sm font-semibold text-emerald-900 mb-2">✓ Importación completa</h2>
         <p id="result-msg" class="text-xs text-emerald-800"></p>
         <div class="mt-3 flex gap-2 flex-wrap">
             <a id="link-lab" href="#" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-1.5 rounded-lg text-xs">
@@ -81,21 +176,56 @@
 </div>
 
 <script>
-// Mapeo campo → label visible y orden de columnas en preview.
 const CAMPOS = [
-    { key: 'ean',              label: 'EAN' },
-    { key: 'codigo',           label: 'Código' },
-    { key: 'descripcion',      label: 'Descripción' },
-    { key: 'unidades_minima',  label: 'Mín' },
-    { key: 'precio',           label: 'Precio' },
-    { key: 'descuento_psl',    label: 'Dto %' },
-    { key: 'rentabilidad',     label: 'Rentab. %' },
-    { key: 'plazo_pago',       label: 'Plazo' },
-    { key: 'grupo_id',         label: 'Grupo' },
+    { key: 'ean',              label: 'EAN',              hint: 'código de barras 13 dígitos' },
+    { key: 'codigo',           label: 'Código',           hint: 'código interno del proveedor' },
+    { key: 'descripcion',      label: 'Descripción',      hint: 'nombre del producto' },
+    { key: 'unidades_minima',  label: 'Mín. unidades',    hint: 'cantidad mínima para descuento' },
+    { key: 'precio',           label: 'Precio',           hint: 'precio unitario en $' },
+    { key: 'descuento_psl',    label: 'Descuento %',      hint: 'porcentaje de descuento' },
+    { key: 'rentabilidad',     label: 'Rentabilidad %',   hint: 'porcentaje de rentabilidad' },
+    { key: 'plazo_pago',       label: 'Plazo de pago',    hint: 'ej. 30 días' },
+    { key: 'grupo_id',         label: 'Grupo',            hint: 'agrupación para mínimos compartidos' },
 ];
 
-let _items = [];           // los items detectados (editables)
-let _camposVisibles = [];  // orden de columnas a mostrar (solo las que aparecen en el archivo)
+let _headers = [];
+let _rows = [];
+let _mapping = {};
+let _items = [];
+let _step = 1;
+
+function setStep(n) {
+    _step = n;
+    for (let i = 1; i <= 4; i++) {
+        const num = document.getElementById('num-' + i);
+        const lbl = document.getElementById('lbl-' + i);
+        const line = document.getElementById('line-' + i);
+        num.classList.remove('active', 'done', 'pending');
+        if (i < n) {
+            num.classList.add('done');
+            num.textContent = '✓';
+            lbl.classList.remove('text-[#888]');
+            lbl.classList.add('text-emerald-700', 'font-semibold');
+        } else if (i === n) {
+            num.classList.add('active');
+            num.textContent = i;
+            lbl.classList.remove('text-[#888]');
+            lbl.classList.add('text-[#1e1e1e]', 'font-semibold');
+        } else {
+            num.classList.add('pending');
+            num.textContent = i;
+            lbl.classList.add('text-[#888]');
+            lbl.classList.remove('text-[#1e1e1e]', 'text-emerald-700', 'font-semibold');
+        }
+        if (line) {
+            line.classList.toggle('done', i < n);
+        }
+    }
+    for (let i = 1; i <= 4; i++) {
+        const p = document.getElementById('panel-' + i);
+        if (p) p.classList.toggle('hidden', i !== n);
+    }
+}
 
 document.getElementById('btn-parse').addEventListener('click', async () => {
     const fileInput = document.getElementById('file-input');
@@ -120,71 +250,126 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
             status.className = 'text-xs text-red-700 mt-2';
             return;
         }
-        status.textContent = `✓ ${data.count} ofertas detectadas en ${data.filename}`;
-        status.className = 'text-xs text-emerald-700 mt-2';
-        _items = data.items;
-        _camposVisibles = CAMPOS.filter(c => data.campos_presentes.includes(c.key));
-        if (_camposVisibles.length === 0) _camposVisibles = CAMPOS.slice(0, 3);
-        renderPreview();
-        document.getElementById('step-preview').classList.remove('hidden');
-        document.getElementById('step-preview').scrollIntoView({behavior: 'smooth'});
+        _headers = data.headers || [];
+        _rows = data.rows || [];
+        _mapping = data.mapping || {};
+        renderMapping();
+        recalcularItems();
+        setStep(2);
     } catch (err) {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-2';
     }
 });
 
+function renderMapping() {
+    document.getElementById('map-info').textContent =
+        `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
+    const grid = document.getElementById('mapping-grid');
+    grid.innerHTML = CAMPOS.map(c => {
+        const sel = _mapping[c.key];
+        const opciones = ['<option value="">(ninguno)</option>'].concat(
+            _headers.map((h, i) =>
+                `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. ${escapeHtml(h)}</option>`
+            )
+        ).join('');
+        return `
+            <div>
+                <label class="text-[11px] font-semibold text-[#555] block">${c.label}</label>
+                <p class="text-[10px] text-[#999] mb-1">${c.hint}</p>
+                <select class="map-sel w-full bg-surface-input border border-surface-border rounded px-2 py-1 text-xs"
+                        data-campo="${c.key}">
+                    ${opciones}
+                </select>
+            </div>`;
+    }).join('');
+
+    grid.querySelectorAll('.map-sel').forEach(sel => {
+        sel.addEventListener('change', () => {
+            const campo = sel.dataset.campo;
+            const v = sel.value;
+            if (v === '') delete _mapping[campo];
+            else _mapping[campo] = parseInt(v, 10);
+            document.getElementById('map-info').textContent =
+                `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
+            recalcularItems();
+        });
+    });
+}
+
+function recalcularItems() {
+    const numericFields = ['unidades_minima', 'precio', 'descuento_psl', 'rentabilidad', 'grupo_id'];
+    _items = [];
+    for (const row of _rows) {
+        const item = {};
+        for (const [campo, idx] of Object.entries(_mapping)) {
+            if (idx < row.length) {
+                const v = row[idx];
+                if (v != null && v !== '') {
+                    if (numericFields.includes(campo)) {
+                        const n = parseFloat(String(v).replace(',', '.'));
+                        if (!isNaN(n)) item[campo] = n;
+                    } else {
+                        item[campo] = String(v).trim();
+                    }
+                }
+            }
+        }
+        if (item.ean || item.codigo) _items.push(item);
+    }
+}
+
 function renderPreview() {
     document.getElementById('preview-count').textContent = _items.length;
-
-    // Header
-    const headerRow = document.getElementById('preview-header');
-    headerRow.innerHTML = '<th class="px-2 py-1.5 text-left w-8">#</th>' +
-        _camposVisibles.map(c => `<th class="px-2 py-1.5 text-left">${c.label}</th>`).join('') +
+    const camposActivos = CAMPOS.filter(c => _mapping[c.key] != null);
+    if (camposActivos.length === 0 || _items.length === 0) {
+        document.getElementById('preview-header').innerHTML =
+            '<th class="px-2 py-1.5 text-center text-[#999]">Mapeá EAN o Código en el paso 2</th>';
+        document.getElementById('preview-body').innerHTML = '';
+        return;
+    }
+    document.getElementById('preview-header').innerHTML =
+        '<th class="px-2 py-1.5 text-left w-8">#</th>' +
+        camposActivos.map(c => `<th class="px-2 py-1.5 text-left">${c.label}</th>`).join('') +
         '<th class="px-2 py-1.5 text-center w-10">✕</th>';
 
-    // Body
     const body = document.getElementById('preview-body');
-    body.innerHTML = _items.map((item, idx) => {
-        const cells = _camposVisibles.map(c => {
+    body.innerHTML = _items.slice(0, 100).map((item, idx) => {
+        const cells = camposActivos.map(c => {
             const val = item[c.key] != null ? item[c.key] : '';
-            return `<td class="px-2 py-1 border-l border-[#f0f0f0]" contenteditable="true" data-idx="${idx}" data-key="${c.key}">${escape(val)}</td>`;
+            return `<td class="px-2 py-1 border-l border-[#f0f0f0]" contenteditable="true" data-idx="${idx}" data-key="${c.key}">${escapeHtml(val)}</td>`;
         }).join('');
         return `<tr class="hover:bg-black/[0.02]">
             <td class="px-2 py-1 text-[#888]">${idx + 1}</td>
             ${cells}
             <td class="px-2 py-1 text-center">
-                <button type="button" class="btn-del text-red-500 hover:text-red-700" data-idx="${idx}" title="Quitar">✕</button>
+                <button type="button" class="btn-del text-red-500 hover:text-red-700" data-idx="${idx}">✕</button>
             </td>
         </tr>`;
     }).join('');
+    if (_items.length > 100) {
+        body.innerHTML += `<tr><td colspan="${camposActivos.length + 2}" class="px-2 py-2 text-center text-[#888] text-[11px]">... y ${_items.length - 100} más (todos se importan)</td></tr>`;
+    }
 }
 
-function escape(s) {
-    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// Editar celdas
 document.getElementById('preview-body').addEventListener('blur', (e) => {
     if (!e.target.isContentEditable) return;
     const idx = parseInt(e.target.dataset.idx, 10);
     const key = e.target.dataset.key;
     if (isNaN(idx) || !key) return;
     const val = e.target.textContent.trim();
-    if (val === '') {
-        delete _items[idx][key];
-    } else if (['unidades_minima', 'grupo_id'].includes(key)) {
-        const n = parseInt(val.replace(',', '.'), 10);
-        _items[idx][key] = isNaN(n) ? null : n;
-    } else if (['precio', 'descuento_psl', 'rentabilidad'].includes(key)) {
+    const numericFields = ['unidades_minima', 'precio', 'descuento_psl', 'rentabilidad', 'grupo_id'];
+    if (val === '') delete _items[idx][key];
+    else if (numericFields.includes(key)) {
         const n = parseFloat(val.replace(',', '.'));
         _items[idx][key] = isNaN(n) ? null : n;
-    } else {
-        _items[idx][key] = val;
-    }
+    } else _items[idx][key] = val;
 }, true);
 
-// Eliminar fila
 document.getElementById('preview-body').addEventListener('click', (e) => {
     const btn = e.target.closest('.btn-del');
     if (!btn) return;
@@ -194,18 +379,45 @@ document.getElementById('preview-body').addEventListener('click', (e) => {
     renderPreview();
 });
 
-// Guardar
+// Navegación entre pasos
+document.getElementById('btn-back-1').addEventListener('click', () => setStep(1));
+document.getElementById('btn-next-2').addEventListener('click', () => {
+    if (!_mapping.ean && !_mapping.codigo) {
+        alert('Tenés que mapear al menos EAN o Código.');
+        return;
+    }
+    renderPreview();
+    setStep(3);
+});
+document.getElementById('btn-back-2').addEventListener('click', () => setStep(2));
+document.getElementById('btn-next-3').addEventListener('click', () => {
+    if (_items.length === 0) {
+        alert('No hay items válidos para importar.');
+        return;
+    }
+    document.getElementById('confirm-count').textContent = _items.length;
+    setStep(4);
+});
+document.getElementById('btn-back-3').addEventListener('click', () => setStep(3));
+
+document.getElementById('lab-select').addEventListener('change', (e) => {
+    const sel = e.target;
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('confirm-lab').textContent = opt.value ? opt.textContent : '—';
+});
+document.getElementById('reemplazar').addEventListener('change', (e) => {
+    document.getElementById('confirm-modo').textContent = e.target.checked
+        ? '⚠ Modo REEMPLAZAR: se borran las ofertas existentes antes de importar.'
+        : 'Modo upsert: actualiza si el EAN/código ya existe, agrega si no.';
+});
+
 document.getElementById('btn-guardar').addEventListener('click', async () => {
     const labId = document.getElementById('lab-select').value;
     const reemplazar = document.getElementById('reemplazar').checked;
     const status = document.getElementById('save-status');
     if (!labId) {
-        status.textContent = '⚠ Elegí un laboratorio antes de guardar.';
+        status.textContent = '⚠ Elegí un laboratorio.';
         status.className = 'text-xs text-amber-700 mt-3';
-        return;
-    }
-    if (_items.length === 0) {
-        status.textContent = '⚠ No hay items para guardar.';
         return;
     }
     status.textContent = '⏳ Guardando…';
@@ -224,21 +436,22 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
         });
         const data = await r.json();
         if (!r.ok || !data.ok) {
-            status.textContent = '✗ ' + (data.error || 'Error al guardar');
+            status.textContent = '✗ ' + (data.error || 'Error');
             status.className = 'text-xs text-red-700 mt-3';
             return;
         }
-        document.getElementById('step-preview').classList.add('hidden');
-        document.getElementById('step-upload').classList.add('hidden');
-        document.getElementById('step-result').classList.remove('hidden');
+        document.getElementById('panel-4').classList.add('hidden');
+        document.getElementById('panel-done').classList.remove('hidden');
         document.getElementById('result-msg').textContent =
-            `${data.laboratorio}: ${data.insertados} insertados, ${data.actualizados} actualizados, ${data.saltados} saltados (sin EAN ni código).`;
+            `${data.laboratorio}: ${data.insertados} insertados, ${data.actualizados} actualizados, ${data.saltados} saltados.`;
         document.getElementById('link-lab').href = `/laboratorio/${labId}/ofertas-minimo`;
     } catch (err) {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-3';
     }
 });
+
+setStep(1);
 </script>
 
 {% endblock %}

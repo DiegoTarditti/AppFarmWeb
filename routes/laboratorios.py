@@ -244,6 +244,52 @@ def init_app(app):
             try: os.unlink(tmp.name)
             except OSError: pass
 
+    @app.route('/laboratorio/<int:lab_id>/ofertas-minimo', methods=['GET'])
+    def lab_ofertas_minimo(lab_id):
+        """Pantalla con todas las ofertas vigentes de un lab. Editable."""
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            rows = (session.query(OfertaMinimo)
+                    .filter_by(laboratorio_id=lab_id)
+                    .order_by(OfertaMinimo.grupo_id.nullslast(),
+                              OfertaMinimo.descripcion.nullslast(),
+                              OfertaMinimo.ean).all())
+            ofertas = [{
+                'id': r.id,
+                'ean': r.ean,
+                'codigo': r.codigo or '',
+                'descripcion': r.descripcion or '',
+                'unidades_minima': r.unidades_minima,
+                'descuento_psl': float(r.descuento_psl) if r.descuento_psl is not None else None,
+                'rentabilidad': float(r.rentabilidad) if r.rentabilidad is not None else None,
+                'plazo_pago': r.plazo_pago or '',
+                'grupo_id': r.grupo_id,
+                'actualizado_en': r.actualizado_en.strftime('%d/%m/%Y %H:%M') if r.actualizado_en else '',
+            } for r in rows]
+        return render_template('lab_ofertas_minimo.html',
+                               lab=lab, ofertas=ofertas, total=len(ofertas))
+
+    @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
+    def lab_ofertas_minimo_borrar_todas(lab_id):
+        with database.get_db() as session:
+            n = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).delete()
+            session.commit()
+        flash(f'Eliminadas {n} ofertas del laboratorio.', 'success')
+        return redirect(url_for('lab_ofertas_minimo', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/<int:oferta_id>/borrar', methods=['POST'])
+    def lab_oferta_minima_borrar(lab_id, oferta_id):
+        with database.get_db() as session:
+            o = session.get(OfertaMinimo, oferta_id)
+            if o and o.laboratorio_id == lab_id:
+                session.delete(o)
+                session.commit()
+                flash('Oferta eliminada.', 'success')
+        return redirect(url_for('lab_ofertas_minimo', lab_id=lab_id))
+
     @app.route('/api/laboratorio/<int:lab_id>/ofertas-minimo', methods=['GET'])
     def api_ofertas_minimo_get(lab_id):
         with database.get_db() as session:

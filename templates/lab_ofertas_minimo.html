@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% set nav_active = "laboratorios" %}
+{% block title %}Ofertas — {{ lab.nombre }}{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('laboratorios_list') }}" class="text-[#6f6f6f] hover:text-[#1e1e1e] text-sm">← Laboratorios</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">{{ lab.nombre }}</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ total }} oferta{{ 's' if total != 1 }}</span>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">OFERTAS</span>
+
+    <div class="ml-auto flex items-center gap-2 flex-wrap">
+        <a href="{{ url_for('ofertas_import_page') }}"
+           class="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg">
+            ➕ Importar más
+        </a>
+        {% if total > 0 %}
+        <form method="POST" action="{{ url_for('lab_ofertas_minimo_borrar_todas', lab_id=lab.id) }}"
+              onsubmit="return confirm('Eliminar TODAS las ofertas de {{ lab.nombre }}?')">
+            <button type="submit" class="text-xs bg-red-50 hover:bg-red-100 border border-red-300 text-red-800 font-semibold px-3 py-1.5 rounded-lg">
+                🗑 Borrar todas
+            </button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm border
+        {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
+        {% elif cat == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200
+        {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    {% if not ofertas %}
+    <div class="bg-white border border-surface-border rounded-xl p-8 text-center">
+        <p class="text-sm text-[#6f6f6f] mb-3">No hay ofertas cargadas para este laboratorio.</p>
+        <a href="{{ url_for('ofertas_import_page') }}"
+           class="inline-block text-sm bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg">
+            Importar ofertas
+        </a>
+    </div>
+    {% else %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+            <thead class="bg-[#fafafa] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2">EAN</th>
+                    <th class="text-left px-3 py-2">Código</th>
+                    <th class="text-left px-3 py-2">Descripción</th>
+                    <th class="text-right px-3 py-2 w-16">Mín</th>
+                    <th class="text-right px-3 py-2 w-20">Dto %</th>
+                    <th class="text-right px-3 py-2 w-20">Rent. %</th>
+                    <th class="text-left px-3 py-2 w-24">Plazo</th>
+                    <th class="text-right px-3 py-2 w-14">Grupo</th>
+                    <th class="text-right px-3 py-2 w-32">Actualizado</th>
+                    <th class="text-center px-3 py-2 w-10"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for o in ofertas %}
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-mono text-[#1e1e1e]">{{ o.ean }}</td>
+                    <td class="px-3 py-1.5 text-[#555]">{{ o.codigo or '—' }}</td>
+                    <td class="px-3 py-1.5 text-[#1e1e1e]">{{ o.descripcion or '—' }}</td>
+                    <td class="px-3 py-1.5 text-right">{{ o.unidades_minima if o.unidades_minima is not none else '—' }}</td>
+                    <td class="px-3 py-1.5 text-right {% if o.descuento_psl %}text-emerald-700 font-semibold{% else %}text-[#bbb]{% endif %}">
+                        {{ '%.1f'|format(o.descuento_psl) if o.descuento_psl is not none else '—' }}
+                    </td>
+                    <td class="px-3 py-1.5 text-right text-[#555]">
+                        {{ '%.1f'|format(o.rentabilidad) if o.rentabilidad is not none else '—' }}
+                    </td>
+                    <td class="px-3 py-1.5 text-[#555]">{{ o.plazo_pago or '—' }}</td>
+                    <td class="px-3 py-1.5 text-right text-[#888]">{{ o.grupo_id if o.grupo_id is not none else '—' }}</td>
+                    <td class="px-3 py-1.5 text-right text-[#999] text-[10px]">{{ o.actualizado_en }}</td>
+                    <td class="px-3 py-1.5 text-center">
+                        <form method="POST" action="{{ url_for('lab_oferta_minima_borrar', lab_id=lab.id, oferta_id=o.id) }}"
+                              onsubmit="return confirm('Eliminar esta oferta?')" class="inline">
+                            <button type="submit" class="text-red-500 hover:text-red-700" title="Eliminar">✕</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}
