@@ -254,6 +254,7 @@ let _mapping = {};
 let _items = [];
 let _step = 1;
 let _columnasActivas = new Set();   // índices de columnas seleccionadas en el snapshot
+let _camposVisibles = new Set();    // claves de campo que se muestran en el grid
 let _panel2Mode = 'select';         // 'select' = elegir columnas, 'map' = mapear a campos
 
 function setStep(n) {
@@ -327,6 +328,7 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         _mapping = data.mapping || {};
         // Por default todas las columnas seleccionadas; el user puede destildar.
         _columnasActivas = new Set(_headers.map((_, i) => i));
+        _camposVisibles = new Set(Object.keys(_mapping));
         setStep(2);
         setPanel2Mode('select');     // sub-paso 2a: elegir columnas
     } catch (err) {
@@ -451,6 +453,8 @@ function setPanel2Mode(modo) {
         btnNext.textContent = 'Continuar →';
         // Auto-inferir sobre las columnas activas y re-render cuando termine.
         autoinferirMapeo().finally(() => {
+            // Después de auto-inferir, los nuevos mapeos también se muestran.
+            for (const k of Object.keys(_mapping)) _camposVisibles.add(k);
             recalcularItems();
             renderSnapshot();
             renderMapping();
@@ -490,33 +494,56 @@ function highlightColumn(idx) {
 function renderMapping() {
     const activasN = _columnasActivas.size;
     document.getElementById('map-info').textContent =
-        `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${activasN}/${_headers.length} columnas seleccionadas`;
+        `${Object.keys(_mapping).length} campos mapeados · ${activasN}/${_headers.length} columnas seleccionadas`;
     const grid = document.getElementById('mapping-grid');
 
     // Sample de la primera fila no-vacía: ayuda a distinguir columnas con
     // headers parecidos (ej. "DESCUENTO MOD 1" vs "DESCUENTO MOD 2").
     const sampleRow = _rows.find(r => r.some(c => c !== '' && c != null)) || [];
 
-    grid.innerHTML = CAMPOS.map(c => {
-        const sel = _mapping[c.key];
-        const opciones = ['<option value="">(ninguno)</option>'].concat(
+    // Mostrar SOLO los campos en _camposVisibles (mapeados o agregados a mano).
+    // Los demás se acceden via el "+ Agregar otro campo" para no llenar la
+    // pantalla con dropdowns vacíos.
+    const camposVisibles = CAMPOS.filter(c => _camposVisibles.has(c.key));
+    const camposNoMapeados = CAMPOS.filter(c => !_camposVisibles.has(c.key));
+
+    const opcionesPorCampo = (campoKey) => {
+        const sel = _mapping[campoKey];
+        return ['<option value="">(ninguno)</option>'].concat(
             _headers.map((h, i) => {
-                if (!_columnasActivas.has(i)) return '';   // omitir columnas destildadas
+                if (!_columnasActivas.has(i)) return '';
                 const sample = i < sampleRow.length ? String(sampleRow[i] || '').slice(0, 25) : '';
                 const sampleTxt = sample ? ` → ${escapeHtml(sample)}` : '';
                 return `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. ${escapeHtml(h)}${sampleTxt}</option>`;
             }).filter(Boolean)
         ).join('');
-        return `
-            <div>
-                <label class="text-[11px] font-semibold text-[#555] block">${c.label}</label>
-                <p class="text-[10px] text-[#999] mb-1">${c.hint}</p>
-                <select class="map-sel w-full bg-surface-input border border-surface-border rounded px-2 py-1 text-xs"
-                        data-campo="${c.key}">
-                    ${opciones}
+    };
+
+    let html = camposVisibles.map(c => `
+        <div>
+            <label class="text-[11px] font-semibold text-[#555] block">${c.label}</label>
+            <p class="text-[10px] text-[#999] mb-1">${c.hint}</p>
+            <select class="map-sel w-full bg-surface-input border border-surface-border rounded px-2 py-1 text-xs"
+                    data-campo="${c.key}">
+                ${opcionesPorCampo(c.key)}
+            </select>
+        </div>`).join('');
+
+    // Tarjeta para agregar otro campo del sistema (los que faltan).
+    if (camposNoMapeados.length > 0) {
+        const opts = camposNoMapeados.map(c =>
+            `<option value="${c.key}">${c.label}</option>`).join('');
+        html += `
+            <div class="border border-dashed border-surface-border rounded p-2 flex flex-col justify-center">
+                <label class="text-[11px] font-semibold text-[#888] block mb-1">+ Agregar otro campo</label>
+                <select id="add-campo-sel" class="bg-white border border-surface-border rounded px-2 py-1 text-xs">
+                    <option value="">— elegí un campo —</option>
+                    ${opts}
                 </select>
             </div>`;
-    }).join('');
+    }
+
+    grid.innerHTML = html;
 
     grid.querySelectorAll('.map-sel').forEach(sel => {
         sel.addEventListener('change', () => {
@@ -524,13 +551,11 @@ function renderMapping() {
             const v = sel.value;
             if (v === '') delete _mapping[campo];
             else _mapping[campo] = parseInt(v, 10);
-            document.getElementById('map-info').textContent =
-                `${Object.keys(_mapping).length}/${CAMPOS.length} campos mapeados · ${_columnasActivas.size}/${_headers.length} columnas seleccionadas`;
+            renderMapping();
             actualizarAlertaDuplicados();
             recalcularItems();
             actualizarBotonContinuar();
         });
-        // Hover sobre el dropdown highlightea la columna en el snapshot
         sel.addEventListener('focus', () => {
             const v = sel.value;
             if (v !== '') highlightColumn(parseInt(v, 10));
@@ -541,6 +566,18 @@ function renderMapping() {
         });
         sel.addEventListener('blur', () => highlightColumn(-1));
     });
+
+    const addSel = document.getElementById('add-campo-sel');
+    if (addSel) {
+        addSel.addEventListener('change', () => {
+            const campo = addSel.value;
+            if (!campo) return;
+            _camposVisibles.add(campo);
+            renderMapping();
+            const nuevo = document.querySelector(`.map-sel[data-campo="${campo}"]`);
+            if (nuevo) nuevo.focus();
+        });
+    }
 }
 
 function actualizarAlertaDuplicados() {
