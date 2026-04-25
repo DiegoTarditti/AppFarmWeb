@@ -240,6 +240,7 @@ def match_producto(*,
                    contexto='general',
                    target='producto',
                    pool=None,
+                   incluir_observer=True,
                    threshold=0.80,
                    incluir_candidatos=True,
                    top_candidatos=8,
@@ -446,7 +447,10 @@ def match_producto(*,
             # nada matcheó en `productos` local. Útil porque el catálogo
             # local suele estar incompleto y obs_productos tiene Alfabeta
             # entero. Re-llamamos a match_producto con target='obs_producto'.
-            if not result.producto and target == 'producto' and pool is None:
+            # Se desactiva con incluir_observer=False (ej. desde bulk para
+            # hacer la pasada en una sola precarga).
+            if (not result.producto and target == 'producto' and pool is None
+                    and incluir_observer):
                 # Mapear lab local → lab observer si está vinculado.
                 lab_obs_id = None
                 if laboratorio_id:
@@ -620,9 +624,15 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
 def match_productos_bulk(items, laboratorio_id=None, target='producto', session=None):
     """Matchea N items reusando una sola precarga de catálogo.
 
+    Para target='producto', hace el flujo en 2 fases:
+    1) Pasada local: cada item contra `productos` (sin fallback observer).
+    2) Para los items sin match, precarga UNA VEZ el pool de obs_productos
+       (filtrado por lab observer si está mapeado) y los matchea contra
+       ese pool en memoria. Evita el N×M (122k×N) que clavaba el endpoint.
+
     Args:
         items: lista de dicts con keys ean/codigo_alfabeta/descripcion/precio.
-        laboratorio_id: scope.
+        laboratorio_id: scope al lab local (productos.laboratorio_id).
         target: 'producto' (default) | 'obs_producto'.
 
     Returns:
@@ -633,13 +643,15 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
     if own_session:
         session = database.SessionLocal()
     try:
-        return [
+        # Fase 1: matchear contra `productos` local SIN fallback observer.
+        results = [
             match_producto(
                 ean=it.get('ean'),
                 codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
                 descripcion=it.get('descripcion'),
                 laboratorio_id=laboratorio_id,
                 target=target,
+                incluir_observer=False,
                 precio_referencia=it.get('precio'),
                 cantidad_envase=it.get('cantidad_envase'),
                 monodroga=it.get('monodroga'),
@@ -647,6 +659,44 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
             )
             for it in items
         ]
+
+        # Fase 2: fallback observer en bulk con UNA precarga del pool.
+        if target == 'producto':
+            no_match_idx = [i for i, r in enumerate(results) if r.producto is None]
+            if no_match_idx:
+                lab_obs_id = None
+                if laboratorio_id:
+                    lab_local = session.get(database.Laboratorio, laboratorio_id)
+                    lab_obs_id = getattr(lab_local, 'observer_id', None) if lab_local else None
+                obs_q = session.query(database.ObsProducto)
+                if lab_obs_id is not None:
+                    obs_q = obs_q.filter(database.ObsProducto.laboratorio_observer == lab_obs_id)
+                obs_q = obs_q.filter(database.ObsProducto.fecha_baja.is_(None))
+                obs_pool = obs_q.all()
+
+                for i in no_match_idx:
+                    it = items[i]
+                    res = match_producto(
+                        ean=None,
+                        codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
+                        descripcion=it.get('descripcion'),
+                        laboratorio_id=lab_obs_id,
+                        target='obs_producto',
+                        pool=obs_pool,
+                        incluir_observer=False,
+                        threshold=0.80,
+                        incluir_candidatos=False,
+                        precio_referencia=it.get('precio'),
+                        session=session,
+                    )
+                    if res.producto is not None:
+                        # Mantener formato consistente: marcar la estrategia
+                        # con sufijo _obs y agregar warning match_observer.
+                        res.estrategia = (res.estrategia or 'fuzzy_global') + '_obs'
+                        res.warnings.append('match_observer')
+                        results[i] = res
+
+        return results
     finally:
         if own_session:
             session.close()
