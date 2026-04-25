@@ -5,13 +5,13 @@
 
 {% block main %}
     <!-- Top bar -->
-    <div class="bg-surface border-b border-surface-border px-6 py-3 flex items-center gap-4 flex-shrink-0">
+    <div class="bg-surface border-b border-surface-border px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4 flex-wrap flex-shrink-0">
         <h1 class="text-base font-bold text-[#1e1e1e]">Cuentas corrientes</h1>
 
         <!-- Selector de proveedor -->
-        <form method="GET" class="flex items-center gap-2">
+        <form method="GET" class="flex items-center gap-2 min-w-0 flex-1 sm:flex-initial">
             <select name="proveedor" onchange="this.form.submit()"
-                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand min-w-[250px]">
+                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand w-full sm:min-w-[250px]">
                 <option value="">— Seleccionar proveedor —</option>
                 {% for p in proveedores %}
                 <option value="{{ p.id }}" {% if p.id == provider_id %}selected{% endif %}>{{ p.razon_social }}</option>
@@ -23,7 +23,7 @@
         <span class="text-xs text-[#6f6f6f]">{% if provider.cuit %}CUIT {{ provider.cuit }}{% endif %}</span>
         {% endif %}
 
-        <div class="ml-auto">
+        <div class="sm:ml-auto">
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

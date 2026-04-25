@@ -98,7 +98,7 @@
     {% endif %}
 </div>
 
-<!-- Modal gráfico -->
+<!-- Modal gráfico evolución -->
 <div id="graf-modal" class="hidden fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4"
      onclick="if(event.target===this) cerrarGrafico()">
     <div class="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl">
@@ -112,6 +112,21 @@
         <div class="relative" style="height: 320px;">
             <canvas id="graf-canvas"></canvas>
         </div>
+    </div>
+</div>
+
+<!-- Modal comparación de labs -->
+<div id="cmp-modal" class="hidden fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarComparacion()">
+    <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-auto p-6 shadow-2xl">
+        <div class="flex items-start justify-between mb-4 sticky top-0 bg-white pb-2 border-b border-surface-border">
+            <div>
+                <p class="text-xs text-[#6f6f6f]">Comparación de laboratorios</p>
+                <p id="cmp-titulo" class="font-bold text-[#1e1e1e] text-lg"></p>
+            </div>
+            <button type="button" onclick="cerrarComparacion()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none">✕</button>
+        </div>
+        <div id="cmp-body" class="space-y-6"></div>
     </div>
 </div>
 
@@ -131,6 +146,24 @@ document.addEventListener('click', (e) => {
         toggleExpand(parseInt(exp.dataset.drogaId, 10), exp);
         return;
     }
+    const cmp = e.target.closest('.btn-comparar');
+    if (cmp) {
+        abrirComparacion(parseInt(cmp.dataset.drogaId, 10));
+        return;
+    }
+});
+
+document.addEventListener('change', (e) => {
+    const chk = e.target.closest('.cmp-lab');
+    if (!chk) return;
+    const drogaId = chk.dataset.drogaId;
+    const body = document.querySelector(`.expand-body[data-droga-id="${drogaId}"]`);
+    if (!body) return;
+    const checked = body.querySelectorAll('.cmp-lab:checked');
+    const btn = body.querySelector('.btn-comparar');
+    const counter = btn.querySelector('.cmp-count');
+    counter.textContent = checked.length;
+    btn.classList.toggle('hidden', checked.length < 2);
 });
 
 const _cache = {};
@@ -155,33 +188,121 @@ async function toggleExpand(id, btn) {
             body.innerHTML = '<p class="text-xs text-[#999]">Sin productos.</p>';
             return;
         }
-        const html = data.grupos.map(g => `
-            <div class="mb-3 last:mb-0">
-                <p class="text-[11px] font-semibold text-violet-800 mb-1">${escapeHtml(g.lab)} <span class="text-[#888] font-normal">(${g.productos.length})</span></p>
+        // Totales por lab para share
+        const labsConUnidades = data.grupos
+            .map(g => ({ lab: g.lab, lab_id: g.lab_id || 0,
+                         u12m: (g.productos || []).reduce((s, p) => s + (p.u12m || 0), 0) }))
+            .filter(x => x.u12m > 0);
+        const totalU12m = labsConUnidades.reduce((s, x) => s + x.u12m, 0);
+
+        const html = `
+            ${labsConUnidades.length >= 2 && totalU12m > 0 ? `
+            <div class="mb-3 bg-white border border-[#ececec] rounded-lg p-3">
+                <p class="text-[11px] font-semibold text-[#555] mb-2">Share de mercado (uni 12m)</p>
+                <div class="relative" style="height:180px"><canvas class="share-mini" data-droga-id="${id}"></canvas></div>
+            </div>` : ''}
+            <div class="mb-2 flex items-center justify-between gap-2 text-[11px]">
+                <span class="text-[#888]">Tildá 2 o más labs para compararlos con gráficos.</span>
+                <button type="button" class="btn-comparar hidden bg-violet-600 hover:bg-violet-700 text-white font-semibold px-3 py-1 rounded-lg" data-droga-id="${id}">
+                    Comparar seleccionados (<span class="cmp-count">0</span>)
+                </button>
+            </div>
+        ` + data.grupos.map((g, idx) => `
+            <div class="mb-3 last:mb-0 border border-[#ececec] rounded-lg p-3">
+                <label class="flex items-center gap-2 mb-1 cursor-pointer">
+                    <input type="checkbox" class="cmp-lab w-4 h-4 accent-violet-600"
+                           data-droga-id="${id}" data-lab-id="${g.lab_id || 0}" data-lab-nombre="${escapeHtml(g.lab)}">
+                    <span class="text-[11px] font-semibold text-violet-800">${escapeHtml(g.lab)}</span>
+                    <span class="text-[#888] font-normal text-[11px]">(${g.productos.length})</span>
+                </label>
                 <table class="w-full text-xs">
                     <thead class="text-[10px] uppercase text-[#aaa]">
                         <tr>
                             <th class="text-left py-1">Producto</th>
-                            <th class="text-right py-1 w-16">Stock</th>
-                            <th class="text-right py-1 w-20">Uni 3m</th>
-                            <th class="text-right py-1 w-20">Uni 12m</th>
+                            <th class="text-right py-1 w-14">Stock</th>
+                            <th class="text-right py-1 w-16" title="Días de stock al ritmo de los últimos 3 meses">Días</th>
+                            <th class="text-right py-1 w-16">Uni 3m</th>
+                            <th class="text-right py-1 w-16">Uni 12m</th>
+                            <th class="text-right py-1 w-20">$ 12m</th>
+                            <th class="text-right py-1 w-16">$/env</th>
+                            <th class="text-right py-1 w-16" title="Tendencia: anualizado 3m×4 vs real 12m">Tend.</th>
                         </tr>
                     </thead>
                     <tbody>
-                    ${g.productos.map(p => `
+                    ${g.productos.map(p => {
+                        // Días de stock con color
+                        let diasCell = '<span class="text-[#bbb]">—</span>';
+                        if (p.dias_stock !== null && p.dias_stock !== undefined) {
+                            const d = p.dias_stock;
+                            const dCls = d < 15 ? 'text-red-700 font-semibold'
+                                       : d < 60 ? 'text-amber-700'
+                                       : d < 180 ? 'text-emerald-700'
+                                       : 'text-sky-700';
+                            const dTxt = !isFinite(d) ? '∞' : Math.round(d);
+                            diasCell = `<span class="${dCls}" title="${!isFinite(d) ? 'Stock dormido (sin ventas)' : Math.round(d) + ' días al ritmo actual'}">${dTxt}</span>`;
+                        } else if (p.stock > 0) {
+                            diasCell = `<span class="text-[#888]" title="Stock pero sin ventas en 3m">∞</span>`;
+                        }
+                        // Momentum chip
+                        let tendCell = '<span class="text-[#bbb]">—</span>';
+                        if (p.momentum_pct !== null && p.momentum_pct !== undefined) {
+                            const m = p.momentum_pct;
+                            const sube = m >= 0;
+                            const cls = sube ? 'text-emerald-700' : 'text-red-700';
+                            const flecha = sube ? '▲' : '▼';
+                            tendCell = `<span class="${cls} font-semibold" title="Anualizado vs 12m: ${sube ? '+' : ''}${m.toFixed(1)}%">${flecha} ${Math.abs(m).toFixed(0)}%</span>`;
+                        }
+                        return `
                         <tr class="border-t border-[#ececec]">
                             <td class="py-1">${escapeHtml(p.descripcion)}</td>
                             <td class="py-1 text-right ${p.stock > 0 ? 'font-semibold text-emerald-700' : 'text-[#bbb]'}">${p.stock}</td>
+                            <td class="py-1 text-right">${diasCell}</td>
                             <td class="py-1 text-right">${p.u3m.toLocaleString('es-AR', {maximumFractionDigits:0})}</td>
                             <td class="py-1 text-right">${p.u12m.toLocaleString('es-AR', {maximumFractionDigits:0})}</td>
-                        </tr>
-                    `).join('')}
+                            <td class="py-1 text-right font-mono">${p.m12m > 0 ? '$'+p.m12m.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
+                            <td class="py-1 text-right font-mono">${p.precio_envase > 0 ? '$'+p.precio_envase.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
+                            <td class="py-1 text-right">${tendCell}</td>
+                        </tr>`;
+                    }).join('')}
                     </tbody>
                 </table>
             </div>
         `).join('');
         body.innerHTML = html;
         _cache[id] = html;
+
+        // Render mini doughnut si hay >= 2 labs con unidades
+        if (labsConUnidades.length >= 2 && totalU12m > 0) {
+            const canvas = body.querySelector(`.share-mini[data-droga-id="${id}"]`);
+            if (canvas && window.Chart) {
+                new Chart(canvas.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: labsConUnidades.map(x => x.lab),
+                        datasets: [{
+                            data: labsConUnidades.map(x => x.u12m),
+                            backgroundColor: labsConUnidades.map((_, i) => CMP_COLORS[i % CMP_COLORS.length]),
+                            borderWidth: 1, borderColor: '#fff',
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { font: { size: 10 }, boxWidth: 12 } },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const v = ctx.parsed;
+                                        const pct = totalU12m > 0 ? (v / totalU12m * 100).toFixed(1) : 0;
+                                        return `${ctx.label}: ${v.toLocaleString('es-AR',{maximumFractionDigits:0})} (${pct}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
     } catch (err) {
         body.innerHTML = `<p class="text-xs text-red-700">Error: ${escapeHtml(err.message)}</p>`;
     }
@@ -189,6 +310,539 @@ async function toggleExpand(id, btn) {
 
 function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ─── Comparación de labs ────────────────────────────────────────────────────
+const CMP_COLORS = ['#7C3AED', '#059669', '#DC2626', '#2563EB', '#D97706', '#DB2777'];
+let _cmpCharts = [];
+
+function _destroyCmpCharts() {
+    _cmpCharts.forEach(c => { try { c.destroy(); } catch(_) {} });
+    _cmpCharts = [];
+}
+
+async function abrirComparacion(drogaId) {
+    const body = document.querySelector(`.expand-body[data-droga-id="${drogaId}"]`);
+    if (!body) return;
+    const checked = Array.from(body.querySelectorAll('.cmp-lab:checked'));
+    const labIds = checked.map(c => c.dataset.labId).filter(x => x && x !== '0');
+    if (labIds.length < 2) { alert('Seleccioná al menos 2 laboratorios con ID válido (descartá "sin lab").'); return; }
+
+    document.getElementById('cmp-modal').classList.remove('hidden');
+    document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999]">Cargando comparación…</p>';
+
+    try {
+        const r = await fetch(`/api/droga/${drogaId}/comparar-labs?labs=${labIds.join(',')}`, { credentials: 'same-origin' });
+        if (!r.ok) {
+            const err = await r.json().catch(() => ({error: 'Error'}));
+            document.getElementById('cmp-body').innerHTML = `<p class="text-sm text-red-700">${escapeHtml(err.error || 'Error')}</p>`;
+            return;
+        }
+        const data = await r.json();
+        document.getElementById('cmp-titulo').textContent = `${data.droga_nombre} — ${data.labs.map(l => l.lab_nombre).join(' vs ')}`;
+        _renderComparacion(data);
+    } catch (err) {
+        document.getElementById('cmp-body').innerHTML = `<p class="text-sm text-red-700">Error: ${escapeHtml(err.message)}</p>`;
+    }
+}
+
+function cerrarComparacion() {
+    document.getElementById('cmp-modal').classList.add('hidden');
+    _destroyCmpCharts();
+}
+
+function _renderComparacion(data) {
+    _destroyCmpCharts();
+    const labs = data.labs;
+    const labels = labs.map(l => l.lab_nombre);
+    const colors = labs.map((_, i) => CMP_COLORS[i % CMP_COLORS.length]);
+
+    const body = document.getElementById('cmp-body');
+    body.innerHTML = `
+        <!-- Tabs -->
+        <div class="flex flex-wrap gap-1 border-b border-surface-border mb-3 sticky top-12 bg-white z-10">
+            <button type="button" data-tab="resumen"   class="cmp-tab px-3 py-2 text-xs font-semibold border-b-2 border-violet-600 text-violet-700">Resumen</button>
+            <button type="button" data-tab="tendencia" class="cmp-tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-[#888] hover:text-[#1e1e1e]">Tendencia</button>
+            <button type="button" data-tab="stock"     class="cmp-tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-[#888] hover:text-[#1e1e1e]">Stock</button>
+            <button type="button" data-tab="ventas"    class="cmp-tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-[#888] hover:text-[#1e1e1e]">Ventas</button>
+            <button type="button" data-tab="productos" class="cmp-tab px-3 py-2 text-xs font-semibold border-b-2 border-transparent text-[#888] hover:text-[#1e1e1e]">Productos</button>
+        </div>
+
+        <!-- TAB: Resumen (cards + share) -->
+        <div class="cmp-panel" data-panel="resumen">
+            <div class="grid grid-cols-${Math.min(labs.length, 3)} gap-3 mb-4">
+                ${labs.map((l, i) => `
+                    <div class="border-2 rounded-xl p-3" style="border-color:${colors[i]}20;background:${colors[i]}08">
+                        <p class="text-sm font-bold text-[#1e1e1e]">${escapeHtml(l.lab_nombre)}</p>
+                        <div class="mt-2 space-y-0.5 text-xs">
+                            <div class="flex justify-between"><span class="text-[#888]">Productos</span><strong>${l.n_productos}</strong></div>
+                            <div class="flex justify-between"><span class="text-[#888]">Stock actual</span><strong class="${l.stock_total > 0 ? 'text-emerald-700' : 'text-[#bbb]'}">${l.stock_total.toLocaleString('es-AR')}</strong></div>
+                            <div class="flex justify-between"><span class="text-[#888]">Uni 3m</span><strong>${l.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</strong></div>
+                            <div class="flex justify-between"><span class="text-[#888]">Uni 12m</span><strong>${l.u12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</strong></div>
+                            <div class="flex justify-between"><span class="text-[#888]">$ 12m</span><strong>$${l.m12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</strong></div>
+                            <div class="flex justify-between"><span class="text-[#888]">$/envase prom</span><strong>$${l.precio_prom_envase.toLocaleString('es-AR',{maximumFractionDigits:2})}</strong></div>
+                            <div class="flex justify-between"><span class="text-[#888]">$/unidad conten.</span><strong>${l.precio_prom_unidad > 0 ? '$'+l.precio_prom_unidad.toLocaleString('es-AR',{maximumFractionDigits:2}) : '—'}</strong></div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="flex items-baseline justify-between mb-1">
+                <p class="text-sm font-semibold text-[#1e1e1e]">Share de mercado (unidades 12m dentro de esta droga)</p>
+                <p class="text-[11px] text-[#888]">Total comparado: <strong id="cmp-share-total"></strong> uni</p>
+            </div>
+            <p class="text-[11px] text-[#888] mb-2">Porcentaje de unidades que cada lab representa sobre el total vendido de esta droga en los últimos 12 meses. Ayuda a ver quién domina.</p>
+            <div class="relative" style="height:260px"><canvas id="cmp-share"></canvas></div>
+        </div>
+
+        <!-- TAB: Tendencia (momentum + serie mensual) -->
+        <div class="cmp-panel hidden" data-panel="tendencia">
+            <p class="text-sm font-semibold text-[#1e1e1e] mb-1">Momentum — ¿está creciendo o cayendo?</p>
+            <p class="text-[11px] text-[#888] mb-2">Compara la proyección anual basada en los últimos 3 meses (<strong>uni 3m × 4</strong>) contra lo vendido en los últimos 12 meses. Si la barra verde supera la gris, el lab viene en alza; si queda por debajo, está cayendo.</p>
+            <div class="relative" style="height:260px"><canvas id="cmp-momentum"></canvas></div>
+            <div id="cmp-momentum-resumen" class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+
+            <p class="text-sm font-semibold text-[#1e1e1e] mt-6 mb-2">Evolución mensual — unidades</p>
+            <div class="relative" style="height:300px"><canvas id="cmp-serie"></canvas></div>
+
+            <p class="text-sm font-semibold text-[#1e1e1e] mt-6 mb-1">Estacionalidad — heatmap mensual</p>
+            <p class="text-[11px] text-[#888] mb-2">Cada celda es un mes. La intensidad del color representa las unidades vendidas <strong>relativas al pico del propio lab</strong> (no se comparan magnitudes entre labs). Sirve para detectar drogas estacionales: invierno (gripe), verano (alergias), etc.</p>
+            <div id="cmp-heatmap" class="text-xs"></div>
+        </div>
+
+        <!-- TAB: Stock (días + cantidades) -->
+        <div class="cmp-panel hidden" data-panel="stock">
+            <p class="text-sm font-semibold text-[#1e1e1e] mb-1">Días de stock — ¿cuánto te dura al ritmo actual?</p>
+            <p class="text-[11px] text-[#888] mb-2">
+                <strong>stock_actual ÷ (uni_3m ÷ 90)</strong> = días que dura el stock al ritmo de venta de los últimos 3 meses.
+                <span class="text-red-700 font-semibold">Rojo &lt; 15</span> (riesgo de faltante),
+                <span class="text-amber-700 font-semibold">amarillo 15–60</span> (normal),
+                <span class="text-emerald-700 font-semibold">verde 60–180</span> (cómodo),
+                <span class="text-sky-700 font-semibold">azul &gt; 180</span> (sobre-stockeado).
+            </p>
+            <div class="relative" style="height:260px"><canvas id="cmp-dias-stock"></canvas></div>
+            <div id="cmp-dias-resumen" class="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+
+            <p class="text-sm font-semibold text-[#1e1e1e] mt-6 mb-2">Stock total y nº de productos</p>
+            <div class="relative" style="height:240px"><canvas id="cmp-stock"></canvas></div>
+        </div>
+
+        <!-- TAB: Ventas (volumen + monto + precio) -->
+        <div class="cmp-panel hidden" data-panel="ventas">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <p class="text-sm font-semibold text-[#1e1e1e] mb-2">Unidades vendidas (3m vs 12m)</p>
+                    <div class="relative" style="height:240px"><canvas id="cmp-uni"></canvas></div>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-[#1e1e1e] mb-2">Monto vendido ($ 3m vs $ 12m)</p>
+                    <div class="relative" style="height:240px"><canvas id="cmp-mon"></canvas></div>
+                </div>
+            </div>
+            <p class="text-sm font-semibold text-[#1e1e1e] mt-6 mb-2">Precio promedio</p>
+            <p class="text-[11px] text-[#888] mb-2">Por envase = monto/unidades. Por unidad de contenido = monto/(unidades × cantidad_envase) — normaliza cuando los labs venden envases de tamaños diferentes (ej. caja x30 vs x60).</p>
+            <div class="relative" style="height:240px"><canvas id="cmp-precio"></canvas></div>
+
+            <p class="text-sm font-semibold text-[#1e1e1e] mt-6 mb-1">Precio vs volumen — estrategia comercial</p>
+            <p class="text-[11px] text-[#888] mb-2">
+                Eje X = precio promedio por envase. Eje Y = unidades vendidas en 12m. Cada punto es un lab.
+                <span class="text-emerald-700">Arriba a la derecha</span> = caro y se vende mucho (premium dominante).
+                <span class="text-sky-700">Arriba a la izquierda</span> = barato y volumen alto (commodity king).
+                <span class="text-amber-700">Abajo a la derecha</span> = caro y poco volumen (premium nicho).
+                <span class="text-[#888]">Abajo a la izquierda</span> = irrelevante en esta droga.
+            </p>
+            <div class="relative" style="height:280px"><canvas id="cmp-scatter"></canvas></div>
+        </div>
+
+        <!-- TAB: Productos (top 5 por lab) -->
+        <div class="cmp-panel hidden" data-panel="productos">
+            <p class="text-sm font-semibold text-[#1e1e1e] mb-1">Top 5 productos por laboratorio (uni 12m)</p>
+            <p class="text-[11px] text-[#888] mb-3">
+                Cada fila: producto · cantidad por envase · unidades 12m · $ por envase · $ por unidad de contenido.
+                <br>El badge de la derecha compara <strong>$ por unidad de contenido</strong> contra el promedio de los <strong>otros labs</strong>:
+                <span class="text-emerald-700 font-semibold">verde = más barato</span>,
+                <span class="text-red-700 font-semibold">rojo = más caro</span>,
+                gris = sin dato comparable.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-${Math.min(labs.length, 3)} gap-4 text-xs">
+                ${labs.map((l, i) => {
+                    // Promedio de precio_prom_unidad de los OTROS labs
+                    const otros = labs.filter((_, j) => j !== i && labs[j].precio_prom_unidad > 0);
+                    const otrosAvg = otros.length
+                        ? otros.reduce((s, x) => s + x.precio_prom_unidad, 0) / otros.length
+                        : 0;
+                    return `
+                    <div>
+                        <p class="font-semibold mb-1" style="color:${colors[i]}">${escapeHtml(l.lab_nombre)}</p>
+                        ${l.top_productos.length ? `
+                            <table class="w-full">
+                                <thead class="text-[10px] uppercase text-[#aaa]">
+                                    <tr>
+                                        <th class="text-left py-1">Producto</th>
+                                        <th class="text-right py-1 w-12">Uni</th>
+                                        <th class="text-right py-1 w-16">$/env</th>
+                                        <th class="text-right py-1 w-16">$/uni</th>
+                                        <th class="text-right py-1 w-14">vs.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                ${l.top_productos.map(p => {
+                                    let badge = '<span class="text-[#bbb]">—</span>';
+                                    if (p.precio_unidad > 0 && otrosAvg > 0) {
+                                        const delta = (p.precio_unidad - otrosAvg) / otrosAvg * 100;
+                                        const cheaper = delta < 0;
+                                        const cls = cheaper ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50';
+                                        const flecha = cheaper ? '▼' : '▲';
+                                        badge = `<span class="${cls} px-1.5 py-0.5 rounded text-[10px] font-semibold" title="Δ vs promedio otros labs">${flecha} ${Math.abs(delta).toFixed(0)}%</span>`;
+                                    }
+                                    return `
+                                        <tr class="border-b border-[#ececec]">
+                                            <td class="py-1 pr-1">${escapeHtml(p.descripcion)}${p.cantidad_envase ? ` <span class="text-[#aaa]">(${p.cantidad_envase})</span>` : ''}</td>
+                                            <td class="py-1 text-right font-mono">${p.u12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+                                            <td class="py-1 text-right font-mono">$${p.precio_envase.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+                                            <td class="py-1 text-right font-mono">${p.precio_unidad > 0 ? '$'+p.precio_unidad.toLocaleString('es-AR',{maximumFractionDigits:2}) : '—'}</td>
+                                            <td class="py-1 text-right">${badge}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                                </tbody>
+                            </table>
+                        ` : '<p class="text-[#bbb]">Sin ventas.</p>'}
+                    </div>`;
+                }).join('')}
+            </div>
+        </div>
+    `;
+
+    // Tab switching: muestra panel y resize charts del nuevo panel
+    body.querySelectorAll('.cmp-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            body.querySelectorAll('.cmp-tab').forEach(b => {
+                const active = b.dataset.tab === tab;
+                b.classList.toggle('border-violet-600', active);
+                b.classList.toggle('text-violet-700', active);
+                b.classList.toggle('border-transparent', !active);
+                b.classList.toggle('text-[#888]', !active);
+            });
+            body.querySelectorAll('.cmp-panel').forEach(p => {
+                p.classList.toggle('hidden', p.dataset.panel !== tab);
+            });
+            // Resize charts dentro del panel visible
+            setTimeout(() => _cmpCharts.forEach(c => { try { c.resize(); } catch(_){} }), 50);
+        });
+    });
+
+    // Charts
+
+    // Share de mercado (doughnut)
+    const totalU12m = labs.reduce((acc, l) => acc + (l.u12m || 0), 0);
+    document.getElementById('cmp-share-total').textContent = totalU12m.toLocaleString('es-AR', {maximumFractionDigits:0});
+    _cmpCharts.push(new Chart(document.getElementById('cmp-share').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: labs.map(l => l.u12m || 0),
+                backgroundColor: colors,
+                borderWidth: 2, borderColor: '#fff',
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const v = ctx.parsed;
+                            const pct = totalU12m > 0 ? (v / totalU12m * 100).toFixed(1) : 0;
+                            return `${ctx.label}: ${v.toLocaleString('es-AR',{maximumFractionDigits:0})} uni (${pct}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    }));
+
+    // Momentum (3m anualizado vs 12m real)
+    const momentumDeltas = labs.map(l => {
+        const anualizado = (l.u3m || 0) * 4;
+        const real = l.u12m || 0;
+        const delta = real > 0 ? (anualizado - real) / real * 100 : 0;
+        return { anualizado, real, delta };
+    });
+
+    // Resumen textual: chip por lab con flecha + % + sube/cae
+    const resumenEl = document.getElementById('cmp-momentum-resumen');
+    if (resumenEl) {
+        resumenEl.innerHTML = labs.map((l, i) => {
+            const m = momentumDeltas[i];
+            const sube = m.delta >= 0;
+            const txt = m.real === 0
+                ? 'sin ventas previas'
+                : (sube ? `sube ${m.delta.toFixed(1)}%` : `cae ${Math.abs(m.delta).toFixed(1)}%`);
+            const colorBg = sube ? 'bg-emerald-50' : 'bg-red-50';
+            const colorTxt = sube ? 'text-emerald-800' : 'text-red-800';
+            const colorBorder = sube ? 'border-emerald-300' : 'border-red-300';
+            const flecha = sube ? '▲' : '▼';
+            return `
+                <div class="${colorBg} ${colorBorder} border rounded-lg px-3 py-2 text-xs">
+                    <p class="font-semibold text-[#1e1e1e] truncate" title="${escapeHtml(l.lab_nombre)}">${escapeHtml(l.lab_nombre)}</p>
+                    <p class="${colorTxt} font-bold mt-0.5">${flecha} ${txt}</p>
+                </div>`;
+        }).join('');
+    }
+    _cmpCharts.push(new Chart(document.getElementById('cmp-momentum').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Uni 12m (real)',
+                    data: momentumDeltas.map(m => m.real),
+                    backgroundColor: '#9CA3AF',
+                    borderRadius: 4,
+                },
+                {
+                    label: 'Anualizado (3m × 4)',
+                    data: momentumDeltas.map(m => m.anualizado),
+                    backgroundColor: momentumDeltas.map(m => m.delta >= 0 ? '#059669' : '#DC2626'),
+                    borderRadius: 4,
+                },
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 10 } } },
+                tooltip: {
+                    callbacks: {
+                        afterLabel: (ctx) => {
+                            const m = momentumDeltas[ctx.dataIndex];
+                            const signo = m.delta >= 0 ? '+' : '';
+                            return `Δ ${signo}${m.delta.toFixed(1)}%`;
+                        }
+                    }
+                }
+            }
+        }
+    }));
+
+    // Días de stock: stock_actual / (u3m / 90)
+    function _diasColor(d) {
+        if (d === null) return '#6B7280';   // sin ventas → gris
+        if (d < 15)   return '#DC2626';     // rojo
+        if (d < 60)   return '#D97706';     // ámbar
+        if (d < 180)  return '#059669';     // verde
+        return '#0284C7';                    // azul (sobre-stock)
+    }
+    function _diasLabel(d) {
+        if (d === null) return 'sin ventas (3m)';
+        if (!isFinite(d)) return 'stock dormido';
+        if (d < 1) return '< 1 día (¡crítico!)';
+        return `${Math.round(d)} día${Math.round(d) === 1 ? '' : 's'}`;
+    }
+    const diasStock = labs.map(l => {
+        const velocidad = (l.u3m || 0) / 90;
+        if (velocidad === 0) return l.stock_total > 0 ? Infinity : null;
+        return l.stock_total / velocidad;
+    });
+    _cmpCharts.push(new Chart(document.getElementById('cmp-dias-stock').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Días de stock',
+                data: diasStock.map(d => (d === null || !isFinite(d)) ? 0 : Math.round(d)),
+                backgroundColor: diasStock.map(d => _diasColor(d)),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => {
+                            const i = ctx.dataIndex;
+                            const d = diasStock[i];
+                            const stock = labs[i].stock_total;
+                            const u3m = labs[i].u3m;
+                            return [
+                                `${_diasLabel(d)}`,
+                                `Stock: ${stock.toLocaleString('es-AR')}`,
+                                `Uni 3m: ${u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}`,
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: 'días', font: { size: 10 } } }
+            }
+        }
+    }));
+
+    // Chips de días de stock
+    const diasResumenEl = document.getElementById('cmp-dias-resumen');
+    if (diasResumenEl) {
+        diasResumenEl.innerHTML = labs.map((l, i) => {
+            const d = diasStock[i];
+            const color = _diasColor(d);
+            return `
+                <div class="border rounded-lg px-3 py-2 text-xs" style="border-color:${color}40;background:${color}10">
+                    <p class="font-semibold text-[#1e1e1e] truncate" title="${escapeHtml(l.lab_nombre)}">${escapeHtml(l.lab_nombre)}</p>
+                    <p class="font-bold mt-0.5" style="color:${color}">${_diasLabel(d)}</p>
+                    <p class="text-[10px] text-[#888] mt-0.5">stock ${l.stock_total.toLocaleString('es-AR')} · uni 3m ${l.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</p>
+                </div>`;
+        }).join('');
+    }
+
+    _cmpCharts.push(new Chart(document.getElementById('cmp-uni').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: ['Uni 3m', 'Uni 12m'],
+            datasets: labs.map((l, i) => ({
+                label: l.lab_nombre, data: [l.u3m, l.u12m],
+                backgroundColor: colors[i], borderRadius: 4,
+            }))
+        },
+        options: { responsive:true, maintainAspectRatio:false,
+                   plugins:{legend:{position:'bottom', labels:{font:{size:10}}}} }
+    }));
+
+    _cmpCharts.push(new Chart(document.getElementById('cmp-mon').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: ['$ 3m', '$ 12m'],
+            datasets: labs.map((l, i) => ({
+                label: l.lab_nombre, data: [l.m3m, l.m12m],
+                backgroundColor: colors[i], borderRadius: 4,
+            }))
+        },
+        options: { responsive:true, maintainAspectRatio:false,
+                   plugins:{legend:{position:'bottom', labels:{font:{size:10}}}},
+                   scales:{y:{ticks:{callback: v => '$'+v.toLocaleString('es-AR')}}} }
+    }));
+
+    _cmpCharts.push(new Chart(document.getElementById('cmp-precio').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: '$ por envase',  data: labs.map(l => l.precio_prom_envase), backgroundColor: colors.map(c => c + 'CC'), borderRadius: 4 },
+                { label: '$ por unidad contenido', data: labs.map(l => l.precio_prom_unidad), backgroundColor: colors.map(c => c + '55'), borderRadius: 4 },
+            ]
+        },
+        options: { responsive:true, maintainAspectRatio:false,
+                   plugins:{legend:{position:'bottom', labels:{font:{size:10}}}},
+                   scales:{y:{ticks:{callback: v => '$'+v.toLocaleString('es-AR',{maximumFractionDigits:2})}}} }
+    }));
+
+    _cmpCharts.push(new Chart(document.getElementById('cmp-stock').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: ['Stock actual', 'Productos'],
+            datasets: labs.map((l, i) => ({
+                label: l.lab_nombre, data: [l.stock_total, l.n_productos],
+                backgroundColor: colors[i], borderRadius: 4,
+            }))
+        },
+        options: { responsive:true, maintainAspectRatio:false,
+                   plugins:{legend:{position:'bottom', labels:{font:{size:10}}}} }
+    }));
+
+    _cmpCharts.push(new Chart(document.getElementById('cmp-serie').getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: labs[0].serie_labels,
+            datasets: labs.map((l, i) => ({
+                label: l.lab_nombre, data: l.serie_unidades,
+                borderColor: colors[i], backgroundColor: colors[i] + '22',
+                tension: 0.3, fill: false,
+            }))
+        },
+        options: { responsive:true, maintainAspectRatio:false,
+                   interaction:{mode:'index', intersect:false},
+                   plugins:{legend:{position:'bottom', labels:{font:{size:10}}}} }
+    }));
+
+    // Precio vs volumen (scatter)
+    const scatterEl = document.getElementById('cmp-scatter');
+    if (scatterEl) {
+        _cmpCharts.push(new Chart(scatterEl.getContext('2d'), {
+            type: 'scatter',
+            data: {
+                datasets: labs.map((l, i) => ({
+                    label: l.lab_nombre,
+                    data: [{ x: l.precio_prom_envase, y: l.u12m, lab: l.lab_nombre }],
+                    backgroundColor: colors[i],
+                    borderColor: colors[i],
+                    pointRadius: 10,
+                    pointHoverRadius: 14,
+                }))
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 10 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const p = ctx.raw;
+                                return `${p.lab}: $${p.x.toLocaleString('es-AR',{maximumFractionDigits:2})} · ${p.y.toLocaleString('es-AR',{maximumFractionDigits:0})} uni`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Precio promedio por envase ($)', font: { size: 10 } },
+                        ticks: { callback: v => '$' + v.toLocaleString('es-AR') }
+                    },
+                    y: {
+                        title: { display: true, text: 'Unidades vendidas 12m', font: { size: 10 } },
+                        beginAtZero: true,
+                    }
+                }
+            }
+        }));
+    }
+
+    // Heatmap de estacionalidad: por cada lab, intensidad relativa al máximo del propio lab
+    const heatEl = document.getElementById('cmp-heatmap');
+    if (heatEl) {
+        const labels12 = labs[0].serie_labels;
+        const headerCells = labels12.map(lbl => `<th class="px-1 py-1 text-[10px] text-[#888] font-normal">${lbl}</th>`).join('');
+        const rows = labs.map((l, i) => {
+            const max = Math.max(...l.serie_unidades, 1);
+            const cells = l.serie_unidades.map(v => {
+                const pct = max > 0 ? v / max : 0;
+                // Mezcla: blanco → color del lab según intensidad
+                const alpha = pct === 0 ? 0.05 : Math.max(0.15, pct);
+                const text = v > 0 ? v.toLocaleString('es-AR',{maximumFractionDigits:0}) : '·';
+                const textColor = pct > 0.5 ? '#fff' : '#1e1e1e';
+                return `<td class="px-1 py-1 text-center align-middle" style="background:${colors[i]};opacity:${alpha};color:${textColor};font-size:10px;min-width:36px">${text}</td>`;
+            }).join('');
+            return `
+                <tr>
+                    <td class="px-2 py-1 font-semibold whitespace-nowrap" style="color:${colors[i]}">${escapeHtml(l.lab_nombre)}</td>
+                    ${cells}
+                </tr>`;
+        }).join('');
+        heatEl.innerHTML = `
+            <div class="overflow-x-auto">
+                <table class="border-collapse w-full">
+                    <thead>
+                        <tr><th></th>${headerCells}</tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    }
 }
 
 async function mostrarGrafico(drogaId, nombre) {

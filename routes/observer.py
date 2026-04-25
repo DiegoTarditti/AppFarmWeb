@@ -335,40 +335,244 @@ def init_app(app):
                                      database.ObsStock.producto_observer.in_(obs_ids)).all())
 
             ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
-            rows_3m = dict(session.query(
+            # Trae unidades + monto en una sola pasada por ventana
+            rows_3m = {}
+            for (pid, u, mt) in (session.query(
                     database.ObsVentaMensual.producto_observer,
-                    _f.sum(database.ObsVentaMensual.unidades))
+                    _f.sum(database.ObsVentaMensual.unidades),
+                    _f.sum(database.ObsVentaMensual.monto))
                 .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
                         database.ObsVentaMensual.producto_observer.in_(obs_ids),
                         ym_expr.between(desde_3m, hasta))
-                .group_by(database.ObsVentaMensual.producto_observer).all())
+                .group_by(database.ObsVentaMensual.producto_observer).all()):
+                rows_3m[pid] = (float(u or 0), float(mt or 0))
 
-            rows_12m = dict(session.query(
+            rows_12m = {}
+            for (pid, u, mt) in (session.query(
                     database.ObsVentaMensual.producto_observer,
-                    _f.sum(database.ObsVentaMensual.unidades))
+                    _f.sum(database.ObsVentaMensual.unidades),
+                    _f.sum(database.ObsVentaMensual.monto))
                 .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
                         database.ObsVentaMensual.producto_observer.in_(obs_ids),
                         ym_expr.between(desde_12m, hasta))
-                .group_by(database.ObsVentaMensual.producto_observer).all())
+                .group_by(database.ObsVentaMensual.producto_observer).all()):
+                rows_12m[pid] = (float(u or 0), float(mt or 0))
 
             # Agrupar por lab
             por_lab = {}
             for p in productos:
                 lab_id = p.laboratorio_observer or 0
                 lab_nombre = labs_map.get(lab_id) or '— sin lab —'
-                por_lab.setdefault(lab_id, {'lab': lab_nombre, 'productos': []})
+                por_lab.setdefault(lab_id, {'lab_id': lab_id, 'lab': lab_nombre, 'productos': []})
+                u3m, _ = rows_3m.get(p.observer_id, (0.0, 0.0))
+                u12m, m12m = rows_12m.get(p.observer_id, (0.0, 0.0))
+                stock = int(stock_map.get(p.observer_id, 0) or 0)
+                # Días de stock = stock / (u3m / 90). None si u3m=0.
+                if u3m > 0:
+                    dias_stock = stock / (u3m / 90)
+                else:
+                    dias_stock = None
+                # Momentum % = (u3m*4 - u12m) / u12m * 100. None si u12m=0.
+                if u12m > 0:
+                    momentum_pct = (u3m * 4 - u12m) / u12m * 100
+                else:
+                    momentum_pct = None
                 por_lab[lab_id]['productos'].append({
-                    'observer_id': p.observer_id,
-                    'descripcion': p.descripcion,
-                    'stock':       int(stock_map.get(p.observer_id, 0) or 0),
-                    'u3m':         float(rows_3m.get(p.observer_id, 0) or 0),
-                    'u12m':        float(rows_12m.get(p.observer_id, 0) or 0),
+                    'observer_id':    p.observer_id,
+                    'descripcion':    p.descripcion,
+                    'stock':          stock,
+                    'u3m':            u3m,
+                    'u12m':           u12m,
+                    'm12m':           m12m,
+                    'precio_envase':  (m12m / u12m) if u12m > 0 else 0,
+                    'dias_stock':     dias_stock,
+                    'momentum_pct':   momentum_pct,
                 })
 
             # Orden: labs con más productos arriba
             grupos = sorted(por_lab.values(), key=lambda g: -len(g['productos']))
 
         return jsonify({'grupos': grupos})
+
+    @app.route('/api/droga/<int:droga_id>/comparar-labs')
+    @login_required
+    def api_droga_comparar_labs(droga_id):
+        """Comparación detallada entre 2 (o más) laboratorios para una droga.
+
+        Query params: labs=ID1,ID2[,ID3...]
+        Devuelve por cada lab: nombre, n_productos, stock_total, uni/monto 3m y 12m,
+        precio_promedio, serie mensual 12m, top 5 productos por unidades."""
+        from sqlalchemy import func as _f
+        from datetime import datetime
+
+        labs_raw = (request.args.get('labs') or '').strip()
+        try:
+            lab_ids = [int(x) for x in labs_raw.split(',') if x.strip()]
+        except ValueError:
+            return jsonify({'error': 'labs inválidos'}), 400
+        if len(lab_ids) < 2:
+            return jsonify({'error': 'Se requieren al menos 2 laboratorios'}), 400
+
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        hoy = datetime.now()
+
+        # Meses de los últimos 12
+        meses = []
+        y, m = hoy.year, hoy.month
+        for _ in range(12):
+            meses.append((y, m))
+            m -= 1
+            if m == 0:
+                m = 12
+                y -= 1
+        meses.reverse()
+        desde_12m = meses[0][0] * 100 + meses[0][1]
+        hasta = meses[-1][0] * 100 + meses[-1][1]
+
+        def _ym_hace(n):
+            yy, mm = hoy.year, hoy.month - n
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            return yy * 100 + mm
+        desde_3m = _ym_hace(2)
+
+        with database.get_db() as session:
+            nombre_droga = session.get(database.ObsNombreDroga, droga_id)
+            nombre_droga = nombre_droga.descripcion if nombre_droga else f'#{droga_id}'
+
+            labs_map = dict(session.query(database.ObsLaboratorio.observer_id,
+                                          database.ObsLaboratorio.descripcion)
+                            .filter(database.ObsLaboratorio.observer_id.in_(lab_ids)).all())
+
+            resultados = []
+            ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
+
+            for lab_id in lab_ids:
+                # Productos del lab para esta droga
+                prods = (session.query(database.ObsProducto)
+                         .filter(database.ObsProducto.nombre_droga_observer == droga_id,
+                                 database.ObsProducto.laboratorio_observer == lab_id,
+                                 database.ObsProducto.fecha_baja.is_(None)).all())
+                prod_ids = [p.observer_id for p in prods]
+
+                if not prod_ids:
+                    resultados.append({
+                        'lab_id': lab_id,
+                        'lab_nombre': labs_map.get(lab_id) or f'#{lab_id}',
+                        'n_productos': 0, 'stock_total': 0,
+                        'u3m': 0, 'u12m': 0, 'm3m': 0, 'm12m': 0,
+                        'precio_prom': 0,
+                        'serie_labels': [f'{m:02d}/{y}' for (y, m) in meses],
+                        'serie_unidades': [0] * 12, 'serie_monto': [0] * 12,
+                        'top_productos': [],
+                    })
+                    continue
+
+                # Stock
+                stock_total = (session.query(_f.coalesce(_f.sum(database.ObsStock.stock_actual), 0))
+                               .filter(database.ObsStock.id_farmacia == id_farmacia,
+                                       database.ObsStock.producto_observer.in_(prod_ids)).scalar()) or 0
+
+                # Agregados 3m / 12m
+                agg_12m = session.query(
+                    _f.coalesce(_f.sum(database.ObsVentaMensual.unidades), 0),
+                    _f.coalesce(_f.sum(database.ObsVentaMensual.monto), 0)
+                ).filter(
+                    database.ObsVentaMensual.id_farmacia == id_farmacia,
+                    database.ObsVentaMensual.producto_observer.in_(prod_ids),
+                    ym_expr.between(desde_12m, hasta)
+                ).first()
+                u12m, m12m = float(agg_12m[0] or 0), float(agg_12m[1] or 0)
+
+                agg_3m = session.query(
+                    _f.coalesce(_f.sum(database.ObsVentaMensual.unidades), 0),
+                    _f.coalesce(_f.sum(database.ObsVentaMensual.monto), 0)
+                ).filter(
+                    database.ObsVentaMensual.id_farmacia == id_farmacia,
+                    database.ObsVentaMensual.producto_observer.in_(prod_ids),
+                    ym_expr.between(desde_3m, hasta)
+                ).first()
+                u3m, m3m = float(agg_3m[0] or 0), float(agg_3m[1] or 0)
+
+                # Serie mensual 12m
+                rows = (session.query(
+                            database.ObsVentaMensual.anio,
+                            database.ObsVentaMensual.mes,
+                            _f.sum(database.ObsVentaMensual.unidades),
+                            _f.sum(database.ObsVentaMensual.monto))
+                        .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                                database.ObsVentaMensual.producto_observer.in_(prod_ids),
+                                ym_expr.between(desde_12m, hasta))
+                        .group_by(database.ObsVentaMensual.anio, database.ObsVentaMensual.mes).all())
+                serie = {(a, mm): (float(u or 0), float(mt or 0)) for (a, mm, u, mt) in rows}
+
+                # Top 5 productos por unidades 12m (incluye monto para precio)
+                top_rows = (session.query(
+                                database.ObsVentaMensual.producto_observer,
+                                _f.sum(database.ObsVentaMensual.unidades),
+                                _f.sum(database.ObsVentaMensual.monto))
+                            .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                                    database.ObsVentaMensual.producto_observer.in_(prod_ids),
+                                    ym_expr.between(desde_12m, hasta))
+                            .group_by(database.ObsVentaMensual.producto_observer)
+                            .order_by(_f.sum(database.ObsVentaMensual.unidades).desc())
+                            .limit(5).all())
+                desc_map = {p.observer_id: p.descripcion for p in prods}
+                cant_envase_map = {p.observer_id: (float(p.cantidad_envase) if p.cantidad_envase else None)
+                                   for p in prods}
+                top_productos = []
+                for (pid, u, mt) in top_rows:
+                    u_f = float(u or 0)
+                    m_f = float(mt or 0)
+                    ce = cant_envase_map.get(pid)
+                    precio_envase = (m_f / u_f) if u_f > 0 else 0
+                    precio_unidad = (m_f / (u_f * ce)) if (u_f > 0 and ce and ce > 0) else 0
+                    top_productos.append({
+                        'descripcion': desc_map.get(pid, f'#{pid}'),
+                        'u12m': u_f,
+                        'm12m': m_f,
+                        'cantidad_envase': ce,
+                        'precio_envase': precio_envase,
+                        'precio_unidad': precio_unidad,
+                    })
+
+                # Precio promedio por unidad de contenido: suma(monto)/suma(unidades*cantidad_envase)
+                # Solo contamos productos con cantidad_envase > 0 para evitar sesgo.
+                u_contenido_total = 0.0
+                m_contenido_total = 0.0
+                for pid, (u_p, m_p) in [
+                    (pid, session.query(
+                        _f.coalesce(_f.sum(database.ObsVentaMensual.unidades), 0),
+                        _f.coalesce(_f.sum(database.ObsVentaMensual.monto), 0))
+                     .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                             database.ObsVentaMensual.producto_observer == pid,
+                             ym_expr.between(desde_12m, hasta)).first())
+                    for pid in prod_ids
+                ]:
+                    ce = cant_envase_map.get(pid)
+                    if ce and ce > 0 and u_p:
+                        u_contenido_total += float(u_p) * ce
+                        m_contenido_total += float(m_p)
+                precio_unidad = (m_contenido_total / u_contenido_total) if u_contenido_total > 0 else 0
+
+                resultados.append({
+                    'lab_id': lab_id,
+                    'lab_nombre': labs_map.get(lab_id) or f'#{lab_id}',
+                    'n_productos': len(prods),
+                    'stock_total': int(stock_total),
+                    'u3m': u3m, 'u12m': u12m,
+                    'm3m': m3m, 'm12m': m12m,
+                    'precio_prom_envase': (m12m / u12m) if u12m > 0 else 0,
+                    'precio_prom_unidad': precio_unidad,
+                    'serie_labels': [f'{m:02d}/{y}' for (y, m) in meses],
+                    'serie_unidades': [serie.get((y, m), (0, 0))[0] for (y, m) in meses],
+                    'serie_monto':    [serie.get((y, m), (0, 0))[1] for (y, m) in meses],
+                    'top_productos': top_productos,
+                })
+
+        return jsonify({'droga_id': droga_id, 'droga_nombre': nombre_droga,
+                        'labs': resultados})
 
     @app.route('/observer/status')
     @login_required

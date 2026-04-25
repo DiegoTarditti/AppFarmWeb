@@ -9,12 +9,12 @@
 {% endblock %}
 
 {% block main %}
-    <div class="bg-surface border-b border-[#e0e0e0] px-6 py-3 flex items-center gap-2 flex-shrink-0">
-        <div>
+    <div class="bg-surface border-b border-[#e0e0e0] px-3 sm:px-6 py-3 flex items-center gap-2 flex-wrap flex-shrink-0">
+        <div class="min-w-0">
             <h1 class="text-base font-bold text-[#1e1e1e]">Packs de módulos</h1>
             <p class="text-xs text-[#6f6f6f]">Módulos agrupados por laboratorio · equivalencias EAN pack → EAN unidad</p>
         </div>
-        <div class="ml-auto flex items-center gap-2">
+        <div class="sm:ml-auto flex items-center gap-2 flex-wrap">
             <a href="{{ url_for('modulo_packs_plantilla') }}"
                class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-[#e0e0e0] text-[#555] hover:bg-black/[0.04] transition-colors flex items-center gap-1.5">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>

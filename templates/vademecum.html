@@ -6,15 +6,15 @@
 <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
     <!-- Header -->
-    <div class="bg-surface border-b border-[#e0e0e0] px-6 py-3 flex-shrink-0">
-        <div class="flex items-center gap-3 flex-wrap">
-            <div>
+    <div class="bg-surface border-b border-[#e0e0e0] px-3 sm:px-6 py-3 flex-shrink-0">
+        <div class="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div class="min-w-0">
                 <h1 class="text-base font-bold text-[#1e1e1e]">Vademécum</h1>
                 <p class="text-xs text-[#6f6f6f]">Búsqueda integrada en PR Vademécum Argentina</p>
             </div>
-            <div class="flex items-center gap-2 ml-auto">
+            <div class="flex items-center gap-2 sm:ml-auto flex-wrap w-full sm:w-auto">
                 <input type="text" id="vad-search" placeholder="Buscar medicamento…"
-                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-1 focus:ring-brand"
+                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm flex-1 sm:flex-initial sm:w-64 focus:outline-none focus:ring-1 focus:ring-brand"
                        onkeydown="if(event.key==='Enter') doSearch()">
                 <button onclick="doSearch()"
                         class="bg-brand hover:bg-brand-hover text-brand-dark px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors">

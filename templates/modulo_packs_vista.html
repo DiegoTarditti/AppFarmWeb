@@ -9,12 +9,12 @@
 
 {% block main %}
     <!-- Header -->
-    <div class="bg-surface border-b border-[#e0e0e0] px-6 py-3 flex items-center gap-4 flex-shrink-0">
-        <div>
+    <div class="bg-surface border-b border-[#e0e0e0] px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4 flex-wrap flex-shrink-0">
+        <div class="min-w-0">
             <h1 class="text-base font-bold text-[#1e1e1e]">Vista módulos</h1>
             <p class="text-xs text-[#6f6f6f]">Módulos con sus productos y equivalencias EAN</p>
         </div>
-        <div class="ml-auto flex items-center gap-2">
+        <div class="sm:ml-auto flex items-center gap-2 flex-wrap">
             <!-- Filtro laboratorio -->
             <select onchange="window.location.href='/modulo-packs/vista' + (this.value ? '?lab=' + encodeURIComponent(this.value) : '')"
                     class="text-xs border border-[#e0e0e0] rounded-lg px-3 py-1.5 bg-white text-[#555] focus:outline-none focus:ring-1 focus:ring-brand">

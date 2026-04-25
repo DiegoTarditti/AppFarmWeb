@@ -50,12 +50,12 @@
 
 {% block main %}
     <!-- Top bar -->
-    <div class="bg-surface border-b border-[#111827] px-6 py-3 flex items-center gap-4 flex-shrink-0 no-print">
-        <div>
-            <h1 class="text-base font-bold text-[#1e1e1e]">{{ pedido.laboratorio }}</h1>
+    <div class="bg-surface border-b border-[#111827] px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4 flex-wrap flex-shrink-0 no-print">
+        <div class="min-w-0 flex-1 sm:flex-initial">
+            <h1 class="text-base font-bold text-[#1e1e1e] truncate">{{ pedido.laboratorio }}</h1>
             <p class="text-xs text-[#6f6f6f]">{{ pedido.periodo }} · {{ pedido.n_days }}d · {{ pedido.productos | length }} productos</p>
         </div>
-        <div class="ml-auto flex items-center gap-2">
+        <div class="sm:ml-auto flex items-center gap-2 flex-wrap">
             <span id="save-status" class="text-[11px] text-[#6f6f6f] italic"></span>
             <button type="button" onclick="saveAnalysisState()"
                     class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
