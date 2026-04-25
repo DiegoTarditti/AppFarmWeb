@@ -545,24 +545,28 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
             c.setdefault('_origen', 'global')
             cands.append(c)
 
-        # 3. Si target='producto' y hay lab local con observer_id mapeado,
-        #    también buscamos en obs_productos del mismo lab observer.
-        if (target == 'producto' and incluir_observer and laboratorio_id):
+        # 3. Pool ObServer (catálogo Alfabeta vía obs_productos).
+        #    Si target='producto' y el lab local tiene observer_id mapeado,
+        #    scopeamos a ese lab observer. Si no, buscamos global en obs.
+        #    Esto cubre el caso donde el lab local todavía no fue vinculado a
+        #    ObServer pero el catálogo ObServer SÍ tiene el producto.
+        if target == 'producto' and incluir_observer:
             import database
-            lab = session.get(database.Laboratorio, laboratorio_id)
-            lab_obs_id = getattr(lab, 'observer_id', None) if lab else None
-            if lab_obs_id is not None:
-                res_obs = match_producto(
-                    descripcion=descripcion,
-                    laboratorio_id=lab_obs_id,
-                    target='obs_producto',
-                    incluir_candidatos=True,
-                    top_candidatos=top * 2,
-                    session=session,
-                )
-                for c in res_obs.candidatos_top:
-                    c['_origen'] = 'observer'
-                cands.extend(res_obs.candidatos_top)
+            lab_obs_id = None
+            if laboratorio_id:
+                lab = session.get(database.Laboratorio, laboratorio_id)
+                lab_obs_id = getattr(lab, 'observer_id', None) if lab else None
+            res_obs = match_producto(
+                descripcion=descripcion,
+                laboratorio_id=lab_obs_id,    # None → busca global en obs
+                target='obs_producto',
+                incluir_candidatos=True,
+                top_candidatos=top * 2,
+                session=session,
+            )
+            for c in res_obs.candidatos_top:
+                c['_origen'] = 'observer'
+            cands.extend(res_obs.candidatos_top)
 
         # Dedup por (origen, id) y ordenar por score desc.
         mejor_por_id = {}
