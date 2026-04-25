@@ -113,6 +113,160 @@ def _previsualizar_xlsx(path):
         'count_filas': len(rows_serializadas),
     }
 
+    @app.route('/api/ofertas/import-validar', methods=['POST'])
+    @login_required
+    def api_ofertas_import_validar():
+        """Cruza los items contra el catálogo de productos local.
+
+        Cascada de match:
+        1. Exacto por EAN (codigo_barra + alts).
+        2. Exacto por codigo_alfabeta.
+        3. Fuzzy por descripción + laboratorio_id (Jaccard, threshold 0.80).
+        4. Sin match → 'not_found'.
+
+        Para los matched: si hay precio_pvp previo y precio nuevo, comparar
+        variación. > umbral → 'warning'.
+
+        Body JSON: { items: [...], laboratorio_id?, umbral_variacion?: 30 }
+        """
+        from sqlalchemy import or_
+        from observer_matcher import _normalize, _tokens, _jaccard
+        data = request.get_json(silent=True) or {}
+        items = data.get('items') or []
+        lab_id = data.get('laboratorio_id')
+        try:
+            lab_id = int(lab_id) if lab_id else None
+        except (TypeError, ValueError):
+            lab_id = None
+        try:
+            umbral = float(data.get('umbral_variacion', 30))
+        except (ValueError, TypeError):
+            umbral = 30
+
+        if not items:
+            return jsonify({'items': [], 'stats': {}})
+
+        # Recolectar todos los códigos a buscar
+        eans = {str(it.get('ean')).strip() for it in items if it.get('ean')}
+        codigos = {str(it.get('codigo')).strip() for it in items if it.get('codigo')}
+        eans.discard('')
+        codigos.discard('')
+
+        # Buscar productos locales que matcheen alguno
+        prod_por_ean = {}
+        prod_por_alfabeta = {}
+        with database.get_db() as session:
+            P = database.Producto
+            cond = []
+            if eans:
+                cond.append(P.codigo_barra.in_(eans))
+                for col_name in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
+                    col = getattr(P, col_name, None)
+                    if col is not None:
+                        cond.append(col.in_(eans))
+            if codigos:
+                cond.append(P.codigo_alfabeta.in_(codigos))
+            if cond:
+                for p in session.query(P).filter(or_(*cond)).all():
+                    for cb in (p.codigo_barra,
+                               getattr(p, 'codigo_barra_alt1', None),
+                               getattr(p, 'codigo_barra_alt2', None),
+                               getattr(p, 'codigo_barra_alt3', None)):
+                        if cb:
+                            prod_por_ean[cb] = p
+                    if p.codigo_alfabeta:
+                        prod_por_alfabeta[p.codigo_alfabeta] = p
+
+            # Para fuzzy: precargar productos del lab (si está) con sus tokens
+            productos_del_lab = []
+            if lab_id:
+                rows = session.query(P).filter(P.laboratorio_id == lab_id).all()
+                productos_del_lab = [(p, _tokens(p.descripcion or '')) for p in rows]
+
+        validados = []
+        stats = {'ok': 0, 'warning': 0, 'fuzzy': 0, 'not_found': 0, 'sin_precio_previo': 0}
+        for it in items:
+            ean = str(it.get('ean') or '').strip()
+            cod = str(it.get('codigo') or '').strip()
+            descr = str(it.get('descripcion') or '').strip()
+            prod = (prod_por_ean.get(ean) if ean else None) or \
+                   (prod_por_alfabeta.get(cod) if cod else None)
+            estrategia = 'exacto' if prod else None
+
+            # Fallback: fuzzy por descripción + lab si no matchó exacto
+            if not prod and descr and productos_del_lab:
+                toks_in = _tokens(descr)
+                if len(toks_in) >= 2:  # evitar matches con descripciones muy cortas
+                    mejor = None
+                    mejor_score = 0.0
+                    empate = False
+                    for p, toks_p in productos_del_lab:
+                        if not toks_p:
+                            continue
+                        score = _jaccard(toks_in, toks_p)
+                        if score > mejor_score:
+                            mejor = p
+                            mejor_score = score
+                            empate = False
+                        elif score == mejor_score and score > 0:
+                            empate = True
+                    if mejor and mejor_score >= 0.80 and not empate:
+                        prod = mejor
+                        estrategia = 'fuzzy'
+
+            entry = dict(it)
+            if not prod:
+                entry['_status'] = 'not_found'
+                entry['_motivo'] = 'No está en el catálogo local'
+                stats['not_found'] += 1
+            else:
+                entry['_match_descripcion_local'] = prod.descripcion or ''
+                entry['_producto_id'] = prod.id
+                entry['_estrategia'] = estrategia
+                # Comparar precio si hay
+                precio_nuevo = it.get('precio')
+                precio_local = float(prod.precio_pvp) if prod.precio_pvp else None
+                base_status = 'fuzzy' if estrategia == 'fuzzy' else 'ok'
+
+                if precio_nuevo is not None and precio_local and precio_local > 0:
+                    try:
+                        variacion = (float(precio_nuevo) - precio_local) / precio_local * 100
+                        entry['_variacion_pct'] = round(variacion, 1)
+                        entry['_precio_anterior'] = precio_local
+                        if abs(variacion) > umbral:
+                            entry['_status'] = 'warning'
+                            entry['_motivo'] = (
+                                f'Variación {variacion:+.1f}% '
+                                f'(${precio_local:.2f} → ${precio_nuevo:.2f})'
+                            )
+                            stats['warning'] += 1
+                        else:
+                            entry['_status'] = base_status
+                            stats[base_status] = stats.get(base_status, 0) + 1
+                    except (ValueError, TypeError):
+                        entry['_status'] = base_status
+                        stats[base_status] = stats.get(base_status, 0) + 1
+                else:
+                    entry['_status'] = base_status
+                    if precio_local is None or precio_local == 0:
+                        entry['_motivo_info'] = 'Sin precio previo en catálogo (no se puede comparar)'
+                        stats['sin_precio_previo'] += 1
+                    stats[base_status] = stats.get(base_status, 0) + 1
+
+                if estrategia == 'fuzzy':
+                    entry['_motivo'] = (
+                        f'Match por descripción (no había EAN/alfabeta exacto). '
+                        f'Local: "{prod.descripcion[:80] if prod.descripcion else ""}"'
+                    )
+            validados.append(entry)
+
+        return jsonify({
+            'items': validados,
+            'stats': stats,
+            'umbral_variacion': umbral,
+            'total': len(validados),
+        })
+
     @app.route('/api/ofertas/import-guardar', methods=['POST'])
     @login_required
     def api_ofertas_import_guardar():

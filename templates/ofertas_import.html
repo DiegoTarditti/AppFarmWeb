@@ -66,9 +66,23 @@
             <p class="text-xs text-[#6f6f6f]"><strong id="map-info"></strong></p>
         </div>
         <p class="text-xs text-[#6f6f6f] mb-3">
-            El sistema detectó automáticamente las columnas. Revisá y corregí si algo está mal.
-            Las columnas que no apliquen, dejalas en <em>"(ninguno)"</em>.
+            Mirá las primeras filas para ver qué tiene cada columna y mapealas a los campos del sistema.
+            Las que no apliquen, <em>"(ninguno)"</em>.
         </p>
+
+        <!-- Snapshot del archivo -->
+        <div class="mb-4">
+            <p class="text-[11px] font-semibold text-[#555] mb-1">Snapshot del archivo (primeras 5 filas):</p>
+            <div class="overflow-x-auto border border-surface-border rounded-lg">
+                <table class="w-full text-[11px]">
+                    <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888]">
+                        <tr id="snapshot-header"></tr>
+                    </thead>
+                    <tbody id="snapshot-body" class="divide-y divide-[#f0f0f0]"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div id="mapping-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"></div>
         <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 mb-4">
             <strong>💡 Tip:</strong> si Excel guardó el descuento como <code>0.2</code> en vez de <code>20</code>, no te preocupes: el sistema lo convierte automáticamente a 20% al guardar (cualquier valor entre 0 y 1 se trata como fracción).
@@ -118,7 +132,32 @@
 
     <!-- ============= PASO 4: Confirmar ============= -->
     <div id="panel-4" class="hidden bg-white border border-surface-border rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">4. Confirmar e importar</h2>
+        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">4. Validación y confirmación</h2>
+
+        <p class="text-xs text-[#6f6f6f] mb-3">
+            El sistema cruzó cada item contra el catálogo de productos local. Resultado:
+        </p>
+
+        <div id="validacion-stats" class="mb-4"></div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 space-y-1.5 text-xs">
+            <p class="font-semibold text-amber-900">Por defecto se descartan los items con problemas. Tildá para incluirlos:</p>
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="incluir-warning" class="w-4 h-4 accent-amber-600">
+                <span>Incluir items con <strong>variación de precio</strong> (>30%)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="incluir-not-found" class="w-4 h-4 accent-red-600">
+                <span>Incluir items <strong>no encontrados</strong> en catálogo (riesgoso, datos sin verificar)</span>
+            </label>
+        </div>
+
+        <details class="mb-4 bg-[#fafafa] rounded-lg">
+            <summary class="cursor-pointer px-3 py-2 text-xs text-[#555] hover:text-[#1e1e1e]">
+                Ver detalle de items con problemas
+            </summary>
+            <div id="validacion-detalle" class="px-3 py-2 max-h-72 overflow-y-auto"></div>
+        </details>
 
         <div class="bg-[#fafafa] rounded-lg p-4 mb-4">
             <p class="text-xs text-[#888] mb-1">Resumen</p>
@@ -253,6 +292,7 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         _headers = data.headers || [];
         _rows = data.rows || [];
         _mapping = data.mapping || {};
+        renderSnapshot();
         renderMapping();
         recalcularItems();
         setStep(2);
@@ -261,6 +301,39 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         status.className = 'text-xs text-red-700 mt-2';
     }
 });
+
+function renderSnapshot() {
+    // Header con número + nombre de columna
+    document.getElementById('snapshot-header').innerHTML =
+        _headers.map((h, i) =>
+            `<th class="px-2 py-1.5 text-left whitespace-nowrap" data-col="${i}">
+                <span class="text-violet-700 font-bold">${i + 1}.</span> ${escapeHtml(h)}
+            </th>`
+        ).join('');
+
+    // Cuerpo: primeras 5 filas
+    const body = document.getElementById('snapshot-body');
+    const sample = _rows.slice(0, 5);
+    body.innerHTML = sample.map(row => {
+        const cells = _headers.map((_, i) => {
+            const v = i < row.length ? row[i] : '';
+            const display = v === '' || v == null ? '<span class="text-[#bbb]">—</span>' : escapeHtml(v).slice(0, 60);
+            return `<td class="px-2 py-1 border-l border-[#f0f0f0] whitespace-nowrap" data-col="${i}">${display}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+    }).join('');
+    if (_rows.length === 0) {
+        body.innerHTML = '<tr><td colspan="' + _headers.length + '" class="px-2 py-3 text-center text-[#999]">Sin filas</td></tr>';
+    }
+}
+
+function highlightColumn(idx) {
+    document.querySelectorAll('#snapshot-header [data-col], #snapshot-body [data-col]').forEach(el => {
+        const isActive = parseInt(el.dataset.col, 10) === idx;
+        el.classList.toggle('bg-violet-100', isActive);
+        el.classList.toggle('font-semibold', isActive);
+    });
+}
 
 function renderMapping() {
     document.getElementById('map-info').textContent =
@@ -294,6 +367,16 @@ function renderMapping() {
                 `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
             recalcularItems();
         });
+        // Hover sobre el dropdown highlightea la columna en el snapshot
+        sel.addEventListener('focus', () => {
+            const v = sel.value;
+            if (v !== '') highlightColumn(parseInt(v, 10));
+        });
+        sel.addEventListener('mouseover', () => {
+            const v = sel.value;
+            if (v !== '') highlightColumn(parseInt(v, 10));
+        });
+        sel.addEventListener('blur', () => highlightColumn(-1));
     });
 }
 
@@ -390,15 +473,116 @@ document.getElementById('btn-next-2').addEventListener('click', () => {
     setStep(3);
 });
 document.getElementById('btn-back-2').addEventListener('click', () => setStep(2));
-document.getElementById('btn-next-3').addEventListener('click', () => {
+document.getElementById('btn-next-3').addEventListener('click', async () => {
     if (_items.length === 0) {
         alert('No hay items válidos para importar.');
         return;
     }
-    document.getElementById('confirm-count').textContent = _items.length;
-    setStep(4);
+    // Para fuzzy match por descripción + lab, necesitamos el lab.
+    // Si todavía no se eligió en paso 4, intentamos sin lab — fuzzy global no se hace.
+    const labId = document.getElementById('lab-select').value;
+    const btn = document.getElementById('btn-next-3');
+    btn.disabled = true; btn.textContent = '⏳ Validando…';
+    try {
+        const r = await fetch('/api/ofertas/import-validar', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                items: _items,
+                laboratorio_id: labId ? parseInt(labId, 10) : null,
+                umbral_variacion: 30,
+            }),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            alert('Error al validar: ' + (data.error || 'desconocido'));
+            return;
+        }
+        _items = data.items;
+        renderValidacion(data.stats);
+        actualizarConfirmCount();
+        setStep(4);
+    } catch (err) {
+        alert('Error de red: ' + err.message);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Continuar →';
+    }
 });
 document.getElementById('btn-back-3').addEventListener('click', () => setStep(3));
+
+function renderValidacion(stats) {
+    const div = document.getElementById('validacion-stats');
+    if (!div) return;
+    div.innerHTML = `
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-center">
+                <p class="text-[10px] text-emerald-700 uppercase">OK</p>
+                <p class="text-xl font-bold text-emerald-800">${stats.ok || 0}</p>
+                <p class="text-[10px] text-emerald-600">match por EAN/alfabeta</p>
+            </div>
+            <div class="bg-sky-50 border border-sky-200 rounded-lg p-2 text-center">
+                <p class="text-[10px] text-sky-700 uppercase">Match fuzzy</p>
+                <p class="text-xl font-bold text-sky-800">${stats.fuzzy || 0}</p>
+                <p class="text-[10px] text-sky-600">por descripción</p>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
+                <p class="text-[10px] text-amber-700 uppercase">Var. precio</p>
+                <p class="text-xl font-bold text-amber-800">${stats.warning || 0}</p>
+                <p class="text-[10px] text-amber-600">>30%</p>
+            </div>
+            <div class="bg-red-50 border border-red-200 rounded-lg p-2 text-center">
+                <p class="text-[10px] text-red-700 uppercase">No encontrados</p>
+                <p class="text-xl font-bold text-red-800">${stats.not_found || 0}</p>
+                <p class="text-[10px] text-red-600">no en catálogo</p>
+            </div>
+        </div>
+        ${stats.sin_precio_previo ? `<p class="text-[11px] text-[#888] italic">${stats.sin_precio_previo} items sin precio previo en el catálogo — no se pudo comparar.</p>` : ''}
+    `;
+
+    // Renderizar detalle de items con problemas
+    const detalle = document.getElementById('validacion-detalle');
+    if (detalle) {
+        const problematicos = _items.filter(it => ['warning', 'not_found', 'fuzzy'].includes(it._status));
+        if (!problematicos.length) {
+            detalle.innerHTML = '<p class="text-xs text-[#999]">Ningún item con problemas. ✓</p>';
+        } else {
+            detalle.innerHTML = '<table class="w-full text-xs"><tbody class="divide-y divide-[#ececec]">' +
+                problematicos.slice(0, 50).map(it => {
+                    const status = it._status;
+                    const colorCls = status === 'not_found' ? 'text-red-700' :
+                                     status === 'warning' ? 'text-amber-700' :
+                                     status === 'fuzzy' ? 'text-sky-700' : 'text-[#555]';
+                    const label = status === 'not_found' ? '❌' :
+                                  status === 'warning' ? '⚠' :
+                                  status === 'fuzzy' ? '🔍' : '';
+                    return `<tr class="${colorCls}">
+                        <td class="py-1 pr-2 w-4">${label}</td>
+                        <td class="py-1 pr-2 font-mono text-[10px]">${escapeHtml(it.ean || it.codigo || '')}</td>
+                        <td class="py-1 pr-2">${escapeHtml(it.descripcion || '')}</td>
+                        <td class="py-1 pr-2 text-[10px]">${escapeHtml(it._motivo || '')}</td>
+                    </tr>`;
+                }).join('') +
+                (problematicos.length > 50 ? `<tr><td colspan="4" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 50} más</td></tr>` : '') +
+                '</tbody></table>';
+        }
+    }
+}
+
+function actualizarConfirmCount() {
+    const incluirFuzzy = document.getElementById('incluir-fuzzy')?.checked ?? true;
+    const incluirWarn = document.getElementById('incluir-warning')?.checked || false;
+    const incluirNotFound = document.getElementById('incluir-not-found')?.checked || false;
+    let n = 0;
+    for (const it of _items) {
+        const s = it._status;
+        if (s === 'ok') n++;
+        else if (s === 'fuzzy' && incluirFuzzy) n++;
+        else if (s === 'warning' && incluirWarn) n++;
+        else if (s === 'not_found' && incluirNotFound) n++;
+    }
+    document.getElementById('confirm-count').textContent = n;
+}
 
 document.getElementById('lab-select').addEventListener('change', (e) => {
     const sel = e.target;

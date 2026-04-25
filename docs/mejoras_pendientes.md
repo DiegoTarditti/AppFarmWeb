@@ -2,6 +2,58 @@
 
 Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo se hace, se marca ✅ y se agrega fecha.
 
+---
+
+## 📐 Reglas generales del sistema
+
+### Imports siempre validan contra el catálogo existente
+**Filosofía**: mejor descartar/avisar un dato malo que importar basura.
+
+Cualquier import (ofertas, módulos, facturas en el conversor, etc.) tiene que pasar por una etapa de validación entre el mapeo de columnas y el guardado:
+
+1. **Match contra catálogo**: cada item se intenta matchear contra `productos` (por EAN, alts, codigo_alfabeta).
+2. **Fallback por descripción + lab**: si no hay match exacto, se intenta fuzzy match por descripción dentro del lab del archivo.
+3. **Detección de outliers en precio**: si matchea y hay `precio_pvp` previo, comparar contra el precio importado. Variación > umbral (sugerido 30-50%) → warning.
+4. **Panel de validación previo al guardado**: mostrar 4 buckets:
+   - ✅ OK (limpio)
+   - 🔍 Match fuzzy (matcheó por descripción, score < 1.0)
+   - ⚠ Warning de precio (variación grande)
+   - ❌ No encontrado (item no está en catálogo)
+5. **Descartar por default los items con problemas**: el user puede destildar para incluirlos.
+6. **Solo se importa lo limpio + lo explícitamente habilitado**.
+
+Aplica a:
+- Importador de ofertas (Fase B en curso).
+- Conversor de facturas (cuando se ajuste).
+- Cualquier import futuro.
+
+### Módulo unificado de matching de productos (PENDIENTE)
+**Trigger**: cuando se sume el segundo import a esta lógica.
+
+Hoy hay infraestructura dispersa para matchear productos:
+- `observer_matcher.py` — matching producto local ↔ obs_producto por descripción (Jaccard).
+- `pack_detector.py` — detecta packs por descripción + cantidad.
+- `scripts/vincular_pedido_observer.py:_matchear` — match para items de pedido.
+
+Hay que consolidar en un solo módulo `producto_matcher.py` con función única:
+
+```python
+def match_producto(ean=None, codigo_alfabeta=None, descripcion=None,
+                   lab_id=None, precio_referencia=None,
+                   threshold_fuzzy=0.80) -> MatchResult:
+    """Cascada de estrategias de match. Devuelve Producto + estrategia + score + warnings.
+
+    1. Exacto por EAN (codigo_barra o alts).
+    2. Exacto por codigo_alfabeta.
+    3. Fuzzy por descripción + lab_id (Jaccard, solo dentro del lab).
+    4. Fuzzy global (sin lab) — solo si threshold alto.
+    5. Cross-check de precio: si hay precio_referencia y |Δ%| > 50% del precio actual,
+       agregar warning aunque haya match.
+    """
+```
+
+Ventajas: cualquier import nuevo (facturas, ofertas, pedidos) usa la misma lógica → comportamiento consistente. Si mejorás el matcher, mejoran todos los imports.
+
 **Cómo leerlo:**
 - Cada item tiene **trigger** (cuándo conviene hacerlo) y **esfuerzo** estimado.
 - Si el trigger se cumple → arrancarlo.
