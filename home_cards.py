@@ -113,6 +113,15 @@ ACCIONES_HOME = [
         'fg_default': '#0F766E',
     },
     {
+        'id': 'ofertas_import',
+        'titulo': 'Importar ofertas',
+        'desc': 'Subí Excel del proveedor con descuento, mínimo, plazo. Asignalo a un lab',
+        'endpoint': 'ofertas_import_page',
+        'icono_path': 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+        'bg_default': '#FEF3C7',
+        'fg_default': '#B45309',
+    },
+    {
         'id': 'config',
         'titulo': 'Configuración',
         'desc': 'Ajustes del sistema',

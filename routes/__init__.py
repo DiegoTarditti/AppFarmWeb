@@ -19,6 +19,7 @@ from routes import (
     obras_sociales_catalogo,
     observer,
     observer_sync,
+    ofertas_import,
     partners,
     plantillas,
     procesos,
@@ -54,6 +55,7 @@ _modules = [
     procesos,
     partners,
     plantillas,
+    ofertas_import,
 ]
 
 
