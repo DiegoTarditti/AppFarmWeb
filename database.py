@@ -250,6 +250,14 @@ class ExportTemplate(Base):
 
 
 class OfertaMinimo(Base):
+    """Tabla de descuentos por producto + lab.
+
+    El nombre histórico es 'minimo' pero hoy contiene los DOS tipos:
+    - tipo_descuento='simple': descuento sin mínimo de unidades (unidades_minima=NULL).
+    - tipo_descuento='con_minimo': el descuento solo aplica si se compra >= unidades_minima.
+
+    El análisis de pedido (`/order/<id>`) lee de acá y filtra por lab + tipo.
+    """
     __tablename__ = 'ofertas_minimo'
     id              = Column(Integer, primary_key=True)
     laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=False)
@@ -261,6 +269,7 @@ class OfertaMinimo(Base):
     rentabilidad    = Column(DECIMAL(6, 2))
     plazo_pago      = Column(String(100))
     grupo_id        = Column(Integer)
+    tipo_descuento  = Column(String(20))   # 'simple' | 'con_minimo'
     actualizado_en  = Column(DateTime, default=now_ar)
 
 
@@ -1287,8 +1296,21 @@ def _pg_add_columns(conn):
             rentabilidad DECIMAL(6,2),
             plazo_pago VARCHAR(100),
             grupo_id INTEGER,
+            tipo_descuento VARCHAR(20),
             actualizado_en TIMESTAMP DEFAULT NOW()
         )
+    """))
+    # Migración: agregar tipo_descuento + backfill desde unidades_minima.
+    conn.execute(text(
+        "ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS tipo_descuento VARCHAR(20)"
+    ))
+    conn.execute(text("""
+        UPDATE ofertas_minimo
+        SET tipo_descuento = CASE
+            WHEN unidades_minima IS NULL OR unidades_minima <= 1 THEN 'simple'
+            ELSE 'con_minimo'
+        END
+        WHERE tipo_descuento IS NULL
     """))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS documentos_pendientes (
@@ -1417,6 +1439,7 @@ def _pg_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_productos_alt1 ON productos(codigo_barra_alt1)",
         "CREATE INDEX IF NOT EXISTS idx_productos_alt2 ON productos(codigo_barra_alt2)",
         "CREATE INDEX IF NOT EXISTS idx_productos_alt3 ON productos(codigo_barra_alt3)",
+        "CREATE INDEX IF NOT EXISTS idx_ofertas_minimo_lab_tipo ON ofertas_minimo(laboratorio_id, tipo_descuento)",
     ]:
         conn.execute(text(stmt))
 
@@ -1770,6 +1793,23 @@ def _sqlite_add_columns(conn):
             creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """))
+    # Migración SQLite: tipo_descuento en ofertas_minimo + backfill.
+    try:
+        existing_om = {row[1] for row in conn.execute(text("PRAGMA table_info(ofertas_minimo)"))}
+        if existing_om and 'tipo_descuento' not in existing_om:
+            conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN tipo_descuento VARCHAR(20)"))
+        if existing_om:
+            conn.execute(text("""
+                UPDATE ofertas_minimo
+                SET tipo_descuento = CASE
+                    WHEN unidades_minima IS NULL OR unidades_minima <= 1 THEN 'simple'
+                    ELSE 'con_minimo'
+                END
+                WHERE tipo_descuento IS NULL
+            """))
+    except Exception:
+        pass
+
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",
@@ -1779,5 +1819,6 @@ def _sqlite_add_columns(conn):
         "CREATE INDEX IF NOT EXISTS idx_productos_alt1 ON productos(codigo_barra_alt1)",
         "CREATE INDEX IF NOT EXISTS idx_productos_alt2 ON productos(codigo_barra_alt2)",
         "CREATE INDEX IF NOT EXISTS idx_productos_alt3 ON productos(codigo_barra_alt3)",
+        "CREATE INDEX IF NOT EXISTS idx_ofertas_minimo_lab_tipo ON ofertas_minimo(laboratorio_id, tipo_descuento)",
     ]:
         conn.execute(text(stmt))

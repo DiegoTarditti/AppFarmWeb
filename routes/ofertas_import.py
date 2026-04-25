@@ -480,13 +480,17 @@ def init_app(app):
                     q = q.filter(OfertaMinimo.codigo == codigo)
                 existing = q.first()
 
+                # Catalogar tipo: si tiene mínimo > 1 → 'con_minimo', sino 'simple'.
+                um = _to_int(it.get('unidades_minima'))
+                tipo_desc = 'con_minimo' if (um is not None and um > 1) else 'simple'
+
                 if existing:
                     if it.get('descripcion'):
                         existing.descripcion = str(it['descripcion'])[:300]
                     if codigo and not existing.codigo:
                         existing.codigo = codigo[:50]
                     if it.get('unidades_minima') is not None:
-                        existing.unidades_minima = _to_int(it['unidades_minima'])
+                        existing.unidades_minima = um
                     if it.get('descuento_psl') is not None:
                         existing.descuento_psl = _to_float(it['descuento_psl'])
                     if it.get('rentabilidad') is not None:
@@ -495,6 +499,7 @@ def init_app(app):
                         existing.plazo_pago = str(it['plazo_pago'])[:100]
                     if it.get('grupo_id') is not None:
                         existing.grupo_id = _to_int(it['grupo_id'])
+                    existing.tipo_descuento = tipo_desc
                     existing.actualizado_en = now_ar()
                     actualizados += 1
                 else:
@@ -503,11 +508,12 @@ def init_app(app):
                         ean=(ean or '')[:20],
                         codigo=(codigo or None) and codigo[:50],
                         descripcion=(str(it.get('descripcion') or ''))[:300] or None,
-                        unidades_minima=_to_int(it.get('unidades_minima')),
+                        unidades_minima=um,
                         descuento_psl=_to_float(it.get('descuento_psl')),
                         rentabilidad=_to_float(it.get('rentabilidad')),
                         plazo_pago=(str(it.get('plazo_pago') or ''))[:100] or None,
                         grupo_id=_to_int(it.get('grupo_id')),
+                        tipo_descuento=tipo_desc,
                     ))
                     insertados += 1
 

@@ -570,22 +570,27 @@ def detectar_campos_factura(tokens):
     if not tokens:
         return {'asignaciones': {}, 'tipos': [], 'warnings': []}
 
-    # 1. Tipar cada token
+    # 1. Tipar cada token. Usamos parsear_numero_ar (tolerante a OCR-rotos
+    # como '15,963,95' o '1,183.326,62') en vez de los regex estrictos —
+    # un valor es "money" si parsea y no es int corto ni pct.
     cls = []
     for i, t in enumerate(tokens):
+        txt = str(t).strip()
         n = parsear_numero_ar(t)
+        es_ean = validar_ean(t) and len(txt) >= 12
+        es_int_corto = (n is not None and 1 <= n <= 9999 and n == int(n)
+                        and bool(re.match(r'^\d{1,4}(?:\.0+)?$', txt)))
+        es_pct = (n is not None and 0 <= n <= 100
+                  and (txt.endswith('%') or bool(_RE_PCT_AR.match(txt))))
+        # Money: parseable, no EAN, no int corto, no pct.
+        es_money = (n is not None and not es_ean
+                    and not es_int_corto and not es_pct)
         cls.append({
-            'i': i,
-            'text': t,
-            'n': n,
-            'es_ean': validar_ean(t) and len(str(t).strip()) >= 12,
-            'es_int_corto': (n is not None and 1 <= n <= 9999 and n == int(n)
-                             and bool(re.match(r'^\d{1,4}(?:\.0+)?$', str(t).strip()))),
-            'es_money': bool(_RE_MONEY_AR.match(str(t).strip())
-                             or _RE_MONEY_EN.match(str(t).strip())),
-            'es_pct': (n is not None and 0 <= n <= 100
-                       and (str(t).strip().endswith('%')
-                            or bool(_RE_PCT_AR.match(str(t).strip())))),
+            'i': i, 'text': t, 'n': n,
+            'es_ean': es_ean,
+            'es_int_corto': es_int_corto,
+            'es_money': es_money,
+            'es_pct': es_pct,
         })
     tipos = [
         'ean' if c['es_ean'] else
