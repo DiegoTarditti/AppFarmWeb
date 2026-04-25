@@ -864,41 +864,43 @@ async function buscarCandidatos(itemIdx) {
             slot.innerHTML = '<span class="text-[10px] text-[#999]">No se encontraron candidatos.</span>';
             return;
         }
-        const opciones = data.candidatos.map(c =>
-            `<option value="${c.producto_id}" data-desc="${escapeHtml(c.descripcion)}" data-cb="${escapeHtml(c.codigo_barra)}" data-alf="${escapeHtml(c.codigo_alfabeta)}">${escapeHtml(c.descripcion)} (${(c.score * 100).toFixed(0)}%)</option>`
-        ).join('');
+        // Lista de candidatos clickeable directa (un click vincula).
+        // Cada candidato se renderiza como un row con la descripción + score.
+        const items = data.candidatos.map((c, ci) => `
+            <button type="button"
+                    class="cand-row w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-violet-100 border border-transparent hover:border-violet-300 transition-colors"
+                    data-pid="${c.producto_id || ''}"
+                    data-desc="${escapeHtml(c.descripcion)}"
+                    data-cb="${escapeHtml(c.codigo_barra)}"
+                    data-alf="${escapeHtml(c.codigo_alfabeta)}"
+                    data-origen="${c._origen || ''}">
+                <span class="text-violet-700 font-bold w-6 text-center">${ci + 1}</span>
+                <span class="flex-1 text-[11px] text-[#1e1e1e]">${escapeHtml(c.descripcion)}</span>
+                <span class="text-[10px] text-[#888] tabular-nums">${(c.score * 100).toFixed(0)}%</span>
+                ${c._origen === 'global' ? '<span class="text-[9px] text-amber-600 ml-1">(otro lab)</span>' : ''}
+            </button>
+        `).join('');
         slot.innerHTML = `
-            <div class="flex items-center gap-1 mt-1">
-                <select class="cand-sel text-[10px] bg-surface-input border border-violet-300 rounded px-1 py-0.5 flex-1" data-idx="${itemIdx}">
-                    <option value="">— Elegí un candidato —</option>
-                    ${opciones}
-                </select>
-                <button type="button" class="btn-vincular text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2 py-0.5 rounded" data-idx="${itemIdx}">Vincular</button>
+            <div class="mt-1 bg-violet-50 border border-violet-200 rounded p-1 max-h-48 overflow-y-auto flex flex-col gap-0.5">
+                ${items}
             </div>
+            <p class="text-[9px] text-[#888] mt-1">Click en una fila para vincular.</p>
         `;
-        slot.querySelector('.btn-vincular').addEventListener('click', () => {
-            const sel = slot.querySelector('.cand-sel');
-            const opt = sel.options[sel.selectedIndex];
-            if (!opt || !opt.value) {
-                alert('Elegí un candidato primero.');
-                return;
-            }
-            // Vincular: el item pasa de not_found a fuzzy con el producto elegido
-            const it = _items[itemIdx];
-            it._status = 'fuzzy';
-            it._producto_id = parseInt(opt.value, 10);
-            it._match_descripcion_local = opt.dataset.desc;
-            it._estrategia = 'manual';
-            it._motivo = `Match manual: "${opt.dataset.desc}"`;
-            // Si el item no tenía EAN pero el producto matcheado tiene codigo_barra,
-            // adoptamos el código_alfabeta o lo mantenemos como código.
-            if (!it.ean && opt.dataset.cb) it.ean = opt.dataset.cb;
-            if (!it.codigo && opt.dataset.alf) it.codigo = opt.dataset.alf;
-            // Re-render
-            slot.innerHTML = `<span class="text-[10px] text-emerald-700 font-semibold">✓ Vinculado a: ${escapeHtml(opt.dataset.desc)}</span>`;
-            // Recalcular stats
-            recalcularStats();
-            actualizarConfirmCount();
+        slot.querySelectorAll('.cand-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const it = _items[itemIdx];
+                it._status = 'manual_ok';
+                it._producto_id = parseInt(row.dataset.pid, 10);
+                it._match_descripcion_local = row.dataset.desc;
+                it._estrategia = 'manual';
+                it._motivo = `Match manual: "${row.dataset.desc}"`;
+                if (!it.ean && row.dataset.cb) it.ean = row.dataset.cb;
+                if (!it.codigo && row.dataset.alf) it.codigo = row.dataset.alf;
+                // Colapsar la fila completa: re-render del detalle. El item
+                // pasa a 'manual_ok' que NO se muestra como problema → desaparece.
+                recalcularStats();
+                actualizarConfirmCount();
+            });
         });
     } catch (err) {
         slot.innerHTML = `<span class="text-[10px] text-red-700">Error: ${escapeHtml(err.message)}</span>`;
@@ -909,7 +911,9 @@ function recalcularStats() {
     const stats = {ok: 0, fuzzy: 0, warning: 0, not_found: 0, sin_precio_previo: 0};
     for (const it of _items) {
         const s = it._status;
-        if (s in stats) stats[s]++;
+        // Los manual_ok cuentan como OK (vinculados a mano por el user).
+        if (s === 'manual_ok') stats.ok++;
+        else if (s in stats) stats[s]++;
         if (it._motivo_info && it._motivo_info.includes('Sin precio previo')) {
             stats.sin_precio_previo++;
         }
@@ -924,7 +928,7 @@ function actualizarConfirmCount() {
     let n = 0;
     for (const it of _items) {
         const s = it._status;
-        if (s === 'ok') n++;
+        if (s === 'ok' || s === 'manual_ok') n++;
         else if (s === 'fuzzy' && incluirFuzzy) n++;
         else if (s === 'warning' && incluirWarn) n++;
         else if (s === 'not_found' && incluirNotFound) n++;
