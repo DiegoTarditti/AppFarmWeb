@@ -35,6 +35,9 @@ def init_app(app):
         from datetime import datetime
         q = (request.args.get('q') or '').strip()
         lab_id = request.args.get('lab_id', type=int)
+        # Default: incluir TODOS (incluso los con fecha_baja). El usuario puede activar
+        # "solo activos" si quiere filtrar discontinuados.
+        solo_activos = request.args.get('solo_activos') == '1'
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -45,8 +48,9 @@ def init_app(app):
         id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
 
         with database.get_db() as session:
-            base = (session.query(database.ObsProducto)
-                    .filter(database.ObsProducto.fecha_baja.is_(None)))
+            base = session.query(database.ObsProducto)
+            if solo_activos:
+                base = base.filter(database.ObsProducto.fecha_baja.is_(None))
             if q:
                 like = f'%{q}%'
                 base = base.filter(_or(
@@ -140,6 +144,7 @@ def init_app(app):
                     'prom_12m':     round(v12 / 12, 1),
                     'total_3m':     v3,
                     'total_12m':    v12,
+                    'baja':         p.fecha_baja is not None,
                 })
 
             # Labs para el dropdown
@@ -152,6 +157,7 @@ def init_app(app):
                                productos=data, total=total,
                                page=page, last_page=last_page,
                                q=q, lab_id=lab_id, labs=labs,
+                               solo_activos=solo_activos,
                                per_page=per_page)
 
     @app.route('/estadisticas/drogas')
@@ -317,9 +323,9 @@ def init_app(app):
         hasta = hoy.year * 100 + hoy.month
 
         with database.get_db() as session:
+            # Incluye también las bajas — se marcan con flag para que el front las muestre.
             productos = (session.query(database.ObsProducto)
-                         .filter(database.ObsProducto.nombre_droga_observer == droga_id,
-                                 database.ObsProducto.fecha_baja.is_(None))
+                         .filter(database.ObsProducto.nombre_droga_observer == droga_id)
                          .order_by(database.ObsProducto.descripcion).all())
 
             obs_ids = [p.observer_id for p in productos]
@@ -380,6 +386,7 @@ def init_app(app):
                 por_lab[lab_id]['productos'].append({
                     'observer_id':    p.observer_id,
                     'descripcion':    p.descripcion,
+                    'baja':           p.fecha_baja is not None,
                     'stock':          stock,
                     'u3m':            u3m,
                     'u12m':           u12m,

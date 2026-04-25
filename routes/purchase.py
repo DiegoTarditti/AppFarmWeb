@@ -1126,6 +1126,7 @@ def init_app(app):
                     'cantidad_pedida': cantidad,
                     'observer_id':    obs_id,
                     'tiene_obs':      obs_id is not None,
+                    'baja':           bool(op.fecha_baja) if op else False,
                     'stock':          stock,
                     'u3m':            u3m,
                     'u12m':           u12m,

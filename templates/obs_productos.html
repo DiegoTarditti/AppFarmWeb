@@ -27,10 +27,15 @@
             <option value="{{ l.observer_id }}" {% if lab_id == l.observer_id %}selected{% endif %}>{{ l.descripcion }}</option>
             {% endfor %}
         </select>
+        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer">
+            <input type="checkbox" name="solo_activos" value="1" {% if solo_activos %}checked{% endif %}
+                   class="w-4 h-4 accent-brand">
+            Solo activos
+        </label>
         <button type="submit" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg">
             Filtrar
         </button>
-        {% if q or lab_id %}
+        {% if q or lab_id or solo_activos %}
         <a href="{{ url_for('obs_productos') }}"
            class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>
         {% endif %}
@@ -53,8 +58,11 @@
             </thead>
             <tbody class="divide-y divide-surface-border">
                 {% for p in productos %}
-                <tr class="hover:bg-black/[0.02]">
-                    <td class="px-3 py-2 text-[#1e1e1e]">{{ p.descripcion }}</td>
+                <tr class="hover:bg-black/[0.02] {% if p.baja %}opacity-60{% endif %}">
+                    <td class="px-3 py-2 text-[#1e1e1e]">
+                        {{ p.descripcion }}
+                        {% if p.baja %}<span class="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>{% endif %}
+                    </td>
                     <td class="px-3 py-2 text-xs text-[#555]">{{ p.laboratorio }}</td>
                     <td class="px-3 py-2 text-[11px] text-[#888] truncate max-w-[280px]" title="{{ p.monodroga }}">
                         {% if p.monodroga %}
@@ -87,7 +95,7 @@
     <!-- Paginación -->
     {% if last_page > 1 %}
     <div class="flex items-center justify-center gap-2 text-sm">
-        {% set base_qs = 'q=' ~ (q or '') ~ '&lab_id=' ~ (lab_id or '') %}
+        {% set base_qs = 'q=' ~ (q or '') ~ '&lab_id=' ~ (lab_id or '') ~ ('&solo_activos=1' if solo_activos else '') %}
         {% if page > 1 %}
         <a href="?{{ base_qs }}&page={{ page - 1 }}" class="px-3 py-1.5 rounded-lg border border-surface-border hover:bg-[#f5f5f5]">← Anterior</a>
         {% endif %}

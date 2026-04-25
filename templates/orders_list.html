@@ -818,12 +818,20 @@ function _renderIndicadores(data) {
                         const dpost = i.dias_post_compra;
                         const delta = (dpost != null && dpre != null && isFinite(dpost) && isFinite(dpre)) ? Math.round(dpost - dpre) : null;
                         const tieneAlt = i.monodroga_id != null;
-                        const altBtn = tieneAlt
-                            ? `<button type="button" class="btn-alt bg-violet-100 hover:bg-violet-200 text-violet-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-violet-300" data-droga-id="${i.monodroga_id}" data-cb="${_esc(i.codigo_barra)}" data-nombre="${_esc(i.nombre)}" title="Ver alternativas de otros laboratorios">⇄ Comparar otros labs</button>`
-                            : '<span class="text-[10px] text-[#bbb]">sin droga</span>';
+                        let altBtn;
+                        if (tieneAlt) {
+                            altBtn = `<button type="button" class="btn-alt bg-violet-100 hover:bg-violet-200 text-violet-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-violet-300" data-droga-id="${i.monodroga_id}" data-cb="${_esc(i.codigo_barra)}" data-nombre="${_esc(i.nombre)}" title="Ver alternativas de otros laboratorios">⇄ Comparar otros labs</button>`;
+                        } else if (i.baja) {
+                            altBtn = '<span class="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-[#f0f0f0] text-[#888]" title="Producto dado de baja en ObServer">baja</span>';
+                        } else if (!i.tiene_obs) {
+                            altBtn = '<span class="text-[10px] text-[#bbb]" title="No matchea con obs_productos">sin link</span>';
+                        } else {
+                            altBtn = '<span class="text-[10px] text-[#bbb]" title="ObServer no registra monodroga">sin droga</span>';
+                        }
+                        const bajaBadge = i.baja ? ' <span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>' : '';
                         return `
-                        <tr>
-                            <td class="py-1 px-2"><span class="text-[#1e1e1e]">${_esc(i.nombre)}</span>${i.monodroga ? ` <span class="text-[10px] text-[#aaa]">· ${_esc(i.monodroga)}</span>` : ''}</td>
+                        <tr ${i.baja ? 'class="opacity-70"' : ''}>
+                            <td class="py-1 px-2"><span class="text-[#1e1e1e]">${_esc(i.nombre)}</span>${bajaBadge}${i.monodroga ? ` <span class="text-[10px] text-[#aaa]">· ${_esc(i.monodroga)}</span>` : ''}</td>
                             <td class="py-1 px-2 text-right font-semibold text-amber-800">${i.cantidad_pedida}</td>
                             <td class="py-1 px-2 text-right ${i.stock > 0 ? 'text-emerald-700' : 'text-[#bbb]'}">${i.stock}</td>
                             <td class="py-1 px-2 text-right">${i.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
