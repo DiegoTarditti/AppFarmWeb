@@ -641,11 +641,15 @@ def init_app(app):
         """Refresca una vista materializada manualmente. Solo admin/dev."""
         if current_user.rol not in ('admin', 'dev'):
             return jsonify({'error': 'sin permisos'}), 403
-        import matviews
+        import matviews, cron_log
         if view_name not in matviews.MATVIEWS:
             return jsonify({'error': 'vista desconocida'}), 404
-        with database.get_db() as session:
-            r = matviews.refrescar_matview(session, view_name)
+        with cron_log.registrar(f'mv_refresh:{view_name}', origen='web') as log:
+            with database.get_db() as session:
+                r = matviews.refrescar_matview(session, view_name)
+            log.set_mensaje(f'{r.get("filas", 0)} filas en {r.get("duracion_ms", 0)}ms')
+            if not r.get('ok'):
+                raise RuntimeError(r.get('error') or 'refresh falló')
         return jsonify(r)
 
     @app.route('/api/mv/status')

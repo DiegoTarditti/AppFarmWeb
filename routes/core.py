@@ -65,8 +65,12 @@ def init_app(app):
         flash('Configuración guardada.')
         return redirect(url_for('settings'))
 
-    @app.route('/admin')
+    @app.route('/admin/dashboard')
+    @app.route('/admin/console')  # alias retrocompatible
     def admin_console():
+        """Dashboard antiguo con stats de la DB. Movido a /admin/dashboard
+        porque /admin lo usa ahora la pantalla de admin_index.html con utilidades.
+        Mantenemos el endpoint admin_console para que url_for siga funcionando."""
         with database.get_db() as session:
             stats = {
                 'proveedores': session.query(database.Provider).count(),

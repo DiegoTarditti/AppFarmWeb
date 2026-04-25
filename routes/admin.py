@@ -22,6 +22,84 @@ def init_app(app):
     def admin_index():
         return render_template('admin_index.html')
 
+    @app.route('/admin/cron-log')
+    @requiere_permiso('usuarios', 'admin')
+    def admin_cron_log():
+        """Vista unificada de procesos automáticos."""
+        from database import CronLog, get_db, now_ar
+        from sqlalchemy import desc, func as _func
+        from datetime import timedelta
+        proceso_filter = (request.args.get('proceso') or '').strip()
+        estado_filter = (request.args.get('estado') or '').strip()
+        try:
+            limit = min(500, int(request.args.get('limit', '100')))
+        except ValueError:
+            limit = 100
+
+        with get_db() as session:
+            base = session.query(CronLog).order_by(desc(CronLog.inicio))
+            if proceso_filter:
+                base = base.filter(CronLog.proceso.ilike(f'%{proceso_filter}%'))
+            if estado_filter:
+                base = base.filter(CronLog.estado == estado_filter)
+            entries = base.limit(limit).all()
+            # Stats últimas 24h
+            corte = now_ar() - timedelta(hours=24)
+            stats_24h = session.query(CronLog.estado, _func.count(CronLog.id)).filter(
+                CronLog.inicio >= corte
+            ).group_by(CronLog.estado).all()
+            stats = {e: int(n) for e, n in stats_24h}
+            # Procesos distintos para el dropdown
+            procesos = sorted({e.proceso for e in session.query(CronLog.proceso).distinct().all()})
+
+        return render_template('admin_cron_log.html',
+                               entries=entries, stats=stats,
+                               proceso_filter=proceso_filter,
+                               estado_filter=estado_filter,
+                               procesos_distintos=procesos,
+                               limit=limit)
+
+    @app.route('/api/cron-log', methods=['POST'])
+    def api_cron_log_externo():
+        """Recibe reporte de un proceso externo (ej. DockerPanel) y lo registra.
+        Body JSON: { proceso, estado, duracion_ms?, mensaje?, error?, origen? }
+        Endpoint sin auth para que el DockerPanel local pueda postear sin tokens —
+        en producción esto debería protegerse con un secret. Por ahora, OK.
+        """
+        import cron_log
+        data = request.get_json(silent=True) or {}
+        proceso = (data.get('proceso') or '').strip()
+        estado = (data.get('estado') or '').strip()
+        if proceso not in ('sync_observer', 'push_render', 'mv_refresh',
+                           'agente_pendientes', 'keepalive', 'pull_render',
+                           'sync_ventas', 'vincular_observer'):
+            # whitelist conservadora — evita basura
+            return jsonify({'error': 'proceso no permitido'}), 400
+        if estado not in ('ok', 'error'):
+            return jsonify({'error': 'estado inválido'}), 400
+        log_id = cron_log.registrar_externo(
+            proceso=proceso,
+            estado=estado,
+            duracion_ms=data.get('duracion_ms'),
+            mensaje=data.get('mensaje'),
+            error=data.get('error'),
+            origen=data.get('origen', 'dockerpanel'),
+        )
+        return jsonify({'ok': log_id is not None, 'id': log_id})
+
+    @app.route('/api/cron-log/purgar', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_cron_log_purgar():
+        """Elimina filas > 7 días. Lo dispara el cron del DockerPanel
+        o se puede llamar manualmente desde la UI."""
+        import cron_log
+        try:
+            dias = int(request.args.get('dias', '7'))
+        except ValueError:
+            dias = 7
+        n = cron_log.purgar_viejos(dias=dias)
+        return jsonify({'ok': True, 'eliminadas': n, 'dias': dias})
+
     @app.route('/admin/seed-proveedores', methods=['GET', 'POST'])
     @requiere_permiso('usuarios', 'admin')
     def admin_seed_proveedores():

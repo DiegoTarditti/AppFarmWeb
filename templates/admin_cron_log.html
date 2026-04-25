@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Log de procesos automáticos{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('admin_index') }}" class="text-[#6f6f6f] hover:text-[#1e1e1e] text-sm">← Admin</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">Log de procesos automáticos</h1>
+    <span class="text-xs text-[#6f6f6f]">retención 7 días</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    <!-- Stats últimas 24h -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div class="bg-emerald-50 rounded-lg p-3 border border-emerald-200">
+            <p class="text-[10px] text-emerald-700 uppercase">OK 24h</p>
+            <p class="text-2xl font-bold text-emerald-800">{{ stats.get('ok', 0) }}</p>
+        </div>
+        <div class="bg-red-50 rounded-lg p-3 border border-red-200">
+            <p class="text-[10px] text-red-700 uppercase">Errores 24h</p>
+            <p class="text-2xl font-bold text-red-800">{{ stats.get('error', 0) }}</p>
+        </div>
+        <div class="bg-amber-50 rounded-lg p-3 border border-amber-200">
+            <p class="text-[10px] text-amber-700 uppercase">Corriendo</p>
+            <p class="text-2xl font-bold text-amber-800">{{ stats.get('corriendo', 0) }}</p>
+        </div>
+        <div class="bg-[#fafafa] rounded-lg p-3 border border-surface-border">
+            <p class="text-[10px] text-[#888] uppercase">Total filas</p>
+            <p class="text-2xl font-bold text-[#1e1e1e]">{{ entries | length }}</p>
+        </div>
+    </div>
+
+    <!-- Filtros -->
+    <form method="get" class="bg-white border border-surface-border rounded-xl p-3 flex items-center gap-3 flex-wrap">
+        <select name="proceso" class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
+            <option value="">Todos los procesos</option>
+            {% for p in procesos_distintos %}
+            <option value="{{ p }}" {% if proceso_filter == p %}selected{% endif %}>{{ p }}</option>
+            {% endfor %}
+        </select>
+        <select name="estado" class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
+            <option value="">Todos los estados</option>
+            <option value="ok" {% if estado_filter == 'ok' %}selected{% endif %}>OK</option>
+            <option value="error" {% if estado_filter == 'error' %}selected{% endif %}>Error</option>
+            <option value="corriendo" {% if estado_filter == 'corriendo' %}selected{% endif %}>Corriendo</option>
+        </select>
+        <select name="limit" class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
+            <option value="50" {% if limit == 50 %}selected{% endif %}>50 filas</option>
+            <option value="100" {% if limit == 100 %}selected{% endif %}>100 filas</option>
+            <option value="200" {% if limit == 200 %}selected{% endif %}>200 filas</option>
+            <option value="500" {% if limit == 500 %}selected{% endif %}>500 filas</option>
+        </select>
+        <button type="submit" class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg">Aplicar</button>
+        {% if proceso_filter or estado_filter %}
+        <a href="{{ url_for('admin_cron_log') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>
+        {% endif %}
+
+        <button type="button" id="btn-purgar"
+                class="ml-auto text-xs bg-red-50 hover:bg-red-100 border border-red-300 text-red-800 font-semibold px-3 py-1.5 rounded-lg">
+            🗑 Purgar > 7 días
+        </button>
+    </form>
+
+    <!-- Tabla -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2 w-44">Inicio</th>
+                    <th class="text-left px-3 py-2">Proceso</th>
+                    <th class="text-left px-3 py-2 w-20">Origen</th>
+                    <th class="text-right px-3 py-2 w-20">Duración</th>
+                    <th class="text-center px-3 py-2 w-20">Estado</th>
+                    <th class="text-left px-3 py-2">Mensaje / Error</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for e in entries %}
+                <tr class="hover:bg-black/[0.02] {% if e.estado == 'error' %}bg-red-50/30{% endif %}">
+                    <td class="px-3 py-1.5 text-xs font-mono text-[#555]">{{ e.inicio.strftime('%d/%m %H:%M:%S') }}</td>
+                    <td class="px-3 py-1.5 text-[#1e1e1e]">{{ e.proceso }}</td>
+                    <td class="px-3 py-1.5 text-xs text-[#888]">{{ e.origen or '—' }}</td>
+                    <td class="px-3 py-1.5 text-right text-xs font-mono text-[#555]">
+                        {% if e.duracion_ms is not none %}
+                            {% if e.duracion_ms < 1000 %}{{ e.duracion_ms }}ms
+                            {% else %}{{ '{:.1f}'.format(e.duracion_ms / 1000) }}s
+                            {% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-center">
+                        {% if e.estado == 'ok' %}<span class="text-emerald-700 font-semibold">✓ OK</span>
+                        {% elif e.estado == 'error' %}<span class="text-red-700 font-semibold">✗ ERROR</span>
+                        {% elif e.estado == 'corriendo' %}<span class="text-amber-700 font-semibold">⏳ ...</span>
+                        {% else %}{{ e.estado }}{% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-xs">
+                        {% if e.error %}
+                            <span class="text-red-700 font-mono">{{ e.error[:200] }}{% if e.error|length > 200 %}…{% endif %}</span>
+                        {% elif e.mensaje %}
+                            <span class="text-[#555]">{{ e.mensaje[:200] }}{% if e.mensaje|length > 200 %}…{% endif %}</span>
+                        {% else %}
+                            <span class="text-[#bbb]">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not entries %}
+                <tr><td colspan="6" class="px-3 py-8 text-center text-[#999]">Sin registros.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+document.getElementById('btn-purgar').addEventListener('click', async () => {
+    if (!confirm('Eliminar registros con más de 7 días de antigüedad?')) return;
+    try {
+        const r = await fetch('/api/cron-log/purgar?dias=7', { method: 'POST', credentials: 'same-origin' });
+        const d = await r.json();
+        alert(`✓ Eliminadas ${d.eliminadas} filas.`);
+        location.reload();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+});
+</script>
+
+{% endblock %}

@@ -209,6 +209,24 @@ class ObsSyncLog(Base):
     ejecutado_en = Column(DateTime, default=now_ar)
 
 
+class CronLog(Base):
+    """Registro unificado de procesos automáticos (sync, refresh, push, agente, etc.).
+
+    Cada ejecución crea una fila al iniciar (estado='corriendo') y la actualiza
+    al terminar con 'ok' o 'error'. Se purga > 7 días.
+    """
+    __tablename__ = 'cron_log'
+    id = Column(Integer, primary_key=True)
+    proceso = Column(String(80), nullable=False, index=True)  # 'sync_ventas', 'push_render', 'mv_refresh', etc.
+    origen = Column(String(40), nullable=True)  # 'web', 'dockerpanel', 'manual'
+    inicio = Column(DateTime, default=now_ar, nullable=False, index=True)
+    fin = Column(DateTime, nullable=True)
+    duracion_ms = Column(Integer, nullable=True)
+    estado = Column(String(15), nullable=False, default='corriendo')  # corriendo / ok / error
+    mensaje = Column(Text, nullable=True)
+    error = Column(Text, nullable=True)
+
+
 class MvRefreshLog(Base):
     """Log de cada refresh de una vista materializada.
 
@@ -765,7 +783,8 @@ def init_db(database_url=None):
                         'home_card_clicks',
                         'obs_grupos_clientes', 'obs_categorias_clientes',
                         'obs_obras_sociales', 'obs_convenios', 'obs_planes',
-                        'obs_clientes', 'clientes')
+                        'obs_clientes', 'clientes',
+                        'cron_log', 'mv_refresh_log')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
