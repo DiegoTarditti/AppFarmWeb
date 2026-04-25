@@ -96,6 +96,10 @@
 
     <div id="auto-todo-warnings" class="mt-3 text-[11px]"></div>
 
+    <!-- Slot de "Listo para importar" — se llena cuando se infiere el patrón
+         y hay filas detectadas. Da shortcut directo a Guardar factura. -->
+    <div id="auto-todo-listo" class="hidden mt-3"></div>
+
     <!-- Botón shortcut para no perder tiempo scrolleando al final de la página
          a buscar el botón 'Inferir patrón'. Hace lo mismo + scroll al resultado. -->
     <div class="mt-3 pt-3 border-t border-violet-200 flex items-center justify-between gap-2 flex-wrap">
@@ -830,14 +834,48 @@ async function inferirYScrollAlResultado() {
         return;
     }
     // Inferir si no se hizo todavía (o re-inferir por si el user editó algo).
-    try {
-        await inferPattern();
-    } catch (_) {}
-    // Scroll al panel de resultado.
+    try { await inferPattern(); } catch (_) {}
+
+    // Mostrar resumen "Listo para importar" dentro del panel de auto-detect
+    // con shortcut directo a las acciones finales.
     setTimeout(() => {
-        const r = document.getElementById('result');
-        if (r) r.scrollIntoView({block: 'start', behavior: 'smooth'});
-    }, 200);
+        const rowCount = parseInt(
+            (document.getElementById('row-count') || {}).textContent || '0', 10
+        );
+        const status = document.getElementById('auto-todo-listo');
+        if (!status) return;
+        if (rowCount > 0) {
+            status.classList.remove('hidden');
+            status.innerHTML = `
+                <div class="bg-emerald-50 border-2 border-emerald-400 rounded-lg p-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div>
+                        <p class="text-sm font-bold text-emerald-900">✓ Listo para importar — ${rowCount} filas detectadas</p>
+                        <p class="text-[11px] text-emerald-800">Revisá el preview abajo. Si está OK, podés guardar la factura directamente.</p>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button onclick="document.getElementById('result')?.scrollIntoView({block:'start',behavior:'smooth'})"
+                                class="px-3 py-1.5 text-xs rounded bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-semibold">
+                            ↓ Ver preview
+                        </button>
+                        <button onclick="document.getElementById('btn-save-factura')?.scrollIntoView({block:'center',behavior:'smooth'}); setTimeout(()=>document.getElementById('btn-save-factura')?.click(), 600)"
+                                class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-bold shadow">
+                            📄 Guardar factura →
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            status.classList.remove('hidden');
+            status.innerHTML = `
+                <div class="bg-red-50 border-2 border-red-400 rounded-lg p-3">
+                    <p class="text-sm font-bold text-red-900">✗ No se detectaron filas</p>
+                    <p class="text-[11px] text-red-800">El patrón inferido no matchea con el resto del PDF. Revisá las asignaciones del Detalle o hacelo manual.</p>
+                </div>
+            `;
+        }
+        // Scroll al panel de resultado.
+        document.getElementById('result')?.scrollIntoView({block: 'start', behavior: 'smooth'});
+    }, 300);
 }
 
 function aplicarAutoHeader() {
