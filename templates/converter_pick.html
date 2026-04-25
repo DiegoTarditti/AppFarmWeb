@@ -35,6 +35,68 @@
 
 <div class="max-w-[1600px] mx-auto px-6 py-6">
 
+<!-- Botón experimental "Auto-detectar TODO" + panel de vista previa.
+     Es CONSERVADOR: solo muestra qué encontró, no aplica nada hasta que
+     el user clickea "Aplicar" en cada sección. -->
+<div class="mb-3 bg-gradient-to-r from-violet-50 to-emerald-50 border border-violet-300 rounded-xl px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+    <div class="text-xs text-[#1e1e1e] flex items-center gap-2">
+        <span class="text-base">🤖</span>
+        <span><strong>Probar auto-detectar TODO</strong> — escanea el PDF entero y te muestra qué pudo deducir (encabezado, detalle, pie). No aplica nada hasta que vos clickeás "Aplicar".</span>
+    </div>
+    <button id="btn-auto-todo" onclick="autoDetectarTodo()"
+            class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold whitespace-nowrap">
+        🤖 Probar
+    </button>
+</div>
+
+<div id="auto-todo-panel" class="hidden mb-4 bg-white border border-violet-300 rounded-xl p-4 shadow-md">
+    <div class="flex items-center justify-between mb-3">
+        <p class="font-bold text-sm">🤖 Vista previa de auto-detección</p>
+        <button onclick="document.getElementById('auto-todo-panel').classList.add('hidden')" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none">✕</button>
+    </div>
+    <div id="auto-todo-stats" class="text-[11px] text-[#666] mb-3"></div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <!-- Encabezado -->
+        <div class="border border-[#e5e7eb] rounded-lg p-3 bg-amber-50/40">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-bold text-amber-900">📋 Encabezado</p>
+                <button id="btn-auto-aplicar-header" onclick="aplicarAutoHeader()" disabled
+                        class="text-[10px] px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold">
+                    Aplicar
+                </button>
+            </div>
+            <div id="auto-todo-header" class="text-[11px] text-[#555] space-y-0.5 max-h-48 overflow-y-auto"></div>
+        </div>
+
+        <!-- Detalle (fila ejemplo) -->
+        <div class="border border-[#e5e7eb] rounded-lg p-3 bg-sky-50/40">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-bold text-sky-900">📦 Detalle (fila ejemplo)</p>
+                <button id="btn-auto-aplicar-detalle" onclick="aplicarAutoDetalle()" disabled
+                        class="text-[10px] px-2 py-0.5 rounded bg-sky-600 hover:bg-sky-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold">
+                    Aplicar
+                </button>
+            </div>
+            <div id="auto-todo-detalle" class="text-[11px] text-[#555] space-y-0.5 max-h-48 overflow-y-auto"></div>
+        </div>
+
+        <!-- Pie / totales -->
+        <div class="border border-[#e5e7eb] rounded-lg p-3 bg-emerald-50/40">
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-xs font-bold text-emerald-900">💰 Pie (totales)</p>
+                <button id="btn-auto-aplicar-pie" onclick="aplicarAutoPie()" disabled
+                        class="text-[10px] px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold">
+                    Aplicar
+                </button>
+            </div>
+            <div id="auto-todo-pie" class="text-[11px] text-[#555] space-y-0.5 max-h-48 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <div id="auto-todo-warnings" class="mt-3 text-[11px]"></div>
+</div>
+
 <div class="flex gap-6">
     <div class="w-1/2 shrink-0">
         <div class="bg-white rounded-xl border border-[#e0e0e0] overflow-hidden">
@@ -545,6 +607,202 @@ function autodetectarCampos() {
     if (warnings.length) {
         alert(exitoMsg + '\n\n⚠ Pendientes:\n- ' + warnings.join('\n- '));
     }
+}
+
+// ── Auto-detectar TODO (encabezado + detalle + pie en una pasada) ─────────
+// Conservador: solo MUESTRA qué pudo detectar; no aplica hasta clickear.
+let _autoTodoData = null;
+
+async function autoDetectarTodo() {
+    const pdfBox = document.getElementById('pdf-text');
+    const texto = pdfBox ? (pdfBox.textContent || '') : '';
+    if (!texto.trim()) { alert('No hay texto del PDF para analizar.'); return; }
+
+    const btn = document.getElementById('btn-auto-todo');
+    const oldText = btn.textContent;
+    btn.disabled = true; btn.textContent = '⏳ Escaneando…';
+
+    try {
+        const r = await fetch('/api/inferir/factura-completa', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({texto: texto}),
+        });
+        const data = await r.json();
+        if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+        _autoTodoData = data;
+        renderAutoTodoPanel();
+        document.getElementById('auto-todo-panel').classList.remove('hidden');
+    } catch (err) {
+        alert('Error de red: ' + err.message);
+    } finally {
+        btn.disabled = false; btn.textContent = oldText;
+    }
+}
+
+function renderAutoTodoPanel() {
+    if (!_autoTodoData) return;
+    const d = _autoTodoData;
+
+    // Stats
+    const stats = d.stats || {};
+    document.getElementById('auto-todo-stats').innerHTML = `
+        <strong>${stats.filas_compatibles || 0}</strong> filas con cant×unit=imp ·
+        <strong>${stats.filas_con_tokens || 0}</strong> filas con tokens ·
+        <strong>${stats.filas_totales_pdf || 0}</strong> líneas en el PDF
+    `;
+
+    // Encabezado: leer state.header actual + comparar con lo que detectaríamos.
+    // Reusamos autoExtraerEtiquetas (no toca el state) para tener simulación.
+    // Como autoExtraerEtiquetas SÍ toca state, hacemos un snapshot rápido:
+    const headerActual = Object.keys(state.header || {}).filter(k => state.header[k]);
+    const headerDiv = document.getElementById('auto-todo-header');
+    headerDiv.innerHTML = `
+        <p class="text-[10px] text-[#888]">El encabezado se detecta con el botón verde 'Auto-detectar' del paso 1 (busca razón social, CUIT, fecha, número, total).</p>
+        <p class="text-[10px] mt-1"><strong>Ya tenés ${headerActual.length} campos asignados:</strong> ${headerActual.join(', ') || '(ninguno)'}</p>
+    `;
+    document.getElementById('btn-auto-aplicar-header').disabled = false;
+
+    // Detalle (fila ejemplo)
+    const detalleDiv = document.getElementById('auto-todo-detalle');
+    if (d.fila_ejemplo) {
+        const a = d.asignaciones_ejemplo || {};
+        const v = d.valores_ejemplo || {};
+        const filas = Object.entries(a).map(([campo, idx]) => {
+            const valor = v[campo] != null
+                ? v[campo]
+                : (Array.isArray(idx)
+                    ? d.tokens_ejemplo.slice(idx[0], idx[1] + 1).join(' ')
+                    : (d.tokens_ejemplo[idx] || ''));
+            return `<div class="flex justify-between gap-2"><span class="font-semibold">${campo}:</span><span class="font-mono text-right truncate">${escapeHtml(valor)}</span></div>`;
+        }).join('');
+        detalleDiv.innerHTML = `
+            <p class="text-[10px] text-[#888] truncate" title="${escapeHtml(d.fila_ejemplo)}">Fila: ${escapeHtml(d.fila_ejemplo)}</p>
+            <div class="border-t border-[#e5e7eb] mt-1 pt-1">${filas}</div>
+        `;
+        document.getElementById('btn-auto-aplicar-detalle').disabled = false;
+    } else {
+        detalleDiv.innerHTML = '<p class="text-amber-700">No pude detectar fila de ejemplo. Hacelo manual.</p>';
+        document.getElementById('btn-auto-aplicar-detalle').disabled = true;
+    }
+
+    // Pie / totales
+    const pieDiv = document.getElementById('auto-todo-pie');
+    if (d.fila_totales) {
+        const a = d.asignaciones_totales || {};
+        const v = d.valores_totales || {};
+        const filas = Object.entries(a).map(([campo, idx]) => {
+            const valor = v[campo] != null ? v[campo] : (d.tokens_totales[idx] || '');
+            return `<div class="flex justify-between gap-2"><span class="font-semibold">${campo}:</span><span class="font-mono text-right">${escapeHtml(valor)}</span></div>`;
+        }).join('');
+        pieDiv.innerHTML = `
+            <p class="text-[10px] text-[#888] truncate" title="${escapeHtml(d.fila_totales)}">Fila: ${escapeHtml(d.fila_totales)}</p>
+            <div class="border-t border-[#e5e7eb] mt-1 pt-1">${filas}</div>
+        `;
+        document.getElementById('btn-auto-aplicar-pie').disabled = false;
+    } else {
+        pieDiv.innerHTML = '<p class="text-amber-700">No pude detectar fila de totales. Hacelo manual.</p>';
+        document.getElementById('btn-auto-aplicar-pie').disabled = true;
+    }
+
+    // Warnings globales
+    const warns = d.warnings || [];
+    const wDiv = document.getElementById('auto-todo-warnings');
+    if (warns.length) {
+        wDiv.innerHTML = `<div class="bg-amber-50 border border-amber-300 rounded p-2 text-amber-900">⚠ ${warns.map(escapeHtml).join('<br>⚠ ')}</div>`;
+    } else {
+        wDiv.innerHTML = '';
+    }
+}
+
+function aplicarAutoHeader() {
+    // Reusa la función existente que ya hace todo el header al toque.
+    autoExtraerEtiquetas(true);
+    // Toast feedback
+    const t = document.createElement('div');
+    t.className = 'fixed bottom-3 right-3 z-[200] bg-amber-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg';
+    t.textContent = '✓ Encabezado aplicado (revisá los campos abajo)';
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+function aplicarAutoDetalle() {
+    if (!_autoTodoData || !_autoTodoData.fila_ejemplo) return;
+    // Cargar la fila ejemplo en state.exampleLine + tokenize
+    state.exampleLine = _normalizarNumerosEnAr(_autoTodoData.fila_ejemplo);
+    state.selections = [];
+    state.tokens = tokenize(state.exampleLine);
+    state.groups = tokensToGroups(state.tokens);
+    renderExample();
+    // Aplicar las asignaciones detectadas
+    const a = _autoTodoData.asignaciones_ejemplo || {};
+    const v = _autoTodoData.valores_ejemplo || {};
+    const FIELD_MAP = {
+        codigo_barra:    'codigo_barra',
+        cantidad:        'cantidad',
+        descripcion:     'descripcion',
+        precio_publico:  'precio_publico',
+        dto:             'dto',
+        precio_unitario: 'precio_unitario',
+        importe:         'importe',
+    };
+    const newSels = [];
+    const line = state.exampleLine;
+    const toks = state.tokens;
+    for (const [campoBack, campoChip] of Object.entries(FIELD_MAP)) {
+        const idx = a[campoBack];
+        if (idx == null) continue;
+        if (Array.isArray(idx) && idx.length === 2) {
+            const tStart = toks[idx[0]], tEnd = toks[idx[1]];
+            if (tStart && tEnd) newSels.push({field: campoChip, text: line.slice(tStart.start, tEnd.end), start: tStart.start, end: tEnd.end});
+        } else if (typeof idx === 'number') {
+            const t = toks[idx];
+            if (t) {
+                const txt = v[campoBack] != null ? v[campoBack] : t.text;
+                newSels.push({field: campoChip, text: txt, start: t.start, end: t.end});
+            }
+        }
+    }
+    state.selections = newSels;
+    renderExample();
+    renderSelections();
+    if (typeof validatePick === 'function') validatePick();
+    const t = document.createElement('div');
+    t.className = 'fixed bottom-3 right-3 z-[200] bg-sky-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg';
+    t.textContent = `✓ Detalle aplicado: ${Object.keys(a).length} campos`;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+function aplicarAutoPie() {
+    if (!_autoTodoData || !_autoTodoData.fila_totales) return;
+    state.totalsLine = _normalizarNumerosEnAr(_autoTodoData.fila_totales);
+    state.totalsTokens = tokenize(state.totalsLine);
+    state.totalsGroups = tokensToGroups(state.totalsTokens);
+    renderTotalsLine();
+    // Aplicar asignaciones
+    const a = _autoTodoData.asignaciones_totales || {};
+    const v = _autoTodoData.valores_totales || {};
+    state.totalsAssign = state.totalsAssign || {};
+    state.totalsWas = state.totalsWas || {};
+    for (const [field, idx] of Object.entries(a)) {
+        const t = state.totalsTokens[idx];
+        if (!t) continue;
+        const valor = v[field] != null ? v[field] : t.text;
+        state.header[field] = valor;
+        state.autodetectados.delete(field);
+        state.totalsAssign[field] = {gkey: `${t.start}-${t.end}`};
+        state.totalsWas[field] = true;
+    }
+    renderTotalsLine();
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+    const t = document.createElement('div');
+    t.className = 'fixed bottom-3 right-3 z-[200] bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg';
+    t.textContent = `✓ Pie aplicado: ${Object.keys(a).length} campos`;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
 }
 
 // ── Auto-detect totales via server (tolerante a OCR-rotos) ──

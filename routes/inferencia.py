@@ -111,6 +111,24 @@ def init_app(app):
             return jsonify({'error': 'tokens debe ser lista'}), 400
         return jsonify(fi.detectar_campos_totales(tokens))
 
+    @app.route('/api/inferir/factura-completa', methods=['POST'])
+    @login_required
+    def api_inferir_factura_completa():
+        """Análisis automático del texto entero de una factura.
+
+        Devuelve sugerencias de header/detalle/pie SIN aplicar nada — la UI
+        decide qué mostrar y aplicar.
+
+        Body JSON: { "texto": "todo el texto del PDF" }
+        Response: ver field_inference.detectar_factura_completa
+        """
+        import field_inference as fi
+        data = request.get_json(silent=True) or {}
+        texto = data.get('texto') or ''
+        if not isinstance(texto, str):
+            return jsonify({'error': 'texto debe ser string'}), 400
+        return jsonify(fi.detectar_factura_completa(texto))
+
     @app.route('/api/inferir/relaciones', methods=['POST'])
     @login_required
     def api_inferir_relaciones():

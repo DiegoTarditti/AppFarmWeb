@@ -714,6 +714,124 @@ def detectar_campos_factura(tokens):
             'valores': valores}
 
 
+# ── Detección integral de una factura ──────────────────────────────────────
+
+def detectar_factura_completa(texto):
+    """Análisis automático del texto entero de una factura.
+
+    Hace en una pasada lo que normalmente requiere muchos clicks del user:
+    1. Tokeniza línea por línea.
+    2. Encuentra la fila de ÍTEM con más campos auto-detectables (mejor
+       candidata para 'fila de ejemplo').
+    3. Encuentra la fila de TOTALES (heurística: contiene gravado×rate=iva
+       o palabras clave + ≥3 numéricos).
+    4. Aplica detectar_campos_factura y detectar_campos_totales.
+    5. Cuenta cuántas otras filas comparten el patrón (estimación de
+       productos detectables).
+
+    Args:
+        texto: string con el texto extraído del PDF (idealmente ya
+            normalizado con _normalize_quadrupled).
+
+    Returns:
+        dict {
+            'fila_ejemplo': str,
+            'tokens_ejemplo': [str],
+            'asignaciones_ejemplo': {campo: idx},
+            'valores_ejemplo': {campo: str_canonical},
+            'fila_totales': str,
+            'tokens_totales': [str],
+            'asignaciones_totales': {campo: idx},
+            'valores_totales': {campo: str_canonical},
+            'stats': {
+                'filas_totales_pdf': N,
+                'filas_compatibles': M,   # estimación de productos detectables
+            },
+            'warnings': [str],
+        }
+    """
+    if not texto or not texto.strip():
+        return {'warnings': ['Texto vacío'], 'stats': {}}
+
+    lineas = [line.strip() for line in texto.split('\n') if line.strip()]
+    warnings = []
+
+    # Tokenizar cada línea (split por whitespace).
+    filas = []
+    for line in lineas:
+        toks = line.split()
+        if len(toks) >= 5:
+            filas.append({'linea': line, 'tokens': toks})
+
+    if not filas:
+        return {'warnings': ['No hay líneas con ≥5 tokens'], 'stats': {'filas_totales_pdf': len(lineas)}}
+
+    # Score por línea: cuántos campos auto-detecta detectar_campos_factura.
+    # Solo nos quedamos con líneas que tengan al menos cant + unit + imp.
+    candidatos = []
+    for f in filas:
+        det = detectar_campos_factura(f['tokens'])
+        a = det['asignaciones']
+        # Una fila de ítem REAL tiene al menos cantidad + precio_unitario + importe.
+        if 'cantidad' in a and 'precio_unitario' in a and 'importe' in a:
+            score = len([k for k in ('codigo_barra', 'cantidad', 'precio_unitario',
+                                      'importe', 'descripcion', 'precio_publico', 'dto')
+                         if k in a])
+            candidatos.append({**f, 'det': det, 'score': score})
+
+    fila_ejemplo = None
+    if candidatos:
+        # El "mejor candidato" es el que tiene más campos detectados.
+        # Empate: el primero (suelen estar al principio del PDF).
+        candidatos.sort(key=lambda x: -x['score'])
+        fila_ejemplo = candidatos[0]
+    else:
+        warnings.append('No encontré ninguna fila con cant×unit=imp')
+
+    # Fila de totales: buscar entre las últimas 30 líneas alguna que tenga
+    # al menos 2 valores monetarios y cumpla iva = gravado × rate.
+    fila_totales = None
+    for f in reversed(filas[-30:] if len(filas) > 30 else filas):
+        det_t = detectar_campos_totales(f['tokens'])
+        a = det_t['asignaciones']
+        if 'monto_gravado' in a and ('iva_21' in a or 'iva_105' in a):
+            fila_totales = {**f, 'det': det_t}
+            break
+    # Si no encontró por matemática, fallback: la última línea con ≥3 moneys.
+    if fila_totales is None:
+        for f in reversed(filas):
+            det_t = detectar_campos_totales(f['tokens'])
+            n_moneys = sum(1 for t in det_t['tipos'] if t == 'money')
+            if n_moneys >= 3:
+                fila_totales = {**f, 'det': det_t}
+                break
+    if fila_totales is None:
+        warnings.append('No encontré fila de totales')
+
+    # Estimar cuántas filas más comparten el patrón.
+    # Métrica simple: cuántas otras filas tienen al menos cant×unit=imp
+    # detectado (las "compatibles" con el ejemplo).
+    filas_compatibles = len(candidatos)
+
+    out = {
+        'fila_ejemplo': fila_ejemplo['linea'] if fila_ejemplo else '',
+        'tokens_ejemplo': fila_ejemplo['tokens'] if fila_ejemplo else [],
+        'asignaciones_ejemplo': fila_ejemplo['det']['asignaciones'] if fila_ejemplo else {},
+        'valores_ejemplo': fila_ejemplo['det'].get('valores', {}) if fila_ejemplo else {},
+        'fila_totales': fila_totales['linea'] if fila_totales else '',
+        'tokens_totales': fila_totales['tokens'] if fila_totales else [],
+        'asignaciones_totales': fila_totales['det']['asignaciones'] if fila_totales else {},
+        'valores_totales': fila_totales['det'].get('valores', {}) if fila_totales else {},
+        'stats': {
+            'filas_totales_pdf': len(lineas),
+            'filas_con_tokens': len(filas),
+            'filas_compatibles': filas_compatibles,
+        },
+        'warnings': warnings,
+    }
+    return out
+
+
 def detectar_campos_totales(tokens):
     """Asigna campos del pie de factura a tokens por matemática.
 
