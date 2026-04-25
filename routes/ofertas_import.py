@@ -70,45 +70,64 @@ def init_app(app):
 
 def _previsualizar_xlsx(path):
     """Devuelve datos CRUDOS del Excel + mapping propuesto. El frontend hace
-    el resto (remapeo manual + render de tabla)."""
+    el resto (remapeo manual + render de tabla).
+
+    Para los valores: detecta el number_format de cada celda y si es porcentaje
+    (contiene '%'), multiplica por 100 antes de serializar para que el snapshot
+    muestre "25%" en vez de "0.25" (que es el valor crudo).
+    """
     import openpyxl
-    from parsers.ofertas_xlsx import _detectar_columnas, _norm
+    from parsers.ofertas_xlsx import _detectar_columnas
 
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
+
+    # Iteramos sin values_only para tener acceso a number_format
+    all_rows_cells = list(ws.iter_rows())
+    if not all_rows_cells:
         return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
                 'count_filas': 0}
 
-    mapping, header_idx = _detectar_columnas(rows)
+    # Detectar headers usando solo los valores (compatible con _detectar_columnas)
+    rows_values = [tuple(c.value for c in r) for r in all_rows_cells]
+    mapping, header_idx = _detectar_columnas(rows_values)
 
-    # Si encontramos header, esa es la fila de headers. Si no, generamos labels
-    # genéricos "Col 1", "Col 2", ...
     if header_idx is not None:
-        headers = [str(c) if c is not None else '' for c in rows[header_idx]]
-        data_rows = rows[header_idx + 1:]
+        headers = [str(c) if c is not None else '' for c in rows_values[header_idx]]
+        data_rows_cells = all_rows_cells[header_idx + 1:]
     else:
-        # Sin header detectado — usar la primera fila NO vacía como referencia
-        # para conocer cuántas columnas hay.
-        first_row = next((r for r in rows if r), tuple())
+        first_row = next((r for r in rows_values if r), tuple())
         headers = [f'Col {i+1}' for i in range(len(first_row))]
-        data_rows = rows
+        data_rows_cells = all_rows_cells
 
-    # Limitar tamaño de la respuesta (preview, no todos los datos para guardar)
-    # Para guardar después, el frontend re-mapea las rows que ya tiene.
+    def _format_cell(cell):
+        v = cell.value
+        if v is None or v == '':
+            return ''
+        fmt = (cell.number_format or '').strip()
+        is_percent = '%' in fmt
+        if is_percent and isinstance(v, (int, float)):
+            # Excel guarda 25% como 0.25; mostramos 25% para coincidir con la UI de Excel.
+            scaled = v * 100
+            if scaled == int(scaled):
+                return f'{int(scaled)}%'
+            return f'{scaled:.2f}%'
+        if isinstance(v, float):
+            if v == int(v):
+                return str(int(v))
+            return f'{v:g}'
+        return str(v)
+
     rows_serializadas = []
-    for row in data_rows:
-        if not row:
+    for row_cells in data_rows_cells:
+        if not row_cells or all(c.value is None or c.value == '' for c in row_cells):
             continue
-        rows_serializadas.append([
-            (str(c) if c is not None else '') for c in row
-        ])
+        rows_serializadas.append([_format_cell(c) for c in row_cells])
 
     return {
         'headers': headers,
         'rows': rows_serializadas,
-        'mapping': mapping,  # {'ean': 2, 'descripcion': 3, ...}
+        'mapping': mapping,
         'header_row': header_idx,
         'count_filas': len(rows_serializadas),
     }
