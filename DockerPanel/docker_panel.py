@@ -5,12 +5,6 @@
 # documentos nuevos y procesarlos desde esta interfaz.
 # ──────────────────────────────────────────────────────────────────────────────
 
-import tkinter as tk
-from tkinter import filedialog, scrolledtext, messagebox
-import subprocess
-import threading
-import queue
-import os
 import datetime
 
 # === BEGIN HELPER HTTP (copy to unified panel) ===
@@ -18,11 +12,17 @@ import datetime
 # listar / leer PDFs desde la máquina de la farmacia.
 import http.server
 import json
+import os
+import queue
+import socket
+import subprocess
+import threading
+import time
+import tkinter as tk
+import urllib.error
 import urllib.parse
 import urllib.request
-import urllib.error
-import time
-import socket
+from tkinter import filedialog, messagebox, scrolledtext
 
 HELPER_PORT = 5055
 HELPER_ALLOWED_ORIGINS = {
@@ -711,7 +711,7 @@ class DockerPanel(tk.Tk):
             lbl.config(text="📁 carpeta: sin configurar", fg=FG_DIM)
             return
         if not os.path.isdir(carpeta):
-            lbl.config(text=f"📁 carpeta: no existe", fg=RED)
+            lbl.config(text="📁 carpeta: no existe", fg=RED)
             return
         try:
             pdfs = [f for f in os.listdir(carpeta)

@@ -14,16 +14,15 @@ Uso:
     docker-compose exec web python scripts/vincular_pedido_observer.py --dry      # sin escribir
 """
 import os
-import sys
 import re
+import sys
 import unicodedata
 from collections import defaultdict
 
 # Imports del proyecto
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import database
-from database import (Pedido, PedidoItem, Producto,
-                      ObsLaboratorio, ObsProducto)
+from database import ObsLaboratorio, ObsProducto, Pedido, PedidoItem, Producto
 
 
 def _norm(s):

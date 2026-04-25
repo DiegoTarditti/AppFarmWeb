@@ -4,12 +4,12 @@ Sirve de base para reemplazar los ~12 selects dispersos por un único
 componente typeahead con chips de "más usados".
 """
 
-from flask import request, jsonify
+from flask import jsonify, request
 from sqlalchemy import func
-import database
-from database import Laboratorio, Provider, Pedido, Invoice, ProcesoCompra
-from helpers import PARTNER_TIPOS
 
+import database
+from database import Invoice, Laboratorio, Pedido, ProcesoCompra, Provider
+from helpers import PARTNER_TIPOS
 
 VALID_TIPOS = set(PARTNER_TIPOS)
 

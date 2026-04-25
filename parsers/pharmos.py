@@ -12,8 +12,9 @@ Nota: el PDF no incluye código de barras. Se usa el código interno como 'codig
 El cruce con el ERP se realiza por descripción normalizada o por mappings manuales.
 """
 import re
-import pdfplumber
 from datetime import datetime
+
+import pdfplumber
 
 
 def parse_invoice_pdf(pdf_path):

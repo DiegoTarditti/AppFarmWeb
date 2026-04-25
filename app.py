@@ -1,13 +1,14 @@
 import os
 import threading
 import time
-from urllib.request import urlopen
 from urllib.error import URLError
+from urllib.request import urlopen
+
 from flask import Flask
 from flask_cors import CORS
+
 import database
 from database import init_db
-
 
 app = Flask(__name__)
 CORS(app)
@@ -23,14 +24,14 @@ init_db(DATABASE_URL)
 
 @app.before_request
 def bloquear_descuentos():
-    from flask import request, abort
+    from flask import abort, request
     if request.path.startswith('/descuentos'):
         abort(404)
 
 
 @app.before_request
 def exigir_login():
-    from flask import request, redirect, url_for
+    from flask import redirect, request, url_for
     from flask_login import current_user
     # Rutas públicas (no requieren login)
     rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api',
@@ -67,15 +68,19 @@ def arg_currency(value):
 
 
 from auth import init_auth
+
 init_auth(app)
 
 # Exponer detección de entorno en todos los templates
 from helpers import detectar_entorno
+
+
 @app.context_processor
 def _inyectar_entorno():
     return {'entorno': detectar_entorno()}
 
 from routes import register_routes
+
 register_routes(app)
 
 

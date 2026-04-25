@@ -1,9 +1,10 @@
 """Catálogo (listado + detalle) de obras sociales + convenios + planes.
 Espejo de DW.ObrasSociales / DW.Convenios / DW.Planes. Solo lectura."""
 
-from flask import render_template, request, redirect, url_for, flash
+from flask import flash, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import func as _f
+
 import database
 
 

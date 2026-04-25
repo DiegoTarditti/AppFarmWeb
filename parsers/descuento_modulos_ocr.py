@@ -13,11 +13,11 @@ Retorna la misma estructura que descuento_modulos_xls.py:
   ...
 ]
 """
-import re
-import pytesseract
-from PIL import Image, ImageFilter, ImageEnhance
 import io
+import re
 
+import pytesseract
+from PIL import Image, ImageEnhance, ImageFilter
 
 # ──────────────────────────── helpers ──────────────────────────────
 

@@ -58,7 +58,7 @@ def main():
         render_url = render_url.replace('postgres://', 'postgresql://', 1)
 
     tmp_dump = os.path.abspath('render_dump_pull.sql')
-    print(f'1/3 Descargando dump de Render...')
+    print('1/3 Descargando dump de Render...')
     t0 = time.time()
     with open(tmp_dump, 'wb') as f:
         # pg_dump 18 para que matchee con Render (18.3). Plain SQL es

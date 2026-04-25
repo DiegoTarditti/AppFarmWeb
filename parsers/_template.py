@@ -9,8 +9,9 @@ Cada ítem debe devolver un dict con:
   codigo_barra, cantidad, descripcion, precio_unitario (puede ser None), importe
 """
 import re
-import pdfplumber
 from datetime import datetime
+
+import pdfplumber
 
 
 def parse_invoice_pdf(pdf_path):

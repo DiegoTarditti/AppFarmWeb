@@ -1,20 +1,21 @@
 """Purchase analysis, orders, and module/offer processing routes."""
 
+import json
 import os
 import re
-import json
 import uuid
 from datetime import datetime
-from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
-from werkzeug.utils import secure_filename
-import database
-from database import Pedido, PedidoItem, Producto, Laboratorio, ModuloPack, ErpStock, AnalisisSesion
-from parsers.sales_history import parse_sales_history_pdf
-from parsers.sales_history_xls import parse_sales_history_xls
-from parsers.sales_history_html import parse_sales_history_html
-from purchase_engine import analyze_purchase
-from helpers import UPLOAD_FOLDER, PURCHASE_FOLDER, get_config, _upsert_producto, _add_alt_barcode, now_ar
 
+from flask import flash, jsonify, make_response, redirect, render_template, request, url_for
+from werkzeug.utils import secure_filename
+
+import database
+from database import AnalisisSesion, ErpStock, Laboratorio, ModuloPack, Pedido, PedidoItem, Producto
+from helpers import PURCHASE_FOLDER, UPLOAD_FOLDER, _add_alt_barcode, _upsert_producto, get_config, now_ar
+from parsers.sales_history import parse_sales_history_pdf
+from parsers.sales_history_html import parse_sales_history_html
+from parsers.sales_history_xls import parse_sales_history_xls
+from purchase_engine import analyze_purchase
 
 _PACK_PATTERN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
 
@@ -35,7 +36,7 @@ def _detectar_packs_en_modulos(modules, session):
                      desc_unidad_sug, fuente, modulo, destacado, tiene_regex,
                      tuvo_ventas (del pack), confianza ('alta'|'media'|'baja')}
     """
-    from database import ObsProducto, ObsVentaMensual, ModuloPack, Producto
+    from database import ModuloPack, ObsProducto, ObsVentaMensual, Producto
     ya_registrados = {ep for (ep,) in session.query(ModuloPack.ean_pack).all()}
 
     # 1. Juntar todos los EANs del archivo para bulk lookup
@@ -486,9 +487,10 @@ def init_app(app):
         farmacia_nombre = data.get('farmacia') or get_config()['farmacia_nombre']
 
         if fmt == 'xlsx':
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
             from io import BytesIO
+
+            import openpyxl
+            from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -540,14 +542,15 @@ def init_app(app):
             return resp
 
         elif fmt == 'pdf':
-            from reportlab.lib.pagesizes import A4, landscape
+            from datetime import datetime as _dt
+            from io import BytesIO
+
             from reportlab.lib import colors
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
             from reportlab.lib.units import cm
             from reportlab.pdfgen import canvas as rl_canvas
-            from io import BytesIO
-            from datetime import datetime as _dt
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             fecha_emision = _dt.now().strftime('%d/%m/%Y %H:%M')
             page_w, page_h = landscape(A4)
@@ -765,6 +768,7 @@ def init_app(app):
     def purchase_suggest():
         """Sugerencia de pedido consolidado por laboratorio."""
         import math
+
         from sqlalchemy import func as _func
 
         try:
@@ -960,9 +964,10 @@ def init_app(app):
         - mix por monodroga y laboratorio
         - estacionalidad mensual del pedido global
         """
-        from sqlalchemy import func as _f
-        from datetime import datetime
         import os as _os
+        from datetime import datetime
+
+        from sqlalchemy import func as _f
 
         id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
         hoy = datetime.now()
@@ -1221,7 +1226,9 @@ def init_app(app):
     def api_pedido_vincular_observer(pedido_id):
         """Linkea items del pedido contra obs_productos por descripción + laboratorio.
         Reusa la lógica del script scripts/vincular_pedido_observer.py."""
-        import sys as _sys, os as _os
+        import os as _os
+        import sys as _sys
+
         import cron_log as _cron_log
         scripts_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'scripts')
         if scripts_dir not in _sys.path:
@@ -1277,9 +1284,10 @@ def init_app(app):
             safe_lab = secure_filename(lab) or 'pedido'
 
         if fmt == 'xlsx':
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment
             from io import BytesIO as _BIO
+
+            import openpyxl
+            from openpyxl.styles import Alignment, Font, PatternFill
 
             wb = openpyxl.Workbook()
             ws = wb.active
@@ -1320,14 +1328,15 @@ def init_app(app):
             return resp
 
         if fmt == 'pdf':
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib import colors
-            from reportlab.lib.units import cm
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.pdfgen import canvas as rl_canvas
-            from io import BytesIO as _BIO
             from datetime import datetime as _dt
+            from io import BytesIO as _BIO
+
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+            from reportlab.lib.units import cm
+            from reportlab.pdfgen import canvas as rl_canvas
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             fecha_emision = _dt.now().strftime('%d/%m/%Y %H:%M')
             page_w, page_h = A4
@@ -1638,8 +1647,10 @@ def init_app(app):
     @app.route('/order/<int:pedido_id>/modules-template', methods=['GET'])
     def order_modules_template(pedido_id):
         """Descarga una plantilla XLSX lista para completar con módulos."""
-        import io, openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        import io
+
+        import openpyxl
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         with database.get_db() as session:
             pedido = session.query(database.Pedido).get(pedido_id)
             lab = pedido.laboratorio if pedido else 'Laboratorio'
@@ -1781,10 +1792,12 @@ def init_app(app):
     def order_export_plantilla(pedido_id):
         """Exporta el resumen usando la plantilla configurada para el laboratorio."""
         import json as _json
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment
         from io import BytesIO
-        from database import Pedido, Laboratorio, ExportTemplate
+
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        from database import ExportTemplate, Laboratorio, Pedido
 
         raw = request.form.get('data', '[]')
         try:
@@ -1977,8 +1990,9 @@ def init_app(app):
     def order_export_plantilla_unified(pedido_id, plantilla_id):
         """Exporta usando la Plantilla unificada (xlsx | csv | txt_fijo)."""
         import json as _json
-        from flask import Response, send_file
         from io import BytesIO, StringIO
+
+        from flask import Response, send_file
 
         body = request.get_json(silent=True) or {}
         rows = body.get('rows') or []
@@ -2078,7 +2092,7 @@ def init_app(app):
 
         # xlsx (default)
         import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment
+        from openpyxl.styles import Alignment, Font, PatternFill
         cols = _norm_cols(cfg.get('columnas'))
         if not cols:
             return jsonify({'error': 'Plantilla sin columnas activas'}), 400
@@ -2106,9 +2120,10 @@ def init_app(app):
     @app.route('/order/<int:pedido_id>/export/<step>/<fmt>', methods=['POST'])
     def order_export(pedido_id, step, fmt):
         """step: modules | offers | nodeal | summary.  fmt: xlsx | pdf"""
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
         from io import BytesIO
+
+        import openpyxl
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
         raw = request.form.get('data')
         if not raw:

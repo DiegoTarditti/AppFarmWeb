@@ -17,3 +17,4 @@ beautifulsoup4>=4.12
 lxml>=5.0
 pytest>=8.0
 pymssql>=2.3
+ruff>=0.6

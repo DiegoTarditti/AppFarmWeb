@@ -138,7 +138,8 @@ def resolve_cards_para_usuario(session, usuario_id, clicks_desde_dias=30):
     """
     import json
     from datetime import timedelta
-    from database import Usuario, HomeCardClick, now_ar
+
+    from database import HomeCardClick, Usuario, now_ar
 
     prefs = {}
     if usuario_id:

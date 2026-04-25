@@ -22,14 +22,30 @@ Considera "tiene movimiento" si:
 
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
+
 from database import (
-    init_db, get_db, Provider, Laboratorio, Invoice, Claim, DescuentoCampana,
-    BarcodeMapping, PagoAjusteCC, DocumentoPendiente, ProcesoCompra,
-    Producto, Modulo, ExportTemplate, OfertaMinimo, AnalisisSesion,
-    Pedido, ProductAnalytics,
+    AnalisisSesion,
+    BarcodeMapping,
+    Claim,
+    DescuentoCampana,
+    DocumentoPendiente,
+    ExportTemplate,
+    Invoice,
+    Laboratorio,
+    Modulo,
+    OfertaMinimo,
+    PagoAjusteCC,
+    Pedido,
+    ProcesoCompra,
+    ProductAnalytics,
+    Producto,
+    Provider,
+    get_db,
+    init_db,
 )
 
 
@@ -167,7 +183,7 @@ def main():
             con_mov = proveedores_con_movimiento(session)
             todos = session.query(Provider).order_by(Provider.razon_social).all()
             sin_mov = [p for p in todos if p.id not in con_mov]
-            print(f'\n=== Proveedores ===')
+            print('\n=== Proveedores ===')
             print(f'Total: {len(todos)} · Con movimiento: {len(con_mov)} · '
                   f'Sin movimiento (candidatos a borrar): {len(sin_mov)}')
             for p in sin_mov:
@@ -184,7 +200,7 @@ def main():
             con_mov = laboratorios_con_movimiento(session)
             todos = session.query(Laboratorio).order_by(Laboratorio.nombre).all()
             sin_mov = [l for l in todos if l.id not in con_mov]
-            print(f'\n=== Laboratorios ===')
+            print('\n=== Laboratorios ===')
             print(f'Total: {len(todos)} · Con movimiento: {len(con_mov)} · '
                   f'Sin movimiento (candidatos a borrar): {len(sin_mov)}')
             for l in sin_mov:

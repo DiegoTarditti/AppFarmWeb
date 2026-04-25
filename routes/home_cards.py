@@ -1,7 +1,9 @@
 """Rutas para tracking de cards del home + pantalla de personalización."""
 import json
-from flask import render_template, redirect, url_for, flash, request, abort
+
+from flask import abort, flash, redirect, render_template, request, url_for
 from flask_login import current_user
+
 import database
 import home_cards as hc
 

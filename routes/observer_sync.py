@@ -2,11 +2,13 @@
 import os
 import threading
 from datetime import datetime
-from flask import render_template, redirect, url_for, flash, request, jsonify
-import database
-import observer_source
-import observer_matcher
+
+from flask import flash, jsonify, redirect, render_template, request, url_for
+
 import cron_log
+import database
+import observer_matcher
+import observer_source
 
 # Lock para evitar que 2 syncs corran en paralelo (auto + manual que se pisan)
 _SYNC_LOCK = threading.Lock()
@@ -180,6 +182,7 @@ def init_app(app):
     def observer_push_render():
         """Replica las tablas obs_* + productos.observer_id a la DB de Render."""
         import os
+
         from scripts.push_obs_to_render import push
         render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
         if not render_url:

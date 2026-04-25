@@ -14,11 +14,11 @@ Opciones:
 import argparse
 import json
 import os
-import sys
 import shutil
+import sys
 import uuid
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 
 
 def _build_multipart(file_paths):

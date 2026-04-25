@@ -3,14 +3,14 @@ Generador de licencias — AppFarmacia
 ⚠ ESTE ARCHIVO NO SE DISTRIBUYE AL CLIENTE. Solo para uso interno.
 Requiere: Python 3.8+ con tkinter (incluido en instalación estándar).
 """
+import csv
 import hashlib
 import hmac
 import json
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-from datetime import date, timedelta
-import csv
 import os
+import tkinter as tk
+from datetime import date, timedelta
+from tkinter import filedialog, messagebox, ttk
 
 # ─── CLAVE PRIVADA ────────────────────────────────────────────────────────────
 # Debe ser idéntica a la de license_utils.py en el proyecto.

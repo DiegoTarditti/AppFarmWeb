@@ -48,7 +48,7 @@ def detectar_packs(modules, session, saltear_registrados=True):
     Cada candidato: {ean_pack, desc_pack, cantidad, ean_unidad_sug, desc_unidad_sug,
                      fuente, modulo, destacado, tiene_regex, sin_ventas, confianza}
     """
-    from database import ObsProducto, ObsVentaMensual, ModuloPack, Producto
+    from database import ModuloPack, ObsProducto, ObsVentaMensual, Producto
 
     ya_registrados = set()
     if saltear_registrados:

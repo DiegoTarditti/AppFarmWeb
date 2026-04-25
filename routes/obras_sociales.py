@@ -5,9 +5,9 @@ cuando tengamos acceso a ObServer. El resto de la UI no debería cambiar.
 """
 
 import random
-from datetime import datetime, timedelta, date
-from flask import render_template, request
+from datetime import date, datetime, timedelta
 
+from flask import render_template, request
 
 # ── Mock data ─────────────────────────────────────────────────────────
 

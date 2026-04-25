@@ -1,7 +1,20 @@
 import importlib
-import pandas as pd
 from datetime import datetime
-from database import Invoice, InvoiceItem, ErpStock, Provider, Claim, ClaimItem, StockDifference, BarcodeMapping, Producto, ProductoPrecioHist
+
+import pandas as pd
+
+from database import (
+    BarcodeMapping,
+    Claim,
+    ClaimItem,
+    ErpStock,
+    Invoice,
+    InvoiceItem,
+    Producto,
+    ProductoPrecioHist,
+    Provider,
+    StockDifference,
+)
 
 
 def extract_provider_name_from_pdf(pdf_path):
@@ -16,8 +29,9 @@ def extract_provider_info_from_pdf(pdf_path):
     Lo que se detecta se precarga en el modo aprendizaje para que el usuario
     no tenga que re-seleccionar campos que ya fueron identificados.
     """
-    import pdfplumber
     import re
+
+    import pdfplumber
     with pdfplumber.open(pdf_path) as pdf:
         text = pdf.pages[0].extract_text() or ''
 

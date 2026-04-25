@@ -5,9 +5,9 @@ Incluir en el proyecto distribuido. NO incluir license_generator.py.
 import hashlib
 import hmac
 import json
-import uuid
 import platform
 import subprocess
+import uuid
 from datetime import date
 
 # ─── CLAVE PRIVADA ────────────────────────────────────────────────────────────

@@ -8,20 +8,39 @@ NO toca: usuarios, configuracion, laboratorios, proveedores, tablas obs_*.
 
 import os
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database import (
-    get_db, init_db,
-    Pedido, PedidoItem, AnalisisSesion, ProductAnalytics,
-    Invoice, InvoiceItem, StockDifference, ErpStock, Claim, ClaimItem,
-    InvoiceBatch, BarcodeMapping, DocumentoPendiente,
-    Modulo, ModuloPack, OfertaMinimo,
-    DescuentoCampana, DescuentoModulo, DescuentoModuloItem,
-    Producto, ProductoPrecioHist,
-    ProcesoCompra, ExportTemplate, PlantillaExportacion, PlantillaCampo,
+    AnalisisSesion,
+    BarcodeMapping,
+    Claim,
+    ClaimItem,
+    DescuentoCampana,
+    DescuentoModulo,
+    DescuentoModuloItem,
+    DocumentoPendiente,
+    ErpStock,
+    ExportTemplate,
+    Invoice,
+    InvoiceBatch,
+    InvoiceItem,
+    Modulo,
+    ModuloPack,
+    OfertaMinimo,
     PagoAjusteCC,
+    Pedido,
+    PedidoItem,
+    PlantillaCampo,
+    PlantillaExportacion,
+    ProcesoCompra,
+    ProductAnalytics,
+    Producto,
+    ProductoPrecioHist,
+    StockDifference,
+    get_db,
+    init_db,
 )
-
 
 # Cada grupo tiene tablas en orden topológico (hijas antes que padres)
 # para evitar violaciones de FK al borrar.

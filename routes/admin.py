@@ -5,9 +5,11 @@
 
 import os
 import sys
-from flask import render_template, request, redirect, url_for, flash, jsonify
-from auth import requiere_permiso
+
+from flask import flash, jsonify, redirect, render_template, request, url_for
+
 import database
+from auth import requiere_permiso
 
 # Path hack para poder importar scripts/
 _SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
@@ -26,9 +28,12 @@ def init_app(app):
     @requiere_permiso('usuarios', 'admin')
     def admin_cron_log():
         """Vista unificada de procesos automáticos."""
-        from database import CronLog, get_db, now_ar
-        from sqlalchemy import desc, func as _func
         from datetime import timedelta
+
+        from sqlalchemy import desc
+        from sqlalchemy import func as _func
+
+        from database import CronLog, get_db, now_ar
         proceso_filter = (request.args.get('proceso') or '').strip()
         estado_filter = (request.args.get('estado') or '').strip()
         try:
@@ -64,8 +69,9 @@ def init_app(app):
         """Recibe reporte de un proceso externo (ej. DockerPanel) y lo registra.
         Body JSON: { proceso, estado, duracion_ms?, mensaje?, error?, origen? }
         """
-        import cron_log
         import re
+
+        import cron_log
         data = request.get_json(silent=True) or {}
         proceso = (data.get('proceso') or '').strip()
         estado = (data.get('estado') or '').strip()
@@ -144,7 +150,7 @@ def init_app(app):
     @requiere_permiso('usuarios', 'admin')
     def admin_reset_datos():
         """Reset de datos operativos agrupados por módulo (dry-run + ejecución con checkboxes)."""
-        from reset_datos import calcular_dry_run, ejecutar_reset, GRUPOS
+        from reset_datos import GRUPOS, calcular_dry_run, ejecutar_reset
         logs = None
         if request.method == 'POST':
             seleccion = request.form.getlist('grupo')

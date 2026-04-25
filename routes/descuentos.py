@@ -1,8 +1,10 @@
 """Descuentos routes: campañas, módulos, importación."""
 
 import os
-from flask import render_template, request, redirect, url_for, flash, jsonify
+
+from flask import flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
+
 import database
 from database import DescuentoCampana, DescuentoModulo, DescuentoModuloItem
 from helpers import UPLOAD_FOLDER, get_providers
@@ -60,7 +62,9 @@ def init_app(app):
             flash('Solo se aceptan archivos Excel (.xlsx / .xls) o PDF.')
             return redirect(url_for('descuento_upload'))
 
-        import tempfile, json
+        import json
+        import tempfile
+
         from parsers.descuento_xlsx_parser import parse_descuento
 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}')
@@ -73,7 +77,8 @@ def init_app(app):
             flash(f'Error al leer el archivo: {e}')
             return redirect(url_for('descuento_upload'))
         finally:
-            import os as _os; _os.unlink(tmp.name)
+            import os as _os
+            _os.unlink(tmp.name)
 
         if not modulos:
             flash('El archivo no contiene módulos reconocibles.')
@@ -307,7 +312,9 @@ def init_app(app):
             flash('Solo se aceptan archivos Excel (.xlsx / .xls).')
             return redirect(url_for('descuento_upload_libre'))
 
-        import tempfile, json
+        import json
+        import tempfile
+
         from parsers.descuento_libre_parser import parse_descuento_libre
 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}')
@@ -320,7 +327,8 @@ def init_app(app):
             flash(f'Error al leer el archivo: {e}')
             return redirect(url_for('descuento_upload_libre'))
         finally:
-            import os as _os; _os.unlink(tmp.name)
+            import os as _os
+            _os.unlink(tmp.name)
 
         if not items:
             flash('El archivo no contiene artículos reconocibles.')

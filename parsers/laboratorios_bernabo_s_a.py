@@ -11,9 +11,10 @@ CÓDIGO interno (ej: 1134O) → se usa como codigo_barra.
 match_strategy del proveedor: 'descripcion'.
 """
 import re
-import pdfplumber
-from datetime import datetime
 from collections import defaultdict
+from datetime import datetime
+
+import pdfplumber
 
 
 def parse_invoice_pdf(pdf_path):

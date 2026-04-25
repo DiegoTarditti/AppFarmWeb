@@ -1,6 +1,7 @@
 """Dashboard routes."""
 
-from flask import render_template, request, jsonify
+from flask import jsonify, render_template, request
+
 import database
 
 
@@ -8,8 +9,10 @@ def init_app(app):
 
     @app.route('/dashboard')
     def dashboard():
-        from sqlalchemy import func as _func, case as _case
         from datetime import date as _date
+
+        from sqlalchemy import case as _case
+        from sqlalchemy import func as _func
         try:
             n_days = max(1, min(365, int(request.args.get('n_days', 10))))
         except (ValueError, TypeError):

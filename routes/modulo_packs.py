@@ -1,10 +1,12 @@
 """Módulo packs routes: CRUD, import, vista, toggle activo."""
 
 import os
-from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
+
+from flask import flash, jsonify, make_response, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
+
 import database
-from database import Producto, Laboratorio, Modulo, ModuloPack
+from database import Laboratorio, Modulo, ModuloPack, Producto
 from helpers import UPLOAD_FOLDER
 
 
@@ -146,8 +148,10 @@ def init_app(app):
     @app.route('/modulo-packs/plantilla')
     def modulo_packs_plantilla():
         """Descarga plantilla XLSX para importar módulos (Formato A)."""
-        import io, openpyxl
-        from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+        import io
+
+        import openpyxl
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.styles.numbers import FORMAT_NUMBER
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -268,8 +272,8 @@ def init_app(app):
           - ausencia de ventas históricas por ese EAN
         Los detectados se guardan con ean_unidad + cantidad sugeridos.
         Los no-pack se guardan con ean_unidad=ean_pack y cantidad=1 (como antes)."""
-        from parsers.modulos_xlsx import parse_modulos_xlsx
         from pack_detector import detectar_packs
+        from parsers.modulos_xlsx import parse_modulos_xlsx
         f = request.files.get('file')
         lab_id = request.form.get('lab_id') or None
         lista_nombre = (request.form.get('lista_nombre') or '').strip() or None

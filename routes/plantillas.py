@@ -7,10 +7,14 @@ Lee del modelo nuevo `Plantilla` y también expone (read-only) plantillas viejas
 
 import json
 from datetime import datetime
-from flask import render_template, request, redirect, url_for, flash, jsonify, abort
+
+from flask import abort, flash, jsonify, redirect, render_template, request, url_for
+
 import database
-from database import Plantilla, Laboratorio, Provider, ExportTemplate, PlantillaExportacion, PlantillaCampo
-from helpers import PARTNER_TIPOS as VALID_TIPOS, PLANTILLA_FORMATOS as VALID_FORMATOS, PLANTILLA_TIPOS_DOC as VALID_TIPOS_DOC
+from database import ExportTemplate, Laboratorio, Plantilla, PlantillaCampo, PlantillaExportacion, Provider
+from helpers import PARTNER_TIPOS as VALID_TIPOS
+from helpers import PLANTILLA_FORMATOS as VALID_FORMATOS
+from helpers import PLANTILLA_TIPOS_DOC as VALID_TIPOS_DOC
 
 
 def _entidad_nombre(session, tipo, id_):

@@ -4,6 +4,7 @@ Extrae: farmacia, laboratorio, período, y lista de productos con ventas mensual
 Retorna el mismo formato que parse_sales_history_pdf.
 """
 import re
+
 import openpyxl
 
 MONTH_ABBR = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,

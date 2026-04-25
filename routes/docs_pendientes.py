@@ -1,9 +1,11 @@
 """Documentos pendientes routes."""
 
-import os
 import json
-from flask import render_template, request, redirect, url_for, flash, jsonify
+import os
+
+from flask import flash, jsonify, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
+
 import database
 
 
@@ -67,7 +69,7 @@ def init_app(app):
                 return redirect(url_for('docs_pendientes'))
             dst = os.path.join(app.config['UPLOAD_FOLDER'], doc.filename)
             if not os.path.isfile(dst):
-                flash(f'Archivo no encontrado en el servidor.')
+                flash('Archivo no encontrado en el servidor.')
                 return redirect(url_for('docs_pendientes'))
             filename = doc.filename
             doc_id_val = doc.id

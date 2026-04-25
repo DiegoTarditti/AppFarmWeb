@@ -8,14 +8,22 @@ Flujo:
      y el sistema infiere una regex. Se ofrece guardar como parser del proveedor.
 """
 
-import os
 import json
+import os
 import re
-from flask import render_template, request, redirect, url_for, flash, jsonify, send_file
+
+from flask import flash, jsonify, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
-from helpers import CONVERTER_DIR, _build_item_pattern, PARSERS_FOLDER, _normalize_quadrupled, extract_text_with_ocr_fallback
+
 import database
 from data_extract import extract_provider_info_from_pdf, parse_invoice_pdf
+from helpers import (
+    CONVERTER_DIR,
+    PARSERS_FOLDER,
+    _build_item_pattern,
+    _normalize_quadrupled,
+    extract_text_with_ocr_fallback,
+)
 
 
 def _converter_meta_path(fname):
@@ -330,8 +338,9 @@ def init_app(app):
     @app.route('/converter/<token>/auto', methods=['GET'])
     def converter_auto(token):
         """Intenta detectar una tabla con pdfplumber.extract_tables()."""
-        import pdfplumber as _plumber
         from collections import defaultdict as _dd
+
+        import pdfplumber as _plumber
         safe = secure_filename(token)
         path = os.path.join(CONVERTER_DIR, safe)
         if not os.path.exists(path):
@@ -639,7 +648,7 @@ def init_app(app):
             if not prov:
                 return jsonify({'error': 'Falta proveedor (id o nombre)'}), 400
 
-            from helpers import _make_parser_slug, _ensure_parser_file
+            from helpers import _ensure_parser_file, _make_parser_slug
             parser_slug = prov.parser_file
             if not parser_slug:
                 parser_slug = _make_parser_slug(prov.razon_social)
@@ -681,6 +690,7 @@ def init_app(app):
     def converter_enviar_a_proceso(token):
         """Guarda la factura y crea un ProcesoCompra tipo droguería asociado."""
         from datetime import datetime
+
         from helpers import now_ar
         body = request.get_json(silent=True) or {}
         header = body.get('header', {}) or {}
@@ -729,6 +739,7 @@ def init_app(app):
     def converter_export(token):
         """Exporta las filas extraídas a XLSX."""
         import io as _io
+
         import openpyxl as _ox
         body = request.get_json(silent=True) or {}
         rows = body.get('rows', [])
@@ -771,10 +782,12 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
 
     Retorna (invoice_id, mensaje) o lanza ValueError con el detalle.
     """
-    from datetime import datetime, date
-    from helpers import UPLOAD_FOLDER
     import shutil
+    from datetime import date, datetime
+
     from werkzeug.utils import secure_filename as _sf
+
+    from helpers import UPLOAD_FOLDER
 
     safe = _sf(token)
     path = os.path.join(CONVERTER_DIR, safe)

@@ -4,9 +4,9 @@ Aplica promedio ponderado + estacionalidad + tendencia lineal
 para pronosticar el pedido óptimo por producto.
 Unidad de pedido: días (en lugar de meses).
 """
-import math
-import datetime
 import calendar
+import datetime
+import math
 
 # Los 11 meses completos (el 12° es el mes parcial en el informe)
 FULL_MONTHS = 11

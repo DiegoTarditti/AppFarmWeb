@@ -3,10 +3,12 @@ Completa codigo_barra_alt1/2/3 en la tabla productos usando articulos.txt.
 Ejecutar dentro del contenedor:
     docker-compose exec web python import_articulos_alt.py
 """
-import os, sys
+import os
+import sys
 from collections import defaultdict
-from sqlalchemy import create_engine, text
 from datetime import datetime
+
+from sqlalchemy import create_engine, text
 
 TXT = "/articulos/articulos.txt"   # path dentro del contenedor
 # Si corrés desde fuera del contenedor, cambiá por la ruta local:

@@ -11,6 +11,7 @@ Uso:
 import os
 import re
 import sys
+
 import psycopg2
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -54,7 +55,7 @@ def main():
             """)
             placeholders = cur.fetchall()
             print(f"\nPaso 1: {len(placeholders)} placeholders para borrar")
-            print(f"  (cantidad=1 y ean_pack==ean_unidad)")
+            print("  (cantidad=1 y ean_pack==ean_unidad)")
             for row in placeholders[:5]:
                 print(f"  ej: #{row[0]} {row[4][:60] if row[4] else '(sin desc)'}")
             if len(placeholders) > 5:
@@ -78,7 +79,7 @@ def main():
                 print(f"  #{row_id} {a} -> {n}  | {d[:60] if d else ''}")
 
             if dry_run:
-                print(f"\n[DRY-RUN] No se aplicó nada. Corré sin --dry-run para aplicar.")
+                print("\n[DRY-RUN] No se aplicó nada. Corré sin --dry-run para aplicar.")
                 return
 
             # APLICAR
@@ -93,7 +94,7 @@ def main():
             print(f"✓ Actualizadas {len(correcciones)} cantidades")
 
             conn.commit()
-            print(f"\nListo. Total restante en modulo_packs:")
+            print("\nListo. Total restante en modulo_packs:")
             cur.execute("SELECT COUNT(*) FROM modulo_packs")
             print(f"  {cur.fetchone()[0]} entradas (antes 124)")
 

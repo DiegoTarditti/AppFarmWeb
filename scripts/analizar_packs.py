@@ -9,6 +9,7 @@ Reporta:
 import os
 import re
 import sys
+
 import psycopg2
 
 # Fuerza stdout UTF-8 para Windows
@@ -86,7 +87,7 @@ def main():
     if len(falsos_negativos) > 30:
         print(f"      ... +{len(falsos_negativos)-30} más")
 
-    print(f"\nResumen por patrón:")
+    print("\nResumen por patrón:")
     por_patron = {}
     for d, g, det, pat in aciertos:
         por_patron.setdefault(pat, 0)

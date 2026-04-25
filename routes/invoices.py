@@ -1,17 +1,34 @@
 """Invoice routes: upload, process_upload, parse-helper, compare, items, pick-fields, header."""
 
 import os
-from flask import render_template, request, redirect, url_for, flash, jsonify, make_response, send_from_directory
+
+from flask import flash, jsonify, make_response, redirect, render_template, request, send_from_directory, url_for
 from werkzeug.utils import secure_filename
+
 import database
-from data_extract import (parse_invoice_pdf, parse_erp_excel, compare_invoice_vs_erp,
-                          save_invoice_to_db, save_erp_to_db, save_differences,
-                          get_saved_differences, get_erp_items_with_issues,
-                          save_barcode_mapping)
+from data_extract import (
+    compare_invoice_vs_erp,
+    get_erp_items_with_issues,
+    get_saved_differences,
+    parse_erp_excel,
+    parse_invoice_pdf,
+    save_barcode_mapping,
+    save_differences,
+    save_erp_to_db,
+    save_invoice_to_db,
+)
 from helpers import (
-    UPLOAD_FOLDER, allowed_file, get_config, get_providers,
-    _make_parser_slug, _ensure_parser_file, _get_or_create_provider_by_name,
-    _upsert_producto, _add_alt_barcode, _build_item_pattern, _bulk_upsert_productos,
+    UPLOAD_FOLDER,
+    _add_alt_barcode,
+    _build_item_pattern,
+    _bulk_upsert_productos,
+    _ensure_parser_file,
+    _get_or_create_provider_by_name,
+    _make_parser_slug,
+    _upsert_producto,
+    allowed_file,
+    get_config,
+    get_providers,
 )
 
 
@@ -283,8 +300,9 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/auto-table', methods=['POST'])
     def auto_table(invoice_id):
-        import pdfplumber as _plumber
         from collections import defaultdict as _dd
+
+        import pdfplumber as _plumber
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
         if not invoice:
@@ -323,9 +341,10 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/map-columns', methods=['GET', 'POST'])
     def map_columns(invoice_id):
-        import pdfplumber as _plumber
         import json as _json
         from collections import defaultdict as _dd
+
+        import pdfplumber as _plumber
 
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
@@ -455,6 +474,7 @@ def init_app(app):
     @app.route('/invoice/<int:invoice_id>/pick-items/infer', methods=['POST'])
     def pick_items_infer(invoice_id):
         import re as _re
+
         import pdfplumber as _plumber
 
         body = request.get_json(silent=True) or {}
@@ -493,8 +513,8 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/pick-items/save', methods=['POST'])
     def pick_items_save(invoice_id):
-        import re as _re
         import datetime as _dt
+        import re as _re
         body = request.get_json(silent=True) or {}
         rows = body.get('rows', [])
         header = body.get('header', {}) or {}
@@ -588,8 +608,9 @@ def init_app(app):
 
     @app.route('/invoice/<int:invoice_id>/manual-items', methods=['GET', 'POST'])
     def manual_items(invoice_id):
-        import pdfplumber as _plumber
         import json as _json
+
+        import pdfplumber as _plumber
 
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
@@ -768,6 +789,7 @@ def init_app(app):
     @app.route('/invoice/<int:invoice_id>/items/export')
     def invoice_items_export(invoice_id):
         import io
+
         import openpyxl
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
@@ -798,6 +820,7 @@ def init_app(app):
     @app.route('/invoice/<int:invoice_id>/differences/export')
     def invoice_differences_export(invoice_id):
         import io
+
         import openpyxl
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
@@ -826,6 +849,7 @@ def init_app(app):
     @app.route('/invoice/<int:invoice_id>/compare')
     def compare_view(invoice_id):
         from flask_login import current_user
+
         import observer_source
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)

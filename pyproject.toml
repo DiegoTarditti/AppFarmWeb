@@ -1,0 +1,48 @@
+[tool.ruff]
+# Reglas suaves al inicio. Ir endureciendo con el tiempo.
+line-length = 120
+target-version = "py312"
+
+# Excluir scripts CLI que tienen sys.exit() y otras rarezas.
+extend-exclude = [
+    "scripts/observer_test.py",
+    ".venv",
+    "venv",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+# Selección conservadora: solo lo que detecta bugs reales o ahorra trabajo.
+# Ampliar gradualmente.
+select = [
+    "E4",     # imports — errores reales
+    "E7",     # statement issues (lambda, comparison)
+    "E9",     # syntax errors
+    "F",      # pyflakes (unused imports, undefined names — bugs reales)
+    "B",      # bugbear (gotchas comunes)
+    "W6",     # warnings deprecation
+    "I",      # isort (orden de imports)
+]
+
+ignore = [
+    # Permitidos para no rompernos el cuello al inicio.
+    "E501",  # line too long (ya está cubierto por line-length pero a veces es OK)
+    "E402",  # imports tardíos (a veces son intencionales)
+    "E701",  # múltiples statements en una línea con `:` — convención
+    "E702",  # múltiples statements con `;` — código existente
+    "E712",  # `== True` — flask/sqlalchemy patterns
+    "E741",  # variable name ambigua (l, I, O) — código existente
+    "B008",  # function call in default arg (Flask hace esto)
+    "B904",  # raise from (no es crítico)
+    "B905",  # zip() sin strict= — Python <3.10 compat
+    "B007",  # variable de loop no usada (a veces es intencional)
+    "F401",  # imports no usados (los hay legítimos en __init__ y similares)
+    "F841",  # asignación local no usada (debug a veces)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests pueden tener prácticas que no queremos en código prod
+"tests/*" = ["F", "B", "I"]
+# Scripts CLI manejan SystemExit
+"scripts/*" = ["B"]

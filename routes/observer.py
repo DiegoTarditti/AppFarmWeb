@@ -3,18 +3,20 @@
 Habilitadas solo para roles/usuarios con acceso online. No requieren subir archivos.
 """
 
+import json
 import os
 import uuid
-import json
 from datetime import datetime
-from flask import render_template, request, redirect, url_for, flash, jsonify
-from flask_login import login_required, current_user
+
+from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user, login_required
+
 import database
-from database import Pedido, PedidoItem, AnalisisSesion
-from purchase_engine import analyze_purchase
-from helpers import PURCHASE_FOLDER, get_config, _upsert_producto, now_ar
-from auth import tiene_permiso
 import observer_source
+from auth import tiene_permiso
+from database import AnalisisSesion, Pedido, PedidoItem
+from helpers import PURCHASE_FOLDER, _upsert_producto, get_config, now_ar
+from purchase_engine import analyze_purchase
 
 
 def _user_tiene_observer(user):
@@ -31,8 +33,10 @@ def init_app(app):
     def obs_productos():
         """Catálogo completo ObServer (122k) con ventas + stock + laboratorio + monodroga.
         Solo lectura, paginado, sin tocar la tabla `productos` local."""
-        from sqlalchemy import func as _f, or_ as _or
         from datetime import datetime
+
+        from sqlalchemy import func as _f
+        from sqlalchemy import or_ as _or
         q = (request.args.get('q') or '').strip()
         lab_id = request.args.get('lab_id', type=int)
         # Default: incluir TODOS (incluso los con fecha_baja). El usuario puede activar
@@ -168,6 +172,7 @@ def init_app(app):
         Para cada droga muestra: #laboratorios que la ofrecen, #productos distintos,
         unidades 3m, unidades 12m y monto 12m. Paginado y con buscador por nombre."""
         from sqlalchemy import text as _text
+
         import matviews
         q = (request.args.get('q') or '').strip()
         try:
@@ -246,8 +251,10 @@ def init_app(app):
     def _estadisticas_drogas_live(session, q, page, per_page, offset, id_farmacia, mv_estado):
         """Fallback: query en vivo si la vista materializada nunca corrió.
         Más lento pero correcto."""
-        from sqlalchemy import func as _f, case as _case
         from datetime import datetime as _dt
+
+        from sqlalchemy import case as _case
+        from sqlalchemy import func as _f
         hoy = _dt.now()
 
         def _ym(n):
@@ -311,8 +318,9 @@ def init_app(app):
     def api_droga_ventas_mensuales(droga_id):
         """Devuelve totales mensuales (unidades, monto) de los últimos 12 meses
         agregando todos los productos de la droga."""
-        from sqlalchemy import func as _f
         from datetime import datetime
+
+        from sqlalchemy import func as _f
 
         id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
         hoy = datetime.now()
@@ -360,8 +368,9 @@ def init_app(app):
     def api_droga_productos(droga_id):
         """Devuelve los productos de la droga, agrupados por laboratorio,
         con stock actual y unidades 3m/12m."""
-        from sqlalchemy import func as _f
         from datetime import datetime
+
+        from sqlalchemy import func as _f
 
         id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
         hoy = datetime.now()
@@ -463,8 +472,9 @@ def init_app(app):
         Query params: labs=ID1,ID2[,ID3...]
         Devuelve por cada lab: nombre, n_productos, stock_total, uni/monto 3m y 12m,
         precio_promedio, serie mensual 12m, top 5 productos por unidades."""
-        from sqlalchemy import func as _f
         from datetime import datetime
+
+        from sqlalchemy import func as _f
 
         labs_raw = (request.args.get('labs') or '').strip()
         try:
@@ -641,7 +651,8 @@ def init_app(app):
         """Refresca una vista materializada manualmente. Solo admin/dev."""
         if current_user.rol not in ('admin', 'dev'):
             return jsonify({'error': 'sin permisos'}), 403
-        import matviews, cron_log
+        import cron_log
+        import matviews
         if view_name not in matviews.MATVIEWS:
             return jsonify({'error': 'vista desconocida'}), 404
         with cron_log.registrar(f'mv_refresh:{view_name}', origen='web') as log:
@@ -835,7 +846,7 @@ def init_app(app):
         Por ahora el nro de comprobante de ObServer se pide manualmente al usuario
         (parámetro `comprobante`). Más adelante se resolverá de dónde sale automáticamente.
         """
-        from data_extract import save_erp_to_db, compare_invoice_vs_erp, save_differences
+        from data_extract import compare_invoice_vs_erp, save_differences, save_erp_to_db
         if not _user_tiene_observer(current_user):
             flash('Tu usuario no tiene acceso a ObServer.', 'error')
             return redirect(url_for('compare_view', invoice_id=invoice_id))

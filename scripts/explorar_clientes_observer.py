@@ -74,7 +74,7 @@ def inspeccionar(cur, schema, tabla):
     try:
         cur.execute(f'SELECT TOP 3 {col_list} FROM [{schema}].[{tabla}]')
         rows = cur.fetchall()
-        print(f'\n  Sample (3 filas, solo campos con valor):')
+        print('\n  Sample (3 filas, solo campos con valor):')
         for i, r in enumerate(rows, 1):
             print(f'\n  Fila {i}:')
             for col, val in zip(col_names, r):

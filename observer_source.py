@@ -14,9 +14,9 @@ Config vía env vars:
     OBSERVER_TDSVER=7.0
     OBSERVER_ID_FARMACIA=10525
 """
+import logging
 import os
 import time
-import logging
 
 try:
     import pymssql
@@ -81,7 +81,7 @@ def observer_analisis_disponible():
     falta tener conexión viva a SQL Server.
     """
     try:
-        from database import get_db, ObsVentaMensual
+        from database import ObsVentaMensual, get_db
         with get_db() as s:
             if s.query(ObsVentaMensual).limit(1).first():
                 return True
@@ -383,7 +383,7 @@ def sync_convenios(session):
 
 
 def sync_planes(session):
-    from database import ObsPlan, ObsConvenio, now_ar
+    from database import ObsConvenio, ObsPlan, now_ar
     t0 = time.time()
     conn = _connect(timeout=60)
     if conn is None:
@@ -418,7 +418,7 @@ def sync_planes(session):
 def sync_clientes(session, id_farmacia=None):
     """Sync DW.Clientes. Requiere obs_grupos_clientes + obs_categorias_clientes sincronizados.
     84k filas: commit parcial cada 5000."""
-    from database import ObsCliente, ObsGrupoCliente, ObsCategoriaCliente, now_ar
+    from database import ObsCategoriaCliente, ObsCliente, ObsGrupoCliente, now_ar
     t0 = time.time()
     cfg = _config()
     if not cfg:
@@ -478,7 +478,7 @@ def sync_clientes(session, id_farmacia=None):
 def sync_stock(session, id_farmacia=None):
     """Sync DW.StockFarmaciasProductos. Requiere obs_productos poblado primero.
     Si id_farmacia=None usa OBSERVER_ID_FARMACIA del env."""
-    from database import ObsStock, ObsProducto, now_ar
+    from database import ObsProducto, ObsStock, now_ar
     t0 = time.time()
     cfg = _config()
     if not cfg:
@@ -540,8 +540,9 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
     - Upsert por (id_farmacia, producto_observer, anio, mes).
     - Skip filas cuyo IdProducto no esté en obs_productos local (FK).
     """
-    from database import ObsVentaMensual, ObsProducto, now_ar
     from datetime import datetime
+
+    from database import ObsProducto, ObsVentaMensual, now_ar
     t0 = time.time()
     cfg = _config()
     if not cfg:
@@ -651,8 +652,7 @@ def estado_syncs(session):
         - laboratorios:      warn 720h, err 2160h (1 mes / 3 meses)
         - clientes:          warn 168h, err 720h
     """
-    from database import (ObsSyncLog, ObsVentaMensual, ObsStock, ObsProducto,
-                          ObsLaboratorio, ObsCliente, now_ar)
+    from database import ObsCliente, ObsLaboratorio, ObsProducto, ObsStock, ObsSyncLog, ObsVentaMensual, now_ar
 
     config = [
         ('ventas_mensuales', ObsVentaMensual, 24,   72,   'Ventas mensuales'),
@@ -768,8 +768,7 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
     que tengamos mapeo EAN↔IdProducto, esto permite trabajar pero los
     matchings contra tabla productos se hacen por observer_id vía el puente.
     """
-    from database import (get_db, ObsLaboratorio, ObsProducto,
-                          ObsStock, ObsVentaMensual)
+    from database import ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, get_db
     cfg = _config()
     id_farmacia = cfg['id_farmacia'] if cfg else int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
 
@@ -848,7 +847,8 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
 def get_laboratorios_disponibles():
     """Lee laboratorios del espejo local con conteo real de productos."""
     from sqlalchemy import func as _func
-    from database import get_db, ObsLaboratorio, ObsProducto
+
+    from database import ObsLaboratorio, ObsProducto, get_db
     with get_db() as session:
         conteo = dict(
             session.query(ObsProducto.laboratorio_observer,

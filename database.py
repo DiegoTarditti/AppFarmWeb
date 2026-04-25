@@ -1,13 +1,14 @@
 import os
-from datetime import datetime, timezone, timedelta
-from sqlalchemy import create_engine, Column, Integer, String, Date, DateTime, DECIMAL, ForeignKey, Text, text, Boolean
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import DECIMAL, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, create_engine, text
 
 _AR_TZ = timezone(timedelta(hours=-3))
 
 def now_ar():
     """Hora actual en Argentina (UTC-3), sin tzinfo para SQLAlchemy DateTime."""
     return datetime.now(_AR_TZ).replace(tzinfo=None)
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 Base = declarative_base()
 
@@ -750,6 +751,7 @@ SessionLocal = None
 
 
 from contextlib import contextmanager
+
 
 @contextmanager
 def get_db():

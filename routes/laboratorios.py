@@ -1,11 +1,13 @@
 """Laboratorio CRUD routes."""
 
+import json
 import os
 import tempfile
-from flask import request, redirect, url_for, flash, render_template, jsonify
+
+from flask import flash, jsonify, redirect, render_template, request, url_for
+
 import database
-import json
-from database import Laboratorio, Producto, ExportTemplate, OfertaMinimo
+from database import ExportTemplate, Laboratorio, OfertaMinimo, Producto
 
 EXPORT_FIELDS = [
     ('ean',           'Código de Barra'),
@@ -72,7 +74,7 @@ def init_app(app):
         with database.get_db() as session:
             existing = session.query(Laboratorio).filter(Laboratorio.nombre.ilike(nombre)).first()
             if existing:
-                flash(f'Ya existe un laboratorio con ese nombre.')
+                flash('Ya existe un laboratorio con ese nombre.')
             else:
                 session.add(Laboratorio(nombre=nombre))
                 session.commit()

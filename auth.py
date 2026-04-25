@@ -7,12 +7,13 @@
 
 import json
 from functools import wraps
-from flask import redirect, url_for, flash, abort
-from flask_login import LoginManager, login_required, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
+
+from flask import abort, flash, redirect, url_for
+from flask_login import LoginManager, current_user, login_required
+from werkzeug.security import check_password_hash, generate_password_hash
+
 import database
 from database import Usuario
-
 
 # ── Permisos por rol ─────────────────────────────────────────────────────────
 # Cada módulo puede tener nivel: 'ver', 'editar', 'admin' (jerárquicos).

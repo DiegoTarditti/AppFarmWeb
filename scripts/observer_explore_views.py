@@ -83,7 +83,7 @@ def main():
                 cur.execute(f"SELECT TOP 3 * FROM {full_name}")
                 rows = cur.fetchall()
                 if rows:
-                    print(f"\n  Sample (3 filas):")
+                    print("\n  Sample (3 filas):")
                     for i, r in enumerate(rows, 1):
                         print(f"    --- fila {i} ---")
                         for k, v in r.items():

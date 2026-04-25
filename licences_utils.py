@@ -1,5 +1,9 @@
 # license_utils.py
-import hashlib, uuid, subprocess, platform
+import hashlib
+import platform
+import subprocess
+import uuid
+
 
 def get_fingerprint():
     mac = hex(uuid.getnode())

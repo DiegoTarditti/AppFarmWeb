@@ -1,8 +1,9 @@
 """Producto routes: list, CRUD, API + análisis histórico de precios."""
 
-from flask import render_template, request, jsonify
+from flask import jsonify, render_template, request
+
 import database
-from database import Producto, Laboratorio, ProductoPrecioHist
+from database import Laboratorio, Producto, ProductoPrecioHist
 from helpers import _find_producto
 
 
@@ -17,7 +18,7 @@ def init_app(app):
 
     @app.route('/api/productos')
     def api_productos():
-        from sqlalchemy import or_, func
+        from sqlalchemy import func, or_
         from sqlalchemy.orm import joinedload
 
         q = (request.args.get('q') or '').strip()

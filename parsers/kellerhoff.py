@@ -6,8 +6,9 @@ Formato: factura multi-hoja con tabla de ítems.
 Columnas: Código Barra | Cant. | Descripción | Precio Público | % Dto. | Precio Unitario | Importe
 """
 import re
-import pdfplumber
 from datetime import datetime
+
+import pdfplumber
 
 
 def parse_invoice_pdf(pdf_path):

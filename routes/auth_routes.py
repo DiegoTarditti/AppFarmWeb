@@ -2,12 +2,21 @@
 
 import json
 from datetime import datetime
-from flask import render_template, request, redirect, url_for, flash, abort
-from flask_login import login_user, logout_user, login_required, current_user
+
+from flask import abort, flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required, login_user, logout_user
+
 import database
+from auth import (
+    MODULOS,
+    NIVELES,
+    hash_password,
+    permisos_default_rol,
+    requiere_permiso,
+    seed_admin_si_falta,
+    verificar_password,
+)
 from database import Usuario
-from auth import (hash_password, verificar_password, permisos_default_rol,
-                  requiere_permiso, MODULOS, NIVELES, seed_admin_si_falta)
 from helpers import now_ar
 
 

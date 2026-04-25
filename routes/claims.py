@@ -1,10 +1,12 @@
 """Claims routes: CRUD, PDF generation, claims list."""
 
 import re
-from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
+
+from flask import flash, jsonify, make_response, redirect, render_template, request, url_for
+
 import database
+from data_extract import complete_claim, create_claim
 from database import Claim
-from data_extract import create_claim, complete_claim
 from helpers import get_config
 
 
@@ -74,12 +76,13 @@ def init_app(app):
     @app.route('/claim/<int:claim_id>/pdf')
     def claim_pdf(claim_id):
         from io import BytesIO
-        from reportlab.lib.pagesizes import A4
+
         from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         with database.get_db() as session:
             claim = session.get(Claim, claim_id)

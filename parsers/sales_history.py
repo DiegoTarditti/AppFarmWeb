@@ -3,6 +3,7 @@ Parser para informe 'Evolución de ventas por producto' de ObServer Gestión.
 Extrae: farmacia, laboratorio, período, y lista de productos con ventas mensuales.
 """
 import re
+
 import pdfplumber
 
 MONTH_LABELS = [

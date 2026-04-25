@@ -1,7 +1,9 @@
 """Core routes: index, ingresos, settings, admin, health."""
 
 import os
-from flask import render_template, request, redirect, url_for, flash, make_response
+
+from flask import flash, make_response, redirect, render_template, request, url_for
+
 import database
 from helpers import get_config, get_providers
 
@@ -11,6 +13,7 @@ def init_app(app):
     @app.route('/')
     def index():
         from flask_login import current_user
+
         import home_cards as hc
         with database.get_db() as session:
             uid = current_user.id if current_user.is_authenticated else None

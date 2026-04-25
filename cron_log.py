@@ -10,8 +10,8 @@ Uso típico (context manager):
 Si la cosa lanza excepción, la captura y la guarda como error.
 """
 
-import time
 import logging
+import time
 from contextlib import contextmanager
 
 _log = logging.getLogger(__name__)
@@ -78,8 +78,9 @@ def registrar_externo(proceso, estado, duracion_ms=None, mensaje=None,
 
     A diferencia del context manager, este recibe el resultado terminado.
     """
-    from database import CronLog, get_db, now_ar
     from datetime import timedelta
+
+    from database import CronLog, get_db, now_ar
 
     inicio = now_ar() - timedelta(milliseconds=duracion_ms or 0)
     try:
@@ -101,8 +102,9 @@ def registrar_externo(proceso, estado, duracion_ms=None, mensaje=None,
 
 def purgar_viejos(dias=7):
     """Elimina filas de cron_log más viejas que N días. Idempotente."""
-    from database import CronLog, get_db, now_ar
     from datetime import timedelta
+
+    from database import CronLog, get_db, now_ar
     corte = now_ar() - timedelta(days=dias)
     with get_db() as s:
         n = s.query(CronLog).filter(CronLog.inicio < corte).delete()

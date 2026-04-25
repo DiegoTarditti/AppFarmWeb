@@ -8,14 +8,14 @@ Uso:
     python scripts/seed_proveedores.py --ejecutar
 """
 
+import argparse
 import os
 import re
 import sys
-import argparse
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database import init_db, get_db, Provider
-
+from database import Provider, get_db, init_db
 
 # Parsers auxiliares que NO son de proveedor (no crear Provider desde ellos)
 PARSERS_AUXILIARES = {
@@ -198,18 +198,18 @@ def main():
             else:
                 crear.append(pp)
 
-        print(f'\n=== Resumen ===')
+        print('\n=== Resumen ===')
         print(f'  A crear:      {len(crear)}')
         print(f'  A actualizar: {len(actualizar)} (ya existen pero sin parser_file o diferente)')
         print(f'  Sin cambios:  {len(saltar)}')
 
         if crear:
-            print(f'\n  Crear:')
+            print('\n  Crear:')
             for pp in crear:
                 print(f'    + {pp["razon_social"]!r} cuit={pp["cuit"] or "—"} → parser={pp["slug"]}')
 
         if actualizar:
-            print(f'\n  Actualizar:')
+            print('\n  Actualizar:')
             for prov, pp in actualizar:
                 print(f'    ~ [{prov.id}] {prov.razon_social!r} parser: {prov.parser_file!r} → {pp["slug"]!r}')
 

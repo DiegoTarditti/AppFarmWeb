@@ -1,9 +1,12 @@
 """Listado, detalle y ABM local de clientes (espejo DW.Clientes + extensión local)."""
 
 from datetime import datetime
-from flask import render_template, request, redirect, url_for, flash
+
+from flask import flash, redirect, render_template, request, url_for
 from flask_login import login_required
-from sqlalchemy import or_, func as _f
+from sqlalchemy import func as _f
+from sqlalchemy import or_
+
 import database
 
 

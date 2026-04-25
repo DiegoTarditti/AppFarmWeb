@@ -1,7 +1,8 @@
 """Helpers para refrescar vistas materializadas y consultar su estado."""
 
-import time
 import logging
+import time
+
 from sqlalchemy import text
 
 _log = logging.getLogger(__name__)

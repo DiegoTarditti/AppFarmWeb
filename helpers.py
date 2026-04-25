@@ -2,7 +2,8 @@
 
 import os
 import re
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+
 import database
 from database import Producto
 
@@ -159,7 +160,8 @@ def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, labora
             prod.ultima_compra = fecha_compra
         if codigo_alfabeta and not prod.codigo_alfabeta:
             prod.codigo_alfabeta = codigo_alfabeta
-        from datetime import datetime as _dt; prod.actualizado_en = _dt.utcnow()
+        from datetime import datetime as _dt
+        prod.actualizado_en = _dt.utcnow()
     else:
         session.add(Producto(
             codigo_barra=codigo_barra,
@@ -197,8 +199,9 @@ def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt):
 
 def _bulk_upsert_productos(session, items):
     """Upsert masivo: 1 SELECT en vez de N. items: list of (codigo_barra, descripcion, precio_pvp, fecha_compra)."""
-    from sqlalchemy import or_
     from datetime import datetime as _dt
+
+    from sqlalchemy import or_
 
     barcodes = list({str(i[0]).strip() for i in items if i[0]})
     if not barcodes:
@@ -303,6 +306,7 @@ def extract_text_with_ocr_fallback(pdf_path, min_chars=50, lang='spa', dpi=400):
     Retorna el texto completo (todas las páginas unidas con \\n).
     """
     import os as _os
+
     import pdfplumber as _pdfplumber
     # 1) Intento rápido con pdfplumber
     try:

@@ -1,6 +1,7 @@
 """Cuentas corrientes routes."""
 
-from flask import render_template, request, redirect, url_for, flash
+from flask import flash, redirect, render_template, request, url_for
+
 import database
 from helpers import get_providers
 

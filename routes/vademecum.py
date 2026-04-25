@@ -1,6 +1,7 @@
 """Vademécum routes: búsqueda integrada en PR Vademécum con cache local."""
 
-from flask import render_template, request, jsonify
+from flask import jsonify, render_template, request
+
 import database
 from database import Producto
 

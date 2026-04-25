@@ -55,7 +55,7 @@ def match_productos(session, threshold=0.80, commit_each=500):
         dict con stats: {'procesados', 'linked_exact', 'linked_fuzzy',
                          'sin_match', 'ambiguos', 'sin_lab'}
     """
-    from database import Producto, Laboratorio, ObsProducto
+    from database import Laboratorio, ObsProducto, Producto
 
     # Mapa laboratorio_id local → observer_id
     lab_to_obs = dict(
@@ -168,7 +168,7 @@ def candidatos_para_producto(session, producto_id, top_n=10):
 
     Ordenados por score Jaccard decreciente. Scope al laboratorio si está vinculado.
     """
-    from database import Producto, Laboratorio, ObsProducto
+    from database import Laboratorio, ObsProducto, Producto
 
     p = session.get(Producto, producto_id)
     if not p:

@@ -8,8 +8,9 @@ Formato de línea de ítem:
   - IMPORTE con puntos de miles (ej: 34.338,97)
 """
 import re
-import pdfplumber
 from datetime import datetime
+
+import pdfplumber
 
 
 def parse_invoice_pdf(pdf_path):

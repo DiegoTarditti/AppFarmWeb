@@ -10,6 +10,7 @@ Estructura de columnas por td (0-indexed) en filas de producto:
 El período se lee del encabezado: "Período del MM/YYYY al MM/YYYY"
 """
 import re
+
 from bs4 import BeautifulSoup
 
 # Índices de td que contienen ventas mensuales (12 meses en orden)

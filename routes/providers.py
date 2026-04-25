@@ -1,14 +1,20 @@
 """Provider routes: CRUD, parser-preview, mappings, peek, API invoices."""
 
 import os
-from flask import render_template, request, redirect, url_for, flash, jsonify, make_response
+
+from flask import flash, jsonify, make_response, redirect, render_template, request, url_for
 from werkzeug.utils import secure_filename
+
 import database
-from database import Producto
 from data_extract import extract_provider_name_from_pdf, parse_invoice_pdf
+from database import Producto
 from helpers import (
-    UPLOAD_FOLDER, allowed_file, get_providers,
-    _make_parser_slug, _ensure_parser_file, _get_or_create_provider_by_name,
+    UPLOAD_FOLDER,
+    _ensure_parser_file,
+    _get_or_create_provider_by_name,
+    _make_parser_slug,
+    allowed_file,
+    get_providers,
 )
 
 
@@ -143,6 +149,7 @@ def init_app(app):
     def provider_parser_preview_export(provider_id):
         """Recibe JSON con datos del preview y devuelve XLS."""
         import io
+
         import openpyxl
         data = request.get_json(silent=True) or {}
         items = data.get('items', [])

@@ -22,7 +22,6 @@ import time
 import psycopg2
 import psycopg2.extras
 
-
 # Orden que respeta FKs: padres antes que hijos
 TABLAS = [
     'obs_laboratorios',
@@ -117,7 +116,7 @@ def push(local_url=None, render_url=None, log=print):
         local.commit()
 
     # Refrescar vistas materializadas en Render (datos ya están al día tras el push).
-    _refresh_matviews_render(remote_url, log)
+    _refresh_matviews_render(render_url, log)
 
     resultados['TOTAL_MS'] = int((time.time() - t_total) * 1000)
     return resultados

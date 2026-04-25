@@ -1,7 +1,8 @@
 """Sirve los .md de docs/manual/ como JSON para el drawer de ayuda contextual."""
 
 import os
-from flask import jsonify, abort
+
+from flask import abort, jsonify
 from flask_login import login_required
 
 DOCS_ROOT = os.path.join(
