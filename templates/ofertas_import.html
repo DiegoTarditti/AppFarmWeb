@@ -910,7 +910,22 @@ function renderValidacion(stats) {
         if (!problematicos.length) {
             detalle.innerHTML = '<p class="text-xs text-[#999]">Ningún item con problemas. ✓</p>';
         } else {
-            detalle.innerHTML = '<table class="w-full text-xs"><tbody class="divide-y divide-[#ececec]">' +
+            // Cabecera de la tabla compacta con columnas separadas.
+            const thead = `
+                <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888] sticky top-0">
+                    <tr>
+                        <th class="py-1 pr-2 w-4 text-left"></th>
+                        <th class="py-1 pr-2 text-left">EAN/Alfa</th>
+                        <th class="py-1 pr-2 text-left">Item del proveedor</th>
+                        <th class="py-1 pr-2 text-left">→</th>
+                        <th class="py-1 pr-2 text-left">Match en catálogo</th>
+                        <th class="py-1 pr-2 text-right whitespace-nowrap">Score</th>
+                        <th class="py-1 pr-2 text-left">Origen</th>
+                        <th class="py-1 pr-2 text-left"></th>
+                    </tr>
+                </thead>`;
+            detalle.innerHTML = '<table class="w-full text-xs">' + thead +
+                '<tbody class="divide-y divide-[#ececec]">' +
                 problematicos.slice(0, 50).map(it => {
                     const status = it._status;
                     const colorCls = status === 'not_found' ? 'text-red-700' :
@@ -919,20 +934,43 @@ function renderValidacion(stats) {
                     const label = status === 'not_found' ? '❌' :
                                   status === 'warning' ? '⚠' :
                                   status === 'fuzzy' ? '🔍' : '';
-                    const candidatosBtn = status === 'not_found'
-                        ? `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300 ml-1" data-idx="${it._idx}">🔍 Buscar similar</button>`
+                    const eanAlf = it.ean || it.codigo || '';
+                    const matchDesc = it._match_descripcion_local || '';
+                    const score = it._score != null ? (it._score * 100).toFixed(0) + '%' : '';
+                    let origenBadge = '';
+                    if (status !== 'not_found' && it._estrategia) {
+                        if (it._estrategia.endsWith('_obs')) {
+                            origenBadge = '<span class="text-[9px] text-violet-700 bg-violet-100 border border-violet-300 px-1 rounded font-semibold">ObServer</span>';
+                        } else if (it._estrategia === 'fuzzy_otro_lab') {
+                            origenBadge = '<span class="text-[9px] text-amber-700 bg-amber-100 border border-amber-300 px-1 rounded">otro lab</span>';
+                        } else if (it._estrategia.includes('exacto') || it._estrategia === 'descripcion_exacta') {
+                            origenBadge = '<span class="text-[9px] text-emerald-700 bg-emerald-100 border border-emerald-300 px-1 rounded">exacto</span>';
+                        } else {
+                            origenBadge = '<span class="text-[9px] text-sky-700 bg-sky-100 border border-sky-300 px-1 rounded">fuzzy</span>';
+                        }
+                    }
+                    const accion = status === 'not_found'
+                        ? `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300" data-idx="${it._idx}">🔍 Buscar similar</button>`
                         : '';
-                    return `<tr class="${colorCls}">
-                        <td class="py-1 pr-2 w-4 align-top">${label}</td>
-                        <td class="py-1 pr-2 font-mono text-[10px] align-top">${escapeHtml(it.ean || it.codigo || '')}</td>
-                        <td class="py-1 pr-2 align-top">
+                    const motivoExtra = (status === 'warning')
+                        ? `<div class="text-[9px] text-amber-700 italic">${escapeHtml(it._motivo || '')}</div>`
+                        : '';
+                    return `<tr class="${colorCls} align-top">
+                        <td class="py-1 pr-2 w-4">${label}</td>
+                        <td class="py-1 pr-2 font-mono text-[10px] whitespace-nowrap">${escapeHtml(eanAlf)}</td>
+                        <td class="py-1 pr-2">
                             ${escapeHtml(it.descripcion || '')}
+                            ${motivoExtra}
                             <div id="candidatos-${it._idx}" class="mt-1"></div>
                         </td>
-                        <td class="py-1 pr-2 text-[10px] align-top">${escapeHtml(it._motivo || '')}${candidatosBtn}</td>
+                        <td class="py-1 pr-2 text-[#bbb]">${matchDesc ? '→' : ''}</td>
+                        <td class="py-1 pr-2">${escapeHtml(matchDesc)}</td>
+                        <td class="py-1 pr-2 text-right text-[10px] tabular-nums whitespace-nowrap">${score}</td>
+                        <td class="py-1 pr-2">${origenBadge}</td>
+                        <td class="py-1 pr-2">${accion}</td>
                     </tr>`;
                 }).join('') +
-                (problematicos.length > 50 ? `<tr><td colspan="4" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 50} más</td></tr>` : '') +
+                (problematicos.length > 50 ? `<tr><td colspan="8" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 50} más</td></tr>` : '') +
                 '</tbody></table>';
 
             // Listeners de los botones "Buscar similar"
