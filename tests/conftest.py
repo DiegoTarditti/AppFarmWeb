@@ -63,12 +63,33 @@ def flask_app(init_test_db, tmp_path_factory):
             return '#'
     app.jinja_env.globals['url_for'] = _tolerant_url_for
 
+    # Flask-Login con un user dummy autenticado: bypassea @login_required.
+    from flask_login import LoginManager, UserMixin
+    lm = LoginManager(app)
+
+    class _DummyUser(UserMixin):
+        id = '1'
+        username = 'test'
+        rol = 'dev'
+        nombre_completo = 'Test'
+
+    @lm.user_loader
+    def _load_user(uid):
+        return _DummyUser()
+
+    @lm.request_loader
+    def _request_load_user(_req):
+        # Cualquier request en tests lleva al user dummy.
+        return _DummyUser()
+
     import routes.invoices as _inv
     import routes.claims as _claims
     import routes.plantillas as _plant
+    import routes.inferencia as _infer
     _inv.init_app(app)
     _claims.init_app(app)
     _plant.init_app(app)
+    _infer.init_app(app)
 
     return app
 
