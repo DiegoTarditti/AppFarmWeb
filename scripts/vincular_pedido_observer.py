@@ -14,30 +14,16 @@ Uso:
     docker-compose exec web python scripts/vincular_pedido_observer.py --dry      # sin escribir
 """
 import os
-import re
 import sys
-import unicodedata
 from collections import defaultdict
 
 # Imports del proyecto
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import database
 from database import ObsLaboratorio, ObsProducto, Pedido, PedidoItem, Producto
-
-
-def _norm(s):
-    """Normaliza descripción: lower, sin acentos, espacios colapsados, sin puntuación."""
-    if not s:
-        return ''
-    s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
-    s = s.lower()
-    s = re.sub(r'[^a-z0-9\s]', ' ', s)
-    s = re.sub(r'\s+', ' ', s).strip()
-    return s
-
-
-def _tokens(s):
-    return set(_norm(s).split())
+from producto_matcher import match_producto
+from producto_matcher import normalizar_texto as _norm
+from producto_matcher import tokens_significativos as _tokens
 
 
 def _resolver_lab_observer(session, lab_pedido):
@@ -74,52 +60,29 @@ def _resolver_lab_observer(session, lab_pedido):
     return None
 
 
-def _matchear(pedido_nombre, obs_prods):
-    """Devuelve el ObsProducto que matchea con pedido_nombre, o None si ambiguo/no encontrado.
+def _matchear(pedido_nombre, obs_prods, session=None):
+    """Devuelve (ObsProducto | None, motivo).
 
-    Estrategia:
-    1. Match exacto normalizado.
-    2. Match por superset (todos los tokens del pedido están en obs).
-    3. Match por overlap >= 80% de tokens en común.
+    Wrapper sobre `producto_matcher.match_producto(target='obs_producto')` que
+    pasa `obs_prods` como pool precargado (ya filtrado por fecha_baja). Lo dejo
+    como helper local para mantener la firma original que devuelve un motivo
+    legible para los logs.
     """
-    pn = _norm(pedido_nombre)
-    if not pn:
+    if not pedido_nombre or not _norm(pedido_nombre):
         return None, 'nombre vacío'
-
-    # 1. Exacto
-    exactos = [p for p in obs_prods if _norm(p.descripcion) == pn]
-    if len(exactos) == 1:
-        return exactos[0], 'exacto'
-    if len(exactos) > 1:
-        return None, f'ambiguo ({len(exactos)} matches exactos)'
-
-    # 2. Superset: todos los tokens del pedido en obs
-    pt = _tokens(pedido_nombre)
-    if not pt:
-        return None, 'sin tokens'
-    supersets = [p for p in obs_prods if pt.issubset(_tokens(p.descripcion))]
-    if len(supersets) == 1:
-        return supersets[0], 'superset'
-
-    # 3. Score por overlap, desempate por nombre más corto (más específico)
-    scored = []
-    for p in obs_prods:
-        ot = _tokens(p.descripcion)
-        if not ot:
-            continue
-        inter = pt & ot
-        if not inter:
-            continue
-        score = len(inter) / max(len(pt), len(ot))
-        if score >= 0.8:
-            scored.append((score, len(p.descripcion), p))
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    if not scored:
-        return None, 'sin match'
-    if len(scored) >= 2 and scored[0][0] == scored[1][0]:
-        # Empate de score → ambiguo
-        return None, f'ambiguo ({len(scored)} candidatos similares)'
-    return scored[0][2], f'fuzzy {scored[0][0]:.2f}'
+    res = match_producto(
+        descripcion=pedido_nombre,
+        target='obs_producto',
+        pool=obs_prods,
+        threshold=0.80,
+        incluir_candidatos=False,
+        session=session,
+    )
+    if res.producto is not None:
+        return res.producto, res.estrategia
+    if 'match_ambiguo' in res.warnings:
+        return None, 'ambiguo'
+    return None, 'sin match'
 
 
 def procesar_pedido(session, pedido, dry_run=False):
@@ -157,7 +120,7 @@ def procesar_pedido(session, pedido, dry_run=False):
             stats['ya_linkeado'] += 1
             continue
 
-        match, motivo = _matchear(it.nombre, obs_prods)
+        match, motivo = _matchear(it.nombre, obs_prods, session=session)
         if not match:
             if 'ambiguo' in motivo:
                 stats['ambiguos'] += 1

@@ -3,11 +3,11 @@
 Soporta XLSX hoy. PDF/OCR a futuro (Fase B Parte 2).
 
 Flujo:
-1. POST /api/ofertas/import-preview — sube archivo, parsea, devuelve preview JSON
-   con items detectados y columnas mapeadas.
-2. POST /api/ofertas/import-guardar — recibe items editados + laboratorio_id,
-   upsertea en OfertaMinimo.
-3. GET /ofertas/import — pantalla con drag&drop, preview editable, asignar lab.
+1. POST /api/ofertas/import-preview — sube archivo, parsea, devuelve preview JSON.
+2. POST /api/ofertas/import-validar — valida items contra catálogo via producto_matcher.
+3. POST /api/ofertas/import-candidatos — buscar productos similares para match manual.
+4. POST /api/ofertas/import-guardar — recibe items mapeados + lab_id, upsertea en OfertaMinimo.
+5. GET /ofertas/import — pantalla del wizard.
 """
 import os
 import tempfile
@@ -19,76 +19,43 @@ import database
 from database import Laboratorio, OfertaMinimo
 
 
-def init_app(app):
+def _to_int(v):
+    if v is None or v == '':
+        return None
+    try:
+        return int(float(str(v).replace(',', '.')))
+    except (ValueError, TypeError):
+        return None
 
-    @app.route('/ofertas/import', methods=['GET'])
-    @login_required
-    def ofertas_import_page():
-        with database.get_db() as session:
-            labs = (session.query(Laboratorio)
-                    .filter(Laboratorio.activo == True)  # noqa: E712
-                    .order_by(Laboratorio.nombre).all())
-            labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
-        return render_template('ofertas_import.html', laboratorios=labs_data)
 
-    @app.route('/api/ofertas/import-preview', methods=['POST'])
-    @login_required
-    def api_ofertas_import_preview():
-        """Recibe un archivo, lo parsea, devuelve preview de items detectados."""
-        if 'archivo' not in request.files:
-            return jsonify({'error': 'Falta archivo'}), 400
-        f = request.files['archivo']
-        if not f.filename:
-            return jsonify({'error': 'Archivo sin nombre'}), 400
-
-        ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in ('.xlsx', '.xls'):
-            return jsonify({
-                'error': f'Formato {ext} no soportado todavía. Solo XLSX por ahora. '
-                         'PDF/foto vendrá en la próxima iteración.'
-            }), 400
-
-        # Guardar temporal y parsear
-        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-            f.save(tmp.name)
-            tmp_path = tmp.name
-        try:
-            preview = _previsualizar_xlsx(tmp_path)
-        except Exception as e:
-            return jsonify({'error': f'Error al parsear: {e}'}), 500
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-
-        return jsonify({
-            **preview,
-            'filename': f.filename,
-        })
+def _to_float(v):
+    if v is None or v == '':
+        return None
+    try:
+        return float(str(v).replace(',', '.'))
+    except (ValueError, TypeError):
+        return None
 
 
 def _previsualizar_xlsx(path):
-    """Devuelve datos CRUDOS del Excel + mapping propuesto. El frontend hace
-    el resto (remapeo manual + render de tabla).
+    """Devuelve datos CRUDOS del Excel + mapping propuesto.
 
     Para los valores: detecta el number_format de cada celda y si es porcentaje
-    (contiene '%'), multiplica por 100 antes de serializar para que el snapshot
-    muestre "25%" en vez de "0.25" (que es el valor crudo).
+    (contiene '%'), multiplica por 100 antes de serializar (snapshot muestra
+    "25%" en vez de "0.25").
     """
     import openpyxl
+
     from parsers.ofertas_xlsx import _detectar_columnas
 
     wb = openpyxl.load_workbook(path, data_only=True)
     ws = wb.active
 
-    # Iteramos sin values_only para tener acceso a number_format
     all_rows_cells = list(ws.iter_rows())
     if not all_rows_cells:
         return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
                 'count_filas': 0}
 
-    # Detectar headers usando solo los valores (compatible con _detectar_columnas)
     rows_values = [tuple(c.value for c in r) for r in all_rows_cells]
     mapping, header_idx = _detectar_columnas(rows_values)
 
@@ -105,9 +72,7 @@ def _previsualizar_xlsx(path):
         if v is None or v == '':
             return ''
         fmt = (cell.number_format or '').strip()
-        is_percent = '%' in fmt
-        if is_percent and isinstance(v, (int, float)):
-            # Excel guarda 25% como 0.25; mostramos 25% para coincidir con la UI de Excel.
+        if '%' in fmt and isinstance(v, (int, float)):
             scaled = v * 100
             if scaled == int(scaled):
                 return f'{int(scaled)}%'
@@ -132,24 +97,60 @@ def _previsualizar_xlsx(path):
         'count_filas': len(rows_serializadas),
     }
 
+
+def init_app(app):
+
+    @app.route('/ofertas/import', methods=['GET'])
+    @login_required
+    def ofertas_import_page():
+        with database.get_db() as session:
+            labs = (session.query(Laboratorio)
+                    .filter(Laboratorio.activo == True)  # noqa: E712
+                    .order_by(Laboratorio.nombre).all())
+            labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+        return render_template('ofertas_import.html', laboratorios=labs_data)
+
+    @app.route('/api/ofertas/import-preview', methods=['POST'])
+    @login_required
+    def api_ofertas_import_preview():
+        """Recibe un archivo XLSX, lo parsea, devuelve preview de items detectados."""
+        if 'archivo' not in request.files:
+            return jsonify({'error': 'Falta archivo'}), 400
+        f = request.files['archivo']
+        if not f.filename:
+            return jsonify({'error': 'Archivo sin nombre'}), 400
+
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in ('.xlsx', '.xls'):
+            return jsonify({
+                'error': f'Formato {ext} no soportado todavía. Solo XLSX por ahora. '
+                         'PDF/foto vendrá en la próxima iteración.'
+            }), 400
+
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+        try:
+            preview = _previsualizar_xlsx(tmp_path)
+        except Exception as e:
+            return jsonify({'error': f'Error al parsear: {e}'}), 500
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+        return jsonify({**preview, 'filename': f.filename})
+
     @app.route('/api/ofertas/import-validar', methods=['POST'])
     @login_required
     def api_ofertas_import_validar():
-        """Cruza los items contra el catálogo de productos local.
-
-        Cascada de match:
-        1. Exacto por EAN (codigo_barra + alts).
-        2. Exacto por codigo_alfabeta.
-        3. Fuzzy por descripción + laboratorio_id (Jaccard, threshold 0.80).
-        4. Sin match → 'not_found'.
-
-        Para los matched: si hay precio_pvp previo y precio nuevo, comparar
-        variación. > umbral → 'warning'.
+        """Cruza los items contra el catálogo de productos local usando el
+        matcher central (producto_matcher.match_productos_bulk).
 
         Body JSON: { items: [...], laboratorio_id?, umbral_variacion?: 30 }
         """
-        from sqlalchemy import or_
-        from observer_matcher import _normalize, _tokens, _jaccard
+        import producto_matcher as pm
         data = request.get_json(silent=True) or {}
         items = data.get('items') or []
         lab_id = data.get('laboratorio_id')
@@ -157,148 +158,71 @@ def _previsualizar_xlsx(path):
             lab_id = int(lab_id) if lab_id else None
         except (TypeError, ValueError):
             lab_id = None
-        try:
-            umbral = float(data.get('umbral_variacion', 30))
-        except (ValueError, TypeError):
-            umbral = 30
 
         if not items:
             return jsonify({'items': [], 'stats': {}})
 
-        # Recolectar todos los códigos a buscar
-        eans = {str(it.get('ean')).strip() for it in items if it.get('ean')}
-        codigos = {str(it.get('codigo')).strip() for it in items if it.get('codigo')}
-        eans.discard('')
-        codigos.discard('')
+        items_para_match = [
+            {
+                'ean': it.get('ean'),
+                'codigo_alfabeta': it.get('codigo'),
+                'descripcion': it.get('descripcion'),
+                'precio': it.get('precio'),
+            }
+            for it in items
+        ]
 
-        # Buscar productos locales que matcheen alguno
-        prod_por_ean = {}
-        prod_por_alfabeta = {}
         with database.get_db() as session:
-            P = database.Producto
-            cond = []
-            if eans:
-                cond.append(P.codigo_barra.in_(eans))
-                for col_name in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
-                    col = getattr(P, col_name, None)
-                    if col is not None:
-                        cond.append(col.in_(eans))
-            if codigos:
-                cond.append(P.codigo_alfabeta.in_(codigos))
-            if cond:
-                for p in session.query(P).filter(or_(*cond)).all():
-                    for cb in (p.codigo_barra,
-                               getattr(p, 'codigo_barra_alt1', None),
-                               getattr(p, 'codigo_barra_alt2', None),
-                               getattr(p, 'codigo_barra_alt3', None)):
-                        if cb:
-                            prod_por_ean[cb] = p
-                    if p.codigo_alfabeta:
-                        prod_por_alfabeta[p.codigo_alfabeta] = p
-
-            # Para fuzzy: precargar productos del lab (si está) con sus tokens
-            productos_del_lab = []
-            if lab_id:
-                rows = session.query(P).filter(P.laboratorio_id == lab_id).all()
-                productos_del_lab = [(p, _tokens(p.descripcion or '')) for p in rows]
+            results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
 
         validados = []
         stats = {'ok': 0, 'warning': 0, 'fuzzy': 0, 'not_found': 0, 'sin_precio_previo': 0}
-        for it in items:
-            ean = str(it.get('ean') or '').strip()
-            cod = str(it.get('codigo') or '').strip()
-            descr = str(it.get('descripcion') or '').strip()
-            prod = (prod_por_ean.get(ean) if ean else None) or \
-                   (prod_por_alfabeta.get(cod) if cod else None)
-            estrategia = 'exacto' if prod else None
-
-            # Fallback: fuzzy por descripción + lab si no matchó exacto
-            if not prod and descr and productos_del_lab:
-                toks_in = _tokens(descr)
-                if len(toks_in) >= 2:  # evitar matches con descripciones muy cortas
-                    mejor = None
-                    mejor_score = 0.0
-                    empate = False
-                    for p, toks_p in productos_del_lab:
-                        if not toks_p:
-                            continue
-                        score = _jaccard(toks_in, toks_p)
-                        if score > mejor_score:
-                            mejor = p
-                            mejor_score = score
-                            empate = False
-                        elif score == mejor_score and score > 0:
-                            empate = True
-                    if mejor and mejor_score >= 0.80 and not empate:
-                        prod = mejor
-                        estrategia = 'fuzzy'
-
+        for it, res in zip(items, results):
             entry = dict(it)
-            if not prod:
+            if res.producto is None:
                 entry['_status'] = 'not_found'
                 entry['_motivo'] = 'No está en el catálogo local'
+                entry['_candidatos_top'] = res.candidatos_top
                 stats['not_found'] += 1
             else:
-                entry['_match_descripcion_local'] = prod.descripcion or ''
-                entry['_producto_id'] = prod.id
-                entry['_estrategia'] = estrategia
-                # Comparar precio si hay
-                precio_nuevo = it.get('precio')
-                precio_local = float(prod.precio_pvp) if prod.precio_pvp else None
-                base_status = 'fuzzy' if estrategia == 'fuzzy' else 'ok'
+                entry['_match_descripcion_local'] = res.producto.descripcion or ''
+                entry['_producto_id'] = res.producto.id
+                entry['_estrategia'] = res.estrategia
+                entry['_score'] = res.score
+                entry['_confianza'] = res.confianza
 
-                if precio_nuevo is not None and precio_local and precio_local > 0:
-                    try:
-                        variacion = (float(precio_nuevo) - precio_local) / precio_local * 100
-                        entry['_variacion_pct'] = round(variacion, 1)
-                        entry['_precio_anterior'] = precio_local
-                        if abs(variacion) > umbral:
-                            entry['_status'] = 'warning'
-                            entry['_motivo'] = (
-                                f'Variación {variacion:+.1f}% '
-                                f'(${precio_local:.2f} → ${precio_nuevo:.2f})'
-                            )
-                            stats['warning'] += 1
-                        else:
-                            entry['_status'] = base_status
-                            stats[base_status] = stats.get(base_status, 0) + 1
-                    except (ValueError, TypeError):
-                        entry['_status'] = base_status
-                        stats[base_status] = stats.get(base_status, 0) + 1
-                else:
-                    entry['_status'] = base_status
-                    if precio_local is None or precio_local == 0:
-                        entry['_motivo_info'] = 'Sin precio previo en catálogo (no se puede comparar)'
-                        stats['sin_precio_previo'] += 1
-                    stats[base_status] = stats.get(base_status, 0) + 1
-
-                if estrategia == 'fuzzy':
+                if 'precio_variacion_alta' in res.warnings:
+                    entry['_status'] = 'warning'
+                    var = res.debug.get('variacion_precio')
+                    entry['_motivo'] = f'Variación de precio {var:+.1f}%' if var is not None else 'Variación alta'
+                    stats['warning'] += 1
+                elif res.estrategia in ('fuzzy_lab', 'fuzzy_global', 'tokens_superset'):
+                    entry['_status'] = 'fuzzy'
                     entry['_motivo'] = (
-                        f'Match por descripción (no había EAN/alfabeta exacto). '
-                        f'Local: "{prod.descripcion[:80] if prod.descripcion else ""}"'
+                        f'Match por descripción (score {res.score:.2f}). '
+                        f'Local: "{(res.producto.descripcion or "")[:80]}"'
                     )
+                    stats['fuzzy'] += 1
+                else:
+                    entry['_status'] = 'ok'
+                    stats['ok'] += 1
+
+                if res.producto.precio_pvp in (None, 0) and it.get('precio') is not None:
+                    entry['_motivo_info'] = 'Sin precio previo en catálogo'
+                    stats['sin_precio_previo'] += 1
+
             validados.append(entry)
 
-        return jsonify({
-            'items': validados,
-            'stats': stats,
-            'umbral_variacion': umbral,
-            'total': len(validados),
-        })
+        return jsonify({'items': validados, 'stats': stats, 'total': len(validados)})
 
     @app.route('/api/ofertas/import-candidatos', methods=['POST'])
     @login_required
     def api_ofertas_import_candidatos():
-        """Para un item 'no encontrado', devuelve top-N productos del catálogo
-        que más se parecen por descripción (Jaccard). Scope al lab si está dado.
-
-        Body JSON: { descripcion, laboratorio_id?, top?: 8 }
-        """
-        from observer_matcher import _tokens, _jaccard
+        """Para un item 'no encontrado', devuelve top-N productos similares.
+        Reusa producto_matcher.buscar_candidatos."""
+        import producto_matcher as pm
         data = request.get_json(silent=True) or {}
         descr = (data.get('descripcion') or '').strip()
-        if not descr:
-            return jsonify({'candidatos': []})
         try:
             lab_id = int(data.get('laboratorio_id')) if data.get('laboratorio_id') else None
         except (ValueError, TypeError):
@@ -307,38 +231,12 @@ def _previsualizar_xlsx(path):
             top = max(1, min(20, int(data.get('top', 8))))
         except (ValueError, TypeError):
             top = 8
-
-        toks_in = _tokens(descr)
-        if len(toks_in) < 1:
-            return jsonify({'candidatos': []})
-
-        with database.get_db() as session:
-            P = database.Producto
-            q = session.query(P)
-            if lab_id:
-                q = q.filter(P.laboratorio_id == lab_id)
-            scored = []
-            for p in q.all():
-                if not p.descripcion:
-                    continue
-                score = _jaccard(toks_in, _tokens(p.descripcion))
-                if score > 0:
-                    scored.append({
-                        'producto_id': p.id,
-                        'descripcion': p.descripcion,
-                        'codigo_barra': p.codigo_barra,
-                        'codigo_alfabeta': p.codigo_alfabeta or '',
-                        'precio_pvp': float(p.precio_pvp) if p.precio_pvp else None,
-                        'score': round(score, 3),
-                    })
-            scored.sort(key=lambda x: -x['score'])
-            return jsonify({'candidatos': scored[:top]})
+        return jsonify({'candidatos': pm.buscar_candidatos(descr, laboratorio_id=lab_id, top=top)})
 
     @app.route('/api/ofertas/import-guardar', methods=['POST'])
     @login_required
     def api_ofertas_import_guardar():
         """Recibe items mapeados + laboratorio_id, upsertea en OfertaMinimo.
-        Body JSON: { laboratorio_id, items: [...], reemplazar?: bool }
 
         Items pueden venir con descuentos en formato decimal Excel (0.2 = 20%);
         el sistema lo normaliza a enteros (×100 si entre 0 y 1).
@@ -352,18 +250,18 @@ def _previsualizar_xlsx(path):
         if not isinstance(items, list) or not items:
             return jsonify({'error': 'items vacío'}), 400
 
-        # Normalizar % de Excel: si valor entre 0 y 1, asumir formato fracción y x100.
+        # Normalizar % de Excel
         for it in items:
             for k in ('descuento_psl', 'rentabilidad'):
                 v = it.get(k)
                 if v is not None and v != '':
                     try:
-                        f = float(str(v).replace(',', '.'))
-                        if 0 < f < 1:
-                            it[k] = f * 100
+                        fv = float(str(v).replace(',', '.'))
+                        if 0 < fv < 1:
+                            it[k] = fv * 100
                     except (ValueError, TypeError):
                         pass
-        # Si reemplazar=True, primero borramos las ofertas vigentes del lab.
+
         reemplazar = bool(data.get('reemplazar'))
 
         with database.get_db() as session:
@@ -375,7 +273,6 @@ def _previsualizar_xlsx(path):
                 session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).delete()
                 session.flush()
 
-            # Upsert por (laboratorio_id, ean). Si no hay ean, por (laboratorio_id, codigo).
             from helpers import now_ar
             insertados = actualizados = saltados = 0
             for it in items:
@@ -385,7 +282,6 @@ def _previsualizar_xlsx(path):
                     saltados += 1
                     continue
 
-                # Buscar existente
                 q = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id)
                 if ean:
                     q = q.filter(OfertaMinimo.ean == ean)
@@ -434,21 +330,3 @@ def _previsualizar_xlsx(path):
             'saltados': saltados,
             'total': insertados + actualizados,
         })
-
-
-def _to_int(v):
-    if v is None or v == '':
-        return None
-    try:
-        return int(float(str(v).replace(',', '.')))
-    except (ValueError, TypeError):
-        return None
-
-
-def _to_float(v):
-    if v is None or v == '':
-        return None
-    try:
-        return float(str(v).replace(',', '.'))
-    except (ValueError, TypeError):
-        return None

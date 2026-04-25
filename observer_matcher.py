@@ -8,39 +8,14 @@ Estrategia:
 2. Si hay match único → setea productos.observer_id.
 3. Si no hay match o hay varios con mismo score → lo deja sin vincular para revisión manual.
 
-Normalización:
-- Lowercase
-- Unicode NFKD + strip accents
-- Colapsa whitespace
-- Saca puntuación/sufijos comunes
+Las primitivas de texto (normalizar/tokens/jaccard) vienen de `producto_matcher`
+para tener UNA fuente de verdad en todo el sistema.
 """
-import re
-import unicodedata
 from collections import defaultdict
 
-
-def _normalize(s):
-    if not s:
-        return ''
-    s = unicodedata.normalize('NFKD', s)
-    s = ''.join(c for c in s if not unicodedata.combining(c))
-    s = s.lower()
-    s = re.sub(r'[^\w\s]', ' ', s)   # puntuación -> espacio
-    s = re.sub(r'\s+', ' ', s).strip()
-    return s
-
-
-def _tokens(s):
-    """Set de tokens alfanuméricos normalizados, ignora tokens de 1 char."""
-    return {t for t in _normalize(s).split() if len(t) >= 2}
-
-
-def _jaccard(a, b):
-    if not a or not b:
-        return 0.0
-    inter = a & b
-    union = a | b
-    return len(inter) / len(union) if union else 0.0
+from producto_matcher import jaccard as _jaccard
+from producto_matcher import normalizar_texto as _normalize
+from producto_matcher import tokens_significativos as _tokens
 
 
 def match_productos(session, threshold=0.80, commit_each=500):
@@ -167,30 +142,23 @@ def candidatos_para_producto(session, producto_id, top_n=10):
     """Devuelve los top_n candidatos de obs_productos para un Producto local.
 
     Ordenados por score Jaccard decreciente. Scope al laboratorio si está vinculado.
+    Delega en `producto_matcher.buscar_candidatos(target='obs_producto')` para
+    mantener UNA sola implementación del scoring.
     """
-    from database import Laboratorio, ObsProducto, Producto
+    from database import Laboratorio, Producto
+    from producto_matcher import buscar_candidatos
 
     p = session.get(Producto, producto_id)
     if not p:
         return []
 
-    toks_p = _tokens(p.descripcion or '')
     lab = session.get(Laboratorio, p.laboratorio_id) if p.laboratorio_id else None
     lab_obs = lab.observer_id if lab else None
 
-    q = session.query(ObsProducto)
-    if lab_obs is not None:
-        q = q.filter(ObsProducto.laboratorio_observer == lab_obs)
-
-    resultados = []
-    for obs in q.all():
-        score = _jaccard(toks_p, _tokens(obs.descripcion or ''))
-        if score > 0:
-            resultados.append({
-                'observer_id': obs.observer_id,
-                'descripcion': obs.descripcion,
-                'codigo_alfabeta': obs.codigo_alfabeta,
-                'score': round(score, 3),
-            })
-    resultados.sort(key=lambda r: r['score'], reverse=True)
-    return resultados[:top_n]
+    return buscar_candidatos(
+        descripcion=p.descripcion or '',
+        laboratorio_id=lab_obs,
+        target='obs_producto',
+        top=top_n,
+        session=session,
+    )
