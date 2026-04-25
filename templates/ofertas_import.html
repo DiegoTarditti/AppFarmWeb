@@ -79,9 +79,20 @@
                     Snapshot del archivo (primeras 5 filas) — destildá las columnas que no querés procesar:
                 </p>
                 <div class="flex items-center gap-2 text-[11px]">
-                    <button type="button" id="btn-cols-all" class="text-violet-700 hover:text-violet-900 underline">Tildar todas</button>
+                    <button type="button" id="btn-plantilla-completa"
+                            class="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded font-semibold"
+                            title="Selecciona código + descripción + descuento + cantidad mínima">
+                        ⚡ Plantilla descuento+mín
+                    </button>
+                    <button type="button" id="btn-plantilla-simple"
+                            class="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded font-semibold"
+                            title="Selecciona código + descripción + descuento">
+                        ⚡ Plantilla solo descuento
+                    </button>
                     <span class="text-[#ccc]">·</span>
-                    <button type="button" id="btn-cols-none" class="text-[#888] hover:text-[#1e1e1e] underline">Destildar todas</button>
+                    <button type="button" id="btn-cols-all" class="text-violet-700 hover:text-violet-900 underline">Todas</button>
+                    <span class="text-[#ccc]">·</span>
+                    <button type="button" id="btn-cols-none" class="text-[#888] hover:text-[#1e1e1e] underline">Ninguna</button>
                 </div>
             </div>
             <div class="overflow-x-auto border border-surface-border rounded-lg">
@@ -369,6 +380,60 @@ document.getElementById('btn-cols-none').addEventListener('click', () => {
     _mapping = {};
     renderSnapshot(); renderMapping(); recalcularItems();
 });
+
+async function aplicarPlantilla(camposPlantilla) {
+    // Pide al backend que infiera el mapeo SOLO contra los campos de la
+    // plantilla, y aplica el resultado: marca esas columnas como activas
+    // y descarta el resto.
+    if (!_headers.length) return;
+    try {
+        const r = await fetch('/api/inferir-columnas', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                headers: _headers,
+                rows: _rows.slice(0, 10),
+                candidatos: camposPlantilla,
+            }),
+        });
+        if (!r.ok) throw new Error('Error en inferencia');
+        const data = await r.json();
+        const mapping = data.mapping || {};
+        // Reemplazar mapping y columnas activas con SOLO lo de la plantilla.
+        _mapping = {};
+        const indices = new Set();
+        for (const campo of camposPlantilla) {
+            if (mapping[campo] != null) {
+                _mapping[campo] = mapping[campo];
+                indices.add(mapping[campo]);
+            }
+        }
+        _columnasActivas = indices;
+        _camposVisibles = new Set(Object.keys(_mapping));
+        // Reportar al user qué quedó
+        const resumen = camposPlantilla.map(c => mapping[c] != null
+            ? `✓ ${c} (col ${mapping[c]+1})`
+            : `✗ ${c} no detectado`).join(' · ');
+        renderSnapshot();
+        renderMapping();
+        recalcularItems();
+        actualizarBotonContinuar();
+        // Mensaje breve de feedback
+        const msg = document.createElement('div');
+        msg.className = 'fixed top-3 right-3 z-[120] bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg max-w-md';
+        msg.textContent = resumen;
+        document.body.appendChild(msg);
+        setTimeout(() => msg.remove(), 4000);
+    } catch (err) {
+        alert('Error aplicando plantilla: ' + err.message);
+    }
+}
+
+document.getElementById('btn-plantilla-completa').addEventListener('click', () =>
+    aplicarPlantilla(['codigo', 'descripcion', 'descuento_psl', 'unidades_minima']));
+document.getElementById('btn-plantilla-simple').addEventListener('click', () =>
+    aplicarPlantilla(['codigo', 'descripcion', 'descuento_psl']));
 
 document.getElementById('btn-parse').addEventListener('click', async () => {
     const fileInput = document.getElementById('file-input');
