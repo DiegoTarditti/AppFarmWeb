@@ -696,15 +696,18 @@ def detectar_campos_factura(tokens):
     for campo, idx in asign.items():
         if isinstance(idx, list):
             continue
+        # EAN/codigo_barra: NO formatear, devolver el texto crudo del token
+        # (ej. '7798129415043' debe quedar igual, no '7.798.129.415.043,00').
+        if cls[idx]['es_ean'] or campo == 'codigo_barra':
+            valores[campo] = str(cls[idx]['text']).strip()
+            continue
         n = cls[idx]['n']
         if n is None:
             continue
-        # Para int corto (cantidad) sin decimales; para money 2 decimales;
-        # para pct mantener decimales. Asumimos cantidad si es 'cantidad' o int.
         if campo == 'cantidad' or cls[idx]['es_int_corto']:
             valores[campo] = str(int(n))
         elif cls[idx]['es_pct']:
-            # Pct: mantener formato AR sin separador de miles
+            # Pct: formato AR sin separador de miles
             txt = formatear_numero_ar(n, decimales=2)
             valores[campo] = txt.replace('.', '')   # 33,41 (sin miles para pct chico)
         else:
