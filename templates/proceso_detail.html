@@ -291,7 +291,7 @@
                         </span>
                     </p>
                     <p class="text-[11px] text-[#6f6f6f]">
-                        {{ proc.invoice.fecha }} · ${{ proc.invoice.total | arg_currency }}
+                        {{ proc.invoice.fecha }} · <strong class="text-[#1e1e1e]">${{ proc.invoice.total | arg_currency }}</strong>
                     </p>
                 </div>
                 {% if proc.invoice.pdf_disponible %}
@@ -305,14 +305,55 @@
                     No disponible
                 </span>
                 {% endif %}
-                <a href="{{ url_for('invoice_items', invoice_id=proc.invoice.id) }}"
-                   class="text-xs text-brand hover:underline">Ver ítems →</a>
                 <form method="post" action="{{ url_for('proceso_link_factura', proceso_id=proc.id) }}"
                       onsubmit="return confirm('¿Desvincular la factura de este proceso?');">
                     <input type="hidden" name="factura_id" value="">
                     <button class="text-[11px] text-[#999] hover:text-red-600">Desvincular</button>
                 </form>
             </div>
+
+            {# Desglose fiscal del pie de la factura — solo si hay al menos un campo cargado. #}
+            {% set _inv = proc.invoice %}
+            {% if _inv.monto_exento or _inv.monto_gravado or _inv.iva_105 or _inv.iva_21 or _inv.percepciones or _inv.otros %}
+            <div class="mt-2 pt-2 border-t border-[#ececec] grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px]">
+                {% if _inv.monto_exento %}
+                <div class="bg-[#fafafa] rounded px-2 py-1">
+                    <p class="text-[9px] uppercase text-[#888]">Exento</p>
+                    <p class="font-mono">${{ _inv.monto_exento | arg_currency }}</p>
+                </div>
+                {% endif %}
+                {% if _inv.monto_gravado %}
+                <div class="bg-[#fafafa] rounded px-2 py-1">
+                    <p class="text-[9px] uppercase text-[#888]">Gravado</p>
+                    <p class="font-mono">${{ _inv.monto_gravado | arg_currency }}</p>
+                </div>
+                {% endif %}
+                {% if _inv.iva_105 %}
+                <div class="bg-[#fafafa] rounded px-2 py-1">
+                    <p class="text-[9px] uppercase text-[#888]">IVA 10,5%</p>
+                    <p class="font-mono">${{ _inv.iva_105 | arg_currency }}</p>
+                </div>
+                {% endif %}
+                {% if _inv.iva_21 %}
+                <div class="bg-[#fafafa] rounded px-2 py-1">
+                    <p class="text-[9px] uppercase text-[#888]">IVA 21%</p>
+                    <p class="font-mono">${{ _inv.iva_21 | arg_currency }}</p>
+                </div>
+                {% endif %}
+                {% if _inv.percepciones %}
+                <div class="bg-[#fafafa] rounded px-2 py-1">
+                    <p class="text-[9px] uppercase text-[#888]">Percepciones</p>
+                    <p class="font-mono">${{ _inv.percepciones | arg_currency }}</p>
+                </div>
+                {% endif %}
+                {% if _inv.otros %}
+                <div class="bg-[#fafafa] rounded px-2 py-1">
+                    <p class="text-[9px] uppercase text-[#888]">Otros</p>
+                    <p class="font-mono">${{ _inv.otros | arg_currency }}</p>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
             {% elif facturas_libres %}
             <form method="post" action="{{ url_for('proceso_link_factura', proceso_id=proc.id) }}"
                   class="flex items-center gap-2 text-sm">
