@@ -28,10 +28,10 @@
             🔄 Calculado en vivo
         </span>
     {% endif %}
-    {% if current_user.rol in ('admin', 'dev') and mv_estado.estado != 'nunca' %}
+    {% if current_user.rol in ('admin', 'dev') %}
         <button type="button" id="btn-refresh-mv"
                 class="text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded font-semibold">
-            🔄 Refrescar ahora
+            {% if mv_estado.estado == 'nunca' %}🔄 Generar vista por primera vez{% else %}🔄 Refrescar ahora{% endif %}
         </button>
     {% endif %}
     {% endif %}
