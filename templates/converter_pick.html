@@ -116,7 +116,7 @@
                 <button onclick="useSelectionAsTotals()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditTotals()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
                 <button onclick="autodetectarTotales()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta Cant.Un/Exento/Gravado/IVA/Percep/Total por relaciones matemáticas (lógica JS local)">🧮 Auto-detectar</button>
-                <button onclick="autodetectarTotalesServer()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Misma detección via API server-side, tolerante a formatos OCR-rotos como '1,183.326,62'">⚡ Server</button>
+                <button onclick="autodetectarTotalesServer()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Detección mejorada: tolerante a OCR-rotos (5,365.571,92) y devuelve los valores ya convertidos al formato limpio">🧠 Auto-detectar V2</button>
                 <button onclick="toggleCargaManualTotals()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Cuando el pie del PDF viene desprolijo, cargá los valores a mano">✍ Carga manual</button>
                 <span class="flex-1"></span>
                 <button onclick="unirTotalsMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold">⤏ Unir marcados</button>
@@ -174,7 +174,7 @@
                 <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
                 <button onclick="autodetectarCampos()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta automáticamente cantidad, precio, importe, etc. por relaciones matemáticas (lógica JS local)">🧮 Auto-detectar</button>
-                <button onclick="autodetectarCamposServer()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Misma detección via API server-side (field_inference centralizado, fuente única de verdad)">⚡ Auto-detectar (server)</button>
+                <button onclick="autodetectarCamposServer()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Detección mejorada: tolerante a números OCR-rotos y devuelve valores ya convertidos al formato limpio">🧠 Auto-detectar V2</button>
                 <span class="flex-1"></span>
                 <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
                 <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
