@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% set nav_active = "clientes" %}
+{% block title %}Demográficos de clientes{% endblock %}
+{% block main %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('clientes_list') }}" class="text-[#6f6f6f] hover:text-[#1e1e1e] text-sm">← Clientes</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">Demográficos</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ '{:,}'.format(total) }} clientes totales</span>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-800">OBS</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    {% if total == 0 %}
+    <div class="bg-amber-50 border border-amber-300 rounded-xl p-4 text-sm text-amber-900">
+        <p class="font-semibold">No hay clientes sincronizados todavía.</p>
+        <p class="text-xs mt-1">Corré el sync desde la PC de la farmacia (botón "Sincronizar clientes" en /admin/observer-sync) o esperá al próximo auto-sync.</p>
+    </div>
+    {% endif %}
+
+    <!-- Extensión local -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">Extensión local</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div class="bg-[#fafafa] rounded-lg p-3">
+                <div class="text-2xl font-bold text-[#1e1e1e]">{{ '{:,}'.format(n_ext) }}</div>
+                <div class="text-[11px] text-[#888]">Con extensión</div>
+            </div>
+            <div class="bg-emerald-50 rounded-lg p-3">
+                <div class="text-2xl font-bold text-emerald-800">{{ '{:,}'.format(n_wa) }}</div>
+                <div class="text-[11px] text-emerald-700">WhatsApp</div>
+            </div>
+            <div class="bg-sky-50 rounded-lg p-3">
+                <div class="text-2xl font-bold text-sky-800">{{ '{:,}'.format(n_mail) }}</div>
+                <div class="text-[11px] text-sky-700">Email</div>
+            </div>
+            <div class="bg-amber-50 rounded-lg p-3">
+                <div class="text-2xl font-bold text-amber-800">{{ '{:,}'.format(n_notas) }}</div>
+                <div class="text-[11px] text-amber-700">Con notas</div>
+            </div>
+            <div class="bg-violet-50 rounded-lg p-3">
+                <div class="text-2xl font-bold text-violet-800">{{ '{:,}'.format(n_tags) }}</div>
+                <div class="text-[11px] text-violet-700">Con tags</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Por grupo -->
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">Por grupo</h2>
+            {% if por_grupo %}
+            <div style="height: 260px;"><canvas id="ch-grupo"></canvas></div>
+            {% else %}<p class="text-xs text-[#999]">Sin datos.</p>{% endif %}
+        </div>
+        <!-- Por categoría -->
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">Por categoría</h2>
+            {% if por_cat %}
+            <div style="height: 260px;"><canvas id="ch-cat"></canvas></div>
+            {% else %}<p class="text-xs text-[#999]">Sin datos.</p>{% endif %}
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Top localidades -->
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">Top 15 localidades</h2>
+            {% if por_loc %}
+            <div style="height: 380px;"><canvas id="ch-loc"></canvas></div>
+            {% else %}<p class="text-xs text-[#999]">Sin datos.</p>{% endif %}
+        </div>
+        <!-- Provincias -->
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">Por provincia</h2>
+            {% if por_prov %}
+            <table class="w-full text-sm">
+                <thead class="text-[10px] uppercase text-[#aaa]">
+                    <tr><th class="text-left py-1">Provincia</th><th class="text-right py-1">Clientes</th></tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                {% for p in por_prov %}
+                <tr><td class="py-1.5">{{ p.label }}</td><td class="py-1.5 text-right">{{ '{:,}'.format(p.count) }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}<p class="text-xs text-[#999]">Sin datos.</p>{% endif %}
+        </div>
+    </div>
+
+</div>
+
+<script>
+const COLORS = ['#0369A1', '#0F766E', '#B38A00', '#B91C1C', '#7C3AED', '#2E7D5B', '#DB2777', '#F97316', '#3B82F6', '#14B8A6', '#6B7280', '#84CC16', '#EC4899', '#F59E0B', '#8B5CF6'];
+
+function barChart(canvasId, data, horizontal) {
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    new Chart(el.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.label),
+            datasets: [{
+                data: data.map(d => d.count),
+                backgroundColor: data.map((_, i) => COLORS[i % COLORS.length]),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            indexAxis: horizontal ? 'y' : 'x',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { ticks: { font: { size: 10 } } },
+                y: { ticks: { font: { size: 10 } } }
+            }
+        }
+    });
+}
+
+{% if por_grupo %}barChart('ch-grupo', {{ por_grupo | tojson }}, false);{% endif %}
+{% if por_cat %}barChart('ch-cat', {{ por_cat | tojson }}, false);{% endif %}
+{% if por_loc %}barChart('ch-loc', {{ por_loc | tojson }}, true);{% endif %}
+</script>
+
+{% endblock %}

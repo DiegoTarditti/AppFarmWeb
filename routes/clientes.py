@@ -84,6 +84,68 @@ def init_app(app):
                                    q=q, grupo_id=grupo_id, localidad=localidad,
                                    page=page, last_page=last_page)
 
+    @app.route('/clientes/stats')
+    @login_required
+    def clientes_stats():
+        """Dashboard demográfico de clientes: distribuciones por grupo, categoría,
+        localidad, provincia + conteo de extensiones locales cargadas."""
+        with database.get_db() as session:
+            total = session.query(database.ObsCliente).count()
+
+            grupos_map = dict(session.query(database.ObsGrupoCliente.observer_id,
+                                            database.ObsGrupoCliente.descripcion).all())
+            cats_map = dict(session.query(database.ObsCategoriaCliente.observer_id,
+                                          database.ObsCategoriaCliente.descripcion).all())
+
+            por_grupo = (session.query(database.ObsCliente.grupo_observer,
+                                       _f.count(database.ObsCliente.observer_id))
+                         .group_by(database.ObsCliente.grupo_observer)
+                         .order_by(_f.count(database.ObsCliente.observer_id).desc()).all())
+            por_grupo = [{'label': grupos_map.get(g) or '(sin grupo)', 'count': int(n)}
+                         for g, n in por_grupo]
+
+            por_cat = (session.query(database.ObsCliente.categoria_observer,
+                                     _f.count(database.ObsCliente.observer_id))
+                       .group_by(database.ObsCliente.categoria_observer)
+                       .order_by(_f.count(database.ObsCliente.observer_id).desc()).all())
+            por_cat = [{'label': cats_map.get(c) or '(sin categoría)', 'count': int(n)}
+                       for c, n in por_cat]
+
+            por_loc = (session.query(database.ObsCliente.localidad,
+                                     _f.count(database.ObsCliente.observer_id))
+                       .filter(database.ObsCliente.localidad.isnot(None),
+                               database.ObsCliente.localidad != '')
+                       .group_by(database.ObsCliente.localidad)
+                       .order_by(_f.count(database.ObsCliente.observer_id).desc())
+                       .limit(15).all())
+            por_loc = [{'label': l or '—', 'count': int(n)} for l, n in por_loc]
+
+            por_prov = (session.query(database.ObsCliente.provincia,
+                                      _f.count(database.ObsCliente.observer_id))
+                        .filter(database.ObsCliente.provincia.isnot(None),
+                                database.ObsCliente.provincia != '')
+                        .group_by(database.ObsCliente.provincia)
+                        .order_by(_f.count(database.ObsCliente.observer_id).desc()).all())
+            por_prov = [{'label': p or '—', 'count': int(n)} for p, n in por_prov]
+
+            # Extensión local
+            n_ext = session.query(database.Cliente).count()
+            n_wa = session.query(database.Cliente).filter(database.Cliente.whatsapp.isnot(None),
+                                                          database.Cliente.whatsapp != '').count()
+            n_mail = session.query(database.Cliente).filter(database.Cliente.email.isnot(None),
+                                                            database.Cliente.email != '').count()
+            n_notas = session.query(database.Cliente).filter(database.Cliente.notas.isnot(None),
+                                                             database.Cliente.notas != '').count()
+            n_tags = session.query(database.Cliente).filter(database.Cliente.tags.isnot(None),
+                                                            database.Cliente.tags != '').count()
+
+        return render_template('clientes_stats.html',
+                               total=total,
+                               por_grupo=por_grupo, por_cat=por_cat,
+                               por_loc=por_loc, por_prov=por_prov,
+                               n_ext=n_ext, n_wa=n_wa, n_mail=n_mail,
+                               n_notas=n_notas, n_tags=n_tags)
+
     @app.route('/clientes/<int:observer_id>')
     @login_required
     def cliente_detail(observer_id):
