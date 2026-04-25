@@ -20,9 +20,7 @@ from database import Provider, get_db, init_db
 # Parsers auxiliares que NO son de proveedor (no crear Provider desde ellos)
 PARSERS_AUXILIARES = {
     '_template', '__init__', 'sales_history', 'sales_history_xls', 'sales_history_html',
-    'bernabo_ofertas', 'modulos_xlsx', 'ofertas_xlsx',
-    'descuento_libre_parser', 'descuento_modulos_ocr', 'descuento_modulos_xls',
-    'descuento_xlsx_parser', 'vademecum',
+    'bernabo_ofertas', 'modulos_xlsx', 'ofertas_xlsx', 'vademecum',
 }
 
 

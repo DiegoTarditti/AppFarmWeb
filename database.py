@@ -387,44 +387,9 @@ class ClaimItem(Base):
     difference = relationship('StockDifference', back_populates='claim_items')
 
 
-class DescuentoCampana(Base):
-    __tablename__ = 'descuento_campanas'
-    id = Column(Integer, primary_key=True)
-    proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=True)
-    laboratorio_nombre = Column(String(150), nullable=False)
-    fecha = Column(Date, nullable=True)
-    observacion = Column(Text, nullable=True)
-    creado_en = Column(DateTime, default=now_ar)
-    proveedor = relationship('Provider')
-    modulos = relationship('DescuentoModulo', back_populates='campana',
-                           cascade='all, delete-orphan')
-
-
-class DescuentoModulo(Base):
-    __tablename__ = 'descuento_modulos'
-    id = Column(Integer, primary_key=True)
-    campana_id = Column(Integer, ForeignKey('descuento_campanas.id'), nullable=True)
-    codigo = Column(String(30), nullable=True)   # legacy, ya no se usa
-    laboratorio = Column(String(100), nullable=True)  # legacy
-    nombre = Column(String(150))
-    descuento_default = Column(DECIMAL(5, 2), nullable=True)  # legacy
-    activo = Column(Integer, nullable=False, default=1)
-    creado_en = Column(DateTime, default=now_ar)
-    campana = relationship('DescuentoCampana', back_populates='modulos')
-    items = relationship('DescuentoModuloItem', back_populates='modulo',
-                         cascade='all, delete-orphan')
-
-
-class DescuentoModuloItem(Base):
-    __tablename__ = 'descuento_modulo_items'
-    id = Column(Integer, primary_key=True)
-    modulo_id = Column(Integer, ForeignKey('descuento_modulos.id'), nullable=False)
-    codigo_ean = Column(String(20), nullable=False)
-    descripcion = Column(String(200))
-    cantidad = Column(Integer, nullable=False, default=1)
-    descuento = Column(DECIMAL(5, 2), nullable=False, default=0)
-    es_principal = Column(Integer, nullable=False, default=0)
-    modulo = relationship('DescuentoModulo', back_populates='items')
+# DescuentoCampana / DescuentoModulo / DescuentoModuloItem fueron eliminados
+# (legacy, primer prototipo de gestión de campañas que nunca se usó en producción).
+# Las tablas se dropean en init_db si todavía existen en el schema.
 
 
 class BarcodeMapping(Base):
@@ -1170,8 +1135,6 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE facturas ADD COLUMN IF NOT EXISTS batch_id INTEGER REFERENCES invoice_batches(id)"
     ))
-    # descuento_campanas, descuento_modulos, descuento_modulo_items los crea
-    # Base.metadata.create_all(). Solo necesitamos ALTER TABLE para datos viejos.
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_alta_min DECIMAL(6,1) NOT NULL DEFAULT 20.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_alta_tol DECIMAL(6,1) NOT NULL DEFAULT 0.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS rot_media_min DECIMAL(6,1) NOT NULL DEFAULT 5.0"))
@@ -1180,12 +1143,13 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS dockerpanel_ruta VARCHAR(500)"))
-    conn.execute(text("ALTER TABLE descuento_modulos ADD COLUMN IF NOT EXISTS campana_id INTEGER REFERENCES descuento_campanas(id) ON DELETE CASCADE"))
-    conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN codigo DROP NOT NULL"))
-    conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN laboratorio DROP NOT NULL"))
-    conn.execute(text("ALTER TABLE descuento_modulos ALTER COLUMN descuento_default DROP NOT NULL"))
-    conn.execute(text("ALTER TABLE descuento_modulo_items ADD COLUMN IF NOT EXISTS es_principal INTEGER NOT NULL DEFAULT 0"))
-    conn.execute(text("ALTER TABLE descuento_modulo_items ALTER COLUMN descuento SET DEFAULT 0"))
+
+    # Cleanup legacy: descuento_campanas, descuento_modulos, descuento_modulo_items.
+    # Eran del primer prototipo de gestión de campañas, nunca se usó en producción.
+    # DROP en lugar de mantener tablas huérfanas.
+    conn.execute(text("DROP TABLE IF EXISTS descuento_modulo_items CASCADE"))
+    conn.execute(text("DROP TABLE IF EXISTS descuento_modulos CASCADE"))
+    conn.execute(text("DROP TABLE IF EXISTS descuento_campanas CASCADE"))
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS rotacion VARCHAR(1)"))
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS avg_monthly DECIMAL(10,2)"))
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_pack INTEGER NOT NULL DEFAULT 0"))
@@ -1643,14 +1607,10 @@ def _sqlite_add_columns(conn):
     existing_f = {row[1] for row in conn.execute(text("PRAGMA table_info(facturas)"))}
     if 'batch_id' not in existing_f:
         conn.execute(text("ALTER TABLE facturas ADD COLUMN batch_id INTEGER REFERENCES invoice_batches(id)"))
-    # descuento_campanas, descuento_modulos, descuento_modulo_items los crea
-    # Base.metadata.create_all(). Solo ALTER TABLE para datos viejos.
-    existing_mod = {row[1] for row in conn.execute(text("PRAGMA table_info(descuento_modulos)"))}
-    if 'campana_id' not in existing_mod:
-        conn.execute(text("ALTER TABLE descuento_modulos ADD COLUMN campana_id INTEGER REFERENCES descuento_campanas(id) ON DELETE CASCADE"))
-    existing_items = {row[1] for row in conn.execute(text("PRAGMA table_info(descuento_modulo_items)"))}
-    if 'es_principal' not in existing_items:
-        conn.execute(text("ALTER TABLE descuento_modulo_items ADD COLUMN es_principal INTEGER NOT NULL DEFAULT 0"))
+    # Cleanup legacy: tablas descuento_* (primer prototipo no usado).
+    conn.execute(text("DROP TABLE IF EXISTS descuento_modulo_items"))
+    conn.execute(text("DROP TABLE IF EXISTS descuento_modulos"))
+    conn.execute(text("DROP TABLE IF EXISTS descuento_campanas"))
     existing_prod2 = {row[1] for row in conn.execute(text("PRAGMA table_info(productos)"))}
     if 'es_pack' not in existing_prod2:
         conn.execute(text("ALTER TABLE productos ADD COLUMN es_pack INTEGER NOT NULL DEFAULT 0"))
