@@ -37,54 +37,35 @@ def _norm(s):
     return s.strip('_')
 
 
-# Mapeo header → campo de salida. Múltiples palabras clave por campo.
-HEADER_KEYWORDS = {
-    'ean':              ['ean', 'codigo_barra', 'codigobarra', 'cod_barra', 'cb', 'gtin'],
-    'codigo':           ['codigo', 'cod', 'sku', 'cod_interno', 'codigo_interno', 'art', 'ref'],
-    'descripcion':      ['descripcion', 'producto', 'detalle', 'nombre', 'articulo', 'desc'],
-    'unidades_minima':  ['minimo', 'min', 'unidades_minima', 'cant_min', 'cantidad_min',
-                         'unid_min', 'cantidad', 'unidades', 'cant', 'piezas'],
-    'precio':           ['precio', 'pvp', 'pvf', 'p_unit', 'precio_unit', 'precio_unitario',
-                         'importe', '$', 'costo'],
-    'descuento_psl':    ['descuento', 'dto', 'desc', 'desc_pct', 'porcentaje', 'pct',
-                         'rebaja', 'descuento_psl', 'descuento_psf'],
-    'rentabilidad':     ['rentabilidad', 'rent', 'margen', 'rentab'],
-    'plazo_pago':       ['plazo', 'plazo_pago', 'pago', 'condicion'],
-    'grupo_id':         ['grupo', 'grupo_id', 'agrupacion', 'set'],
-}
-
-
-def _detectar_columnas(rows):
-    """Busca una fila de header en las primeras 10 filas.
+def _detectar_columnas(rows, candidatos=None):
+    """Busca una fila de header en las primeras 10 filas y mapea sus columnas
+    a los campos del sistema usando `field_inference` (módulo central).
 
     Devuelve dict { campo_salida: indice_columna } y nro de fila donde está
     el header (None si no encontró).
+
+    Args:
+        rows: lista de filas (cada fila tupla/lista de valores).
+        candidatos: subset de campos a considerar. None = todos los del
+            catálogo. Para el importador de ofertas dejamos los específicos
+            del flujo.
     """
-    mapa = {}
-    header_row_idx = None
+    import field_inference as fi
+    if candidatos is None:
+        candidatos = ['ean', 'codigo', 'descripcion', 'unidades_minima',
+                      'precio', 'descuento_psl', 'rentabilidad',
+                      'plazo_pago', 'grupo_id']
     for ri, row in enumerate(rows[:10]):
         if not row:
             continue
-        candidato = {}
-        for ci, val in enumerate(row):
-            n = _norm(val)
-            if not n:
-                continue
-            for campo, kws in HEADER_KEYWORDS.items():
-                if campo in candidato:
-                    continue  # ya encontramos esa columna
-                # Match exacto o que contenga la keyword
-                if n in kws or any(kw in n for kw in kws if len(kw) >= 3):
-                    candidato[campo] = ci
-                    break
-        # Lo consideramos header si encontró al menos 2 campos significativos
-        # (uno de ellos debería ser ean/codigo/descripcion para validar).
-        ancla = any(c in candidato for c in ('ean', 'codigo', 'descripcion'))
-        if len(candidato) >= 2 and ancla:
-            mapa = candidato
-            header_row_idx = ri
-            break
-    return mapa, header_row_idx
+        headers = [str(v) if v is not None else '' for v in row]
+        mapa = fi.inferir_columnas(headers, candidatos=candidatos)
+        # Lo consideramos header válido si encontró al menos 2 campos y uno
+        # de los anclas (ean/codigo/descripcion) está presente.
+        ancla = any(c in mapa for c in ('ean', 'codigo', 'descripcion'))
+        if len(mapa) >= 2 and ancla:
+            return mapa, ri
+    return {}, None
 
 
 def _is_ean_value(val):

@@ -398,27 +398,65 @@ function renderSnapshot() {
     }
 }
 
+async function autoinferirMapeo() {
+    // Llama al endpoint central pasando solo headers + filas de columnas
+    // activas. Re-mapea sin pisar las asignaciones manuales que ya hizo el
+    // user (solo completa los campos que están en (ninguno)).
+    const indices = [..._columnasActivas].sort((a, b) => a - b);
+    if (indices.length === 0) return;
+    const headers = indices.map(i => _headers[i]);
+    const rows = _rows.slice(0, 10).map(r => indices.map(i => i < r.length ? r[i] : ''));
+    const candidatos = CAMPOS.map(c => c.key);
+    try {
+        const r = await fetch('/api/inferir-columnas', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({headers, rows, candidatos}),
+        });
+        if (!r.ok) return;
+        const d = await r.json();
+        const mapaInferido = d.mapping || {};
+        // Convertir índices del subset a índices originales y completar lo no mapeado.
+        for (const [campo, idxSubset] of Object.entries(mapaInferido)) {
+            if (_mapping[campo] != null) continue;     // no pisar manual
+            const idxOriginal = indices[idxSubset];
+            if (idxOriginal != null) _mapping[campo] = idxOriginal;
+        }
+    } catch (_) { /* silencioso, mapeo manual sigue funcionando */ }
+}
+
 function setPanel2Mode(modo) {
     _panel2Mode = modo;
     const wrapMap     = document.getElementById('mapping-wrapper');
     const btnNext     = document.getElementById('btn-next-2');
     const btnBackCols = document.getElementById('btn-back-cols');
     const btnAll      = document.getElementById('btn-cols-all');
-    const btnNone     = document.getElementById('btn-cols-none');
     if (modo === 'select') {
         wrapMap.classList.add('hidden');
         btnBackCols.classList.add('hidden');
         btnAll.parentElement.classList.remove('hidden');
         btnNext.textContent = 'Mapear campos →';
+        renderSnapshot();
+        renderMapping();
+        actualizarBotonContinuar();
     } else {
+        // Limpiar mapeos huérfanos (apuntando a columnas destildadas).
+        for (const [campo, idx] of Object.entries(_mapping)) {
+            if (!_columnasActivas.has(idx)) delete _mapping[campo];
+        }
         wrapMap.classList.remove('hidden');
         btnBackCols.classList.remove('hidden');
         btnAll.parentElement.classList.add('hidden');
         btnNext.textContent = 'Continuar →';
+        // Auto-inferir sobre las columnas activas y re-render cuando termine.
+        autoinferirMapeo().finally(() => {
+            recalcularItems();
+            renderSnapshot();
+            renderMapping();
+            actualizarBotonContinuar();
+        });
     }
-    renderSnapshot();
-    renderMapping();
-    actualizarBotonContinuar();
 }
 
 function actualizarBotonContinuar() {

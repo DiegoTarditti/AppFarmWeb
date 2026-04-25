@@ -1,0 +1,505 @@
+"""Inferencia central de tipo de campo / mapeo de columnas.
+
+UNA sola fuente de verdad para todos los importadores del sistema (ofertas
+XLSX, conversor de facturas, módulos de descuento, etc.). Cualquier wizard
+que tenga que mapear columnas/celdas a campos conocidos pasa por acá.
+
+Tres niveles de inferencia, de más confiable a menos:
+
+1. **Por header** (palabra clave en el nombre de la columna).
+   `inferir_campo_por_header('descuento %')` → 'descuento_psl'.
+2. **Por contenido** (forma del valor: EAN, money, %, fecha, etc.).
+   `inferir_tipo_valor('7793450121123')` → 'ean'.
+3. **Por matemática** (tripletes que cumplen una relación, ej. cant × unit
+   = importe). `relacion_aritmetica([1, 100, 100])` → ('cant_unit_imp', ...).
+
+API principal:
+- `inferir_columnas(headers, sample_rows)` — combina niveles 1 + 2 sobre
+  un dataset. Devuelve `{campo: idx_columna}` con confianza mejor primero.
+
+API auxiliar:
+- `inferir_tipo_valor(s)`, `inferir_campo_por_header(s)`,
+  `parsear_numero_ar(s)`, `validar_ean(s)`.
+
+Diseño: stateless, sin DB, sin imports de Flask/SQLAlchemy. Eso lo hace
+testeable y reusable (también desde scripts CLI).
+"""
+import re
+import unicodedata
+from typing import Optional
+
+# ── Diccionario de datos: campos conocidos por el sistema ───────────────────
+# UNA fuente de verdad para todos los importadores. Cada entrada describe un
+# campo "estándar" del dominio farmacéutico, con metadatos suficientes para:
+#   - autodetección por header (keywords)
+#   - validación por contenido (tipo + regex_valor opcional)
+#   - render en UI (label, descripcion, ejemplos)
+#   - priorización (nucleo: True → "siempre presente en cualquier import")
+#
+# Para usos específicos, los importadores eligen un subconjunto via
+# `nombres_campos(nucleo_only=True)` o pasando `candidatos=[...]` a las
+# funciones de inferencia.
+
+CAMPOS = {
+    # ── NÚCLEO: campos siempre usados ───────────────────────────────────────
+    'ean': {
+        'label': 'EAN',
+        'descripcion': 'Código de barras (7-14 dígitos numéricos)',
+        'tipo': 'ean',
+        'nucleo': True,
+        'keywords': ['ean', 'codigo_barra', 'codigo_barras', 'codigo_de_barras',
+                     'codigobarra', 'cod_barra', 'cb', 'gtin'],
+        'regex_valor': r'^\d{7,14}$',
+        'ejemplos': ['7793450121123', '7791234567890'],
+    },
+    'codigo': {
+        'label': 'Código',
+        'descripcion': 'Código interno del proveedor / SKU',
+        'tipo': 'text',
+        'nucleo': True,
+        'keywords': ['codigo', 'cod', 'sku', 'cod_interno', 'codigo_interno', 'art', 'ref'],
+        'ejemplos': ['BON-001', '79-65', 'AMX500'],
+    },
+    'descripcion': {
+        'label': 'Descripción',
+        'descripcion': 'Nombre/detalle del producto',
+        'tipo': 'text',
+        'nucleo': True,
+        'keywords': ['descripcion', 'producto', 'detalle', 'nombre', 'articulo', 'desc'],
+        'ejemplos': ['TAFIROL 1g COM x 50', 'AMOXIDAL 500mg COM x 16'],
+    },
+    'cantidad': {
+        'label': 'Cantidad',
+        'descripcion': 'Unidades pedidas/facturadas (entero corto)',
+        'tipo': 'int',
+        'nucleo': True,
+        'keywords': ['cantidad', 'cant', 'qty', 'piezas', 'unidades', 'uds'],
+        'regex_valor': r'^\d{1,4}(?:\.0+)?$',
+        'ejemplos': ['1', '12', '100'],
+    },
+    'precio': {
+        'label': 'Precio',
+        'descripcion': 'Precio unitario en $ (acepta formatos AR y EN)',
+        'tipo': 'money',
+        'nucleo': True,
+        'keywords': ['precio', 'pvf', 'p_unit', 'importe', 'costo'],
+        'ejemplos': ['1.234,56', '4500', '$ 1500.50'],
+    },
+    'descuento_psl': {
+        'label': 'Descuento %',
+        'descripcion': 'Porcentaje de descuento (0–100)',
+        'tipo': 'pct',
+        'nucleo': True,
+        'keywords': ['descuento', 'dto', 'desc', 'desc_pct', 'porcentaje', 'pct',
+                     'rebaja', 'descuento_psl', 'descuento_psf'],
+        'regex_valor': r'^\d{1,2}(?:[.,]\d{1,3})?\s*%?$',
+        'ejemplos': ['25', '7,5%', '0.20'],
+    },
+
+    # ── EXTRAS: específicos de algún flujo ──────────────────────────────────
+    'codigo_alfabeta': {
+        'label': 'Código Alfabeta',
+        'descripcion': 'Código del catálogo Alfabeta (clave compartida con ObServer)',
+        'tipo': 'text',
+        'nucleo': False,
+        'keywords': ['alfabeta', 'cod_alfabeta', 'codigo_alfabeta'],
+        'ejemplos': ['AMX500-16'],
+    },
+    'unidades_minima': {
+        'label': 'Mín. unidades',
+        'descripcion': 'Cantidad mínima para acceder al descuento',
+        'tipo': 'int',
+        'nucleo': False,
+        'keywords': ['minimo', 'min_unidades', 'unidades_minima', 'unidades_min',
+                     'min_cantidad', 'cant_min', 'cantidad_min', 'unid_min', 'minima'],
+        'ejemplos': ['12', '50', '100'],
+    },
+    'precio_publico': {
+        'label': 'Precio público',
+        'descripcion': 'Precio al público (PVP) antes del descuento',
+        'tipo': 'money',
+        'nucleo': False,
+        'keywords': ['precio_publico', 'precio_pub', 'pvp', 'precio_publ', 'p_publico'],
+        'ejemplos': ['5.500,00'],
+    },
+    'precio_unitario': {
+        'label': 'Precio unitario',
+        'descripcion': 'Precio neto por unidad (después de descuento)',
+        'tipo': 'money',
+        'nucleo': False,
+        'keywords': ['precio_unitario', 'precio_unit', 'pcio_unit', 'unitario', 'unit'],
+        'ejemplos': ['4.125,00'],
+    },
+    'importe': {
+        'label': 'Importe',
+        'descripcion': 'Subtotal de la línea (cant × precio_unitario)',
+        'tipo': 'money',
+        'nucleo': False,
+        'keywords': ['importe', 'subtotal', 'monto', 'total_renglon'],
+        'ejemplos': ['49.500,00'],
+    },
+    'rentabilidad': {
+        'label': 'Rentabilidad %',
+        'descripcion': 'Margen comercial sobre el costo',
+        'tipo': 'pct',
+        'nucleo': False,
+        'keywords': ['rentabilidad', 'rent', 'margen', 'rentab'],
+        'ejemplos': ['35,87%'],
+    },
+    'plazo_pago': {
+        'label': 'Plazo de pago',
+        'descripcion': 'Condición/plazo de pago',
+        'tipo': 'text',
+        'nucleo': False,
+        'keywords': ['plazo', 'plazo_pago', 'pago', 'condicion'],
+        'ejemplos': ['30 días', 'Contado'],
+    },
+    'grupo_id': {
+        'label': 'Grupo',
+        'descripcion': 'Agrupación para mínimos compartidos',
+        'tipo': 'int',
+        'nucleo': False,
+        'keywords': ['grupo', 'grupo_id', 'agrupacion', 'set'],
+        'ejemplos': ['1', '2'],
+    },
+    'lote': {
+        'label': 'Lote',
+        'descripcion': 'Número de lote / partida',
+        'tipo': 'text',
+        'nucleo': False,
+        'keywords': ['lote', 'partida', 'batch'],
+        'ejemplos': ['L240312'],
+    },
+    'vencimiento': {
+        'label': 'Vencimiento',
+        'descripcion': 'Fecha de vencimiento del lote',
+        'tipo': 'date',
+        'nucleo': False,
+        'keywords': ['vencimiento', 'venc', 'vto', 'expiracion'],
+        'ejemplos': ['12/2026', '31/12/2025'],
+    },
+}
+
+
+def nombres_campos(nucleo_only=False):
+    """Lista los nombres de campos del catálogo. nucleo_only=True filtra a los siempre-usados."""
+    if nucleo_only:
+        return [n for n, c in CAMPOS.items() if c.get('nucleo')]
+    return list(CAMPOS.keys())
+
+
+def campo(nombre):
+    """Devuelve el dict de metadatos de un campo, o None si no existe."""
+    return CAMPOS.get(nombre)
+
+
+# ── Helpers de texto ────────────────────────────────────────────────────────
+
+def _norm_header(s) -> str:
+    """Normaliza un header: lower + sin acentos + no-alfanum → '_'.
+    Ej: 'Descuento %' → 'descuento'.
+    """
+    if s is None:
+        return ''
+    s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
+    s = s.lower().strip()
+    s = re.sub(r'[^a-z0-9]+', '_', s)
+    return s.strip('_')
+
+
+# ── Inferencia por contenido (tipo de un valor) ────────────────────────────
+
+_RE_EAN       = re.compile(r'^\d{7,14}$')
+_RE_INT_SHORT = re.compile(r'^\d{1,2}(?:\.0+)?$')   # 1-99: "5" o "5.0"
+_RE_MONEY_AR  = re.compile(r'^\d{1,3}(?:\.\d{3})+,\d{2}$|^\d+,\d{2}$')
+_RE_MONEY_EN  = re.compile(r'^\d{1,3}(?:,\d{3})+\.\d{2}$|^\d+\.\d{2}$')
+_RE_PCT_AR    = re.compile(r'^\d{1,2}(?:[.,]\d{1,3})?\s*%?$')
+_RE_DATE      = re.compile(r'^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$|^\d{4}-\d{2}-\d{2}')
+
+
+def parsear_numero_ar(s) -> Optional[float]:
+    """Convierte a float aceptando formatos AR ('1.234,56') y EN ('1,234.56').
+
+    Tolera símbolos $ y % (los saca). Devuelve None si no parsea.
+    """
+    if s is None or s == '':
+        return None
+    if isinstance(s, (int, float)):
+        return float(s)
+    txt = str(s).strip().replace(' ', '').replace('$', '').replace('%', '')
+    if not txt:
+        return None
+    if ',' in txt and '.' in txt:
+        # 1.234,56 (AR) o 1,234.56 (EN). Comparar posiciones.
+        if txt.rfind(',') > txt.rfind('.'):
+            txt = txt.replace('.', '').replace(',', '.')
+        else:
+            txt = txt.replace(',', '')
+    elif ',' in txt:
+        # Sólo coma → asumimos decimal AR.
+        txt = txt.replace(',', '.')
+    try:
+        return float(txt)
+    except (ValueError, TypeError):
+        return None
+
+
+def validar_ean(s) -> bool:
+    """True si el valor tiene forma de EAN (numérico de 7 a 14 dígitos)."""
+    if s is None:
+        return False
+    txt = str(s).strip().replace(' ', '')
+    # Excel guarda enteros como float: '7793450121123.0' → quitar el '.0'.
+    if txt.endswith('.0'):
+        txt = txt[:-2]
+    return bool(_RE_EAN.match(txt))
+
+
+def inferir_tipo_valor(s) -> Optional[str]:
+    """Devuelve 'ean' | 'int' | 'money' | 'pct' | 'date' | 'text' | None.
+
+    Heurística por la forma del valor. None si está vacío.
+    """
+    if s is None or s == '':
+        return None
+    txt = str(s).strip()
+    if not txt:
+        return None
+
+    # EAN primero (más específico que int).
+    if validar_ean(txt):
+        return 'ean'
+    # Fecha
+    if _RE_DATE.match(txt):
+        return 'date'
+    # Money (con separadores de miles o decimales explícitos)
+    if _RE_MONEY_AR.match(txt) or _RE_MONEY_EN.match(txt):
+        return 'money'
+    n = parsear_numero_ar(txt)
+    # Pct con `%` explícito → siempre es pct
+    if txt.endswith('%') and n is not None:
+        return 'pct'
+    # Int corto SIN % (1-99, sin separadores) → int. Tiene prioridad sobre pct
+    # porque "5" es más probablemente "5 unidades" que "5%".
+    if _RE_INT_SHORT.match(txt) and n is not None and 1 <= n <= 99 and n == int(n):
+        return 'int'
+    # Pct sin `%`: número 0-100 con o sin decimal corto, distinto de int corto.
+    if _RE_PCT_AR.match(txt) and n is not None and 0 <= n <= 100:
+        return 'pct'
+    # Cualquier otro número → money por descarte (incluye 100-9999 enteros).
+    if n is not None:
+        return 'money'
+    return 'text'
+
+
+# ── Inferencia por header (palabra clave) ───────────────────────────────────
+
+def inferir_campo_por_header(header, candidatos=None) -> Optional[str]:
+    """Devuelve el nombre del campo (ean/codigo/descripcion/...) o None.
+
+    Estrategia:
+    1. **Match exacto**: si una o más keywords matchean exactamente el header
+       normalizado, gana el campo MÁS específico (menos keywords totales).
+       Ej. 'pvp' → entre 'precio' (8 kw) y 'precio_publico' (5 kw), gana
+       precio_publico.
+    2. **Score por contains**: para cada campo, sumar la longitud de cada
+       keyword (≥3 chars) que esté contenida en el header. Gana el de mayor
+       score (keywords más largas y/o más matches → más específico).
+
+    Args:
+        header: texto del header de la columna.
+        candidatos: subset de nombres de campo a considerar (None = todos).
+    """
+    n = _norm_header(header)
+    if not n:
+        return None
+    candidatos = candidatos or list(CAMPOS.keys())
+
+    # Paso 1: exacto. El más específico (menos keywords) gana.
+    exactos = []
+    for nombre in candidatos:
+        if nombre not in CAMPOS:
+            continue
+        if any(n == kw for kw in CAMPOS[nombre]['keywords']):
+            exactos.append(nombre)
+    if exactos:
+        return min(exactos, key=lambda c: len(CAMPOS[c]['keywords']))
+
+    # Paso 2: scoring por longitud de keywords matchadas, con bonus por
+    # match al INICIO del header (alineación posicional fuerte: ej. "Cod.
+    # Producto" → 'cod' al inicio gana sobre 'producto' aunque sea más corta).
+    scores = {}
+    for nombre in candidatos:
+        if nombre not in CAMPOS:
+            continue
+        score = 0
+        for kw in CAMPOS[nombre]['keywords']:
+            if len(kw) < 3 or kw not in n:
+                continue
+            base = len(kw)
+            # Bonus 3x si la keyword aparece al INICIO del header. Captura
+            # el patrón "<prefix>. <descriptor>" tipo "Cód. Producto" donde
+            # la primera palabra es la que define el campo.
+            if n.startswith(kw):
+                base *= 3
+            score += base
+        if score:
+            scores[nombre] = score
+    if scores:
+        return max(scores.keys(), key=lambda c: scores[c])
+    return None
+
+
+# ── Inferencia mixta: header + contenido ────────────────────────────────────
+
+def _columna_es_consistente(sample_values, tipo_esperado) -> bool:
+    """¿Mayoría de los valores no-vacíos de la columna concuerdan con el tipo?"""
+    if not sample_values:
+        return False
+    no_vacios = [v for v in sample_values if v is not None and v != '']
+    if not no_vacios:
+        return False
+    hits = sum(1 for v in no_vacios if inferir_tipo_valor(v) == tipo_esperado)
+    return hits / len(no_vacios) >= 0.6
+
+
+def inferir_columnas(headers, sample_rows=None, candidatos=None) -> dict:
+    """Devuelve dict {campo: idx_columna} sobre los headers (+ filas opcionales).
+
+    Estrategia:
+    1. Para cada header, intentar mapearlo por palabra clave (alta confianza).
+    2. Si una columna queda sin asignar y hay sample_rows, intentar por
+       contenido: detectar tipo dominante de la columna y matchear con un
+       campo que esté libre y espere ese tipo.
+
+    Args:
+        headers: lista de strings (header de cada columna).
+        sample_rows: lista de filas (cada fila = lista de valores) para
+            inferencia por contenido. Si None, solo se usa header.
+        candidatos: subset de nombres de campo a considerar. None = todos.
+
+    Returns:
+        dict {campo: idx_columna}. Puede tener menos entradas que headers.
+    """
+    candidatos = candidatos or list(CAMPOS.keys())
+    mapa = {}
+    usados = set()  # índices ya asignados a algún campo
+
+    # Paso 1: por header
+    for ci, h in enumerate(headers):
+        if ci in usados:
+            continue
+        campo = inferir_campo_por_header(h, candidatos=candidatos)
+        if campo and campo not in mapa:
+            mapa[campo] = ci
+            usados.add(ci)
+
+    # Paso 2: por contenido (sólo si hay sample_rows y faltan campos clave).
+    if sample_rows:
+        libres = [c for c in candidatos if c not in mapa]
+        # Para cada columna sin uso, detectar tipo dominante.
+        for ci, _h in enumerate(headers):
+            if ci in usados or not libres:
+                continue
+            sample = [r[ci] if ci < len(r) else None for r in sample_rows]
+            for campo in libres:
+                tipo = CAMPOS[campo]['tipo']
+                if _columna_es_consistente(sample, tipo):
+                    mapa[campo] = ci
+                    usados.add(ci)
+                    libres.remove(campo)
+                    break
+
+    return mapa
+
+
+# ── Inferencia por relación aritmética ──────────────────────────────────────
+# Útil para detectar trios (cant, unit, importe) o pares (gravado, iva)
+# directamente sobre los VALORES de una fila o pie de factura, sin headers.
+
+def relacion_aritmetica(values, contexto='item', tol_rel=0.005, tol_abs=0.05):
+    """Busca relaciones conocidas entre los `values` numéricos de una fila.
+
+    Args:
+        values: lista de floats (filtrar None antes de llamar).
+        contexto: 'item' busca cant×unit=imp y pub×(1-dto%)=unit.
+                  'totales' busca iva=gravado×21% (o 10.5%) y total=sum(rest).
+        tol_rel: tolerancia relativa (0.5% por default).
+        tol_abs: tolerancia absoluta (0.05 por default).
+
+    Returns:
+        Lista de dicts {tipo, indices, formula} con las relaciones encontradas.
+    """
+    nums = [(i, v) for i, v in enumerate(values) if v is not None]
+    out = []
+
+    def _eq(a, b):
+        return abs(a - b) <= max(tol_abs, abs(b) * tol_rel)
+
+    if contexto == 'item':
+        # Triplete: cant (entero chico) × unit (money) ≈ imp (money)
+        for ai, (i, vi) in enumerate(nums):
+            if not (vi >= 1 and vi <= 9999 and vi == int(vi)):
+                continue
+            for bi, (j, vj) in enumerate(nums[ai+1:], start=ai+1):
+                for k, vk in nums[bi+1:]:
+                    if _eq(vi * vj, vk):
+                        out.append({
+                            'tipo': 'cant_unit_imp',
+                            'indices': {'cantidad': i, 'precio_unitario': j, 'importe': k},
+                            'formula': f'{vi} × {vj} = {vk}',
+                        })
+                        break
+                if out and out[-1]['tipo'] == 'cant_unit_imp':
+                    break
+            if out and out[-1]['tipo'] == 'cant_unit_imp':
+                break
+        # Par con descuento: pub × (1 - dto/100) ≈ unit
+        for i, vi in nums:
+            for j, vj in nums:
+                if i == j or not (0 <= vj <= 100):
+                    continue
+                for k, vk in nums:
+                    if k in (i, j):
+                        continue
+                    if _eq(vi * (1 - vj / 100), vk):
+                        out.append({
+                            'tipo': 'pub_dto_unit',
+                            'indices': {'precio_publico': i, 'dto': j, 'precio_unitario': k},
+                            'formula': f'{vi} × (1−{vj}%) = {vk}',
+                        })
+                        return out
+        return out
+
+    if contexto == 'totales':
+        # iva = gravado × rate
+        for rate, campo_iva in ((0.21, 'iva_21'), (0.105, 'iva_105')):
+            for i, vi in nums:
+                for j, vj in nums:
+                    if i == j:
+                        continue
+                    if _eq(vi * rate, vj):
+                        out.append({
+                            'tipo': 'iva_gravado',
+                            'indices': {'monto_gravado': i, campo_iva: j},
+                            'formula': f'{vi} × {rate*100}% = {vj}',
+                        })
+                        break
+                if out and out[-1]['tipo'] == 'iva_gravado':
+                    break
+            if out and out[-1]['tipo'] == 'iva_gravado':
+                break
+        # total = suma del resto (mayor de los moneys)
+        if len(nums) >= 2:
+            sorted_nums = sorted(nums, key=lambda x: -x[1])
+            mayor_idx, mayor_v = sorted_nums[0]
+            resto_sum = sum(v for _, v in nums) - mayor_v
+            if _eq(resto_sum, mayor_v):
+                out.append({
+                    'tipo': 'total_suma',
+                    'indices': {'total': mayor_idx},
+                    'formula': f'sum(rest) = {mayor_v}',
+                })
+        return out
+
+    return out
