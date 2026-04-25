@@ -37,6 +37,72 @@ def _to_float(v):
         return None
 
 
+def _previsualizar_pdf(path):
+    """Devuelve datos crudos de un PDF de ofertas + mapping propuesto.
+
+    Estrategia:
+    - Usa `pdfplumber.extract_tables()` por página (detecta líneas de tabla
+      automáticamente — funciona muy bien con PDFs tabulares como Baliarda).
+    - Concatena las tablas de todas las páginas. La primera fila se considera
+      header; las páginas siguientes pueden repetir el header — lo
+      detectamos comparándolo con el primer header y lo descartamos.
+    - Aplana headers multilínea ("DESCUENTO\\nMOD 1" → "DESCUENTO MOD 1").
+    - Mapping inicial via `field_inference.inferir_columnas`.
+    """
+    import pdfplumber
+
+    import field_inference as fi
+
+    headers = []
+    rows = []
+    with pdfplumber.open(path) as pdf:
+        primera = True
+        for page in pdf.pages:
+            tablas = page.extract_tables() or []
+            for tabla in tablas:
+                if not tabla:
+                    continue
+                # Aplanar multilínea en cada celda.
+                tabla = [
+                    [(c.replace('\n', ' ').strip() if c else '') for c in fila]
+                    for fila in tabla
+                ]
+                primera_fila = tabla[0]
+                if primera:
+                    headers = primera_fila
+                    rows.extend(tabla[1:])
+                    primera = False
+                else:
+                    # Si la primera fila es el header repetido, saltearla.
+                    if primera_fila == headers:
+                        rows.extend(tabla[1:])
+                    else:
+                        rows.extend(tabla)
+
+    # Filtrar filas totalmente vacías
+    rows = [r for r in rows if any((c or '').strip() for c in r)]
+
+    if not headers and not rows:
+        return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
+                'count_filas': 0}
+
+    mapping = fi.inferir_columnas(
+        headers,
+        sample_rows=rows[:10] if rows else None,
+        candidatos=['ean', 'codigo', 'descripcion', 'unidades_minima',
+                    'precio', 'descuento_psl', 'rentabilidad', 'plazo_pago',
+                    'grupo_id'],
+    )
+
+    return {
+        'headers': headers,
+        'rows': rows,
+        'mapping': mapping,
+        'header_row': 0 if headers else None,
+        'count_filas': len(rows),
+    }
+
+
 def _previsualizar_xlsx(path):
     """Devuelve datos CRUDOS del Excel + mapping propuesto.
 
@@ -155,17 +221,20 @@ def init_app(app):
             return jsonify({'error': 'Archivo sin nombre'}), 400
 
         ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in ('.xlsx', '.xls'):
+        if ext not in ('.xlsx', '.xls', '.pdf'):
             return jsonify({
-                'error': f'Formato {ext} no soportado todavía. Solo XLSX por ahora. '
-                         'PDF/foto vendrá en la próxima iteración.'
+                'error': f'Formato {ext} no soportado. Aceptamos XLSX, XLS y PDF. '
+                         'Foto/OCR vendrá en la próxima iteración.'
             }), 400
 
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
             f.save(tmp.name)
             tmp_path = tmp.name
         try:
-            preview = _previsualizar_xlsx(tmp_path)
+            if ext == '.pdf':
+                preview = _previsualizar_pdf(tmp_path)
+            else:
+                preview = _previsualizar_xlsx(tmp_path)
         except Exception as e:
             return jsonify({'error': f'Error al parsear: {e}'}), 500
         finally:
