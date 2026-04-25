@@ -13,6 +13,7 @@ from routes import (
     docs_pendientes,
     help as help_module,
     home_cards,
+    inferencia,
     invoices,
     laboratorios,
     modulo_packs,
@@ -58,6 +59,7 @@ _modules = [
     plantillas,
     ofertas_import,
     help_module,
+    inferencia,
 ]
 
 

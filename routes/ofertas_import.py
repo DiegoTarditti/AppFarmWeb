@@ -176,40 +176,6 @@ def init_app(app):
             labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
         return render_template('ofertas_import.html', laboratorios=labs_data)
 
-    @app.route('/api/inferir-columnas', methods=['POST'])
-    @login_required
-    def api_inferir_columnas():
-        """Endpoint genérico de inferencia de columnas. Usable desde cualquier
-        wizard de import (ofertas, módulos, etc.).
-
-        Body JSON:
-            { "headers": ["EAN", "Producto", ...],
-              "rows": [["7793...", "TAFIROL"], ...]   # opcional, mejora detección
-              "candidatos": ["ean", "codigo", "descripcion"]  # opcional }
-
-        Response: { "mapping": {"ean": 0, "descripcion": 1, ...},
-                    "campos": {"ean": {label, descripcion, tipo, ejemplos}, ...} }
-        """
-        import field_inference as fi
-        data = request.get_json(silent=True) or {}
-        headers = data.get('headers') or []
-        rows = data.get('rows') or None
-        candidatos = data.get('candidatos') or None
-        if not isinstance(headers, list):
-            return jsonify({'error': 'headers debe ser lista'}), 400
-        mapping = fi.inferir_columnas(headers, sample_rows=rows, candidatos=candidatos)
-        # Devuelvo también metadatos del catálogo para que la UI pueda
-        # renderizar labels, descripciones y ejemplos.
-        cat = candidatos or fi.nombres_campos()
-        campos_meta = {n: {
-            'label': fi.CAMPOS[n].get('label', n),
-            'descripcion': fi.CAMPOS[n].get('descripcion', ''),
-            'tipo': fi.CAMPOS[n].get('tipo', 'text'),
-            'nucleo': fi.CAMPOS[n].get('nucleo', False),
-            'ejemplos': fi.CAMPOS[n].get('ejemplos', []),
-        } for n in cat if n in fi.CAMPOS}
-        return jsonify({'mapping': mapping, 'campos': campos_meta})
-
     @app.route('/api/ofertas/import-preview', methods=['POST'])
     @login_required
     def api_ofertas_import_preview():
