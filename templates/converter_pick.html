@@ -115,7 +115,8 @@
             <div class="mt-2 flex gap-2 flex-wrap">
                 <button onclick="useSelectionAsTotals()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditTotals()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
-                <button onclick="autodetectarTotales()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta Cant.Un/Exento/Gravado/IVA/Percep/Total por relaciones matemáticas">🧮 Auto-detectar</button>
+                <button onclick="autodetectarTotales()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta Cant.Un/Exento/Gravado/IVA/Percep/Total por relaciones matemáticas (lógica JS local)">🧮 Auto-detectar</button>
+                <button onclick="autodetectarTotalesServer()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Misma detección via API server-side, tolerante a formatos OCR-rotos como '1,183.326,62'">⚡ Server</button>
                 <button onclick="toggleCargaManualTotals()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Cuando el pie del PDF viene desprolijo, cargá los valores a mano">✍ Carga manual</button>
                 <span class="flex-1"></span>
                 <button onclick="unirTotalsMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold">⤏ Unir marcados</button>
@@ -543,6 +544,54 @@ function autodetectarCampos() {
     const exitoMsg = `✓ ${newSels.length} campo${newSels.length===1?'':'s'} detectado${newSels.length===1?'':'s'}: ${campos}`;
     if (warnings.length) {
         alert(exitoMsg + '\n\n⚠ Pendientes:\n- ' + warnings.join('\n- '));
+    }
+}
+
+// ── Auto-detect totales via server (tolerante a OCR-rotos) ──
+async function autodetectarTotalesServer() {
+    const line = state.totalsLine;
+    const toks = state.totalsTokens || [];
+    if (!line || toks.length < 3) { alert('Primero usá una fila de totales.'); return; }
+
+    try {
+        const r = await fetch('/api/inferir/fila-totales', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({tokens: toks.map(t => t.text)}),
+        });
+        const data = await r.json();
+        if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+
+        const a = data.asignaciones || {};
+        if (!Object.keys(a).length) {
+            alert('No se pudo detectar nada (server). ' + (data.warnings || []).join('. '));
+            return;
+        }
+
+        // Aplicar al state.header + state.totalsAssign
+        state.totalsAssign = state.totalsAssign || {};
+        state.totalsWas = state.totalsWas || {};
+        for (const [field, idx] of Object.entries(a)) {
+            const t = toks[idx];
+            if (!t) continue;
+            state.header[field] = t.text;
+            state.autodetectados.delete(field);
+            state.totalsAssign[field] = {gkey: `${t.start}-${t.end}`};
+            state.totalsWas[field] = true;
+        }
+        state.totalsGroups.forEach(g => g.checked = false);
+        renderTotalsLine();
+        renderHeader();
+        if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+
+        const campos = Object.keys(a).join(', ');
+        const msg = `✓ ${Object.keys(a).length} campos detectados (server): ${campos}`;
+        if ((data.warnings || []).length) {
+            alert(msg + '\n\n⚠ ' + data.warnings.join('\n⚠ '));
+        }
+    } catch (err) {
+        alert('Error de red: ' + err.message);
     }
 }
 

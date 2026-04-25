@@ -218,9 +218,20 @@ _RE_DATE      = re.compile(r'^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$|^\d{4}-\d{2}-\d{2
 
 
 def parsear_numero_ar(s) -> Optional[float]:
-    """Convierte a float aceptando formatos AR ('1.234,56') y EN ('1,234.56').
+    """Convierte a float aceptando formatos AR, EN y OCR-rotos.
 
-    Tolera símbolos $ y % (los saca). Devuelve None si no parsea.
+    Estrategia robusta: la ÚLTIMA coma o punto que aparezca después de un
+    grupo de 1-3 dígitos al final se trata como decimal; todos los otros
+    separadores (comas o puntos) se descartan como miles.
+
+    Acepta:
+        '1.234,56'      → 1234.56  (AR)
+        '1,234.56'      → 1234.56  (EN)
+        '1234,56'       → 1234.56
+        '1,183.326,62'  → 1183326.62  (OCR-roto: punto en medio + coma decimal)
+        '10,486,61'     → 10486.61  (OCR-roto: dos comas, la última decimal)
+        '$ 100,50'      → 100.5
+        '25%'           → 25.0
     """
     if s is None or s == '':
         return None
@@ -229,15 +240,22 @@ def parsear_numero_ar(s) -> Optional[float]:
     txt = str(s).strip().replace(' ', '').replace('$', '').replace('%', '')
     if not txt:
         return None
-    if ',' in txt and '.' in txt:
-        # 1.234,56 (AR) o 1,234.56 (EN). Comparar posiciones.
-        if txt.rfind(',') > txt.rfind('.'):
-            txt = txt.replace('.', '').replace(',', '.')
+
+    # Encontrar el último separador (coma o punto). Si hay un dígito decimal
+    # después (1-3 dígitos), ese separador es el punto decimal.
+    if ',' in txt or '.' in txt:
+        last_comma = txt.rfind(',')
+        last_dot = txt.rfind('.')
+        last_sep = max(last_comma, last_dot)
+        # ¿Hay 1-3 dígitos después del último separador? → es decimal.
+        cola = txt[last_sep + 1:]
+        if cola.isdigit() and 1 <= len(cola) <= 3:
+            entero = txt[:last_sep].replace(',', '').replace('.', '')
+            txt = entero + '.' + cola
         else:
-            txt = txt.replace(',', '')
-    elif ',' in txt:
-        # Sólo coma → asumimos decimal AR.
-        txt = txt.replace(',', '.')
+            # Sin parte decimal clara: todos los separadores son miles.
+            txt = txt.replace(',', '').replace('.', '')
+
     try:
         return float(txt)
     except (ValueError, TypeError):
@@ -645,5 +663,124 @@ def detectar_campos_factura(tokens):
         desc_end = anchor - 1
         if desc_start <= desc_end:
             asign['descripcion'] = [desc_start, desc_end]
+
+    return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}
+
+
+def detectar_campos_totales(tokens):
+    """Asigna campos del pie de factura a tokens por matemática.
+
+    Reemplaza `autodetectarTotales` JS de converter_pick.html. Usa
+    `parsear_numero_ar` (tolerante a OCR-rotos como '1,183.326,62') para
+    parsear los valores antes de buscar relaciones.
+
+    Detecta:
+    - cantidad_total: primer entero corto (1-9999) sin formato money.
+    - monto_gravado + iva_21|iva_105: par donde iva ≈ gravado × rate.
+    - total: el money mayor cuya suma cierra con los otros.
+    - monto_exento, percepciones: los moneys remanentes (mayor → exento,
+      menor → percepciones).
+
+    Args:
+        tokens: lista de strings (tokens de la fila de totales).
+
+    Returns:
+        dict {asignaciones, tipos, warnings}
+    """
+    if not tokens:
+        return {'asignaciones': {}, 'tipos': [], 'warnings': []}
+
+    # Tipar tokens. Para totales aceptamos como "money" cualquier número
+    # parseable, no solo los formatos estrictos. parsear_numero_ar es
+    # tolerante a OCR (1,183.326,62 → 1183326.62).
+    cls = []
+    for i, t in enumerate(tokens):
+        n = parsear_numero_ar(t)
+        es_int_corto = (n is not None and 1 <= n <= 9999 and n == int(n)
+                        and bool(re.match(r'^\d{1,4}(?:[.,]0+)?$', str(t).strip())))
+        es_pct = (n is not None and 0 <= n <= 100
+                  and (str(t).strip().endswith('%')
+                       or bool(_RE_PCT_AR.match(str(t).strip()))))
+        # Money: cualquier número que NO sea int corto ni pct.
+        es_money = n is not None and not es_int_corto and not es_pct
+        cls.append({'i': i, 'text': t, 'n': n,
+                    'es_int': es_int_corto, 'es_pct': es_pct, 'es_money': es_money})
+    tipos = [
+        'pct' if c['es_pct'] else
+        'int' if c['es_int'] else
+        'money' if c['es_money'] else
+        'text'
+        for c in cls
+    ]
+    asign = {}
+    warnings = []
+    moneys = [c for c in cls if c['es_money']]
+
+    if len(moneys) < 2:
+        warnings.append(f'Solo {len(moneys)} valores monetarios — no alcanza para deducir relaciones')
+        # Aún así, asignar lo que se pueda
+        ints = [c for c in cls if c['es_int']]
+        if ints:
+            asign['cantidad_total'] = ints[0]['i']
+        return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}
+
+    TOL_REL = 0.005
+    TOL_ABS = 0.05
+
+    def _eq(a, b):
+        return abs(a - b) <= max(TOL_ABS, abs(b) * TOL_REL)
+
+    # 1. iva = gravado × rate (21% o 10.5%)
+    pair = None
+    for rate, campo_iva in ((0.21, 'iva_21'), (0.105, 'iva_105')):
+        for g in moneys:
+            for iv in moneys:
+                if iv['i'] == g['i']:
+                    continue
+                if _eq(g['n'] * rate, iv['n']):
+                    pair = {'gravado': g, 'iva': iv, 'campo_iva': campo_iva}
+                    break
+            if pair:
+                break
+        if pair:
+            break
+
+    # 2. total = sum(rest) → el mayor money debería ser ≈ suma de los demás.
+    sorted_moneys = sorted(moneys, key=lambda x: -x['n'])
+    total_tok = None
+    if len(sorted_moneys) >= 2:
+        biggest = sorted_moneys[0]
+        rest_sum = sum(m['n'] for m in moneys) - biggest['n']
+        if _eq(rest_sum, biggest['n']):
+            total_tok = biggest
+
+    if not pair and not total_tok:
+        warnings.append('No pude deducir relaciones (iva/total). Asigná manualmente.')
+        return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}
+
+    used = set()
+    if pair:
+        asign['monto_gravado'] = pair['gravado']['i']
+        asign[pair['campo_iva']] = pair['iva']['i']
+        used.add(pair['gravado']['i'])
+        used.add(pair['iva']['i'])
+    if total_tok:
+        asign['total'] = total_tok['i']
+        used.add(total_tok['i'])
+
+    # cantidad_total: primer int corto que no esté usado.
+    ints_libres = [c for c in cls if c['es_int'] and c['i'] not in used]
+    if ints_libres:
+        asign['cantidad_total'] = ints_libres[0]['i']
+
+    # Remanentes: el mayor → exento, el menor → percepciones.
+    remaining = sorted(
+        [m for m in moneys if m['i'] not in used],
+        key=lambda x: -x['n'],
+    )
+    if remaining:
+        asign['monto_exento'] = remaining[0]['i']
+    if len(remaining) >= 2:
+        asign['percepciones'] = remaining[-1]['i']
 
     return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}

@@ -84,6 +84,33 @@ def init_app(app):
             return jsonify({'error': 'tokens debe ser lista'}), 400
         return jsonify(fi.detectar_campos_factura(tokens))
 
+    @app.route('/api/inferir/fila-totales', methods=['POST'])
+    @login_required
+    def api_inferir_fila_totales():
+        """Asignar campos del pie de factura a tokens por matemática.
+
+        Reemplaza la lógica JS `autodetectarTotales` de converter_pick.html.
+        Usa parsear_numero_ar tolerante a OCR-rotos.
+
+        Body JSON: { "tokens": ["40", "1.183.326,62", "10.486,61", ...] }
+        Response:
+            { "asignaciones": {
+                  "cantidad_total": 0,
+                  "monto_exento": 5,
+                  "monto_gravado": 1, "iva_21": 2,
+                  "percepciones": 3,
+                  "total": 4
+              },
+              "tipos": ["int", "money", "money", ...],
+              "warnings": ["..."] }
+        """
+        import field_inference as fi
+        data = request.get_json(silent=True) or {}
+        tokens = data.get('tokens') or []
+        if not isinstance(tokens, list):
+            return jsonify({'error': 'tokens debe ser lista'}), 400
+        return jsonify(fi.detectar_campos_totales(tokens))
+
     @app.route('/api/inferir/relaciones', methods=['POST'])
     @login_required
     def api_inferir_relaciones():
