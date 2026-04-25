@@ -3,6 +3,8 @@
 {% block title %}Importar ofertas{% endblock %}
 {% block main %}
 
+{% include '_analisis_overlay.html' %}
+
 <style>
     .step-num { width: 28px; height: 28px; border-radius: 50%;
                 display: inline-flex; align-items: center; justify-content: center;
@@ -775,12 +777,33 @@ document.getElementById('btn-back-2').addEventListener('click', () => {
 async function validarItems(opciones={}) {
     // opciones.btn: botón a deshabilitar mientras valida (opcional).
     // opciones.statusEl: span donde mostrar el estado (opcional).
+    // opciones.silencioso: si true, no abre el overlay (para re-validaciones rápidas).
     const labId = document.getElementById('lab-select').value;
     const btn = opciones.btn || null;
     const statusEl = opciones.statusEl || null;
+    const silencioso = opciones.silencioso || false;
     if (btn) { btn.disabled = true; btn._oldText = btn.textContent; btn.textContent = '⏳ Validando…'; }
     if (statusEl) statusEl.textContent = '⏳ Re-matcheando…';
+
+    // Configurar overlay con pasos custom: 1 enviando, 2 matcheando, 3 calculando.
+    if (!silencioso && window.AnalisisOverlay) {
+        // Reemplazar los pasos default por los nuestros
+        document.getElementById('ao-title').textContent = 'Validando ofertas';
+        // Limpiar pasos viejos y poner los nuestros
+        document.getElementById('ao-steps').innerHTML = '';
+        AnalisisOverlay.agregarPaso(1, 'Enviando items',
+            `${_items.length} ofertas al servidor`);
+        AnalisisOverlay.agregarPaso(2, 'Cruzando contra catálogo',
+            'EAN, alfabeta, descripción, fuzzy por lab y ObServer');
+        AnalisisOverlay.agregarPaso(3, 'Calculando estadísticas',
+            'OK, fuzzy, no encontrados, variación de precio');
+        AnalisisOverlay.mostrar(`${_items.length} items · lab: ${labId ? document.querySelector('#lab-select option:checked').textContent : '(sin lab)'}`);
+        AnalisisOverlay.setPaso(1, 'active');
+        AnalisisOverlay.setProgreso(15);
+    }
+
     try {
+        if (!silencioso && window.AnalisisOverlay) AnalisisOverlay.setProgreso(30);
         const r = await fetch('/api/ofertas/import-validar', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -791,17 +814,40 @@ async function validarItems(opciones={}) {
                 umbral_variacion: 30,
             }),
         });
+        if (!silencioso && window.AnalisisOverlay) {
+            AnalisisOverlay.setPaso(1, 'done');
+            AnalisisOverlay.setPaso(2, 'active');
+            AnalisisOverlay.setProgreso(70);
+        }
         const data = await r.json();
         if (!r.ok) {
+            if (!silencioso && window.AnalisisOverlay) {
+                AnalisisOverlay.setPaso(2, 'error', data.error || 'error');
+                setTimeout(() => AnalisisOverlay.cerrar(), 1500);
+            }
             alert('Error al validar: ' + (data.error || 'desconocido'));
             return false;
         }
         _items = data.items;
+        if (!silencioso && window.AnalisisOverlay) {
+            AnalisisOverlay.setPaso(2, 'done', `${data.stats.ok || 0} OK · ${data.stats.fuzzy || 0} fuzzy · ${data.stats.not_found || 0} no encontrados`);
+            AnalisisOverlay.setPaso(3, 'active');
+            AnalisisOverlay.setProgreso(95);
+        }
         renderValidacion(data.stats);
         actualizarConfirmCount();
+        if (!silencioso && window.AnalisisOverlay) {
+            AnalisisOverlay.setPaso(3, 'done');
+            AnalisisOverlay.setProgreso(100);
+            setTimeout(() => AnalisisOverlay.cerrar(), 350);
+        }
         if (statusEl) statusEl.textContent = '✓ Match actualizado';
         return true;
     } catch (err) {
+        if (!silencioso && window.AnalisisOverlay) {
+            AnalisisOverlay.setPaso(2, 'error', err.message);
+            setTimeout(() => AnalisisOverlay.cerrar(), 1500);
+        }
         if (statusEl) statusEl.textContent = '✗ Error: ' + err.message;
         else alert('Error de red: ' + err.message);
         return false;
