@@ -825,7 +825,7 @@ function aplicarAutoHeader() {
     setTimeout(() => t.remove(), 3000);
 }
 
-function aplicarAutoDetalle() {
+async function aplicarAutoDetalle() {
     if (!_autoTodoData || !_autoTodoData.fila_ejemplo) return;
     // Cargar la fila ejemplo en state.exampleLine + tokenize
     state.exampleLine = _normalizarNumerosEnAr(_autoTodoData.fila_ejemplo);
@@ -866,11 +866,27 @@ function aplicarAutoDetalle() {
     renderExample();
     renderSelections();
     if (typeof validatePick === 'function') validatePick();
+
+    // Disparar también la inferencia del patrón para no dejar al user a medio
+    // camino — si tiene cant + unit + imp ya se puede inferir.
+    const tieneMin = newSels.some(s => s.field === 'cantidad')
+                  && newSels.some(s => s.field === 'precio_unitario')
+                  && newSels.some(s => s.field === 'importe');
+    let extra = '';
+    if (tieneMin && typeof inferPattern === 'function') {
+        try {
+            await inferPattern();
+            extra = ' + patrón inferido';
+        } catch (e) { /* silencioso, el user puede inferir a mano */ }
+    } else if (!tieneMin) {
+        extra = ' (asigná cantidad+unit+importe a mano y clickeá Inferir patrón)';
+    }
+
     const t = document.createElement('div');
-    t.className = 'fixed bottom-3 right-3 z-[200] bg-sky-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg';
-    t.textContent = `✓ Detalle aplicado: ${Object.keys(a).length} campos`;
+    t.className = 'fixed bottom-3 right-3 z-[200] bg-sky-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg max-w-md';
+    t.textContent = `✓ Detalle aplicado: ${Object.keys(a).length} campos${extra}`;
     document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3000);
+    setTimeout(() => t.remove(), 4000);
 }
 
 function aplicarAutoPie() {
