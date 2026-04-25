@@ -153,49 +153,44 @@
 
     <!-- ============= PASO 4: Confirmar ============= -->
     <div id="panel-4" class="hidden bg-white border border-surface-border rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">4. Validación y confirmación</h2>
-
-        <!-- Selector de laboratorio ARRIBA: el match contra catálogo se hace
-             scopeado a este lab. Cambiarlo re-valida al toque. -->
-        <div class="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-4">
-            <label class="text-xs font-semibold text-violet-900 block mb-1">
-                Laboratorio destino
-                <span class="text-[10px] font-normal text-violet-700">(el match contra catálogo se filtra por este lab)</span>
-            </label>
-            <div class="flex items-center gap-2">
-                <select id="lab-select" class="flex-1 bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
-                    <option value="">— Elegí un laboratorio —</option>
+        <!-- Lab + stats compactados en una sola fila para ganar altura. -->
+        <div class="flex items-stretch gap-2 mb-2 flex-wrap">
+            <div class="bg-violet-50 border border-violet-200 rounded px-2 py-1.5 flex items-center gap-2 flex-1 min-w-[260px]">
+                <label class="text-[11px] font-semibold text-violet-900 whitespace-nowrap">Lab destino:</label>
+                <select id="lab-select" class="flex-1 bg-white border border-violet-300 rounded px-2 py-1 text-xs">
+                    <option value="">— Elegí —</option>
                     {% for l in laboratorios %}
                     <option value="{{ l.id }}">{{ l.nombre }}</option>
                     {% endfor %}
                 </select>
-                <span id="revalidar-status" class="text-[11px] text-violet-700"></span>
+                <span id="revalidar-status" class="text-[10px] text-violet-700 whitespace-nowrap"></span>
             </div>
         </div>
 
-        <p class="text-xs text-[#6f6f6f] mb-3">
-            El sistema cruzó cada item contra el catálogo de productos local. Resultado:
-        </p>
+        <div id="validacion-stats" class="mb-2"></div>
 
-        <div id="validacion-stats" class="mb-4"></div>
-
-        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 space-y-1.5 text-xs">
-            <p class="font-semibold text-amber-900">Por defecto se descartan los items con problemas. Tildá para incluirlos:</p>
-            <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="incluir-warning" class="w-4 h-4 accent-amber-600">
-                <span>Incluir items con <strong>variación de precio</strong> (>30%)</span>
+        <div class="bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
+            <span class="font-semibold text-amber-900">Incluir:</span>
+            <label class="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" id="incluir-warning" class="w-3.5 h-3.5 accent-amber-600">
+                <span>variación de precio &gt;30%</span>
             </label>
-            <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" id="incluir-not-found" class="w-4 h-4 accent-red-600">
-                <span>Incluir items <strong>no encontrados</strong> en catálogo (riesgoso, datos sin verificar)</span>
+            <label class="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" id="incluir-not-found" class="w-3.5 h-3.5 accent-red-600">
+                <span>no encontrados (sin verificar)</span>
             </label>
         </div>
 
-        <details class="mb-4 bg-[#fafafa] rounded-lg">
-            <summary class="cursor-pointer px-3 py-2 text-xs text-[#555] hover:text-[#1e1e1e]">
-                Ver detalle de items con problemas
+        <details open class="mb-2 bg-[#fafafa] rounded">
+            <summary class="cursor-pointer px-2 py-1 text-xs text-[#555] hover:text-[#1e1e1e] flex items-center justify-between gap-2">
+                <span>Detalle de items con problemas</span>
+                <button type="button" id="btn-expandir-todos"
+                        class="text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300"
+                        onclick="event.stopPropagation(); event.preventDefault(); expandirTodosLosBuscarSimilar();">
+                    🔍 Buscar similar a todos
+                </button>
             </summary>
-            <div id="validacion-detalle" class="px-3 py-2 max-h-72 overflow-y-auto"></div>
+            <div id="validacion-detalle" class="px-2 py-1 max-h-[60vh] overflow-y-auto"></div>
         </details>
 
         <div class="bg-[#fafafa] rounded-lg p-4 mb-4">
@@ -773,29 +768,24 @@ function renderValidacion(stats) {
     const div = document.getElementById('validacion-stats');
     if (!div) return;
     div.innerHTML = `
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-            <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-2 text-center">
-                <p class="text-[10px] text-emerald-700 uppercase">OK</p>
-                <p class="text-xl font-bold text-emerald-800">${stats.ok || 0}</p>
-                <p class="text-[10px] text-emerald-600">match por EAN/alfabeta</p>
+        <div class="grid grid-cols-4 gap-1">
+            <div class="bg-emerald-50 border border-emerald-200 rounded px-2 py-1 flex items-baseline gap-1.5">
+                <span class="text-base font-bold text-emerald-800">${stats.ok || 0}</span>
+                <span class="text-[10px] text-emerald-700">OK</span>
             </div>
-            <div class="bg-sky-50 border border-sky-200 rounded-lg p-2 text-center">
-                <p class="text-[10px] text-sky-700 uppercase">Match fuzzy</p>
-                <p class="text-xl font-bold text-sky-800">${stats.fuzzy || 0}</p>
-                <p class="text-[10px] text-sky-600">por descripción</p>
+            <div class="bg-sky-50 border border-sky-200 rounded px-2 py-1 flex items-baseline gap-1.5">
+                <span class="text-base font-bold text-sky-800">${stats.fuzzy || 0}</span>
+                <span class="text-[10px] text-sky-700">fuzzy</span>
             </div>
-            <div class="bg-amber-50 border border-amber-200 rounded-lg p-2 text-center">
-                <p class="text-[10px] text-amber-700 uppercase">Var. precio</p>
-                <p class="text-xl font-bold text-amber-800">${stats.warning || 0}</p>
-                <p class="text-[10px] text-amber-600">>30%</p>
+            <div class="bg-amber-50 border border-amber-200 rounded px-2 py-1 flex items-baseline gap-1.5">
+                <span class="text-base font-bold text-amber-800">${stats.warning || 0}</span>
+                <span class="text-[10px] text-amber-700">var. precio</span>
             </div>
-            <div class="bg-red-50 border border-red-200 rounded-lg p-2 text-center">
-                <p class="text-[10px] text-red-700 uppercase">No encontrados</p>
-                <p class="text-xl font-bold text-red-800">${stats.not_found || 0}</p>
-                <p class="text-[10px] text-red-600">no en catálogo</p>
+            <div class="bg-red-50 border border-red-200 rounded px-2 py-1 flex items-baseline gap-1.5">
+                <span class="text-base font-bold text-red-800">${stats.not_found || 0}</span>
+                <span class="text-[10px] text-red-700">no encontrados</span>
             </div>
         </div>
-        ${stats.sin_precio_previo ? `<p class="text-[11px] text-[#888] italic">${stats.sin_precio_previo} items sin precio previo en el catálogo — no se pudo comparar.</p>` : ''}
     `;
 
     // Renderizar detalle de items con problemas
@@ -900,11 +890,53 @@ async function buscarCandidatos(itemIdx) {
                 // pasa a 'manual_ok' que NO se muestra como problema → desaparece.
                 recalcularStats();
                 actualizarConfirmCount();
+                // Auto-avance: abrir el siguiente not_found que aún no tenga
+                // candidatos cargados.
+                setTimeout(abrirSiguienteCandidato, 50);
             });
         });
     } catch (err) {
         slot.innerHTML = `<span class="text-[10px] text-red-700">Error: ${escapeHtml(err.message)}</span>`;
     }
+}
+
+function abrirSiguienteCandidato() {
+    // Busca el siguiente item con _status='not_found' cuyo slot de candidatos
+    // todavía esté vacío, y dispara su carga.
+    for (let i = 0; i < _items.length; i++) {
+        const it = _items[i];
+        if (it._status !== 'not_found') continue;
+        const slot = document.getElementById('candidatos-' + i);
+        if (!slot) continue;
+        if (slot.innerHTML.trim()) continue;  // ya cargado o cargándose
+        buscarCandidatos(i);
+        // Hacemos scroll al elemento para verlo.
+        slot.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+        return;
+    }
+}
+
+function expandirTodosLosBuscarSimilar() {
+    // Dispara buscarCandidatos para todos los not_found en paralelo (pero
+    // limitamos a tandas de 5 para no saturar la API).
+    const pendientes = [];
+    for (let i = 0; i < _items.length; i++) {
+        if (_items[i]._status !== 'not_found') continue;
+        const slot = document.getElementById('candidatos-' + i);
+        if (!slot || slot.innerHTML.trim()) continue;
+        pendientes.push(i);
+    }
+    if (!pendientes.length) {
+        alert('Todos los items ya tienen sus candidatos cargados o vinculados.');
+        return;
+    }
+    // Tandas de 5 en paralelo
+    (async () => {
+        const tanda = 5;
+        for (let k = 0; k < pendientes.length; k += tanda) {
+            await Promise.all(pendientes.slice(k, k + tanda).map(buscarCandidatos));
+        }
+    })();
 }
 
 function recalcularStats() {
