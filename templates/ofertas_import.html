@@ -155,6 +155,24 @@
     <div id="panel-4" class="hidden bg-white border border-surface-border rounded-xl p-5">
         <h2 class="text-sm font-semibold text-[#1e1e1e] mb-3">4. Validación y confirmación</h2>
 
+        <!-- Selector de laboratorio ARRIBA: el match contra catálogo se hace
+             scopeado a este lab. Cambiarlo re-valida al toque. -->
+        <div class="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-4">
+            <label class="text-xs font-semibold text-violet-900 block mb-1">
+                Laboratorio destino
+                <span class="text-[10px] font-normal text-violet-700">(el match contra catálogo se filtra por este lab)</span>
+            </label>
+            <div class="flex items-center gap-2">
+                <select id="lab-select" class="flex-1 bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">— Elegí un laboratorio —</option>
+                    {% for l in laboratorios %}
+                    <option value="{{ l.id }}">{{ l.nombre }}</option>
+                    {% endfor %}
+                </select>
+                <span id="revalidar-status" class="text-[11px] text-violet-700"></span>
+            </div>
+        </div>
+
         <p class="text-xs text-[#6f6f6f] mb-3">
             El sistema cruzó cada item contra el catálogo de productos local. Resultado:
         </p>
@@ -190,15 +208,6 @@
         </div>
 
         <div class="space-y-3">
-            <div>
-                <label class="text-xs font-semibold text-[#555] block mb-1">Laboratorio destino</label>
-                <select id="lab-select" class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm w-full max-w-md">
-                    <option value="">— Elegí un laboratorio —</option>
-                    {% for l in laboratorios %}
-                    <option value="{{ l.id }}">{{ l.nombre }}</option>
-                    {% endfor %}
-                </select>
-            </div>
             <label class="flex items-center gap-2 text-sm text-[#1e1e1e] cursor-pointer">
                 <input type="checkbox" id="reemplazar" class="w-4 h-4 accent-brand">
                 <span>Reemplazar todas las ofertas existentes del laboratorio</span>
@@ -704,16 +713,14 @@ document.getElementById('btn-back-2').addEventListener('click', () => {
     setStep(2);
     setPanel2Mode('map');     // al volver del paso 3, volvemos al sub-paso de mapeo
 });
-document.getElementById('btn-next-3').addEventListener('click', async () => {
-    if (_items.length === 0) {
-        alert('No hay items válidos para importar.');
-        return;
-    }
-    // Para fuzzy match por descripción + lab, necesitamos el lab.
-    // Si todavía no se eligió en paso 4, intentamos sin lab — fuzzy global no se hace.
+async function validarItems(opciones={}) {
+    // opciones.btn: botón a deshabilitar mientras valida (opcional).
+    // opciones.statusEl: span donde mostrar el estado (opcional).
     const labId = document.getElementById('lab-select').value;
-    const btn = document.getElementById('btn-next-3');
-    btn.disabled = true; btn.textContent = '⏳ Validando…';
+    const btn = opciones.btn || null;
+    const statusEl = opciones.statusEl || null;
+    if (btn) { btn.disabled = true; btn._oldText = btn.textContent; btn.textContent = '⏳ Validando…'; }
+    if (statusEl) statusEl.textContent = '⏳ Re-matcheando…';
     try {
         const r = await fetch('/api/ofertas/import-validar', {
             method: 'POST',
@@ -728,19 +735,39 @@ document.getElementById('btn-next-3').addEventListener('click', async () => {
         const data = await r.json();
         if (!r.ok) {
             alert('Error al validar: ' + (data.error || 'desconocido'));
-            return;
+            return false;
         }
         _items = data.items;
         renderValidacion(data.stats);
         actualizarConfirmCount();
-        setStep(4);
+        if (statusEl) statusEl.textContent = '✓ Match actualizado';
+        return true;
     } catch (err) {
-        alert('Error de red: ' + err.message);
+        if (statusEl) statusEl.textContent = '✗ Error: ' + err.message;
+        else alert('Error de red: ' + err.message);
+        return false;
     } finally {
-        btn.disabled = false; btn.textContent = 'Continuar →';
+        if (btn) { btn.disabled = false; btn.textContent = btn._oldText || 'Continuar →'; }
     }
+}
+
+document.getElementById('btn-next-3').addEventListener('click', async () => {
+    if (_items.length === 0) {
+        alert('No hay items válidos para importar.');
+        return;
+    }
+    const btn = document.getElementById('btn-next-3');
+    const ok = await validarItems({btn});
+    if (ok) setStep(4);
 });
 document.getElementById('btn-back-3').addEventListener('click', () => setStep(3));
+
+// Re-matchear automáticamente al cambiar el laboratorio destino.
+document.getElementById('lab-select').addEventListener('change', () => {
+    if (_items.length === 0) return;
+    const status = document.getElementById('revalidar-status');
+    validarItems({statusEl: status});
+});
 
 function renderValidacion(stats) {
     const div = document.getElementById('validacion-stats');
