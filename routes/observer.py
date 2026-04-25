@@ -167,8 +167,8 @@ def init_app(app):
 
         Para cada droga muestra: #laboratorios que la ofrecen, #productos distintos,
         unidades 3m, unidades 12m y monto 12m. Paginado y con buscador por nombre."""
-        from sqlalchemy import func as _f, or_ as _or, case as _case
-        from datetime import datetime
+        from sqlalchemy import text as _text
+        import matviews
         q = (request.args.get('q') or '').strip()
         try:
             page = max(1, int(request.args.get('page', '1')))
@@ -178,79 +178,133 @@ def init_app(app):
         offset = (page - 1) * per_page
 
         id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
-        hoy = datetime.now()
-
-        def _ym_hace(n):
-            y, m = hoy.year, hoy.month - n
-            while m <= 0:
-                m += 12
-                y -= 1
-            return y * 100 + m
-        desde_3m = _ym_hace(2)
-        desde_12m = _ym_hace(11)
-        hasta = hoy.year * 100 + hoy.month
-        ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
 
         with database.get_db() as session:
-            # Agregados por nombre_droga a través de obs_productos + obs_ventas_mensuales.
-            # Sólo traemos drogas que tuvieron al menos alguna venta en los últimos 12m.
-            base_q = (session.query(
-                        database.ObsProducto.nombre_droga_observer.label('droga_id'),
-                        _f.count(_f.distinct(database.ObsProducto.laboratorio_observer)).label('labs'),
-                        _f.count(_f.distinct(database.ObsProducto.observer_id)).label('prods'),
-                        _f.sum(_case(
-                            (ym_expr.between(desde_3m, hasta), database.ObsVentaMensual.unidades),
-                            else_=0,
-                        )).label('u3m'),
-                        _f.sum(database.ObsVentaMensual.unidades).label('u12m'),
-                        _f.sum(database.ObsVentaMensual.monto).label('m12m'))
-                    .join(database.ObsVentaMensual,
-                          database.ObsVentaMensual.producto_observer == database.ObsProducto.observer_id)
-                    .filter(database.ObsProducto.nombre_droga_observer.isnot(None),
-                            database.ObsProducto.fecha_baja.is_(None),
-                            database.ObsVentaMensual.id_farmacia == id_farmacia,
-                            ym_expr.between(desde_12m, hasta))
-                    .group_by(database.ObsProducto.nombre_droga_observer))
+            mv_estado = matviews.estado_matview(session, 'mv_stats_drogas')
 
-            # Filtro por nombre si hay q — resolvemos los ids que matchean
+            # Si la vista nunca se refrescó, hacer fallback al JOIN en vivo
+            # (más lento pero garantiza datos correctos en el primer uso).
+            if mv_estado['estado'] == 'nunca':
+                return _estadisticas_drogas_live(session, q, page, per_page, offset,
+                                                  id_farmacia, mv_estado)
+
+            # Filtro de nombre: resolver IDs de drogas que matchean
+            droga_ids_filtro = None
             if q:
                 like = f'%{q}%'
-                matching_ids = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
-                                .filter(database.ObsNombreDroga.descripcion.ilike(like)).all()]
-                if not matching_ids:
+                droga_ids_filtro = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
+                                    .filter(database.ObsNombreDroga.descripcion.ilike(like)).all()]
+                if not droga_ids_filtro:
                     return render_template('estadisticas_drogas.html',
                                            drogas=[], total=0, page=1, last_page=1,
-                                           q=q, per_page=per_page)
-                base_q = base_q.filter(database.ObsProducto.nombre_droga_observer.in_(matching_ids))
+                                           q=q, per_page=per_page,
+                                           mv_estado=mv_estado)
 
-            sub = base_q.subquery()
-            total = session.query(_f.count()).select_from(sub).scalar() or 0
+            params = {'id_farmacia': id_farmacia}
+            where_extra = ''
+            if droga_ids_filtro is not None:
+                where_extra = 'AND droga_id = ANY(:droga_ids)'
+                params['droga_ids'] = droga_ids_filtro
 
-            rows = (base_q.order_by(_f.sum(database.ObsVentaMensual.unidades).desc())
-                    .offset(offset).limit(per_page).all())
+            total = session.execute(_text(f"""
+                SELECT COUNT(*) FROM mv_stats_drogas
+                WHERE id_farmacia = :id_farmacia {where_extra}
+            """), params).scalar() or 0
+
+            params['lim'] = per_page
+            params['off'] = offset
+            rows = session.execute(_text(f"""
+                SELECT droga_id, labs, prods, u3m, u12m, m12m
+                FROM mv_stats_drogas
+                WHERE id_farmacia = :id_farmacia {where_extra}
+                ORDER BY u12m DESC
+                LIMIT :lim OFFSET :off
+            """), params).fetchall()
 
             droga_ids = [r.droga_id for r in rows]
             nombres = dict(session.query(database.ObsNombreDroga.observer_id,
                                          database.ObsNombreDroga.descripcion)
                            .filter(database.ObsNombreDroga.observer_id.in_(droga_ids)).all()) if droga_ids else {}
 
-            drogas = []
-            for r in rows:
-                drogas.append({
-                    'id':       r.droga_id,
-                    'nombre':   nombres.get(r.droga_id) or f'#{r.droga_id}',
-                    'labs':     int(r.labs or 0),
-                    'prods':    int(r.prods or 0),
-                    'u3m':      float(r.u3m or 0),
-                    'u12m':     float(r.u12m or 0),
-                    'm12m':     float(r.m12m or 0),
-                })
+            drogas = [{
+                'id':    r.droga_id,
+                'nombre': nombres.get(r.droga_id) or f'#{r.droga_id}',
+                'labs':  int(r.labs or 0),
+                'prods': int(r.prods or 0),
+                'u3m':   float(r.u3m or 0),
+                'u12m':  float(r.u12m or 0),
+                'm12m':  float(r.m12m or 0),
+            } for r in rows]
 
         last_page = max(1, (total + per_page - 1) // per_page)
         return render_template('estadisticas_drogas.html',
                                drogas=drogas, total=total,
                                page=page, last_page=last_page,
-                               q=q, per_page=per_page)
+                               q=q, per_page=per_page,
+                               mv_estado=mv_estado)
+
+    def _estadisticas_drogas_live(session, q, page, per_page, offset, id_farmacia, mv_estado):
+        """Fallback: query en vivo si la vista materializada nunca corrió.
+        Más lento pero correcto."""
+        from sqlalchemy import func as _f, case as _case
+        from datetime import datetime as _dt
+        hoy = _dt.now()
+
+        def _ym(n):
+            y, m = hoy.year, hoy.month - n
+            while m <= 0:
+                m += 12
+                y -= 1
+            return y * 100 + m
+        desde_3m, desde_12m = _ym(2), _ym(11)
+        hasta = hoy.year * 100 + hoy.month
+        ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
+
+        base_q = (session.query(
+                    database.ObsProducto.nombre_droga_observer.label('droga_id'),
+                    _f.count(_f.distinct(database.ObsProducto.laboratorio_observer)).label('labs'),
+                    _f.count(_f.distinct(database.ObsProducto.observer_id)).label('prods'),
+                    _f.sum(_case(
+                        (ym_expr.between(desde_3m, hasta), database.ObsVentaMensual.unidades),
+                        else_=0,
+                    )).label('u3m'),
+                    _f.sum(database.ObsVentaMensual.unidades).label('u12m'),
+                    _f.sum(database.ObsVentaMensual.monto).label('m12m'))
+                .join(database.ObsVentaMensual,
+                      database.ObsVentaMensual.producto_observer == database.ObsProducto.observer_id)
+                .filter(database.ObsProducto.nombre_droga_observer.isnot(None),
+                        database.ObsProducto.fecha_baja.is_(None),
+                        database.ObsVentaMensual.id_farmacia == id_farmacia,
+                        ym_expr.between(desde_12m, hasta))
+                .group_by(database.ObsProducto.nombre_droga_observer))
+        if q:
+            like = f'%{q}%'
+            matching_ids = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
+                            .filter(database.ObsNombreDroga.descripcion.ilike(like)).all()]
+            if not matching_ids:
+                return render_template('estadisticas_drogas.html',
+                                       drogas=[], total=0, page=1, last_page=1,
+                                       q=q, per_page=per_page, mv_estado=mv_estado)
+            base_q = base_q.filter(database.ObsProducto.nombre_droga_observer.in_(matching_ids))
+        sub = base_q.subquery()
+        total = session.query(_f.count()).select_from(sub).scalar() or 0
+        rows = (base_q.order_by(_f.sum(database.ObsVentaMensual.unidades).desc())
+                .offset(offset).limit(per_page).all())
+        droga_ids = [r.droga_id for r in rows]
+        nombres = dict(session.query(database.ObsNombreDroga.observer_id,
+                                     database.ObsNombreDroga.descripcion)
+                       .filter(database.ObsNombreDroga.observer_id.in_(droga_ids)).all()) if droga_ids else {}
+        drogas = [{
+            'id': r.droga_id, 'nombre': nombres.get(r.droga_id) or f'#{r.droga_id}',
+            'labs': int(r.labs or 0), 'prods': int(r.prods or 0),
+            'u3m': float(r.u3m or 0), 'u12m': float(r.u12m or 0),
+            'm12m': float(r.m12m or 0),
+        } for r in rows]
+        last_page = max(1, (total + per_page - 1) // per_page)
+        return render_template('estadisticas_drogas.html',
+                               drogas=drogas, total=total,
+                               page=page, last_page=last_page,
+                               q=q, per_page=per_page, mv_estado=mv_estado)
 
     @app.route('/api/droga/<int:droga_id>/ventas-mensuales')
     @login_required
@@ -580,6 +634,27 @@ def init_app(app):
 
         return jsonify({'droga_id': droga_id, 'droga_nombre': nombre_droga,
                         'labs': resultados})
+
+    @app.route('/api/mv/refresh/<view_name>', methods=['POST'])
+    @login_required
+    def api_mv_refresh(view_name):
+        """Refresca una vista materializada manualmente. Solo admin/dev."""
+        if current_user.rol not in ('admin', 'dev'):
+            return jsonify({'error': 'sin permisos'}), 403
+        import matviews
+        if view_name not in matviews.MATVIEWS:
+            return jsonify({'error': 'vista desconocida'}), 404
+        with database.get_db() as session:
+            r = matviews.refrescar_matview(session, view_name)
+        return jsonify(r)
+
+    @app.route('/api/mv/status')
+    @login_required
+    def api_mv_status():
+        """Estado de cada vista materializada (último refresh, edad, filas)."""
+        import matviews
+        with database.get_db() as session:
+            return jsonify(matviews.estado_todas_matviews(session))
 
     @app.route('/api/sync-status')
     @login_required

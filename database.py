@@ -209,6 +209,20 @@ class ObsSyncLog(Base):
     ejecutado_en = Column(DateTime, default=now_ar)
 
 
+class MvRefreshLog(Base):
+    """Log de cada refresh de una vista materializada.
+
+    Permite mostrar al usuario cuán frescos son los datos cacheados.
+    """
+    __tablename__ = 'mv_refresh_log'
+    id = Column(Integer, primary_key=True)
+    view_name = Column(String(80), nullable=False, index=True)
+    refrescada_en = Column(DateTime, default=now_ar, nullable=False)
+    duracion_ms = Column(Integer, nullable=True)
+    filas = Column(Integer, nullable=True)
+    error = Column(Text, nullable=True)
+
+
 class ExportTemplate(Base):
     __tablename__ = 'export_templates'
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
@@ -778,10 +792,61 @@ def init_db(database_url=None):
             _sqlite_add_columns(conn)
         else:
             _pg_add_columns(conn)
+            _crear_matviews(conn)
         conn.commit()
 
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
+
+
+def _crear_matviews(conn):
+    """Crea las vistas materializadas (una vez, idempotente).
+
+    NO hace REFRESH automático — eso queda a cargo del cron del DockerPanel
+    o de un endpoint manual. La vista nace vacía y se llena al primer refresh.
+    """
+    # Stats agregados por monodroga (powers /estadisticas/drogas).
+    # Ventana móvil 12m basada en CURRENT_DATE al momento del refresh.
+    conn.execute(text("""
+        CREATE MATERIALIZED VIEW IF NOT EXISTS mv_stats_drogas AS
+        WITH ventana AS (
+            SELECT
+                EXTRACT(YEAR FROM CURRENT_DATE)::INT * 100 +
+                EXTRACT(MONTH FROM CURRENT_DATE)::INT AS hasta,
+                EXTRACT(YEAR FROM (CURRENT_DATE - INTERVAL '11 months'))::INT * 100 +
+                EXTRACT(MONTH FROM (CURRENT_DATE - INTERVAL '11 months'))::INT AS desde_12m,
+                EXTRACT(YEAR FROM (CURRENT_DATE - INTERVAL '2 months'))::INT * 100 +
+                EXTRACT(MONTH FROM (CURRENT_DATE - INTERVAL '2 months'))::INT AS desde_3m
+        )
+        SELECT
+            v.id_farmacia,
+            p.nombre_droga_observer AS droga_id,
+            COUNT(DISTINCT p.laboratorio_observer)::INT AS labs,
+            COUNT(DISTINCT p.observer_id)::INT AS prods,
+            SUM(CASE WHEN (v.anio*100 + v.mes) BETWEEN ventana.desde_3m AND ventana.hasta
+                     THEN v.unidades ELSE 0 END)::NUMERIC(14,3) AS u3m,
+            SUM(v.unidades)::NUMERIC(14,3) AS u12m,
+            SUM(v.monto)::NUMERIC(14,2) AS m12m
+        FROM obs_productos p
+        JOIN obs_ventas_mensuales v ON v.producto_observer = p.observer_id
+        CROSS JOIN ventana
+        WHERE p.fecha_baja IS NULL
+          AND p.nombre_droga_observer IS NOT NULL
+          AND (v.anio*100 + v.mes) BETWEEN ventana.desde_12m AND ventana.hasta
+        GROUP BY v.id_farmacia, p.nombre_droga_observer
+        HAVING SUM(v.unidades) > 0
+        WITH NO DATA
+    """))
+    # Index único requerido para REFRESH MATERIALIZED VIEW CONCURRENTLY.
+    conn.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_mv_stats_drogas
+        ON mv_stats_drogas (id_farmacia, droga_id)
+    """))
+    # Index para ORDER BY u12m DESC (lectura en /estadisticas/drogas).
+    conn.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_mv_stats_drogas_u12m
+        ON mv_stats_drogas (id_farmacia, u12m DESC)
+    """))
 
 
 def _migrate_legacy_plantillas():

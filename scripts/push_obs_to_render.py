@@ -116,8 +116,52 @@ def push(local_url=None, render_url=None, log=print):
         remote.commit()
         local.commit()
 
+    # Refrescar vistas materializadas en Render (datos ya están al día tras el push).
+    _refresh_matviews_render(remote_url, log)
+
     resultados['TOTAL_MS'] = int((time.time() - t_total) * 1000)
     return resultados
+
+
+def _refresh_matviews_render(remote_url, log):
+    """Refresca las vistas materializadas en Render después del push.
+
+    Idempotente y best-effort: si una falla no bloquea el push entero.
+    Logea en mv_refresh_log de Render para que el banner de la app web sepa
+    cuándo fue el último refresh.
+    """
+    matviews = ['mv_stats_drogas']
+    try:
+        with psycopg2.connect(remote_url) as remote:
+            with remote.cursor() as rc:
+                for view in matviews:
+                    t0 = time.time()
+                    error = None
+                    filas = None
+                    try:
+                        # Primero intentar CONCURRENTLY (no bloquea reads).
+                        try:
+                            rc.execute(f'REFRESH MATERIALIZED VIEW CONCURRENTLY {view}')
+                        except Exception:
+                            # Vista vacía / sin populate → fallback a refresh bloqueante.
+                            remote.rollback()
+                            rc.execute(f'REFRESH MATERIALIZED VIEW {view}')
+                        rc.execute(f'SELECT COUNT(*) FROM {view}')
+                        filas = rc.fetchone()[0]
+                        log(f'  {view}: refrescada con {filas:,} filas')
+                    except Exception as e:
+                        error = str(e)[:500]
+                        log(f'  {view}: ERROR — {error}')
+                    duracion_ms = int((time.time() - t0) * 1000)
+                    rc.execute("""
+                        INSERT INTO mv_refresh_log (view_name, refrescada_en, duracion_ms, filas, error)
+                        VALUES (%s, NOW(), %s, %s, %s)
+                    """, (view, duracion_ms, filas, error))
+                remote.commit()
+    except Exception as e:
+        # Si falla todo el bloque (ej. tabla mv_refresh_log no existe todavía),
+        # no romper el push. El banner de la app va a mostrar "calculado en vivo".
+        log(f'  refresh matviews: ERROR — {str(e)[:200]}')
 
 
 if __name__ == '__main__':
