@@ -41,11 +41,15 @@ def _previsualizar_pdf(path):
     """Devuelve datos crudos de un PDF de ofertas + mapping propuesto.
 
     Estrategia:
-    - Usa `pdfplumber.extract_tables()` por página (detecta líneas de tabla
-      automáticamente — funciona muy bien con PDFs tabulares como Baliarda).
-    - Concatena las tablas de todas las páginas. La primera fila se considera
-      header; las páginas siguientes pueden repetir el header — lo
-      detectamos comparándolo con el primer header y lo descartamos.
+    1. Intenta `pdfplumber.extract_tables()` (funciona en PDFs digitales
+       tabulares como Baliarda). Si extrae filas → usa eso.
+    2. Si NO extrae nada (PDF escaneado o sin estructura de tabla), cae a:
+       - `helpers.extract_text_with_ocr_fallback()` para sacar texto plano
+         (con OCR si hace falta).
+       - Tokeniza las líneas que parezcan filas de oferta y devuelve una
+         matriz best-effort.
+
+    En ambos casos:
     - Aplana headers multilínea ("DESCUENTO\\nMOD 1" → "DESCUENTO MOD 1").
     - Mapping inicial via `field_inference.inferir_columnas`.
     """
@@ -55,6 +59,7 @@ def _previsualizar_pdf(path):
 
     headers = []
     rows = []
+    fuente = 'tablas'   # para informar a la UI cómo se parseó
     with pdfplumber.open(path) as pdf:
         primera = True
         for page in pdf.pages:
@@ -62,7 +67,6 @@ def _previsualizar_pdf(path):
             for tabla in tablas:
                 if not tabla:
                     continue
-                # Aplanar multilínea en cada celda.
                 tabla = [
                     [(c.replace('\n', ' ').strip() if c else '') for c in fila]
                     for fila in tabla
@@ -73,18 +77,21 @@ def _previsualizar_pdf(path):
                     rows.extend(tabla[1:])
                     primera = False
                 else:
-                    # Si la primera fila es el header repetido, saltearla.
                     if primera_fila == headers:
                         rows.extend(tabla[1:])
                     else:
                         rows.extend(tabla)
 
-    # Filtrar filas totalmente vacías
     rows = [r for r in rows if any((c or '').strip() for c in r)]
+
+    # Si extract_tables NO encontró nada, fallback a OCR + tokenización por línea.
+    if not rows:
+        fuente = 'ocr_lineas'
+        headers, rows = _extraer_filas_por_ocr(path)
 
     if not headers and not rows:
         return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
-                'count_filas': 0}
+                'count_filas': 0, 'fuente': fuente}
 
     mapping = fi.inferir_columnas(
         headers,
@@ -100,7 +107,47 @@ def _previsualizar_pdf(path):
         'mapping': mapping,
         'header_row': 0 if headers else None,
         'count_filas': len(rows),
+        'fuente': fuente,
     }
+
+
+def _extraer_filas_por_ocr(path):
+    """Fallback para PDFs escaneados o sin estructura de tabla detectable.
+
+    Usa `helpers.extract_text_with_ocr_fallback` para sacar texto plano
+    (con OCR si hace falta). Después tokeniza cada línea por whitespace y
+    devuelve filas como matriz uniforme. Header: una fila genérica
+    'Col 1, Col 2...' — el user mapea manualmente desde el wizard.
+
+    Estrategia conservadora: dejamos que el wizard de mapeo del paso 2 haga
+    el resto. Como hay variabilidad enorme en formatos escaneados, no
+    intentamos detectar headers reales acá.
+    """
+    from helpers import extract_text_with_ocr_fallback
+    texto = extract_text_with_ocr_fallback(path, min_chars=50)
+    if not texto.strip():
+        return [], []
+
+    # Tokenizar línea por línea. Solo conservamos líneas con ≥3 tokens
+    # (probablemente datos, no encabezados sueltos).
+    filas_tokens = []
+    for linea in texto.split('\n'):
+        toks = [t for t in linea.split() if t.strip()]
+        if len(toks) < 3:
+            continue
+        filas_tokens.append(toks)
+
+    if not filas_tokens:
+        return [], []
+
+    # Determinar ancho máximo (algunas filas pueden tener menos cols por OCR)
+    n_cols = max(len(r) for r in filas_tokens)
+    # Padding a la derecha
+    matriz = [r + [''] * (n_cols - len(r)) for r in filas_tokens]
+
+    # Header genérico — el user lo mapeará manualmente
+    headers = [f'Col {i + 1}' for i in range(n_cols)]
+    return headers, matriz
 
 
 def _previsualizar_xlsx(path):
