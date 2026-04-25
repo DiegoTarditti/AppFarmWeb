@@ -118,18 +118,78 @@ def _extraer_filas_por_ocr(path):
     (con OCR si hace falta). Después tokeniza cada línea por whitespace y
     devuelve filas como matriz uniforme. Header: una fila genérica
     'Col 1, Col 2...' — el user mapea manualmente desde el wizard.
-
-    Estrategia conservadora: dejamos que el wizard de mapeo del paso 2 haga
-    el resto. Como hay variabilidad enorme en formatos escaneados, no
-    intentamos detectar headers reales acá.
     """
     from helpers import extract_text_with_ocr_fallback
     texto = extract_text_with_ocr_fallback(path, min_chars=50)
-    if not texto.strip():
+    return _texto_a_matriz(texto)
+
+
+def _previsualizar_imagen(path):
+    """Procesa una foto/escaneo de una lista de ofertas.
+
+    Estrategia:
+    - PIL para abrir.
+    - Preprocess (grayscale + binarización) reusando `_preprocess_image_for_ocr`.
+    - pytesseract para extraer texto.
+    - Misma tokenización por línea que el fallback de PDF escaneado.
+    """
+    from helpers import _clean_ocr_text, _preprocess_image_for_ocr
+    try:
+        import pytesseract
+        from PIL import Image
+    except ImportError:
+        return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
+                'count_filas': 0, 'fuente': 'sin_ocr',
+                'error': 'pytesseract o PIL no disponibles'}
+
+    try:
+        img = Image.open(path)
+        # Si la imagen tiene transparencia o paleta, convertimos a RGB
+        if img.mode not in ('RGB', 'L'):
+            img = img.convert('RGB')
+        img = _preprocess_image_for_ocr(img)
+        texto = pytesseract.image_to_string(img, lang='spa', config='--psm 6') or ''
+        texto = _clean_ocr_text(texto)
+    except Exception as e:
+        return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
+                'count_filas': 0, 'fuente': 'ocr_imagen',
+                'error': f'Error OCR: {e}'}
+
+    headers, rows = _texto_a_matriz(texto)
+
+    if not headers and not rows:
+        return {'headers': [], 'rows': [], 'mapping': {}, 'header_row': None,
+                'count_filas': 0, 'fuente': 'ocr_imagen'}
+
+    import field_inference as fi
+    mapping = fi.inferir_columnas(
+        headers,
+        sample_rows=rows[:10] if rows else None,
+        candidatos=['ean', 'codigo', 'descripcion', 'unidades_minima',
+                    'precio', 'descuento_psl', 'rentabilidad', 'plazo_pago',
+                    'grupo_id'],
+    )
+
+    return {
+        'headers': headers,
+        'rows': rows,
+        'mapping': mapping,
+        'header_row': 0 if headers else None,
+        'count_filas': len(rows),
+        'fuente': 'ocr_imagen',
+    }
+
+
+def _texto_a_matriz(texto):
+    """Tokeniza un bloque de texto OCR en una matriz best-effort.
+
+    Cada línea con ≥3 tokens (probablemente datos, no encabezados sueltos)
+    se convierte en una fila. Padding a la derecha al ancho máximo.
+    Devuelve (headers, rows) con headers genéricos 'Col N'.
+    """
+    if not texto or not texto.strip():
         return [], []
 
-    # Tokenizar línea por línea. Solo conservamos líneas con ≥3 tokens
-    # (probablemente datos, no encabezados sueltos).
     filas_tokens = []
     for linea in texto.split('\n'):
         toks = [t for t in linea.split() if t.strip()]
@@ -140,12 +200,8 @@ def _extraer_filas_por_ocr(path):
     if not filas_tokens:
         return [], []
 
-    # Determinar ancho máximo (algunas filas pueden tener menos cols por OCR)
     n_cols = max(len(r) for r in filas_tokens)
-    # Padding a la derecha
     matriz = [r + [''] * (n_cols - len(r)) for r in filas_tokens]
-
-    # Header genérico — el user lo mapeará manualmente
     headers = [f'Col {i + 1}' for i in range(n_cols)]
     return headers, matriz
 
@@ -234,10 +290,11 @@ def init_app(app):
             return jsonify({'error': 'Archivo sin nombre'}), 400
 
         ext = os.path.splitext(f.filename)[1].lower()
-        if ext not in ('.xlsx', '.xls', '.pdf'):
+        IMG_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif')
+        if ext not in ('.xlsx', '.xls', '.pdf', *IMG_EXTS):
             return jsonify({
-                'error': f'Formato {ext} no soportado. Aceptamos XLSX, XLS y PDF. '
-                         'Foto/OCR vendrá en la próxima iteración.'
+                'error': f'Formato {ext} no soportado. Aceptamos XLSX, XLS, PDF '
+                         'y fotos (JPG, PNG, WEBP).'
             }), 400
 
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
@@ -246,6 +303,8 @@ def init_app(app):
         try:
             if ext == '.pdf':
                 preview = _previsualizar_pdf(tmp_path)
+            elif ext in IMG_EXTS:
+                preview = _previsualizar_imagen(tmp_path)
             else:
                 preview = _previsualizar_xlsx(tmp_path)
         except Exception as e:
