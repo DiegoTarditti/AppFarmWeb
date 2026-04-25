@@ -653,15 +653,47 @@ function renderAutoTodoPanel() {
         <strong>${stats.filas_totales_pdf || 0}</strong> líneas en el PDF
     `;
 
-    // Encabezado: leer state.header actual + comparar con lo que detectaríamos.
-    // Reusamos autoExtraerEtiquetas (no toca el state) para tener simulación.
-    // Como autoExtraerEtiquetas SÍ toca state, hacemos un snapshot rápido:
-    const headerActual = Object.keys(state.header || {}).filter(k => state.header[k]);
+    // Encabezado: listar los campos de state.header en orden preferido,
+    // mostrando valor + check de validación. Si no hay nada, sugerir aplicar.
+    const ORDEN_HEADER = [
+        'razon_social', 'cuit', 'fecha', 'numero',
+        'total', 'monto_exento', 'monto_gravado',
+        'iva_21', 'iva_105', 'percepciones', 'otros',
+        'cantidad_total',
+    ];
     const headerDiv = document.getElementById('auto-todo-header');
-    headerDiv.innerHTML = `
-        <p class="text-[10px] text-[#888]">El encabezado se detecta con el botón verde 'Auto-detectar' del paso 1 (busca razón social, CUIT, fecha, número, total).</p>
-        <p class="text-[10px] mt-1"><strong>Ya tenés ${headerActual.length} campos asignados:</strong> ${headerActual.join(', ') || '(ninguno)'}</p>
-    `;
+    const claves = Object.keys(state.header || {}).filter(k => state.header[k]);
+    if (!claves.length) {
+        headerDiv.innerHTML = `<p class="text-[10px] text-amber-700">Aún no hay campos del encabezado. Click 'Aplicar' para escanear.</p>`;
+    } else {
+        // Ordenar: ORDEN_HEADER primero, después el resto.
+        const ordenadas = [
+            ...ORDEN_HEADER.filter(k => claves.includes(k)),
+            ...claves.filter(k => !ORDEN_HEADER.includes(k)).sort(),
+        ];
+        const NUMS = new Set(['total','monto_exento','monto_gravado','iva_21','iva_105',
+                              'percepciones','otros','cantidad_total']);
+        const rows = ordenadas.map(k => {
+            const v = state.header[k];
+            let check = '<span class="text-emerald-600">✓</span>';
+            if (NUMS.has(k)) {
+                const n = _parseArgNumber(v);
+                check = (n != null) ? '<span class="text-emerald-600" title="Formato OK">✓</span>'
+                                    : '<span class="text-red-600" title="No parsea">✗</span>';
+            }
+            const isAuto = state.autodetectados.has(k);
+            const badge = isAuto ? '<span class="text-[8px] font-bold px-1 rounded bg-sky-100 text-sky-700 mr-1">AUTO</span>' : '';
+            return `<div class="flex justify-between items-baseline gap-2">
+                <span class="font-semibold flex items-center">${badge}${k}:</span>
+                <span class="font-mono text-right truncate flex-1">${escapeHtml(v)}</span>
+                ${check}
+            </div>`;
+        }).join('');
+        headerDiv.innerHTML = `
+            <p class="text-[10px] text-[#888] mb-1.5">${ordenadas.length} campos asignados (orden razón social, CUIT, fecha, número, totales…):</p>
+            ${rows}
+        `;
+    }
     document.getElementById('btn-auto-aplicar-header').disabled = false;
 
     // Detalle (fila ejemplo)
