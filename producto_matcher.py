@@ -75,15 +75,22 @@ def normalizar_texto(s) -> str:
 
 
 def tokens_significativos(s) -> set:
-    """Tokens normalizados de longitud >=2 sin stopwords farmacéuticos.
+    """Tokens normalizados sin stopwords farmacéuticos.
 
-    Mantiene números (dosis, cantidades) porque son discriminantes.
+    Reglas:
+    - Letras sueltas de 1 char se filtran ('a', 'b' tras quitar puntuación
+      no aportan).
+    - **Dígitos de 1 char SÍ se preservan** (`3`, `5`, `7` son críticos
+      para distinguir presentaciones: x3 vs x5 vs x7).
+    - Stopwords farmacéuticos siempre fuera.
     """
     out = set()
     for t in normalizar_texto(s).split():
-        if len(t) < 2:
-            continue
         if t in _STOPWORDS:
+            continue
+        # Solo filtrar tokens de 1 char si NO son dígitos (preservamos números
+        # de presentación tipo "x 3" cuya `x` es stopword pero `3` no debería).
+        if len(t) < 2 and not t.isdigit():
             continue
         out.add(t)
     return out
