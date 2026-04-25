@@ -1222,15 +1222,23 @@ def init_app(app):
         """Linkea items del pedido contra obs_productos por descripción + laboratorio.
         Reusa la lógica del script scripts/vincular_pedido_observer.py."""
         import sys as _sys, os as _os
+        import cron_log as _cron_log
         scripts_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'scripts')
         if scripts_dir not in _sys.path:
             _sys.path.insert(0, scripts_dir)
         from vincular_pedido_observer import procesar_pedido as _procesar
-        with database.get_db() as session:
-            pedido = session.get(Pedido, pedido_id)
-            if not pedido:
-                return jsonify({'error': 'Pedido no encontrado'}), 404
-            stats = _procesar(session, pedido, dry_run=False)
+        with _cron_log.registrar(f'vincular_observer:pedido_{pedido_id}', origen='web') as log:
+            with database.get_db() as session:
+                pedido = session.get(Pedido, pedido_id)
+                if not pedido:
+                    return jsonify({'error': 'Pedido no encontrado'}), 404
+                stats = _procesar(session, pedido, dry_run=False)
+            log.set_mensaje(
+                f'{pedido.laboratorio}: linkeados={stats.get("linkeados", 0)} '
+                f'ya={stats.get("ya_linkeado", 0)} '
+                f'amb={stats.get("ambiguos", 0)} '
+                f'sin={stats.get("no_encontrados", 0)}'
+            )
             return jsonify({'ok': True, **stats, 'pedido': pedido.laboratorio})
 
     @app.route('/order/<int:pedido_id>/delete', methods=['POST'])

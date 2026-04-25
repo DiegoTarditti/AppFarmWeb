@@ -63,18 +63,16 @@ def init_app(app):
     def api_cron_log_externo():
         """Recibe reporte de un proceso externo (ej. DockerPanel) y lo registra.
         Body JSON: { proceso, estado, duracion_ms?, mensaje?, error?, origen? }
-        Endpoint sin auth para que el DockerPanel local pueda postear sin tokens —
-        en producción esto debería protegerse con un secret. Por ahora, OK.
         """
         import cron_log
+        import re
         data = request.get_json(silent=True) or {}
         proceso = (data.get('proceso') or '').strip()
         estado = (data.get('estado') or '').strip()
-        if proceso not in ('sync_observer', 'push_render', 'mv_refresh',
-                           'agente_pendientes', 'keepalive', 'pull_render',
-                           'sync_ventas', 'vincular_observer'):
-            # whitelist conservadora — evita basura
-            return jsonify({'error': 'proceso no permitido'}), 400
+        # Acepta nombres tipo: sync_productos, mv_refresh:mv_stats_drogas,
+        # vincular_observer:pedido_12, agente_pendientes, etc.
+        if not re.match(r'^[a-z][a-z0-9_:-]{1,79}$', proceso):
+            return jsonify({'error': 'proceso inválido (formato esperado: minúsculas, _ : -)'}), 400
         if estado not in ('ok', 'error'):
             return jsonify({'error': 'estado inválido'}), 400
         log_id = cron_log.registrar_externo(

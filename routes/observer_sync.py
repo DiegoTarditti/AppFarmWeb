@@ -6,6 +6,7 @@ from flask import render_template, redirect, url_for, flash, request, jsonify
 import database
 import observer_source
 import observer_matcher
+import cron_log
 
 # Lock para evitar que 2 syncs corran en paralelo (auto + manual que se pisan)
 _SYNC_LOCK = threading.Lock()
@@ -82,18 +83,19 @@ def init_app(app):
             return redirect(url_for('observer_sync_panel'))
 
         resultados = []
-        with database.get_db() as session:
-            for ent in ents:
-                try:
-                    stats = funcs_por_nombre[ent](session)
-                    session.commit()
+        for ent in ents:
+            try:
+                with cron_log.registrar(f'sync_{ent}', origen='web') as log:
+                    with database.get_db() as session:
+                        stats = funcs_por_nombre[ent](session)
+                        session.commit()
+                    log.set_mensaje(f'{stats["upsert"]} filas en {stats["duracion_ms"]} ms')
                     resultados.append(
                         f'{ent}: {stats["upsert"]} filas ({stats["duracion_ms"]} ms)'
                     )
-                except Exception as e:
-                    session.rollback()
-                    resultados.append(f'{ent}: ERROR — {e}')
-                    break  # si falla una, no seguir con las que dependen
+            except Exception as e:
+                resultados.append(f'{ent}: ERROR — {e}')
+                break  # si falla una, no seguir con las que dependen
 
         flash('Sync ObServer — ' + ' · '.join(resultados), 'success')
         next_url = (request.form.get('next') or '').strip()
@@ -184,13 +186,17 @@ def init_app(app):
             flash('Falta RENDER_DATABASE_URL en el .env (External URL de Render).', 'error')
             return redirect(url_for('observer_sync_panel'))
         try:
-            res = push(render_url=render_url)
-            partes = []
-            for k, v in res.items():
-                if isinstance(v, dict):
-                    partes.append(f"{k}: {v['filas']} ({v['ms']} ms)")
-            partes.append(f"total {res['TOTAL_MS']} ms")
-            flash('Push a Render — ' + ' · '.join(partes), 'success')
+            with cron_log.registrar('push_render', origen='web') as log:
+                res = push(render_url=render_url)
+                partes = []
+                total_filas = 0
+                for k, v in res.items():
+                    if isinstance(v, dict):
+                        partes.append(f"{k}: {v['filas']} ({v['ms']} ms)")
+                        total_filas += v.get('filas', 0)
+                partes.append(f"total {res['TOTAL_MS']} ms")
+                log.set_mensaje(f'{total_filas} filas en {res["TOTAL_MS"]} ms')
+                flash('Push a Render — ' + ' · '.join(partes), 'success')
         except Exception as e:
             flash(f'Error al pushear: {e}', 'error')
         return redirect(url_for('observer_sync_panel'))
@@ -272,30 +278,37 @@ def init_app(app):
                 'planes':               observer_source.sync_planes,
                 'clientes':             observer_source.sync_clientes,
             }
-            with database.get_db() as session:
-                for ent in orden:
-                    _SYNC_ESTADO['paso_actual'] = ent
-                    try:
-                        stats = funcs[ent](session)
-                        session.commit()
-                        resultado['pasos'].append({
-                            'paso': ent, 'ok': True,
-                            'upsert': stats.get('upsert', 0),
-                            'ms': stats.get('duracion_ms', 0),
-                        })
-                    except Exception as e:
-                        session.rollback()
-                        resultado['pasos'].append({'paso': ent, 'ok': False, 'error': str(e)})
-                        resultado['ok'] = False
-                        return jsonify(resultado), 500
+            for ent in orden:
+                _SYNC_ESTADO['paso_actual'] = ent
+                try:
+                    with cron_log.registrar(f'sync_{ent}', origen='dockerpanel') as clog:
+                        with database.get_db() as session:
+                            stats = funcs[ent](session)
+                            session.commit()
+                        clog.set_mensaje(f'{stats.get("upsert", 0)} filas en {stats.get("duracion_ms", 0)} ms')
+                    resultado['pasos'].append({
+                        'paso': ent, 'ok': True,
+                        'upsert': stats.get('upsert', 0),
+                        'ms': stats.get('duracion_ms', 0),
+                    })
+                except Exception as e:
+                    resultado['pasos'].append({'paso': ent, 'ok': False, 'error': str(e)})
+                    resultado['ok'] = False
+                    return jsonify(resultado), 500
 
             # Paso 3: auto-match productos (opcional)
             if not skip_match:
                 _SYNC_ESTADO['paso_actual'] = 'match_productos'
                 try:
-                    with database.get_db() as session:
-                        stats = observer_matcher.match_productos(session, threshold=0.80)
-                        session.commit()
+                    with cron_log.registrar('match_productos', origen='dockerpanel') as clog:
+                        with database.get_db() as session:
+                            stats = observer_matcher.match_productos(session, threshold=0.80)
+                            session.commit()
+                        clog.set_mensaje(
+                            f'exact={stats.get("linked_exact", 0)} '
+                            f'fuzzy={stats.get("linked_fuzzy", 0)} '
+                            f'sin={stats.get("sin_match", 0)}'
+                        )
                     resultado['pasos'].append({
                         'paso': 'match_productos', 'ok': True,
                         'linked_exact': stats.get('linked_exact', 0),
@@ -317,9 +330,11 @@ def init_app(app):
                     })
                 else:
                     try:
-                        from scripts.push_obs_to_render import push
-                        res = push(render_url=render_url)
-                        total_filas = sum(v['filas'] for v in res.values() if isinstance(v, dict))
+                        with cron_log.registrar('push_render', origen='dockerpanel') as clog:
+                            from scripts.push_obs_to_render import push
+                            res = push(render_url=render_url)
+                            total_filas = sum(v['filas'] for v in res.values() if isinstance(v, dict))
+                            clog.set_mensaje(f'{total_filas} filas en {res.get("TOTAL_MS", 0)} ms')
                         resultado['pasos'].append({
                             'paso': 'push_render', 'ok': True,
                             'total_filas': total_filas,
