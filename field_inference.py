@@ -582,9 +582,10 @@ def detectar_campos_factura(tokens):
                         and bool(re.match(r'^\d{1,4}(?:\.0+)?$', txt)))
         es_pct = (n is not None and 0 <= n <= 100
                   and (txt.endswith('%') or bool(_RE_PCT_AR.match(txt))))
-        # Money: parseable, no EAN, no int corto, no pct.
-        es_money = (n is not None and not es_ean
-                    and not es_int_corto and not es_pct)
+        # Money: parseable, no EAN, no int corto. NO excluimos pct: un
+        # token tipo '80,00' puede ser money en una columna y pct en otra,
+        # el algoritmo lo decide por matemática (cant×unit=imp / pub×dto).
+        es_money = n is not None and not es_ean and not es_int_corto
         cls.append({
             'i': i, 'text': t, 'n': n,
             'es_ean': es_ean,
