@@ -48,10 +48,24 @@
 
     <!-- ============= PASO 1: Subir ============= -->
     <div id="panel-1" class="bg-white border border-surface-border rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-2">1. Subir archivo</h2>
+        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-2">1. Elegí laboratorio y archivo</h2>
         <p class="text-xs text-[#6f6f6f] mb-4">
             <strong>Excel</strong> o <strong>PDF</strong> del proveedor con columnas tipo: EAN, Código, Descripción, Cantidad mínima, Descuento %, Plazo, Grupo. El sistema detecta los headers automáticamente y te deja remapear si lo hace mal.
         </p>
+
+        <div class="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-3">
+            <label class="text-xs font-semibold text-violet-900 block mb-1">
+                Laboratorio destino
+                <span class="text-[10px] font-normal text-violet-700">— elegilo ahora para que el primer match contra catálogo ya sea preciso</span>
+            </label>
+            <select id="lab-select-pre" class="w-full bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">— Elegí un laboratorio —</option>
+                {% for l in laboratorios %}
+                <option value="{{ l.id }}">{{ l.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
         <input type="file" id="file-input" accept=".xlsx,.xls,.pdf"
                class="block w-full text-sm border border-surface-border rounded-lg px-3 py-2 file:bg-brand file:text-brand-dark file:font-semibold file:rounded-md file:border-0 file:px-3 file:py-1 file:mr-3 file:cursor-pointer">
         <button type="button" id="btn-parse"
@@ -435,14 +449,33 @@ document.getElementById('btn-plantilla-completa').addEventListener('click', () =
 document.getElementById('btn-plantilla-simple').addEventListener('click', () =>
     aplicarPlantilla(['codigo', 'descripcion', 'descuento_psl']));
 
+// Sincronizar selectores de lab entre paso 1 y paso 4: cualquiera que cambie
+// pisa al otro. Así la primera validación arranca con el lab elegido.
+const _labPre = document.getElementById('lab-select-pre');
+const _labFinal = document.getElementById('lab-select');
+function _sincronizarLab(srcId) {
+    const v = (srcId === 'pre' ? _labPre.value : _labFinal.value);
+    _labPre.value = v;
+    _labFinal.value = v;
+}
+_labPre.addEventListener('change', () => _sincronizarLab('pre'));
+
 document.getElementById('btn-parse').addEventListener('click', async () => {
     const fileInput = document.getElementById('file-input');
     const status = document.getElementById('upload-status');
+    if (!_labPre.value) {
+        status.textContent = '⚠ Elegí un laboratorio destino primero.';
+        status.className = 'text-xs text-amber-700 mt-2';
+        _labPre.focus();
+        return;
+    }
     if (!fileInput.files[0]) {
-        status.textContent = '⚠ Seleccioná un archivo primero.';
+        status.textContent = '⚠ Seleccioná un archivo.';
         status.className = 'text-xs text-amber-700 mt-2';
         return;
     }
+    // Sincronizar al paso 4 antes de empezar (por si el user lo cambió arriba).
+    _sincronizarLab('pre');
     status.textContent = '⏳ Procesando…';
     status.className = 'text-xs text-[#888] mt-2';
 
@@ -935,8 +968,10 @@ document.getElementById('btn-next-3-top').addEventListener('click', (e) =>
     _validarYAvanzar(e.currentTarget));
 document.getElementById('btn-back-3').addEventListener('click', () => setStep(3));
 
-// Re-matchear automáticamente al cambiar el laboratorio destino.
+// Re-matchear automáticamente al cambiar el laboratorio destino en el paso 4.
+// Sincroniza con el selector del paso 1 para que ambos reflejen el mismo lab.
 document.getElementById('lab-select').addEventListener('change', () => {
+    _sincronizarLab('final');
     if (_items.length === 0) return;
     const status = document.getElementById('revalidar-status');
     validarItems({statusEl: status});
