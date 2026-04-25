@@ -172,7 +172,8 @@
             <div class="mt-2 flex gap-2">
                 <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
                 <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
-                <button onclick="autodetectarCampos()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta automáticamente cantidad, precio, importe, etc. por relaciones matemáticas">🧮 Auto-detectar</button>
+                <button onclick="autodetectarCampos()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta automáticamente cantidad, precio, importe, etc. por relaciones matemáticas (lógica JS local)">🧮 Auto-detectar</button>
+                <button onclick="autodetectarCamposServer()" class="px-3 py-1.5 text-xs rounded bg-violet-600 hover:bg-violet-700 text-white font-semibold" title="Misma detección via API server-side (field_inference centralizado, fuente única de verdad)">⚡ Auto-detectar (server)</button>
                 <span class="flex-1"></span>
                 <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
                 <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
@@ -542,6 +543,80 @@ function autodetectarCampos() {
     const exitoMsg = `✓ ${newSels.length} campo${newSels.length===1?'':'s'} detectado${newSels.length===1?'':'s'}: ${campos}`;
     if (warnings.length) {
         alert(exitoMsg + '\n\n⚠ Pendientes:\n- ' + warnings.join('\n- '));
+    }
+}
+
+// ── Detección server-side (alternativa unificada) ─────────────────────────
+// Llama a /api/inferir/fila-factura (Python: field_inference.detectar_campos_factura)
+// que es la fuente única de verdad. La ventaja: si la lógica mejora ahí, todos
+// los formularios se actualizan al toque. La función JS local (autodetectarCampos)
+// se mantiene como fallback offline o por si querés comparar.
+async function autodetectarCamposServer() {
+    const line = state.exampleLine;
+    const toks = state.tokens || [];
+    if (!line || toks.length < 4) { alert('Primero usá una fila de ejemplo.'); return; }
+
+    try {
+        const r = await fetch('/api/inferir/fila-factura', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({tokens: toks.map(t => t.text)}),
+        });
+        const data = await r.json();
+        if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+
+        // Mapear campos del backend a los chips del converter.
+        // Diferencia de naming: backend usa 'codigo_barra'; el chip se llama igual.
+        const FIELD_MAP = {
+            codigo_barra:    'codigo_barra',
+            cantidad:        'cantidad',
+            descripcion:     'descripcion',  // viene como [start, end]
+            precio_publico:  'precio_publico',
+            dto:             'dto',
+            precio_unitario: 'precio_unitario',
+            importe:         'importe',
+        };
+
+        const a = data.asignaciones || {};
+        const newSels = [];
+        for (const [campoBack, campoChip] of Object.entries(FIELD_MAP)) {
+            const v = a[campoBack];
+            if (v == null) continue;
+            if (Array.isArray(v) && v.length === 2) {
+                const tStart = toks[v[0]], tEnd = toks[v[1]];
+                if (tStart && tEnd) {
+                    newSels.push({
+                        field: campoChip,
+                        text: line.slice(tStart.start, tEnd.end),
+                        start: tStart.start,
+                        end: tEnd.end,
+                    });
+                }
+            } else if (typeof v === 'number') {
+                const t = toks[v];
+                if (t) newSels.push({field: campoChip, text: t.text, start: t.start, end: t.end});
+            }
+        }
+
+        if (!newSels.length) {
+            alert('No pude detectar ningún campo (server). Probá modo manual.');
+            return;
+        }
+
+        state.selections = newSels;
+        state.groups = tokensToGroups(state.tokens);
+        renderExample();
+        renderSelections();
+        if (typeof validatePick === 'function') validatePick();
+
+        const campos = newSels.map(s => s.field).join(', ');
+        const msg = `✓ ${newSels.length} campos detectados (server): ${campos}`;
+        if ((data.warnings || []).length) {
+            alert(msg + '\n\n⚠ ' + data.warnings.join('\n⚠ '));
+        }
+    } catch (err) {
+        alert('Error de red: ' + err.message);
     }
 }
 
