@@ -677,9 +677,11 @@ function renderAutoTodoPanel() {
                     : (d.tokens_ejemplo[idx] || ''));
             return `<div class="flex justify-between gap-2"><span class="font-semibold">${campo}:</span><span class="font-mono text-right truncate">${escapeHtml(valor)}</span></div>`;
         }).join('');
+        const verifsDet = _verificacionesDetalle(v);
         detalleDiv.innerHTML = `
             <p class="text-[10px] text-[#888] truncate" title="${escapeHtml(d.fila_ejemplo)}">Fila: ${escapeHtml(d.fila_ejemplo)}</p>
             <div class="border-t border-[#e5e7eb] mt-1 pt-1">${filas}</div>
+            ${verifsDet ? `<div class="border-t border-[#e5e7eb] mt-1.5 pt-1.5 space-y-0.5">${verifsDet}</div>` : ''}
         `;
         document.getElementById('btn-auto-aplicar-detalle').disabled = false;
     } else {
@@ -696,9 +698,11 @@ function renderAutoTodoPanel() {
             const valor = v[campo] != null ? v[campo] : (d.tokens_totales[idx] || '');
             return `<div class="flex justify-between gap-2"><span class="font-semibold">${campo}:</span><span class="font-mono text-right">${escapeHtml(valor)}</span></div>`;
         }).join('');
+        const verifsPie = _verificacionesPie(v);
         pieDiv.innerHTML = `
             <p class="text-[10px] text-[#888] truncate" title="${escapeHtml(d.fila_totales)}">Fila: ${escapeHtml(d.fila_totales)}</p>
             <div class="border-t border-[#e5e7eb] mt-1 pt-1">${filas}</div>
+            ${verifsPie ? `<div class="border-t border-[#e5e7eb] mt-1.5 pt-1.5 space-y-0.5">${verifsPie}</div>` : ''}
         `;
         document.getElementById('btn-auto-aplicar-pie').disabled = false;
     } else {
@@ -714,6 +718,76 @@ function renderAutoTodoPanel() {
     } else {
         wDiv.innerHTML = '';
     }
+}
+
+// Verificaciones matemáticas para mostrar como feedback inline.
+function _verificacionesDetalle(valores) {
+    const cant = _parseArgNumber(valores.cantidad);
+    const unit = _parseArgNumber(valores.precio_unitario);
+    const imp  = _parseArgNumber(valores.importe);
+    const pub  = _parseArgNumber(valores.precio_publico);
+    const dto  = _parseArgNumber(valores.dto);
+    const out = [];
+
+    if (cant != null && unit != null && imp != null) {
+        const calc = cant * unit;
+        const ok = Math.abs(calc - imp) <= Math.max(0.02, imp * 0.005);
+        out.push(_fmtVerif(ok,
+            `cant × unit = imp · ${cant} × ${_fmtArgMoney(unit)} = ${_fmtArgMoney(imp)}`,
+            `${cant} × ${_fmtArgMoney(unit)} = ${_fmtArgMoney(calc)}, esperaba ${_fmtArgMoney(imp)}`));
+    }
+    if (pub != null && dto != null && unit != null) {
+        const calc = pub * (1 - dto / 100);
+        const ok = Math.abs(calc - unit) <= Math.max(0.02, unit * 0.005);
+        out.push(_fmtVerif(ok,
+            `pub × (1 − dto%) = unit · ${_fmtArgMoney(pub)} − ${dto}% = ${_fmtArgMoney(unit)}`,
+            `${_fmtArgMoney(pub)} − ${dto}% = ${_fmtArgMoney(calc)}, esperaba ${_fmtArgMoney(unit)}`));
+    }
+    return out.join('');
+}
+
+function _verificacionesPie(valores) {
+    const grav = _parseArgNumber(valores.monto_gravado);
+    const iva21 = _parseArgNumber(valores.iva_21);
+    const iva105 = _parseArgNumber(valores.iva_105);
+    const exento = _parseArgNumber(valores.monto_exento);
+    const percep = _parseArgNumber(valores.percepciones);
+    const total = _parseArgNumber(valores.total);
+    const otros = _parseArgNumber(valores.otros);
+    const out = [];
+
+    if (grav != null && iva21 != null) {
+        const calc = grav * 0.21;
+        const ok = Math.abs(calc - iva21) <= Math.max(0.02, iva21 * 0.005);
+        out.push(_fmtVerif(ok,
+            `gravado × 21% = IVA · ${_fmtArgMoney(grav)} × 21% = ${_fmtArgMoney(iva21)}`,
+            `${_fmtArgMoney(grav)} × 21% = ${_fmtArgMoney(calc)}, esperaba ${_fmtArgMoney(iva21)}`));
+    }
+    if (grav != null && iva105 != null) {
+        const calc = grav * 0.105;
+        const ok = Math.abs(calc - iva105) <= Math.max(0.02, iva105 * 0.005);
+        out.push(_fmtVerif(ok,
+            `gravado × 10,5% = IVA · ${_fmtArgMoney(grav)} × 10,5% = ${_fmtArgMoney(iva105)}`,
+            `${_fmtArgMoney(grav)} × 10,5% = ${_fmtArgMoney(calc)}, esperaba ${_fmtArgMoney(iva105)}`));
+    }
+    if (total != null) {
+        const partes = [exento, grav, iva21, iva105, percep, otros].filter(x => x != null);
+        if (partes.length >= 2) {
+            const sum = partes.reduce((a, b) => a + b, 0);
+            const ok = Math.abs(sum - total) <= Math.max(1, total * 0.005);
+            out.push(_fmtVerif(ok,
+                `Σ desglose = total · ${_fmtArgMoney(sum)} = ${_fmtArgMoney(total)}`,
+                `Σ ${_fmtArgMoney(sum)} ≠ total ${_fmtArgMoney(total)} (dif ${_fmtArgMoney(Math.abs(sum - total))})`));
+        }
+    }
+    return out.join('');
+}
+
+function _fmtVerif(ok, msgOk, msgErr) {
+    const cls = ok ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50';
+    const icon = ok ? '✓' : '✗';
+    const msg = ok ? msgOk : msgErr;
+    return `<div class="text-[10px] ${cls} px-1.5 py-0.5 rounded font-semibold">${icon} ${escapeHtml(msg)}</div>`;
 }
 
 function aplicarAutoHeader() {
