@@ -409,7 +409,13 @@ def match_producto(*,
             # positivos. NO se ejecuta si el caller pasó un pool propio.
             if (not result.producto and laboratorio_id and pool is None
                     and lab_col is not None):
-                global_query = session.query(P).filter(lab_col != laboratorio_id)
+                from sqlalchemy import or_ as _or
+                # Incluir productos con lab distinto Y los que tienen lab NULL
+                # (en SQL `lab != X` excluye los NULL, hay que sumarlos aparte).
+                global_query = session.query(P).filter(_or(
+                    lab_col != laboratorio_id,
+                    lab_col.is_(None),
+                ))
                 global_candidatos = global_query.all()
                 mejor = None
                 mejor_score = 0.0
