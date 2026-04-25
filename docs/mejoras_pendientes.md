@@ -56,11 +56,11 @@ una tarea aparte.
 ### ~~Vista materializada para `/estadisticas/drogas`~~ ✅ HECHO 2026-04-25
 - Implementado preventivamente. `mv_stats_drogas` con refresh automático post-push a Render. Banner de frescura en la pantalla. Ver commit `8aa1d76`.
 
-### Trigram index en `obs_productos.descripcion`
-- **Trigger**: la búsqueda en `/obs/productos` o `/estadisticas/drogas` con `q=...` tarda > 1 seg.
-- **Esfuerzo**: ~10 min.
-- **Cómo**: `CREATE EXTENSION pg_trgm; CREATE INDEX ... USING gin (descripcion gin_trgm_ops)`.
-- **Por qué**: el `ilike '%...%'` actual hace full table scan. Con 200k+ productos se nota.
+### ~~Trigram index en `obs_productos.descripcion`~~ ✅ HECHO 2026-04-25
+- `CREATE EXTENSION pg_trgm` + GIN trigram index en `obs_productos(descripcion)`.
+  Creado idempotentemente en `_crear_matviews`. EXPLAIN ANALYZE confirma
+  Bitmap Index Scan (~0.7ms vs full scan). Aplica a /obs/productos,
+  modulo_packs, pack_detector, purchase. Ver commit posterior a `82bc3af`.
 
 ### Bulk queries en `/api/pedido/<id>/indicadores`
 - **Trigger**: pedidos de más de 500 items tardan > 3 seg en abrir Indicadores.
@@ -258,6 +258,7 @@ una tarea aparte.
 
 ## ✅ Hechos recientes (histórico)
 
+- 2026-04-25: **Trigram index en obs_productos** — `pg_trgm` + GIN gin_trgm_ops para acelerar `ILIKE '%...%'` (full scan → bitmap index ~0.7ms).
 - 2026-04-25: **Matcher central `producto_matcher.py`** — `match_producto(target=...)` reemplaza primitivas duplicadas en observer_matcher, vincular_pedido_observer y ofertas_import. Soporta `Producto` y `ObsProducto`. 28 tests específicos.
 - 2026-04-25: **Importador de ofertas (Fase B parte 1)** — `/ofertas/import` con wizard de 4 pasos: subir → mapear columnas → revisar → confirmar. Snapshot del archivo, validación contra catálogo, dropdown manual para items no encontrados. Excel `%` reconocido.
 - 2026-04-25: **Alerta sync fallido** — banner + endpoint + `estado_syncs()`.

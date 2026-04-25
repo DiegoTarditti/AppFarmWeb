@@ -834,6 +834,22 @@ def _crear_matviews(conn):
         ON mv_stats_drogas (id_farmacia, u12m DESC)
     """))
 
+    # Trigram index para búsquedas ilike '%...%' en obs_productos.descripcion
+    # (200k+ filas → con ilike sin index hace full scan; con GIN trigram cae a
+    # decenas de ms). Usado en /obs/productos, modulo_packs, pack_detector,
+    # purchase. Si la extensión pg_trgm no está disponible, se loggea y se
+    # sigue (no bloquea init_db).
+    try:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_obs_productos_descripcion_trgm
+            ON obs_productos USING gin (descripcion gin_trgm_ops)
+        """))
+    except Exception as e:
+        # Permisos insuficientes para CREATE EXTENSION (raro en Render pero
+        # posible en DBs gestionadas con superuser limitado).
+        print(f'[init_db] aviso: no pude crear trigram index — {e}')
+
 
 def _migrate_legacy_plantillas():
     """Copia ExportTemplate (lab XLSX) y PlantillaExportacion (prov TXT fijo)
