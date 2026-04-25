@@ -124,7 +124,13 @@
     <div id="panel-3" class="hidden bg-white border border-surface-border rounded-xl p-5">
         <div class="flex items-baseline justify-between mb-2 flex-wrap gap-2">
             <h2 class="text-sm font-semibold text-[#1e1e1e]">3. Revisar y corregir items</h2>
-            <p class="text-xs text-[#6f6f6f]"><strong id="preview-count">0</strong> ofertas válidas</p>
+            <div class="flex items-center gap-3">
+                <p class="text-xs text-[#6f6f6f]"><strong id="preview-count">0</strong> ofertas válidas</p>
+                <button type="button" id="btn-next-3-top"
+                        class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1 rounded-lg text-xs">
+                    Continuar →
+                </button>
+            </div>
         </div>
         <p class="text-xs text-[#6f6f6f] mb-3">
             Editá cualquier celda con click. ✕ elimina la fila. Mostramos las primeras 100 filas; al guardar se guardan todas.
@@ -165,6 +171,10 @@
                 </select>
                 <span id="revalidar-status" class="text-[10px] text-violet-700 whitespace-nowrap"></span>
             </div>
+            <button type="button" id="btn-guardar-top"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-1.5 rounded-lg text-xs whitespace-nowrap">
+                ✓ Confirmar e importar
+            </button>
         </div>
 
         <div id="validacion-stats" class="mb-2"></div>
@@ -184,14 +194,68 @@
         <details open class="mb-2 bg-[#fafafa] rounded">
             <summary class="cursor-pointer px-2 py-1 text-xs text-[#555] hover:text-[#1e1e1e] flex items-center justify-between gap-2">
                 <span>Detalle de items con problemas</span>
-                <button type="button" id="btn-expandir-todos"
-                        class="text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300"
-                        onclick="event.stopPropagation(); event.preventDefault(); expandirTodosLosBuscarSimilar();">
-                    🔍 Buscar similar a todos
-                </button>
+                <span class="flex items-center gap-1.5">
+                    <button type="button"
+                            class="text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2 py-0.5 rounded"
+                            onclick="event.stopPropagation(); event.preventDefault(); abrirModoRapido();"
+                            title="Procesar uno por uno con ventana grande y atajos de teclado">
+                        ⚡ Modo rápido
+                    </button>
+                    <button type="button" id="btn-expandir-todos"
+                            class="text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300"
+                            onclick="event.stopPropagation(); event.preventDefault(); expandirTodosLosBuscarSimilar();">
+                        🔍 Expandir todos
+                    </button>
+                </span>
             </summary>
             <div id="validacion-detalle" class="px-2 py-1 max-h-[60vh] overflow-y-auto"></div>
         </details>
+
+        <!-- Modal "Modo rápido": procesa not_found uno a uno -->
+        <div id="rapido-modal" class="hidden fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-[#ececec] bg-[#1f2937] text-white rounded-t-xl">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <span class="text-base font-bold">⚡ Vincular ofertas</span>
+                        <span id="rapido-progreso" class="text-xs text-[#9ca3af]"></span>
+                    </div>
+                    <button type="button" onclick="cerrarModoRapido()"
+                            class="w-8 h-8 flex items-center justify-center rounded hover:bg-white/[0.1] text-lg">✕</button>
+                </div>
+                <div class="px-5 py-4 border-b border-[#ececec] bg-violet-50">
+                    <p class="text-[10px] uppercase font-semibold text-violet-700 mb-1">Item del proveedor</p>
+                    <p id="rapido-item-desc" class="text-base font-bold text-[#1e1e1e] leading-tight"></p>
+                    <p id="rapido-item-meta" class="text-[11px] text-[#6f6f6f] mt-0.5"></p>
+                </div>
+                <div class="flex-1 overflow-y-auto px-3 py-2">
+                    <div class="flex items-center justify-between mb-1.5 px-1">
+                        <p class="text-[11px] text-[#555]">Candidatos del catálogo (click o tecla 1-9 para vincular):</p>
+                        <button type="button" id="rapido-buscar-otro" onclick="rapidoEditarBusqueda()"
+                                class="text-[10px] bg-[#f3f4f6] hover:bg-[#e5e7eb] text-[#374151] px-2 py-0.5 rounded border">
+                            ✎ Buscar otra cosa
+                        </button>
+                    </div>
+                    <div id="rapido-busqueda-edit" class="hidden mb-2 flex items-center gap-1">
+                        <input type="text" id="rapido-busqueda-input"
+                               class="flex-1 text-xs border border-violet-300 rounded px-2 py-1">
+                        <button type="button" onclick="rapidoBuscar()"
+                                class="text-xs bg-violet-600 hover:bg-violet-700 text-white font-semibold px-3 py-1 rounded">Buscar</button>
+                    </div>
+                    <div id="rapido-candidatos" class="flex flex-col gap-1"></div>
+                </div>
+                <div class="px-4 py-2 border-t border-[#ececec] bg-[#fafafa] rounded-b-xl flex items-center justify-between text-xs">
+                    <div class="text-[#888]">
+                        <kbd class="px-1.5 py-0.5 bg-white border border-[#ddd] rounded text-[10px] font-mono">1-9</kbd> elegir ·
+                        <kbd class="px-1.5 py-0.5 bg-white border border-[#ddd] rounded text-[10px] font-mono">S</kbd> saltar ·
+                        <kbd class="px-1.5 py-0.5 bg-white border border-[#ddd] rounded text-[10px] font-mono">Esc</kbd> salir
+                    </div>
+                    <div class="flex gap-1.5">
+                        <button type="button" onclick="rapidoSaltar()"
+                                class="text-xs bg-[#fafafa] hover:bg-[#f3f4f6] border border-[#ddd] text-[#555] px-3 py-1 rounded">Saltar →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div class="bg-[#fafafa] rounded-lg p-4 mb-4">
             <p class="text-xs text-[#888] mb-1">Resumen</p>
@@ -746,15 +810,18 @@ async function validarItems(opciones={}) {
     }
 }
 
-document.getElementById('btn-next-3').addEventListener('click', async () => {
+async function _validarYAvanzar(btnEl) {
     if (_items.length === 0) {
         alert('No hay items válidos para importar.');
         return;
     }
-    const btn = document.getElementById('btn-next-3');
-    const ok = await validarItems({btn});
+    const ok = await validarItems({btn: btnEl});
     if (ok) setStep(4);
-});
+}
+document.getElementById('btn-next-3').addEventListener('click', (e) =>
+    _validarYAvanzar(e.currentTarget));
+document.getElementById('btn-next-3-top').addEventListener('click', (e) =>
+    _validarYAvanzar(e.currentTarget));
 document.getElementById('btn-back-3').addEventListener('click', () => setStep(3));
 
 // Re-matchear automáticamente al cambiar el laboratorio destino.
@@ -916,6 +983,171 @@ function abrirSiguienteCandidato() {
     }
 }
 
+// ── Modo rápido: vincular not_found uno por uno con un modal grande ───────
+let _rapidoIdx = -1;
+let _rapidoCandidatos = [];
+
+function abrirModoRapido() {
+    const pendientes = _items
+        .map((it, i) => ({it, i}))
+        .filter(({it}) => it._status === 'not_found');
+    if (!pendientes.length) {
+        alert('No hay items pendientes de vincular.');
+        return;
+    }
+    document.getElementById('rapido-modal').classList.remove('hidden');
+    document.addEventListener('keydown', _rapidoTeclaHandler);
+    _rapidoMostrar(pendientes[0].i);
+}
+
+function cerrarModoRapido() {
+    document.getElementById('rapido-modal').classList.add('hidden');
+    document.removeEventListener('keydown', _rapidoTeclaHandler);
+    _rapidoIdx = -1;
+}
+
+function _rapidoTeclaHandler(e) {
+    // Si está editando la búsqueda, no interceptamos teclas.
+    const editVisible = !document.getElementById('rapido-busqueda-edit').classList.contains('hidden');
+    if (editVisible && document.activeElement?.id === 'rapido-busqueda-input') return;
+    if (e.key === 'Escape') { e.preventDefault(); cerrarModoRapido(); return; }
+    if (e.key === 's' || e.key === 'S') { e.preventDefault(); rapidoSaltar(); return; }
+    if (/^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        const n = parseInt(e.key, 10) - 1;
+        if (n < _rapidoCandidatos.length) _rapidoVincular(n);
+    }
+}
+
+async function _rapidoMostrar(itemIdx) {
+    _rapidoIdx = itemIdx;
+    const item = _items[itemIdx];
+    if (!item) { cerrarModoRapido(); return; }
+
+    document.getElementById('rapido-item-desc').textContent = item.descripcion || '(sin descripción)';
+    const partes = [];
+    if (item.codigo) partes.push(`Código: ${item.codigo}`);
+    if (item.ean) partes.push(`EAN: ${item.ean}`);
+    if (item.descuento_psl != null) partes.push(`Descuento: ${item.descuento_psl}%`);
+    if (item.unidades_minima != null) partes.push(`Mín: ${item.unidades_minima}`);
+    document.getElementById('rapido-item-meta').textContent = partes.join(' · ') || '—';
+
+    // Contador
+    const pendientes = _items.filter(it => it._status === 'not_found').length;
+    const total = _items.filter(it => it._status === 'not_found' || it._status === 'manual_ok').length;
+    document.getElementById('rapido-progreso').textContent =
+        `${total - pendientes + 1} de ${total}`;
+
+    // Resetear panel de búsqueda manual
+    document.getElementById('rapido-busqueda-edit').classList.add('hidden');
+
+    // Cargar candidatos
+    const cont = document.getElementById('rapido-candidatos');
+    cont.innerHTML = '<p class="text-xs text-[#888] py-3 text-center">⏳ Buscando candidatos…</p>';
+    await _rapidoCargarCandidatos(item.descripcion || item.codigo || '');
+}
+
+async function _rapidoCargarCandidatos(descripcion) {
+    const labId = document.getElementById('lab-select').value;
+    const cont = document.getElementById('rapido-candidatos');
+    try {
+        const r = await fetch('/api/ofertas/import-candidatos', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                descripcion: descripcion,
+                laboratorio_id: labId ? parseInt(labId, 10) : null,
+                top: 9,
+            }),
+        });
+        const data = await r.json();
+        _rapidoCandidatos = data.candidatos || [];
+        if (!_rapidoCandidatos.length) {
+            cont.innerHTML = '<p class="text-xs text-[#999] py-3 text-center">No se encontraron candidatos. Saltá o editá la búsqueda.</p>';
+            return;
+        }
+        cont.innerHTML = _rapidoCandidatos.map((c, i) => `
+            <button type="button"
+                    class="rapido-cand-row w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg
+                           bg-white hover:bg-violet-50 border border-[#e5e7eb] hover:border-violet-400 transition-colors"
+                    data-idx="${i}">
+                <span class="w-7 h-7 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-sm flex-shrink-0">${i + 1}</span>
+                <span class="flex-1 min-w-0">
+                    <span class="block text-sm text-[#1e1e1e] font-medium truncate">${escapeHtml(c.descripcion)}</span>
+                    <span class="block text-[10px] text-[#888]">
+                        ${c.codigo_barra ? 'EAN ' + escapeHtml(c.codigo_barra) : ''}
+                        ${c.codigo_alfabeta ? ' · Alfa ' + escapeHtml(c.codigo_alfabeta) : ''}
+                        ${c.precio_pvp ? ' · $' + c.precio_pvp.toLocaleString('es-AR') : ''}
+                        ${c._origen === 'global' ? ' · <span class="text-amber-600 font-semibold">otro lab</span>' : ''}
+                    </span>
+                </span>
+                <span class="text-xs font-bold text-violet-700 tabular-nums flex-shrink-0">${(c.score * 100).toFixed(0)}%</span>
+            </button>
+        `).join('');
+        cont.querySelectorAll('.rapido-cand-row').forEach(row => {
+            row.addEventListener('click', () => _rapidoVincular(parseInt(row.dataset.idx, 10)));
+        });
+    } catch (err) {
+        cont.innerHTML = `<p class="text-xs text-red-700 py-3 text-center">Error: ${escapeHtml(err.message)}</p>`;
+    }
+}
+
+function _rapidoVincular(candIdx) {
+    const c = _rapidoCandidatos[candIdx];
+    if (!c) return;
+    const it = _items[_rapidoIdx];
+    it._status = 'manual_ok';
+    it._producto_id = c.producto_id;
+    it._match_descripcion_local = c.descripcion;
+    it._estrategia = 'manual';
+    it._motivo = `Match manual: "${c.descripcion}"`;
+    if (!it.ean && c.codigo_barra) it.ean = c.codigo_barra;
+    if (!it.codigo && c.codigo_alfabeta) it.codigo = c.codigo_alfabeta;
+    recalcularStats();
+    actualizarConfirmCount();
+    _rapidoSiguiente();
+}
+
+function rapidoSaltar() {
+    // Marca el item con un flag para que no aparezca de nuevo en esta sesión
+    // del modal pero deja su _status como not_found.
+    const it = _items[_rapidoIdx];
+    if (it) it._rapido_saltado = true;
+    _rapidoSiguiente();
+}
+
+function _rapidoSiguiente() {
+    const siguiente = _items.findIndex(it => it._status === 'not_found' && !it._rapido_saltado);
+    if (siguiente < 0) {
+        // No hay más
+        const cont = document.getElementById('rapido-candidatos');
+        cont.innerHTML = '<p class="text-sm text-emerald-700 py-6 text-center font-semibold">✓ No quedan items pendientes.</p>';
+        document.getElementById('rapido-item-desc').textContent = '¡Listo!';
+        document.getElementById('rapido-item-meta').textContent = '';
+        setTimeout(cerrarModoRapido, 1500);
+        return;
+    }
+    _rapidoMostrar(siguiente);
+}
+
+function rapidoEditarBusqueda() {
+    const wrap = document.getElementById('rapido-busqueda-edit');
+    const input = document.getElementById('rapido-busqueda-input');
+    wrap.classList.remove('hidden');
+    input.value = _items[_rapidoIdx]?.descripcion || '';
+    input.focus();
+    input.select();
+}
+
+async function rapidoBuscar() {
+    const q = document.getElementById('rapido-busqueda-input').value.trim();
+    if (!q) return;
+    document.getElementById('rapido-candidatos').innerHTML =
+        '<p class="text-xs text-[#888] py-3 text-center">⏳ Buscando…</p>';
+    await _rapidoCargarCandidatos(q);
+}
+
 function expandirTodosLosBuscarSimilar() {
     // Dispara buscarCandidatos para todos los not_found en paralelo (pero
     // limitamos a tandas de 5 para no saturar la API).
@@ -979,7 +1211,7 @@ document.getElementById('reemplazar').addEventListener('change', (e) => {
         : 'Modo upsert: actualiza si el EAN/código ya existe, agrega si no.';
 });
 
-document.getElementById('btn-guardar').addEventListener('click', async () => {
+async function _confirmarEImportar() {
     const labId = document.getElementById('lab-select').value;
     const reemplazar = document.getElementById('reemplazar').checked;
     const status = document.getElementById('save-status');
@@ -1017,7 +1249,9 @@ document.getElementById('btn-guardar').addEventListener('click', async () => {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-3';
     }
-});
+}
+document.getElementById('btn-guardar').addEventListener('click', _confirmarEImportar);
+document.getElementById('btn-guardar-top').addEventListener('click', _confirmarEImportar);
 
 setStep(1);
 </script>
