@@ -935,6 +935,7 @@ async function buscarCandidatos(itemIdx) {
                 <span class="flex-1 text-[11px] text-[#1e1e1e]">${escapeHtml(c.descripcion)}</span>
                 <span class="text-[10px] text-[#888] tabular-nums">${(c.score * 100).toFixed(0)}%</span>
                 ${c._origen === 'global' ? '<span class="text-[9px] text-amber-600 ml-1">(otro lab)</span>' : ''}
+                ${c._origen === 'observer' ? '<span class="text-[9px] text-violet-600 ml-1 font-semibold">ObServer</span>' : ''}
             </button>
         `).join('');
         slot.innerHTML = `
@@ -1080,6 +1081,7 @@ async function _rapidoCargarCandidatos(descripcion) {
                         ${c.codigo_alfabeta ? ' · Alfa ' + escapeHtml(c.codigo_alfabeta) : ''}
                         ${c.precio_pvp ? ' · $' + c.precio_pvp.toLocaleString('es-AR') : ''}
                         ${c._origen === 'global' ? ' · <span class="text-amber-600 font-semibold">otro lab</span>' : ''}
+                        ${c._origen === 'observer' ? ' · <span class="text-violet-600 font-bold">ObServer</span>' : ''}
                     </span>
                 </span>
                 <span class="text-xs font-bold text-violet-700 tabular-nums flex-shrink-0">${(c.score * 100).toFixed(0)}%</span>

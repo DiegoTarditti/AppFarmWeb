@@ -491,63 +491,97 @@ def match_producto(*,
 
 # ── API conveniente para UIs (ej. dropdown de match manual) ────────────────
 
-def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto', session=None):
-    """Helper directo para cualquier UI que necesita un dropdown de productos
-    similares. Devuelve lista de dicts ordenada por score.
+def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto',
+                      incluir_observer=True, threshold_min=0.50, session=None):
+    """Devuelve lista de candidatos para un dropdown de match manual.
 
-    Si se pasa `laboratorio_id`, hace DOS búsquedas y las combina:
-    1) Solo dentro del lab (con boost +0.05 al score para priorizar).
-    2) Global (todo el catálogo).
-    Esto cubre el caso donde el catálogo del lab no tiene el producto pero
-    sí está cargado bajo otro lab — devuelve igual los más parecidos.
+    Para `target='producto'` combina TRES pools (cuando aplica):
+    1) Productos locales del lab (boost +0.05).
+    2) Productos locales globales.
+    3) Catálogo ObServer del mismo lab (mapeando Laboratorio.observer_id).
+       Esto cubre el caso real donde el catálogo local está incompleto y
+       el catálogo Alfabeta vía ObServer tiene el producto.
 
-    `target='obs_producto'` busca contra el catálogo ObServer; `laboratorio_id`
-    pasa a interpretarse como `laboratorio_observer`.
+    Args:
+        threshold_min: score mínimo para incluir candidatos (default 0.50).
+            Si NINGÚN candidato supera el umbral, devuelve [] — preferimos
+            "no encontrado" claro que sugerencias basura.
+        incluir_observer: False desactiva el pool ObServer (para tests).
     """
     if not descripcion:
         return []
     cands = []
+    own_session = session is None
+    if own_session:
+        import database
+        session = database.SessionLocal()
+    try:
+        # 1. Búsqueda con scope al lab local (si se pidió). Boost al score
+        #    para que los del lab queden primero ante empates.
+        if laboratorio_id:
+            res_lab = match_producto(
+                descripcion=descripcion,
+                laboratorio_id=laboratorio_id,
+                target=target,
+                incluir_candidatos=True,
+                top_candidatos=top * 2,
+                session=session,
+            )
+            for c in res_lab.candidatos_top:
+                c['score'] = round(min(1.0, c['score'] + 0.05), 3)
+                c['_origen'] = 'lab'
+            cands.extend(res_lab.candidatos_top)
 
-    # 1. Búsqueda con scope al lab (si se pidió). Boost al score para que los
-    #    del lab queden primero ante empates.
-    if laboratorio_id:
-        res_lab = match_producto(
+        # 2. Búsqueda global en el target principal.
+        res_global = match_producto(
             descripcion=descripcion,
-            laboratorio_id=laboratorio_id,
+            laboratorio_id=None,
             target=target,
             incluir_candidatos=True,
             top_candidatos=top * 2,
             session=session,
         )
-        for c in res_lab.candidatos_top:
-            c['score'] = round(min(1.0, c['score'] + 0.05), 3)
-            c['_origen'] = 'lab'
-        cands.extend(res_lab.candidatos_top)
+        for c in res_global.candidatos_top:
+            c.setdefault('_origen', 'global')
+            cands.append(c)
 
-    # 2. Búsqueda global (siempre, para asegurar que aparezcan parecidos
-    #    aunque estén bajo otro lab o sin lab).
-    res_global = match_producto(
-        descripcion=descripcion,
-        laboratorio_id=None,
-        target=target,
-        incluir_candidatos=True,
-        top_candidatos=top * 2,
-        session=session,
-    )
-    for c in res_global.candidatos_top:
-        c.setdefault('_origen', 'global')
-        cands.append(c)
+        # 3. Si target='producto' y hay lab local con observer_id mapeado,
+        #    también buscamos en obs_productos del mismo lab observer.
+        if (target == 'producto' and incluir_observer and laboratorio_id):
+            import database
+            lab = session.get(database.Laboratorio, laboratorio_id)
+            lab_obs_id = getattr(lab, 'observer_id', None) if lab else None
+            if lab_obs_id is not None:
+                res_obs = match_producto(
+                    descripcion=descripcion,
+                    laboratorio_id=lab_obs_id,
+                    target='obs_producto',
+                    incluir_candidatos=True,
+                    top_candidatos=top * 2,
+                    session=session,
+                )
+                for c in res_obs.candidatos_top:
+                    c['_origen'] = 'observer'
+                cands.extend(res_obs.candidatos_top)
 
-    # Dedup por producto_id (o observer_id) — el de mayor score gana.
-    mejor_por_id = {}
-    for c in cands:
-        key = c.get('producto_id') or c.get('observer_id')
-        if key is None:
-            continue
-        if key not in mejor_por_id or c['score'] > mejor_por_id[key]['score']:
-            mejor_por_id[key] = c
-    out = sorted(mejor_por_id.values(), key=lambda x: -x['score'])
-    return out[:top]
+        # Dedup por (origen, id) y ordenar por score desc.
+        mejor_por_id = {}
+        for c in cands:
+            origen = c.get('_origen', 'global')
+            key = (origen, c.get('producto_id') or c.get('observer_id'))
+            if key[1] is None:
+                continue
+            if key not in mejor_por_id or c['score'] > mejor_por_id[key]['score']:
+                mejor_por_id[key] = c
+        out = sorted(mejor_por_id.values(), key=lambda x: -x['score'])
+        # Aplicar threshold mínimo: si NINGUNO supera el umbral, devolver [].
+        # Si ALGUNO lo supera, mostrar todos los que sí (los basura quedan
+        # cortados aunque el primero sea bueno).
+        out = [c for c in out if c['score'] >= threshold_min]
+        return out[:top]
+    finally:
+        if own_session:
+            session.close()
 
 
 # ── Bulk: para cuando hay N items que matchear (ej. importar oferta) ────────
