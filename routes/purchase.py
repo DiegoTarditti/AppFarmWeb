@@ -947,6 +947,291 @@ def init_app(app):
                            for pv in session.query(database.Provider).order_by(database.Provider.razon_social).all()]
             return render_template('orders_list.html', pedidos=result, proveedores=proveedores)
 
+    @app.route('/api/pedido/<int:pedido_id>/indicadores')
+    def api_pedido_indicadores(pedido_id):
+        """Devuelve indicadores agregados del pedido (mini dashboard).
+
+        Para cada item del pedido cruza vía bridge productos.observer_id ↔ ObsProducto
+        y trae stock, ventas 3m/12m, monodroga, laboratorio. Calcula:
+        - cobertura post-compra (días)
+        - momentum (anualizado vs 12m)
+        - riesgos (sin movimiento, sobre-pedido, stock dormido)
+        - top 10 por unidades 12m
+        - mix por monodroga y laboratorio
+        - estacionalidad mensual del pedido global
+        """
+        from sqlalchemy import func as _f
+        from datetime import datetime
+        import os as _os
+
+        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        hoy = datetime.now()
+
+        # Ventana 12m
+        meses = []
+        y, m = hoy.year, hoy.month
+        for _ in range(12):
+            meses.append((y, m))
+            m -= 1
+            if m == 0:
+                m, y = 12, y - 1
+        meses.reverse()
+        desde_12m = meses[0][0] * 100 + meses[0][1]
+        hasta = meses[-1][0] * 100 + meses[-1][1]
+
+        def _ym_hace(n):
+            yy, mm = hoy.year, hoy.month - n
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            return yy * 100 + mm
+        desde_3m = _ym_hace(2)
+
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'error': 'Pedido no encontrado'}), 404
+            items = session.query(database.PedidoItem).filter_by(pedido_id=pedido_id).all()
+
+            # Bridge codigo_barra → observer_id, en 2 pasos:
+            # 1) ATAJO: pedidos generados desde ObServer guardan el IdProducto como string
+            #    en codigo_barra. Si el código es numérico y existe en obs_productos, lo
+            #    usamos directo (sin pasar por la tabla productos local).
+            # 2) FALLBACK: tabla productos local (codigo_barra principal o alts) → observer_id.
+            codigos = [(i.codigo_barra or '').strip() for i in items if i.codigo_barra]
+            cb_to_obs = {}
+
+            # Paso 1: códigos numéricos que matchean directo a obs_productos.observer_id
+            cb_numericos = []
+            for cb in codigos:
+                try:
+                    cb_numericos.append((cb, int(cb)))
+                except (ValueError, TypeError):
+                    continue
+            if cb_numericos:
+                ids_a_buscar = [n for (_, n) in cb_numericos]
+                obs_existentes = {oid for (oid,) in session.query(database.ObsProducto.observer_id)
+                                  .filter(database.ObsProducto.observer_id.in_(ids_a_buscar)).all()}
+                for cb, n in cb_numericos:
+                    if n in obs_existentes:
+                        cb_to_obs[cb] = n
+
+            # Paso 2: bridge vía tabla productos para los que no resolvimos en el paso 1
+            codigos_pendientes = [c for c in codigos if c not in cb_to_obs]
+            if codigos_pendientes:
+                from sqlalchemy import or_
+                Producto = database.Producto
+                conds = [Producto.codigo_barra.in_(codigos_pendientes)]
+                for col_name in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
+                    col = getattr(Producto, col_name, None)
+                    if col is not None:
+                        conds.append(col.in_(codigos_pendientes))
+                prods_locales = session.query(Producto).filter(or_(*conds)).all()
+                for p in prods_locales:
+                    if p.observer_id:
+                        for cb in [p.codigo_barra,
+                                   getattr(p, 'codigo_barra_alt1', None),
+                                   getattr(p, 'codigo_barra_alt2', None),
+                                   getattr(p, 'codigo_barra_alt3', None)]:
+                            if cb and cb in codigos_pendientes:
+                                cb_to_obs[cb] = p.observer_id
+
+            obs_ids = list(set(cb_to_obs.values()))
+            obs_data = {}
+            stock_map = {}
+            ventas_3m = {}
+            ventas_12m = {}
+            serie_mensual = {}  # producto_observer → {(y,m): u}
+            labs_map = {}
+            drogas_map = {}
+
+            if obs_ids:
+                obs_prods = session.query(database.ObsProducto).filter(
+                    database.ObsProducto.observer_id.in_(obs_ids)).all()
+                obs_data = {p.observer_id: p for p in obs_prods}
+
+                stock_map = dict(session.query(
+                    database.ObsStock.producto_observer,
+                    database.ObsStock.stock_actual)
+                    .filter(database.ObsStock.id_farmacia == id_farmacia,
+                            database.ObsStock.producto_observer.in_(obs_ids)).all())
+
+                ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
+
+                ventas_3m = {pid: float(u or 0) for (pid, u) in session.query(
+                    database.ObsVentaMensual.producto_observer,
+                    _f.sum(database.ObsVentaMensual.unidades))
+                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                            database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                            ym_expr.between(desde_3m, hasta))
+                    .group_by(database.ObsVentaMensual.producto_observer).all()}
+
+                ventas_12m = {pid: float(u or 0) for (pid, u) in session.query(
+                    database.ObsVentaMensual.producto_observer,
+                    _f.sum(database.ObsVentaMensual.unidades))
+                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                            database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                            ym_expr.between(desde_12m, hasta))
+                    .group_by(database.ObsVentaMensual.producto_observer).all()}
+
+                # Serie mensual por producto (para estacionalidad agregada)
+                for (pid, anio, mes, u) in session.query(
+                        database.ObsVentaMensual.producto_observer,
+                        database.ObsVentaMensual.anio,
+                        database.ObsVentaMensual.mes,
+                        database.ObsVentaMensual.unidades)\
+                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                            database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                            ym_expr.between(desde_12m, hasta)).all():
+                    serie_mensual.setdefault(pid, {})[(anio, mes)] = float(u or 0)
+
+                lab_ids = {p.laboratorio_observer for p in obs_prods if p.laboratorio_observer}
+                droga_ids = {p.nombre_droga_observer for p in obs_prods if p.nombre_droga_observer}
+                if lab_ids:
+                    labs_map = dict(session.query(
+                        database.ObsLaboratorio.observer_id,
+                        database.ObsLaboratorio.descripcion)
+                        .filter(database.ObsLaboratorio.observer_id.in_(lab_ids)).all())
+                if droga_ids:
+                    drogas_map = dict(session.query(
+                        database.ObsNombreDroga.observer_id,
+                        database.ObsNombreDroga.descripcion)
+                        .filter(database.ObsNombreDroga.observer_id.in_(droga_ids)).all())
+
+            # Construir items enriquecidos
+            items_enriched = []
+            for it in items:
+                cb = (it.codigo_barra or '').strip()
+                obs_id = cb_to_obs.get(cb)
+                op = obs_data.get(obs_id) if obs_id else None
+                stock = int(stock_map.get(obs_id, 0) or 0) if obs_id else 0
+                u3m = ventas_3m.get(obs_id, 0) if obs_id else 0
+                u12m = ventas_12m.get(obs_id, 0) if obs_id else 0
+                cantidad = int(it.cantidad or 0)
+                # Cobertura post-compra (días)
+                if u3m > 0:
+                    dias_post = (stock + cantidad) / (u3m / 90)
+                    dias_pre = stock / (u3m / 90)
+                else:
+                    dias_post = None
+                    dias_pre = None
+                # Momentum
+                momentum = None
+                if u12m > 0:
+                    momentum = (u3m * 4 - u12m) / u12m * 100
+                items_enriched.append({
+                    'pedido_item_id': it.id,
+                    'codigo_barra':   cb,
+                    'nombre':         it.nombre or '',
+                    'cantidad_pedida': cantidad,
+                    'observer_id':    obs_id,
+                    'tiene_obs':      obs_id is not None,
+                    'stock':          stock,
+                    'u3m':            u3m,
+                    'u12m':           u12m,
+                    'avg_mensual':    round(u3m / 3, 2),
+                    'dias_pre_compra': dias_pre,
+                    'dias_post_compra': dias_post,
+                    'momentum_pct':   momentum,
+                    'monodroga':      drogas_map.get(op.nombre_droga_observer) if op else '',
+                    'monodroga_id':   op.nombre_droga_observer if op else None,
+                    'laboratorio':    labs_map.get(op.laboratorio_observer) if op else '',
+                })
+
+            # Riesgos
+            riesgos = []
+            for it in items_enriched:
+                tags = []
+                if it['cantidad_pedida'] == 0:
+                    continue
+                if it['u12m'] == 0 and it['tiene_obs']:
+                    tags.append('Sin ventas en 12m')
+                elif it['u3m'] == 0 and it['u12m'] > 0:
+                    tags.append('Sin ventas en 3m')
+                if it['avg_mensual'] > 0 and it['cantidad_pedida'] > it['avg_mensual'] * 3:
+                    tags.append(f'Sobre-pedido ({it["cantidad_pedida"]} vs {it["avg_mensual"]:.0f}/mes)')
+                if it['dias_pre_compra'] is not None and it['dias_pre_compra'] > 180:
+                    tags.append(f'Stock previo {round(it["dias_pre_compra"])}d (>180)')
+                if it['dias_post_compra'] is not None and it['dias_post_compra'] < 15:
+                    tags.append(f'Aún corto post-compra ({round(it["dias_post_compra"])}d)')
+                if not it['tiene_obs']:
+                    tags.append('Sin link a ObServer')
+                if tags:
+                    riesgos.append({'item': it, 'tags': tags})
+
+            # Top 10 por uni 12m (filtrado a items con cantidad pedida)
+            top10 = sorted([i for i in items_enriched if i['cantidad_pedida'] > 0],
+                           key=lambda x: -x['u12m'])[:10]
+
+            # Mix por monodroga (suma cantidad pedida)
+            mix_droga = {}
+            for it in items_enriched:
+                if it['cantidad_pedida'] == 0:
+                    continue
+                key = it['monodroga'] or '(sin monodroga)'
+                mix_droga[key] = mix_droga.get(key, 0) + it['cantidad_pedida']
+            mix_droga_list = sorted([{'label': k, 'count': v} for k, v in mix_droga.items()],
+                                    key=lambda x: -x['count'])[:10]
+
+            # Mix por laboratorio
+            mix_lab = {}
+            for it in items_enriched:
+                if it['cantidad_pedida'] == 0:
+                    continue
+                key = it['laboratorio'] or '(sin lab)'
+                mix_lab[key] = mix_lab.get(key, 0) + it['cantidad_pedida']
+            mix_lab_list = sorted([{'label': k, 'count': v} for k, v in mix_lab.items()],
+                                  key=lambda x: -x['count'])
+
+            # Estacionalidad: total mensual sumando uni de todos los items
+            est = {(y, m): 0.0 for (y, m) in meses}
+            for pid, serie in serie_mensual.items():
+                for (y, m), u in serie.items():
+                    if (y, m) in est:
+                        est[(y, m)] += u
+            estacionalidad = {
+                'labels': [f'{m:02d}/{y}' for (y, m) in meses],
+                'unidades': [est[(y, m)] for (y, m) in meses],
+            }
+
+            # Resumen general
+            n_items = len(items_enriched)
+            n_con_obs = sum(1 for i in items_enriched if i['tiene_obs'])
+            unidades_pedidas = sum(i['cantidad_pedida'] for i in items_enriched)
+
+        return jsonify({
+            'pedido': {
+                'id': pedido.id,
+                'laboratorio': pedido.laboratorio,
+                'periodo': pedido.periodo or '',
+                'n_items': n_items,
+                'n_con_obs': n_con_obs,
+                'unidades_pedidas': unidades_pedidas,
+            },
+            'items': items_enriched,
+            'riesgos': riesgos,
+            'top10': top10,
+            'mix_monodroga': mix_droga_list,
+            'mix_laboratorio': mix_lab_list,
+            'estacionalidad': estacionalidad,
+        })
+
+    @app.route('/api/pedido/<int:pedido_id>/vincular-observer', methods=['POST'])
+    def api_pedido_vincular_observer(pedido_id):
+        """Linkea items del pedido contra obs_productos por descripción + laboratorio.
+        Reusa la lógica del script scripts/vincular_pedido_observer.py."""
+        import sys as _sys, os as _os
+        scripts_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'scripts')
+        if scripts_dir not in _sys.path:
+            _sys.path.insert(0, scripts_dir)
+        from vincular_pedido_observer import procesar_pedido as _procesar
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'error': 'Pedido no encontrado'}), 404
+            stats = _procesar(session, pedido, dry_run=False)
+            return jsonify({'ok': True, **stats, 'pedido': pedido.laboratorio})
+
     @app.route('/order/<int:pedido_id>/delete', methods=['POST'])
     def order_delete(pedido_id):
         with database.get_db() as session:
