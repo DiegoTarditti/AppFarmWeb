@@ -780,11 +780,9 @@ function _renderIndicadores(data) {
             <div class="bg-[#fafafa] rounded-lg p-2">
                 <p class="text-[10px] text-[#888]">Con datos ObServer</p>
                 <p class="text-base font-bold text-[#1e1e1e]">${ped.n_con_obs} <span class="text-[10px] text-[#888]">(${ped.n_items > 0 ? Math.round(ped.n_con_obs / ped.n_items * 100) : 0}%)</span></p>
-                ${(ped.n_items - ped.n_con_obs) > 0 ? `
-                    <button type="button" id="btn-vincular-observer" data-pedido-id="${ped.id}"
-                            class="mt-1 text-[10px] bg-violet-600 hover:bg-violet-700 text-white font-semibold px-2 py-0.5 rounded">
-                        🔗 Vincular ${ped.n_items - ped.n_con_obs} items
-                    </button>` : ''}
+                <button type="button" class="btn-vincular-observer mt-1 text-[10px] bg-violet-600 hover:bg-violet-700 text-white font-semibold px-2 py-0.5 rounded" data-pedido-id="${ped.id}">
+                    ${(ped.n_items - ped.n_con_obs) > 0 ? `🔗 Vincular ${ped.n_items - ped.n_con_obs} items` : '🔗 Re-vincular'}
+                </button>
             </div>
             <div class="bg-amber-50 rounded-lg p-2"><p class="text-[10px] text-amber-700">Unidades pedidas</p><p class="text-base font-bold text-amber-900">${ped.unidades_pedidas.toLocaleString('es-AR')}</p></div>
             <div class="bg-red-50 rounded-lg p-2"><p class="text-[10px] text-red-700">Críticos / Sobre-stock</p><p class="text-base font-bold text-red-800">${cantCriticos} / ${cantSobre}</p></div>
@@ -843,6 +841,17 @@ function _renderIndicadores(data) {
         <!-- TAB Riesgos -->
         <div class="ind-panel hidden" data-panel="riesgo">
             ${riesgos.length === 0 ? `<p class="text-sm text-emerald-700 bg-emerald-50 p-3 rounded-lg">Sin riesgos detectados. ✓</p>` : `
+            ${riesgos.some(r => r.tags.includes('Sin link a ObServer')) ? `
+                <div class="bg-violet-50 border border-violet-300 rounded-lg p-3 mb-3 flex items-center justify-between">
+                    <div class="text-xs text-violet-900">
+                        <strong>${riesgos.filter(r => r.tags.includes('Sin link a ObServer')).length} items</strong> sin link a ObServer.
+                        Vinculá automáticamente por descripción + laboratorio.
+                    </div>
+                    <button type="button" class="btn-vincular-observer bg-violet-600 hover:bg-violet-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg" data-pedido-id="${ped.id}">
+                        🔗 Vincular ahora
+                    </button>
+                </div>
+            ` : ''}
             <p class="text-[11px] text-[#888] mb-2">Items que merecen una segunda mirada. ${riesgos.length} producto${riesgos.length===1?'':'s'} con flags.</p>
             <div class="space-y-2">
             ${riesgos.map(r => `
@@ -950,7 +959,7 @@ function _renderIndicadores(data) {
             verAlternativas(parseInt(btn.dataset.drogaId, 10), btn.dataset.cb, btn.dataset.nombre);
             return;
         }
-        const vinc = e.target.closest('#btn-vincular-observer');
+        const vinc = e.target.closest('.btn-vincular-observer');
         if (vinc) {
             e.stopPropagation();
             vincularObserver(parseInt(vinc.dataset.pedidoId, 10), vinc);
