@@ -81,10 +81,20 @@
                     Ir al análisis →
                 </a>
                 {% else %}
+                {# Para procesos de tipo laboratorio se va a Analizar Ventas (ObServer)
+                   precargado con el lab. Para droguería se va al index de compras
+                   (PDF / módulos / etc.). #}
+                {% if proc.tipo == 'laboratorio' %}
+                <a href="{{ url_for('observer_analizar', lab=proc.partner_nombre, proceso=proc.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
+                    Analizar ventas →
+                </a>
+                {% else %}
                 <a href="{{ url_for('purchase_index') }}"
                    class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
                     Ir a Compras →
                 </a>
+                {% endif %}
                 {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='analisis') }}">
