@@ -455,20 +455,59 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
     """Helper directo para cualquier UI que necesita un dropdown de productos
     similares. Devuelve lista de dicts ordenada por score.
 
+    Si se pasa `laboratorio_id`, hace DOS búsquedas y las combina:
+    1) Solo dentro del lab (con boost +0.05 al score para priorizar).
+    2) Global (todo el catálogo).
+    Esto cubre el caso donde el catálogo del lab no tiene el producto pero
+    sí está cargado bajo otro lab — devuelve igual los más parecidos.
+
     `target='obs_producto'` busca contra el catálogo ObServer; `laboratorio_id`
     pasa a interpretarse como `laboratorio_observer`.
     """
     if not descripcion:
         return []
-    res = match_producto(
+    cands = []
+
+    # 1. Búsqueda con scope al lab (si se pidió). Boost al score para que los
+    #    del lab queden primero ante empates.
+    if laboratorio_id:
+        res_lab = match_producto(
+            descripcion=descripcion,
+            laboratorio_id=laboratorio_id,
+            target=target,
+            incluir_candidatos=True,
+            top_candidatos=top * 2,
+            session=session,
+        )
+        for c in res_lab.candidatos_top:
+            c['score'] = round(min(1.0, c['score'] + 0.05), 3)
+            c['_origen'] = 'lab'
+        cands.extend(res_lab.candidatos_top)
+
+    # 2. Búsqueda global (siempre, para asegurar que aparezcan parecidos
+    #    aunque estén bajo otro lab o sin lab).
+    res_global = match_producto(
         descripcion=descripcion,
-        laboratorio_id=laboratorio_id,
+        laboratorio_id=None,
         target=target,
         incluir_candidatos=True,
-        top_candidatos=top,
+        top_candidatos=top * 2,
         session=session,
     )
-    return res.candidatos_top
+    for c in res_global.candidatos_top:
+        c.setdefault('_origen', 'global')
+        cands.append(c)
+
+    # Dedup por producto_id (o observer_id) — el de mayor score gana.
+    mejor_por_id = {}
+    for c in cands:
+        key = c.get('producto_id') or c.get('observer_id')
+        if key is None:
+            continue
+        if key not in mejor_por_id or c['score'] > mejor_por_id[key]['score']:
+            mejor_por_id[key] = c
+    out = sorted(mejor_por_id.values(), key=lambda x: -x['score'])
+    return out[:top]
 
 
 # ── Bulk: para cuando hay N items que matchear (ej. importar oferta) ────────
