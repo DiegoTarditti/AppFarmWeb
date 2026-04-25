@@ -588,11 +588,21 @@ async function autodetectarTotalesServer() {
         renderTotalsLine();
         renderHeader();
         if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+        if (typeof renderDesglose === 'function') renderDesglose();
 
-        const campos = Object.keys(a).join(', ');
-        const msg = `✓ ${Object.keys(a).length} campos detectados (server): ${campos}`;
+        // Toast verde abajo a la derecha — feedback explícito.
+        const campos = Object.keys(a).map(f => {
+            const v = vals[f] != null ? vals[f] : (toks[a[f]] || {}).text;
+            return `${f}: ${v}`;
+        }).join('\n');
+        const toast = document.createElement('div');
+        toast.className = 'fixed bottom-3 right-3 z-[200] bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg shadow-2xl max-w-md whitespace-pre-line';
+        toast.textContent = `✓ ${Object.keys(a).length} campos detectados (server):\n${campos}`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+
         if ((data.warnings || []).length) {
-            alert(msg + '\n\n⚠ ' + data.warnings.join('\n⚠ '));
+            console.warn('Auto-detect warnings:', data.warnings);
         }
     } catch (err) {
         alert('Error de red: ' + err.message);
@@ -1385,14 +1395,52 @@ function syncDesgloseFromHeader() {
 function renderHeader() {
     const used = new Set(Object.keys(state.header));
     document.querySelectorAll('#header-chips .hchip').forEach(c => c.classList.toggle('used', used.has(c.dataset.field)));
+    // Campos que esperamos que sean numéricos (money/cantidad). Si lo son
+    // pero no parsean, mostramos badge ⚠.
+    const CAMPOS_NUMERICOS = new Set([
+        'monto_exento', 'monto_gravado', 'iva_105', 'iva_21', 'percepciones',
+        'otros', 'total', 'cantidad_total',
+    ]);
+
+    function _validarCampo(field, valor) {
+        // Devuelve {ok, badge_html} para mostrar al lado del valor.
+        const v = (valor || '').trim();
+        if (!v) return {ok: false, badge: '<span class="text-[10px] text-[#888]">vacío</span>'};
+        if (!CAMPOS_NUMERICOS.has(field)) {
+            return {ok: true, badge: '<span class="text-[10px] text-emerald-700">✓</span>'};
+        }
+        const n = _parseArgNumber(v);
+        if (n == null || isNaN(n)) {
+            return {ok: false, badge: '<span class="text-[10px] text-red-700 font-semibold">⚠ formato</span>'};
+        }
+        // Sugerir el formato canonical si difiere del actual (puede ser OCR roto).
+        const canonical = _fmtArgMoney(n);
+        if (canonical && canonical !== v) {
+            return {
+                ok: 'sugerencia',
+                badge: `<span class="text-[10px] text-amber-700" title="Sugerencia: convertir a formato canonical">⚠ ${escapeHtml(canonical)}</span>`,
+                canonical: canonical,
+            };
+        }
+        return {ok: true, badge: '<span class="text-[10px] text-emerald-700" title="Formato OK">✓</span>'};
+    }
+
     const rows = Object.keys(state.header).map(k => {
         const isAuto = state.autodetectados.has(k);
-        const badge = isAuto ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-sky-100 text-sky-700 mr-1.5" title="Detectado automáticamente">AUTO</span>' : '';
+        const badgeAuto = isAuto ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-sky-100 text-sky-700 mr-1.5" title="Detectado automáticamente">AUTO</span>' : '';
+        const v = state.header[k] != null ? String(state.header[k]) : '';
+        const valid = _validarCampo(k, v);
+        const sugerirBtn = (valid.ok === 'sugerencia' && valid.canonical)
+            ? `<button onclick="aplicarCanonical('${k}', ${JSON.stringify(valid.canonical)})" title="Reemplazar con valor canonical" class="text-amber-600 hover:text-amber-800 px-1">↻</button>`
+            : '';
         return `<div class="flex justify-between items-center bg-[#f5f5f5] rounded px-2 py-1 gap-2">
-            <span class="font-semibold flex items-center">${badge}${k}:</span>
-            <span class="font-mono flex-1 text-right">${escapeHtml(state.header[k])}</span>
-            <button onclick="editHeader('${k}')" title="Editar a mano" class="text-sky-600 hover:text-sky-800 px-1">✎</button>
-            <button onclick="removeHeader('${k}')" class="text-red-600 hover:text-red-800 font-bold px-1">×</button>
+            <span class="font-semibold flex items-center">${badgeAuto}${k}:</span>
+            <input type="text" value="${escapeHtml(v)}"
+                   onchange="updateHeaderValue('${k}', this.value)"
+                   class="font-mono flex-1 text-right bg-white border border-[#e5e7eb] rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-400"/>
+            ${valid.badge}
+            ${sugerirBtn}
+            <button onclick="removeHeader('${k}')" class="text-red-600 hover:text-red-800 font-bold px-1" title="Quitar">×</button>
          </div>`;
     });
 
@@ -1472,6 +1520,25 @@ function editHeader(k) {
     if (!t) { delete state.header[k]; } else { state.header[k] = t; }
     state.autodetectados.delete(k); // ya no es AUTO si lo editaste
     renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+
+// Edición inline (input al lado del campo) — más rápida que editHeader (prompt).
+function updateHeaderValue(k, v) {
+    const t = (v || '').trim();
+    if (!t) { delete state.header[k]; }
+    else { state.header[k] = t; }
+    state.autodetectados.delete(k);
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
+}
+
+// Aplica el valor canonical sugerido por el validador (botón ↻).
+function aplicarCanonical(k, canonical) {
+    state.header[k] = canonical;
+    state.autodetectados.delete(k);
+    renderHeader();
+    if (typeof syncDesgloseFromHeader === 'function') syncDesgloseFromHeader();
 }
 
 function useSelectionAsExample() {
