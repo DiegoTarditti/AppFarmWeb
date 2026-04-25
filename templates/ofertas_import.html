@@ -463,14 +463,20 @@ function actualizarBotonContinuar() {
     const btn = document.getElementById('btn-next-2');
     if (_panel2Mode === 'select') {
         btn.disabled = _columnasActivas.size === 0;
-        btn.classList.toggle('opacity-40', btn.disabled);
-        btn.classList.toggle('cursor-not-allowed', btn.disabled);
     } else {
-        const tieneId = _mapping.ean != null || _mapping.codigo != null;
-        btn.disabled = !tieneId;
-        btn.classList.toggle('opacity-40', btn.disabled);
-        btn.classList.toggle('cursor-not-allowed', btn.disabled);
+        // Para continuar necesitamos: 1) algo que identifique al producto
+        // (EAN, código, o al menos descripción para match fuzzy), y 2) algún
+        // valor (descuento o precio). Ofertas sin valor no aporta nada.
+        const tieneIdent = _mapping.ean != null || _mapping.codigo != null
+                        || _mapping.descripcion != null;
+        const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null;
+        btn.disabled = !(tieneIdent && tieneValor);
+        btn.title = btn.disabled
+            ? 'Mapeá al menos descripción (o EAN/código) y un valor (descuento o precio).'
+            : '';
     }
+    btn.classList.toggle('opacity-40', btn.disabled);
+    btn.classList.toggle('cursor-not-allowed', btn.disabled);
 }
 
 function highlightColumn(idx) {
@@ -569,7 +575,9 @@ function recalcularItems() {
                 }
             }
         }
-        if (item.ean || item.codigo) _items.push(item);
+        // Aceptamos la fila si tiene ean/codigo O al menos descripción
+        // (en ese caso el match se resuelve por producto_matcher fuzzy).
+        if (item.ean || item.codigo || item.descripcion) _items.push(item);
     }
 }
 
@@ -644,8 +652,11 @@ document.getElementById('btn-next-2').addEventListener('click', () => {
         setPanel2Mode('map');
         return;
     }
-    if (!_mapping.ean && !_mapping.codigo) {
-        alert('Tenés que mapear al menos EAN o Código.');
+    const tieneIdent = _mapping.ean != null || _mapping.codigo != null
+                    || _mapping.descripcion != null;
+    const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null;
+    if (!tieneIdent || !tieneValor) {
+        alert('Necesitás mapear al menos descripción (o EAN/código) y un valor (descuento o precio).');
         return;
     }
     renderPreview();
