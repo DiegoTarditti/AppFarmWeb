@@ -564,18 +564,22 @@ async function autodetectarTotalesServer() {
         if (!r.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
 
         const a = data.asignaciones || {};
+        const vals = data.valores || {};
         if (!Object.keys(a).length) {
             alert('No se pudo detectar nada (server). ' + (data.warnings || []).join('. '));
             return;
         }
 
-        // Aplicar al state.header + state.totalsAssign
+        // Aplicar al state.header + state.totalsAssign. Usamos el valor
+        // CANONICAL (5.313.393,26 limpio) en vez del texto crudo OCR-roto
+        // (5,313.393,26 con comas mal puestas).
         state.totalsAssign = state.totalsAssign || {};
         state.totalsWas = state.totalsWas || {};
         for (const [field, idx] of Object.entries(a)) {
             const t = toks[idx];
             if (!t) continue;
-            state.header[field] = t.text;
+            const valorLimpio = vals[field] != null ? vals[field] : t.text;
+            state.header[field] = valorLimpio;
             state.autodetectados.delete(field);
             state.totalsAssign[field] = {gkey: `${t.start}-${t.end}`};
             state.totalsWas[field] = true;
@@ -628,6 +632,7 @@ async function autodetectarCamposServer() {
         };
 
         const a = data.asignaciones || {};
+        const vals = data.valores || {};
         const newSels = [];
         for (const [campoBack, campoChip] of Object.entries(FIELD_MAP)) {
             const v = a[campoBack];
@@ -644,7 +649,12 @@ async function autodetectarCamposServer() {
                 }
             } else if (typeof v === 'number') {
                 const t = toks[v];
-                if (t) newSels.push({field: campoChip, text: t.text, start: t.start, end: t.end});
+                if (t) {
+                    // Usar el valor canonical (formato AR limpio) si está
+                    // disponible, en lugar del texto crudo OCR-roto.
+                    const txt = vals[campoBack] != null ? vals[campoBack] : t.text;
+                    newSels.push({field: campoChip, text: txt, start: t.start, end: t.end});
+                }
             }
         }
 

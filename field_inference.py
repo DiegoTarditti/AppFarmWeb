@@ -217,6 +217,25 @@ _RE_PCT_AR    = re.compile(r'^\d{1,2}(?:[.,]\d{1,3})?\s*%?$')
 _RE_DATE      = re.compile(r'^\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}$|^\d{4}-\d{2}-\d{2}')
 
 
+def formatear_numero_ar(n, decimales=2) -> str:
+    """Formatea un float como string AR limpio: '5.365.571,92'.
+
+    Útil cuando convertimos un valor OCR-roto y queremos volcar el
+    valor canonical al input del formulario (sin ambigüedad).
+    """
+    if n is None:
+        return ''
+    try:
+        n = float(n)
+    except (TypeError, ValueError):
+        return ''
+    # f-string con coma decimal y punto de miles (formato AR)
+    s = f'{n:,.{decimales}f}'   # estilo EN: 5,365,571.92
+    # Swap: , ↔ .  → AR: 5.365.571,92
+    s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
+    return s
+
+
 def parsear_numero_ar(s) -> Optional[float]:
     """Convierte a float aceptando formatos AR, EN y OCR-rotos.
 
@@ -670,7 +689,29 @@ def detectar_campos_factura(tokens):
         if desc_start <= desc_end:
             asign['descripcion'] = [desc_start, desc_end]
 
-    return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}
+    # Valores normalizados: para cada campo asignado, devolver el valor
+    # parseado y reformateado en AR limpio. Útil para que el frontend vuelque
+    # un texto canonical en el input en vez del crudo OCR-roto.
+    valores = {}
+    for campo, idx in asign.items():
+        if isinstance(idx, list):
+            continue
+        n = cls[idx]['n']
+        if n is None:
+            continue
+        # Para int corto (cantidad) sin decimales; para money 2 decimales;
+        # para pct mantener decimales. Asumimos cantidad si es 'cantidad' o int.
+        if campo == 'cantidad' or cls[idx]['es_int_corto']:
+            valores[campo] = str(int(n))
+        elif cls[idx]['es_pct']:
+            # Pct: mantener formato AR sin separador de miles
+            txt = formatear_numero_ar(n, decimales=2)
+            valores[campo] = txt.replace('.', '')   # 33,41 (sin miles para pct chico)
+        else:
+            valores[campo] = formatear_numero_ar(n, decimales=2)
+
+    return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings,
+            'valores': valores}
 
 
 def detectar_campos_totales(tokens):
@@ -789,4 +830,16 @@ def detectar_campos_totales(tokens):
     if len(remaining) >= 2:
         asign['percepciones'] = remaining[-1]['i']
 
-    return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings}
+    # Valores normalizados (ver explicación en detectar_campos_factura).
+    valores = {}
+    for campo, idx in asign.items():
+        n = cls[idx]['n']
+        if n is None:
+            continue
+        if campo == 'cantidad_total' or cls[idx]['es_int']:
+            valores[campo] = str(int(n))
+        else:
+            valores[campo] = formatear_numero_ar(n, decimales=2)
+
+    return {'asignaciones': asign, 'tipos': tipos, 'warnings': warnings,
+            'valores': valores}
