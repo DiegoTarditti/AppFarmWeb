@@ -339,12 +339,19 @@ function renderMapping() {
     document.getElementById('map-info').textContent =
         `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
     const grid = document.getElementById('mapping-grid');
+
+    // Sample de la primera fila no-vacía: ayuda a distinguir columnas con
+    // headers parecidos (ej. "DESCUENTO MOD 1" vs "DESCUENTO MOD 2").
+    const sampleRow = _rows.find(r => r.some(c => c !== '' && c != null)) || [];
+
     grid.innerHTML = CAMPOS.map(c => {
         const sel = _mapping[c.key];
         const opciones = ['<option value="">(ninguno)</option>'].concat(
-            _headers.map((h, i) =>
-                `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. ${escapeHtml(h)}</option>`
-            )
+            _headers.map((h, i) => {
+                const sample = i < sampleRow.length ? String(sampleRow[i] || '').slice(0, 25) : '';
+                const sampleTxt = sample ? ` → ${escapeHtml(sample)}` : '';
+                return `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. ${escapeHtml(h)}${sampleTxt}</option>`;
+            })
         ).join('');
         return `
             <div>
@@ -365,6 +372,7 @@ function renderMapping() {
             else _mapping[campo] = parseInt(v, 10);
             document.getElementById('map-info').textContent =
                 `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
+            actualizarAlertaDuplicados();
             recalcularItems();
         });
         // Hover sobre el dropdown highlightea la columna en el snapshot
@@ -378,6 +386,18 @@ function renderMapping() {
         });
         sel.addEventListener('blur', () => highlightColumn(-1));
     });
+}
+
+function actualizarAlertaDuplicados() {
+    // Detecta si dos campos están mapeados a la misma columna
+    const usados = {};
+    const dupes = [];
+    for (const [campo, idx] of Object.entries(_mapping)) {
+        if (usados[idx]) dupes.push(idx);
+        usados[idx] = true;
+    }
+    // (Por ahora solo console — se puede agregar UI después)
+    if (dupes.length) console.warn('Columnas duplicadas en mapeo:', dupes);
 }
 
 function recalcularItems() {
@@ -543,7 +563,9 @@ function renderValidacion(stats) {
     // Renderizar detalle de items con problemas
     const detalle = document.getElementById('validacion-detalle');
     if (detalle) {
-        const problematicos = _items.filter(it => ['warning', 'not_found', 'fuzzy'].includes(it._status));
+        const problematicos = _items
+            .map((it, idx) => ({...it, _idx: idx}))
+            .filter(it => ['warning', 'not_found', 'fuzzy'].includes(it._status));
         if (!problematicos.length) {
             detalle.innerHTML = '<p class="text-xs text-[#999]">Ningún item con problemas. ✓</p>';
         } else {
@@ -556,17 +578,105 @@ function renderValidacion(stats) {
                     const label = status === 'not_found' ? '❌' :
                                   status === 'warning' ? '⚠' :
                                   status === 'fuzzy' ? '🔍' : '';
+                    const candidatosBtn = status === 'not_found'
+                        ? `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300 ml-1" data-idx="${it._idx}">🔍 Buscar similar</button>`
+                        : '';
                     return `<tr class="${colorCls}">
-                        <td class="py-1 pr-2 w-4">${label}</td>
-                        <td class="py-1 pr-2 font-mono text-[10px]">${escapeHtml(it.ean || it.codigo || '')}</td>
-                        <td class="py-1 pr-2">${escapeHtml(it.descripcion || '')}</td>
-                        <td class="py-1 pr-2 text-[10px]">${escapeHtml(it._motivo || '')}</td>
+                        <td class="py-1 pr-2 w-4 align-top">${label}</td>
+                        <td class="py-1 pr-2 font-mono text-[10px] align-top">${escapeHtml(it.ean || it.codigo || '')}</td>
+                        <td class="py-1 pr-2 align-top">
+                            ${escapeHtml(it.descripcion || '')}
+                            <div id="candidatos-${it._idx}" class="mt-1"></div>
+                        </td>
+                        <td class="py-1 pr-2 text-[10px] align-top">${escapeHtml(it._motivo || '')}${candidatosBtn}</td>
                     </tr>`;
                 }).join('') +
                 (problematicos.length > 50 ? `<tr><td colspan="4" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 50} más</td></tr>` : '') +
                 '</tbody></table>';
+
+            // Listeners de los botones "Buscar similar"
+            detalle.querySelectorAll('.btn-buscar-candidato').forEach(btn => {
+                btn.addEventListener('click', () => buscarCandidatos(parseInt(btn.dataset.idx, 10)));
+            });
         }
     }
+}
+
+async function buscarCandidatos(itemIdx) {
+    const item = _items[itemIdx];
+    if (!item) return;
+    const labId = document.getElementById('lab-select').value;
+    const slot = document.getElementById('candidatos-' + itemIdx);
+    if (!slot) return;
+    slot.innerHTML = '<span class="text-[10px] text-[#888]">⏳ Buscando…</span>';
+
+    try {
+        const r = await fetch('/api/ofertas/import-candidatos', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                descripcion: item.descripcion || item.codigo || '',
+                laboratorio_id: labId ? parseInt(labId, 10) : null,
+                top: 8,
+            }),
+        });
+        const data = await r.json();
+        if (!data.candidatos || !data.candidatos.length) {
+            slot.innerHTML = '<span class="text-[10px] text-[#999]">No se encontraron candidatos.</span>';
+            return;
+        }
+        const opciones = data.candidatos.map(c =>
+            `<option value="${c.producto_id}" data-desc="${escapeHtml(c.descripcion)}" data-cb="${escapeHtml(c.codigo_barra)}" data-alf="${escapeHtml(c.codigo_alfabeta)}">${escapeHtml(c.descripcion)} (${(c.score * 100).toFixed(0)}%)</option>`
+        ).join('');
+        slot.innerHTML = `
+            <div class="flex items-center gap-1 mt-1">
+                <select class="cand-sel text-[10px] bg-surface-input border border-violet-300 rounded px-1 py-0.5 flex-1" data-idx="${itemIdx}">
+                    <option value="">— Elegí un candidato —</option>
+                    ${opciones}
+                </select>
+                <button type="button" class="btn-vincular text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2 py-0.5 rounded" data-idx="${itemIdx}">Vincular</button>
+            </div>
+        `;
+        slot.querySelector('.btn-vincular').addEventListener('click', () => {
+            const sel = slot.querySelector('.cand-sel');
+            const opt = sel.options[sel.selectedIndex];
+            if (!opt || !opt.value) {
+                alert('Elegí un candidato primero.');
+                return;
+            }
+            // Vincular: el item pasa de not_found a fuzzy con el producto elegido
+            const it = _items[itemIdx];
+            it._status = 'fuzzy';
+            it._producto_id = parseInt(opt.value, 10);
+            it._match_descripcion_local = opt.dataset.desc;
+            it._estrategia = 'manual';
+            it._motivo = `Match manual: "${opt.dataset.desc}"`;
+            // Si el item no tenía EAN pero el producto matcheado tiene codigo_barra,
+            // adoptamos el código_alfabeta o lo mantenemos como código.
+            if (!it.ean && opt.dataset.cb) it.ean = opt.dataset.cb;
+            if (!it.codigo && opt.dataset.alf) it.codigo = opt.dataset.alf;
+            // Re-render
+            slot.innerHTML = `<span class="text-[10px] text-emerald-700 font-semibold">✓ Vinculado a: ${escapeHtml(opt.dataset.desc)}</span>`;
+            // Recalcular stats
+            recalcularStats();
+            actualizarConfirmCount();
+        });
+    } catch (err) {
+        slot.innerHTML = `<span class="text-[10px] text-red-700">Error: ${escapeHtml(err.message)}</span>`;
+    }
+}
+
+function recalcularStats() {
+    const stats = {ok: 0, fuzzy: 0, warning: 0, not_found: 0, sin_precio_previo: 0};
+    for (const it of _items) {
+        const s = it._status;
+        if (s in stats) stats[s]++;
+        if (it._motivo_info && it._motivo_info.includes('Sin precio previo')) {
+            stats.sin_precio_previo++;
+        }
+    }
+    renderValidacion(stats);
 }
 
 function actualizarConfirmCount() {

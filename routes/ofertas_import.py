@@ -286,6 +286,54 @@ def _previsualizar_xlsx(path):
             'total': len(validados),
         })
 
+    @app.route('/api/ofertas/import-candidatos', methods=['POST'])
+    @login_required
+    def api_ofertas_import_candidatos():
+        """Para un item 'no encontrado', devuelve top-N productos del catálogo
+        que más se parecen por descripción (Jaccard). Scope al lab si está dado.
+
+        Body JSON: { descripcion, laboratorio_id?, top?: 8 }
+        """
+        from observer_matcher import _tokens, _jaccard
+        data = request.get_json(silent=True) or {}
+        descr = (data.get('descripcion') or '').strip()
+        if not descr:
+            return jsonify({'candidatos': []})
+        try:
+            lab_id = int(data.get('laboratorio_id')) if data.get('laboratorio_id') else None
+        except (ValueError, TypeError):
+            lab_id = None
+        try:
+            top = max(1, min(20, int(data.get('top', 8))))
+        except (ValueError, TypeError):
+            top = 8
+
+        toks_in = _tokens(descr)
+        if len(toks_in) < 1:
+            return jsonify({'candidatos': []})
+
+        with database.get_db() as session:
+            P = database.Producto
+            q = session.query(P)
+            if lab_id:
+                q = q.filter(P.laboratorio_id == lab_id)
+            scored = []
+            for p in q.all():
+                if not p.descripcion:
+                    continue
+                score = _jaccard(toks_in, _tokens(p.descripcion))
+                if score > 0:
+                    scored.append({
+                        'producto_id': p.id,
+                        'descripcion': p.descripcion,
+                        'codigo_barra': p.codigo_barra,
+                        'codigo_alfabeta': p.codigo_alfabeta or '',
+                        'precio_pvp': float(p.precio_pvp) if p.precio_pvp else None,
+                        'score': round(score, 3),
+                    })
+            scored.sort(key=lambda x: -x['score'])
+            return jsonify({'candidatos': scored[:top]})
+
     @app.route('/api/ofertas/import-guardar', methods=['POST'])
     @login_required
     def api_ofertas_import_guardar():
