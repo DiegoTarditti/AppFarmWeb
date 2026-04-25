@@ -402,6 +402,40 @@ def match_producto(*,
                 elif empate and mejor_score >= threshold:
                     result.warnings.append('match_ambiguo')
 
+            # Estrategia 5b: fallback global si scope al lab no encontró nada.
+            # Cubre el caso donde el catálogo del lab está vacío o el producto
+            # está cargado bajo otro lab/sin lab. Threshold un poco más alto
+            # (penalización por venir de "otro lab") para reducir falsos
+            # positivos. NO se ejecuta si el caller pasó un pool propio.
+            if (not result.producto and laboratorio_id and pool is None
+                    and lab_col is not None):
+                global_query = session.query(P).filter(lab_col != laboratorio_id)
+                global_candidatos = global_query.all()
+                mejor = None
+                mejor_score = 0.0
+                empate = False
+                skip_packs = contexto in ('modulo', 'pack')
+                threshold_global = max(threshold, 0.85)
+                for c in global_candidatos:
+                    if skip_packs and descripcion_es_pack(c.descripcion):
+                        continue
+                    toks_c = tokens_significativos(c.descripcion)
+                    score = jaccard(toks_input, toks_c)
+                    if cantidad_envase and _extraer_cantidad_envase(c.descripcion) == cantidad_envase:
+                        score = min(1.0, score + 0.10)
+                    if score > mejor_score:
+                        mejor = c
+                        mejor_score = score
+                        empate = False
+                    elif score == mejor_score and score > 0:
+                        empate = True
+                if mejor and mejor_score >= threshold_global and not empate:
+                    result.producto = mejor
+                    result.score = mejor_score - 0.05  # penalización
+                    result.estrategia = 'fuzzy_otro_lab'
+                    result.confianza = _confianza(result.score)
+                    result.warnings.append('match_otro_lab')
+
         # Cross-check de precio si hay match
         if result.producto and precio_referencia is not None:
             try:

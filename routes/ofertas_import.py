@@ -299,10 +299,12 @@ def init_app(app):
                     var = res.debug.get('variacion_precio')
                     entry['_motivo'] = f'Variación de precio {var:+.1f}%' if var is not None else 'Variación alta'
                     stats['warning'] += 1
-                elif res.estrategia in ('fuzzy_lab', 'fuzzy_global', 'tokens_superset'):
+                elif res.estrategia in ('fuzzy_lab', 'fuzzy_global',
+                                         'fuzzy_otro_lab', 'tokens_superset'):
                     entry['_status'] = 'fuzzy'
+                    nota_lab = ' [otro lab]' if res.estrategia == 'fuzzy_otro_lab' else ''
                     entry['_motivo'] = (
-                        f'Match por descripción (score {res.score:.2f}). '
+                        f'Match por descripción{nota_lab} (score {res.score:.2f}). '
                         f'Local: "{(res.producto.descripcion or "")[:80]}"'
                     )
                     stats['fuzzy'] += 1
