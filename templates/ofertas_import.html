@@ -72,7 +72,16 @@
 
         <!-- Snapshot del archivo -->
         <div class="mb-4">
-            <p class="text-[11px] font-semibold text-[#555] mb-1">Snapshot del archivo (primeras 5 filas):</p>
+            <div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+                <p class="text-[11px] font-semibold text-[#555]">
+                    Snapshot del archivo (primeras 5 filas) — destildá las columnas que no querés procesar:
+                </p>
+                <div class="flex items-center gap-2 text-[11px]">
+                    <button type="button" id="btn-cols-all" class="text-violet-700 hover:text-violet-900 underline">Tildar todas</button>
+                    <span class="text-[#ccc]">·</span>
+                    <button type="button" id="btn-cols-none" class="text-[#888] hover:text-[#1e1e1e] underline">Destildar todas</button>
+                </div>
+            </div>
             <div class="overflow-x-auto border border-surface-border rounded-lg">
                 <table class="w-full text-[11px]">
                     <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888]">
@@ -232,6 +241,7 @@ let _rows = [];
 let _mapping = {};
 let _items = [];
 let _step = 1;
+let _columnasActivas = new Set();   // índices de columnas seleccionadas en el snapshot
 
 function setStep(n) {
     _step = n;
@@ -266,6 +276,16 @@ function setStep(n) {
     }
 }
 
+document.getElementById('btn-cols-all').addEventListener('click', () => {
+    _columnasActivas = new Set(_headers.map((_, i) => i));
+    renderSnapshot(); renderMapping(); recalcularItems();
+});
+document.getElementById('btn-cols-none').addEventListener('click', () => {
+    _columnasActivas = new Set();
+    _mapping = {};
+    renderSnapshot(); renderMapping(); recalcularItems();
+});
+
 document.getElementById('btn-parse').addEventListener('click', async () => {
     const fileInput = document.getElementById('file-input');
     const status = document.getElementById('upload-status');
@@ -292,6 +312,8 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         _headers = data.headers || [];
         _rows = data.rows || [];
         _mapping = data.mapping || {};
+        // Por default todas las columnas seleccionadas; el user puede destildar.
+        _columnasActivas = new Set(_headers.map((_, i) => i));
         renderSnapshot();
         renderMapping();
         recalcularItems();
@@ -303,22 +325,50 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
 });
 
 function renderSnapshot() {
-    // Header con número + nombre de columna
+    // Header: checkbox + número + nombre. Las columnas destildadas se atenúan
+    // y se sacan de los dropdowns de mapeo + del cálculo de items.
     document.getElementById('snapshot-header').innerHTML =
-        _headers.map((h, i) =>
-            `<th class="px-2 py-1.5 text-left whitespace-nowrap" data-col="${i}">
-                <span class="text-violet-700 font-bold">${i + 1}.</span> ${escapeHtml(h)}
-            </th>`
-        ).join('');
+        _headers.map((h, i) => {
+            const activa = _columnasActivas.has(i);
+            const dim = activa ? '' : 'opacity-40';
+            const strike = activa ? '' : 'line-through';
+            return `<th class="px-2 py-1.5 text-left whitespace-nowrap ${dim}" data-col="${i}">
+                <label class="flex items-center gap-1.5 cursor-pointer select-none" title="${activa ? 'Destildar para descartar esta columna' : 'Tildar para incluir esta columna'}">
+                    <input type="checkbox" class="col-toggle w-3.5 h-3.5 accent-violet-600 cursor-pointer" data-col="${i}" ${activa ? 'checked' : ''}>
+                    <span class="text-violet-700 font-bold">${i + 1}.</span>
+                    <span class="${strike}">${escapeHtml(h) || '<i class="text-[#bbb]">(sin nombre)</i>'}</span>
+                </label>
+            </th>`;
+        }).join('');
 
-    // Cuerpo: primeras 5 filas
+    document.querySelectorAll('#snapshot-header .col-toggle').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            e.stopPropagation();
+            const i = parseInt(cb.dataset.col, 10);
+            if (cb.checked) {
+                _columnasActivas.add(i);
+            } else {
+                _columnasActivas.delete(i);
+                // Si algún campo del sistema apuntaba a esta columna, desasignarlo.
+                for (const [campo, idx] of Object.entries(_mapping)) {
+                    if (idx === i) delete _mapping[campo];
+                }
+            }
+            renderSnapshot();
+            renderMapping();
+            recalcularItems();
+        });
+    });
+
+    // Cuerpo: primeras 5 filas, columnas inactivas atenuadas.
     const body = document.getElementById('snapshot-body');
     const sample = _rows.slice(0, 5);
     body.innerHTML = sample.map(row => {
         const cells = _headers.map((_, i) => {
             const v = i < row.length ? row[i] : '';
             const display = v === '' || v == null ? '<span class="text-[#bbb]">—</span>' : escapeHtml(v).slice(0, 60);
-            return `<td class="px-2 py-1 border-l border-[#f0f0f0] whitespace-nowrap" data-col="${i}">${display}</td>`;
+            const dim = _columnasActivas.has(i) ? '' : 'opacity-40';
+            return `<td class="px-2 py-1 border-l border-[#f0f0f0] whitespace-nowrap ${dim}" data-col="${i}">${display}</td>`;
         }).join('');
         return `<tr>${cells}</tr>`;
     }).join('');
@@ -336,8 +386,9 @@ function highlightColumn(idx) {
 }
 
 function renderMapping() {
+    const activasN = _columnasActivas.size;
     document.getElementById('map-info').textContent =
-        `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${_headers.length} columnas en el archivo`;
+        `${Object.keys(_mapping).length}/${CAMPOS.length} campos detectados · ${activasN}/${_headers.length} columnas seleccionadas`;
     const grid = document.getElementById('mapping-grid');
 
     // Sample de la primera fila no-vacía: ayuda a distinguir columnas con
@@ -348,10 +399,11 @@ function renderMapping() {
         const sel = _mapping[c.key];
         const opciones = ['<option value="">(ninguno)</option>'].concat(
             _headers.map((h, i) => {
+                if (!_columnasActivas.has(i)) return '';   // omitir columnas destildadas
                 const sample = i < sampleRow.length ? String(sampleRow[i] || '').slice(0, 25) : '';
                 const sampleTxt = sample ? ` → ${escapeHtml(sample)}` : '';
                 return `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. ${escapeHtml(h)}${sampleTxt}</option>`;
-            })
+            }).filter(Boolean)
         ).join('');
         return `
             <div>
@@ -406,6 +458,8 @@ function recalcularItems() {
     for (const row of _rows) {
         const item = {};
         for (const [campo, idx] of Object.entries(_mapping)) {
+            // Si la columna fue destildada después del mapeo, ignorar.
+            if (!_columnasActivas.has(idx)) continue;
             if (idx < row.length) {
                 const v = row[idx];
                 if (v != null && v !== '') {
