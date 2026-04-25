@@ -27,32 +27,22 @@ Aplica a:
 - Conversor de facturas (cuando se ajuste).
 - Cualquier import futuro.
 
-### Módulo unificado de matching de productos (PENDIENTE)
-**Trigger**: cuando se sume el segundo import a esta lógica.
+### ~~Módulo unificado de matching de productos~~ ✅ HECHO 2026-04-25
+- `producto_matcher.py` central con `match_producto(target='producto'|'obs_producto')`.
+  Cascada: EAN → alfabeta → descripción exacta → tokens superset → Jaccard
+  por lab → fuzzy global. Modifiers: cantidad envase (+0.10), monodroga
+  (+0.05), variación de precio >30% (-0.20 + warning).
+- `match_productos_bulk()` para N items, `buscar_candidatos()` para
+  dropdowns de match manual.
+- Migrados: `routes/ofertas_import.py`, `observer_matcher.candidatos_para_producto`,
+  `scripts/vincular_pedido_observer._matchear` (con `pool` precargado para
+  mantener filtro `fecha_baja IS NULL`). Ver commit `9cbb176`.
+- 28 tests específicos del matcher (incluye target ObsProducto).
 
-Hoy hay infraestructura dispersa para matchear productos:
-- `observer_matcher.py` — matching producto local ↔ obs_producto por descripción (Jaccard).
-- `pack_detector.py` — detecta packs por descripción + cantidad.
-- `scripts/vincular_pedido_observer.py:_matchear` — match para items de pedido.
-
-Hay que consolidar en un solo módulo `producto_matcher.py` con función única:
-
-```python
-def match_producto(ean=None, codigo_alfabeta=None, descripcion=None,
-                   lab_id=None, precio_referencia=None,
-                   threshold_fuzzy=0.80) -> MatchResult:
-    """Cascada de estrategias de match. Devuelve Producto + estrategia + score + warnings.
-
-    1. Exacto por EAN (codigo_barra o alts).
-    2. Exacto por codigo_alfabeta.
-    3. Fuzzy por descripción + lab_id (Jaccard, solo dentro del lab).
-    4. Fuzzy global (sin lab) — solo si threshold alto.
-    5. Cross-check de precio: si hay precio_referencia y |Δ%| > 50% del precio actual,
-       agregar warning aunque haya match.
-    """
-```
-
-Ventajas: cualquier import nuevo (facturas, ofertas, pedidos) usa la misma lógica → comportamiento consistente. Si mejorás el matcher, mejoran todos los imports.
+**Pendiente (gradual):** migrar `observer_matcher.match_productos` (bulk-job
+de 30k×122k productos) — su precarga de índices in-memory es performance
+crítica y no conviene reemplazarla item-por-item; se va a tratar como
+una tarea aparte.
 
 **Cómo leerlo:**
 - Cada item tiene **trigger** (cuándo conviene hacerlo) y **esfuerzo** estimado.
@@ -268,6 +258,8 @@ Ventajas: cualquier import nuevo (facturas, ofertas, pedidos) usa la misma lógi
 
 ## ✅ Hechos recientes (histórico)
 
+- 2026-04-25: **Matcher central `producto_matcher.py`** — `match_producto(target=...)` reemplaza primitivas duplicadas en observer_matcher, vincular_pedido_observer y ofertas_import. Soporta `Producto` y `ObsProducto`. 28 tests específicos.
+- 2026-04-25: **Importador de ofertas (Fase B parte 1)** — `/ofertas/import` con wizard de 4 pasos: subir → mapear columnas → revisar → confirmar. Snapshot del archivo, validación contra catálogo, dropdown manual para items no encontrados. Excel `%` reconocido.
 - 2026-04-25: **Alerta sync fallido** — banner + endpoint + `estado_syncs()`.
 - 2026-04-25: **CI mínimo** — workflow GitHub Actions con syntax + pytest.
 - 2026-04-25: **Test isolation fixes** — autouse fixture + mock de `entorno`.
