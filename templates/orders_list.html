@@ -902,12 +902,20 @@ function _renderIndicadores(data) {
                         const cls = sube ? 'text-emerald-700' : 'text-red-700';
                         tend = `<span class="${cls} font-semibold">${sube ? '▲' : '▼'} ${Math.abs(i.momentum_pct).toFixed(0)}%</span>`;
                     }
-                    const altBtn = i.monodroga_id != null
-                        ? `<button type="button" class="btn-alt bg-violet-100 hover:bg-violet-200 text-violet-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-violet-300" data-droga-id="${i.monodroga_id}" data-cb="${_esc(i.codigo_barra)}" data-nombre="${_esc(i.nombre)}" title="Ver alternativas">⇄ Comparar otros labs</button>`
-                        : '<span class="text-[10px] text-[#bbb]">sin droga</span>';
-                    return `<tr>
+                    let altBtn;
+                    if (i.monodroga_id != null) {
+                        altBtn = `<button type="button" class="btn-alt bg-violet-100 hover:bg-violet-200 text-violet-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-violet-300" data-droga-id="${i.monodroga_id}" data-cb="${_esc(i.codigo_barra)}" data-nombre="${_esc(i.nombre)}" title="Ver alternativas">⇄ Comparar otros labs</button>`;
+                    } else if (i.baja) {
+                        altBtn = '<span class="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-[#f0f0f0] text-[#888]" title="Producto dado de baja en ObServer">baja</span>';
+                    } else if (!i.tiene_obs) {
+                        altBtn = '<span class="text-[10px] text-[#bbb]" title="No matchea con obs_productos">sin link</span>';
+                    } else {
+                        altBtn = '<span class="text-[10px] text-[#bbb]" title="ObServer no registra monodroga">sin droga</span>';
+                    }
+                    const bajaBadge = i.baja ? ' <span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>' : '';
+                    return `<tr ${i.baja ? 'class="opacity-70"' : ''}>
                         <td class="py-1 text-[#888]">${idx+1}</td>
-                        <td class="py-1">${_esc(i.nombre)}</td>
+                        <td class="py-1">${_esc(i.nombre)}${bajaBadge}</td>
                         <td class="py-1 text-right text-amber-800 font-semibold">${i.cantidad_pedida}</td>
                         <td class="py-1 text-right">${i.u12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
                         <td class="py-1 text-right">${tend}</td>
@@ -1165,8 +1173,10 @@ async function verAlternativas(drogaId, currentCb, currentNombre) {
                             const cls = sube ? 'text-emerald-700' : 'text-red-700';
                             tendCell = `<span class="${cls} font-semibold">${sube?'▲':'▼'} ${Math.abs(p.momentum_pct).toFixed(0)}%</span>`;
                         }
-                        return `<tr class="border-t border-[#ececec] ${rowCls}">
-                            <td class="py-1 px-1.5">${esActual ? '<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 rounded mr-1">👉 PEDIDO</span>' : ''}${_esc(p.descripcion)}</td>
+                        const bajaBadge = p.baja ? ' <span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>' : '';
+                        const opacityCls = p.baja ? 'opacity-70' : '';
+                        return `<tr class="border-t border-[#ececec] ${rowCls} ${opacityCls}">
+                            <td class="py-1 px-1.5">${esActual ? '<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 rounded mr-1">👉 PEDIDO</span>' : ''}${_esc(p.descripcion)}${bajaBadge}</td>
                             <td class="py-1 px-1.5 text-right ${p.stock > 0 ? 'font-semibold text-emerald-700' : 'text-[#bbb]'}">${p.stock}</td>
                             <td class="py-1 px-1.5 text-right">${diasCell}</td>
                             <td class="py-1 px-1.5 text-right">${p.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
