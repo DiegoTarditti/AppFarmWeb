@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Pre-push hook: corre checks rápidos antes de cada push.
+# Bloquea push si hay errores de sintaxis o de lint.
+#
+# Activación (una sola vez por clon):
+#   git config core.hooksPath git-hooks
+#
+# Bypass de emergencia:
+#   SKIP_PUSH_CHECK=1 git push
+
+set -e
+
+if [ "$SKIP_PUSH_CHECK" = "1" ]; then
+    echo "⚠  Saltando checks pre-push (SKIP_PUSH_CHECK=1)"
+    exit 0
+fi
+
+START_TIME=$(date +%s)
+
+# 1. Compileall — detecta syntax errors. Rápido (~1 seg).
+echo "▶ Pre-push 1/2 — Syntax check..."
+if ! python -m compileall -q . 2>&1; then
+    echo ""
+    echo "✗ Syntax errors detectados. Push bloqueado."
+    echo "  Para forzar el push: SKIP_PUSH_CHECK=1 git push"
+    exit 1
+fi
+
+# 2. Ruff — detecta lint issues. Rápido si está instalado.
+echo "▶ Pre-push 2/2 — Lint (ruff)..."
+if command -v ruff > /dev/null 2>&1; then
+    if ! ruff check . 2>&1; then
+        echo ""
+        echo "✗ Ruff detectó issues. Push bloqueado."
+        echo "  Auto-fix:    ruff check --fix ."
+        echo "  Bypass:      SKIP_PUSH_CHECK=1 git push"
+        exit 1
+    fi
+else
+    echo "  (ruff no instalado en el host. pip install ruff — salteado)"
+fi
+
+DURATION=$(($(date +%s) - START_TIME))
+echo "✓ Pre-push OK (${DURATION}s)"
+exit 0

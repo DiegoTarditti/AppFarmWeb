@@ -1,6 +1,16 @@
 # App de Control de Stock para Farmacia
 
-[![CI](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml/badge.svg?branch=desarrollo)](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml)
+[![CI](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/DiegoTarditti/AppFarmWeb/actions/workflows/ci.yml)
+
+## Pre-push hooks (recomendado)
+
+Para que el sistema corra `compileall` y `ruff` automáticamente antes de cada `git push` y bloquee el push si hay problemas:
+
+```bash
+git config core.hooksPath git-hooks
+```
+
+Una sola vez por clon. Bypass de emergencia: `SKIP_PUSH_CHECK=1 git push`.
 
 Esta aplicación es un prototipo para cargar facturas en PDF y reportes ERP en Excel, extraer datos, comparar inventarios y generar un informe de diferencias.
 
