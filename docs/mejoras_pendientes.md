@@ -11,11 +11,8 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ## 🚀 Rendimiento — cuando empiece a tardar
 
-### Vista materializada para `/estadisticas/drogas`
-- **Trigger**: la pantalla tarda > 3-5 seg en cargar.
-- **Esfuerzo**: ~30 min.
-- **Cómo**: `CREATE MATERIALIZED VIEW mv_stats_drogas` con el JOIN agregado actual. Cambiar la ruta para leer de la vista. Refresh nocturno con `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_stats_drogas` desde DockerPanel cron o post-sync.
-- **Por qué**: hoy el JOIN escanea `obs_productos` × `obs_ventas_mensuales`. Con 500k filas tarda 5-15 seg.
+### ~~Vista materializada para `/estadisticas/drogas`~~ ✅ HECHO 2026-04-25
+- Implementado preventivamente. `mv_stats_drogas` con refresh automático post-push a Render. Banner de frescura en la pantalla. Ver commit `8aa1d76`.
 
 ### Trigram index en `obs_productos.descripcion`
 - **Trigger**: la búsqueda en `/obs/productos` o `/estadisticas/drogas` con `q=...` tarda > 1 seg.
@@ -225,6 +222,7 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 - 2026-04-25: **Bug `_bulk_upsert_productos`** — falta de flush entre llamadas → UNIQUE violation.
 - 2026-04-25: **Simplificación de ramas** — eliminada `desarrollo`, todo trabajo en `main`.
 - 2026-04-25: **Esqueleto del manual de usuario** — 22 archivos en `docs/manual/`.
+- 2026-04-25: **Vista materializada `mv_stats_drogas`** — pre-calcula agregados por monodroga + banner de frescura + auto-refresh post-push.
 - 2026-04-25: **Indicadores del pedido** — modal con 5 tabs + sub-modal alternativas.
 - 2026-04-25: **Estadísticas por droga** — comparación de labs con 12+ gráficos.
 
