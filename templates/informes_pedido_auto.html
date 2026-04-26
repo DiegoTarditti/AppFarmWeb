@@ -51,10 +51,56 @@
                     <a href="{{ url_for('informe_pedido_auto') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Cambiar laboratorio</a>
                     <h2 class="text-base font-bold text-[#1e1e1e] mt-1">{{ lab_nombre or 'Laboratorio' }}</h2>
                     <p class="text-xs text-[#6f6f6f]">
-                        <strong>{{ stats.productos }}</strong> productos · sugerido <strong>{{ '{:,}'.format(stats.unidades_total).replace(',', '.') }}</strong> unidades
+                        <strong>{{ stats.productos }}</strong> productos · sugerido <strong>{{ '{:,}'.format(stats.unidades_total).replace(',', '.') }}</strong> unidades · pérdida estimada <strong class="text-rose-700">{{ stats.perdida_mensual_total }} u/mes</strong>
                     </p>
                 </div>
             </div>
+
+            {% if chart_perdida and chart_perdida.labels %}
+            <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+                <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+                    <h3 class="text-sm font-bold text-[#1e1e1e]">📉 Top 10 productos con mayor pérdida estimada</h3>
+                    <p class="text-[11px] text-[#888]">Unidades promedio que dejás de vender por mes según la falta de stock vs mínimo</p>
+                </div>
+                <div style="height: 320px"><canvas id="chart-perdida"></canvas></div>
+            </div>
+            <script>
+            (function() {
+                const ctx = document.getElementById('chart-perdida');
+                if (!ctx || typeof Chart === 'undefined') return;
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: {{ chart_perdida.labels|tojson }},
+                        datasets: [{
+                            label: 'Pérdida estimada (u/mes)',
+                            data: {{ chart_perdida.data|tojson }},
+                            backgroundColor: 'rgba(225, 29, 72, .75)',
+                            borderColor: 'rgba(225, 29, 72, 1)',
+                            borderWidth: 1,
+                        }]
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.parsed.x.toFixed(1)} u/mes que se pierden`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { beginAtZero: true, ticks: { precision: 0 } },
+                            y: { ticks: { font: { size: 11 } } }
+                        }
+                    }
+                });
+            })();
+            </script>
+            {% endif %}
 
             {% if rows %}
             <form method="POST" action="{{ url_for('informe_pedido_auto_crear') }}">

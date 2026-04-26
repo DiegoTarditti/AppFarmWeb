@@ -547,6 +547,14 @@ def init_app(app):
                     else:
                         sugerido = max(1, minimo - stock)
                         base = 'min-stock'
+                    u12m = int(r.u12m or 0)
+                    # Pérdida mensual estimada = ventas promedio × proporción
+                    # de stock faltante respecto al mínimo. Si el producto
+                    # está vacío vs su mínimo, se asume que se pierde toda
+                    # la venta promedio. Cap en avg para no inflar.
+                    avg_mensual = u12m / 12.0 if u12m else 0.0
+                    factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
+                    perdida_mensual = round(avg_mensual * factor_falta, 1)
                     rows.append({
                         'producto_id': r.pid,
                         'descripcion': r.desc,
@@ -556,7 +564,8 @@ def init_app(app):
                         'maximo': maximo,
                         'sugerido': max(1, sugerido),
                         'base_sugerido': base,
-                        'u12m': int(r.u12m or 0),
+                        'u12m': u12m,
+                        'perdida_mensual': perdida_mensual,
                         'ean': None,
                     })
                     obs_ids.append(r.pid)
@@ -572,13 +581,24 @@ def init_app(app):
         stats = {
             'productos': len(rows),
             'unidades_total': sum(r['sugerido'] for r in rows),
+            'perdida_mensual_total': round(sum(r.get('perdida_mensual', 0) for r in rows), 1),
+        }
+        # Top 10 por pérdida estimada para el gráfico de barras.
+        top_perdida = sorted(
+            [r for r in rows if r.get('perdida_mensual', 0) > 0],
+            key=lambda r: -r['perdida_mensual'],
+        )[:10]
+        chart_perdida = {
+            'labels': [r['descripcion'][:50] for r in top_perdida],
+            'data':   [r['perdida_mensual'] for r in top_perdida],
         }
         return render_template('informes_pedido_auto.html',
                                lab_id=lab_id,
                                lab_nombre=lab_nombre,
                                labs_con_alertas=labs_con_alertas,
                                rows=rows,
-                               stats=stats)
+                               stats=stats,
+                               chart_perdida=chart_perdida)
 
     @app.route('/informes/pedido-auto/crear', methods=['POST'])
     @login_required
