@@ -19,6 +19,16 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Cruces con el stock mínimo que calcula ObServer a diario.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <a href="{{ url_for('informe_pedido_auto') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">📦</div>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Pedido automático por lab</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Elegí un laboratorio con productos bajo mínimo y armá un pedido sugerido editable en un click.</p>
+                </a>
+
                 <a href="{{ url_for('informe_bajo_minimo') }}"
                    class="block bg-white border border-surface-border rounded-xl p-4 hover:border-rose-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Pedido automático — Informes{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('informes_index') }}"
+       class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Mis Informes</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Pedido automático por mínimos</h1>
+    <span class="text-xs text-[#6f6f6f]">— Sugerencia de pedido para reabastecer hasta el máximo</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto">
+
+        {% if not lab_id %}
+            {# Paso 1: elegir laboratorio #}
+            <div class="bg-white border border-surface-border rounded-xl p-5 mb-4">
+                <h2 class="text-sm font-semibold text-[#1e1e1e] mb-2">1. Elegí un laboratorio</h2>
+                <p class="text-xs text-[#6f6f6f] mb-3">
+                    Estos son los laboratorios que tienen productos por debajo del mínimo en ObServer.
+                    Tocá uno para armar el pedido sugerido.
+                </p>
+
+                {% if labs_con_alertas %}
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {% for l in labs_con_alertas %}
+                    <a href="{{ url_for('informe_pedido_auto', lab_id=l.lab_id) }}"
+                       class="block bg-rose-50 border border-rose-200 rounded-lg p-3 hover:bg-rose-100 transition-colors">
+                        <p class="font-semibold text-sm text-rose-900">{{ l.nombre }}</p>
+                        <p class="text-xs text-rose-700 mt-1">
+                            <span class="font-bold">{{ l.n_productos }}</span> producto{{ '' if l.n_productos == 1 else 's' }} bajo mínimo
+                        </p>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+                    <p class="text-sm font-bold text-emerald-900">✓ Sin alertas</p>
+                    <p class="text-xs text-emerald-800 mt-1">No hay laboratorios con productos bajo mínimo.</p>
+                </div>
+                {% endif %}
+            </div>
+
+        {% else %}
+            {# Paso 2: armar pedido del lab elegido #}
+            <div class="bg-white border border-surface-border rounded-xl p-5 mb-4 flex items-center justify-between flex-wrap gap-3">
+                <div>
+                    <a href="{{ url_for('informe_pedido_auto') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Cambiar laboratorio</a>
+                    <h2 class="text-base font-bold text-[#1e1e1e] mt-1">{{ lab_nombre or 'Laboratorio' }}</h2>
+                    <p class="text-xs text-[#6f6f6f]">
+                        <strong>{{ stats.productos }}</strong> productos · sugerido <strong>{{ '{:,}'.format(stats.unidades_total).replace(',', '.') }}</strong> unidades
+                    </p>
+                </div>
+            </div>
+
+            {% if rows %}
+            <form method="POST" action="{{ url_for('informe_pedido_auto_crear') }}">
+                <input type="hidden" name="lab_id" value="{{ lab_id }}">
+                <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-[#fafafa]">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Producto</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Stock</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Mín</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Máx</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Unid 12m</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Sugerido</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">A pedir</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-[#f0f0f0]">
+                                {% for r in rows %}
+                                <tr class="hover:bg-black/[0.02]">
+                                    <td class="px-3 py-2">
+                                        <p class="font-semibold text-[#1e1e1e]">{{ r.descripcion }}</p>
+                                        {% if r.codigo_alfabeta %}
+                                        <p class="text-[10px] text-[#888] font-mono">{{ r.codigo_alfabeta }}</p>
+                                        {% endif %}
+                                        <input type="hidden" name="pid_{{ loop.index0 }}" value="{{ r.producto_id }}">
+                                        <input type="hidden" name="nombre_{{ loop.index0 }}" value="{{ r.descripcion }}">
+                                        <input type="hidden" name="ean_{{ loop.index0 }}" value="{{ r.ean or '' }}">
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.stock }}</td>
+                                    <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.minimo }}</td>
+                                    <td class="px-3 py-2 text-right font-mono tabular-nums">{% if r.maximo %}{{ r.maximo }}{% else %}<span class="text-[#bbb]">—</span>{% endif %}</td>
+                                    <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.u12m if r.u12m else '0' }}</td>
+                                    <td class="px-3 py-2 text-right">
+                                        <span class="inline-block px-2 py-0.5 rounded font-mono text-xs
+                                            {% if r.base_sugerido == 'max-stock' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}"
+                                              title="{% if r.base_sugerido == 'max-stock' %}máximo - stock{% else %}mínimo - stock{% endif %}">
+                                            {{ r.sugerido }}
+                                        </span>
+                                    </td>
+                                    <td class="px-3 py-2 text-right">
+                                        <input type="number" name="qty_{{ loop.index0 }}" min="0" value="{{ r.sugerido }}"
+                                               class="w-20 text-right border border-surface-border rounded px-2 py-1 text-sm">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 mt-4">
+                    <a href="{{ url_for('informe_pedido_auto') }}"
+                       class="px-3 py-2 text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Cancelar</a>
+                    <button type="submit"
+                            class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg text-sm">
+                        Crear pedido →
+                    </button>
+                </div>
+            </form>
+            {% else %}
+            <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+                <p class="text-sm font-bold text-emerald-900">✓ Sin productos bajo mínimo</p>
+                <p class="text-xs text-emerald-800 mt-1">Este laboratorio no tiene productos por debajo del mínimo en ObServer.</p>
+            </div>
+            {% endif %}
+        {% endif %}
+
+    </div>
+</div>
+
+{% endblock %}

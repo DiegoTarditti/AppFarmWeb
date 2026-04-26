@@ -454,6 +454,187 @@ def init_app(app):
                                lab_id=lab_id,
                                labs_disponibles=labs_disponibles)
 
+    @app.route('/informes/pedido-auto', methods=['GET'])
+    @login_required
+    def informe_pedido_auto():
+        """Análisis de mínimos #2: armar un pedido sugerido para un laboratorio,
+        partiendo de los productos del lab que están bajo mínimo en ObServer.
+
+        Cantidad sugerida por ítem:
+          - Si hay máximo cargado: max(1, maximo - stock_actual).
+          - Si no: max(1, minimo - stock_actual).
+        """
+        lab_id = request.args.get('lab_id', type=int)
+        labs_con_alertas = []
+        rows = []
+        lab_nombre = None
+
+        with database.get_db() as session:
+            stock_q = (
+                session.query(
+                    ObsStock.producto_observer.label('pid'),
+                    func.sum(ObsStock.stock_actual).label('stock'),
+                    func.sum(ObsStock.minimo).label('minimo'),
+                    func.sum(ObsStock.maximo).label('maximo'),
+                )
+                .filter(ObsStock.minimo.isnot(None))
+                .filter(ObsStock.minimo > 0)
+                .group_by(ObsStock.producto_observer)
+                .subquery()
+            )
+
+            # Selector de labs: solo los que tienen al menos 1 producto bajo mínimo.
+            labs_q = (session.query(
+                        ObsLaboratorio.observer_id,
+                        ObsLaboratorio.descripcion,
+                        func.count(distinct(ObsProducto.observer_id)).label('n'),
+                     )
+                     .join(ObsProducto,
+                           ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+                     .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
+                     .filter(ObsProducto.fecha_baja.is_(None))
+                     .filter(stock_q.c.stock < stock_q.c.minimo)
+                     .group_by(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
+                     .order_by(func.count(distinct(ObsProducto.observer_id)).desc()))
+            labs_con_alertas = [
+                {'lab_id': r[0], 'nombre': r[1], 'n_productos': int(r[2])}
+                for r in labs_q.all()
+            ]
+
+            if lab_id:
+                lab = session.get(ObsLaboratorio, lab_id)
+                lab_nombre = lab.descripcion if lab else None
+
+                desde, hasta = _ventana_12m()
+                ventas_sub = (
+                    session.query(
+                        ObsVentaMensual.producto_observer.label('pid'),
+                        func.sum(ObsVentaMensual.unidades).label('u12m'),
+                    )
+                    .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde)
+                    .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta)
+                    .group_by(ObsVentaMensual.producto_observer)
+                    .subquery()
+                )
+
+                q = (session.query(
+                        ObsProducto.observer_id.label('pid'),
+                        ObsProducto.descripcion.label('desc'),
+                        ObsProducto.codigo_alfabeta,
+                        stock_q.c.stock,
+                        stock_q.c.minimo,
+                        stock_q.c.maximo,
+                        func.coalesce(ventas_sub.c.u12m, 0).label('u12m'),
+                     )
+                     .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
+                     .outerjoin(ventas_sub, ventas_sub.c.pid == ObsProducto.observer_id)
+                     .filter(ObsProducto.fecha_baja.is_(None))
+                     .filter(ObsProducto.laboratorio_observer == lab_id)
+                     .filter(stock_q.c.stock < stock_q.c.minimo)
+                     .order_by(
+                        (stock_q.c.minimo - stock_q.c.stock).desc(),
+                        func.coalesce(ventas_sub.c.u12m, 0).desc(),
+                     ))
+
+                obs_ids = []
+                for r in q.all():
+                    stock = int(r.stock or 0)
+                    minimo = int(r.minimo or 0)
+                    maximo = int(r.maximo or 0) if r.maximo is not None else None
+                    if maximo and maximo > stock:
+                        sugerido = maximo - stock
+                        base = 'max-stock'
+                    else:
+                        sugerido = max(1, minimo - stock)
+                        base = 'min-stock'
+                    rows.append({
+                        'producto_id': r.pid,
+                        'descripcion': r.desc,
+                        'codigo_alfabeta': r.codigo_alfabeta,
+                        'stock': stock,
+                        'minimo': minimo,
+                        'maximo': maximo,
+                        'sugerido': max(1, sugerido),
+                        'base_sugerido': base,
+                        'u12m': int(r.u12m or 0),
+                        'ean': None,
+                    })
+                    obs_ids.append(r.pid)
+
+                if obs_ids:
+                    ean_by_obs = dict(
+                        session.query(Producto.observer_id, Producto.codigo_barra)
+                        .filter(Producto.observer_id.in_(obs_ids)).all()
+                    )
+                    for r in rows:
+                        r['ean'] = ean_by_obs.get(r['producto_id'])
+
+        stats = {
+            'productos': len(rows),
+            'unidades_total': sum(r['sugerido'] for r in rows),
+        }
+        return render_template('informes_pedido_auto.html',
+                               lab_id=lab_id,
+                               lab_nombre=lab_nombre,
+                               labs_con_alertas=labs_con_alertas,
+                               rows=rows,
+                               stats=stats)
+
+    @app.route('/informes/pedido-auto/crear', methods=['POST'])
+    @login_required
+    def informe_pedido_auto_crear():
+        """Crea un Pedido + PedidoItems con las cantidades editadas por el
+        usuario en la pantalla de pedido auto."""
+        from database import Pedido, PedidoItem
+        lab_id = request.form.get('lab_id', type=int)
+        if not lab_id:
+            return jsonify({'error': 'lab_id requerido'}), 400
+
+        with database.get_db() as session:
+            lab = session.get(ObsLaboratorio, lab_id)
+            lab_nombre = lab.descripcion if lab else f'Lab #{lab_id}'
+
+            items = []
+            i = 0
+            while True:
+                pid = request.form.get(f'pid_{i}', type=int)
+                if pid is None:
+                    break
+                qty = request.form.get(f'qty_{i}', type=int) or 0
+                if qty > 0:
+                    nombre = request.form.get(f'nombre_{i}', '').strip()
+                    cb = request.form.get(f'ean_{i}', '').strip() or f'OBS:{pid}'
+                    items.append(PedidoItem(
+                        codigo_barra=cb[:20],
+                        nombre=nombre[:200],
+                        cantidad=qty,
+                        precio_pvp=0,
+                        subtotal=0,
+                    ))
+                i += 1
+
+            if not items:
+                from flask import flash, redirect, url_for
+                flash('No hay items con cantidad > 0.', 'warning')
+                return redirect(url_for('informe_pedido_auto', lab_id=lab_id))
+
+            from helpers import now_ar
+            pedido = Pedido(
+                laboratorio=lab_nombre,
+                farmacia='',
+                periodo=f'Auto bajo mínimo {now_ar().strftime("%Y-%m-%d")}',
+                n_days=0,
+                items=items,
+                estado='PENDIENTE',
+            )
+            session.add(pedido)
+            session.commit()
+            pedido_id = pedido.id
+
+        from flask import flash, redirect, url_for
+        flash(f'Pedido creado: {len(items)} productos.', 'success')
+        return redirect(url_for('order_detail', pedido_id=pedido_id))
+
     @app.route('/api/observer-product/<int:observer_id>/chart')
     @login_required
     def api_observer_product_chart(observer_id):
