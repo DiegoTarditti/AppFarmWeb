@@ -95,13 +95,16 @@ def init_app(app):
         Cada item: { nombre_modulo, ean, codigo, descripcion, cantidad,
                      descuento_psl, _destacado (bool, opcional) }
 
-        Pack = fila amarilla del Excel (señal explícita del laboratorio) o
-        regex 'PACK X N' en la descripción. Sin heurísticas adicionales —
-        cualquier otra señal (primero del módulo, palabra PACK suelta,
-        envase múltiplo, sin ventas) genera demasiados falsos positivos.
+        Pack si se cumplen LAS 3 señales (AND):
+          1. Primero del grupo (módulo).
+          2. Descripción contiene la palabra 'PACK'.
+          3. Nunca se vendió por ese código (no hay ventas históricas).
+        El amarillo del Excel también marca pack (señal explícita).
+        El regex 'PACK X N' aporta la cantidad cuando está disponible.
         """
         import re as _re
         import producto_matcher as pm
+        from database import ObsVentaMensual, Producto
         data = request.get_json(silent=True) or {}
         items = data.get('items') or []
         lab_id = data.get('laboratorio_id')
@@ -120,6 +123,7 @@ def init_app(app):
             return (it.get('codigo') or '').strip() or None
 
         re_pack_xn = _re.compile(r'\bPACK\s*X\s*(\d+)\b', _re.IGNORECASE)
+        re_pack_palabra = _re.compile(r'\bPACK\b', _re.IGNORECASE)
         re_envase = _re.compile(r'\b[xX]\s*(\d{1,4})\b')
 
         with database.get_db() as session:
@@ -131,7 +135,30 @@ def init_app(app):
             } for it in items]
             results = pm.match_productos_bulk(items_match, laboratorio_id=lab_id, session=session)
 
-            # 2. Detección de packs por amarillo + regex explícito.
+            # 2. Lookup bulk de "tuvo ventas alguna vez" por EAN.
+            todos_eans = {_ean_o_codigo(it) for it in items if _ean_o_codigo(it)}
+            ean_a_obs = dict(
+                session.query(Producto.codigo_barra, Producto.observer_id)
+                .filter(Producto.codigo_barra.in_(todos_eans),
+                        Producto.observer_id.isnot(None)).all()
+            ) if todos_eans else {}
+            obs_ids = {oid for oid in ean_a_obs.values() if oid}
+            con_ventas = set()
+            if obs_ids:
+                rows = (session.query(ObsVentaMensual.producto_observer)
+                        .filter(ObsVentaMensual.producto_observer.in_(obs_ids),
+                                ObsVentaMensual.unidades > 0)
+                        .distinct().all())
+                con_ventas = {r[0] for r in rows}
+
+            def _sin_ventas(ean):
+                # Sin registro local = nunca vendido por ese código.
+                oid = ean_a_obs.get(ean)
+                if oid is None:
+                    return True
+                return oid not in con_ventas
+
+            # 3. Agrupar por módulo en orden de aparición.
             por_modulo = {}
             for idx, it in enumerate(items):
                 nm = (it.get('nombre_modulo') or 'sin_nombre').strip() or 'sin_nombre'
@@ -147,26 +174,34 @@ def init_app(app):
                     if nums:
                         envases[idx] = int(nums[-1])
 
-                for idx, prod in lst:
+                for pos, (idx, prod) in enumerate(lst):
                     e = _ean_o_codigo(prod)
                     if not e:
                         continue
                     desc = prod.get('descripcion') or ''
                     destacado = bool(prod.get('_destacado'))
-                    m = re_pack_xn.search(desc)
+                    m_xn = re_pack_xn.search(desc)
+                    tiene_pack = bool(re_pack_palabra.search(desc))
+                    primero = (pos == 0 and len(lst) >= 2)
+                    sin_v = _sin_ventas(e)
 
-                    if not destacado and not m:
+                    # Combo lógica del usuario: primero del grupo + dice PACK
+                    # + nunca vendido por ese código.
+                    combo = primero and tiene_pack and sin_v
+
+                    if not destacado and not combo:
                         continue
 
-                    cant_pack = int(m.group(1)) if m else None
+                    cant_pack = int(m_xn.group(1)) if m_xn else None
                     razon = []
                     if destacado:
                         razon.append('amarillo')
-                    if m:
+                    if combo:
+                        razon.append('primero+pack+sin_ventas')
+                    if m_xn:
                         razon.append(f'PACKx{cant_pack}')
 
-                    # Sugerir ean_unidad: dentro del módulo, el item con el
-                    # envase más chico que sea divisor del de este pack.
+                    # Sugerir ean_unidad por envase múltiplo dentro del módulo.
                     ean_unidad = ''
                     env_i = envases.get(idx)
                     if env_i and env_i >= 2:
@@ -186,7 +221,7 @@ def init_app(app):
                                         cant_pack = k
 
                     pack_map[e] = {
-                        'confianza': 'alta' if (destacado and m) else 'media',
+                        'confianza': 'alta' if destacado else 'media',
                         'razon': '+'.join(razon),
                         'cantidad': cant_pack,
                         'ean_unidad_sug': ean_unidad,
