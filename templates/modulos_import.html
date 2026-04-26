@@ -120,8 +120,7 @@
             <table class="w-full text-xs">
                 <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888] sticky top-0">
                     <tr>
-                        <th class="px-2 py-1.5 text-left w-8">¿Pack?</th>
-                        <th class="px-2 py-1.5 text-left">Módulo</th>
+                        <th class="px-2 py-1.5 text-left w-10">¿Pack?</th>
                         <th class="px-2 py-1.5 text-left">EAN del módulo</th>
                         <th class="px-2 py-1.5 text-left">EAN equivalente <span class="text-[9px] font-normal text-[#bbb]">(unidad)</span></th>
                         <th class="px-2 py-1.5 text-left">Descripción</th>
@@ -368,7 +367,21 @@ function renderPacksTable() {
     });
 
     const body = document.getElementById('packs-body');
-    body.innerHTML = _validados.map((it, idx) => {
+    let modAnt = null;
+    const html = [];
+    _validados.forEach((it, idx) => {
+        const banda = moduloAColor[it.nombre_modulo || ''] || 'bg-white';
+        // Insertar fila-título cuando cambia el módulo.
+        if (it.nombre_modulo !== modAnt) {
+            modAnt = it.nombre_modulo;
+            const nMod = _validados.filter(x => x.nombre_modulo === it.nombre_modulo).length;
+            html.push(`<tr class="${banda}">
+                <td colspan="7" class="px-3 py-2 border-t-2 border-t-[#1e1e1e]/30 first:border-t-0">
+                    <span class="font-bold text-sm text-[#1e1e1e]">📦 ${escapeHtml(it.nombre_modulo || '(sin nombre)')}</span>
+                    <span class="text-[10px] text-[#888] ml-2">${nMod} item${nMod === 1 ? '' : 's'}</span>
+                </td>
+            </tr>`);
+        }
         const checked = it._es_pack ? 'checked' : '';
         const conf = it._pack_confianza || '';
         const badge = (it._es_pack && conf === 'alta')
@@ -376,19 +389,9 @@ function renderPacksTable() {
             : (it._es_pack ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 ml-1">PACK?</span>' : '');
         const cantPack = it._cantidad_pack || '';
         const eanUnidad = it._ean_unidad_sugerido || '';
-        const banda = moduloAColor[it.nombre_modulo || ''] || 'bg-white';
-        // Mostrar el nombre del módulo solo en la primera fila del bloque
-        // para reducir ruido visual. La banda de color hace el resto.
-        const idxAnterior = idx > 0 ? idx - 1 : -1;
-        const esPrimeraDelModulo = (idxAnterior < 0) ||
-            (_validados[idxAnterior].nombre_modulo !== it.nombre_modulo);
-        const nombreCelda = esPrimeraDelModulo
-            ? `<span class="font-bold text-[#1e1e1e]">${escapeHtml(it.nombre_modulo || '')}</span>`
-            : `<span class="text-[#bbb]">↳</span>`;
-        return `<tr data-idx="${idx}" class="${banda} hover:brightness-95 ${esPrimeraDelModulo && idx > 0 ? 'border-t-2 border-t-[#d0d0d0]' : ''}">
+        html.push(`<tr data-idx="${idx}" class="${banda} hover:brightness-95">
             <td class="px-2 py-1 text-center"><input type="checkbox" class="pack-chk" data-idx="${idx}" ${checked}></td>
-            <td class="px-2 py-1">${nombreCelda}</td>
-            <td class="px-2 py-1 font-mono text-[10px]">${escapeHtml(it.ean || it.codigo || '')}</td>
+            <td class="px-2 py-1 font-mono text-[10px] whitespace-nowrap">${escapeHtml(it.ean || it.codigo || '')}</td>
             <td class="px-2 py-1">
                 <input type="text" class="pack-ean-unidad w-32 font-mono text-[10px] border border-surface-border rounded px-1 py-0.5"
                        data-idx="${idx}" value="${escapeHtml(eanUnidad)}"
@@ -396,14 +399,15 @@ function renderPacksTable() {
                        ${it._es_pack ? '' : 'disabled style="background:#fafafa"'}>
             </td>
             <td class="px-2 py-1">${escapeHtml(it.descripcion || '')}${badge}</td>
-            <td class="px-2 py-1 text-right">${it.cantidad ?? ''}</td>
-            <td class="px-2 py-1 text-right">${it.descuento_psl != null ? it.descuento_psl + '%' : ''}</td>
-            <td class="px-2 py-1 text-right">
+            <td class="px-2 py-1 text-right whitespace-nowrap">${it.cantidad ?? ''}</td>
+            <td class="px-2 py-1 text-right whitespace-nowrap">${it.descuento_psl != null ? it.descuento_psl + '%' : ''}</td>
+            <td class="px-2 py-1 text-right whitespace-nowrap">
                 <input type="number" min="1" class="pack-cant w-14 text-right border border-surface-border rounded px-1 py-0.5 text-xs"
                        data-idx="${idx}" value="${cantPack}" ${it._es_pack ? '' : 'disabled'}>
             </td>
-        </tr>`;
-    }).join('');
+        </tr>`);
+    });
+    body.innerHTML = html.join('');
     actualizarPackCount();
     body.querySelectorAll('.pack-chk').forEach(chk => chk.addEventListener('change', e => {
         const i = parseInt(chk.dataset.idx, 10);
