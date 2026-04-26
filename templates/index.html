@@ -57,14 +57,14 @@
 
         /* Utility cards (segunda fila) */
         .util-card {
-            background: #fff; border: 1px solid #cfe3d6; border-radius: 14px;
+            background: #fff; border: 1px solid rgba(0,0,0,.06); border-radius: 14px;
             padding: 16px;
             display:flex; flex-direction:column; gap:10px;
-            transition: box-shadow .15s, border-color .15s, transform .15s;
+            transition: box-shadow .15s, border-color .15s, transform .15s, filter .15s;
             text-decoration: none; color: inherit;
         }
-        .util-card:hover { box-shadow: 0 6px 18px rgba(30,60,40,.07); border-color: #7fb99f; transform: translateY(-1px); }
-        .util-card .icon-wrap { width: 36px; height: 36px; border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .util-card:hover { box-shadow: 0 6px 18px rgba(30,60,40,.10); transform: translateY(-1px); filter: brightness(.97); }
+        .util-card .icon-wrap { width: 36px; height: 36px; border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:#fff; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
         .util-card .title { font-weight: 600; font-size: 14px; color: #1e1e1e; }
         .util-card .desc  { font-size: 11px; color: #6b8778; margin-top: 2px; line-height: 1.35; }
         .util-card .sub-link { display:inline-flex; align-items:center; gap:4px;
@@ -174,9 +174,9 @@
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {% for card in acciones %}
-                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="util-card">
+                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="util-card" style="background: {{ card.bg }};">
                     <div class="flex items-start gap-3">
-                        <div class="icon-wrap" style="background: {{ card.bg }};">
+                        <div class="icon-wrap">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: {{ card.fg }};">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ card.icono_path }}"/>
                             </svg>

@@ -55,11 +55,12 @@
             </p>
             <ul id="card-list" class="space-y-1.5">
                 {% for c in cards %}
-                <li class="flex items-center gap-3 bg-[#f8faf9] border border-[#e6efe9] rounded-lg px-3 py-2.5 cursor-move"
-                    data-id="{{ c.id }}">
+                <li class="card-row flex items-center gap-3 border border-[#e6efe9] rounded-lg px-3 py-2.5 cursor-move"
+                    data-id="{{ c.id }}"
+                    style="background: {{ c.bg }};">
                     <span class="text-[#999] select-none" title="Arrastrar">≡</span>
                     <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 card-icon"
-                         style="background: {{ c.bg }};">
+                         style="background:#fff; box-shadow: 0 1px 2px rgba(0,0,0,.06);">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: {{ c.fg }};">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ c.icono_path }}"/>
                         </svg>
@@ -74,7 +75,7 @@
                         <span>Color</span>
                         <input type="color" name="color_{{ c.id }}" value="{{ c.bg }}"
                                class="w-7 h-7 border border-surface-border rounded cursor-pointer"
-                               onchange="this.parentElement.parentElement.querySelector('.card-icon').style.background = this.value">
+                               onchange="this.closest('.card-row').style.background = this.value">
                     </label>
                     <label class="flex items-center gap-1 text-xs text-[#6f6f6f]">
                         <input type="checkbox" name="ocultos" value="{{ c.id }}"
