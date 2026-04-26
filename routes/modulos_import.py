@@ -95,18 +95,21 @@ def init_app(app):
         Cada item: { nombre_modulo, ean, codigo, descripcion, cantidad,
                      descuento_psl, _destacado (bool, opcional) }
 
-        Pack si se cumplen LAS 3 señales (AND):
-          1. Primero del grupo (módulo).
-          2. Descripción contiene la palabra 'PACK'.
-          3. Nunca se vendió por ese código (no hay ventas históricas).
-        El amarillo del Excel también marca pack (señal explícita).
-        El regex 'PACK X N' aporta la cantidad cuando está disponible.
+        Por defecto SOLO se marca pack si la fila viene en amarillo en el
+        Excel (señal explícita del laboratorio).
+
+        Si el caller pasa `usar_historico: true`, además se aplica el combo:
+          - Primero del grupo (módulo)
+          - Descripción contiene la palabra 'PACK'
+          - Nunca se vendió por ese código (sin ventas históricas)
+        Cuando se cumplen los 3 → pack. El regex 'PACK X N' aporta cantidad.
         """
         import re as _re
         import producto_matcher as pm
         from database import ObsVentaMensual, Producto
         data = request.get_json(silent=True) or {}
         items = data.get('items') or []
+        usar_historico = bool(data.get('usar_historico'))
         lab_id = data.get('laboratorio_id')
         try:
             lab_id = int(lab_id) if lab_id else None
@@ -135,21 +138,24 @@ def init_app(app):
             } for it in items]
             results = pm.match_productos_bulk(items_match, laboratorio_id=lab_id, session=session)
 
-            # 2. Lookup bulk de "tuvo ventas alguna vez" por EAN.
-            todos_eans = {_ean_o_codigo(it) for it in items if _ean_o_codigo(it)}
-            ean_a_obs = dict(
-                session.query(Producto.codigo_barra, Producto.observer_id)
-                .filter(Producto.codigo_barra.in_(todos_eans),
-                        Producto.observer_id.isnot(None)).all()
-            ) if todos_eans else {}
-            obs_ids = {oid for oid in ean_a_obs.values() if oid}
+            # 2. Lookup bulk de "tuvo ventas alguna vez" — solo si se pidió
+            # usar el histórico (la query es cara y no la necesitamos por defecto).
+            ean_a_obs = {}
             con_ventas = set()
-            if obs_ids:
-                rows = (session.query(ObsVentaMensual.producto_observer)
-                        .filter(ObsVentaMensual.producto_observer.in_(obs_ids),
-                                ObsVentaMensual.unidades > 0)
-                        .distinct().all())
-                con_ventas = {r[0] for r in rows}
+            if usar_historico:
+                todos_eans = {_ean_o_codigo(it) for it in items if _ean_o_codigo(it)}
+                ean_a_obs = dict(
+                    session.query(Producto.codigo_barra, Producto.observer_id)
+                    .filter(Producto.codigo_barra.in_(todos_eans),
+                            Producto.observer_id.isnot(None)).all()
+                ) if todos_eans else {}
+                obs_ids = {oid for oid in ean_a_obs.values() if oid}
+                if obs_ids:
+                    rows = (session.query(ObsVentaMensual.producto_observer)
+                            .filter(ObsVentaMensual.producto_observer.in_(obs_ids),
+                                    ObsVentaMensual.unidades > 0)
+                            .distinct().all())
+                    con_ventas = {r[0] for r in rows}
 
             def _sin_ventas(ean):
                 # Sin registro local = nunca vendido por ese código.
@@ -186,8 +192,9 @@ def init_app(app):
                     sin_v = _sin_ventas(e)
 
                     # Combo lógica del usuario: primero del grupo + dice PACK
-                    # + nunca vendido por ese código.
-                    combo = primero and tiene_pack and sin_v
+                    # + nunca vendido por ese código. Solo aplica si el caller
+                    # pidió usar el histórico de ventas.
+                    combo = usar_historico and primero and tiene_pack and sin_v
 
                     if not destacado and not combo:
                         continue

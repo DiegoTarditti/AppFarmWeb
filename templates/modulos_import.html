@@ -125,6 +125,13 @@
             Filas con <span class="bg-emerald-100 text-emerald-800 font-bold px-1 rounded">PACK</span> fueron detectadas automáticamente.
             Si alguna NO debería ser pack, destildá. Si alguna debería serlo y no aparece marcada, tildala.
         </p>
+
+        <label class="flex items-center gap-2 mb-3 text-xs cursor-pointer select-none">
+            <input type="checkbox" id="chk-historico" class="w-4 h-4">
+            <span class="font-semibold text-[#1e1e1e]">Identificar packs en ventas históricas</span>
+            <span class="text-[#888]">— marca como pack si es el primero del módulo, dice "PACK" y nunca se vendió por ese código.</span>
+            <span id="historico-status" class="text-[10px] text-[#888]"></span>
+        </label>
         <div class="overflow-x-auto max-h-[500px] overflow-y-auto border border-surface-border rounded-lg">
             <table class="w-full text-xs">
                 <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888] sticky top-0">
@@ -330,34 +337,41 @@ document.getElementById('btn-back-1').addEventListener('click', () => setStep(1)
 document.getElementById('btn-back-2').addEventListener('click', () => setStep(2));
 document.getElementById('btn-back-3').addEventListener('click', () => setStep(3));
 
-document.getElementById('btn-next-2').addEventListener('click', async () => {
+async function validarItems({reentrar = false} = {}) {
     if (!_items.length) { alert('No hay items con EAN/código.'); return; }
     if (!_mapping.descripcion) { alert('Mapeá la descripción.'); return; }
     const labId = document.getElementById('lab-select-pre').value;
     const btn = document.getElementById('btn-next-2');
-    btn.disabled = true; btn.textContent = '⏳ Validando…';
+    const histStatus = document.getElementById('historico-status');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Validando…'; }
+    if (reentrar && histStatus) histStatus.textContent = '⏳ buscando ventas…';
     try {
         const r = await fetch('/api/modulos/import-validar', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
-            body: JSON.stringify({items: _items, laboratorio_id: parseInt(labId, 10)}),
+            body: JSON.stringify({
+                items: _items,
+                laboratorio_id: parseInt(labId, 10),
+                usar_historico: document.getElementById('chk-historico')?.checked || false,
+            }),
         });
         const data = await r.json();
         if (!r.ok) { alert('Error: ' + (data.error || '')); return; }
         _validados = data.items;
-        // Debug: log lo que respondió el server para verificar packs detectados.
-        console.log('[modulos] validar stats:', data.stats);
-        console.log('[modulos] validados:', _validados.length, 'items');
         const packs = _validados.filter(it => it._es_pack);
         console.log('[modulos] packs detectados:', packs.length, packs.slice(0, 5));
         renderPacksTable();
-        setStep(3);
+        if (!reentrar) setStep(3);
+        if (histStatus) histStatus.textContent = '';
     } catch (err) {
         alert('Error de red: ' + err.message);
     } finally {
-        btn.disabled = false; btn.textContent = 'Continuar →';
+        if (btn) { btn.disabled = false; btn.textContent = 'Continuar →'; }
     }
-});
+}
+
+document.getElementById('btn-next-2').addEventListener('click', () => validarItems());
+document.getElementById('chk-historico').addEventListener('change', () => validarItems({reentrar: true}));
 
 function renderPacksTable() {
     // Bandas de color para separar módulos visualmente. Tonos pastel claros
