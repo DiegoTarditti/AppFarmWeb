@@ -1,10 +1,9 @@
 {% extends "base.html" %}
 {% set nav_active = "informes" %}
 {% block title %}Labs por droga — Informes{% endblock %}
-{% block extra_head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-{% endblock %}
 {% block main %}
+{# Modal de gráfico histórico (mismo de order_detail) #}
+{% include '_grafico_historico.html' %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <a href="{{ url_for('informes_index') }}"
@@ -163,6 +162,15 @@
                             <tr class="hover:bg-black/[0.02] {% if r.baja %}opacity-50{% endif %}">
                                 <td class="px-3 py-2 font-semibold text-[#1e1e1e]">{{ r.lab_nombre }}</td>
                                 <td class="px-3 py-2 text-[#1e1e1e]">
+                                    {% if r.ean %}
+                                    <button onclick="openChart('{{ r.ean }}')" title="Ver gráfico histórico"
+                                            class="inline-flex items-center text-[#999] hover:text-amber-500 transition-colors mr-1 align-middle">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                        </svg>
+                                    </button>
+                                    {% endif %}
                                     {{ r.descripcion }}
                                     {% if r.baja %}<span class="text-[9px] font-bold ml-1 px-1 rounded bg-red-100 text-red-700">BAJA</span>{% endif %}
                                 </td>

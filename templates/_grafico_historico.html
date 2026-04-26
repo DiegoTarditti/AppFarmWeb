@@ -1,0 +1,170 @@
+{# Modal de gráfico histórico de un producto + función JS para abrirlo.
+
+   Uso desde la página contenedora:
+     1. {% include '_grafico_historico.html' %}  al final del body.
+     2. En cualquier tabla, agregar un botón clickeable:
+        <button onclick="openChart('7793...')">📊</button>
+        O usar el helper: ${CHART_BTN(ean)}
+
+   El endpoint /api/product/<ean>/chart provee los datos.
+
+   Reusable: misma UI que order_detail.html / orders_list.html /
+   purchase_suggest.html / purchase_results.html.
+#}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<!-- Modal gráfico histórico -->
+<div id="hist-chart-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm no-print"
+     onclick="if(event.target===this) closeHistChart()">
+    <div class="bg-[#f3f3f3] border border-[#e0e0e0] rounded-2xl shadow-2xl w-[700px] max-w-[96vw] p-6">
+        <div class="flex items-start justify-between mb-4">
+            <div>
+                <p class="font-bold text-[#1e1e1e] text-sm leading-tight" id="hist-chart-title"></p>
+                <p class="text-xs text-[#999] font-mono mt-0.5" id="hist-chart-barcode"></p>
+                <p class="text-[10px] text-[#bbb] mt-0.5 hidden" id="hist-chart-fecha">Datos al <span></span></p>
+            </div>
+            <button onclick="closeHistChart()" class="w-7 h-7 flex items-center justify-center rounded-lg text-[#888] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors flex-shrink-0 ml-4 text-lg leading-none">✕</button>
+        </div>
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-4" style="height:300px">
+            <canvas id="hist-product-chart"></canvas>
+        </div>
+        <div class="grid grid-cols-6 gap-2 mt-4" id="hist-chart-stats"></div>
+        <p id="hist-chart-note" class="hidden text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3"></p>
+        <p id="hist-chart-loading" class="text-center text-sm text-[#888] py-4 hidden">Cargando datos…</p>
+        <p id="hist-chart-error" class="hidden text-center text-sm text-red-600 py-4"></p>
+    </div>
+</div>
+
+<script>
+const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+let chartInstance = null;
+
+const CHART_BTN = ean => `<button onclick="openChart('${ean}')" title="Ver gráfico histórico"
+    class="inline-flex items-center text-[#999] hover:text-amber-500 transition-colors mr-1">
+    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+    </svg>
+</button>`;
+
+function openChart(barcode) {
+    const modal = document.getElementById('hist-chart-modal');
+    document.getElementById('hist-chart-title').textContent = '';
+    document.getElementById('hist-chart-barcode').textContent = barcode;
+    document.getElementById('hist-chart-fecha').classList.add('hidden');
+    document.getElementById('hist-chart-stats').innerHTML = '';
+    document.getElementById('hist-chart-note').classList.add('hidden');
+    document.getElementById('hist-chart-error').classList.add('hidden');
+    document.getElementById('hist-chart-loading').classList.remove('hidden');
+    modal.classList.remove('hidden');
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+    fetch('/api/product/' + barcode + '/chart')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('hist-chart-loading').classList.add('hidden');
+            if (!data.ok) {
+                document.getElementById('hist-chart-error').textContent = data.error || 'Sin datos';
+                document.getElementById('hist-chart-error').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('hist-chart-title').textContent = data.nombre;
+            const fechaEl = document.getElementById('hist-chart-fecha');
+            if (data.analizado_en) {
+                fechaEl.querySelector('span').textContent = data.analizado_en;
+                fechaEl.classList.remove('hidden');
+            }
+            renderHistChart(data);
+        })
+        .catch(err => {
+            document.getElementById('hist-chart-loading').classList.add('hidden');
+            document.getElementById('hist-chart-error').textContent = 'Error: ' + err;
+            document.getElementById('hist-chart-error').classList.remove('hidden');
+        });
+}
+
+function renderHistChart(p) {
+    const avg = p.avg_monthly||0, slope = p.slope||0, rot = p.rotacion||'B';
+    const rC = {A:'#15803d',M:'#b45309',B:'#dc2626'}, rL = {A:'Alta',M:'Media',B:'Baja'};
+    const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
+    if (p.sin_historial || !p.ventas || !p.ventas.length) {
+        document.getElementById('hist-chart-stats').innerHTML = [
+            {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+            {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
+            {l:'Cobertura',v:sd,c:'#888'},
+        ].map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+        const n = document.getElementById('hist-chart-note');
+        n.textContent = 'Sin historial mensual. Procesá un análisis de ventas para ver el gráfico.';
+        n.classList.remove('hidden');
+        return;
+    }
+    const ventas = p.ventas, sm = p.start_month||4, FM = 11, N_D = p.n_days||35;
+    const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm-1+i)%12]);
+    const today = new Date(), de = today.getDate(), dim = new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+    const ps = ventas[11]||0;
+    const pf = (avg>0&&de>0) ? Math.round(ps+(avg/dim)*(dim-de)) : (ps>0&&de>0?Math.round(ps*dim/de):0);
+    const pr = Math.max(0, pf-ps);
+    const vals = ventas.slice(0,FM), mx = (FM-1)/2, my = vals.reduce((a,b)=>a+b,0)/FM;
+    const nF = N_D>=35?2:1;
+    const fv = [];
+    for (let o=0;o<nF;o++) {
+        const si = (avg>0&&ventas[o]>0)?ventas[o]/avg:1.0, th = Math.min(FM+o-mx,2.0);
+        fv.push(Math.max(0,Math.round(avg*si+slope*th)));
+    }
+    const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→'), tc = 12+nF;
+    const tC = avg>0?avg*0.6:Infinity;
+    const tL = Array.from({length:tc},(_,i)=>{const r=my+slope*(i-mx);return Math.max(0,avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r);});
+    const labels = [...monthLabels.map((m,i)=>i===11?m+'*':m),...fl];
+    const hd = [...ventas,...Array(nF).fill(null)], fd = [...Array(12).fill(null),...fv];
+    const blp = {id:'barLabels',afterDraw(chart){
+        const ctx2=chart.ctx,yS=chart.scales.y;
+        chart.data.datasets.forEach((d,di)=>{
+            const meta=chart.getDatasetMeta(di);
+            if(meta.type!=='bar') return;
+            meta.data.forEach((bar,i)=>{
+                const v=d.data[i]; if(v==null||v<=0) return;
+                if(di===0&&i===11&&pr>0){
+                    const yt=yS.getPixelForValue(pf),hw=bar.width/2;
+                    ctx2.save();ctx2.fillStyle='rgba(234,179,8,0.22)';ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
+                    ctx2.strokeStyle='rgba(234,179,8,0.7)';ctx2.lineWidth=1;ctx2.setLineDash([3,2]);ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt);ctx2.restore();
+                    ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle='#64748b';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-2);ctx2.restore();
+                    ctx2.save();ctx2.font='bold 8px sans-serif';ctx2.fillStyle='#b45309';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-2);ctx2.restore();
+                    return;
+                }
+                ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle=di===1?'rgba(34,197,94,0.9)':'#888';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-2);ctx2.restore();
+            });
+        });
+    }};
+    const ctx = document.getElementById('hist-product-chart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+        type:'bar', plugins:[blp],
+        data:{labels, datasets:[
+            {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(56,189,248,0.45)',borderColor:'rgba(56,189,248,0.75)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(34,197,94,0.35)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
+            {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
+            ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            plugins:{legend:{labels:{color:'#888',font:{size:10},boxWidth:20,padding:12}},tooltip:{backgroundColor:'#fff',titleColor:'#1e1e1e',bodyColor:'#555',borderColor:'#e0e0e0',borderWidth:1}},
+            scales:{x:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:10}}},y:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:10}},beginAtZero:true}}}
+    });
+    const ss = slope>0.05?'↑':slope<-0.05?'↓':'→', sc = slope>0.05?'#4ade80':slope<-0.05?'#f87171':'#888';
+    const stats = [
+        {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+        {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+        {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
+        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
+        {l:'Cobertura',v:sd,c:'#888'},
+    ];
+    if (ps>0) stats.push({l:`Mes actual (${de}/${dim}d)`,v:`${ps} / ~${pf}`,c:'#b45309'});
+    document.getElementById('hist-chart-stats').innerHTML = stats.map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+}
+
+function closeHistChart() {
+    document.getElementById('hist-chart-modal').classList.add('hidden');
+    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+}
+document.addEventListener('keydown', e => { if (e.key==='Escape') closeHistChart(); });
+</script>

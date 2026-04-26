@@ -18,7 +18,7 @@ from flask_login import login_required
 from sqlalchemy import distinct, func
 
 import database
-from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsVentaMensual
+from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsVentaMensual, Producto
 
 
 def _ventana_12m():
@@ -92,6 +92,7 @@ def init_app(app):
                          .order_by(func.coalesce(
                             func.sum(ObsVentaMensual.unidades), 0).desc())
                     )
+                    obs_prod_ids = []
                     for r in q.all():
                         rows.append({
                             'lab_id': r.lab_id,
@@ -102,7 +103,20 @@ def init_app(app):
                             'baja': r.fecha_baja is not None,
                             'u12m': int(r.u12m or 0),
                             'm12m': float(r.m12m or 0),
+                            'ean': None,    # se llena abajo si hay producto local
                         })
+                        obs_prod_ids.append(r.prod_id)
+
+                    # Mapear obs_producto → EAN del producto local (si existe).
+                    # El endpoint /api/product/<ean>/chart espera EAN, no observer_id.
+                    if obs_prod_ids:
+                        ean_by_obs = dict(
+                            session.query(Producto.observer_id, Producto.codigo_barra)
+                            .filter(Producto.observer_id.in_(obs_prod_ids))
+                            .all()
+                        )
+                        for r in rows:
+                            r['ean'] = ean_by_obs.get(r['producto_id'])
                     # Agregados
                     total_u = sum(r['u12m'] for r in rows)
                     total_m = sum(r['m12m'] for r in rows)
