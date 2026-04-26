@@ -32,7 +32,14 @@ def refrescar_matview(session, view_name, concurrently=True):
                 session.execute(text(f'REFRESH MATERIALIZED VIEW CONCURRENTLY {view_name}'))
             except Exception as e:
                 # Fallback: vista vacía, refresh sin CONCURRENTLY.
-                if 'has not been populated' in str(e) or 'cannot refresh materialized view' in str(e).lower():
+                # Postgres puede decir 'has not been populated', 'is not populated'
+                # o 'cannot refresh materialized view ... CONCURRENTLY'. Cubrimos
+                # los 3 mensajes y el código de error específico (FeatureNotSupported).
+                msg = str(e).lower()
+                if ('not been populated' in msg
+                        or 'is not populated' in msg
+                        or 'cannot refresh materialized view' in msg
+                        or 'concurrently cannot be used' in msg):
                     session.rollback()
                     session.execute(text(f'REFRESH MATERIALIZED VIEW {view_name}'))
                 else:
