@@ -62,42 +62,56 @@
                     <h3 class="text-sm font-bold text-[#1e1e1e]">📉 Top 10 productos con mayor pérdida estimada</h3>
                     <p class="text-[11px] text-[#888]">Unidades promedio que dejás de vender por mes según la falta de stock vs mínimo</p>
                 </div>
+                <p id="chart-perdida-error" class="text-xs text-rose-700 hidden"></p>
                 <div style="height: 320px"><canvas id="chart-perdida"></canvas></div>
             </div>
             <script>
             (function() {
-                const ctx = document.getElementById('chart-perdida');
-                if (!ctx || typeof Chart === 'undefined') return;
-                new Chart(ctx, {
-                    type: 'bar',
-                    data: {
-                        labels: {{ chart_perdida.labels|tojson }},
-                        datasets: [{
-                            label: 'Pérdida estimada (u/mes)',
-                            data: {{ chart_perdida.data|tojson }},
-                            backgroundColor: 'rgba(225, 29, 72, .75)',
-                            borderColor: 'rgba(225, 29, 72, 1)',
-                            borderWidth: 1,
-                        }]
-                    },
-                    options: {
-                        indexAxis: 'y',
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    label: (ctx) => `${ctx.parsed.x.toFixed(1)} u/mes que se pierden`
+                const labels = {{ chart_perdida.labels|tojson }};
+                const data   = {{ chart_perdida.data|tojson }};
+                function go() {
+                    const ctx = document.getElementById('chart-perdida');
+                    const err = document.getElementById('chart-perdida-error');
+                    if (!ctx) return;
+                    if (typeof Chart === 'undefined') {
+                        if (err) { err.textContent = 'Chart.js no cargó (revisá la red).'; err.classList.remove('hidden'); }
+                        console.error('[pedido_auto] Chart.js no está disponible');
+                        return;
+                    }
+                    try {
+                        new Chart(ctx, {
+                            type: 'bar',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    label: 'Pérdida estimada (u/mes)',
+                                    data,
+                                    backgroundColor: 'rgba(225, 29, 72, .75)',
+                                    borderColor: 'rgba(225, 29, 72, 1)',
+                                    borderWidth: 1,
+                                }]
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: c => c.parsed.x.toFixed(1) + ' u/mes que se pierden' } }
+                                },
+                                scales: {
+                                    x: { beginAtZero: true, ticks: { precision: 0 } },
+                                    y: { ticks: { font: { size: 11 } } }
                                 }
                             }
-                        },
-                        scales: {
-                            x: { beginAtZero: true, ticks: { precision: 0 } },
-                            y: { ticks: { font: { size: 11 } } }
-                        }
+                        });
+                    } catch (e) {
+                        console.error('[pedido_auto] Error armando chart', e);
+                        if (err) { err.textContent = 'Error: ' + e.message; err.classList.remove('hidden'); }
                     }
-                });
+                }
+                if (document.readyState === 'complete') go();
+                else window.addEventListener('load', go);
             })();
             </script>
             {% endif %}
