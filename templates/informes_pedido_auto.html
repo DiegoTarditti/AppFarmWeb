@@ -3,6 +3,8 @@
 {% block title %}Pedido automático — Informes{% endblock %}
 {% block main %}
 
+{% include '_grafico_historico.html' %}
+
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <a href="{{ url_for('informes_index') }}"
        class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Mis Informes</a>
@@ -69,6 +71,7 @@
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Unid 12m</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Sugerido</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">A pedir</th>
+                                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide w-10">📊</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-[#f0f0f0]">
@@ -97,6 +100,12 @@
                                     <td class="px-3 py-2 text-right">
                                         <input type="number" name="qty_{{ loop.index0 }}" min="0" value="{{ r.sugerido }}"
                                                class="w-20 text-right border border-surface-border rounded px-2 py-1 text-sm">
+                                    </td>
+                                    <td class="px-3 py-2 text-center">
+                                        <button type="button"
+                                                onclick="openChartObs({{ r.producto_id }})"
+                                                class="text-violet-700 hover:text-violet-900 text-base"
+                                                title="Histórico de ventas">📊</button>
                                     </td>
                                 </tr>
                                 {% endfor %}
