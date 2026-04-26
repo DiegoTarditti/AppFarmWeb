@@ -253,6 +253,10 @@ def _previsualizar_xlsx(path):
         return str(v)
 
     def _es_amarillo(fg_hex):
+        # Amarillo ≈ R y G muy altos, B claramente menor.
+        # Excluimos blanco y casi-blanco (b alto), grises (r≈g≈b),
+        # y exigimos diferencia mínima entre G y B para evitar
+        # confundir con cremas/marfiles.
         if not fg_hex or len(str(fg_hex)) < 6:
             return False
         rgb = str(fg_hex).upper()[-6:]
@@ -260,17 +264,29 @@ def _previsualizar_xlsx(path):
             r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
         except ValueError:
             return False
-        return r >= 200 and g >= 200 and b <= 180 and not (r == 255 and g == 255 and b >= 230)
+        # Blanco/casi-blanco
+        if r >= 240 and g >= 240 and b >= 220:
+            return False
+        # Gris (r≈g≈b)
+        if abs(r - g) < 10 and abs(g - b) < 10:
+            return False
+        # Verde-amarillo permitido si G > B con margen ≥ 60 y R alto.
+        return r >= 200 and g >= 200 and b <= 160 and (g - b) >= 60
 
     def _row_destacada(row_cells):
+        # Solo consideramos relleno SOLID con fgColor en formato RGB explícito.
+        # Otros tipos (theme/indexed/auto) son ambiguos y daban falsos positivos.
         for c in row_cells:
             if c.value is None:
                 continue
             fill = c.fill
-            if not fill or fill.patternType in (None, 'none'):
+            if not fill or fill.patternType != 'solid':
                 continue
-            fg = getattr(fill.fgColor, 'rgb', None)
-            if fg and _es_amarillo(str(fg)):
+            fg = fill.fgColor
+            if fg is None or getattr(fg, 'type', None) != 'rgb':
+                continue
+            rgb = getattr(fg, 'rgb', None)
+            if rgb and _es_amarillo(str(rgb)):
                 return True
         return False
 
