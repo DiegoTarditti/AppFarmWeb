@@ -347,6 +347,21 @@ document.getElementById('btn-next-2').addEventListener('click', async () => {
 });
 
 function renderPacksTable() {
+    // Bandas de color para separar módulos visualmente. Tonos pastel claros
+    // que ciclan cada vez que cambia el nombre del módulo.
+    const BANDAS = ['bg-white', 'bg-sky-50/60', 'bg-emerald-50/60', 'bg-amber-50/60', 'bg-violet-50/60'];
+    const moduloAColor = {};
+    let colorIdx = -1;
+    let modAnterior = null;
+    _validados.forEach(it => {
+        const m = it.nombre_modulo || '';
+        if (m !== modAnterior) {
+            colorIdx = (colorIdx + 1) % BANDAS.length;
+            moduloAColor[m] = BANDAS[colorIdx];
+            modAnterior = m;
+        }
+    });
+
     const body = document.getElementById('packs-body');
     body.innerHTML = _validados.map((it, idx) => {
         const checked = it._es_pack ? 'checked' : '';
@@ -356,9 +371,18 @@ function renderPacksTable() {
             : (it._es_pack ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 ml-1">PACK?</span>' : '');
         const cantPack = it._cantidad_pack || '';
         const eanUnidad = it._ean_unidad_sugerido || '';
-        return `<tr data-idx="${idx}" class="hover:bg-black/[0.02]">
+        const banda = moduloAColor[it.nombre_modulo || ''] || 'bg-white';
+        // Mostrar el nombre del módulo solo en la primera fila del bloque
+        // para reducir ruido visual. La banda de color hace el resto.
+        const idxAnterior = idx > 0 ? idx - 1 : -1;
+        const esPrimeraDelModulo = (idxAnterior < 0) ||
+            (_validados[idxAnterior].nombre_modulo !== it.nombre_modulo);
+        const nombreCelda = esPrimeraDelModulo
+            ? `<span class="font-bold text-[#1e1e1e]">${escapeHtml(it.nombre_modulo || '')}</span>`
+            : `<span class="text-[#bbb]">↳</span>`;
+        return `<tr data-idx="${idx}" class="${banda} hover:brightness-95 ${esPrimeraDelModulo && idx > 0 ? 'border-t-2 border-t-[#d0d0d0]' : ''}">
             <td class="px-2 py-1 text-center"><input type="checkbox" class="pack-chk" data-idx="${idx}" ${checked}></td>
-            <td class="px-2 py-1">${escapeHtml(it.nombre_modulo || '')}</td>
+            <td class="px-2 py-1">${nombreCelda}</td>
             <td class="px-2 py-1 font-mono text-[10px]">${escapeHtml(it.ean || '')}</td>
             <td class="px-2 py-1">
                 <input type="text" class="pack-ean-unidad w-32 font-mono text-[10px] border border-surface-border rounded px-1 py-0.5"
