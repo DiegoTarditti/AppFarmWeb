@@ -134,6 +134,11 @@ una tarea aparte.
 
 ## 🎨 UX — pulir el sistema
 
+### Color de fondo del botón en home (no solo del ícono)
+- **Trigger**: cuando el home tenga 10+ botones y se necesite agrupación visual.
+- **Esfuerzo**: 30 min — agregar campo `bg_color` al modelo de cards (o reusar uno existente con sufijo `_btn`), exponerlo en el editor, aplicar via `style="background-color: ..."` en el render.
+- **Por qué**: hoy se puede personalizar el color del ÍCONO de cada botón, pero el fondo del botón es uniforme. Se necesita poder dar un color distinto al fondo del botón completo para agrupar visualmente (ej. todos los de Mis Informes en un mismo tono).
+
 ### Botón "?" contextual del manual
 - **Trigger**: ya, cuando puedas (1-2 horas).
 - **Esfuerzo**: ~1-2 horas.
