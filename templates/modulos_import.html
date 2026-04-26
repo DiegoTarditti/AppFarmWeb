@@ -120,13 +120,14 @@
             <table class="w-full text-xs">
                 <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888] sticky top-0">
                     <tr>
-                        <th class="px-2 py-1.5 text-left w-8">Pack?</th>
+                        <th class="px-2 py-1.5 text-left w-8">¿Pack?</th>
                         <th class="px-2 py-1.5 text-left">Módulo</th>
-                        <th class="px-2 py-1.5 text-left">EAN</th>
+                        <th class="px-2 py-1.5 text-left">EAN del módulo</th>
+                        <th class="px-2 py-1.5 text-left">EAN equivalente <span class="text-[9px] font-normal text-[#bbb]">(unidad)</span></th>
                         <th class="px-2 py-1.5 text-left">Descripción</th>
                         <th class="px-2 py-1.5 text-right">Cant. mód</th>
                         <th class="px-2 py-1.5 text-right">Dto %</th>
-                        <th class="px-2 py-1.5 text-right">Cant. pack</th>
+                        <th class="px-2 py-1.5 text-right">Unid. por pack</th>
                     </tr>
                 </thead>
                 <tbody id="packs-body" class="divide-y divide-surface-border"></tbody>
@@ -186,12 +187,12 @@
 
 <script>
 const CAMPOS = [
-    { key: 'nombre_modulo', label: 'Nombre del módulo', hint: 'identificador (MOD 1, PROMO ABRIL...)' },
-    { key: 'ean',           label: 'EAN',               hint: 'código de barras 13 dígitos' },
-    { key: 'codigo',        label: 'Código',            hint: 'código interno del proveedor' },
-    { key: 'descripcion',   label: 'Descripción',       hint: 'nombre del producto' },
-    { key: 'cantidad',      label: 'Cant. por módulo',  hint: 'unidades por módulo (CANT.)' },
-    { key: 'descuento_psl', label: 'Descuento %',       hint: 'porcentaje del módulo' },
+    { key: 'nombre_modulo', label: 'Nombre del módulo',     hint: 'identificador (MOD 1, PROMO ABRIL...)' },
+    { key: 'ean',           label: 'EAN del módulo (pack)', hint: 'EAN tal como viene del proveedor' },
+    { key: 'codigo',        label: 'Código',                hint: 'código interno del proveedor (opcional)' },
+    { key: 'descripcion',   label: 'Descripción',           hint: 'nombre del producto' },
+    { key: 'cantidad',      label: 'Cant. por módulo',      hint: 'unidades por módulo (CANT.)' },
+    { key: 'descuento_psl', label: 'Descuento %',           hint: 'porcentaje del módulo' },
 ];
 
 let _headers = [], _rows = [], _mapping = {}, _items = [], _step = 1;
@@ -354,10 +355,17 @@ function renderPacksTable() {
             ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-800 ml-1">PACK</span>'
             : (it._es_pack ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 ml-1">PACK?</span>' : '');
         const cantPack = it._cantidad_pack || '';
+        const eanUnidad = it._ean_unidad_sugerido || '';
         return `<tr data-idx="${idx}" class="hover:bg-black/[0.02]">
             <td class="px-2 py-1 text-center"><input type="checkbox" class="pack-chk" data-idx="${idx}" ${checked}></td>
             <td class="px-2 py-1">${escapeHtml(it.nombre_modulo || '')}</td>
             <td class="px-2 py-1 font-mono text-[10px]">${escapeHtml(it.ean || '')}</td>
+            <td class="px-2 py-1">
+                <input type="text" class="pack-ean-unidad w-32 font-mono text-[10px] border border-surface-border rounded px-1 py-0.5"
+                       data-idx="${idx}" value="${escapeHtml(eanUnidad)}"
+                       placeholder="${it._es_pack ? 'EAN unidad' : '—'}"
+                       ${it._es_pack ? '' : 'disabled style="background:#fafafa"'}>
+            </td>
             <td class="px-2 py-1">${escapeHtml(it.descripcion || '')}${badge}</td>
             <td class="px-2 py-1 text-right">${it.cantidad ?? ''}</td>
             <td class="px-2 py-1 text-right">${it.descuento_psl != null ? it.descuento_psl + '%' : ''}</td>
@@ -371,10 +379,16 @@ function renderPacksTable() {
     body.querySelectorAll('.pack-chk').forEach(chk => chk.addEventListener('change', e => {
         const i = parseInt(chk.dataset.idx, 10);
         _validados[i]._es_pack = chk.checked;
-        const inp = body.querySelector(`.pack-cant[data-idx="${i}"]`);
-        if (inp) {
-            inp.disabled = !chk.checked;
-            if (chk.checked && !inp.value) inp.value = 2;
+        const cantInp = body.querySelector(`.pack-cant[data-idx="${i}"]`);
+        const eanInp  = body.querySelector(`.pack-ean-unidad[data-idx="${i}"]`);
+        if (cantInp) {
+            cantInp.disabled = !chk.checked;
+            if (chk.checked && !cantInp.value) cantInp.value = 2;
+        }
+        if (eanInp) {
+            eanInp.disabled = !chk.checked;
+            eanInp.style.background = chk.checked ? '' : '#fafafa';
+            eanInp.placeholder = chk.checked ? 'EAN unidad' : '—';
         }
         actualizarPackCount();
     }));
@@ -382,6 +396,11 @@ function renderPacksTable() {
         const i = parseInt(inp.dataset.idx, 10);
         const v = parseInt(inp.value, 10);
         _validados[i]._cantidad_pack = (!isNaN(v) && v > 0) ? v : null;
+    }));
+    body.querySelectorAll('.pack-ean-unidad').forEach(inp => inp.addEventListener('change', e => {
+        const i = parseInt(inp.dataset.idx, 10);
+        const v = (inp.value || '').trim();
+        _validados[i]._ean_unidad_sugerido = v || null;
     }));
 }
 
