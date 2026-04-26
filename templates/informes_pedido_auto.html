@@ -88,8 +88,28 @@
                         return;
                     }
                     try {
+                        const valueLabels = {
+                            id: 'valueLabels',
+                            afterDatasetsDraw(chart) {
+                                const c = chart.ctx;
+                                const meta = chart.getDatasetMeta(0);
+                                if (!meta || !meta.data) return;
+                                c.save();
+                                c.font = 'bold 11px sans-serif';
+                                c.fillStyle = '#1e1e1e';
+                                c.textBaseline = 'middle';
+                                c.textAlign = 'left';
+                                meta.data.forEach((bar, i) => {
+                                    const v = data[i];
+                                    if (v == null) return;
+                                    c.fillText(' ' + v.toFixed(1), bar.x + 4, bar.y);
+                                });
+                                c.restore();
+                            }
+                        };
                         new Chart(ctx, {
                             type: 'bar',
+                            plugins: [valueLabels],
                             data: {
                                 labels,
                                 datasets: [{
@@ -104,6 +124,7 @@
                                 indexAxis: 'y',
                                 responsive: true,
                                 maintainAspectRatio: false,
+                                layout: { padding: { right: 36 } },
                                 plugins: {
                                     legend: { display: false },
                                     tooltip: { callbacks: { label: c => c.parsed.x.toFixed(1) + ' u/mes que se pierden' } }
