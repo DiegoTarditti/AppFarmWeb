@@ -46,15 +46,16 @@
                 <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Drogas que vendés con pocos labs proveedores. Alerta de riesgo de quiebre / dependencia.</p>
             </a>
 
-            {# ── Informe #4 (próximamente) ── #}
-            <div class="block bg-white border border-surface-border rounded-xl p-4 opacity-60 cursor-not-allowed">
+            {# ── Informe #3 ── #}
+            <a href="{{ url_for('informe_presentaciones_por_droga') }}"
+               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-sky-500 hover:shadow-md transition-all">
                 <div class="flex items-start gap-2 mb-2">
                     <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-lg flex-shrink-0">📦</div>
-                    <span class="text-[10px] uppercase font-bold text-[#999] bg-[#f5f5f5] px-2 py-0.5 rounded">Próximamente</span>
+                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
                 </div>
                 <p class="font-bold text-sm text-[#1e1e1e]">Presentaciones por droga</p>
                 <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Para una droga, qué presentaciones (x10/x20/x30) se venden más. Para decidir qué stockear.</p>
-            </div>
+            </a>
 
         </div>
 

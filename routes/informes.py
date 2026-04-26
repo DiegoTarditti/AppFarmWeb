@@ -150,6 +150,106 @@ def init_app(app):
                                chart_donut=chart_donut if droga_nombre else [],
                                chart_top=chart_top if droga_nombre else [])
 
+    @app.route('/informes/presentaciones-por-droga')
+    @login_required
+    def informe_presentaciones_por_droga():
+        """Informe #3: para una droga elegida, agrupa los productos por
+        presentación (dosis × cant por envase) y muestra qué se vende más.
+
+        Útil para decidir qué stockear: ej. para AMOXICILINA, ¿se vende
+        más x10 o x20? ¿La de 500mg o 750mg?
+        """
+        import re as _re
+
+        droga_id = request.args.get('droga_id', type=int)
+        droga_nombre = None
+        presentaciones = []
+        chart_data = None
+
+        if droga_id:
+            desde, hasta = _ventana_12m()
+            with database.get_db() as session:
+                droga = session.get(ObsNombreDroga, droga_id)
+                if droga:
+                    droga_nombre = droga.descripcion
+
+                    # Traer todos los productos de la droga + su lab + ventas 12m.
+                    q = (session.query(
+                            ObsProducto.descripcion.label('desc'),
+                            ObsProducto.cantidad_envase,
+                            ObsLaboratorio.descripcion.label('lab'),
+                            func.coalesce(func.sum(ObsVentaMensual.unidades), 0).label('u12m'),
+                         )
+                         .join(ObsLaboratorio,
+                               ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                         .outerjoin(ObsVentaMensual,
+                                    (ObsVentaMensual.producto_observer == ObsProducto.observer_id) &
+                                    (ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde) &
+                                    (ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta))
+                         .filter(ObsProducto.nombre_droga_observer == droga_id)
+                         .filter(ObsProducto.fecha_baja.is_(None))
+                         .group_by(
+                            ObsProducto.descripcion,
+                            ObsProducto.cantidad_envase,
+                            ObsLaboratorio.descripcion,
+                         ))
+
+                    # Extraer "dosis mg" de la descripción + cantidad de envase.
+                    # Combinarlos en una clave de presentación.
+                    re_dosis = _re.compile(r'(\d+(?:[.,]\d+)?)\s*mg', _re.IGNORECASE)
+                    by_pres = {}    # clave → {total, por_lab: {lab: unidades}}
+                    for r in q.all():
+                        m = re_dosis.search(r.desc or '')
+                        dosis = m.group(1).replace(',', '.') if m else '?'
+                        cant = int(r.cantidad_envase) if r.cantidad_envase else None
+                        clave = f'{dosis} mg' + (f' × {cant}' if cant else '')
+                        ent = by_pres.setdefault(clave, {
+                            'presentacion': clave,
+                            'dosis': dosis,
+                            'cant_envase': cant,
+                            'total_u12m': 0,
+                            'por_lab': {},
+                        })
+                        ent['total_u12m'] += int(r.u12m or 0)
+                        ent['por_lab'].setdefault(r.lab, 0)
+                        ent['por_lab'][r.lab] += int(r.u12m or 0)
+
+                    presentaciones = sorted(by_pres.values(),
+                                             key=lambda p: -p['total_u12m'])
+
+                    # Datos para el chart: barras agrupadas por presentación.
+                    # Series = top labs (max 6 para no saturar). El resto se agrupa en "Otros".
+                    todos_labs = {}
+                    for p in presentaciones:
+                        for lab, u in p['por_lab'].items():
+                            todos_labs[lab] = todos_labs.get(lab, 0) + u
+                    top_labs = sorted(todos_labs.items(), key=lambda kv: -kv[1])
+                    series_labs = [l for l, _ in top_labs[:6]]
+                    chart_data = {
+                        'labels': [p['presentacion'] for p in presentaciones[:15]],
+                        'series': [],
+                    }
+                    for lab in series_labs:
+                        chart_data['series'].append({
+                            'lab': lab,
+                            'data': [p['por_lab'].get(lab, 0) for p in presentaciones[:15]],
+                        })
+                    if len(top_labs) > 6:
+                        chart_data['series'].append({
+                            'lab': 'Otros',
+                            'data': [
+                                sum(u for lab, u in p['por_lab'].items()
+                                    if lab not in series_labs)
+                                for p in presentaciones[:15]
+                            ],
+                        })
+
+        return render_template('informes_presentaciones_por_droga.html',
+                               droga_id=droga_id,
+                               droga_nombre=droga_nombre,
+                               presentaciones=presentaciones,
+                               chart_data=chart_data)
+
     @app.route('/informes/drogas-sin-alternativa')
     @login_required
     def informe_drogas_sin_alternativa():

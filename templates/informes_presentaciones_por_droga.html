@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Presentaciones por droga — Informes{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('informes_index') }}"
+       class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Mis Informes</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Presentaciones por droga</h1>
+    {% if droga_nombre %}
+    <span class="text-xs text-[#6f6f6f]">— <strong>{{ droga_nombre }}</strong></span>
+    {% endif %}
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto">
+
+        {# Buscador de drogas (mismo autocomplete que el otro informe) #}
+        <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+            <label class="text-xs font-semibold text-[#555] block mb-1">
+                Buscá una droga (mínimo 2 caracteres)
+            </label>
+            <div class="relative">
+                <input type="text" id="droga-input"
+                       placeholder="ej. AMOXICILINA, IBUPROFENO, FEXOFENADINA…"
+                       value="{{ droga_nombre or '' }}"
+                       class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30">
+                <ul id="droga-results"
+                    class="hidden absolute z-10 left-0 right-0 mt-1 bg-white border border-surface-border rounded-lg shadow-lg max-h-72 overflow-y-auto"></ul>
+            </div>
+            <p class="text-[11px] text-[#888] mt-1">
+                Para decidir qué presentaciones (x10, x20, x30…) y dosis stockear.
+            </p>
+        </div>
+
+        {% if droga_nombre %}
+            {% if presentaciones %}
+            {# Chart: barras agrupadas presentación × lab #}
+            {% if chart_data %}
+            <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+                <p class="text-xs font-bold text-[#1e1e1e] mb-2">Ventas 12m por presentación (top 15) y laboratorio</p>
+                <div style="height: 360px;"><canvas id="chart-presentaciones"></canvas></div>
+            </div>
+            <script>
+            (function () {
+                const PALETA = ['#2E7D5B', '#0EA5E9', '#F59E0B', '#A855F7', '#EF4444',
+                                '#10B981', '#94A3B8'];
+                const data = {{ chart_data | tojson }};
+                new Chart(document.getElementById('chart-presentaciones'), {
+                    type: 'bar',
+                    data: {
+                        labels: data.labels,
+                        datasets: data.series.map((s, i) => ({
+                            label: s.lab,
+                            data: s.data,
+                            backgroundColor: PALETA[i % PALETA.length],
+                            borderWidth: 0,
+                        })),
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 14 } },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-AR')} u`
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { stacked: true, ticks: { font: { size: 10 } } },
+                            y: { stacked: true, beginAtZero: true, ticks: { font: { size: 10 } } }
+                        }
+                    }
+                });
+            })();
+            </script>
+            {% endif %}
+
+            {# Tabla con detalle por presentación #}
+            <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Presentación</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Total 12m</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Top labs</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">% s/total</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#f0f0f0]">
+                            {% set total_global = presentaciones | sum(attribute='total_u12m') %}
+                            {% for p in presentaciones %}
+                            <tr class="hover:bg-black/[0.02]">
+                                <td class="px-3 py-2 font-semibold text-[#1e1e1e]">{{ p.presentacion }}</td>
+                                <td class="px-3 py-2 text-right font-mono tabular-nums {% if p.total_u12m == 0 %}text-[#bbb]{% endif %}">
+                                    {{ '{:,}'.format(p.total_u12m).replace(',', '.') }}
+                                </td>
+                                <td class="px-3 py-2 text-xs text-[#555]">
+                                    {% for lab, u in (p.por_lab.items() | list | sort(attribute=1, reverse=true))[:3] %}
+                                    <span class="inline-block bg-[#f3f3f3] rounded px-1.5 py-0.5 mr-1">
+                                        {{ lab }}: {{ '{:,}'.format(u).replace(',', '.') }}
+                                    </span>
+                                    {% endfor %}
+                                    {% if p.por_lab | length > 3 %}
+                                    <span class="text-[#888] text-[10px]">+{{ (p.por_lab | length) - 3 }} más</span>
+                                    {% endif %}
+                                </td>
+                                <td class="px-3 py-2 text-right text-xs">
+                                    {% if total_global > 0 and p.total_u12m > 0 %}
+                                    {{ '{:.1f}%'.format(p.total_u12m * 100 / total_global) }}
+                                    {% else %}—{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+                No se encontraron productos para esta droga.
+            </div>
+            {% endif %}
+        {% else %}
+        <div class="bg-[#fafafa] border border-dashed border-surface-border rounded-xl p-8 text-center">
+            <p class="text-sm text-[#888]">Empezá tipeando el nombre de una droga arriba.</p>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+<script>
+(function () {
+    const input = document.getElementById('droga-input');
+    const list = document.getElementById('droga-results');
+    let timer = null;
+
+    async function buscar(q) {
+        if (q.length < 2) { list.classList.add('hidden'); list.innerHTML = ''; return; }
+        try {
+            const r = await fetch('/api/informes/buscar-droga?q=' + encodeURIComponent(q));
+            const d = await r.json();
+            if (!d.items.length) {
+                list.innerHTML = '<li class="px-3 py-2 text-xs text-[#999]">Sin resultados.</li>';
+                list.classList.remove('hidden');
+                return;
+            }
+            list.innerHTML = d.items.map(it =>
+                `<li><a href="/informes/presentaciones-por-droga?droga_id=${it.id}"
+                        class="block px-3 py-2 text-sm hover:bg-emerald-50 hover:text-emerald-900">
+                    ${escapeHtml(it.descripcion)}
+                </a></li>`
+            ).join('');
+            list.classList.remove('hidden');
+        } catch (_) {}
+    }
+
+    function escapeHtml(s) {
+        return (s || '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    }
+
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => buscar(input.value.trim()), 200);
+    });
+    input.addEventListener('focus', () => {
+        if (input.value.trim().length >= 2) buscar(input.value.trim());
+    });
+    document.addEventListener('click', (e) => {
+        if (e.target !== input && !list.contains(e.target)) {
+            list.classList.add('hidden');
+        }
+    });
+})();
+</script>
+
+{% endblock %}
