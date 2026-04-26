@@ -845,7 +845,10 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
 
 
 def get_laboratorios_disponibles():
-    """Lee laboratorios del espejo local con conteo real de productos."""
+    """Lee laboratorios del espejo local con conteo real de productos.
+
+    Excluye los labs con 0 productos activos — no aportan al análisis.
+    """
     from sqlalchemy import func as _func
 
     from database import ObsLaboratorio, ObsProducto, get_db
@@ -863,4 +866,5 @@ def get_laboratorios_disponibles():
         return [{'nombre': l.descripcion,
                  'n_articulos': int(conteo.get(l.observer_id, 0)),
                  'observer_id': l.observer_id}
-                for l in labs]
+                for l in labs
+                if conteo.get(l.observer_id, 0) > 0]
