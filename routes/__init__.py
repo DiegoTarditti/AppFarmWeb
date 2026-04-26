@@ -11,13 +11,13 @@ from routes import (
     cuentas,
     dashboard,
     docs_pendientes,
-    help as help_module,
     home_cards,
     inferencia,
     informes,
     invoices,
     laboratorios,
     modulo_packs,
+    modulos_import,
     obras_sociales,
     obras_sociales_catalogo,
     observer,
@@ -31,6 +31,7 @@ from routes import (
     purchase,
     vademecum,
 )
+from routes import help as help_module
 
 _modules = [
     auth_routes,
@@ -46,6 +47,7 @@ _modules = [
     claims,
     purchase,
     modulo_packs,
+    modulos_import,
     productos,
     cuentas,
     dashboard,

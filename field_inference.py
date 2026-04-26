@@ -97,6 +97,14 @@ CAMPOS = {
     },
 
     # ── EXTRAS: específicos de algún flujo ──────────────────────────────────
+    'nombre_modulo': {
+        'label': 'Nombre del módulo',
+        'descripcion': 'Identificador del módulo de descuento (ej. "MOD 1", "PROMO ABRIL")',
+        'tipo': 'text',
+        'nucleo': False,
+        'keywords': ['modulo', 'nombre_modulo', 'mod', 'pack', 'promo'],
+        'ejemplos': ['MOD 1', 'PROMO ABRIL', 'PACK CARDIO'],
+    },
     'codigo_alfabeta': {
         'label': 'Código Alfabeta',
         'descripcion': 'Código del catálogo Alfabeta (clave compartida con ObServer)',
