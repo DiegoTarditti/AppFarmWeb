@@ -51,27 +51,46 @@
                     <a href="{{ url_for('informe_pedido_auto') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Cambiar laboratorio</a>
                     <h2 class="text-base font-bold text-[#1e1e1e] mt-1">{{ lab_nombre or 'Laboratorio' }}</h2>
                     <p class="text-xs text-[#6f6f6f]">
-                        <strong>{{ stats.productos }}</strong> productos · sugerido <strong>{{ '{:,}'.format(stats.unidades_total).replace(',', '.') }}</strong> unidades · pérdida estimada <strong class="text-rose-700">{{ stats.perdida_mensual_total }} u/mes</strong>
+                        <strong>{{ stats.productos }}</strong> productos · sugerido <strong>{{ '{:,}'.format(stats.unidades_total).replace(',', '.') }}</strong> unidades · pérdida estimada <strong class="text-rose-700">{{ stats.perdida_mensual_total }} u/mes</strong> · <strong class="text-rose-700">${{ '{:,.0f}'.format(stats.perdida_pesos_total|default(0)).replace(',', '.') }}/mes</strong>
                     </p>
                 </div>
             </div>
 
             {% set _cp = chart_perdida if chart_perdida is defined else None %}
-            <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
-                <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-                    <h3 class="text-sm font-bold text-[#1e1e1e]">📉 Top 10 productos con mayor pérdida estimada</h3>
-                    <p class="text-[11px] text-[#888]">Unidades promedio que dejás de vender por mes según la falta de stock vs mínimo</p>
+            {% set _cm = chart_pesos if chart_pesos is defined else None %}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+                <div class="bg-white border border-surface-border rounded-xl p-4">
+                    <div class="mb-2">
+                        <h3 class="text-sm font-bold text-[#1e1e1e]">📉 Pérdida en unidades</h3>
+                        <p class="text-[11px] text-[#888]">Top 10 — u/mes que dejás de vender</p>
+                    </div>
+                    <p id="chart-perdida-error" class="text-xs text-rose-700 hidden"></p>
+                    {% if _cp and _cp.labels %}
+                    <div style="height: 320px"><canvas id="chart-perdida"></canvas></div>
+                    {% else %}
+                    <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900">
+                        <p class="font-semibold mb-1">Sin datos.</p>
+                        <p>Productos del lab con ventas históricas: 0.</p>
+                    </div>
+                    {% endif %}
                 </div>
-                <p id="chart-perdida-error" class="text-xs text-rose-700 hidden"></p>
-                {% if _cp and _cp.labels %}
-                <div style="height: 320px"><canvas id="chart-perdida"></canvas></div>
-                {% else %}
-                <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900">
-                    <p class="font-semibold mb-1">Sin datos para graficar.</p>
-                    <p>Esto pasa cuando ningún producto bajo mínimo del lab tiene ventas históricas (u12m=0).</p>
-                    <p class="mt-1 text-amber-700">Debug — productos: <strong>{{ stats.productos|default(0) }}</strong> · pérdida total: <strong>{{ stats.perdida_mensual_total|default(0) }}</strong> · puntos en chart: <strong>{{ _cp.labels|length if _cp else 0 }}</strong></p>
+
+                <div class="bg-white border border-surface-border rounded-xl p-4">
+                    <div class="mb-2 flex items-baseline justify-between flex-wrap gap-1">
+                        <h3 class="text-sm font-bold text-[#1e1e1e]">💸 Pérdida valorizada</h3>
+                        <p class="text-[11px] text-rose-700 font-semibold">${{ '{:,.0f}'.format(stats.perdida_pesos_total|default(0)).replace(',', '.') }}/mes total</p>
+                    </div>
+                    <p class="text-[11px] text-[#888] mb-2">Top 10 — $ promedio que dejás de vender por mes</p>
+                    <p id="chart-pesos-error" class="text-xs text-rose-700 hidden"></p>
+                    {% if _cm and _cm.labels %}
+                    <div style="height: 320px"><canvas id="chart-pesos"></canvas></div>
+                    {% else %}
+                    <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900">
+                        <p class="font-semibold mb-1">Sin datos.</p>
+                        <p>No hay precio histórico para los productos bajo mínimo.</p>
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
             </div>
             {% if _cp and _cp.labels %}
             <script>
@@ -137,6 +156,79 @@
                         });
                     } catch (e) {
                         console.error('[pedido_auto] Error armando chart', e);
+                        if (err) { err.textContent = 'Error: ' + e.message; err.classList.remove('hidden'); }
+                    }
+                }
+                if (document.readyState === 'complete') go();
+                else window.addEventListener('load', go);
+            })();
+            </script>
+            {% endif %}
+
+            {% if _cm and _cm.labels %}
+            <script>
+            (function() {
+                const labels = {{ _cm.labels|tojson }};
+                const data   = {{ _cm.data|tojson }};
+                const fmt = v => '$' + v.toLocaleString('es-AR', {maximumFractionDigits: 0});
+                function go() {
+                    const ctx = document.getElementById('chart-pesos');
+                    const err = document.getElementById('chart-pesos-error');
+                    if (!ctx) return;
+                    if (typeof Chart === 'undefined') {
+                        if (err) { err.textContent = 'Chart.js no cargó.'; err.classList.remove('hidden'); }
+                        return;
+                    }
+                    try {
+                        const valueLabels = {
+                            id: 'valueLabelsPesos',
+                            afterDatasetsDraw(chart) {
+                                const c = chart.ctx;
+                                const meta = chart.getDatasetMeta(0);
+                                if (!meta || !meta.data) return;
+                                c.save();
+                                c.font = 'bold 11px sans-serif';
+                                c.fillStyle = '#1e1e1e';
+                                c.textBaseline = 'middle';
+                                c.textAlign = 'left';
+                                meta.data.forEach((bar, i) => {
+                                    const v = data[i];
+                                    if (v == null) return;
+                                    c.fillText(' ' + fmt(v), bar.x + 4, bar.y);
+                                });
+                                c.restore();
+                            }
+                        };
+                        new Chart(ctx, {
+                            type: 'bar',
+                            plugins: [valueLabels],
+                            data: {
+                                labels,
+                                datasets: [{
+                                    label: 'Pérdida $ /mes',
+                                    data,
+                                    backgroundColor: 'rgba(16, 185, 129, .7)',
+                                    borderColor: 'rgba(5, 150, 105, 1)',
+                                    borderWidth: 1,
+                                }]
+                            },
+                            options: {
+                                indexAxis: 'y',
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                layout: { padding: { right: 80 } },
+                                plugins: {
+                                    legend: { display: false },
+                                    tooltip: { callbacks: { label: c => fmt(c.parsed.x) + ' /mes que se pierden' } }
+                                },
+                                scales: {
+                                    x: { beginAtZero: true, ticks: { callback: v => fmt(v) } },
+                                    y: { ticks: { font: { size: 11 } } }
+                                }
+                            }
+                        });
+                    } catch (e) {
+                        console.error('[pedido_auto] Error armando chart pesos', e);
                         if (err) { err.textContent = 'Error: ' + e.message; err.classList.remove('hidden'); }
                     }
                 }

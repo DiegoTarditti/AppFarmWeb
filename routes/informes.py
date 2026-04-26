@@ -510,6 +510,7 @@ def init_app(app):
                     session.query(
                         ObsVentaMensual.producto_observer.label('pid'),
                         func.sum(ObsVentaMensual.unidades).label('u12m'),
+                        func.sum(ObsVentaMensual.monto).label('m12m'),
                     )
                     .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde)
                     .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta)
@@ -525,6 +526,7 @@ def init_app(app):
                         stock_q.c.minimo,
                         stock_q.c.maximo,
                         func.coalesce(ventas_sub.c.u12m, 0).label('u12m'),
+                        func.coalesce(ventas_sub.c.m12m, 0).label('m12m'),
                      )
                      .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
                      .outerjoin(ventas_sub, ventas_sub.c.pid == ObsProducto.observer_id)
@@ -548,9 +550,12 @@ def init_app(app):
                         sugerido = max(1, minimo - stock)
                         base = 'min-stock'
                     u12m = int(r.u12m or 0)
+                    m12m = float(r.m12m or 0)
                     avg_mensual = u12m / 12.0 if u12m else 0.0
+                    precio_unit = (m12m / u12m) if u12m else 0.0
                     factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
                     perdida_mensual = round(avg_mensual * factor_falta, 1)
+                    perdida_pesos = round(perdida_mensual * precio_unit, 2)
                     # Diagnóstico del mínimo configurado vs ventas:
                     #   ratio = minimo / avg_mensual
                     #   <0.5  → bajo (cubre <2 semanas, vas a vivir bajo mínimo)
@@ -577,6 +582,8 @@ def init_app(app):
                         'base_sugerido': base,
                         'u12m': u12m,
                         'perdida_mensual': perdida_mensual,
+                        'perdida_pesos': perdida_pesos,
+                        'precio_unit': round(precio_unit, 2),
                         'min_diag': diag[0],
                         'min_diag_label': diag[1],
                         'ean': None,
@@ -595,6 +602,7 @@ def init_app(app):
             'productos': len(rows),
             'unidades_total': sum(r['sugerido'] for r in rows),
             'perdida_mensual_total': round(sum(r.get('perdida_mensual', 0) for r in rows), 1),
+            'perdida_pesos_total': round(sum(r.get('perdida_pesos', 0) for r in rows), 2),
         }
         # Top 10 por pérdida estimada para el gráfico de barras.
         top_perdida = sorted(
@@ -605,13 +613,23 @@ def init_app(app):
             'labels': [r['descripcion'][:50] for r in top_perdida],
             'data':   [r['perdida_mensual'] for r in top_perdida],
         }
+        # Top 10 por pérdida valorizada en pesos.
+        top_pesos = sorted(
+            [r for r in rows if r.get('perdida_pesos', 0) > 0],
+            key=lambda r: -r['perdida_pesos'],
+        )[:10]
+        chart_pesos = {
+            'labels': [r['descripcion'][:50] for r in top_pesos],
+            'data':   [r['perdida_pesos'] for r in top_pesos],
+        }
         return render_template('informes_pedido_auto.html',
                                lab_id=lab_id,
                                lab_nombre=lab_nombre,
                                labs_con_alertas=labs_con_alertas,
                                rows=rows,
                                stats=stats,
-                               chart_perdida=chart_perdida)
+                               chart_perdida=chart_perdida,
+                               chart_pesos=chart_pesos)
 
     @app.route('/informes/pedido-auto/crear', methods=['POST'])
     @login_required
