@@ -134,6 +134,12 @@ una tarea aparte.
 
 ## 🎨 UX — pulir el sistema
 
+### Botón "Crear y exportar con plantilla" en pedido auto
+- **Trigger**: cuando se use seguido pedido auto y quieras saltarte el paso de ir a `/order/<id>` para exportar.
+- **Esfuerzo**: ~1 hora — agregar segundo botón "Crear pedido + exportar plantilla" en `informes_pedido_auto.html` que: (1) crea el Pedido como hoy, (2) en el handler, en lugar de redirigir a `/order/<id>`, arma el JSON `data` con las columnas que la plantilla del lab espera, (3) llama internamente a la lógica de `order_export_plantilla` (extraída a una función reusable) y devuelve el XLSX.
+- **Hoy**: hay un cartel verde que avisa que el lab tiene plantilla y que la verás al ir al pedido. Es 2 clicks en lugar de 1.
+- **Detalle clave**: el endpoint `/order/<int:pedido_id>/export/plantilla` espera `request.form['data']` con el formato exacto de columnas; hay que construir ese array desde los items del pedido respetando los `field` que la plantilla declare.
+
 ### Filtro arriba en Pedidos guardados
 - **Trigger**: cuando puedas — la pantalla `/orders` no tiene filtro y con varios pedidos hay que scrollear.
 - **Esfuerzo**: ~30 min — input de búsqueda + filtro por lab/estado/fecha.

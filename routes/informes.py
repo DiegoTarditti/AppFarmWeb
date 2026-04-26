@@ -501,9 +501,19 @@ def init_app(app):
                 for r in labs_q.all()
             ]
 
+            tiene_plantilla = False
+            local_lab_nombre = None
             if lab_id:
                 lab = session.get(ObsLaboratorio, lab_id)
                 lab_nombre = lab.descripcion if lab else None
+                # Buscar Laboratorio local mapeado para detectar plantilla.
+                from database import ExportTemplate, Laboratorio
+                local_lab = (session.query(Laboratorio)
+                             .filter(Laboratorio.observer_id == lab_id).first())
+                if local_lab:
+                    local_lab_nombre = local_lab.nombre
+                    tpl = session.get(ExportTemplate, local_lab.id)
+                    tiene_plantilla = bool(tpl and tpl.columns_json)
 
                 desde, hasta = _ventana_12m()
                 ventas_sub = (
@@ -629,7 +639,9 @@ def init_app(app):
                                rows=rows,
                                stats=stats,
                                chart_perdida=chart_perdida,
-                               chart_pesos=chart_pesos)
+                               chart_pesos=chart_pesos,
+                               tiene_plantilla=tiene_plantilla,
+                               local_lab_nombre=local_lab_nombre)
 
     @app.route('/informes/pedido-auto/crear', methods=['POST'])
     @login_required
@@ -643,7 +655,16 @@ def init_app(app):
 
         with database.get_db() as session:
             lab = session.get(ObsLaboratorio, lab_id)
-            lab_nombre = lab.descripcion if lab else f'Lab #{lab_id}'
+            # Preferir el nombre del Laboratorio LOCAL si está mapeado:
+            # así ExportTemplate (PK=lab.id) y filtros de plantilla del
+            # /order/<id> matchean por pedido.laboratorio.
+            from database import Laboratorio
+            local_lab = (session.query(Laboratorio)
+                         .filter(Laboratorio.observer_id == lab_id).first())
+            if local_lab:
+                lab_nombre = local_lab.nombre
+            else:
+                lab_nombre = lab.descripcion if lab else f'Lab #{lab_id}'
 
             items = []
             i = 0

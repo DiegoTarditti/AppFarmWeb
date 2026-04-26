@@ -308,6 +308,11 @@
                     </div>
                 </div>
 
+                {% if tiene_plantilla %}
+                <div class="bg-emerald-50 border border-emerald-200 rounded p-3 mt-3 text-xs text-emerald-900">
+                    ✨ <strong>{{ local_lab_nombre }}</strong> tiene plantilla de exportación cargada. Al crear el pedido, vas a poder exportarlo con el formato del lab desde el botón "Plantilla laboratorio" en la pantalla del pedido.
+                </div>
+                {% endif %}
                 <div class="flex justify-end gap-2 mt-4">
                     <a href="{{ url_for('informe_pedido_auto') }}"
                        class="px-3 py-2 text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Cancelar</a>
