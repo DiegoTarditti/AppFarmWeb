@@ -23,15 +23,6 @@ ACCIONES_HOME = [
         'fg_default': '#2E7D5B',
     },
     {
-        'id': 'analisis',
-        'titulo': 'Análisis y proyección',
-        'desc': 'Sugerencia de pedido según ventas y stock',
-        'endpoint': 'purchase_index',
-        'icono_path': 'M3 3v18h18M7 14l4-4 4 4 5-5',
-        'bg_default': '#E8F3ED',
-        'fg_default': '#2E7D5B',
-    },
-    {
         'id': 'ingresos',
         'titulo': 'Control de Ingreso',
         'desc': 'Subir facturas y cruzar con ERP',
