@@ -146,31 +146,72 @@ def init_app(app):
                         if p['ean_pack'] and p['confianza'] in ('alta', 'media')}
 
             # Heurísticas adicionales para módulos:
-            # 1. La palabra 'PACK' sola en la descripción (sin número, ej.
-            #    "OPTAMOX PACK ESPECIAL" o "MOD PACK CARDIO").
-            # 2. El primer item de cada módulo típicamente ES el pack — los
-            #    siguientes suelen ser las unidades equivalentes.
+            # 1. La palabra 'PACK' sola en la descripción (sin número).
+            # 2. El primer item de cada módulo típicamente ES el pack.
+            # 3. Cantidad-envase múltiplo: si dentro del mismo módulo un item
+            #    tiene "envase = K × envase_otro" (K≥2), el primero es pack
+            #    de K unidades del segundo. Ej: "x 80" en un módulo donde
+            #    también hay "x 8" → pack de 10. Confianza alta porque la
+            #    matemática lo confirma.
             import re as _re
             re_pack_palabra = _re.compile(r'\bPACK\b', _re.IGNORECASE)
+            re_envase = _re.compile(r'\b[xX]\s*(\d{1,4})\b')
+
+            def _extraer_envases(desc):
+                """Devuelve la lista de números 'x N' en orden. El último es
+                típicamente la cantidad por envase."""
+                if not desc:
+                    return []
+                return [int(m) for m in re_envase.findall(desc) if m.isdigit()]
+
             for nm, mod in por_modulo.items():
                 items_mod = mod.get('items') or []
+
+                # Pre-calcular envases por item (último número de "x N").
+                envases = []
+                for prod in items_mod:
+                    nums = _extraer_envases(prod.get('descripcion') or '')
+                    envases.append(nums[-1] if nums else None)
+
                 for i, prod in enumerate(items_mod):
                     e = (prod.get('ean') or '').strip()
                     if not e or e in pack_map:
                         continue
                     desc = (prod.get('descripcion') or '')
                     razones = []
+                    cant_pack = None
+                    ean_unidad = ''
+
                     if re_pack_palabra.search(desc):
                         razones.append('palabra_pack')
                     if i == 0 and len(items_mod) >= 2:
                         razones.append('primero_del_modulo')
+
+                    # Comparar envase con el resto del módulo.
+                    env_i = envases[i]
+                    if env_i and env_i >= 2:
+                        for j, otro in enumerate(items_mod):
+                            if j == i:
+                                continue
+                            env_j = envases[j]
+                            if not env_j or env_j < 1 or env_j >= env_i:
+                                continue
+                            if env_i % env_j == 0 and (env_i // env_j) >= 2:
+                                cant_pack = env_i // env_j
+                                ean_unidad = (otro.get('ean') or '').strip()
+                                razones.append(f'envase_x{cant_pack}')
+                                break
+
                     if razones:
+                        # Si la heurística por envase funcionó, confianza alta
+                        # (matemática verificada). Si no, media.
+                        conf = 'alta' if cant_pack else 'media'
                         pack_map[e] = {
                             'ean_pack': e,
-                            'confianza': 'media',
+                            'confianza': conf,
                             'razon': '+'.join(razones),
-                            'cantidad': None,
-                            'ean_unidad_sug': '',
+                            'cantidad': cant_pack,
+                            'ean_unidad_sug': ean_unidad,
                         }
 
             # 3. Combinar match + pack en cada entry.
