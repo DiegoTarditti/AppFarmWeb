@@ -113,12 +113,28 @@ def init_app(app):
                         'unidades_12m': total_u,
                         'monto_12m': total_m,
                     }
+                    # Datos para gráficos
+                    # 1. Donut: agregar por lab.
+                    por_lab = {}
+                    for r in rows:
+                        por_lab.setdefault(r['lab_nombre'], 0)
+                        por_lab[r['lab_nombre']] += r['u12m']
+                    chart_donut = sorted(por_lab.items(), key=lambda kv: -kv[1])
+                    # 2. Barras top 10 productos (por unidades).
+                    top10 = sorted(rows, key=lambda r: -r['u12m'])[:10]
+                    chart_top = [{
+                        'label': r['descripcion'],
+                        'lab': r['lab_nombre'],
+                        'u12m': r['u12m'],
+                    } for r in top10 if r['u12m'] > 0]
 
         return render_template('informes_labs_por_droga.html',
                                droga_id=droga_id,
                                droga_nombre=droga_nombre,
                                rows=rows,
-                               stats=stats)
+                               stats=stats,
+                               chart_donut=chart_donut if droga_nombre else [],
+                               chart_top=chart_top if droga_nombre else [])
 
     @app.route('/api/informes/buscar-droga')
     @login_required

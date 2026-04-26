@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% set nav_active = "informes" %}
 {% block title %}Labs por droga — Informes{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
 {% block main %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
@@ -54,6 +57,92 @@
                     <p class="text-2xl font-bold text-violet-900 mt-0.5">${{ '{:,.0f}'.format(stats.monto_12m).replace(',', '.') }}</p>
                 </div>
             </div>
+
+            {# Charts: donut % por lab + barras top 10 productos #}
+            {% if chart_donut and chart_top %}
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
+                <div class="bg-white border border-surface-border rounded-xl p-4">
+                    <p class="text-xs font-bold text-[#1e1e1e] mb-2">Participación por laboratorio (unidades 12m)</p>
+                    <div style="height: 280px;"><canvas id="chart-donut"></canvas></div>
+                </div>
+                <div class="bg-white border border-surface-border rounded-xl p-4">
+                    <p class="text-xs font-bold text-[#1e1e1e] mb-2">Top 10 productos por unidades 12m</p>
+                    <div style="height: 280px;"><canvas id="chart-top"></canvas></div>
+                </div>
+            </div>
+            <script>
+            (function () {
+                const datosDonut = {{ chart_donut | tojson }};
+                const datosTop = {{ chart_top | tojson }};
+                // Paleta consistente: cada lab mantiene el mismo color en ambos charts.
+                const PALETA = ['#2E7D5B', '#0EA5E9', '#F59E0B', '#A855F7', '#EF4444',
+                                '#10B981', '#6366F1', '#EC4899', '#14B8A6', '#F97316'];
+                const colorPorLab = {};
+                datosDonut.forEach(([lab, _], i) => { colorPorLab[lab] = PALETA[i % PALETA.length]; });
+
+                // Donut
+                new Chart(document.getElementById('chart-donut'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: datosDonut.map(([l, _]) => l),
+                        datasets: [{
+                            data: datosDonut.map(([_, v]) => v),
+                            backgroundColor: datosDonut.map(([l, _]) => colorPorLab[l]),
+                            borderWidth: 2, borderColor: '#fff',
+                        }],
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'right', labels: { font: { size: 11 }, boxWidth: 12 } },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                        const pct = total ? (ctx.parsed / total * 100).toFixed(1) : 0;
+                                        return `${ctx.label}: ${ctx.parsed.toLocaleString('es-AR')} u (${pct}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Barras horizontales top 10 productos
+                new Chart(document.getElementById('chart-top'), {
+                    type: 'bar',
+                    data: {
+                        labels: datosTop.map(p => p.label.length > 35 ? p.label.slice(0, 35) + '…' : p.label),
+                        datasets: [{
+                            label: 'Unidades 12m',
+                            data: datosTop.map(p => p.u12m),
+                            backgroundColor: datosTop.map(p => colorPorLab[p.lab] || '#999'),
+                            borderWidth: 0,
+                        }],
+                    },
+                    options: {
+                        indexAxis: 'y',
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        const p = datosTop[ctx.dataIndex];
+                                        return `${p.lab}: ${ctx.parsed.x.toLocaleString('es-AR')} u`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { ticks: { font: { size: 10 } } },
+                            y: { ticks: { font: { size: 10 } } }
+                        }
+                    }
+                });
+            })();
+            </script>
+            {% endif %}
 
             {# Tabla por producto/lab, ordenada por ventas 12m DESC #}
             <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
