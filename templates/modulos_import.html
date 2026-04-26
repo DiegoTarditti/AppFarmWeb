@@ -337,6 +337,11 @@ document.getElementById('btn-next-2').addEventListener('click', async () => {
         const data = await r.json();
         if (!r.ok) { alert('Error: ' + (data.error || '')); return; }
         _validados = data.items;
+        // Debug: log lo que respondió el server para verificar packs detectados.
+        console.log('[modulos] validar stats:', data.stats);
+        console.log('[modulos] validados:', _validados.length, 'items');
+        const packs = _validados.filter(it => it._es_pack);
+        console.log('[modulos] packs detectados:', packs.length, packs.slice(0, 5));
         renderPacksTable();
         setStep(3);
     } catch (err) {
