@@ -54,6 +54,15 @@
             Columnas esperadas: nombre del módulo, EAN, descripción, cantidad por módulo, descuento %.
         </p>
 
+        <div class="bg-amber-50 border-l-4 border-amber-400 rounded-r-lg p-3 mb-4 flex items-start gap-2">
+            <span class="text-xl leading-none">⚠️</span>
+            <div class="text-xs text-amber-900">
+                <strong class="block text-sm">Antes de importar: marcá en amarillo los packs en el Excel.</strong>
+                Pintá la fila del producto que es pack con fondo <span class="bg-yellow-300 px-1 rounded">amarillo</span>
+                en el archivo. Es la única señal automática que vamos a usar para detectarlos.
+            </div>
+        </div>
+
         <div class="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-3">
             <label class="text-xs font-semibold text-violet-900 block mb-1">Laboratorio</label>
             <select id="lab-select-pre" class="w-full bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
@@ -194,7 +203,7 @@ const CAMPOS = [
     { key: 'descuento_psl', label: 'Descuento %',           hint: 'porcentaje del módulo' },
 ];
 
-let _headers = [], _rows = [], _mapping = {}, _items = [], _step = 1;
+let _headers = [], _rows = [], _destacadas = [], _mapping = {}, _items = [], _step = 1;
 let _validados = [];
 
 function setStep(n) {
@@ -239,6 +248,7 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         if (!r.ok) { status.textContent = '✗ ' + (data.error || 'Error'); status.className = 'text-xs text-red-700 mt-2'; return; }
         _headers = data.headers || [];
         _rows = data.rows || [];
+        _destacadas = data.rows_destacadas || [];
         _mapping = data.mapping || {};
         renderSnapshot();
         renderMapping();
@@ -291,7 +301,7 @@ function recalcularItems() {
     const numericos = ['cantidad', 'descuento_psl'];
     _items = [];
     let nombreModuloActivo = null;
-    for (const row of _rows) {
+    _rows.forEach((row, ri) => {
         const item = {};
         for (const [campo, idx] of Object.entries(_mapping)) {
             if (idx >= row.length) continue;
@@ -304,17 +314,16 @@ function recalcularItems() {
                 item[campo] = String(v).trim();
             }
         }
-        // El nombre del módulo se "arrastra": si una fila no tiene nombre pero
-        // hay una previa con nombre, se usa ese (formato típico de planillas).
         if (item.nombre_modulo) {
             nombreModuloActivo = item.nombre_modulo;
         } else if (nombreModuloActivo) {
             item.nombre_modulo = nombreModuloActivo;
         }
-        // Solo guardamos filas que tengan EAN o código (las "puro nombre" del módulo
-        // son separadores y no las importamos).
+        // Marcar fila como destacada (fondo amarillo en el Excel) — única
+        // señal automática de pack que vamos a usar en el backend.
+        if (_destacadas[ri]) item._destacado = true;
         if (item.ean || item.codigo) _items.push(item);
-    }
+    });
 }
 
 document.getElementById('btn-back-1').addEventListener('click', () => setStep(1));

@@ -252,15 +252,40 @@ def _previsualizar_xlsx(path):
             return f'{v:g}'
         return str(v)
 
+    def _es_amarillo(fg_hex):
+        if not fg_hex or len(str(fg_hex)) < 6:
+            return False
+        rgb = str(fg_hex).upper()[-6:]
+        try:
+            r = int(rgb[0:2], 16); g = int(rgb[2:4], 16); b = int(rgb[4:6], 16)
+        except ValueError:
+            return False
+        return r >= 200 and g >= 200 and b <= 180 and not (r == 255 and g == 255 and b >= 230)
+
+    def _row_destacada(row_cells):
+        for c in row_cells:
+            if c.value is None:
+                continue
+            fill = c.fill
+            if not fill or fill.patternType in (None, 'none'):
+                continue
+            fg = getattr(fill.fgColor, 'rgb', None)
+            if fg and _es_amarillo(str(fg)):
+                return True
+        return False
+
     rows_serializadas = []
+    rows_destacadas = []
     for row_cells in data_rows_cells:
         if not row_cells or all(c.value is None or c.value == '' for c in row_cells):
             continue
         rows_serializadas.append([_format_cell(c) for c in row_cells])
+        rows_destacadas.append(_row_destacada(row_cells))
 
     return {
         'headers': headers,
         'rows': rows_serializadas,
+        'rows_destacadas': rows_destacadas,
         'mapping': mapping,
         'header_row': header_idx,
         'count_filas': len(rows_serializadas),

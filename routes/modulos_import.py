@@ -92,10 +92,16 @@ def init_app(app):
         ean_unidad si corresponde.
 
         Body: { items: [...], laboratorio_id?: N }
-        Cada item: { nombre_modulo, ean, codigo, descripcion, cantidad, descuento_psl }
+        Cada item: { nombre_modulo, ean, codigo, descripcion, cantidad,
+                     descuento_psl, _destacado (bool, opcional) }
+
+        Pack = fila amarilla del Excel (señal explícita del laboratorio) o
+        regex 'PACK X N' en la descripción. Sin heurísticas adicionales —
+        cualquier otra señal (primero del módulo, palabra PACK suelta,
+        envase múltiplo, sin ventas) genera demasiados falsos positivos.
         """
+        import re as _re
         import producto_matcher as pm
-        from pack_detector import detectar_packs
         data = request.get_json(silent=True) or {}
         items = data.get('items') or []
         lab_id = data.get('laboratorio_id')
@@ -107,6 +113,15 @@ def init_app(app):
         if not items:
             return jsonify({'items': [], 'stats': {}})
 
+        def _ean_o_codigo(it):
+            e = (it.get('ean') or '').strip()
+            if e:
+                return e
+            return (it.get('codigo') or '').strip() or None
+
+        re_pack_xn = _re.compile(r'\bPACK\s*X\s*(\d+)\b', _re.IGNORECASE)
+        re_envase = _re.compile(r'\b[xX]\s*(\d{1,4})\b')
+
         with database.get_db() as session:
             # 1. Match contra catálogo (mismo flujo que ofertas).
             items_match = [{
@@ -116,103 +131,66 @@ def init_app(app):
             } for it in items]
             results = pm.match_productos_bulk(items_match, laboratorio_id=lab_id, session=session)
 
-            # 2. Detección de packs: agrupamos los items por nombre_modulo (formato
-            # esperado por pack_detector). Si no hay 'ean' usamos 'codigo' como
-            # fallback — algunos proveedores solo manejan código interno.
-            def _ean_o_codigo(it):
-                e = (it.get('ean') or '').strip()
-                if e:
-                    return e
-                return (it.get('codigo') or '').strip() or None
-
+            # 2. Detección de packs por amarillo + regex explícito.
             por_modulo = {}
-            for it in items:
+            for idx, it in enumerate(items):
                 nm = (it.get('nombre_modulo') or 'sin_nombre').strip() or 'sin_nombre'
-                por_modulo.setdefault(nm, {'nombre': nm, 'items': []})
-                por_modulo[nm]['items'].append({
-                    'ean': _ean_o_codigo(it),
-                    'descripcion': it.get('descripcion') or '',
-                    'cant': it.get('cantidad'),
-                    'desc_pct': it.get('descuento_psl'),
-                })
-            packs_detectados = detectar_packs(list(por_modulo.values()), session,
-                                              saltear_registrados=False)
-            # Solo consideramos pack los de confianza alta o media. Los de
-            # confianza 'baja' (solo señal "sin ventas en catálogo local")
-            # NO son packs reales — pueden ser cualquier producto que la
-            # farmacia simplemente no vende. Marcarlos genera muchos falsos
-            # positivos en farmacias con catálogo local incompleto.
-            pack_map = {p['ean_pack']: p for p in packs_detectados
-                        if p['ean_pack'] and p['confianza'] in ('alta', 'media')}
+                por_modulo.setdefault(nm, [])
+                por_modulo[nm].append((idx, it))
 
-            # Heurísticas adicionales para módulos:
-            # 1. La palabra 'PACK' sola en la descripción (sin número).
-            # 2. El primer item de cada módulo típicamente ES el pack.
-            # 3. Cantidad-envase múltiplo: si dentro del mismo módulo un item
-            #    tiene "envase = K × envase_otro" (K≥2), el primero es pack
-            #    de K unidades del segundo. Ej: "x 80" en un módulo donde
-            #    también hay "x 8" → pack de 10. Confianza alta porque la
-            #    matemática lo confirma.
-            import re as _re
-            re_pack_palabra = _re.compile(r'\bPACK\b', _re.IGNORECASE)
-            re_envase = _re.compile(r'\b[xX]\s*(\d{1,4})\b')
+            pack_map = {}
+            for nm, lst in por_modulo.items():
+                # Pre-calcular envases del módulo para sugerir ean_unidad.
+                envases = {}
+                for idx, prod in lst:
+                    nums = re_envase.findall(prod.get('descripcion') or '')
+                    if nums:
+                        envases[idx] = int(nums[-1])
 
-            def _extraer_envases(desc):
-                """Devuelve la lista de números 'x N' en orden. El último es
-                típicamente la cantidad por envase."""
-                if not desc:
-                    return []
-                return [int(m) for m in re_envase.findall(desc) if m.isdigit()]
-
-            for nm, mod in por_modulo.items():
-                items_mod = mod.get('items') or []
-
-                # Pre-calcular envases por item (último número de "x N").
-                envases = []
-                for prod in items_mod:
-                    nums = _extraer_envases(prod.get('descripcion') or '')
-                    envases.append(nums[-1] if nums else None)
-
-                for i, prod in enumerate(items_mod):
-                    e = (prod.get('ean') or '').strip()
-                    if not e or e in pack_map:
+                for idx, prod in lst:
+                    e = _ean_o_codigo(prod)
+                    if not e:
                         continue
-                    desc = (prod.get('descripcion') or '')
-                    razones = []
-                    cant_pack = None
+                    desc = prod.get('descripcion') or ''
+                    destacado = bool(prod.get('_destacado'))
+                    m = re_pack_xn.search(desc)
+
+                    if not destacado and not m:
+                        continue
+
+                    cant_pack = int(m.group(1)) if m else None
+                    razon = []
+                    if destacado:
+                        razon.append('amarillo')
+                    if m:
+                        razon.append(f'PACKx{cant_pack}')
+
+                    # Sugerir ean_unidad: dentro del módulo, el item con el
+                    # envase más chico que sea divisor del de este pack.
                     ean_unidad = ''
-
-                    if re_pack_palabra.search(desc):
-                        razones.append('palabra_pack')
-                    if i == 0 and len(items_mod) >= 2:
-                        razones.append('primero_del_modulo')
-
-                    # Comparar envase con el resto del módulo.
-                    env_i = envases[i]
+                    env_i = envases.get(idx)
                     if env_i and env_i >= 2:
-                        for j, otro in enumerate(items_mod):
-                            if j == i:
+                        mejor_k = None
+                        for j_idx, otro in lst:
+                            if j_idx == idx:
                                 continue
-                            env_j = envases[j]
-                            if not env_j or env_j < 1 or env_j >= env_i:
+                            env_j = envases.get(j_idx)
+                            if not env_j or env_j >= env_i:
                                 continue
-                            if env_i % env_j == 0 and (env_i // env_j) >= 2:
-                                cant_pack = env_i // env_j
-                                ean_unidad = (otro.get('ean') or '').strip()
-                                razones.append(f'envase_x{cant_pack}')
-                                break
+                            if env_i % env_j == 0:
+                                k = env_i // env_j
+                                if k >= 2 and (mejor_k is None or k > mejor_k):
+                                    mejor_k = k
+                                    ean_unidad = _ean_o_codigo(otro) or ''
+                                    if cant_pack is None:
+                                        cant_pack = k
 
-                    if razones:
-                        # Si la heurística por envase funcionó, confianza alta
-                        # (matemática verificada). Si no, media.
-                        conf = 'alta' if cant_pack else 'media'
-                        pack_map[e] = {
-                            'ean_pack': e,
-                            'confianza': conf,
-                            'razon': '+'.join(razones),
-                            'cantidad': cant_pack,
-                            'ean_unidad_sug': ean_unidad,
-                        }
+                    pack_map[e] = {
+                        'confianza': 'alta' if (destacado and m) else 'media',
+                        'razon': '+'.join(razon),
+                        'cantidad': cant_pack,
+                        'ean_unidad_sug': ean_unidad,
+                    }
 
             # 3. Combinar match + pack en cada entry.
             validados = []
