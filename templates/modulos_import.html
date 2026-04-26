@@ -388,7 +388,7 @@ function renderPacksTable() {
         return `<tr data-idx="${idx}" class="${banda} hover:brightness-95 ${esPrimeraDelModulo && idx > 0 ? 'border-t-2 border-t-[#d0d0d0]' : ''}">
             <td class="px-2 py-1 text-center"><input type="checkbox" class="pack-chk" data-idx="${idx}" ${checked}></td>
             <td class="px-2 py-1">${nombreCelda}</td>
-            <td class="px-2 py-1 font-mono text-[10px]">${escapeHtml(it.ean || '')}</td>
+            <td class="px-2 py-1 font-mono text-[10px]">${escapeHtml(it.ean || it.codigo || '')}</td>
             <td class="px-2 py-1">
                 <input type="text" class="pack-ean-unidad w-32 font-mono text-[10px] border border-surface-border rounded px-1 py-0.5"
                        data-idx="${idx}" value="${escapeHtml(eanUnidad)}"

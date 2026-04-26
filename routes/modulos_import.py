@@ -117,13 +117,20 @@ def init_app(app):
             results = pm.match_productos_bulk(items_match, laboratorio_id=lab_id, session=session)
 
             # 2. Detección de packs: agrupamos los items por nombre_modulo (formato
-            # esperado por pack_detector).
+            # esperado por pack_detector). Si no hay 'ean' usamos 'codigo' como
+            # fallback — algunos proveedores solo manejan código interno.
+            def _ean_o_codigo(it):
+                e = (it.get('ean') or '').strip()
+                if e:
+                    return e
+                return (it.get('codigo') or '').strip() or None
+
             por_modulo = {}
             for it in items:
                 nm = (it.get('nombre_modulo') or 'sin_nombre').strip() or 'sin_nombre'
                 por_modulo.setdefault(nm, {'nombre': nm, 'items': []})
                 por_modulo[nm]['items'].append({
-                    'ean': it.get('ean'),
+                    'ean': _ean_o_codigo(it),
                     'descripcion': it.get('descripcion') or '',
                     'cant': it.get('cantidad'),
                     'desc_pct': it.get('descuento_psl'),
@@ -158,9 +165,12 @@ def init_app(app):
                         entry['_status'] = 'ok'
                         stats['ok'] += 1
 
-                # Datos del pack detector.
-                ean = it.get('ean')
+                # Datos del pack detector. Reuso el mismo fallback ean→codigo.
+                ean = _ean_o_codigo(it)
                 pack_info = pack_map.get(ean) if ean else None
+                # Para que el frontend tenga claro qué EAN usamos (si fue
+                # fallback al código), lo agrego al entry.
+                entry['_ean_efectivo'] = ean
                 if pack_info:
                     entry['_es_pack'] = True
                     entry['_pack_confianza'] = pack_info.get('confianza', 'media')
@@ -207,7 +217,10 @@ def init_app(app):
             saltados = 0
             modulos_cache = {}
             for it in items:
+                # Mismo fallback: ean del archivo o código del proveedor.
                 ean_pack = (str(it.get('ean') or '').strip()) or None
+                if not ean_pack:
+                    ean_pack = (str(it.get('codigo') or '').strip()) or None
                 if not ean_pack:
                     saltados += 1
                     continue
