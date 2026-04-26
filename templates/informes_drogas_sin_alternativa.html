@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Drogas sin alternativa — Informes{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('informes_index') }}"
+       class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Mis Informes</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">⚠ Drogas sin alternativa</h1>
+    <span class="text-xs text-[#6f6f6f]">— Alerta de dependencia de proveedor</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto">
+
+        {# Filtro: cuántos labs como máximo se consideran "pocos" #}
+        <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+            <p class="text-xs font-semibold text-[#555] mb-2">Mostrar drogas con</p>
+            <div class="flex flex-wrap gap-2 text-xs">
+                {% for n, label in [(1, '1 solo lab (monopolio)'), (2, '1 o 2 labs'), (3, 'hasta 3 labs')] %}
+                <a href="{{ url_for('informe_drogas_sin_alternativa', max_labs=n) }}"
+                   class="px-3 py-1.5 rounded-lg font-semibold {% if max_labs == n %}bg-amber-500 text-white{% else %}bg-[#f0f0f0] text-[#555] hover:bg-[#e5e5e5]{% endif %}">
+                    {{ label }}
+                </a>
+                {% endfor %}
+            </div>
+            <p class="text-[11px] text-[#888] mt-2">
+                Solo se incluyen drogas con ventas en los últimos 12 meses (las que NO vendés no son críticas).
+                Productos en BAJA quedan fuera del conteo.
+            </p>
+        </div>
+
+        {# Stats top-line #}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+            <div class="bg-red-50 border border-red-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-red-700">Drogas críticas</p>
+                <p class="text-2xl font-bold text-red-900 mt-0.5">{{ stats.criticas }}</p>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-amber-700">Monopolios (1 lab)</p>
+                <p class="text-2xl font-bold text-amber-900 mt-0.5">{{ stats.monopolios }}</p>
+            </div>
+            <div class="bg-sky-50 border border-sky-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-sky-700">Unidades 12m</p>
+                <p class="text-2xl font-bold text-sky-900 mt-0.5">{{ '{:,}'.format(stats.unidades_12m).replace(',', '.') }}</p>
+            </div>
+            <div class="bg-violet-50 border border-violet-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-violet-700">Monto 12m</p>
+                <p class="text-2xl font-bold text-violet-900 mt-0.5">${{ '{:,.0f}'.format(stats.monto_12m).replace(',', '.') }}</p>
+            </div>
+        </div>
+
+        {% if rows %}
+        <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Droga</th>
+                            <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Labs</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Único proveedor</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Productos</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Unid. 12m</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Monto 12m</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#f0f0f0]">
+                        {% for r in rows %}
+                        <tr class="hover:bg-black/[0.02]">
+                            <td class="px-3 py-2 font-semibold text-[#1e1e1e]">{{ r.droga_nombre }}</td>
+                            <td class="px-3 py-2 text-center">
+                                <span class="inline-block px-2 py-0.5 rounded-full text-xs font-bold
+                                    {% if r.n_labs == 1 %}bg-red-100 text-red-700
+                                    {% elif r.n_labs == 2 %}bg-amber-100 text-amber-700
+                                    {% else %}bg-sky-100 text-sky-700{% endif %}">
+                                    {{ r.n_labs }}
+                                </span>
+                            </td>
+                            <td class="px-3 py-2 text-[#1e1e1e]">
+                                {% if r.lab_unico %}{{ r.lab_unico }}
+                                {% else %}<span class="text-[#bbb]">— ({{ r.n_labs }} labs)</span>{% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.n_productos }}</td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">
+                                {{ '{:,}'.format(r.u12m).replace(',', '.') }}
+                            </td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">
+                                ${{ '{:,.0f}'.format(r.m12m).replace(',', '.') }}
+                            </td>
+                            <td class="px-3 py-2 text-right">
+                                <a href="{{ url_for('informe_labs_por_droga', droga_id=r.droga_id) }}"
+                                   class="text-xs text-emerald-700 hover:text-emerald-900 underline">
+                                    Ver detalle →
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+            <p class="text-sm font-bold text-emerald-900">✓ Sin alertas</p>
+            <p class="text-xs text-emerald-800 mt-1">No hay drogas con tan pocos proveedores entre las que vendés.</p>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+{% endblock %}

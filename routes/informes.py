@@ -15,7 +15,7 @@ from datetime import date
 
 from flask import jsonify, render_template, request
 from flask_login import login_required
-from sqlalchemy import func
+from sqlalchemy import distinct, func
 
 import database
 from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsVentaMensual
@@ -135,6 +135,104 @@ def init_app(app):
                                stats=stats,
                                chart_donut=chart_donut if droga_nombre else [],
                                chart_top=chart_top if droga_nombre else [])
+
+    @app.route('/informes/drogas-sin-alternativa')
+    @login_required
+    def informe_drogas_sin_alternativa():
+        """Informe #2: drogas críticas (con pocos labs proveedores).
+
+        Filtra solo drogas que tuvieron ventas en los últimos 12 meses
+        (las que NO vendo no son urgentes). Ordena por unidades desc para
+        que las críticas-y-vendidas estén arriba.
+
+        Query param `max_labs` (default 1): cuántos labs como máximo se
+        consideran 'pocos'. Si 1, son monopolios; si 2, también pares.
+        """
+        try:
+            max_labs = max(1, min(5, int(request.args.get('max_labs', 1))))
+        except (TypeError, ValueError):
+            max_labs = 1
+
+        desde, hasta = _ventana_12m()
+        rows = []
+        with database.get_db() as session:
+            # Subquery: drogas con ventas 12m + total unidades.
+            ventas_por_droga = (
+                session.query(
+                    ObsProducto.nombre_droga_observer.label('droga_id'),
+                    func.sum(ObsVentaMensual.unidades).label('u12m'),
+                    func.sum(ObsVentaMensual.monto).label('m12m'),
+                )
+                .join(ObsVentaMensual,
+                      ObsVentaMensual.producto_observer == ObsProducto.observer_id)
+                .filter(ObsProducto.nombre_droga_observer.isnot(None))
+                .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde)
+                .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta)
+                .group_by(ObsProducto.nombre_droga_observer)
+                .subquery()
+            )
+
+            # Para cada droga con ventas: count(distinct lab) + nombre droga.
+            q = (session.query(
+                    ObsNombreDroga.observer_id.label('droga_id'),
+                    ObsNombreDroga.descripcion.label('droga_nombre'),
+                    func.count(distinct(ObsProducto.laboratorio_observer)).label('n_labs'),
+                    func.count(distinct(ObsProducto.observer_id)).label('n_productos'),
+                    ventas_por_droga.c.u12m,
+                    ventas_por_droga.c.m12m,
+                 )
+                 .join(ObsProducto,
+                       ObsProducto.nombre_droga_observer == ObsNombreDroga.observer_id)
+                 .join(ventas_por_droga,
+                       ventas_por_droga.c.droga_id == ObsNombreDroga.observer_id)
+                 .filter(ObsProducto.fecha_baja.is_(None))   # solo activos
+                 .group_by(
+                    ObsNombreDroga.observer_id,
+                    ObsNombreDroga.descripcion,
+                    ventas_por_droga.c.u12m,
+                    ventas_por_droga.c.m12m,
+                 )
+                 .having(func.count(distinct(ObsProducto.laboratorio_observer)) <= max_labs)
+                 .order_by(ventas_por_droga.c.u12m.desc())
+            )
+
+            for r in q.all():
+                # Si es monopolio (1 lab), traer el nombre del único proveedor.
+                lab_unico = None
+                if r.n_labs == 1:
+                    lab = (session.query(ObsLaboratorio.descripcion)
+                           .join(ObsProducto,
+                                 ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+                           .filter(ObsProducto.nombre_droga_observer == r.droga_id)
+                           .filter(ObsProducto.fecha_baja.is_(None))
+                           .first())
+                    if lab:
+                        lab_unico = lab[0]
+                rows.append({
+                    'droga_id': r.droga_id,
+                    'droga_nombre': r.droga_nombre,
+                    'n_labs': r.n_labs,
+                    'n_productos': r.n_productos,
+                    'lab_unico': lab_unico,
+                    'u12m': int(r.u12m or 0),
+                    'm12m': float(r.m12m or 0),
+                })
+
+        # Stats agregados
+        total_drogas_criticas = len(rows)
+        total_u = sum(r['u12m'] for r in rows)
+        total_m = sum(r['m12m'] for r in rows)
+        monopolios = sum(1 for r in rows if r['n_labs'] == 1)
+
+        return render_template('informes_drogas_sin_alternativa.html',
+                               max_labs=max_labs,
+                               rows=rows,
+                               stats={
+                                   'criticas': total_drogas_criticas,
+                                   'monopolios': monopolios,
+                                   'unidades_12m': total_u,
+                                   'monto_12m': total_m,
+                               })
 
     @app.route('/api/informes/buscar-droga')
     @login_required
