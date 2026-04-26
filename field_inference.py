@@ -430,12 +430,19 @@ def inferir_columnas(headers, sample_rows=None, candidatos=None) -> dict:
     mapa = {}
     usados = set()  # índices ya asignados a algún campo
 
-    # Paso 1: por header
+    # Paso 1: por header. Pasamos candidatos = todos los todavía libres, así
+    # si una keyword ambigua matchea varios campos (ej. 'desc' matchea
+    # 'descripcion' Y 'descuento_psl'), una vez asignado uno el siguiente
+    # header con la misma palabra prueba el OTRO campo en vez de quedar sin
+    # mapear.
     for ci, h in enumerate(headers):
         if ci in usados:
             continue
-        campo = inferir_campo_por_header(h, candidatos=candidatos)
-        if campo and campo not in mapa:
+        libres = [c for c in candidatos if c not in mapa]
+        if not libres:
+            break
+        campo = inferir_campo_por_header(h, candidatos=libres)
+        if campo:
             mapa[campo] = ci
             usados.add(ci)
 
