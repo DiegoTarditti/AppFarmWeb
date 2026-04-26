@@ -116,6 +116,7 @@
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Máx</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Unid 12m</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Sugerido</th>
+                                    <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Diagnóstico mín.</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">A pedir</th>
                                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide w-10">📊</th>
                                 </tr>
@@ -142,6 +143,17 @@
                                               title="{% if r.base_sugerido == 'max-stock' %}máximo - stock{% else %}mínimo - stock{% endif %}">
                                             {{ r.sugerido }}
                                         </span>
+                                    </td>
+                                    <td class="px-3 py-2 text-left">
+                                        {% if r.min_diag == 'bajo' %}
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-100 text-rose-800">▼ {{ r.min_diag_label }}</span>
+                                        {% elif r.min_diag == 'alto' %}
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-amber-800">▲ {{ r.min_diag_label }}</span>
+                                        {% elif r.min_diag == 'ok' %}
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-100 text-emerald-800">✓ {{ r.min_diag_label }}</span>
+                                        {% else %}
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-[#f0f0f0] text-[#666]">— {{ r.min_diag_label }}</span>
+                                        {% endif %}
                                     </td>
                                     <td class="px-3 py-2 text-right">
                                         <input type="number" name="qty_{{ loop.index0 }}" min="0" value="{{ r.sugerido }}"

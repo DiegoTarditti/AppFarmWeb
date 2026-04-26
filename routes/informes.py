@@ -548,13 +548,24 @@ def init_app(app):
                         sugerido = max(1, minimo - stock)
                         base = 'min-stock'
                     u12m = int(r.u12m or 0)
-                    # Pérdida mensual estimada = ventas promedio × proporción
-                    # de stock faltante respecto al mínimo. Si el producto
-                    # está vacío vs su mínimo, se asume que se pierde toda
-                    # la venta promedio. Cap en avg para no inflar.
                     avg_mensual = u12m / 12.0 if u12m else 0.0
                     factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
                     perdida_mensual = round(avg_mensual * factor_falta, 1)
+                    # Diagnóstico del mínimo configurado vs ventas:
+                    #   ratio = minimo / avg_mensual
+                    #   <0.5  → bajo (cubre <2 semanas, vas a vivir bajo mínimo)
+                    #   0.5–2 → ok (1–2 meses de cover)
+                    #   >2    → alto (mínimo sobredimensionado, plata frenada)
+                    if avg_mensual <= 0:
+                        diag = ('sin_ventas', 'Sin ventas 12m')
+                    else:
+                        ratio = minimo / avg_mensual
+                        if ratio < 0.5:
+                            diag = ('bajo', f'Bajo — cubre ~{int(ratio*30)}d, sugerido ≥{int(round(avg_mensual))}')
+                        elif ratio > 2:
+                            diag = ('alto', f'Alto — cubre ~{int(ratio*30)}d, sugerido ≈{int(round(avg_mensual*1.5))}')
+                        else:
+                            diag = ('ok', f'OK — cubre ~{int(ratio*30)}d')
                     rows.append({
                         'producto_id': r.pid,
                         'descripcion': r.desc,
@@ -566,6 +577,8 @@ def init_app(app):
                         'base_sugerido': base,
                         'u12m': u12m,
                         'perdida_mensual': perdida_mensual,
+                        'min_diag': diag[0],
+                        'min_diag_label': diag[1],
                         'ean': None,
                     })
                     obs_ids.append(r.pid)
