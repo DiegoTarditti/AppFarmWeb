@@ -650,18 +650,22 @@ def init_app(app):
     def api_mv_refresh(view_name):
         """Refresca una vista materializada manualmente. Solo admin/dev."""
         if current_user.rol not in ('admin', 'dev'):
-            return jsonify({'error': 'sin permisos'}), 403
+            return jsonify({'ok': False, 'error': 'sin permisos'}), 403
         import cron_log
         import matviews
         if view_name not in matviews.MATVIEWS:
-            return jsonify({'error': 'vista desconocida'}), 404
-        with cron_log.registrar(f'mv_refresh:{view_name}', origen='web') as log:
-            with database.get_db() as session:
-                r = matviews.refrescar_matview(session, view_name)
-            log.set_mensaje(f'{r.get("filas", 0)} filas en {r.get("duracion_ms", 0)}ms')
-            if not r.get('ok'):
-                raise RuntimeError(r.get('error') or 'refresh falló')
-        return jsonify(r)
+            return jsonify({'ok': False, 'error': 'vista desconocida'}), 404
+        try:
+            with cron_log.registrar(f'mv_refresh:{view_name}', origen='web') as log:
+                with database.get_db() as session:
+                    r = matviews.refrescar_matview(session, view_name)
+                log.set_mensaje(f'{r.get("filas", 0)} filas en {r.get("duracion_ms", 0)}ms')
+                if not r.get('ok'):
+                    log.set_mensaje(f'ERROR: {r.get("error", "refresh falló")}')
+            # Devolvemos siempre JSON — incluso si el refresh falló (con ok=False).
+            return jsonify(r), (200 if r.get('ok') else 500)
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'{type(e).__name__}: {e}'}), 500
 
     @app.route('/api/mv/status')
     @login_required
