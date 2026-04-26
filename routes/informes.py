@@ -248,6 +248,77 @@ def init_app(app):
                                    'monto_12m': total_m,
                                })
 
+    @app.route('/api/observer-product/<int:observer_id>/chart')
+    @login_required
+    def api_observer_product_chart(observer_id):
+        """Datos para el gráfico histórico, leídos desde obs_ventas_mensuales.
+
+        No requiere que el producto esté en el catálogo local — solo necesita
+        el observer_id. Útil para informes/listados que cruzan con ObServer
+        directo y no pasan por Producto local.
+        """
+        from datetime import date as _date
+        with database.get_db() as session:
+            obs = session.get(ObsProducto, observer_id)
+            if not obs:
+                return jsonify({'ok': False, 'error': 'Producto ObServer no encontrado'}), 404
+
+            # Construir array de 12 valores mensuales (mes -11 al mes actual).
+            hoy = _date.today()
+            ventas_arr = [0] * 12
+            start_y = hoy.year
+            start_m = hoy.month - 11
+            while start_m <= 0:
+                start_m += 12
+                start_y -= 1
+            ventas_rows = (session.query(ObsVentaMensual)
+                           .filter(ObsVentaMensual.producto_observer == observer_id)
+                           .all())
+            for v in ventas_rows:
+                # Calcular el slot 0..11 del array.
+                offset = (v.anio - start_y) * 12 + (v.mes - start_m)
+                if 0 <= offset <= 11:
+                    ventas_arr[offset] += int(v.unidades or 0)
+
+            # Stock: sumamos sobre todas las farmacias si hay datos.
+            from database import ObsStock
+            stock_total = (session.query(func.coalesce(func.sum(ObsStock.stock_actual), 0))
+                           .filter(ObsStock.producto_observer == observer_id).scalar() or 0)
+
+            no_cero = [v for v in ventas_arr if v > 0]
+            avg = sum(no_cero) / len(no_cero) if no_cero else 0
+            # Tendencia simple: pendiente lineal sobre los 12 meses.
+            n = len(ventas_arr)
+            xs = list(range(n))
+            mean_x = sum(xs) / n
+            mean_y = sum(ventas_arr) / n
+            num = sum((xs[i] - mean_x) * (ventas_arr[i] - mean_y) for i in range(n))
+            den = sum((x - mean_x) ** 2 for x in xs)
+            slope = num / den if den else 0
+            # Rotación rough: A si avg>=20, M si >=5, B si menos.
+            if avg >= 20:
+                rot = 'A'
+            elif avg >= 5:
+                rot = 'M'
+            else:
+                rot = 'B'
+
+            return jsonify({
+                'ok': True,
+                'nombre': obs.descripcion or '',
+                'codigo_barra': obs.codigo_alfabeta or str(observer_id),
+                'ventas': ventas_arr,
+                'avg_monthly': float(avg),
+                'slope': float(slope),
+                'stock': int(stock_total),
+                'rotacion': rot,
+                'tipo': 'N',
+                'start_month': start_m,
+                'n_days': 35,
+                'sin_historial': not no_cero,
+                'analizado_en': None,
+            })
+
     @app.route('/api/informes/buscar-droga')
     @login_required
     def api_buscar_droga():

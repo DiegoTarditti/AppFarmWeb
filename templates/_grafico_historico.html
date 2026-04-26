@@ -47,10 +47,13 @@ const CHART_BTN = ean => `<button onclick="openChart('${ean}')" title="Ver gráf
     </svg>
 </button>`;
 
-function openChart(barcode) {
+function openChart(barcode) { _openChartFrom('/api/product/' + encodeURIComponent(barcode) + '/chart', barcode); }
+function openChartObs(observerId) { _openChartFrom('/api/observer-product/' + observerId + '/chart', observerId); }
+
+function _openChartFrom(url, label) {
     const modal = document.getElementById('hist-chart-modal');
     document.getElementById('hist-chart-title').textContent = '';
-    document.getElementById('hist-chart-barcode').textContent = barcode;
+    document.getElementById('hist-chart-barcode').textContent = label;
     document.getElementById('hist-chart-fecha').classList.add('hidden');
     document.getElementById('hist-chart-stats').innerHTML = '';
     document.getElementById('hist-chart-note').classList.add('hidden');
@@ -58,7 +61,7 @@ function openChart(barcode) {
     document.getElementById('hist-chart-loading').classList.remove('hidden');
     modal.classList.remove('hidden');
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-    fetch('/api/product/' + barcode + '/chart')
+    fetch(url)
         .then(r => r.json())
         .then(data => {
             document.getElementById('hist-chart-loading').classList.add('hidden');
