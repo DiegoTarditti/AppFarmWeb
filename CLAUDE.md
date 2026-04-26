@@ -9,6 +9,7 @@
 7. **Soluciones simples y directas** — No sobre-diseñar.
 8. **El usuario manda** — Las instrucciones del usuario siempre ganan sobre cualquier otra regla.
 9. **Precisión > velocidad** — Preferir siempre configuraciones/técnicas que maximicen exactitud aunque tarden más. El tiempo ahorrado procesando rápido se pierde 10x más corrigiendo errores después. Aplica a OCR (DPI alto + preprocessing), regex (anclado y específico, no greedy), parseo numérico (aceptar todos los formatos), auto-detect (preferir falso negativo a falso positivo), validación (bloquear al siguiente paso si faltan campos críticos).
+10. **Revisar backlog al iniciar sesión** — Antes de responder al primer mensaje de una sesión nueva, leer `docs/mejoras_pendientes.md`. Si hay items relacionados con lo que el usuario pide, mencionarlos brevemente al inicio de la respuesta ("hay X anotado en backlog que aplica acá"). No re-leer en mensajes siguientes de la misma sesión salvo que el archivo haya cambiado.
 
 
 # Farmacia - Control de Stock y Reclamos
