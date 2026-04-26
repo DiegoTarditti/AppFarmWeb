@@ -18,7 +18,8 @@ from flask_login import login_required
 from sqlalchemy import distinct, func
 
 import database
-from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsVentaMensual, Producto
+from database import (ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock,
+                      ObsVentaMensual, Producto)
 
 
 def _ventana_12m():
@@ -347,6 +348,111 @@ def init_app(app):
                                    'unidades_12m': total_u,
                                    'monto_12m': total_m,
                                })
+
+    @app.route('/informes/bajo-minimo')
+    @login_required
+    def informe_bajo_minimo():
+        """Análisis de mínimos #1: productos con stock_actual < minimo en
+        ObServer (sumado por farmacia). Suma las ventas 12m para que el
+        usuario priorice los de alta rotación.
+
+        Filtros: lab (opcional), solo activos por defecto.
+        """
+        lab_id = request.args.get('lab_id', type=int)
+        rows = []
+        labs_disponibles = []
+        with database.get_db() as session:
+            stock_q = (
+                session.query(
+                    ObsStock.producto_observer.label('pid'),
+                    func.sum(ObsStock.stock_actual).label('stock'),
+                    func.sum(ObsStock.minimo).label('minimo'),
+                )
+                .filter(ObsStock.minimo.isnot(None))
+                .filter(ObsStock.minimo > 0)
+                .group_by(ObsStock.producto_observer)
+                .subquery()
+            )
+
+            desde, hasta = _ventana_12m()
+            ventas_sub = (
+                session.query(
+                    ObsVentaMensual.producto_observer.label('pid'),
+                    func.sum(ObsVentaMensual.unidades).label('u12m'),
+                )
+                .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde)
+                .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta)
+                .group_by(ObsVentaMensual.producto_observer)
+                .subquery()
+            )
+
+            q = (session.query(
+                    ObsProducto.observer_id.label('pid'),
+                    ObsProducto.descripcion.label('desc'),
+                    ObsProducto.codigo_alfabeta,
+                    ObsLaboratorio.observer_id.label('lab_id'),
+                    ObsLaboratorio.descripcion.label('lab_nombre'),
+                    stock_q.c.stock,
+                    stock_q.c.minimo,
+                    func.coalesce(ventas_sub.c.u12m, 0).label('u12m'),
+                 )
+                 .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
+                 .outerjoin(ObsLaboratorio,
+                            ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                 .outerjoin(ventas_sub, ventas_sub.c.pid == ObsProducto.observer_id)
+                 .filter(ObsProducto.fecha_baja.is_(None))
+                 .filter(stock_q.c.stock < stock_q.c.minimo)
+            )
+            if lab_id:
+                q = q.filter(ObsProducto.laboratorio_observer == lab_id)
+            # Orden: por unidades faltantes (minimo - stock) desc, después por
+            # ventas 12m desc para que los de alta rotación queden arriba.
+            q = q.order_by(
+                (stock_q.c.minimo - stock_q.c.stock).desc(),
+                func.coalesce(ventas_sub.c.u12m, 0).desc(),
+            )
+
+            obs_ids = []
+            for r in q.all():
+                stock = int(r.stock or 0)
+                minimo = int(r.minimo or 0)
+                rows.append({
+                    'producto_id': r.pid,
+                    'descripcion': r.desc,
+                    'codigo_alfabeta': r.codigo_alfabeta,
+                    'lab_id': r.lab_id,
+                    'lab_nombre': r.lab_nombre or '—',
+                    'stock': stock,
+                    'minimo': minimo,
+                    'faltan': max(0, minimo - stock),
+                    'u12m': int(r.u12m or 0),
+                    'ean': None,
+                })
+                obs_ids.append(r.pid)
+
+            if obs_ids:
+                ean_by_obs = dict(
+                    session.query(Producto.observer_id, Producto.codigo_barra)
+                    .filter(Producto.observer_id.in_(obs_ids)).all()
+                )
+                for r in rows:
+                    r['ean'] = ean_by_obs.get(r['producto_id'])
+
+            # Lista de labs presentes en el resultado (para el filtro).
+            labs_set = {(r['lab_id'], r['lab_nombre']) for r in rows
+                        if r['lab_id']}
+            labs_disponibles = sorted(labs_set, key=lambda kv: kv[1])
+
+        stats = {
+            'productos': len(rows),
+            'total_faltan': sum(r['faltan'] for r in rows),
+            'con_ventas': sum(1 for r in rows if r['u12m'] > 0),
+        }
+        return render_template('informes_bajo_minimo.html',
+                               rows=rows,
+                               stats=stats,
+                               lab_id=lab_id,
+                               labs_disponibles=labs_disponibles)
 
     @app.route('/api/observer-product/<int:observer_id>/chart')
     @login_required

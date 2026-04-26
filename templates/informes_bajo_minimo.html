@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Productos bajo mínimo — Informes{% endblock %}
+{% block main %}
+
+{% include '_grafico_historico.html' %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('informes_index') }}"
+       class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Mis Informes</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">🔻 Productos bajo mínimo</h1>
+    <span class="text-xs text-[#6f6f6f]">— Stock actual menor al mínimo de ObServer</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto">
+
+        {# Stats #}
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+            <div class="bg-rose-50 border border-rose-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-rose-700">Productos en alerta</p>
+                <p class="text-2xl font-bold text-rose-900 mt-0.5">{{ stats.productos }}</p>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-amber-700">Unidades faltantes (suma)</p>
+                <p class="text-2xl font-bold text-amber-900 mt-0.5">{{ '{:,}'.format(stats.total_faltan).replace(',', '.') }}</p>
+            </div>
+            <div class="bg-sky-50 border border-sky-200 rounded-lg p-3">
+                <p class="text-[10px] uppercase text-sky-700">Con ventas 12m</p>
+                <p class="text-2xl font-bold text-sky-900 mt-0.5">{{ stats.con_ventas }}</p>
+            </div>
+        </div>
+
+        {# Filtro por lab #}
+        <div class="bg-white border border-surface-border rounded-xl p-4 mb-4 flex items-center gap-3 flex-wrap">
+            <label class="text-xs font-semibold text-[#555]">Laboratorio:</label>
+            <form method="get" class="flex items-center gap-2 flex-wrap">
+                <select name="lab_id" onchange="this.form.submit()"
+                        class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs">
+                    <option value="">Todos los laboratorios</option>
+                    {% for lid, lname in labs_disponibles %}
+                    <option value="{{ lid }}" {% if lab_id == lid %}selected{% endif %}>{{ lname }}</option>
+                    {% endfor %}
+                </select>
+                {% if lab_id %}
+                <a href="{{ url_for('informe_bajo_minimo') }}" class="text-[11px] text-[#888] hover:text-[#555] underline">limpiar</a>
+                {% endif %}
+            </form>
+        </div>
+
+        {% if rows %}
+        <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-[#fafafa]">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Producto</th>
+                            <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Laboratorio</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Stock</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Mínimo</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Faltan</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Unid. 12m</th>
+                            <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Acción</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#f0f0f0]">
+                        {% for r in rows %}
+                        <tr class="hover:bg-black/[0.02]">
+                            <td class="px-3 py-2">
+                                <p class="font-semibold text-[#1e1e1e]">{{ r.descripcion }}</p>
+                                {% if r.codigo_alfabeta %}
+                                <p class="text-[10px] text-[#888] font-mono">{{ r.codigo_alfabeta }}</p>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-xs text-[#555]">{{ r.lab_nombre }}</td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.stock }}</td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.minimo }}</td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">
+                                <span class="font-bold text-rose-700">{{ r.faltan }}</span>
+                            </td>
+                            <td class="px-3 py-2 text-right font-mono tabular-nums">
+                                {% if r.u12m > 0 %}
+                                {{ '{:,}'.format(r.u12m).replace(',', '.') }}
+                                {% else %}
+                                <span class="text-[#bbb]">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-right">
+                                <button type="button"
+                                        onclick="openChartObs({{ r.producto_id }})"
+                                        class="text-xs text-violet-700 hover:text-violet-900 underline">📊 Histórico</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center">
+            <p class="text-sm font-bold text-emerald-900">✓ Sin alertas</p>
+            <p class="text-xs text-emerald-800 mt-1">No hay productos por debajo del stock mínimo {% if lab_id %}de este laboratorio{% endif %}.</p>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+{% endblock %}
