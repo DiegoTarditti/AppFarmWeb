@@ -14,6 +14,7 @@ from routes import (
     help as help_module,
     home_cards,
     inferencia,
+    informes,
     invoices,
     laboratorios,
     modulo_packs,
@@ -60,6 +61,7 @@ _modules = [
     ofertas_import,
     help_module,
     inferencia,
+    informes,
 ]
 
 

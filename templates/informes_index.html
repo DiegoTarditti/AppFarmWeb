@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Mis Informes{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📊 Mis Informes</h1>
+    <p class="text-xs text-[#6f6f6f] mt-0.5">Cruces de catálogo, ventas y stock para el día a día.</p>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-5xl mx-auto">
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+
+            {# ── Informe #1 ── #}
+            <a href="{{ url_for('informe_labs_por_droga') }}"
+               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-brand hover:shadow-md transition-all">
+                <div class="flex items-start gap-2 mb-2">
+                    <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">🔍</div>
+                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                </div>
+                <p class="font-bold text-sm text-[#1e1e1e]">Labs por droga</p>
+                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">¿Qué labs fabrican esta droga y cuál te vende más? Útil cuando un lab se queda sin stock o sube precio.</p>
+            </a>
+
+            {# ── Informe #2 (próximamente) ── #}
+            <div class="block bg-white border border-surface-border rounded-xl p-4 opacity-60 cursor-not-allowed">
+                <div class="flex items-start gap-2 mb-2">
+                    <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">⚠</div>
+                    <span class="text-[10px] uppercase font-bold text-[#999] bg-[#f5f5f5] px-2 py-0.5 rounded">Próximamente</span>
+                </div>
+                <p class="font-bold text-sm text-[#1e1e1e]">Drogas con un solo proveedor</p>
+                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Drogas donde dependés de un único lab. Alerta de riesgo de quiebre.</p>
+            </div>
+
+            {# ── Informe #4 (próximamente) ── #}
+            <div class="block bg-white border border-surface-border rounded-xl p-4 opacity-60 cursor-not-allowed">
+                <div class="flex items-start gap-2 mb-2">
+                    <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-lg flex-shrink-0">📦</div>
+                    <span class="text-[10px] uppercase font-bold text-[#999] bg-[#f5f5f5] px-2 py-0.5 rounded">Próximamente</span>
+                </div>
+                <p class="font-bold text-sm text-[#1e1e1e]">Presentaciones por droga</p>
+                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Para una droga, qué presentaciones (x10/x20/x30) se venden más. Para decidir qué stockear.</p>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}
