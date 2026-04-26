@@ -137,7 +137,41 @@ def init_app(app):
                 })
             packs_detectados = detectar_packs(list(por_modulo.values()), session,
                                               saltear_registrados=False)
-            pack_map = {p['ean_pack']: p for p in packs_detectados if p['ean_pack']}
+            # Solo consideramos pack los de confianza alta o media. Los de
+            # confianza 'baja' (solo señal "sin ventas en catálogo local")
+            # NO son packs reales — pueden ser cualquier producto que la
+            # farmacia simplemente no vende. Marcarlos genera muchos falsos
+            # positivos en farmacias con catálogo local incompleto.
+            pack_map = {p['ean_pack']: p for p in packs_detectados
+                        if p['ean_pack'] and p['confianza'] in ('alta', 'media')}
+
+            # Heurísticas adicionales para módulos:
+            # 1. La palabra 'PACK' sola en la descripción (sin número, ej.
+            #    "OPTAMOX PACK ESPECIAL" o "MOD PACK CARDIO").
+            # 2. El primer item de cada módulo típicamente ES el pack — los
+            #    siguientes suelen ser las unidades equivalentes.
+            import re as _re
+            re_pack_palabra = _re.compile(r'\bPACK\b', _re.IGNORECASE)
+            for nm, mod in por_modulo.items():
+                items_mod = mod.get('items') or []
+                for i, prod in enumerate(items_mod):
+                    e = (prod.get('ean') or '').strip()
+                    if not e or e in pack_map:
+                        continue
+                    desc = (prod.get('descripcion') or '')
+                    razones = []
+                    if re_pack_palabra.search(desc):
+                        razones.append('palabra_pack')
+                    if i == 0 and len(items_mod) >= 2:
+                        razones.append('primero_del_modulo')
+                    if razones:
+                        pack_map[e] = {
+                            'ean_pack': e,
+                            'confianza': 'media',
+                            'razon': '+'.join(razones),
+                            'cantidad': None,
+                            'ean_unidad_sug': '',
+                        }
 
             # 3. Combinar match + pack en cada entry.
             validados = []
