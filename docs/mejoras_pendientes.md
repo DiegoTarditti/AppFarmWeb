@@ -134,6 +134,11 @@ una tarea aparte.
 
 ## 🎨 UX — pulir el sistema
 
+### Filtro arriba en Pedidos guardados
+- **Trigger**: cuando puedas — la pantalla `/orders` no tiene filtro y con varios pedidos hay que scrollear.
+- **Esfuerzo**: ~30 min — input de búsqueda + filtro por lab/estado/fecha.
+- **Por qué**: hoy hay que buscar manualmente con Ctrl+F.
+
 ### Color de fondo del botón en home (no solo del ícono)
 - **Trigger**: cuando el home tenga 10+ botones y se necesite agrupación visual.
 - **Esfuerzo**: 30 min — agregar campo `bg_color` al modelo de cards (o reusar uno existente con sufijo `_btn`), exponerlo en el editor, aplicar via `style="background-color: ..."` en el render.
