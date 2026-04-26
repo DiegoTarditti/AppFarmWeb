@@ -56,26 +56,28 @@
                 </div>
             </div>
 
+            {% set _cp = chart_perdida if chart_perdida is defined else None %}
             <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
                 <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
                     <h3 class="text-sm font-bold text-[#1e1e1e]">📉 Top 10 productos con mayor pérdida estimada</h3>
                     <p class="text-[11px] text-[#888]">Unidades promedio que dejás de vender por mes según la falta de stock vs mínimo</p>
                 </div>
                 <p id="chart-perdida-error" class="text-xs text-rose-700 hidden"></p>
-                {% if chart_perdida and chart_perdida.labels %}
+                {% if _cp and _cp.labels %}
                 <div style="height: 320px"><canvas id="chart-perdida"></canvas></div>
                 {% else %}
                 <div class="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-900">
                     <p class="font-semibold mb-1">Sin datos para graficar.</p>
                     <p>Esto pasa cuando ningún producto bajo mínimo del lab tiene ventas históricas (u12m=0).</p>
-                    <p class="mt-1 text-amber-700">Debug — productos: <strong>{{ stats.productos }}</strong> · pérdida total: <strong>{{ stats.perdida_mensual_total }}</strong> · puntos en chart: <strong>{{ chart_perdida.labels|length if chart_perdida else 0 }}</strong></p>
+                    <p class="mt-1 text-amber-700">Debug — productos: <strong>{{ stats.productos|default(0) }}</strong> · pérdida total: <strong>{{ stats.perdida_mensual_total|default(0) }}</strong> · puntos en chart: <strong>{{ _cp.labels|length if _cp else 0 }}</strong></p>
                 </div>
                 {% endif %}
             </div>
+            {% if _cp and _cp.labels %}
             <script>
             (function() {
-                const labels = {{ chart_perdida.labels|tojson }};
-                const data   = {{ chart_perdida.data|tojson }};
+                const labels = {{ _cp.labels|tojson }};
+                const data   = {{ _cp.data|tojson }};
                 function go() {
                     const ctx = document.getElementById('chart-perdida');
                     const err = document.getElementById('chart-perdida-error');
@@ -121,6 +123,7 @@
                 else window.addEventListener('load', go);
             })();
             </script>
+            {% endif %}
 
             {% if rows %}
             <form method="POST" action="{{ url_for('informe_pedido_auto_crear') }}">
