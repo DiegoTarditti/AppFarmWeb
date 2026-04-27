@@ -88,14 +88,56 @@
                 <p class="font-semibold text-[#1e1e1e]">Rutas predeterminadas</p>
                 <p class="text-xs text-[#6f6f6f] mt-0.5">Carpetas que el sistema usa como punto de partida al buscar archivos.</p>
             </div>
-            <div class="px-6 py-5">
-                <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
-                    Carpeta de facturas PDF
-                </label>
-                <input type="text" name="ruta_facturas" value="{{ config.ruta_facturas }}"
-                       placeholder="C:\AppFarmacia\Facturas"
-                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
-                <p class="text-xs text-[#999] mt-1.5">Ruta predeterminada para buscar PDFs de facturas al cargar una nueva.</p>
+            <div class="px-6 py-5 space-y-5">
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                        Carpeta de facturas PDF
+                    </label>
+                    <input type="text" name="ruta_facturas" value="{{ config.ruta_facturas or '' }}"
+                           placeholder="C:\AppFarmacia\Facturas"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1.5">Predeterminada al cargar una factura nueva. Cada proveedor puede tener la suya propia (override).</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                        Carpeta de Excels (ofertas, módulos, ERP)
+                    </label>
+                    <input type="text" name="ruta_excels" value="{{ config.ruta_excels or '' }}"
+                           placeholder="C:\AppFarmacia\Excels"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1.5">Donde la farmacia guarda los XLSX que importa: ofertas del lab, módulos de descuento, stock del ERP.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                        Carpeta de plantillas del laboratorio
+                    </label>
+                    <input type="text" name="ruta_plantillas_lab" value="{{ config.ruta_plantillas_lab or '' }}"
+                           placeholder="C:\AppFarmacia\Plantillas"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1.5">XLSX que envían los laboratorios y sirven de base para los exports por plantilla.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                        Carpeta destino para descargas
+                    </label>
+                    <input type="text" name="ruta_descargas" value="{{ config.ruta_descargas or '' }}"
+                           placeholder="C:\AppFarmacia\Descargas"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1.5">A dónde van los XLSX de export por plantilla y los PDFs de reclamo. Si está vacío, usa el Descargas del navegador.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-[#6f6f6f] mb-2 uppercase tracking-wide">
+                        Carpeta de backups locales
+                    </label>
+                    <input type="text" name="ruta_backups" value="{{ config.ruta_backups or '' }}"
+                           placeholder="C:\AppFarmacia\Backups"
+                           class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand">
+                    <p class="text-xs text-[#999] mt-1.5">Destino del <code class="font-mono text-[10px] bg-[#f5f5f5] px-1 rounded">pg_dump</code> mensual. Aún no automatizado — preparado para cuando se sume el job.</p>
+                </div>
             </div>
         </div>
 

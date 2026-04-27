@@ -18,6 +18,11 @@ class Config(Base):
     id = Column(Integer, primary_key=True)
     farmacia_nombre = Column(String(200), nullable=False, default='Farmacia')
     ruta_facturas = Column(String(500), nullable=True)
+    # Rutas predeterminadas adicionales (todas opcionales)
+    ruta_excels = Column(String(500), nullable=True)        # ofertas, módulos, ERP
+    ruta_descargas = Column(String(500), nullable=True)     # destino de exports XLSX/PDF
+    ruta_backups = Column(String(500), nullable=True)       # destino de pg_dump local
+    ruta_plantillas_lab = Column(String(500), nullable=True)  # XLSX que vienen del laboratorio
     umbral_pico = Column(DECIMAL(4, 2), nullable=False, default=1.30)
     umbral_baja = Column(DECIMAL(4, 2), nullable=False, default=0.70)
     umbral_tendencia = Column(DECIMAL(4, 2), nullable=False, default=0.20)
@@ -1029,6 +1034,11 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_vtas_anio_mes ON obs_ventas_mensuales(anio, mes)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
+    # Rutas predeterminadas adicionales (cliente local)
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_excels VARCHAR(500)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_descargas VARCHAR(500)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_backups VARCHAR(500)"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_plantillas_lab VARCHAR(500)"))
     conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS preferencias_home_json TEXT"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS home_card_clicks (
@@ -1596,7 +1606,11 @@ def _sqlite_add_columns(conn):
                          ('rot_media_min', 'DECIMAL(6,1) NOT NULL DEFAULT 5.0'),
                          ('rot_media_tol', 'DECIMAL(6,1) NOT NULL DEFAULT 0.0'),
                          ('rot_baja_tol', 'DECIMAL(6,1) NOT NULL DEFAULT 0.0'),
-                         ('dockerpanel_ruta', 'VARCHAR(500)')]:
+                         ('dockerpanel_ruta', 'VARCHAR(500)'),
+                         ('ruta_excels', 'VARCHAR(500)'),
+                         ('ruta_descargas', 'VARCHAR(500)'),
+                         ('ruta_backups', 'VARCHAR(500)'),
+                         ('ruta_plantillas_lab', 'VARCHAR(500)')]:
         if col not in existing_cfg:
             conn.execute(text(f"ALTER TABLE configuracion ADD COLUMN {col} {typedef}"))
 

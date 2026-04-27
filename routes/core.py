@@ -46,6 +46,10 @@ def init_app(app):
                 session.add(cfg)
             cfg.farmacia_nombre = nombre
             cfg.ruta_facturas = ruta or None
+            cfg.ruta_excels = (request.form.get('ruta_excels') or '').strip() or None
+            cfg.ruta_descargas = (request.form.get('ruta_descargas') or '').strip() or None
+            cfg.ruta_backups = (request.form.get('ruta_backups') or '').strip() or None
+            cfg.ruta_plantillas_lab = (request.form.get('ruta_plantillas_lab') or '').strip() or None
             try:
                 cfg.umbral_pico = max(1.01, min(3.0, float(request.form.get('umbral_pico', 1.30))))
                 cfg.umbral_baja = max(0.01, min(0.99, float(request.form.get('umbral_baja', 0.70))))

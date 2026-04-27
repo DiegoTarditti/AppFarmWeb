@@ -115,6 +115,10 @@ def get_config():
         return {
             'farmacia_nombre': cfg.farmacia_nombre,
             'ruta_facturas': cfg.ruta_facturas or '',
+            'ruta_excels': cfg.ruta_excels or '',
+            'ruta_descargas': cfg.ruta_descargas or '',
+            'ruta_backups': cfg.ruta_backups or '',
+            'ruta_plantillas_lab': cfg.ruta_plantillas_lab or '',
             'umbral_pico': float(cfg.umbral_pico or 1.30),
             'umbral_baja': float(cfg.umbral_baja or 0.70),
             'umbral_tendencia': float(cfg.umbral_tendencia or 0.20),
