@@ -38,6 +38,18 @@
             </button>
         </div>
 
+        <!-- Filtro canal/droguería -->
+        <select id="filtro-canal" onchange="aplicarFiltroEstado()"
+                class="bg-white border border-surface-border rounded-md px-2 py-1 text-xs">
+            <option value="">📦 Todos los canales</option>
+            <option value="laboratorio">🏭 Solo lab directo</option>
+            <option value="drogueria">📦 Solo vía droguería</option>
+            <option value="sin-canal">⊘ Sin canal elegido</option>
+            <optgroup label="— Por droguería —" id="opt-droguerias">
+                <!-- Se llena con JS al cargar -->
+            </optgroup>
+        </select>
+
         <div class="ml-auto hidden sm:block">
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
@@ -74,7 +86,9 @@
         <div class="space-y-3" id="pedidos-container">
         {% for p in pedidos %}
         <details class="bg-surface border border-surface-border rounded-xl overflow-hidden group pedido-card"
-                 data-analizado="{{ 'si' if p.analizado_en else 'no' }}">
+                 data-analizado="{{ 'si' if p.analizado_en else 'no' }}"
+                 data-canal="{{ p.canal or '' }}"
+                 data-canal-partner="{{ p.canal_partner_nombre or '' }}">
             <summary class="px-4 py-3 cursor-pointer hover:bg-black/[0.02] select-none">
                 <!-- Fila 1: chevron + título + stats + acciones (desktop) -->
                 <div class="flex items-center gap-3 md:gap-4 flex-wrap xl:flex-nowrap">
@@ -88,14 +102,19 @@
                         <div class="flex items-center gap-2 flex-wrap">
                             <p class="text-sm font-semibold text-[#1e1e1e] truncate">{{ p.laboratorio }}</p>
                             {% if p.canal == 'laboratorio' %}
-                            <span class="inline-flex items-center text-[10px] font-semibold bg-violet-100 text-violet-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
-                                  title="Canal elegido: directo al laboratorio">
-                                ↗ DIRECTO
+                            <span class="inline-flex items-center gap-1 text-[11px] font-semibold bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full border border-violet-200 flex-shrink-0"
+                                  title="Compra directo al laboratorio">
+                                🏭 Lab directo
                             </span>
                             {% elif p.canal == 'drogueria' %}
-                            <span class="inline-flex items-center text-[10px] font-semibold bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
+                            <span class="inline-flex items-center gap-1 text-[11px] font-semibold bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full border border-sky-200 flex-shrink-0"
                                   title="Se comprará vía droguería {{ p.canal_partner_nombre or '—' }}">
-                                → {{ p.canal_partner_nombre or 'DROGUERÍA' }}
+                                📦 vía {{ p.canal_partner_nombre or 'droguería' }}
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center gap-1 text-[11px] font-semibold bg-[#f0f0f0] text-[#888] px-2 py-0.5 rounded-full border border-[#e0e0e0] flex-shrink-0"
+                                  title="Canal aún no elegido — podés definirlo en el detalle del pedido">
+                                ⊘ canal sin elegir
                             </span>
                             {% endif %}
                             {% if p.tiene_analisis_guardado %}
@@ -670,17 +689,52 @@ function setEstado(estado) {
 }
 
 function aplicarFiltroEstado() {
+    const filtroCanal = document.getElementById('filtro-canal')?.value || '';
     let visibles = 0;
     document.querySelectorAll('.pedido-card').forEach(card => {
         const analizado = card.dataset.analizado; // 'si' o 'no'
+        const canal = card.dataset.canal || '';
+        const partner = card.dataset.canalPartner || '';
+
+        // Filtro estado.
         let mostrar = true;
         if (estadoActual === 'pendiente') mostrar = analizado === 'no';
         else if (estadoActual === 'procesado') mostrar = analizado === 'si';
+
+        // Filtro canal.
+        if (mostrar && filtroCanal) {
+            if (filtroCanal === 'laboratorio') mostrar = canal === 'laboratorio';
+            else if (filtroCanal === 'drogueria') mostrar = canal === 'drogueria';
+            else if (filtroCanal === 'sin-canal') mostrar = !canal;
+            else if (filtroCanal.startsWith('drog:')) {
+                mostrar = canal === 'drogueria' && partner === filtroCanal.slice(5);
+            }
+        }
+
         card.style.display = mostrar ? '' : 'none';
         if (mostrar) visibles++;
     });
     const el = document.getElementById('pedidos-count');
     if (el) el.textContent = visibles + ' pedido' + (visibles !== 1 ? 's' : '');
+}
+
+function poblarFiltroDroguerias() {
+    // Recolectar las droguerías presentes en los pedidos.
+    const set = new Set();
+    document.querySelectorAll('.pedido-card').forEach(card => {
+        const partner = card.dataset.canalPartner;
+        if (partner) set.add(partner);
+    });
+    const opt = document.getElementById('opt-droguerias');
+    if (!opt) return;
+    if (!set.size) {
+        opt.style.display = 'none';
+        return;
+    }
+    const droguerias = Array.from(set).sort();
+    opt.innerHTML = droguerias.map(d =>
+        `<option value="drog:${d.replace(/"/g, '&quot;')}">${d}</option>`
+    ).join('');
 }
 
 function filtrarItems(input) {
@@ -701,6 +755,7 @@ function filtrarItems(input) {
 // salta automáticamente a "Procesados" para que el usuario no vea una
 // pantalla vacía sin entender por qué.
 document.addEventListener('DOMContentLoaded', () => {
+    poblarFiltroDroguerias();
     const totalPendientes = document.querySelectorAll('.pedido-card[data-analizado="no"]').length;
     const totalProcesados = document.querySelectorAll('.pedido-card[data-analizado="si"]').length;
     if (totalPendientes === 0 && totalProcesados > 0) {
