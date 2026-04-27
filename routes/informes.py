@@ -35,6 +35,82 @@ def _ventana_12m():
     return desde, hasta
 
 
+def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m):
+    """Calcula las métricas de un producto bajo mínimo para el pedido automático.
+
+    Función pura, sin DB. Testeable.
+
+    Args:
+        stock: int, stock actual.
+        minimo: int, mínimo configurado.
+        maximo: int o None, máximo configurado.
+        u12m: int, unidades vendidas en los últimos 12 meses.
+        m12m: float, monto vendido en los últimos 12 meses.
+
+    Returns:
+        dict con: sugerido, base_sugerido, perdida_mensual, perdida_pesos,
+                  precio_unit, min_diag (sin_ventas|bajo|ok|alto), min_diag_label.
+
+    Reglas:
+      - sugerido = max(1, maximo - stock) si hay máximo > stock; sino max(1, minimo - stock).
+      - avg_mensual = u12m / 12.
+      - precio_unit = m12m / u12m (0 si no hay ventas).
+      - factor_falta = clamp((minimo - stock) / minimo, 0, 1).
+      - perdida_mensual = avg_mensual * factor_falta.
+      - perdida_pesos = perdida_mensual * precio_unit.
+      - Diagnóstico de mínimo:
+          - sin_ventas si u12m=0
+          - ratio = minimo / avg_mensual
+          - <0.5 → bajo (cubre <~2 semanas)
+          - >2   → alto (cubre >2 meses)
+          - sino → ok
+    """
+    stock = int(stock or 0)
+    minimo = int(minimo or 0)
+    maximo = int(maximo) if maximo is not None else None
+    u12m = int(u12m or 0)
+    m12m = float(m12m or 0)
+
+    if maximo and maximo > stock:
+        sugerido = maximo - stock
+        base_sugerido = 'max-stock'
+    else:
+        sugerido = max(1, minimo - stock)
+        base_sugerido = 'min-stock'
+
+    avg_mensual = u12m / 12.0 if u12m else 0.0
+    precio_unit = (m12m / u12m) if u12m else 0.0
+    factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
+    perdida_mensual = round(avg_mensual * factor_falta, 1)
+    perdida_pesos = round(perdida_mensual * precio_unit, 2)
+
+    if avg_mensual <= 0:
+        min_diag = 'sin_ventas'
+        min_diag_label = 'Sin ventas 12m'
+    else:
+        ratio = minimo / avg_mensual
+        if ratio < 0.5:
+            min_diag = 'bajo'
+            min_diag_label = f'Bajo — cubre ~{int(ratio * 30)}d, sugerido ≥{int(round(avg_mensual))}'
+        elif ratio > 2:
+            min_diag = 'alto'
+            min_diag_label = f'Alto — cubre ~{int(ratio * 30)}d, sugerido ≈{int(round(avg_mensual * 1.5))}'
+        else:
+            min_diag = 'ok'
+            min_diag_label = f'OK — cubre ~{int(ratio * 30)}d'
+
+    return {
+        'sugerido': max(1, sugerido),
+        'base_sugerido': base_sugerido,
+        'avg_mensual': round(avg_mensual, 2),
+        'precio_unit': round(precio_unit, 2),
+        'perdida_mensual': perdida_mensual,
+        'perdida_pesos': perdida_pesos,
+        'min_diag': min_diag,
+        'min_diag_label': min_diag_label,
+    }
+
+
 def init_app(app):
 
     @app.route('/informes')
@@ -550,53 +626,20 @@ def init_app(app):
 
                 obs_ids = []
                 for r in q.all():
-                    stock = int(r.stock or 0)
-                    minimo = int(r.minimo or 0)
-                    maximo = int(r.maximo or 0) if r.maximo is not None else None
-                    if maximo and maximo > stock:
-                        sugerido = maximo - stock
-                        base = 'max-stock'
-                    else:
-                        sugerido = max(1, minimo - stock)
-                        base = 'min-stock'
-                    u12m = int(r.u12m or 0)
-                    m12m = float(r.m12m or 0)
-                    avg_mensual = u12m / 12.0 if u12m else 0.0
-                    precio_unit = (m12m / u12m) if u12m else 0.0
-                    factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
-                    perdida_mensual = round(avg_mensual * factor_falta, 1)
-                    perdida_pesos = round(perdida_mensual * precio_unit, 2)
-                    # Diagnóstico del mínimo configurado vs ventas:
-                    #   ratio = minimo / avg_mensual
-                    #   <0.5  → bajo (cubre <2 semanas, vas a vivir bajo mínimo)
-                    #   0.5–2 → ok (1–2 meses de cover)
-                    #   >2    → alto (mínimo sobredimensionado, plata frenada)
-                    if avg_mensual <= 0:
-                        diag = ('sin_ventas', 'Sin ventas 12m')
-                    else:
-                        ratio = minimo / avg_mensual
-                        if ratio < 0.5:
-                            diag = ('bajo', f'Bajo — cubre ~{int(ratio*30)}d, sugerido ≥{int(round(avg_mensual))}')
-                        elif ratio > 2:
-                            diag = ('alto', f'Alto — cubre ~{int(ratio*30)}d, sugerido ≈{int(round(avg_mensual*1.5))}')
-                        else:
-                            diag = ('ok', f'OK — cubre ~{int(ratio*30)}d')
+                    metricas = calcular_metricas_pedido_auto(
+                        stock=r.stock, minimo=r.minimo, maximo=r.maximo,
+                        u12m=r.u12m, m12m=r.m12m,
+                    )
                     rows.append({
                         'producto_id': r.pid,
                         'descripcion': r.desc,
                         'codigo_alfabeta': r.codigo_alfabeta,
-                        'stock': stock,
-                        'minimo': minimo,
-                        'maximo': maximo,
-                        'sugerido': max(1, sugerido),
-                        'base_sugerido': base,
-                        'u12m': u12m,
-                        'perdida_mensual': perdida_mensual,
-                        'perdida_pesos': perdida_pesos,
-                        'precio_unit': round(precio_unit, 2),
-                        'min_diag': diag[0],
-                        'min_diag_label': diag[1],
+                        'stock': int(r.stock or 0),
+                        'minimo': int(r.minimo or 0),
+                        'maximo': int(r.maximo) if r.maximo is not None else None,
+                        'u12m': int(r.u12m or 0),
                         'ean': None,
+                        **metricas,
                     })
                     obs_ids.append(r.pid)
 
