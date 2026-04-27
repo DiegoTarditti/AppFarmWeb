@@ -91,6 +91,101 @@ def observer_analisis_disponible():
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Exploración del schema (read-only)
+# ──────────────────────────────────────────────────────────────────────────
+
+def explorar_schema(schema='DW', sample_rows=5, table=None):
+    """Lista tablas/views del schema indicado (default DW) con columnas y filas
+    de ejemplo. Read-only, no toca nada en Observer.
+
+    Args:
+        schema: schema a explorar (default 'DW').
+        sample_rows: cuántas filas de muestra traer por tabla (default 5, max 20).
+        table: si está, solo explora esa tabla específica (más rápido).
+
+    Returns:
+        dict {
+            'tables': [
+                {
+                    'name': 'ProductosVendidos',
+                    'columns': [{'name': 'IdProducto', 'type': 'int', 'nullable': False}, ...],
+                    'sample': [{col: val, ...}, ...],
+                    'error': None | str,
+                },
+                ...
+            ],
+            'errors': [...]
+        }
+    """
+    sample_rows = max(1, min(20, int(sample_rows or 5)))
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    out = {'tables': [], 'errors': []}
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            if table:
+                tablas = [{'TABLE_NAME': table, 'TABLE_TYPE': 'BASE TABLE'}]
+            else:
+                cur.execute("""
+                    SELECT TABLE_NAME, TABLE_TYPE
+                    FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = %s
+                    ORDER BY TABLE_NAME
+                """, (schema,))
+                tablas = list(cur.fetchall())
+
+            for t in tablas:
+                tname = t['TABLE_NAME']
+                entry = {
+                    'name': tname,
+                    'type': t.get('TABLE_TYPE', '?'),
+                    'columns': [],
+                    'sample': [],
+                    'row_count': None,
+                    'error': None,
+                }
+                try:
+                    cur.execute("""
+                        SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                        ORDER BY ORDINAL_POSITION
+                    """, (schema, tname))
+                    for c in cur.fetchall():
+                        t_str = c['DATA_TYPE']
+                        if c.get('CHARACTER_MAXIMUM_LENGTH') and c['CHARACTER_MAXIMUM_LENGTH'] != -1:
+                            t_str += f"({c['CHARACTER_MAXIMUM_LENGTH']})"
+                        entry['columns'].append({
+                            'name':     c['COLUMN_NAME'],
+                            'type':     t_str,
+                            'nullable': c['IS_NULLABLE'] == 'YES',
+                        })
+
+                    # Muestra: TOP N
+                    cur.execute(f"SELECT TOP {sample_rows} * FROM [{schema}].[{tname}]")
+                    rows = cur.fetchall()
+                    # Convertir tipos no serializables a string
+                    for r in rows:
+                        clean = {}
+                        for k, v in r.items():
+                            if v is None:
+                                clean[k] = None
+                            elif isinstance(v, (int, float, str, bool)):
+                                clean[k] = v
+                            else:
+                                clean[k] = str(v)
+                        entry['sample'].append(clean)
+                except Exception as e:
+                    entry['error'] = str(e)
+                    out['errors'].append(f'{tname}: {e}')
+                out['tables'].append(entry)
+    finally:
+        conn.close()
+    return out
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Syncs — cada función abre su propia conexión al source y recibe la session
 # local como parámetro para el upsert. Devuelve dict con stats.
 # ──────────────────────────────────────────────────────────────────────────

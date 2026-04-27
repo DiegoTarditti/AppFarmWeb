@@ -701,6 +701,30 @@ def init_app(app):
             'cualquier_atrasado':  cualquier_atrasado,
         })
 
+    @app.route('/observer/schema')
+    @login_required
+    def observer_schema():
+        """Pantalla read-only que lista todas las tablas/views del schema DW
+        de Observer con sus columnas y 5 filas de muestra. Sirve para
+        descubrir qué hay disponible antes de armar nuevos syncs.
+        """
+        if not _user_tiene_observer(current_user):
+            flash('Tu usuario no tiene acceso a ObServer.', 'error')
+            return redirect(url_for('index'))
+        if not observer_source.observer_disponible():
+            flash('ObServer no está disponible.', 'error')
+            return redirect(url_for('index'))
+        schema = (request.args.get('schema') or 'DW').strip()
+        sample = request.args.get('sample', type=int) or 5
+        focus = (request.args.get('table') or '').strip() or None
+        try:
+            data = observer_source.explorar_schema(schema=schema, sample_rows=sample, table=focus)
+        except Exception as e:
+            flash(f'Error explorando schema: {e}', 'error')
+            return redirect(url_for('index'))
+        return render_template('observer_schema.html',
+                               data=data, schema=schema, sample=sample, focus=focus)
+
     @app.route('/observer/status')
     @login_required
     def observer_status():
