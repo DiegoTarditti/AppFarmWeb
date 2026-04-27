@@ -10,6 +10,13 @@
 <div class="flex-1 overflow-auto p-4 sm:p-6">
     <div class="max-w-7xl mx-auto">
 
+        {% if error %}
+        <div class="bg-amber-50 border-l-4 border-amber-400 rounded-r p-4 mb-4">
+            <p class="font-bold text-sm text-amber-900 mb-1">⚠ No pude acceder a ObServer</p>
+            <p class="text-xs text-amber-800">{{ error }}</p>
+        </div>
+        {% endif %}
+
         <!-- Form de filtros -->
         <form method="get" class="bg-white border border-surface-border rounded-xl p-3 mb-4 flex items-end gap-3 flex-wrap">
             <div>
