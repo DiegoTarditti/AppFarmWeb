@@ -61,8 +61,18 @@ function _openChartFrom(url, label) {
     document.getElementById('hist-chart-loading').classList.remove('hidden');
     modal.classList.remove('hidden');
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-    fetch(url)
-        .then(r => r.json())
+    fetch(url, {credentials: 'same-origin'})
+        .then(async r => {
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) {
+                // Se redirigió a login o algo similar — devolver mensaje claro.
+                if (r.status === 401 || r.status === 302) {
+                    throw new Error('Tu sesión expiró. Recargá la página.');
+                }
+                throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
+            }
+            return r.json();
+        })
         .then(data => {
             document.getElementById('hist-chart-loading').classList.add('hidden');
             if (!data.ok) {

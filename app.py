@@ -31,7 +31,7 @@ def bloquear_descuentos():
 
 @app.before_request
 def exigir_login():
-    from flask import redirect, request, url_for
+    from flask import jsonify, redirect, request, url_for
     from flask_login import current_user
     # Rutas públicas (no requieren login)
     rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api',
@@ -39,6 +39,11 @@ def exigir_login():
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
     if not current_user.is_authenticated:
+        # Para rutas /api/* devolvemos 401 JSON en vez de redirect HTML, así
+        # el JS puede manejar la sesión expirada con un mensaje claro
+        # (en vez de tirar SyntaxError al parsear HTML como JSON).
+        if request.path.startswith('/api/'):
+            return jsonify({'ok': False, 'error': 'Sesión expirada. Recargá la página para iniciar sesión.'}), 401
         return redirect(url_for('auth_login', next=request.path))
     # Forzar cambio de password si corresponde
     if current_user.debe_cambiar_password and request.endpoint not in ('auth_cambiar_password', 'auth_logout'):

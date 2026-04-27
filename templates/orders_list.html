@@ -468,8 +468,17 @@ function openChart(barcode) {
 
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
-    fetch('/api/product/' + barcode + '/chart')
-        .then(r => r.json())
+    fetch('/api/product/' + barcode + '/chart', {credentials: 'same-origin'})
+        .then(async r => {
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) {
+                if (r.status === 401 || r.status === 302) {
+                    throw new Error('Tu sesión expiró. Recargá la página.');
+                }
+                throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
+            }
+            return r.json();
+        })
         .then(data => {
             loading.classList.add('hidden');
             if (!data.ok) {
