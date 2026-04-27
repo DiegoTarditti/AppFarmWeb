@@ -47,8 +47,8 @@ CAMPOS = {
         'descripcion': 'Código de barras (7-14 dígitos numéricos)',
         'tipo': 'ean',
         'nucleo': True,
-        'keywords': ['ean', 'codigo_barra', 'codigo_barras', 'codigo_de_barras',
-                     'codigobarra', 'cod_barra', 'cb', 'gtin'],
+        'keywords': ['ean', 'codigo_ean', 'cod_ean', 'codigo_barra', 'codigo_barras',
+                     'codigo_de_barras', 'codigobarra', 'cod_barra', 'cb', 'gtin'],
         'regex_valor': r'^\d{7,14}$',
         'ejemplos': ['7793450121123', '7791234567890'],
     },
@@ -73,7 +73,7 @@ CAMPOS = {
         'descripcion': 'Unidades pedidas/facturadas (entero corto)',
         'tipo': 'int',
         'nucleo': True,
-        'keywords': ['cantidad', 'cant', 'qty', 'piezas', 'unidades', 'uds'],
+        'keywords': ['cantidad', 'cant', 'qty', 'piezas', 'unidades', 'uds', 'unid'],
         'regex_valor': r'^\d{1,4}(?:\.0+)?$',
         'ejemplos': ['1', '12', '100'],
     },
@@ -91,7 +91,7 @@ CAMPOS = {
         'tipo': 'pct',
         'nucleo': True,
         'keywords': ['descuento', 'dto', 'desc', 'desc_pct', 'porcentaje', 'pct',
-                     'rebaja', 'descuento_psl', 'descuento_psf'],
+                     'rebaja', 'descuento_psl', 'descuento_psf', 'dscto', 'descto'],
         'regex_valor': r'^\d{1,2}(?:[.,]\d{1,3})?\s*%?$',
         'ejemplos': ['25', '7,5%', '0.20'],
     },
@@ -358,7 +358,17 @@ def inferir_campo_por_header(header, candidatos=None) -> Optional[str]:
     n = _norm_header(header)
     if not n:
         return None
-    candidatos = candidatos or list(CAMPOS.keys())
+    candidatos = list(candidatos) if candidatos else list(CAMPOS.keys())
+
+    # Heurística: si el header original contiene '%', no es descripcion ni
+    # ningún campo de texto libre. Forzamos a descartarlos.
+    # Esto resuelve el bug donde 'DESC. %' (descuento) se confundía con
+    # 'DESCRIPCIÓN' por compartir el prefijo 'desc'.
+    if '%' in str(header):
+        for textual in ('descripcion', 'codigo', 'plazo_pago', 'codigo_alfabeta',
+                        'nombre_modulo'):
+            if textual in candidatos:
+                candidatos.remove(textual)
 
     # Paso 1: exacto. El más específico (menos keywords) gana.
     exactos = []

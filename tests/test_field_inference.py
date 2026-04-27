@@ -213,3 +213,116 @@ class TestDetectarCamposFactura:
     def test_fila_vacia(self):
         res = fi.detectar_campos_factura([])
         assert res['asignaciones'] == {}
+
+
+# ── Headers reales de proveedores que conocemos ───────────────────────────────
+
+class TestHeadersRealesProveedores:
+    """Casos vienen de Excels reales de Roemmers, Bernabó, plantillas nuestras.
+    Iteramos esto el 2026-04-26 cuando 'DESC. %' colisionaba con 'DESCRIPCIÓN'.
+    """
+
+    # ── Roemmers — formato módulos (FORMATO B con 6 columnas) ─────────────
+    def test_roemmers_modulos_6cols(self):
+        headers = ['COD MOD.', 'NOMBRE MODULO', 'CODIGO EAN', 'DESCRIPCION', 'CANT.', 'DESC. %']
+        candidatos = ['nombre_modulo', 'codigo', 'ean', 'descripcion',
+                      'cantidad', 'descuento_psl']
+        mapa = fi.inferir_columnas(headers, candidatos=candidatos)
+        # Lo crítico: DESCRIPCION → descripcion, DESC. % → descuento_psl.
+        assert mapa['nombre_modulo'] == 1
+        assert mapa['ean'] == 2
+        assert mapa['descripcion'] == 3
+        assert mapa['cantidad'] == 4
+        assert mapa['descuento_psl'] == 5
+        # codigo es el COD MOD. (col 0).
+        assert mapa.get('codigo') == 0
+
+    # ── Plantilla nuestra de módulos (FORMATO A con 5 columnas) ───────────
+    def test_plantilla_modulos_5cols(self):
+        headers = ['NOMBRE MÓDULO', 'CÓDIGO EAN', 'DESCRIPCIÓN', 'CANT. MÓDULO', 'DESC. %']
+        candidatos = ['nombre_modulo', 'ean', 'descripcion', 'cantidad', 'descuento_psl']
+        mapa = fi.inferir_columnas(headers, candidatos=candidatos)
+        assert mapa['nombre_modulo'] == 0
+        assert mapa['ean'] == 1
+        assert mapa['descripcion'] == 2
+        assert mapa['cantidad'] == 3
+        assert mapa['descuento_psl'] == 4
+
+    # ── Caso del bug que arreglamos hoy ─────────────────────────────────
+    def test_desc_no_pisa_a_descripcion(self):
+        """'DESCRIPCIÓN' debe ganar para descripcion, 'DESC. %' para descuento_psl.
+        Este test bloquea el bug que iteramos hoy: 'desc' estaba en keywords de
+        ambos campos y la inferencia le daba el descuento al header de descripción.
+        """
+        headers = ['EAN', 'DESCRIPCIÓN', 'CANT', 'DESC. %']
+        mapa = fi.inferir_columnas(headers)
+        assert mapa['descripcion'] == 1, 'DESCRIPCIÓN no debe quedar pisado'
+        assert mapa['descuento_psl'] == 3, 'DESC. % debe ir a descuento_psl, no a descripcion'
+
+    # ── Headers con tildes y sin tildes ──────────────────────────────────
+    @pytest.mark.parametrize('header_desc', ['Descripción', 'DESCRIPCIÓN', 'descripcion',
+                                              'Descripcion', 'DESCRIPCION'])
+    def test_descripcion_con_y_sin_tildes(self, header_desc):
+        headers = ['EAN', header_desc]
+        mapa = fi.inferir_columnas(headers)
+        assert mapa['descripcion'] == 1
+
+    # ── Bernabó — ofertas con mínimo (formato típico) ──────────────────────
+    def test_bernabo_ofertas_minimo(self):
+        headers = ['EAN', 'Código', 'Descripción', 'Unid. Mínima',
+                   'Desc. %', 'Rentab.', 'Plazo']
+        candidatos = ['ean', 'codigo', 'descripcion', 'unidades_minima',
+                      'descuento_psl', 'rentabilidad', 'plazo_pago']
+        mapa = fi.inferir_columnas(headers, candidatos=candidatos)
+        assert mapa['ean'] == 0
+        assert mapa['descripcion'] == 2
+        assert mapa['unidades_minima'] == 3
+        assert mapa['descuento_psl'] == 4
+
+    # ── Headers con puntos al final ─────────────────────────────────────
+    def test_headers_con_puntos(self):
+        # 'CANT.', 'DESC.' (con punto) deben matchear igual que sin punto.
+        headers = ['EAN', 'CANT.', 'DESC. %']
+        mapa = fi.inferir_columnas(headers)
+        assert mapa.get('cantidad') == 1
+        assert mapa.get('descuento_psl') == 2
+
+    # ── Descuento — variantes comunes ───────────────────────────────────
+    @pytest.mark.parametrize('header_dto', ['DTO', 'Descuento', '% Dto',
+                                             'Descuento %', 'DSCTO', '%dscto'])
+    def test_descuento_variantes(self, header_dto):
+        headers = ['EAN', 'Descripción', header_dto]
+        mapa = fi.inferir_columnas(headers)
+        assert mapa.get('descuento_psl') == 2, f'{header_dto!r} debería mapear a descuento_psl'
+
+    # ── EAN — variantes comunes ─────────────────────────────────────────
+    @pytest.mark.parametrize('header_ean', ['EAN', 'Código EAN', 'CODIGO EAN',
+                                             'Cod. Barra', 'Codigo de barras',
+                                             'Código de barras'])
+    def test_ean_variantes(self, header_ean):
+        headers = [header_ean, 'Descripción', 'Cant']
+        mapa = fi.inferir_columnas(headers)
+        assert mapa.get('ean') == 0, f'{header_ean!r} debería mapear a ean'
+
+    # ── Cantidad — variantes ────────────────────────────────────────────
+    @pytest.mark.parametrize('header_cant', ['Cantidad', 'CANT', 'Cant.', 'Unid'])
+    def test_cantidad_variantes(self, header_cant):
+        headers = ['EAN', 'Descripción', header_cant]
+        mapa = fi.inferir_columnas(headers)
+        assert mapa.get('cantidad') == 2, f'{header_cant!r} debería mapear a cantidad'
+
+    # ── Fila con header MAYÚSCULA + datos numéricos ───────────────────
+    def test_header_y_contenido_real_roemmers(self):
+        headers = ['NOMBRE MODULO', 'CODIGO EAN', 'DESCRIPCION', 'CANT.', 'DESC. %']
+        rows = [
+            ['MOD. OPTAMOX DUO', '7795345123103',
+             'OPTAMOX DUO 1G COMP REC X 8 PACK X 10', '1', '7'],
+            ['MOD. OPTAMOX DUO', '7795345011844',
+             'OPTAMOX DUO 1G COMP.REC.X 14', '5', '7'],
+        ]
+        candidatos = ['nombre_modulo', 'ean', 'descripcion', 'cantidad', 'descuento_psl']
+        mapa = fi.inferir_columnas(headers, sample_rows=rows, candidatos=candidatos)
+        assert mapa['ean'] == 1
+        assert mapa['descripcion'] == 2
+        assert mapa['cantidad'] == 3
+        assert mapa['descuento_psl'] == 4
