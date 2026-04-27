@@ -35,6 +35,45 @@ def _ventana_12m():
     return desde, hasta
 
 
+def sugerir_drogueria_para_lab(session, lab_nombre):
+    """Devuelve dict {provider_id, nombre, n_pedidos_anteriores} o None.
+
+    Busca pedidos pasados con canal='drogueria' para ese laboratorio y
+    devuelve la droguería más frecuente. Si no hay historial → None.
+
+    Args:
+        session: SQLAlchemy session.
+        lab_nombre: nombre del laboratorio (string, como en Pedido.laboratorio).
+    """
+    from sqlalchemy import func
+    from database import Pedido, Provider
+
+    if not lab_nombre:
+        return None
+
+    row = (session.query(
+                Pedido.partner_id,
+                func.count(Pedido.id).label('n'),
+            )
+            .filter(Pedido.laboratorio == lab_nombre)
+            .filter(Pedido.canal == 'drogueria')
+            .filter(Pedido.partner_id.isnot(None))
+            .group_by(Pedido.partner_id)
+            .order_by(func.count(Pedido.id).desc())
+            .first())
+
+    if not row or not row[0]:
+        return None
+    prov = session.get(Provider, row[0])
+    if not prov:
+        return None
+    return {
+        'provider_id': prov.id,
+        'nombre': prov.razon_social,
+        'n_pedidos_anteriores': int(row[1]),
+    }
+
+
 def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m):
     """Calcula las métricas de un producto bajo mínimo para el pedido automático.
 
@@ -581,17 +620,31 @@ def init_app(app):
 
             tiene_plantilla = False
             local_lab_nombre = None
+            droguerias = []
+            sugerencia_drogueria = None
             if lab_id:
                 lab = session.get(ObsLaboratorio, lab_id)
                 lab_nombre = lab.descripcion if lab else None
                 # Buscar Laboratorio local mapeado para detectar plantilla.
-                from database import ExportTemplate, Laboratorio
+                from database import ExportTemplate, Laboratorio, Provider
                 local_lab = (session.query(Laboratorio)
                              .filter(Laboratorio.observer_id == lab_id).first())
                 if local_lab:
                     local_lab_nombre = local_lab.nombre
                     tpl = session.get(ExportTemplate, local_lab.id)
                     tiene_plantilla = bool(tpl and tpl.columns_json)
+
+                # Droguerías disponibles para el dropdown del canal.
+                provs = (session.query(Provider)
+                         .filter(Provider.tipo == 'drogueria')
+                         .filter(Provider.activo == True)  # noqa: E712
+                         .order_by(Provider.razon_social).all())
+                droguerias = [{'id': p.id, 'nombre': p.razon_social} for p in provs]
+
+                # Sugerencia: el lab que usamos en Pedido.laboratorio es el local.
+                nombre_para_buscar = local_lab_nombre or lab_nombre
+                sugerencia_drogueria = sugerir_drogueria_para_lab(
+                    session, nombre_para_buscar)
 
                 desde, hasta = _ventana_12m()
                 ventas_sub = (
@@ -688,7 +741,9 @@ def init_app(app):
                                chart_perdida=chart_perdida,
                                chart_pesos=chart_pesos,
                                tiene_plantilla=tiene_plantilla,
-                               local_lab_nombre=local_lab_nombre)
+                               local_lab_nombre=local_lab_nombre,
+                               droguerias=droguerias,
+                               sugerencia_drogueria=sugerencia_drogueria)
 
     @app.route('/informes/pedido-auto/crear', methods=['POST'])
     @login_required
@@ -737,6 +792,18 @@ def init_app(app):
                 flash('No hay items con cantidad > 0.', 'warning')
                 return redirect(url_for('informe_pedido_auto', lab_id=lab_id))
 
+            # Canal: lo que el user eligió en el form (laboratorio/drogueria/'').
+            canal = (request.form.get('canal') or '').strip() or None
+            partner_id = request.form.get('partner_id', type=int)
+            if canal not in ('laboratorio', 'drogueria'):
+                canal = None
+            if canal == 'drogueria' and not partner_id:
+                # Pidió droguería pero no eligió cuál → no settear canal.
+                canal = None
+                partner_id = None
+            if canal != 'drogueria':
+                partner_id = None
+
             from helpers import now_ar
             pedido = Pedido(
                 laboratorio=lab_nombre,
@@ -745,6 +812,9 @@ def init_app(app):
                 n_days=0,
                 items=items,
                 estado='PENDIENTE',
+                canal=canal,
+                partner_id=partner_id,
+                canal_elegido_en=now_ar() if canal else None,
             )
             session.add(pedido)
             session.commit()

@@ -322,6 +322,48 @@
                     ✨ <strong>{{ local_lab_nombre }}</strong> tiene plantilla de exportación cargada. Al crear el pedido, vas a poder exportarlo con el formato del lab desde el botón "Plantilla laboratorio" en la pantalla del pedido.
                 </div>
                 {% endif %}
+
+                {# ── Canal: laboratorio directo o vía droguería ── #}
+                <div class="bg-violet-50 border border-violet-200 rounded p-4 mt-3">
+                    <p class="text-xs font-semibold text-violet-900 mb-2">📦 Canal de compra</p>
+                    <div class="space-y-2">
+                        <label class="flex items-center gap-2 text-sm text-[#1e1e1e] cursor-pointer">
+                            <input type="radio" name="canal" value="laboratorio"
+                                   {% if not sugerencia_drogueria %}checked{% endif %}
+                                   class="accent-violet-600">
+                            <span>Compra al laboratorio directo</span>
+                        </label>
+                        <label class="flex items-start gap-2 text-sm text-[#1e1e1e] cursor-pointer">
+                            <input type="radio" name="canal" value="drogueria"
+                                   {% if sugerencia_drogueria %}checked{% endif %}
+                                   class="accent-violet-600 mt-1">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span>Compra vía droguería:</span>
+                                    <select name="partner_id"
+                                            class="bg-white border border-violet-300 rounded px-2 py-1 text-xs">
+                                        <option value="">— Elegí droguería —</option>
+                                        {% for d in droguerias %}
+                                        <option value="{{ d.id }}"
+                                                {% if sugerencia_drogueria and sugerencia_drogueria.provider_id == d.id %}selected{% endif %}>
+                                            {{ d.nombre }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    {% if sugerencia_drogueria %}
+                                    <span class="text-[11px] text-emerald-700 font-semibold">
+                                        ✨ Sugerido: {{ sugerencia_drogueria.nombre }} ({{ sugerencia_drogueria.n_pedidos_anteriores }} pedido{{ '' if sugerencia_drogueria.n_pedidos_anteriores == 1 else 's' }} previo{{ '' if sugerencia_drogueria.n_pedidos_anteriores == 1 else 's' }})
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                {% if not sugerencia_drogueria %}
+                                <p class="text-[10px] text-[#888] mt-1">Sin historial previo de este lab por droguería — elegí una si vas a comprar por canal indirecto.</p>
+                                {% endif %}
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="flex justify-end gap-2 mt-4">
                     <a href="{{ url_for('informe_pedido_auto') }}"
                        class="px-3 py-2 text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Cancelar</a>
