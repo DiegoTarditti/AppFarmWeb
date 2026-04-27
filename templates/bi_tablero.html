@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% set nav_active = "bi" %}
+{% block title %}Tablero del dueño — BI{% endblock %}
+{% block main %}
+
+{% include '_grafico_historico.html' %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">🧠 Tablero del dueño</h1>
+    <span class="text-xs text-[#6f6f6f]">— 5 minutos para mirar antes de abrir</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto">
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+
+            {# ───── Card 1: Para reponer ya ───── #}
+            <a href="{{ url_for('informe_pedido_auto') }}"
+               class="block bg-rose-50 border border-rose-200 rounded-xl p-5 hover:shadow-md transition-all">
+                <div class="flex items-start gap-3 mb-3">
+                    <div class="w-10 h-10 rounded-lg bg-rose-200 text-rose-800 flex items-center justify-center text-xl flex-shrink-0">🔻</div>
+                    <div>
+                        <p class="text-xs uppercase font-bold text-rose-700">Para reponer ya</p>
+                        <p class="text-3xl font-bold text-rose-900 mt-0.5">{{ n_bajo_min }}</p>
+                        <p class="text-xs text-rose-700">productos bajo mínimo</p>
+                    </div>
+                </div>
+                <p class="text-sm text-rose-900">
+                    Estás perdiendo aprox. <strong>${{ '{:,.0f}'.format(perdida_pesos_total).replace(',', '.') }}/mes</strong> por no tenerlos.
+                </p>
+                <p class="text-xs text-rose-700 mt-2 underline">→ Armar pedido por laboratorio</p>
+            </a>
+
+            {# ───── Card 2: Próximos quiebres ───── #}
+            <div class="block bg-amber-50 border border-amber-200 rounded-xl p-5">
+                <div class="flex items-start gap-3 mb-3">
+                    <div class="w-10 h-10 rounded-lg bg-amber-200 text-amber-800 flex items-center justify-center text-xl flex-shrink-0">⏳</div>
+                    <div>
+                        <p class="text-xs uppercase font-bold text-amber-700">Próximos quiebres (≤ 14 días)</p>
+                        <p class="text-3xl font-bold text-amber-900 mt-0.5">{{ n_quiebres_total }}</p>
+                        <p class="text-xs text-amber-700">productos se van a quedar sin stock</p>
+                    </div>
+                </div>
+                {% if top_quiebres %}
+                <div class="bg-white rounded-lg p-2 mt-2">
+                    <table class="w-full text-xs">
+                        <thead class="text-[10px] uppercase text-[#888]">
+                            <tr><th class="text-left p-1">Producto</th><th class="text-right p-1">Stock</th><th class="text-right p-1">Días</th><th class="w-6"></th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#f0f0f0]">
+                            {% for q in top_quiebres %}
+                            <tr>
+                                <td class="p-1 truncate max-w-[200px]" title="{{ q.descripcion }}">{{ q.descripcion }}</td>
+                                <td class="p-1 text-right font-mono">{{ q.stock }}</td>
+                                <td class="p-1 text-right font-mono {% if q.dias <= 7 %}text-rose-700 font-bold{% else %}text-amber-700{% endif %}">{{ q.dias }}d</td>
+                                <td class="p-1 text-center">
+                                    <button type="button" onclick="openChartObs({{ q.producto_id }})" class="text-violet-700 hover:text-violet-900" title="Histórico">📊</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-xs text-amber-700">Sin quiebres a la vista — todo bien.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+            {# ───── Card 3: Top vendidos del mes ───── #}
+            <div class="bg-white border border-surface-border rounded-xl p-5">
+                <div class="flex items-start justify-between mb-3 flex-wrap gap-1">
+                    <div>
+                        <p class="text-xs uppercase font-bold text-emerald-700">🏆 Top 10 vendidos</p>
+                        <p class="text-xs text-[#888]">{{ mes_label }}</p>
+                    </div>
+                </div>
+                {% if top_vendidos %}
+                <table class="w-full text-xs">
+                    <tbody class="divide-y divide-[#f0f0f0]">
+                        {% for p in top_vendidos %}
+                        <tr>
+                            <td class="py-1.5 text-[#888] w-6">{{ loop.index }}.</td>
+                            <td class="py-1.5">
+                                <p class="text-[#1e1e1e]">{{ p.descripcion }}</p>
+                                <p class="text-[10px] text-[#888]">{{ p.lab }}</p>
+                            </td>
+                            <td class="py-1.5 text-right font-mono font-semibold">{{ '{:,}'.format(p.unidades).replace(',', '.') }}</td>
+                            <td class="py-1.5 text-center w-6">
+                                <button type="button" onclick="openChartObs({{ p.producto_id }})" class="text-violet-700 hover:text-violet-900" title="Histórico">📊</button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-xs text-[#888]">Sin datos del mes anterior.</p>
+                {% endif %}
+            </div>
+
+            {# ───── Card 4: Top labs del mes ───── #}
+            <div class="bg-white border border-surface-border rounded-xl p-5">
+                <div class="flex items-start justify-between mb-3 flex-wrap gap-1">
+                    <div>
+                        <p class="text-xs uppercase font-bold text-sky-700">🏢 Top 10 laboratorios</p>
+                        <p class="text-xs text-[#888]">{{ mes_label }}</p>
+                    </div>
+                </div>
+                {% if top_labs %}
+                <table class="w-full text-xs">
+                    <thead class="text-[10px] uppercase text-[#888]">
+                        <tr><th class="text-left py-1 w-6">#</th><th class="text-left py-1">Laboratorio</th><th class="text-right py-1">Unid.</th><th class="text-right py-1">$ vendido</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#f0f0f0]">
+                        {% for l in top_labs %}
+                        <tr>
+                            <td class="py-1.5 text-[#888]">{{ loop.index }}.</td>
+                            <td class="py-1.5 font-semibold">{{ l.lab }}</td>
+                            <td class="py-1.5 text-right font-mono">{{ '{:,}'.format(l.unidades).replace(',', '.') }}</td>
+                            <td class="py-1.5 text-right font-mono">${{ '{:,.0f}'.format(l.monto).replace(',', '.') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-xs text-[#888]">Sin datos del mes anterior.</p>
+                {% endif %}
+            </div>
+
+        </div>
+
+        <div class="bg-violet-50 border border-violet-200 rounded-xl p-3 mt-4 text-xs text-violet-900">
+            <strong>👀 Esto es Fase 1.</strong> Próximamente: vencimientos, caídas de venta detectadas, comparación vs año pasado, y un asistente al que le podés preguntar "¿cómo viene mayo?". Charlemos para ajustarlo a lo que más necesitás.
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

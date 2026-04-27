@@ -4,6 +4,7 @@ from routes import (
     admin,
     auth_routes,
     batch,
+    bi,
     claims,
     clientes,
     converter,
@@ -64,6 +65,7 @@ _modules = [
     help_module,
     inferencia,
     informes,
+    bi,
 ]
 
 
