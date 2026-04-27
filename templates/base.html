@@ -849,14 +849,14 @@ function _renderNotifList(data) {
     if (!list) return;
     const ultimos = (data.docs_pendientes && data.docs_pendientes.ultimos) || [];
     if (!ultimos.length) {
-        list.innerHTML = '<div class="px-3 py-3 text-[11px] text-[#9ca3af]">Sin documentos pendientes.</div>';
+        list.innerHTML = '<div class="px-3 py-3 text-[11px] text-[#888]">Sin documentos pendientes.</div>';
         return;
     }
     list.innerHTML = ultimos.map(d => `
         <a href="/docs-pendientes/${d.id}/procesar"
-           class="block px-3 py-2 hover:bg-[#374151] border-b border-[#374151] last:border-0">
-            <div class="text-[11px] text-white truncate" title="${d.filename}">${d.filename}</div>
-            <div class="text-[9px] text-[#9ca3af]">${d.fecha || ''}</div>
+           class="block px-3 py-2 hover:bg-[#f5f5f5] border-b border-[#eee] last:border-0">
+            <div class="text-[11px] text-[#1e1e1e] truncate" title="${d.filename}">${d.filename}</div>
+            <div class="text-[9px] text-[#888]">${d.fecha || ''}</div>
         </a>`).join('');
 }
 async function _pollNotifs() {
