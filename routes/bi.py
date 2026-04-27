@@ -97,6 +97,7 @@ def init_app(app):
                 session.query(
                     ObsProducto.observer_id.label('pid'),
                     ObsProducto.descripcion.label('desc'),
+                    ObsProducto.nombre_droga_observer.label('droga_id'),
                     stock_q.c.stock,
                     ventas_12m.c.u12m,
                     ObsLaboratorio.descripcion.label('lab'),
@@ -121,6 +122,7 @@ def init_app(app):
                     quiebres_proximos.append({
                         'producto_id': r.pid,
                         'descripcion': r.desc,
+                        'droga_id': r.droga_id,
                         'lab': r.lab or '—',
                         'stock': stock,
                         'dias': round(dias_cobertura, 1),
@@ -136,6 +138,7 @@ def init_app(app):
                 session.query(
                     ObsProducto.observer_id.label('pid'),
                     ObsProducto.descripcion.label('desc'),
+                    ObsProducto.nombre_droga_observer.label('droga_id'),
                     ObsLaboratorio.descripcion.label('lab'),
                     func.sum(ObsVentaMensual.unidades).label('u'),
                 )
@@ -147,6 +150,7 @@ def init_app(app):
                 .filter(ObsVentaMensual.mes == mes_prev)
                 .filter(ObsProducto.fecha_baja.is_(None))
                 .group_by(ObsProducto.observer_id, ObsProducto.descripcion,
+                          ObsProducto.nombre_droga_observer,
                           ObsLaboratorio.descripcion)
                 .order_by(func.sum(ObsVentaMensual.unidades).desc())
                 .limit(10)
@@ -154,6 +158,7 @@ def init_app(app):
             top_vendidos = [{
                 'producto_id': r.pid,
                 'descripcion': r.desc,
+                'droga_id': r.droga_id,
                 'lab': r.lab or '—',
                 'unidades': int(r.u or 0),
             } for r in top_vendidos_q.all()]

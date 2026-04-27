@@ -4,6 +4,7 @@
 {% block main %}
 
 {% include '_grafico_historico.html' %}
+{% include '_comparar_labs.html' %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <a href="{{ url_for('informes_index') }}"
@@ -295,11 +296,17 @@
                                         <input type="number" name="qty_{{ loop.index0 }}" min="0" value="{{ r.sugerido }}"
                                                class="w-20 text-right border border-surface-border rounded px-2 py-1 text-sm">
                                     </td>
-                                    <td class="px-3 py-2 text-center">
+                                    <td class="px-3 py-2 text-center whitespace-nowrap">
                                         <button type="button"
                                                 onclick="openChartObs({{ r.producto_id }})"
-                                                class="text-violet-700 hover:text-violet-900 text-base"
+                                                class="text-violet-700 hover:text-violet-900 text-base mr-1"
                                                 title="Histórico de ventas">📊</button>
+                                        {% if r.droga_id %}
+                                        <button type="button"
+                                                onclick="openComparar({{ r.droga_id }}, {{ (r.ean or r.producto_id|string)|tojson }}, {{ r.descripcion|tojson }})"
+                                                class="text-emerald-700 hover:text-emerald-900 text-base"
+                                                title="Comparar con otros laboratorios">⇄</button>
+                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}

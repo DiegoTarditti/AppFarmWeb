@@ -1,0 +1,138 @@
+{# Modal "⇄ Comparar otros labs" + función JS reusable.
+
+   Uso desde la página contenedora:
+     1. {% include '_comparar_labs.html' %} al final del body.
+     2. En cualquier tabla, agregar un botón:
+        <button onclick="openComparar(<droga_id>, '<codigo_barra>', '<nombre>')">⇄ Comparar otros labs</button>
+
+   Necesita el endpoint /api/droga/<id>/productos para los datos.
+#}
+<style>
+    .cmp-modal-bg { background: rgba(0,0,0,.4); }
+</style>
+
+<div id="cmp-modal" class="hidden fixed inset-0 cmp-modal-bg z-[90] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarComparar()">
+    <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-auto p-6 shadow-2xl">
+        <div class="flex items-start justify-between mb-3 sticky top-0 bg-white pb-2 border-b border-surface-border">
+            <div class="min-w-0">
+                <p class="text-xs text-[#6f6f6f]">Alternativas por monodroga</p>
+                <p class="font-bold text-[#1e1e1e] text-base truncate">Tu producto: <span id="cmp-current-prod" class="text-amber-700"></span></p>
+                <p class="text-[11px] text-[#888] mt-0.5">Productos de otros laboratorios que cubren la misma droga.</p>
+            </div>
+            <button type="button" onclick="cerrarComparar()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none flex-shrink-0">✕</button>
+        </div>
+        <div id="cmp-body"></div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const COLORS = ['#7C3AED','#EAB308','#10B981','#3B82F6','#EF4444','#F97316','#06B6D4','#EC4899'];
+
+    function _esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function _diasColor(d) {
+        if (d == null) return '#888';
+        if (d <= 7)  return '#dc2626';
+        if (d <= 21) return '#b45309';
+        if (d <= 60) return '#15803d';
+        return '#0369a1';
+    }
+    function _diasLabel(d) {
+        if (d == null) return '—';
+        if (d < 1) return '<1d';
+        if (d < 365) return `${Math.round(d)}d`;
+        return '>1a';
+    }
+
+    window.openComparar = async function(drogaId, currentCb, currentNombre) {
+        if (!drogaId) {
+            alert('Este producto no tiene monodroga vinculada.');
+            return;
+        }
+        const modal = document.getElementById('cmp-modal');
+        modal.classList.remove('hidden');
+        document.getElementById('cmp-current-prod').textContent = currentNombre || '';
+        document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999] p-4">Cargando alternativas…</p>';
+        try {
+            const r = await fetch(`/api/droga/${drogaId}/productos`, { credentials: 'same-origin' });
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) {
+                throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
+            }
+            const data = await r.json();
+            const grupos = data.grupos || [];
+            if (!grupos.length) {
+                document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999] p-4">Sin productos para esta droga.</p>';
+                return;
+            }
+            document.getElementById('cmp-body').innerHTML = grupos.map((g, idx) => {
+                const color = COLORS[idx % COLORS.length];
+                return `
+                <div class="mb-3 last:mb-0 border border-[#ececec] rounded-lg p-3">
+                    <p class="text-[11px] font-semibold mb-1" style="color:${color}">${_esc(g.lab)} <span class="text-[#888] font-normal">(${g.productos.length})</span></p>
+                    <table class="w-full text-xs">
+                        <thead class="text-[10px] uppercase text-[#aaa]">
+                            <tr>
+                                <th class="text-left py-1">Producto</th>
+                                <th class="text-right py-1 w-14">Stock</th>
+                                <th class="text-right py-1 w-16">Días</th>
+                                <th class="text-right py-1 w-16">Uni 3m</th>
+                                <th class="text-right py-1 w-16">Uni 12m</th>
+                                <th class="text-right py-1 w-20">$ 12m</th>
+                                <th class="text-right py-1 w-16">$/env</th>
+                                <th class="text-right py-1 w-16">Tend.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        ${g.productos.map(p => {
+                            const esActual = p.codigo_barra === currentCb || (p.observer_id && currentCb && p.observer_id == currentCb);
+                            const rowCls = esActual ? 'bg-amber-50 border-l-4 border-amber-400' : '';
+                            let diasCell = '<span class="text-[#bbb]">—</span>';
+                            if (p.dias_stock != null) {
+                                const dCls = _diasColor(p.dias_stock);
+                                diasCell = `<span style="color:${dCls}" class="font-semibold">${_diasLabel(p.dias_stock)}</span>`;
+                            } else if (p.stock > 0) {
+                                diasCell = '<span class="text-[#888]">∞</span>';
+                            }
+                            let tendCell = '<span class="text-[#bbb]">—</span>';
+                            if (p.momentum_pct != null) {
+                                const sube = p.momentum_pct >= 0;
+                                const cls = sube ? 'text-emerald-700' : 'text-red-700';
+                                tendCell = `<span class="${cls} font-semibold">${sube?'▲':'▼'} ${Math.abs(p.momentum_pct).toFixed(0)}%</span>`;
+                            }
+                            const bajaBadge = p.baja ? ' <span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>' : '';
+                            const opacityCls = p.baja ? 'opacity-70' : '';
+                            return `<tr class="border-t border-[#ececec] ${rowCls} ${opacityCls}">
+                                <td class="py-1 px-1.5">${esActual ? '<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 rounded mr-1">👉 ACTUAL</span>' : ''}${_esc(p.descripcion)}${bajaBadge}</td>
+                                <td class="py-1 px-1.5 text-right ${p.stock > 0 ? 'font-semibold text-emerald-700' : 'text-[#bbb]'}">${p.stock}</td>
+                                <td class="py-1 px-1.5 text-right">${diasCell}</td>
+                                <td class="py-1 px-1.5 text-right">${p.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+                                <td class="py-1 px-1.5 text-right">${p.u12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+                                <td class="py-1 px-1.5 text-right font-mono">${p.m12m > 0 ? '$'+p.m12m.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
+                                <td class="py-1 px-1.5 text-right font-mono">${p.precio_envase > 0 ? '$'+p.precio_envase.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
+                                <td class="py-1 px-1.5 text-right">${tendCell}</td>
+                            </tr>`;
+                        }).join('')}
+                        </tbody>
+                    </table>
+                </div>`;
+            }).join('');
+        } catch (err) {
+            document.getElementById('cmp-body').innerHTML = `<p class="text-sm text-red-700 p-4">Error: ${_esc(err.message)}</p>`;
+        }
+    };
+
+    window.cerrarComparar = function() {
+        document.getElementById('cmp-modal').classList.add('hidden');
+    };
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') cerrarComparar();
+    });
+})();
+</script>
