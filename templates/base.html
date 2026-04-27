@@ -337,52 +337,8 @@
                 </svg>
             </div>
             <div class="brand-text flex-1 min-w-0">
-                <div class="flex items-center gap-1.5">
-                    <p class="text-sm font-bold text-[#F4C430] leading-tight">Control de Stock</p>
-                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                          style="background-color: {{ entorno.color }}; color: #fff;"
-                          title="{{ entorno.descripcion }}">{{ entorno.label }}</span>
-                </div>
-                <p class="text-xs text-[#9ca3af]">{{ config.farmacia_nombre | default('Farmacia') }}</p>
-                {% if current_user.is_authenticated %}
-                <div class="mt-2 pt-2 border-t border-[#1f2937] flex items-center gap-1.5">
-                    <div class="w-5 h-5 rounded-full bg-brand flex items-center justify-center text-[9px] font-bold text-brand-dark flex-shrink-0">
-                        {{ (current_user.nombre_completo or current_user.username)[0] | upper }}
-                    </div>
-                    <p class="text-[11px] text-white truncate flex-1" title="{{ current_user.nombre_completo or current_user.username }} ({{ current_user.rol }})">
-                        {{ current_user.nombre_completo or current_user.username }}
-                    </p>
-                    <div class="relative flex-shrink-0">
-                        <button type="button" id="notif-bell" onclick="toggleNotifMenu(event)"
-                                class="text-[#9ca3af] hover:text-[#F4C430] relative" title="Notificaciones">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M15 17h5l-1.4-1.4A2 2 0 0118 14.17V11a6 6 0 10-12 0v3.17a2 2 0 01-.6 1.43L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
-                            </svg>
-                            <span id="notif-badge"
-                                  class="hidden absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold rounded-full min-w-[13px] h-[13px] flex items-center justify-center px-1 leading-none">
-                            </span>
-                        </button>
-                        <div id="notif-menu"
-                             class="hidden absolute left-0 mt-2 w-72 bg-[#1f2937] border border-[#374151] rounded-lg shadow-xl z-[60]">
-                            <div class="px-3 py-2 border-b border-[#374151] text-[11px] font-semibold text-[#F4C430]">
-                                Notificaciones
-                            </div>
-                            <div id="notif-list" class="max-h-64 overflow-y-auto py-1">
-                                <div class="px-3 py-3 text-[11px] text-[#9ca3af]">Sin novedades.</div>
-                            </div>
-                            <a href="{{ url_for('docs_pendientes') }}"
-                               class="block px-3 py-2 border-t border-[#374151] text-[11px] text-center text-[#9ca3af] hover:text-white hover:bg-[#374151] rounded-b-lg">
-                                Ver documentos pendientes →
-                            </a>
-                        </div>
-                    </div>
-                    <a href="{{ url_for('auth_logout') }}" title="Salir"
-                       class="text-[#9ca3af] hover:text-red-400 flex-shrink-0">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
-                    </a>
-                </div>
-                {% endif %}
+                <p class="text-sm font-bold text-[#F4C430] leading-tight">Control de Stock</p>
+                <p class="text-xs text-[#9ca3af] truncate">{{ config.farmacia_nombre | default('Farmacia') }}</p>
             </div>
         </div>
     </div>
@@ -514,6 +470,59 @@
 
 <!-- Main -->
 <div class="flex-1 flex flex-col min-h-screen overflow-hidden pt-12 lg:pt-0">
+
+    {# ── Top bar desktop ── #}
+    {% if current_user.is_authenticated %}
+    <div class="hidden lg:flex items-center justify-end gap-3 px-5 h-11 bg-white border-b border-[#ececec] flex-shrink-0">
+        <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide"
+              style="background-color: {{ entorno.color }}; color: #fff;"
+              title="{{ entorno.descripcion }}">{{ entorno.label }}</span>
+
+        <div class="relative">
+            <button type="button" id="notif-bell" onclick="toggleNotifMenu(event)"
+                    class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:bg-[#f5f5f5] hover:text-[#1e1e1e] relative" title="Notificaciones">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M15 17h5l-1.4-1.4A2 2 0 0118 14.17V11a6 6 0 10-12 0v3.17a2 2 0 01-.6 1.43L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                </svg>
+                <span id="notif-badge"
+                      class="hidden absolute top-1 right-1 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-1 leading-none">
+                </span>
+            </button>
+            <div id="notif-menu"
+                 class="hidden absolute right-0 mt-2 w-72 bg-white border border-[#e0e0e0] rounded-lg shadow-xl z-[60]">
+                <div class="px-3 py-2 border-b border-[#e0e0e0] text-[11px] font-semibold text-[#1e1e1e]">
+                    Notificaciones
+                </div>
+                <div id="notif-list" class="max-h-64 overflow-y-auto py-1">
+                    <div class="px-3 py-3 text-[11px] text-[#888]">Sin novedades.</div>
+                </div>
+                <a href="{{ url_for('docs_pendientes') }}"
+                   class="block px-3 py-2 border-t border-[#e0e0e0] text-[11px] text-center text-[#666] hover:text-[#1e1e1e] hover:bg-[#f5f5f5] rounded-b-lg">
+                    Ver documentos pendientes →
+                </a>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#f5f5f5]">
+            <div class="w-7 h-7 rounded-full bg-brand flex items-center justify-center text-[11px] font-bold text-brand-dark flex-shrink-0">
+                {{ (current_user.nombre_completo or current_user.username)[0] | upper }}
+            </div>
+            <div class="flex flex-col leading-tight">
+                <p class="text-[12px] font-semibold text-[#1e1e1e]" title="{{ current_user.nombre_completo or current_user.username }} ({{ current_user.rol }})">
+                    {{ current_user.nombre_completo or current_user.username }}
+                </p>
+                <p class="text-[10px] text-[#888] uppercase">{{ current_user.rol }}</p>
+            </div>
+        </div>
+
+        <a href="{{ url_for('auth_logout') }}" title="Salir"
+           class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:bg-red-50 hover:text-red-600">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+        </a>
+    </div>
+    {% endif %}
+
     {% block main %}{% endblock %}
 </div>
 
