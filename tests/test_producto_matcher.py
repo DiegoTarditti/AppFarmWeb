@@ -264,3 +264,177 @@ class TestMatchObsProducto:
     def test_target_invalido_levanta(self, db_session):
         with pytest.raises(ValueError):
             pm.match_producto(descripcion='X', target='inexistente', session=db_session)
+
+
+# ── Edge cases observados en producción / Roemmers / Bernabó ─────────────────
+
+class TestEdgeCasesReales:
+    """Casos que vimos en datos reales de proveedores el 2026-04-26."""
+
+    # ── Match por EAN alternativo ──────────────────────────────────────────
+    def test_match_por_codigo_barra_alt1(self, db_session, lab):
+        """Productos pueden tener hasta 3 EANs alternativos. El matcher debe
+        encontrarlos por cualquiera de los alts."""
+        prod = Producto(
+            codigo_barra='7793450100000', descripcion='OPTAMOX X 8',
+            codigo_barra_alt1='7793450199999',
+            codigo_barra_alt2='7793450188888',
+            laboratorio_id=lab.id,
+        )
+        db_session.add(prod)
+        db_session.commit()
+
+        res = pm.match_producto(ean='7793450199999', session=db_session)
+        assert res.producto is not None
+        assert res.producto.codigo_barra == '7793450100000'
+
+    def test_match_por_codigo_barra_alt3(self, db_session, lab):
+        prod = Producto(
+            codigo_barra='7793450100000', descripcion='X', codigo_barra_alt3='ALT3-EAN',
+            laboratorio_id=lab.id,
+        )
+        db_session.add(prod)
+        db_session.commit()
+
+        res = pm.match_producto(ean='ALT3-EAN', session=db_session)
+        assert res.producto is not None
+
+    # ── Descripciones con dosis similares (1g vs 100g) ──────────────────────
+    def test_dosis_similar_no_confunde(self, db_session, lab):
+        """1g y 100g se ven parecido por tokens. El matcher exacto debe
+        preferir el de la dosis correcta."""
+        items = [
+            Producto(codigo_barra='X1', descripcion='TAFIROL 1 g COM x 50',
+                     laboratorio_id=lab.id),
+            Producto(codigo_barra='X2', descripcion='TAFIROL 100 mg COM x 50',
+                     laboratorio_id=lab.id),
+        ]
+        db_session.add_all(items)
+        db_session.commit()
+
+        res = pm.match_producto(
+            descripcion='TAFIROL 1 g COM x 50',
+            laboratorio_id=lab.id,
+            session=db_session,
+        )
+        assert res.producto.codigo_barra == 'X1'
+
+    # ── Productos dados de baja (fecha_baja IS NOT NULL) ───────────────────
+    def test_obs_match_excluye_baja_si_pool_no_lo_incluye(self, db_session, lab):
+        """ObsProducto.fecha_baja NOT NULL debe poder excluirse via pool."""
+        from database import ObsProducto
+        from datetime import datetime
+
+        prod_activo = ObsProducto(
+            observer_id=20001, descripcion='PRODUCTO ACTIVO X 30',
+            fecha_baja=None, codigo_alfabeta='ACT-30',
+        )
+        prod_baja = ObsProducto(
+            observer_id=20002, descripcion='PRODUCTO ACTIVO X 30',  # mismo nombre
+            fecha_baja=datetime(2025, 1, 1), codigo_alfabeta='BAJA-30',
+        )
+        db_session.add_all([prod_activo, prod_baja])
+        db_session.commit()
+
+        pool = [prod_activo]  # solo activos
+        res = pm.match_producto(
+            descripcion='PRODUCTO ACTIVO X 30',
+            target='obs_producto',
+            pool=pool,
+            session=db_session,
+        )
+        assert res.producto is not None
+        assert res.producto.observer_id == 20001  # el activo, nunca el baja
+
+    # ── Descripciones con apóstrofes o comillas raras ───────────────────────
+    def test_descripcion_con_apostrofe(self, db_session, lab):
+        prod = Producto(
+            codigo_barra='AP1', descripcion="ALPHA'S CREMA X 60g",
+            laboratorio_id=lab.id,
+        )
+        db_session.add(prod)
+        db_session.commit()
+
+        res = pm.match_producto(
+            descripcion="ALPHA'S CREMA X 60g",
+            laboratorio_id=lab.id,
+            session=db_session,
+        )
+        assert res.producto is not None
+
+    # ── Descripción con espacios extra y mayúsculas distintas ──────────────
+    def test_normalizacion_espacios_y_mayusculas(self, db_session, lab):
+        prod = Producto(
+            codigo_barra='SP1', descripcion='AMOXIDAL DUO 875 COM x 14',
+            laboratorio_id=lab.id,
+        )
+        db_session.add(prod)
+        db_session.commit()
+
+        # Mismo producto pero con espacios extra y minúsculas.
+        res = pm.match_producto(
+            descripcion='   amoxidal   duo   875   com   x   14   ',
+            laboratorio_id=lab.id,
+            session=db_session,
+        )
+        assert res.producto is not None
+        assert res.producto.codigo_barra == 'SP1'
+
+    # ── EAN vacío string explícito ─────────────────────────────────────────
+    def test_ean_vacio_string_no_matchea_falsamente(self, db_session, lab):
+        """Si pasamos ean='' (string vacío), no debe matchear con algún producto
+        que tenga codigo_barra=NULL o ''. Caso real con OBS:xxx pseudo-EANs."""
+        prod1 = Producto(codigo_barra='ALGO1', descripcion='UNO', laboratorio_id=lab.id)
+        db_session.add(prod1)
+        db_session.commit()
+
+        res = pm.match_producto(ean='', descripcion='OTRO', session=db_session)
+        # No debería matchear por EAN vacío.
+        assert res.producto is None or res.estrategia != 'ean_exacto'
+
+    # ── Bulk con items repetidos (mismo EAN N veces) ──────────────────────
+    def test_bulk_items_repetidos_devuelve_n_resultados(self, productos_catalog, db_session, lab):
+        """Si pasamos 10 veces el mismo EAN, devuelve 10 resultados (igual orden)."""
+        items = [{'ean': '7793450133333', 'descripcion': 'AMOXIDAL'}] * 10
+        results = pm.match_productos_bulk(items, laboratorio_id=lab.id, session=db_session)
+        assert len(results) == 10
+        for r in results:
+            assert r.producto is not None
+            assert r.producto.codigo_barra == '7793450133333'
+
+    # ── Bulk con todos sin match ───────────────────────────────────────────
+    def test_bulk_todos_sin_match_no_revienta(self, db_session, lab):
+        items = [{'ean': f'XX{i}', 'descripcion': f'inexistente {i}'} for i in range(5)]
+        results = pm.match_productos_bulk(items, laboratorio_id=lab.id, session=db_session)
+        assert len(results) == 5
+        for r in results:
+            assert r.producto is None
+
+    # ── Bulk con mezcla: matches y no-matches ──────────────────────────────
+    def test_bulk_mezcla_devuelve_alineado(self, productos_catalog, db_session, lab):
+        items = [
+            {'ean': '7793450133333', 'descripcion': 'AMOXIDAL 500 mg COM x 16'},
+            {'ean': 'XX-NO-EXISTE', 'descripcion': 'producto inexistente'},
+            {'ean': '7793450121111', 'descripcion': 'TAFIROL 1 g COM x 50'},
+        ]
+        results = pm.match_productos_bulk(items, laboratorio_id=lab.id, session=db_session)
+        assert len(results) == 3
+        assert results[0].producto is not None
+        assert results[1].producto is None
+        assert results[2].producto is not None
+        # Alineamiento mantenido: result[0] ↔ items[0].
+        assert results[0].producto.codigo_barra == '7793450133333'
+        assert results[2].producto.codigo_barra == '7793450121111'
+
+    # ── codigo_alfabeta con mayúscula/minúscula ────────────────────────────
+    def test_codigo_alfabeta_case_insensitive_o_no(self, productos_catalog, db_session, lab):
+        """AMX500-16 vs amx500-16. Documenta el comportamiento actual.
+        Si el matcher es case-sensitive, este test lo bloquea como contrato.
+        """
+        # El catálogo tiene AMX500-16 (mayúscula).
+        res = pm.match_producto(
+            codigo_alfabeta='AMX500-16',
+            session=db_session,
+        )
+        assert res.producto is not None
+        assert res.producto.codigo_alfabeta == 'AMX500-16'
