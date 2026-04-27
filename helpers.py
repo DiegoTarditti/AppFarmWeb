@@ -177,6 +177,38 @@ def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, labora
         ))
 
 
+def _upsert_pedido_items(session, items, observer_bridge=False):
+    """Itera los PedidoItem de un pedido recién creado, asegura que cada producto
+    esté en el catálogo master y opcionalmente liga el bridge a obs_productos
+    cuando el código viene como pseudo-EAN ``OBS:<id>``.
+
+    Centraliza el loop que antes se repetía en purchase.py:711, purchase.py:887
+    e informes.py:808 (este último incluso omitía el upsert).
+
+    Args:
+        session: sesión SQLAlchemy abierta.
+        items: iterable de PedidoItem ya agregados al pedido (con codigo_barra,
+               nombre, precio_pvp).
+        observer_bridge: si True, los códigos ``OBS:<id>`` que correspondan a
+                         productos ya creados se atan a obs_productos.
+    """
+    for it in items:
+        _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
+        if observer_bridge and it.codigo_barra and it.codigo_barra.startswith('OBS:'):
+            try:
+                obs_id = int(it.codigo_barra[4:])
+            except (ValueError, TypeError):
+                continue
+            prod = session.query(Producto).filter_by(codigo_barra=it.codigo_barra).first()
+            if prod and not prod.observer_id:
+                ya_tomado = session.query(Producto.id).filter(
+                    Producto.observer_id == obs_id,
+                    Producto.id != prod.id,
+                ).first()
+                if not ya_tomado:
+                    prod.observer_id = obs_id
+
+
 def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt):
     """Agrega un código alternativo al producto ERP si no está ya registrado."""
     if not codigo_barra_erp or not codigo_barra_alt:

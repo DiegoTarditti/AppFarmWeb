@@ -804,7 +804,7 @@ def init_app(app):
             if canal != 'drogueria':
                 partner_id = None
 
-            from helpers import now_ar
+            from helpers import _upsert_pedido_items, now_ar
             pedido = Pedido(
                 laboratorio=lab_nombre,
                 farmacia='',
@@ -817,6 +817,8 @@ def init_app(app):
                 canal_elegido_en=now_ar() if canal else None,
             )
             session.add(pedido)
+            # Sumar al catálogo master los productos del pedido (antes este flow lo omitía).
+            _upsert_pedido_items(session, items)
             session.commit()
             pedido_id = pedido.id
 

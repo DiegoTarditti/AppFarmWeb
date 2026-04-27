@@ -11,7 +11,7 @@ from werkzeug.utils import secure_filename
 
 import database
 from database import AnalisisSesion, ErpStock, Laboratorio, ModuloPack, Pedido, PedidoItem, Producto
-from helpers import PURCHASE_FOLDER, UPLOAD_FOLDER, _add_alt_barcode, _upsert_producto, get_config, now_ar
+from helpers import PURCHASE_FOLDER, UPLOAD_FOLDER, _add_alt_barcode, _upsert_pedido_items, _upsert_producto, get_config, now_ar
 from parsers.sales_history import parse_sales_history_pdf
 from parsers.sales_history_html import parse_sales_history_html
 from parsers.sales_history_xls import parse_sales_history_xls
@@ -717,23 +717,7 @@ def init_app(app):
                     items=items,
                 )
                 session.add(pedido)
-                for it in items:
-                    _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
-                    # Si usamos pseudo-EAN, atar el bridge productos.observer_id →
-                    # obs_productos para que el catálogo local quede vinculado.
-                    if it.codigo_barra.startswith('OBS:'):
-                        try:
-                            obs_id = int(it.codigo_barra[4:])
-                        except (ValueError, TypeError):
-                            continue
-                        prod = session.query(Producto).filter_by(codigo_barra=it.codigo_barra).first()
-                        if prod and not prod.observer_id:
-                            ya_tomado = session.query(Producto.id).filter(
-                                Producto.observer_id == obs_id,
-                                Producto.id != prod.id,
-                            ).first()
-                            if not ya_tomado:
-                                prod.observer_id = obs_id
+                _upsert_pedido_items(session, items, observer_bridge=True)
                 session.flush()  # para tener pedido.id
 
                 # Si viene de un proceso → asociar + avanzar pasos 1 y 2
@@ -892,8 +876,7 @@ def init_app(app):
                     items=items,
                 )
                 session.add(pedido)
-                for it in items:
-                    _upsert_producto(session, it.codigo_barra, it.nombre, float(it.precio_pvp or 0))
+                _upsert_pedido_items(session, items)
                 session.commit()
                 flash(f'Pedido creado para {laboratorio}: {len(items)} productos.')
                 return redirect(url_for('orders_list'))
