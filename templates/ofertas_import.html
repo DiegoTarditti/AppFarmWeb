@@ -193,7 +193,7 @@
     <div id="panel-4" class="hidden bg-white border border-surface-border rounded-xl p-5">
         <!-- Lab + stats compactados en una sola fila para ganar altura. -->
         <div class="flex items-stretch gap-2 mb-2 flex-wrap">
-            <div class="bg-violet-50 border border-violet-200 rounded px-2 py-1.5 flex items-center gap-2 flex-1 min-w-[260px]">
+            <div class="bg-violet-50 border border-violet-200 rounded px-2 py-1.5 flex items-center gap-2 flex-1 min-w-[220px]">
                 <label class="text-[11px] font-semibold text-violet-900 whitespace-nowrap">Lab destino:</label>
                 <select id="lab-select" class="flex-1 bg-white border border-violet-300 rounded px-2 py-1 text-xs">
                     <option value="">— Elegí —</option>
@@ -203,11 +203,43 @@
                 </select>
                 <span id="revalidar-status" class="text-[10px] text-violet-700 whitespace-nowrap"></span>
             </div>
+            <div class="bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 flex items-center gap-2 min-w-[220px]"
+                 title="Si está cargada, este transfer aplica solo a esta droguería. Si NO se elige, aplica a todas las droguerías y a venta directa al lab.">
+                <label class="text-[11px] font-semibold text-emerald-900 whitespace-nowrap">Droguería:</label>
+                <select id="drog-select" class="flex-1 bg-white border border-emerald-300 rounded px-2 py-1 text-xs">
+                    <option value="">— Todas / directo lab —</option>
+                    {% for d in droguerias %}
+                    <option value="{{ d.id }}">{{ d.razon_social }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded px-2 py-1.5 flex items-center gap-2"
+                 title="Vigencia del transfer. Default: 30 días desde hoy.">
+                <label class="text-[11px] font-semibold text-amber-900 whitespace-nowrap">Vence:</label>
+                <input type="date" id="vigencia-hasta"
+                       class="bg-white border border-amber-300 rounded px-2 py-1 text-xs">
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded px-2 py-1.5 flex items-center gap-2 min-w-[140px]"
+                 title="Etiqueta libre: TR Lanzamiento / TRs OTC / TR Excepcional...">
+                <label class="text-[11px] font-semibold text-amber-900 whitespace-nowrap">Categoría:</label>
+                <input type="text" id="observacion-input" placeholder="ej. TRs OTC"
+                       class="flex-1 bg-white border border-amber-300 rounded px-2 py-1 text-xs">
+            </div>
             <button type="button" id="btn-guardar-top"
                     class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-1.5 rounded-lg text-xs whitespace-nowrap">
                 ✓ Confirmar e importar
             </button>
         </div>
+        <script>
+        // Default: vigencia hasta = hoy + 30 días
+        (function() {
+            const inp = document.getElementById('vigencia-hasta');
+            if (!inp) return;
+            const d = new Date();
+            d.setDate(d.getDate() + 30);
+            inp.value = d.toISOString().slice(0, 10);
+        })();
+        </script>
 
         <div id="validacion-stats" class="mb-2"></div>
 
@@ -1414,18 +1446,44 @@ async function _confirmarEImportar() {
     status.textContent = '⏳ Guardando…';
     status.className = 'text-xs text-[#888] mt-3';
 
-    try {
+    // Capturar campos Fase 2: droguería, vigencia, observación
+    const drogId = document.getElementById('drog-select')?.value || '';
+    const vigenciaHasta = document.getElementById('vigencia-hasta')?.value || '';
+    const observacion = document.getElementById('observacion-input')?.value || '';
+
+    async function _enviar(accionConflicto) {
         const r = await fetch('/api/ofertas/import-guardar', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
             body: JSON.stringify({
                 laboratorio_id: parseInt(labId, 10),
+                drogueria_id: drogId ? parseInt(drogId, 10) : null,
+                vigencia_hasta: vigenciaHasta || null,
+                observacion: observacion || null,
+                accion_conflicto: accionConflicto || null,
                 reemplazar: reemplazar,
                 items: _items,
             }),
         });
-        const data = await r.json();
+        return [r, await r.json()];
+    }
+
+    try {
+        let [r, data] = await _enviar(null);
+
+        // Conflicto: el backend devuelve 409 con la info del choque
+        if (r.status === 409 && data.conflicto) {
+            const accion = await _preguntarConflicto(data);
+            if (accion === 'cancelar') {
+                status.textContent = 'Cancelado por usuario.';
+                status.className = 'text-xs text-[#888] mt-3';
+                return;
+            }
+            // Reintentar con la acción elegida
+            [r, data] = await _enviar(accion);
+        }
+
         if (!r.ok || !data.ok) {
             status.textContent = '✗ ' + (data.error || 'Error');
             status.className = 'text-xs text-red-700 mt-3';
@@ -1440,6 +1498,41 @@ async function _confirmarEImportar() {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-3';
     }
+}
+
+// Modal de conflicto. Devuelve promesa con la acción elegida.
+function _preguntarConflicto(data) {
+    return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-black/50 z-[120] flex items-center justify-center p-4';
+        overlay.innerHTML = `
+            <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+                <p class="text-amber-700 text-sm font-bold mb-2">⚠ Conflicto de transfers</p>
+                <p class="text-sm text-[#1e1e1e] mb-3">${data.mensaje.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</p>
+                <p class="text-xs text-[#666] mb-4">¿Qué hacer con las ofertas vigentes existentes?</p>
+                <div class="space-y-2">
+                    <button data-act="reemplazar" class="w-full text-left p-3 border border-emerald-300 hover:bg-emerald-50 rounded-lg">
+                        <p class="text-sm font-semibold text-emerald-900">🔄 Reemplazar</p>
+                        <p class="text-xs text-emerald-700">Las ofertas anteriores quedan inactivas (histórico). El import nuevo es la fuente de verdad.</p>
+                    </button>
+                    <button data-act="sumar" class="w-full text-left p-3 border border-violet-300 hover:bg-violet-50 rounded-lg">
+                        <p class="text-sm font-semibold text-violet-900">➕ Sumar</p>
+                        <p class="text-xs text-violet-700">Se agrega encima de las anteriores. Aplica si son campañas distintas y se acumulan multiplicativamente.</p>
+                    </button>
+                    <button data-act="cancelar" class="w-full text-left p-3 border border-[#ddd] hover:bg-[#f5f5f5] rounded-lg">
+                        <p class="text-sm font-semibold text-[#555]">✕ Cancelar</p>
+                        <p class="text-xs text-[#999]">No importar nada. Volver a editar.</p>
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelectorAll('button[data-act]').forEach(b => {
+            b.addEventListener('click', () => {
+                overlay.remove();
+                resolve(b.dataset.act);
+            });
+        });
+    });
 }
 document.getElementById('btn-guardar').addEventListener('click', _confirmarEImportar);
 document.getElementById('btn-guardar-top').addEventListener('click', _confirmarEImportar);

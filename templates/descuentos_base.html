@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Descuentos base lab × droguería{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Descuentos base — Matriz Lab × Droguería</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ labs|length }} laboratorios · {{ drogs|length }} droguerías</span>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-800">NIVEL 1 de 5</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    <div class="bg-violet-50 border border-violet-200 rounded-xl p-4 text-sm text-violet-900">
+        <p class="mb-2"><strong>Cómo funciona</strong>: cada celda es el descuento base
+        acordado entre un laboratorio y una droguería (acuerdo anual/semestral). Click en
+        una celda para editarla. Vaciar el campo y guardar = desactivar (no borra histórico).</p>
+        <p class="text-xs">Este descuento se combina <strong>multiplicativamente</strong> con
+        transfers (nivel 2), ofertas por producto (3), ofertas con cantidad mínima (4) y
+        módulos (5). Ejemplo: <span class="font-mono">31.03% + 25% transfer = 48.27% final</span>.</p>
+    </div>
+
+    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-3 flex-wrap">
+        <span class="text-xs text-[#6f6f6f]">Mostrando:</span>
+        <a href="{{ url_for('descuentos_base_lista') }}"
+           class="text-xs px-3 py-1.5 rounded-lg {% if not mostrar_todos %}bg-violet-100 text-violet-800 font-semibold{% else %}bg-[#f5f5f5] text-[#6f6f6f] hover:bg-[#ececec]{% endif %}">
+            Solo con descuentos cargados
+        </a>
+        <a href="{{ url_for('descuentos_base_lista', todos='1') }}"
+           class="text-xs px-3 py-1.5 rounded-lg {% if mostrar_todos %}bg-violet-100 text-violet-800 font-semibold{% else %}bg-[#f5f5f5] text-[#6f6f6f] hover:bg-[#ececec]{% endif %}">
+            Todos los labs activos
+        </a>
+        <span class="text-xs text-[#888] ml-auto">💡 Tip: <kbd class="px-1.5 py-0.5 bg-[#f0f0f0] border border-[#ddd] rounded text-[10px]">Tab</kbd> para moverse entre celdas, <kbd class="px-1.5 py-0.5 bg-[#f0f0f0] border border-[#ddd] rounded text-[10px]">Enter</kbd> para guardar</span>
+    </div>
+
+    {% if not labs %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center text-amber-900">
+        No hay descuentos base cargados.
+        <a href="{{ url_for('descuentos_base_lista', todos='1') }}" class="underline font-semibold">Mostrar todos los labs activos</a>
+        para empezar a cargar.
+    </div>
+    {% else %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-x-auto">
+        <table class="w-full text-sm border-collapse" id="matriz-tabla">
+            <thead class="sticky top-0 bg-white shadow-sm">
+                <tr>
+                    <th class="text-left px-3 py-2 text-[10px] uppercase tracking-wide text-[#aaa] font-semibold sticky left-0 bg-white border-r border-surface-border" style="min-width:200px">
+                        Laboratorio ↓ / Droguería →
+                    </th>
+                    {% for d in drogs %}
+                    <th class="text-center px-3 py-2 text-[10px] uppercase tracking-wide text-[#888] font-semibold" style="min-width:120px">
+                        {{ d.razon_social }}
+                        {% if d.compra_minima_pesos %}
+                        <div class="text-[9px] text-amber-700 normal-case font-normal">mín ${{ '{:,.0f}'.format(d.compra_minima_pesos|float).replace(',','.') }}</div>
+                        {% endif %}
+                    </th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for lab in labs %}
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-2 font-medium text-[#1e1e1e] sticky left-0 bg-white border-r border-surface-border">
+                        {{ lab.nombre }}
+                    </td>
+                    {% for d in drogs %}
+                    {% set cell = mapa.get((lab.id, d.id)) %}
+                    <td class="px-2 py-1 text-center">
+                        <input type="text"
+                               class="cell-dto w-full text-center bg-transparent border border-transparent hover:border-violet-300 focus:border-violet-500 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-violet-300"
+                               data-lab="{{ lab.id }}"
+                               data-drog="{{ d.id }}"
+                               data-plazo="{{ cell.plazo_pago if cell else '' }}"
+                               value="{{ '%.2f'|format(cell.descuento_pct|float) if cell and cell.descuento_pct else '' }}"
+                               placeholder="—"
+                               title="{% if cell %}{{ cell.plazo_pago or 'Sin plazo' }}{% if cell.observacion %} · {{ cell.observacion }}{% endif %}{% else %}Click para agregar descuento{% endif %}">
+                        {% if cell and cell.plazo_pago %}
+                        <div class="text-[9px] text-[#999]">{{ cell.plazo_pago }}</div>
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.cell-dto').forEach(inp => {
+    let original = inp.value;
+    inp.addEventListener('focus', () => { original = inp.value; });
+    const guardar = async () => {
+        const v = inp.value.trim();
+        if (v === original) return;  // sin cambios
+        const labId = parseInt(inp.dataset.lab);
+        const drogId = parseInt(inp.dataset.drog);
+        // Indicador visual
+        inp.classList.add('opacity-60');
+        try {
+            const r = await fetch('/descuentos-base/celda', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({lab_id: labId, drog_id: drogId, descuento_pct: v}),
+            });
+            const data = await r.json();
+            if (data.ok) {
+                inp.classList.remove('opacity-60');
+                inp.classList.add('bg-emerald-50');
+                setTimeout(() => inp.classList.remove('bg-emerald-50'), 800);
+                if (data.estado === 'guardado') {
+                    inp.value = data.descuento_pct.toFixed(2);
+                } else {
+                    inp.value = '';
+                }
+                original = inp.value;
+            } else {
+                inp.value = original;
+                inp.classList.remove('opacity-60');
+                inp.classList.add('bg-red-50');
+                setTimeout(() => inp.classList.remove('bg-red-50'), 1200);
+                alert('Error: ' + (data.error || 'no especificado'));
+            }
+        } catch (e) {
+            inp.value = original;
+            inp.classList.remove('opacity-60');
+            alert('Error de red: ' + e.message);
+        }
+    };
+    inp.addEventListener('blur', guardar);
+    inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            inp.blur();
+        }
+        if (e.key === 'Escape') {
+            inp.value = original;
+            inp.blur();
+        }
+    });
+});
+</script>
+
+{% endblock %}

@@ -35,13 +35,6 @@ init_db(DATABASE_URL)
 
 
 @app.before_request
-def bloquear_descuentos():
-    from flask import abort, request
-    if request.path.startswith('/descuentos'):
-        abort(404)
-
-
-@app.before_request
 def exigir_login():
     from flask import jsonify, redirect, request, url_for
     from flask_login import current_user

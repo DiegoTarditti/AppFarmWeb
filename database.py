@@ -378,6 +378,18 @@ class OfertaMinimo(Base):
     plazo_pago      = Column(String(100))
     grupo_id        = Column(Integer)
     tipo_descuento  = Column(String(20))   # 'simple' | 'con_minimo'
+    # === Fase 2 compra rápida (2026-04-27) ===
+    # Droguería a la que aplica este transfer/oferta. NULL = aplica a venta DIRECTA
+    # al laboratorio (sin pasar por droguería). Si está cargado → solo aplica
+    # cuando el optimizador evalúa esa droguería para este producto.
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id'), nullable=True, index=True)
+    # Vigencia: el optimizador filtra automáticamente los vencidos.
+    vigencia_desde  = Column(Date, nullable=True)
+    vigencia_hasta  = Column(Date, nullable=True, index=True)
+    # Categoría/observación libre (ej "TR Lanzamiento", "TRs OTC", "TR Excepcional").
+    observacion     = Column(String(200), nullable=True)
+    # Activación manual (para "pausar" sin borrar)
+    activo          = Column(Boolean, nullable=False, default=True)
     actualizado_en  = Column(DateTime, default=now_ar)
 
 
@@ -1136,6 +1148,14 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS descripcion_custom VARCHAR(200)"))
     # Provider: mínimo de compra (puede no estar en deploys viejos)
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
+    # OfertaMinimo: campos nuevos Fase 2 compra rápida
+    conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id)"))
+    conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS vigencia_desde DATE"))
+    conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS vigencia_hasta DATE"))
+    conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS observacion VARCHAR(200)"))
+    conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ofertas_drog ON ofertas_minimo(drogueria_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ofertas_vig  ON ofertas_minimo(vigencia_hasta)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS obs_stock (
             id_farmacia INTEGER NOT NULL,
@@ -1960,6 +1980,17 @@ def _sqlite_add_columns(conn):
                 END
                 WHERE tipo_descuento IS NULL
             """))
+        # Fase 2 compra rápida (2026-04-27)
+        if existing_om:
+            for col, sql_type in [
+                ('drogueria_id',   'INTEGER REFERENCES proveedores(id)'),
+                ('vigencia_desde', 'DATE'),
+                ('vigencia_hasta', 'DATE'),
+                ('observacion',    'VARCHAR(200)'),
+                ('activo',         'BOOLEAN NOT NULL DEFAULT 1'),
+            ]:
+                if col not in existing_om:
+                    conn.execute(text(f'ALTER TABLE ofertas_minimo ADD COLUMN {col} {sql_type}'))
     except Exception:
         pass
 

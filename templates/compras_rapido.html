@@ -1,0 +1,372 @@
+{% extends "base.html" %}
+{% block title %}Compra rápida multi-droguería{% endblock %}
+{% block extra_head %}
+<style>
+.dto-cell { cursor: pointer; }
+.dto-cell:hover { background: rgba(124,58,237,0.05); }
+.opciones-row { display: none; }
+.opciones-row.show { display: table-row; }
+.row-edit-cant { width: 70px; text-align: right; }
+</style>
+{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Compra rápida multi-droguería</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ total_productos }} productos bajo mínimo</span>
+    {% if sin_descuentos %}
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">{{ sin_descuentos }} sin descuento configurado</span>
+    {% endif %}
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    <!-- Selector de ámbito (laboratorios a procesar) -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+            <div>
+                <h2 class="text-sm font-bold text-[#1e1e1e]">📌 Ámbito — laboratorios a procesar</h2>
+                <p class="text-[11px] text-[#888]">{{ labs_seleccionados|length }} de {{ labs_disponibles|length }} laboratorios · {{ labs_con_descuento_count }} con descuento configurado</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button" id="btn-todos-con-dto"
+                        class="text-[11px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-1 rounded border border-violet-300">
+                    ✓ Todos con descuento ({{ labs_con_descuento_count }})
+                </button>
+                <button type="button" id="btn-limpiar-labs"
+                        class="text-[11px] bg-[#f5f5f5] hover:bg-[#ececec] text-[#555] px-2 py-1 rounded border border-[#ddd]">
+                    ✕ Limpiar
+                </button>
+            </div>
+        </div>
+
+        <!-- Chips de labs seleccionados -->
+        <div id="labs-chips" class="flex flex-wrap gap-1.5 mb-2 min-h-[32px]">
+            {% for l in labs_seleccionados %}
+            <span class="lab-chip inline-flex items-center gap-1.5 bg-violet-100 text-violet-800 px-2 py-1 rounded text-[11px] font-medium border border-violet-300"
+                  data-id="{{ l.id }}">
+                {% if l.tiene_dto %}<span class="text-emerald-600 text-[9px]">●</span>{% endif %}
+                {{ l.nombre }}
+                <button type="button" class="text-violet-600 hover:text-violet-900 font-bold"
+                        onclick="quitarLab({{ l.id }})">×</button>
+            </span>
+            {% endfor %}
+            {% if not labs_seleccionados %}
+            <span class="text-[11px] text-[#999] italic py-1">Ningún laboratorio elegido — agregá uno abajo o usá "Todos con descuento".</span>
+            {% endif %}
+        </div>
+
+        <!-- Buscador para agregar -->
+        <div class="relative">
+            <input type="text" id="lab-search"
+                   placeholder='+ Agregar laboratorio (multi-token: "bayer cons")'
+                   class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-violet-300"
+                   autocomplete="off">
+            <div id="lab-dropdown" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-surface-border rounded-lg shadow-lg max-h-64 overflow-y-auto z-20"></div>
+        </div>
+
+        <button type="button" id="btn-aplicar-ambito"
+                class="mt-3 bg-violet-700 hover:bg-violet-600 text-white font-semibold text-xs px-4 py-2 rounded-lg">
+            ↻ Aplicar ámbito y ver productos
+        </button>
+        <span id="ambito-status" class="text-[11px] text-[#888] ml-2"></span>
+    </div>
+
+    <!-- Header dinámico de filtros + optimizador -->
+    <form method="get" class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-1.5">
+            <label class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Tipo de venta:</label>
+            <select name="venta_tipo" onchange="this.form.submit()"
+                    class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-xs">
+                <option value="">Todos</option>
+                <option value="libre"      {% if venta_tipo == 'libre' %}selected{% endif %}>Solo Venta Libre</option>
+                <option value="receta"     {% if venta_tipo == 'receta' %}selected{% endif %}>Solo Bajo Receta</option>
+                <option value="controlado" {% if venta_tipo == 'controlado' %}selected{% endif %}>Solo Controlados</option>
+            </select>
+        </div>
+        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer">
+            <input type="checkbox" name="excluir_clavos" value="1" {% if excluir_clavos %}checked{% endif %}
+                   onchange="this.form.submit()" class="w-4 h-4 accent-violet-600">
+            Excluir "clavos" (sin venta 3m)
+        </label>
+        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer">
+            <input type="checkbox" name="solo_clavos" value="1" {% if solo_clavos %}checked{% endif %}
+                   onchange="this.form.submit()" class="w-4 h-4 accent-amber-600">
+            Solo clavos
+        </label>
+        <span class="text-xs text-[#888] ml-auto flex items-center gap-3">
+            <a href="{{ url_for('compras_transfers') }}" class="text-violet-700 hover:underline">📋 Revisar transfers vigentes</a>
+            <a href="{{ url_for('descuentos_base_lista') }}" class="text-violet-700 hover:underline">⚙ Editar descuentos base</a>
+        </span>
+    </form>
+
+    <!-- Banner si hay productos sin descuento -->
+    {% if sin_descuentos %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900">
+        ⚠ <strong>{{ sin_descuentos }} productos no tienen descuento configurado</strong> — su laboratorio no está en la matriz `descuentos-base`.
+        <a href="{{ url_for('descuentos_base_lista', todos='1') }}" class="underline font-semibold">Cargar descuentos →</a>
+    </div>
+    {% endif %}
+
+    <!-- Tabla principal -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2">Producto</th>
+                    <th class="text-left px-3 py-2 w-32">Laboratorio</th>
+                    <th class="text-center px-3 py-2 w-12" title="Tipo venta">Vta</th>
+                    <th class="text-right px-3 py-2 w-16">Stock</th>
+                    <th class="text-right px-3 py-2 w-16">Mín</th>
+                    <th class="text-right px-3 py-2 w-16">Faltan</th>
+                    <th class="text-right px-3 py-2 w-20">Vtas 3m</th>
+                    <th class="text-right px-3 py-2 w-24">Cantidad</th>
+                    <th class="text-left px-3 py-2 w-64">Mejor descuento</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border" id="tabla-body">
+                {% for p in productos %}
+                <tr class="hover:bg-black/[0.02] item-row {% if p.es_clavo %}opacity-60{% endif %}"
+                    data-obs-id="{{ p.observer_id }}"
+                    data-lab-id="{{ p.lab_id_local or '' }}"
+                    data-precio="0">
+                    <td class="px-3 py-2 text-[#1e1e1e]">
+                        {{ p.descripcion }}
+                        {% if p.es_clavo %}<span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-red-100 text-red-700 ml-1" title="Sin venta últimos 3 meses">clavo</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-xs text-[#555]">{{ p.lab_nombre }}</td>
+                    <td class="px-3 py-2 text-center">
+                        {% if p.tvc == 'L' %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">VL</span>
+                        {% elif p.tvc in ('R','A') %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-amber-100 text-amber-800">{{ 'RA' if p.tvc == 'A' else 'R' }}</span>
+                        {% elif p.tvc in ('1','2','3','4','5','6','7','8') %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-red-100 text-red-800">CTL</span>
+                        {% else %}<span class="text-[9px] text-[#bbb]">—</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-right {% if p.stock <= 0 %}text-red-600 font-semibold{% else %}text-[#555]{% endif %}">{{ p.stock }}</td>
+                    <td class="px-3 py-2 text-right text-[#555]">{{ p.minimo }}</td>
+                    <td class="px-3 py-2 text-right font-semibold {% if p.faltan > 0 %}text-rose-700{% else %}text-[#bbb]{% endif %}">{{ p.faltan }}</td>
+                    <td class="px-3 py-2 text-right text-[#555]">{{ '%.0f'|format(p.u3m) }}</td>
+                    <td class="px-3 py-2 text-right">
+                        <input type="number" min="0" max="9999" value="{{ p.sugerido }}"
+                               class="row-edit-cant bg-surface-input border border-surface-border rounded px-2 py-1 text-xs cant-input"
+                               data-obs-id="{{ p.observer_id }}"
+                               oninput="recalcularResumen()">
+                    </td>
+                    <td class="px-3 py-2">
+                        {% if p.opciones %}
+                        <div class="dto-cell flex items-center gap-2 px-2 py-1 rounded border border-violet-200 bg-violet-50"
+                             onclick="toggleOpciones({{ p.observer_id }})"
+                             title="Click para ver alternativas">
+                            <span class="font-bold text-violet-800">{{ '%.2f'|format(p.mejor_dto_pct) }}%</span>
+                            <span class="text-xs text-violet-700 truncate flex-1">{{ p.mejor_drog_nombre }}</span>
+                            <span class="text-[10px] text-[#999]">▼ {{ p.opciones|length }}</span>
+                        </div>
+                        {% else %}
+                        <span class="text-[11px] text-[#bbb]">Sin descuento configurado</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% if p.opciones %}
+                <tr class="opciones-row" id="op-{{ p.observer_id }}">
+                    <td colspan="9" class="px-3 py-2 bg-violet-50/30">
+                        <table class="w-full text-xs">
+                            <thead class="text-[10px] uppercase text-violet-700">
+                                <tr>
+                                    <th class="text-left px-2 py-1">Droguería</th>
+                                    <th class="text-right px-2 py-1 w-20">Total %</th>
+                                    <th class="text-left  px-2 py-1">Desglose</th>
+                                    <th class="text-right px-2 py-1 w-24">Mín. compra</th>
+                                    <th class="text-center px-2 py-1 w-16">Elegir</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for o in p.opciones %}
+                                <tr class="border-t border-violet-100 {% if loop.first %}bg-emerald-50/40{% endif %}">
+                                    <td class="px-2 py-1 font-medium">{{ o.drogueria_nombre }}</td>
+                                    <td class="px-2 py-1 text-right font-bold text-violet-800">{{ '%.2f'|format(o.descuento_total_pct) }}%</td>
+                                    <td class="px-2 py-1 text-[10px] text-[#666]">
+                                        {% for d in o.desglose %}
+                                            {{ d.nivel }} {{ '%.2f'|format(d.pct) }}%
+                                            {% if d.plazo %}<span class="text-[#999]">({{ d.plazo }})</span>{% endif %}
+                                            {% if not loop.last %} · {% endif %}
+                                        {% endfor %}
+                                    </td>
+                                    <td class="px-2 py-1 text-right text-[10px]">
+                                        {% if o.compra_minima %}<span class="text-amber-700">${{ '{:,.0f}'.format(o.compra_minima|float).replace(',','.') }}</span>{% else %}<span class="text-[#bbb]">—</span>{% endif %}
+                                    </td>
+                                    <td class="px-2 py-1 text-center">
+                                        <input type="radio" name="drog-{{ p.observer_id }}"
+                                               value="{{ o.drogueria_id }}"
+                                               data-obs-id="{{ p.observer_id }}"
+                                               data-drog-nombre="{{ o.drogueria_nombre }}"
+                                               data-dto="{{ o.descuento_total_pct }}"
+                                               {% if loop.first %}checked{% endif %}
+                                               onchange="elegirDrogueria({{ p.observer_id }}, this)">
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+                {% if not productos %}
+                <tr><td colspan="9" class="px-3 py-8 text-center text-[#999]">Sin productos bajo mínimo con los filtros actuales.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Resumen por droguería -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <h2 class="text-sm font-bold text-[#1e1e1e] mb-3">📦 Pre-pedidos por droguería</h2>
+        <div id="resumen-drogs" class="space-y-2">
+            <p class="text-xs text-[#888]">Recalculando…</p>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// === Selector de ámbito de laboratorios ===
+const _LABS_DISP = {{ labs_disponibles|tojson }};
+let _labsSeleccionados = new Set({{ labs_seleccionados|map(attribute='id')|list|tojson }});
+
+function _renderChips() {
+    const cont = document.getElementById('labs-chips');
+    const labs = _LABS_DISP.filter(l => _labsSeleccionados.has(l.id));
+    if (labs.length === 0) {
+        cont.innerHTML = '<span class="text-[11px] text-[#999] italic py-1">Ningún laboratorio elegido.</span>';
+        return;
+    }
+    cont.innerHTML = labs.map(l => `
+        <span class="lab-chip inline-flex items-center gap-1.5 bg-violet-100 text-violet-800 px-2 py-1 rounded text-[11px] font-medium border border-violet-300" data-id="${l.id}">
+            ${l.tiene_dto ? '<span class="text-emerald-600 text-[9px]">●</span>' : ''}
+            ${l.nombre.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}
+            <button type="button" class="text-violet-600 hover:text-violet-900 font-bold" onclick="quitarLab(${l.id})">×</button>
+        </span>`).join('');
+}
+
+function agregarLab(id) {
+    _labsSeleccionados.add(id);
+    _renderChips();
+    document.getElementById('lab-search').value = '';
+    document.getElementById('lab-dropdown').classList.add('hidden');
+    document.getElementById('lab-search').focus();
+}
+
+function quitarLab(id) {
+    _labsSeleccionados.delete(id);
+    _renderChips();
+}
+
+document.getElementById('lab-search').addEventListener('input', e => {
+    const q = e.target.value.trim();
+    const dd = document.getElementById('lab-dropdown');
+    if (!q) { dd.classList.add('hidden'); return; }
+    const matchFn = window.MultiTokenFilter
+        ? window.MultiTokenFilter.build(q)
+        : (t => t.toLowerCase().includes(q.toLowerCase()));
+    const matches = _LABS_DISP
+        .filter(l => !_labsSeleccionados.has(l.id))
+        .filter(l => matchFn(l.nombre))
+        .slice(0, 20);
+    if (matches.length === 0) {
+        dd.innerHTML = '<p class="px-3 py-2 text-xs text-[#999]">Sin resultados</p>';
+    } else {
+        dd.innerHTML = matches.map(l => `
+            <button type="button" class="block w-full text-left px-3 py-1.5 hover:bg-violet-50 text-xs border-b border-[#f0f0f0] last:border-0"
+                    onclick="agregarLab(${l.id})">
+                ${l.tiene_dto ? '<span class="text-emerald-600">● </span>' : '<span class="text-[#ccc]">○ </span>'}
+                ${l.nombre.replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}
+                ${l.tiene_dto ? '<span class="text-[10px] text-emerald-600 ml-1">tiene descuento</span>' : ''}
+            </button>`).join('');
+    }
+    dd.classList.remove('hidden');
+});
+
+document.getElementById('lab-search').addEventListener('blur', () => {
+    setTimeout(() => document.getElementById('lab-dropdown').classList.add('hidden'), 200);
+});
+
+document.getElementById('btn-todos-con-dto').addEventListener('click', () => {
+    _labsSeleccionados = new Set(_LABS_DISP.filter(l => l.tiene_dto).map(l => l.id));
+    _renderChips();
+});
+
+document.getElementById('btn-limpiar-labs').addEventListener('click', () => {
+    _labsSeleccionados = new Set();
+    _renderChips();
+});
+
+document.getElementById('btn-aplicar-ambito').addEventListener('click', () => {
+    const ids = [..._labsSeleccionados].join(',');
+    // Conservar otros parámetros del query string
+    const params = new URLSearchParams(location.search);
+    if (ids) params.set('labs', ids);
+    else params.delete('labs');
+    location.search = params.toString();
+});
+
+function toggleOpciones(obsId) {
+    const row = document.getElementById('op-' + obsId);
+    if (row) row.classList.toggle('show');
+}
+
+function elegirDrogueria(obsId, radio) {
+    const itemRow = document.querySelector(`tr.item-row[data-obs-id="${obsId}"]`);
+    if (!itemRow) return;
+    // Actualizar la celda "mejor descuento" con la elegida
+    const dtoCell = itemRow.querySelector('.dto-cell');
+    if (dtoCell) {
+        dtoCell.querySelector('span:first-child').textContent =
+            parseFloat(radio.dataset.dto).toFixed(2) + '%';
+        dtoCell.querySelector('span:nth-child(2)').textContent = radio.dataset.drogNombre;
+    }
+    itemRow.dataset.drogeleg = radio.value;
+    itemRow.dataset.drognombre = radio.dataset.drogNombre;
+    itemRow.dataset.dto = radio.dataset.dto;
+    recalcularResumen();
+}
+
+function recalcularResumen() {
+    const drogs = {};  // drog_id → {nombre, items: [...]}
+    document.querySelectorAll('tr.item-row').forEach(row => {
+        const obsId = row.dataset.obsId;
+        const cantInput = row.querySelector('.cant-input');
+        const cant = parseInt(cantInput?.value || 0);
+        if (cant <= 0) return;
+        // Droguería elegida (radio checked)
+        const radio = document.querySelector(`input[name="drog-${obsId}"]:checked`);
+        if (!radio) return;
+        const drogId = radio.value;
+        const drogNombre = radio.dataset.drogNombre;
+        const dto = parseFloat(radio.dataset.dto);
+        if (!drogs[drogId]) drogs[drogId] = {nombre: drogNombre, items: 0, dto_avg: []};
+        drogs[drogId].items += cant;
+        drogs[drogId].dto_avg.push(dto);
+    });
+
+    const cont = document.getElementById('resumen-drogs');
+    if (Object.keys(drogs).length === 0) {
+        cont.innerHTML = '<p class="text-xs text-[#888]">Sin productos seleccionados.</p>';
+        return;
+    }
+    const lista = Object.entries(drogs).sort((a, b) => b[1].items - a[1].items);
+    cont.innerHTML = lista.map(([id, d]) => {
+        const dtoProm = d.dto_avg.reduce((a,b)=>a+b,0) / d.dto_avg.length;
+        return `<div class="flex items-center gap-3 p-3 bg-violet-50 border border-violet-200 rounded-lg">
+            <span class="text-2xl">📦</span>
+            <div class="flex-1">
+                <p class="font-bold text-[#1e1e1e]">${d.nombre}</p>
+                <p class="text-xs text-[#666]">${d.items} unidades · descuento promedio ${dtoProm.toFixed(2)}%</p>
+            </div>
+            <button class="text-xs bg-violet-700 hover:bg-violet-600 text-white font-semibold px-3 py-1.5 rounded-lg" onclick="alert('Export pendiente: fase 8')">Exportar</button>
+        </div>`;
+    }).join('');
+}
+
+document.addEventListener('DOMContentLoaded', recalcularResumen);
+</script>
+
+{% endblock %}

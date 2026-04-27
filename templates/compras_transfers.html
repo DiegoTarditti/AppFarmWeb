@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Transfers vigentes — Compra rápida{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Transfers y descuentos vigentes</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ stats.total }} ofertas · {{ stats.lab_count }} labs · {{ stats.drog_count }} drogs</span>
+    {% if stats.por_vencer %}
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">{{ stats.por_vencer }} por vencer (≤7d)</span>
+    {% endif %}
+    {% if stats.vencidos %}
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-red-100 text-red-800">{{ stats.vencidos }} vencidos</span>
+    {% endif %}
+    <a href="{{ url_for('compras_rapido') }}"
+       class="ml-auto text-xs bg-violet-700 hover:bg-violet-600 text-white font-semibold px-4 py-1.5 rounded-lg">
+        Continuar a Compra Rápida →
+    </a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    <!-- Tabs de filtros -->
+    <form method="get" class="bg-white border border-surface-border rounded-xl p-3 flex items-center gap-2 flex-wrap">
+        <div class="flex gap-1 mr-2">
+            {% for f, label in [('activos', 'Activos'), ('por_vencer', 'Por vencer 7d'), ('vencidos', 'Vencidos'), ('inactivos', 'Inactivos manuales'), ('todos', 'Todos')] %}
+            <a href="{{ url_for('compras_transfers', filtro=f, drog_id=drog_id_param, lab_id=lab_id_param) }}"
+               class="text-xs px-3 py-1.5 rounded-lg {% if filtro == f %}bg-violet-100 text-violet-800 font-semibold{% else %}bg-[#f5f5f5] text-[#6f6f6f] hover:bg-[#ececec]{% endif %}">
+                {{ label }}
+            </a>
+            {% endfor %}
+        </div>
+        <select name="lab_id" onchange="this.form.submit()" class="bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs">
+            <option value="">Todos los labs</option>
+            {% for l in labs_filtro %}
+            <option value="{{ l.id }}" {% if lab_id_param == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+            {% endfor %}
+        </select>
+        <select name="drog_id" onchange="this.form.submit()" class="bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs">
+            <option value="">Todas las drogs</option>
+            <option value="-1" {% if drog_id_param == -1 %}selected{% endif %}>— Directo lab —</option>
+            {% for d in drogs_filtro %}
+            <option value="{{ d.id }}" {% if drog_id_param == d.id %}selected{% endif %}>{{ d.nombre }}</option>
+            {% endfor %}
+        </select>
+        <input type="hidden" name="filtro" value="{{ filtro }}">
+    </form>
+
+    {% if not grupos %}
+    <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-6 text-center text-emerald-900">
+        Sin transfers/ofertas con los filtros actuales.
+        {% if filtro != 'todos' %}<a href="{{ url_for('compras_transfers', filtro='todos') }}" class="underline font-semibold">Ver todos</a>{% endif %}
+    </div>
+    {% endif %}
+
+    {% for g in grupos %}
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="bg-[#fafafa] px-4 py-2 border-b border-surface-border flex items-center justify-between flex-wrap gap-2">
+            <div>
+                <span class="text-sm font-bold text-[#1e1e1e]">{{ g.lab }}</span>
+                <span class="text-[#999] mx-1">→</span>
+                <span class="text-sm font-medium {% if g.drog == 'Directo lab' %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ g.drog }}</span>
+                <span class="text-[11px] text-[#888] ml-2">({{ g.ofertas|length }} ofertas)</span>
+            </div>
+            <div class="flex gap-1">
+                <button type="button" onclick="grupoToggle({{ g.lab_id }}, {{ g.drog_id }}, 'desactivar')"
+                        class="text-[10px] bg-[#f5f5f5] hover:bg-red-50 text-[#666] hover:text-red-700 px-2 py-1 rounded">
+                    Desactivar todos
+                </button>
+                <button type="button" onclick="grupoToggle({{ g.lab_id }}, {{ g.drog_id }}, 'activar')"
+                        class="text-[10px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2 py-1 rounded">
+                    Activar todos
+                </button>
+            </div>
+        </div>
+        <table class="w-full text-xs">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase text-[#999]">
+                <tr>
+                    <th class="text-left px-3 py-1.5 w-12">Estado</th>
+                    <th class="text-left px-3 py-1.5">Producto</th>
+                    <th class="text-left px-3 py-1.5 w-20">Código</th>
+                    <th class="text-right px-3 py-1.5 w-16">Dto %</th>
+                    <th class="text-right px-3 py-1.5 w-12">Mín</th>
+                    <th class="text-left px-3 py-1.5 w-32">Categoría</th>
+                    <th class="text-left px-3 py-1.5 w-28">Vence</th>
+                    <th class="text-right px-3 py-1.5 w-32">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for o in g.ofertas %}
+                <tr class="{% if not o.activo %}opacity-50{% endif %}">
+                    <td class="px-3 py-1.5">
+                        {% if o.activo %}
+                            <span class="text-emerald-700">●</span>
+                        {% else %}
+                            <span class="text-[#bbb]">○</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-[#1e1e1e]">{{ o.descripcion }}</td>
+                    <td class="px-3 py-1.5 text-[10px] font-mono text-[#888]">{{ o.codigo }}</td>
+                    <td class="px-3 py-1.5 text-right font-bold text-violet-800">{{ '%.2f'|format(o.descuento_psl) }}%</td>
+                    <td class="px-3 py-1.5 text-right">{{ o.unidades_minima }}</td>
+                    <td class="px-3 py-1.5 text-[10px] text-[#666]">{{ o.observacion }}</td>
+                    <td class="px-3 py-1.5 text-[10px]">
+                        {% if o.vigencia_hasta %}
+                            {{ o.vigencia_hasta }}
+                            {% if o.dias_quedan is not none %}
+                                {% if o.dias_quedan < 0 %}
+                                <span class="text-red-700 font-semibold">vencido {{ -o.dias_quedan }}d</span>
+                                {% elif o.dias_quedan <= 7 %}
+                                <span class="text-amber-700 font-semibold">{{ o.dias_quedan }}d</span>
+                                {% else %}
+                                <span class="text-[#999]">{{ o.dias_quedan }}d</span>
+                                {% endif %}
+                            {% endif %}
+                        {% else %}
+                            <span class="text-[#bbb]">indefinida</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-right">
+                        {% if o.activo %}
+                        <button type="button" onclick="toggleOferta({{ o.id }}, this)"
+                                class="text-[10px] text-red-700 hover:underline mr-2">Desactivar</button>
+                        {% else %}
+                        <button type="button" onclick="toggleOferta({{ o.id }}, this)"
+                                class="text-[10px] text-emerald-700 hover:underline mr-2">Activar</button>
+                        {% endif %}
+                        {% if o.dias_quedan is not none and o.dias_quedan <= 7 %}
+                        <button type="button" onclick="renovarOferta({{ o.id }})"
+                                class="text-[10px] text-violet-700 hover:underline">Renovar +30d</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+async function toggleOferta(id, btn) {
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/api/compras/transfer/${id}/toggle`, {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const data = await r.json();
+        if (data.ok) {
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'desconocido'));
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+        btn.disabled = false;
+    }
+}
+
+async function renovarOferta(id) {
+    const dias = parseInt(prompt('¿Cuántos días de vigencia agregar?', '30'));
+    if (!dias || dias < 1) return;
+    try {
+        const r = await fetch(`/api/compras/transfer/${id}/renovar`, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dias: dias}),
+        });
+        const data = await r.json();
+        if (data.ok) location.reload();
+        else alert('Error: ' + (data.error || 'desconocido'));
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function grupoToggle(labId, drogId, accion) {
+    const verbo = accion === 'activar' ? 'activar' : 'desactivar';
+    if (!confirm(`¿Seguro de ${verbo} TODAS las ofertas del grupo?`)) return;
+    try {
+        const r = await fetch('/api/compras/transfer-grupo/toggle', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({lab_id: labId, drog_id: drogId, accion: accion}),
+        });
+        const data = await r.json();
+        if (data.ok) {
+            alert(`${data.afectados} ofertas ${verbo}adas`);
+            location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'desconocido'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+</script>
+
+{% endblock %}

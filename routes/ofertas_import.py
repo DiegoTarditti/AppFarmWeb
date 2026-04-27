@@ -16,7 +16,7 @@ from flask import jsonify, render_template, request
 from flask_login import login_required
 
 import database
-from database import Laboratorio, OfertaMinimo
+from database import Laboratorio, OfertaMinimo, Provider
 
 
 def _to_int(v):
@@ -35,6 +35,37 @@ def _to_float(v):
         return float(str(v).replace(',', '.'))
     except (ValueError, TypeError):
         return None
+
+
+def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descripcion):
+    """Cuando un import resuelve `codigo_interno → ean_real`, persiste la
+    equivalencia en `Producto.codigo_barra_alt1/2/3` para que cualquier flujo
+    futuro (factura, transfer, búsqueda) reconozca el código interno como EAN
+    válido del producto.
+
+    Args:
+        session: SQLAlchemy session.
+        lab_id: int — laboratorio_id local.
+        codigo_interno: str — código del Excel (ej "0967" Baliarda).
+        ean_resuelto: str — EAN real o pseudo-EAN OBS:N.
+        descripcion: str — descripción del Excel (para crear Producto si no existe).
+    """
+    if not codigo_interno or not ean_resuelto:
+        return
+    cod = str(codigo_interno).strip()
+    ean = str(ean_resuelto).strip()
+    if cod == ean:
+        return  # nada para mappear
+    from helpers import _add_alt_barcode, _upsert_producto
+    # Asegurar que el Producto local existe con el EAN principal.
+    # Si no existe, lo creamos con la descripción del Excel + lab.
+    from database import Producto
+    prod = session.query(Producto).filter_by(codigo_barra=ean).first()
+    if not prod:
+        _upsert_producto(session, ean, descripcion or '', laboratorio_id=lab_id)
+        session.flush()
+    # Ahora agregar el código interno como alt (idempotente)
+    _add_alt_barcode(session, ean, cod)
 
 
 def _previsualizar_pdf(path):
@@ -314,14 +345,21 @@ def init_app(app):
     @login_required
     def ofertas_import_page():  # type: ignore[reportUnusedFunction]
         from helpers import get_config
+        from database import Provider
         cfg = get_config()
         with database.get_db() as session:
             labs = (session.query(Laboratorio)
                     .filter(Laboratorio.activo == True)  # noqa: E712
                     .order_by(Laboratorio.nombre).all())
             labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+            drogs = (session.query(Provider)
+                     .filter(Provider.tipo == 'drogueria',
+                             Provider.activo == True)  # noqa: E712
+                     .order_by(Provider.razon_social).all())
+            drogs_data = [{'id': d.id, 'razon_social': d.razon_social} for d in drogs]
         return render_template('ofertas_import.html',
                                laboratorios=labs_data,
+                               droguerias=drogs_data,
                                ruta_excels=cfg.get('ruta_excels', ''))
 
     @app.route('/api/ofertas/import-preview', methods=['POST'])
@@ -482,6 +520,25 @@ def init_app(app):
             lab_id = int(data.get('laboratorio_id'))
         except (TypeError, ValueError):
             return jsonify({'error': 'laboratorio_id inválido'}), 400
+        # Fase 2: drogueria opcional, vigencia, observación
+        drog_id = data.get('drogueria_id')
+        try:
+            drog_id = int(drog_id) if drog_id else None
+        except (TypeError, ValueError):
+            drog_id = None
+        from datetime import date as _date
+        from datetime import datetime as _dt
+        vigencia_hasta = None
+        vigencia_str = (data.get('vigencia_hasta') or '').strip()
+        if vigencia_str:
+            try:
+                vigencia_hasta = _dt.strptime(vigencia_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+        observacion = (data.get('observacion') or '').strip()[:200] or None
+        # Acción ante conflicto: 'reemplazar' | 'sumar' | None (chequear)
+        accion_conflicto = (data.get('accion_conflicto') or '').strip().lower()
+
         items = data.get('items') or []
         if not isinstance(items, list) or not items:
             return jsonify({'error': 'items vacío'}), 400
@@ -501,12 +558,52 @@ def init_app(app):
         reemplazar = bool(data.get('reemplazar'))
 
         with database.get_db() as session:
+            from sqlalchemy import or_ as _or
             lab = session.get(Laboratorio, lab_id)
             if not lab:
                 return jsonify({'error': 'Laboratorio no encontrado'}), 404
 
-            if reemplazar:
-                session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).delete()
+            # Detección de conflicto: ¿ya hay ofertas activas y vigentes para
+            # este (lab, drog) que NO sean del mismo Excel? Si sí y el usuario
+            # NO eligió acción → devolver 409 con info para que decida.
+            hoy = _date.today()
+            if not accion_conflicto and not reemplazar:
+                conflictos_q = session.query(OfertaMinimo).filter(
+                    OfertaMinimo.laboratorio_id == lab_id,
+                    OfertaMinimo.activo == True,  # noqa: E712
+                    _or(OfertaMinimo.vigencia_hasta.is_(None),
+                        OfertaMinimo.vigencia_hasta >= hoy),
+                )
+                if drog_id:
+                    conflictos_q = conflictos_q.filter(
+                        _or(OfertaMinimo.drogueria_id == drog_id,
+                            OfertaMinimo.drogueria_id.is_(None)))
+                else:
+                    conflictos_q = conflictos_q.filter(OfertaMinimo.drogueria_id.is_(None))
+                n_conflictos = conflictos_q.count()
+                if n_conflictos > 0:
+                    return jsonify({
+                        'conflicto': True,
+                        'cantidad_existentes': n_conflictos,
+                        'mensaje': f'Ya hay {n_conflictos} oferta(s) activa(s) y vigente(s) '
+                                   f'para {lab.nombre}'
+                                   + (f' / {session.get(Provider, drog_id).razon_social}' if drog_id else ' (todas las drog.)'),
+                        'opciones': ['reemplazar', 'sumar', 'cancelar'],
+                    }), 409
+
+            if reemplazar or accion_conflicto == 'reemplazar':
+                # Borrar las ofertas activas del mismo (lab, drog) → quedará histórico
+                # con activo=False para auditoría.
+                q = session.query(OfertaMinimo).filter(
+                    OfertaMinimo.laboratorio_id == lab_id,
+                    OfertaMinimo.activo == True,  # noqa: E712
+                )
+                if drog_id:
+                    q = q.filter(OfertaMinimo.drogueria_id == drog_id)
+                else:
+                    q = q.filter(OfertaMinimo.drogueria_id.is_(None))
+                for o in q.all():
+                    o.activo = False
                 session.flush()
 
             from helpers import now_ar
@@ -545,8 +642,19 @@ def init_app(app):
                     if it.get('grupo_id') is not None:
                         existing.grupo_id = _to_int(it['grupo_id'])
                     existing.tipo_descuento = tipo_desc
+                    # Campos Fase 2: drog, vigencia, observacion. Se setean siempre
+                    # (sobreescriben) — el último import gana en sus campos.
+                    existing.drogueria_id = drog_id
+                    existing.vigencia_hasta = vigencia_hasta
+                    existing.vigencia_desde = hoy if vigencia_hasta else None
+                    if observacion:
+                        existing.observacion = observacion
+                    existing.activo = True  # re-activar si estaba inactivo
                     existing.actualizado_en = now_ar()
                     actualizados += 1
+                    # Persistir equivalencia codigo_interno → Producto local
+                    _persistir_equivalencia(session, lab_id, codigo, ean,
+                                             it.get('descripcion'))
                 else:
                     session.add(OfertaMinimo(
                         laboratorio_id=lab_id,
@@ -559,8 +667,16 @@ def init_app(app):
                         plazo_pago=(str(it.get('plazo_pago') or ''))[:100] or None,
                         grupo_id=_to_int(it.get('grupo_id')),
                         tipo_descuento=tipo_desc,
+                        # Fase 2
+                        drogueria_id=drog_id,
+                        vigencia_desde=hoy if vigencia_hasta else None,
+                        vigencia_hasta=vigencia_hasta,
+                        observacion=observacion,
+                        activo=True,
                     ))
                     insertados += 1
+                    _persistir_equivalencia(session, lab_id, codigo, ean,
+                                             it.get('descripcion'))
 
             session.commit()
 
