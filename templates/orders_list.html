@@ -697,9 +697,17 @@ function filtrarItems(input) {
     if (countEl) countEl.textContent = q ? matches + ' resultado' + (matches !== 1 ? 's' : '') : '';
 }
 
-// Inicializar con "Pendientes" activo
+// Inicializar: arranca en "Pendientes". Si no hay pedidos pendientes,
+// salta automáticamente a "Procesados" para que el usuario no vea una
+// pantalla vacía sin entender por qué.
 document.addEventListener('DOMContentLoaded', () => {
-    setEstado('pendiente');
+    const totalPendientes = document.querySelectorAll('.pedido-card[data-analizado="no"]').length;
+    const totalProcesados = document.querySelectorAll('.pedido-card[data-analizado="si"]').length;
+    if (totalPendientes === 0 && totalProcesados > 0) {
+        setEstado('procesado');
+    } else {
+        setEstado('pendiente');
+    }
     document.querySelectorAll('.btn-ind').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
