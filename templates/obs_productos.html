@@ -18,7 +18,7 @@
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
             </svg>
             <input type="text" name="q" value="{{ q or '' }}"
-                   placeholder="Buscar por nombre o código Alfabeta…"
+                   placeholder='Buscar (multi-token: "ibu 400 sus" → todos)'
                    class="w-full bg-surface-input border border-surface-border rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
         </div>
         <select name="lab_id" class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand min-w-[200px]">
@@ -26,6 +26,12 @@
             {% for l in labs %}
             <option value="{{ l.observer_id }}" {% if lab_id == l.observer_id %}selected{% endif %}>{{ l.descripcion }}</option>
             {% endfor %}
+        </select>
+        <select name="venta_tipo" class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <option value="">Todos los tipos</option>
+            <option value="libre"      {% if venta_tipo == 'libre' %}selected{% endif %}>Solo Venta Libre</option>
+            <option value="receta"     {% if venta_tipo == 'receta' %}selected{% endif %}>Solo Bajo Receta</option>
+            <option value="controlado" {% if venta_tipo == 'controlado' %}selected{% endif %}>Solo Controlados</option>
         </select>
         <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer">
             <input type="checkbox" name="solo_activos" value="1" {% if solo_activos %}checked{% endif %}
@@ -35,7 +41,7 @@
         <button type="submit" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg">
             Filtrar
         </button>
-        {% if q or lab_id or solo_activos %}
+        {% if q or lab_id or solo_activos or venta_tipo %}
         <a href="{{ url_for('obs_productos') }}"
            class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>
         {% endif %}
@@ -47,6 +53,7 @@
             <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
                 <tr>
                     <th class="text-left px-3 py-2">Descripción</th>
+                    <th class="text-center px-3 py-2 w-12" title="L=Venta Libre · R=Bajo Receta · A=Receta Archivada · 1-8=Controlados">Vta</th>
                     <th class="text-left px-3 py-2">Laboratorio</th>
                     <th class="text-left px-3 py-2">Monodroga</th>
                     <th class="text-right px-3 py-2 w-16">Stock</th>
@@ -59,9 +66,22 @@
             <tbody class="divide-y divide-surface-border">
                 {% for p in productos %}
                 <tr class="hover:bg-black/[0.02] {% if p.baja %}opacity-60{% endif %}">
-                    <td class="px-3 py-2 text-[#1e1e1e]">
-                        {{ p.descripcion }}
+                    <td class="px-3 py-2 text-[#1e1e1e] desc-cell" data-obs-id="{{ p.observer_id }}"
+                        data-desc-orig="{{ p.descripcion_obs }}">
+                        <span class="desc-text cursor-pointer hover:bg-amber-50 px-1 -mx-1 rounded" title="Click para editar (sin tocar Observer)">{{ p.descripcion }}</span>
+                        {% if p.tiene_desc_custom %}<span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-amber-100 text-amber-800 ml-1" title="Descripción editada localmente. Original Observer: {{ p.descripcion_obs }}">editada</span>{% endif %}
                         {% if p.baja %}<span class="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>{% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-center">
+                        {% if p.es_libre %}
+                            <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800" title="Venta Libre">VL</span>
+                        {% elif p.es_receta %}
+                            <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800" title="{% if p.tvc == 'A' %}Receta Archivada{% else %}Bajo Receta{% endif %}">{{ 'RA' if p.tvc == 'A' else 'R' }}</span>
+                        {% elif p.es_controlado %}
+                            <span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-800" title="Controlado (Psicotrópico/Estupefaciente Lista {{ p.tvc }})">CTL</span>
+                        {% else %}
+                            <span class="text-[9px] text-[#bbb]">—</span>
+                        {% endif %}
                     </td>
                     <td class="px-3 py-2 text-xs text-[#555]">{{ p.laboratorio }}</td>
                     <td class="px-3 py-2 text-[11px] text-[#888] truncate max-w-[280px]" title="{{ p.monodroga }}">
@@ -86,7 +106,7 @@
                 </tr>
                 {% endfor %}
                 {% if not productos %}
-                <tr><td colspan="8" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
+                <tr><td colspan="9" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
                 {% endif %}
             </tbody>
         </table>
@@ -95,7 +115,7 @@
     <!-- Paginación -->
     {% if last_page > 1 %}
     <div class="flex items-center justify-center gap-2 text-sm">
-        {% set base_qs = 'q=' ~ (q or '') ~ '&lab_id=' ~ (lab_id or '') ~ ('&solo_activos=1' if solo_activos else '') %}
+        {% set base_qs = 'q=' ~ (q or '') ~ '&lab_id=' ~ (lab_id or '') ~ ('&solo_activos=1' if solo_activos else '') ~ ('&venta_tipo=' ~ venta_tipo if venta_tipo else '') %}
         {% if page > 1 %}
         <a href="?{{ base_qs }}&page={{ page - 1 }}" class="px-3 py-1.5 rounded-lg border border-surface-border hover:bg-[#f5f5f5]">← Anterior</a>
         {% endif %}
@@ -107,5 +127,72 @@
     {% endif %}
 
 </div>
+
+<script>
+// Edición inline de descripción local (no toca Observer).
+document.addEventListener('click', e => {
+    const span = e.target.closest('.desc-text');
+    if (!span) return;
+    const cell = span.closest('.desc-cell');
+    if (!cell || cell.querySelector('input.desc-editor')) return;
+
+    const obsId = cell.dataset.obsId;
+    const descActual = span.textContent.trim();
+    const descOrig = cell.dataset.descOrig || '';
+
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.value = descActual;
+    inp.className = 'desc-editor border border-amber-400 rounded px-2 py-1 text-sm w-full max-w-[400px] focus:outline-none focus:ring-2 focus:ring-amber-300';
+    inp.title = `Original Observer: ${descOrig}`;
+    span.style.display = 'none';
+    cell.insertBefore(inp, span);
+    inp.focus();
+    inp.select();
+
+    const cancelar = () => {
+        inp.remove();
+        span.style.display = '';
+    };
+    const guardar = async () => {
+        const nueva = inp.value.trim();
+        if (nueva === descActual) { cancelar(); return; }
+        inp.disabled = true;
+        try {
+            const r = await fetch(`/obs/producto/${obsId}/descripcion`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({descripcion: nueva}),
+            });
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || 'Error');
+            span.textContent = data.descripcion;
+            // Actualizar/quitar badge "editada"
+            const oldBadge = cell.querySelector('span.bg-amber-100.text-amber-800');
+            if (data.tiene_desc_custom && !oldBadge) {
+                const b = document.createElement('span');
+                b.className = 'text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-amber-100 text-amber-800 ml-1';
+                b.textContent = 'editada';
+                b.title = `Descripción editada localmente. Original Observer: ${descOrig}`;
+                span.after(b);
+            } else if (!data.tiene_desc_custom && oldBadge) {
+                oldBadge.remove();
+            }
+            cancelar();
+        } catch (err) {
+            alert('Error al guardar: ' + err.message);
+            inp.disabled = false;
+            inp.focus();
+        }
+    };
+
+    inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); guardar(); }
+        if (e.key === 'Escape') { e.preventDefault(); cancelar(); }
+    });
+    inp.addEventListener('blur', guardar);
+});
+</script>
 
 {% endblock %}

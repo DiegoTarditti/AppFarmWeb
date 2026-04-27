@@ -107,11 +107,12 @@
 
 <script>
 function filtrar() {
-    const q = document.getElementById('prov-search').value.trim().toLowerCase();
+    const q = document.getElementById('prov-search').value || '';
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.build(q) : (() => true);
     const t = document.getElementById('filter-tipo').value;
     const est = document.getElementById('filter-estado').value;
     document.querySelectorAll('.prov-row').forEach(row => {
-        const matchQ = !q || row.dataset.nombre.includes(q);
+        const matchQ = matchFn(row.dataset.nombre || '');
         const matchT = !t || row.dataset.tipo === t;
         const matchE = !est || row.dataset.activo === est;
         row.style.display = (matchQ && matchT && matchE) ? '' : 'none';

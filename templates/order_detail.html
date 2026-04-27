@@ -547,6 +547,8 @@ const pedidoRot  = {};
 const pedidoPvp  = {};
 const pedidoErp  = {};
 const pedidoMono = {};
+const pedidoTvc  = {};   // 'L'=Venta Libre, 'R'=Receta, 'A'=Receta Archivada, '1-8'=Controlados
+const pedidoDrogaId = {}; // observer_id de la monodroga (para "Comparar otros labs")
 PEDIDO_PRODS.forEach(p => {
     pedidoQty[p.codigo_barra] = p.cantidad;
     pedidoNom[p.codigo_barra] = p.nombre;
@@ -554,6 +556,8 @@ PEDIDO_PRODS.forEach(p => {
     pedidoPvp[p.codigo_barra] = p.precio_pvp || 0;
     if (p.monodroga) pedidoMono[p.codigo_barra] = p.monodroga;
     if (p.erp_qty !== null && p.erp_qty !== undefined) pedidoErp[p.codigo_barra] = p.erp_qty;
+    if (p.tvc) pedidoTvc[p.codigo_barra] = p.tvc;
+    if (p.monodroga_id) pedidoDrogaId[p.codigo_barra] = p.monodroga_id;
 });
 
 EQUIV_GROUPS.forEach(g => {
@@ -1288,6 +1292,13 @@ function buildResumenAgrupado() {
     offResult.forEach(it    => { get(it.ean, it.nombre).cant_oferta     = it.cantidad; });
     offMinResult.forEach(it => { get(it.ean, it.nombre).cant_oferta_min += it.cantidad; });
     nodealResult.forEach(it => { get(it.ean, it.nombre).cant_nodeal     = it.cantidad; });
+    // Orden alfabético por nombre (case-insensitive). Default A→Z para todas las
+    // listas de productos en el sistema.
+    resumenAgrEans.sort((a, b) => {
+        const na = (resumenAgr[a].nombre || '').toLowerCase();
+        const nb = (resumenAgr[b].nombre || '').toLowerCase();
+        return na < nb ? -1 : na > nb ? 1 : 0;
+    });
 }
 
 function buildResumenRows() {
@@ -1314,9 +1325,19 @@ function renderResumen() {
     const body = document.getElementById('resumen-body');
     let html = `
     <div class="flex items-center gap-3 mb-3 no-print flex-wrap">
-        <input type="text" id="resumen-filter" placeholder="Filtrar por producto o EAN…"
+        <input type="text" id="resumen-filter" placeholder='Filtrar (multi-token: "400 sus" → ambos)'
                oninput="filterResumen()"
-               class="bg-[#f5f5f5] border border-[#e0e0e0] text-[#1e1e1e] rounded-lg px-3 py-1.5 text-xs w-64 focus:outline-none focus:ring-1 focus:ring-[#EAB308]">
+               class="bg-[#f5f5f5] border border-[#e0e0e0] text-[#1e1e1e] rounded-lg px-3 py-1.5 text-xs w-72 focus:outline-none focus:ring-1 focus:ring-[#EAB308]">
+        <div class="flex items-center gap-1.5">
+            <label for="resumen-filter-tvc" class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Tipo de venta:</label>
+            <select id="resumen-filter-tvc" onchange="filterResumen()"
+                    class="bg-[#f5f5f5] border border-[#e0e0e0] text-[#1e1e1e] rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#EAB308]">
+                <option value="">Todos</option>
+                <option value="libre">Solo Venta Libre</option>
+                <option value="receta">Solo Bajo Receta</option>
+                <option value="controlado">Solo Controlados</option>
+            </select>
+        </div>
         <span id="resumen-count" class="text-xs text-[#999]">${total_prods} productos</span>
     </div>
     <div class="overflow-x-auto">
@@ -1356,9 +1377,16 @@ function renderResumen() {
         const monoLine = d.monodroga
             ? `<p class="text-[10px] text-[#888] font-normal leading-tight mt-0.5 pl-4 truncate" title="${d.monodroga}">${d.monodroga}</p>`
             : '';
+        const _tvc = pedidoTvc[ean] || '';
+        const _drogaId = pedidoDrogaId[ean] || '';
+        const _cmpLabsBtn = _drogaId
+            ? `<button type="button" class="btn-cmp-labs ml-1 align-middle bg-violet-100 hover:bg-violet-200 text-violet-800 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-violet-300 transition-colors"
+                       data-droga="${_drogaId}" data-cb="${ean}" data-nombre="${(d.nombre||'').replace(/"/g,'&quot;')}"
+                       title="Comparar contra otros laboratorios con la misma monodroga">⇄ Otros labs</button>`
+            : '';
         html += `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.02] transition-colors"
-                     data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${packBadge}${d.nombre}${monoLine}</td>
+                     data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}" data-tvc="${_tvc}">
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${packBadge}${d.nombre}${_cmpLabsBtn}${monoLine}</td>
             <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
             <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
             <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
@@ -1416,10 +1444,18 @@ function recalcResumenRow(ean) {
 }
 
 function filterResumen() {
-    const q = document.getElementById('resumen-filter').value.toLowerCase().trim();
+    const q = document.getElementById('resumen-filter').value || '';
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.buildAnyOf(q) : (() => true);
+    const tvcFilter = document.getElementById('resumen-filter-tvc')?.value || '';
     let visible = 0;
     document.querySelectorAll('#tbody-resumen tr').forEach(tr => {
-        const match = !q || tr.dataset.nombre.includes(q) || tr.dataset.ean.includes(q);
+        const matchQ = matchFn([tr.dataset.nombre, tr.dataset.ean]);
+        const tvc = tr.dataset.tvc || '';
+        let matchTvc = true;
+        if (tvcFilter === 'libre')      matchTvc = tvc === 'L';
+        else if (tvcFilter === 'receta') matchTvc = (tvc === 'R' || tvc === 'A');
+        else if (tvcFilter === 'controlado') matchTvc = ['1','2','3','4','5','6','7','8'].includes(tvc);
+        const match = matchQ && matchTvc;
         tr.style.display = match ? '' : 'none';
         if (match) visible++;
     });
@@ -2158,4 +2194,26 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') closeHistChart
         <p id="hist-chart-error" class="hidden text-center text-sm text-red-600 py-4"></p>
     </div>
 </div>
+
+{% include '_comparar_labs.html' %}
+
+<script>
+// Hook ANTES del listener delegado de _comparar_labs.html: cuando el click viene
+// de una fila del resumen, propagamos el filtro activo (texto del input
+// resumen-filter) como "filtro extra" para el modal. El modal lo combinará con
+// los auto-tokens del nombre del producto.
+window._cmpFiltroExtraResumen = '';
+document.addEventListener('click', e => {
+    const btn = e.target.closest('.btn-cmp-labs');
+    if (!btn) return;
+    const dentroResumen = btn.closest('#tbody-resumen');
+    if (dentroResumen) {
+        const filtroInput = document.getElementById('resumen-filter');
+        window._cmpFiltroExtraResumen = filtroInput ? (filtroInput.value || '').trim() : '';
+    } else {
+        window._cmpFiltroExtraResumen = '';
+    }
+}, true);  // capture phase: corre antes que el listener bubbling de _comparar_labs
+</script>
+
 {% endblock %}

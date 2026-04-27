@@ -261,6 +261,11 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
                                     </svg>
                                 </a>
+                                <button type="button"
+                                        class="btn-cmp-drog flex-shrink-0 bg-violet-100 hover:bg-violet-200 text-violet-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-violet-300 transition-colors"
+                                        title="Comparar precios del mismo EAN entre droguerías"
+                                        data-cb="{{ it.codigo_barra }}"
+                                        data-nombre="{{ it.nombre }}">⇄ Drog.</button>
                                 <span class="truncate">{{ it.nombre }}</span>
                             </div>
                         </td>
@@ -297,6 +302,11 @@
                                class="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-[#ccc] hover:text-blue-600 hover:bg-blue-50 transition-colors">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
                             </a>
+                            <button type="button"
+                                    class="btn-cmp-drog flex-shrink-0 bg-violet-100 hover:bg-violet-200 text-violet-800 text-[10px] font-semibold px-2 py-0.5 rounded border border-violet-300 transition-colors"
+                                    title="Comparar precios del mismo EAN entre droguerías"
+                                    data-cb="{{ it.codigo_barra }}"
+                                    data-nombre="{{ it.nombre }}">⇄ Drog.</button>
                             <p class="flex-1 text-sm font-medium text-[#1e1e1e] leading-snug">{{ it.nombre }}</p>
                         </div>
                         <p class="text-[10px] text-[#bbb] font-mono mb-2">{{ it.codigo_barra }}</p>
@@ -429,12 +439,24 @@ document.addEventListener('keydown', e => {
 <div id="ind-modal" class="hidden fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4"
      onclick="if(event.target===this) cerrarIndicadores()">
     <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-auto p-6 shadow-2xl">
-        <div class="flex items-start justify-between mb-3 sticky top-0 bg-white pb-2 border-b border-surface-border">
-            <div class="min-w-0">
-                <p class="text-xs text-[#6f6f6f]">Indicadores del pedido</p>
-                <p id="ind-titulo" class="font-bold text-[#1e1e1e] text-lg truncate"></p>
+        <div class="sticky top-0 bg-white pb-3 border-b border-surface-border mb-3 z-10">
+            <div class="flex items-start justify-between mb-3">
+                <div class="min-w-0">
+                    <p class="text-xs text-[#6f6f6f]">Indicadores del pedido</p>
+                    <p id="ind-titulo" class="font-bold text-[#1e1e1e] text-lg truncate"></p>
+                </div>
+                <button type="button" onclick="cerrarIndicadores()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none flex-shrink-0">✕</button>
             </div>
-            <button type="button" onclick="cerrarIndicadores()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none flex-shrink-0">✕</button>
+            <div class="flex items-center gap-2">
+                <div class="relative flex-1 max-w-md">
+                    <input id="ind-filtro" type="text"
+                           placeholder='Filtrar productos (separá con espacios: "400 susp" → tiene 400 Y susp)'
+                           class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
+                    <button type="button" id="ind-filtro-clear"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-[#bbb] hover:text-[#666] text-xs hidden">✕</button>
+                </div>
+                <span id="ind-filtro-info" class="text-xs text-[#888]"></span>
+            </div>
         </div>
         <div id="ind-body"></div>
     </div>
@@ -738,17 +760,23 @@ function poblarFiltroDroguerias() {
 }
 
 function filtrarItems(input) {
+    // Multi-token AND: "400 susp" → fila debe contener ambos tokens (en nombre o cb).
     const q = input.value.toLowerCase().trim();
+    const tokens = q.replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
     const details = input.closest('details');
-    const rows = details.querySelectorAll('tr.item-row');
-    let matches = 0;
-    rows.forEach(tr => {
-        const ok = !q || tr.dataset.nombre.includes(q) || tr.dataset.cb.includes(q);
-        tr.style.display = ok ? '' : 'none';
-        if (ok) matches++;
+    // Aplicar a tabla desktop (tr) Y a cards mobile (div). Ambos tienen .item-row.
+    const rows = details.querySelectorAll('.item-row');
+    // Contamos solo productos únicos (las filas desktop son <tr>).
+    let matchesUnicos = 0;
+    rows.forEach(el => {
+        const nombre = (el.dataset.nombre || '').toLowerCase();
+        const cb = (el.dataset.cb || '').toLowerCase();
+        const ok = tokens.length === 0 || tokens.every(t => nombre.includes(t) || cb.includes(t));
+        el.style.display = ok ? '' : 'none';
+        if (ok && el.tagName === 'TR') matchesUnicos++;
     });
     const countEl = details.querySelector('.items-count');
-    if (countEl) countEl.textContent = q ? matches + ' resultado' + (matches !== 1 ? 's' : '') : '';
+    if (countEl) countEl.textContent = q ? matchesUnicos + ' resultado' + (matchesUnicos !== 1 ? 's' : '') : '';
 }
 
 // Inicializar: arranca en "Pendientes". Si no hay pedidos pendientes,
@@ -767,7 +795,12 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             e.preventDefault();
-            abrirIndicadores(parseInt(btn.dataset.pedidoId, 10), btn.dataset.pedidoLab);
+            // Leer el filtro de productos del pedido contenedor para que Indicadores
+            // se calcule sobre el subset visible (no sobre todos los items).
+            const details = btn.closest('details');
+            const filtroInput = details ? details.querySelector('input[oninput*="filtrarItems"]') : null;
+            const q = filtroInput ? (filtroInput.value || '').trim() : '';
+            abrirIndicadores(parseInt(btn.dataset.pedidoId, 10), btn.dataset.pedidoLab, q);
         });
     });
 });
@@ -796,14 +829,36 @@ function _diasLabel(d) {
     return `${Math.round(d)} día${Math.round(d) === 1 ? '' : 's'}`;
 }
 
-async function abrirIndicadores(pedidoId, lab) {
+// Estado del modal Indicadores: pedido actual + filtro en vivo.
+let _indPedidoId = null;
+let _indPedidoLab = null;
+let _indFiltroDebounceTimer = null;
+
+async function abrirIndicadores(pedidoId, lab, qFiltro) {
     const modal = document.getElementById('ind-modal');
     modal.classList.remove('hidden');
+    _indPedidoId = pedidoId;
+    _indPedidoLab = lab;
     document.getElementById('ind-titulo').textContent = lab || ('Pedido #' + pedidoId);
+
+    // Sincronizar el input del filtro con el valor entrante
+    const filtroInput = document.getElementById('ind-filtro');
+    if (filtroInput) filtroInput.value = qFiltro || '';
+
+    await _cargarIndicadores(qFiltro || '');
+}
+
+async function _cargarIndicadores(qFiltro) {
+    const pedidoId = _indPedidoId;
+    if (pedidoId == null) return;
     document.getElementById('ind-body').innerHTML = '<p class="text-sm text-[#999] p-4">Cargando indicadores…</p>';
+    document.getElementById('ind-filtro-info').textContent = '';
 
     try {
-        const r = await fetch(`/api/pedido/${pedidoId}/indicadores`, { credentials: 'same-origin' });
+        const url = qFiltro
+            ? `/api/pedido/${pedidoId}/indicadores?q=${encodeURIComponent(qFiltro)}`
+            : `/api/pedido/${pedidoId}/indicadores`;
+        const r = await fetch(url, { credentials: 'same-origin' });
         if (!r.ok) {
             const err = await r.json().catch(() => ({error: 'Error'}));
             document.getElementById('ind-body').innerHTML = `<p class="text-sm text-red-700 p-4">${_esc(err.error || 'Error')}</p>`;
@@ -811,13 +866,45 @@ async function abrirIndicadores(pedidoId, lab) {
         }
         const data = await r.json();
         _renderIndicadores(data);
+        // Mostrar info del filtro activo
+        const infoEl = document.getElementById('ind-filtro-info');
+        if (data.filtro && infoEl) {
+            const f = data.filtro;
+            infoEl.textContent = `${f.items_filtrados} de ${f.items_total} productos`;
+            infoEl.className = 'text-xs ' + (f.items_filtrados === 0 ? 'text-red-600' : 'text-emerald-700');
+        } else if (infoEl) {
+            infoEl.textContent = '';
+        }
     } catch (err) {
         document.getElementById('ind-body').innerHTML = `<p class="text-sm text-red-700 p-4">Error: ${_esc(err.message)}</p>`;
     }
 }
+
+function _onIndFiltroChange() {
+    const v = document.getElementById('ind-filtro').value.trim();
+    document.getElementById('ind-filtro-clear').classList.toggle('hidden', !v);
+    clearTimeout(_indFiltroDebounceTimer);
+    _indFiltroDebounceTimer = setTimeout(() => _cargarIndicadores(v), 300);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const inp = document.getElementById('ind-filtro');
+    const btn = document.getElementById('ind-filtro-clear');
+    if (inp) inp.addEventListener('input', _onIndFiltroChange);
+    if (btn) btn.addEventListener('click', () => {
+        const i = document.getElementById('ind-filtro');
+        i.value = '';
+        _onIndFiltroChange();
+        i.focus();
+    });
+});
+
 function cerrarIndicadores() {
     document.getElementById('ind-modal').classList.add('hidden');
     _destroyIndCharts();
+    _indPedidoId = null;
+    _indPedidoLab = null;
+    clearTimeout(_indFiltroDebounceTimer);
 }
 
 function _renderIndicadores(data) {
@@ -1270,4 +1357,6 @@ function cerrarAlternativas() {
     document.getElementById('alt-modal').classList.add('hidden');
 }
 </script>
+
+{% include '_comparar_droguerias.html' %}
 {% endblock %}

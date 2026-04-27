@@ -25,7 +25,10 @@ def init_app(app):
             base = (session.query(database.ObsObraSocial)
                     .filter(database.ObsObraSocial.fecha_baja.is_(None)))
             if q:
-                base = base.filter(database.ObsObraSocial.descripcion.ilike(f'%{q}%'))
+                from helpers import multi_token_filter
+                clausula = multi_token_filter(q, database.ObsObraSocial.descripcion)
+                if clausula is not None:
+                    base = base.filter(clausula)
             total = base.count()
             oss = (base.order_by(database.ObsObraSocial.descripcion)
                    .offset(offset).limit(per_page).all())

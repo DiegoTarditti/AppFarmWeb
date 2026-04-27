@@ -14,6 +14,39 @@ def now_ar():
     return datetime.now(AR_TZ).replace(tzinfo=None)
 
 
+def multi_token_filter(query_text, *columns):
+    """Devuelve una cláusula SQLAlchemy multi-token AND para búsquedas.
+
+    Splittea el query por espacios o '+' y arma `AND(OR(col.ilike(t) por col)
+    por token)`. El usuario fue explícito: TODA búsqueda en el sistema debe
+    soportar multi-token AND ("400 susp" → tiene 400 Y susp).
+
+    Args:
+        query_text: string del input del usuario.
+        columns: una o más Column de SQLAlchemy donde buscar el token.
+
+    Returns:
+        - None si query_text está vacío o sin tokens (caller debe omitir filter).
+        - Cláusula and_(...) lista para pasar a .filter().
+
+    Ejemplo:
+        q = request.args.get('q')
+        clausula = multi_token_filter(q, Producto.descripcion, Producto.codigo_barra)
+        if clausula is not None:
+            base = base.filter(clausula)
+    """
+    from sqlalchemy import and_, or_
+    if not query_text or not columns:
+        return None
+    tokens = [t for t in query_text.replace('+', ' ').split() if t]
+    if not tokens:
+        return None
+    return and_(*[
+        or_(*[col.ilike(f'%{t}%') for col in columns])
+        for t in tokens
+    ])
+
+
 def detectar_entorno():
     """Detecta dónde está corriendo la app. Retorna dict con:
       - codigo: 'render' | 'local' | 'local_render_db'

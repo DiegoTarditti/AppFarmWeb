@@ -1,0 +1,188 @@
+{# Modal "🏪 Comparar droguerías" — precios del mismo EAN por proveedor.
+
+   Uso desde la página contenedora:
+     1. {% include '_comparar_droguerias.html' %} al final del body.
+     2. Botón con data-attributes:
+        <button class="btn-cmp-drog"
+                data-cb="7791234567890"
+                data-nombre="PRODUCTO X">🏪</button>
+
+   Lee de /api/precios/<ean> (existente en routes/productos.py).
+#}
+<style>
+    .cmpd-modal-bg { background: rgba(0,0,0,.4); }
+</style>
+
+<div id="cmpd-modal" class="hidden fixed inset-0 cmpd-modal-bg z-[90] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarComparDrog()">
+    <div class="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-auto p-6 shadow-2xl">
+        <div class="flex items-start justify-between mb-3 sticky top-0 bg-white pb-2 border-b border-surface-border">
+            <div class="min-w-0">
+                <p class="text-xs text-[#6f6f6f]">Comparar droguerías</p>
+                <p class="font-bold text-[#1e1e1e] text-base truncate"><span id="cmpd-current-prod" class="text-amber-700"></span></p>
+                <p class="text-[11px] text-[#888] mt-0.5">Último precio facturado por cada proveedor para este EAN.</p>
+            </div>
+            <button type="button" onclick="cerrarComparDrog()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none flex-shrink-0">✕</button>
+        </div>
+        <div id="cmpd-body"></div>
+        <div id="cmpd-footer" class="hidden mt-4 pt-3 border-t border-surface-border">
+            <a id="cmpd-link-historico" href="#" target="_blank"
+               class="text-xs text-brand hover:underline">Ver histórico completo →</a>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    function _esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function _money(v) {
+        if (v == null) return '—';
+        return '$' + Number(v).toLocaleString('es-AR', {maximumFractionDigits: 2});
+    }
+    function _fecha(s) {
+        if (!s) return '—';
+        const [y, m, d] = s.split('-');
+        return `${d}/${m}/${y.slice(2)}`;
+    }
+    function _diasDesde(fechaStr) {
+        if (!fechaStr) return null;
+        const f = new Date(fechaStr);
+        const hoy = new Date();
+        return Math.floor((hoy - f) / (1000 * 60 * 60 * 24));
+    }
+
+    window.openComparDrog = async function(cb, nombre) {
+        if (!cb) {
+            alert('Este producto no tiene código de barras.');
+            return;
+        }
+        const modal = document.getElementById('cmpd-modal');
+        modal.classList.remove('hidden');
+        document.getElementById('cmpd-current-prod').textContent = nombre || cb;
+        document.getElementById('cmpd-body').innerHTML = '<p class="text-sm text-[#999] p-4">Cargando precios…</p>';
+        document.getElementById('cmpd-footer').classList.add('hidden');
+
+        try {
+            const r = await fetch(`/api/precios/${encodeURIComponent(cb)}`, { credentials: 'same-origin' });
+            const ct = r.headers.get('content-type') || '';
+            if (!ct.includes('application/json')) {
+                throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
+            }
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || 'Error desconocido');
+
+            const resumen = data.resumen || [];
+            if (!resumen.length) {
+                let msg = '';
+                if (data.tabla_vacia) {
+                    msg = `<div class="space-y-2">
+                        <p class="text-sm text-[#1e1e1e] font-medium">Aún no hay facturas cargadas en el sistema.</p>
+                        <p class="text-sm text-[#666]">Para comparar precios entre droguerías, cargá facturas desde
+                        <a href="/" class="text-brand hover:underline font-medium">Control de Ingreso</a>. Cada factura
+                        deja un registro histórico de precio por proveedor.</p>
+                    </div>`;
+                } else if (data.es_pseudo_ean) {
+                    msg = `<div class="space-y-2">
+                        <p class="text-sm text-[#1e1e1e] font-medium">Este producto se identifica solo por ObServer (sin EAN real).</p>
+                        <p class="text-sm text-[#666]">Las facturas de droguerías traen EANs reales, no IDs internos
+                        de ObServer. Cuando cargues una factura con el EAN real de este producto, va a aparecer
+                        acá automáticamente.</p>
+                        <p class="text-[11px] text-[#888] mt-2">Identificador interno: <span class="font-mono">${_esc(cb)}</span></p>
+                    </div>`;
+                } else {
+                    msg = `<p class="text-sm text-[#999] p-4">
+                        Sin precios históricos para este EAN (<span class="font-mono">${_esc(cb)}</span>).
+                        Aparecerá acá cuando cargues una factura de cualquier droguería que incluya este producto.
+                    </p>`;
+                }
+                document.getElementById('cmpd-body').innerHTML = msg;
+                document.getElementById('cmpd-footer').classList.add('hidden');
+                return;
+            }
+
+            // Encontrar el proveedor más barato (último precio).
+            const minPrecio = Math.min(...resumen.filter(r => r.ultimo_precio != null).map(r => r.ultimo_precio));
+
+            const filas = resumen.map(r => {
+                const dias = _diasDesde(r.ultimo_fecha);
+                let diasCls = 'text-[#888]';
+                let diasLabel = '—';
+                if (dias != null) {
+                    diasLabel = `${dias}d`;
+                    if (dias <= 30) diasCls = 'text-emerald-700 font-semibold';
+                    else if (dias <= 90) diasCls = 'text-amber-700';
+                    else diasCls = 'text-[#999]';
+                }
+                const esMin = r.ultimo_precio === minPrecio;
+                const rowCls = esMin ? 'bg-emerald-50 border-l-4 border-emerald-500' : '';
+                const minBadge = esMin ? '<span class="text-[10px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded mr-1 font-semibold">⭐ Más barato</span>' : '';
+                let varCell = '<span class="text-[#bbb]">—</span>';
+                if (r.variacion_pct != null) {
+                    const sube = r.variacion_pct > 0;
+                    const cls = sube ? 'text-red-700' : (r.variacion_pct < 0 ? 'text-emerald-700' : 'text-[#888]');
+                    const arrow = sube ? '▲' : (r.variacion_pct < 0 ? '▼' : '·');
+                    varCell = `<span class="${cls} font-semibold">${arrow} ${Math.abs(r.variacion_pct).toFixed(1)}%</span>`;
+                }
+                return `<tr class="border-t border-[#ececec] ${rowCls}">
+                    <td class="py-2 px-2">${minBadge}<span class="text-[#1e1e1e] font-medium">${_esc(r.proveedor)}</span></td>
+                    <td class="py-2 px-2 text-right font-mono ${esMin ? 'font-bold text-emerald-700' : 'text-[#1e1e1e]'}">${_money(r.ultimo_precio)}</td>
+                    <td class="py-2 px-2 text-right text-[11px] ${diasCls}">${_fecha(r.ultimo_fecha)}<br><span class="text-[10px]">${diasLabel}</span></td>
+                    <td class="py-2 px-2 text-right text-[11px] text-[#666]">${_money(r.min)} / ${_money(r.max)}</td>
+                    <td class="py-2 px-2 text-right text-xs">${varCell}</td>
+                    <td class="py-2 px-2 text-right text-[11px] text-[#888]">${r.n_puntos}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('cmpd-body').innerHTML = `
+                <table class="w-full text-sm">
+                    <thead class="text-[10px] uppercase text-[#aaa] bg-[#fafafa]">
+                        <tr>
+                            <th class="text-left py-2 px-2">Proveedor</th>
+                            <th class="text-right py-2 px-2">Último P.U.</th>
+                            <th class="text-right py-2 px-2">Última factura</th>
+                            <th class="text-right py-2 px-2">Mín / Máx</th>
+                            <th class="text-right py-2 px-2">Variación</th>
+                            <th class="text-right py-2 px-2">Pts</th>
+                        </tr>
+                    </thead>
+                    <tbody>${filas}</tbody>
+                </table>`;
+
+            // Link al histórico completo
+            const link = document.getElementById('cmpd-link-historico');
+            link.href = `/precios/${encodeURIComponent(cb)}`;
+            document.getElementById('cmpd-footer').classList.remove('hidden');
+        } catch (err) {
+            document.getElementById('cmpd-body').innerHTML = `<p class="text-sm text-red-700 p-4">Error: ${_esc(err.message)}</p>`;
+            document.getElementById('cmpd-footer').classList.add('hidden');
+        }
+    };
+
+    window.cerrarComparDrog = function() {
+        document.getElementById('cmpd-modal').classList.add('hidden');
+    };
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') cerrarComparDrog();
+    });
+
+    // Event delegation: cualquier botón con clase .btn-cmp-drog y data-cb
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.btn-cmp-drog');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const cb = btn.dataset.cb || '';
+        const nombre = btn.dataset.nombre || '';
+        if (!cb) {
+            alert('Este producto no tiene código de barras.');
+            return;
+        }
+        openComparDrog(cb, nombre);
+    });
+})();
+</script>

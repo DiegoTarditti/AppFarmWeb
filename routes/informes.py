@@ -474,6 +474,7 @@ def init_app(app):
         Filtros: lab (opcional), solo activos por defecto.
         """
         lab_id = request.args.get('lab_id', type=int)
+        venta_tipo = (request.args.get('venta_tipo') or '').strip()
         rows = []
         labs_disponibles = []
         with database.get_db() as session:
@@ -505,6 +506,7 @@ def init_app(app):
                     ObsProducto.observer_id.label('pid'),
                     ObsProducto.descripcion.label('desc'),
                     ObsProducto.codigo_alfabeta,
+                    ObsProducto.id_tipo_venta_control.label('tvc'),
                     ObsProducto.nombre_droga_observer.label('droga_id'),
                     ObsLaboratorio.observer_id.label('lab_id'),
                     ObsLaboratorio.descripcion.label('lab_nombre'),
@@ -521,6 +523,12 @@ def init_app(app):
             )
             if lab_id:
                 q = q.filter(ObsProducto.laboratorio_observer == lab_id)
+            if venta_tipo == 'libre':
+                q = q.filter(ObsProducto.id_tipo_venta_control == 'L')
+            elif venta_tipo == 'receta':
+                q = q.filter(ObsProducto.id_tipo_venta_control.in_(['R', 'A']))
+            elif venta_tipo == 'controlado':
+                q = q.filter(ObsProducto.id_tipo_venta_control.in_(['1','2','3','4','5','6','7','8']))
             # Orden: por unidades faltantes (minimo - stock) desc, después por
             # ventas 12m desc para que los de alta rotación queden arriba.
             q = q.order_by(
@@ -536,6 +544,7 @@ def init_app(app):
                     'producto_id': r.pid,
                     'descripcion': r.desc,
                     'codigo_alfabeta': r.codigo_alfabeta,
+                    'tvc': (r.tvc or '').strip(),
                     'droga_id': r.droga_id,
                     'lab_id': r.lab_id,
                     'lab_nombre': r.lab_nombre or '—',
@@ -569,6 +578,7 @@ def init_app(app):
                                rows=rows,
                                stats=stats,
                                lab_id=lab_id,
+                               venta_tipo=venta_tipo,
                                labs_disponibles=labs_disponibles)
 
     @app.route('/informes/pedido-auto', methods=['GET'])
@@ -582,6 +592,7 @@ def init_app(app):
           - Si no: max(1, minimo - stock_actual).
         """
         lab_id = request.args.get('lab_id', type=int)
+        venta_tipo = (request.args.get('venta_tipo') or '').strip()
         labs_con_alertas = []
         rows = []
         lab_nombre = None
@@ -663,6 +674,7 @@ def init_app(app):
                         ObsProducto.observer_id.label('pid'),
                         ObsProducto.descripcion.label('desc'),
                         ObsProducto.codigo_alfabeta,
+                        ObsProducto.id_tipo_venta_control.label('tvc'),
                         ObsProducto.nombre_droga_observer.label('droga_id'),
                         stock_q.c.stock,
                         stock_q.c.minimo,
@@ -679,6 +691,12 @@ def init_app(app):
                         (stock_q.c.minimo - stock_q.c.stock).desc(),
                         func.coalesce(ventas_sub.c.u12m, 0).desc(),
                      ))
+                if venta_tipo == 'libre':
+                    q = q.filter(ObsProducto.id_tipo_venta_control == 'L')
+                elif venta_tipo == 'receta':
+                    q = q.filter(ObsProducto.id_tipo_venta_control.in_(['R', 'A']))
+                elif venta_tipo == 'controlado':
+                    q = q.filter(ObsProducto.id_tipo_venta_control.in_(['1','2','3','4','5','6','7','8']))
 
                 obs_ids = []
                 for r in q.all():
@@ -690,6 +708,7 @@ def init_app(app):
                         'producto_id': r.pid,
                         'descripcion': r.desc,
                         'codigo_alfabeta': r.codigo_alfabeta,
+                        'tvc': (r.tvc or '').strip(),
                         'droga_id': r.droga_id,
                         'stock': int(r.stock or 0),
                         'minimo': int(r.minimo or 0),
@@ -734,6 +753,7 @@ def init_app(app):
         }
         return render_template('informes_pedido_auto.html',
                                lab_id=lab_id,
+                               venta_tipo=venta_tipo,
                                lab_nombre=lab_nombre,
                                labs_con_alertas=labs_con_alertas,
                                rows=rows,

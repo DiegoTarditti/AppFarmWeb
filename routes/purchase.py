@@ -448,9 +448,36 @@ def init_app(app):
                     Producto.codigo_barra.in_(barcodes)
                 ).all()
             }
+            # Resolver monodroga_id por producto (para botón "Comparar otros labs").
+            # Si el item ya trae observer_id (análisis ObServer), lookup directo;
+            # sino, vía Producto.observer_id local. Idempotente para análisis viejos.
+            obs_ids_a_buscar = set()
+            for p in data.get('products', []):
+                if p.get('observer_id'):
+                    obs_ids_a_buscar.add(int(p['observer_id']))
+            cbs_sin_obs = [p['codigo_barra'] for p in data.get('products', [])
+                           if p.get('codigo_barra') and not p.get('observer_id')]
+            cb_to_obs = {}
+            if cbs_sin_obs:
+                for prod in (session.query(Producto)
+                             .filter(Producto.codigo_barra.in_(cbs_sin_obs),
+                                     Producto.observer_id.isnot(None)).all()):
+                    cb_to_obs[prod.codigo_barra] = prod.observer_id
+                    obs_ids_a_buscar.add(prod.observer_id)
+            droga_by_obs = {}
+            if obs_ids_a_buscar:
+                droga_by_obs = dict(
+                    session.query(database.ObsProducto.observer_id,
+                                  database.ObsProducto.nombre_droga_observer)
+                    .filter(database.ObsProducto.observer_id.in_(list(obs_ids_a_buscar)),
+                            database.ObsProducto.nombre_droga_observer.isnot(None)).all()
+                )
+
             for p in data.get('products', []):
                 cb = p.get('codigo_barra', '')
                 p['es_pack'] = prods_pack.get(cb, False) or (cb in pack_eans)
+                obs_id = p.get('observer_id') or cb_to_obs.get(cb)
+                p['monodroga_id'] = droga_by_obs.get(obs_id) if obs_id else None
 
         _mes_jan = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
         sm = data.get('start_month', 4)
@@ -688,12 +715,15 @@ def init_app(app):
                         precio = float(p.get('precio_pvp') or 0)
                         cb = (p.get('codigo_barra') or '').strip()
                         obs_id = p.get('observer_id')
-                        # Bootstrap: si no hay EAN pero sí observer_id, usar pseudo-EAN
-                        # para que módulos/packs/plantillas funcionen antes de tener
-                        # factura. El EAN real lo completa el matcher al ingresar la
-                        # primera factura con ese producto.
+                        # Resolver EAN real desde obs_codigos_barras si el item no
+                        # lo trae (lookup directo, ya no hace falta pseudo-EAN).
                         if not cb and obs_id:
-                            cb = f'OBS:{obs_id}'
+                            ean_real = (session.query(database.ObsCodigoBarras.codigo_barras)
+                                        .filter(database.ObsCodigoBarras.producto_observer == obs_id,
+                                                database.ObsCodigoBarras.orden == 1,
+                                                database.ObsCodigoBarras.fecha_baja.is_(None))
+                                        .first())
+                            cb = ean_real[0] if ean_real else ''
                         items.append(PedidoItem(
                             codigo_barra=cb,
                             nombre=p.get('nombre', ''),
@@ -919,7 +949,7 @@ def init_app(app):
                     'n_productos': len(p.items),
                     'total_unidades': total_unidades,
                     'total_importe': total_importe,
-                    'productos': [
+                    'productos': sorted([
                         {
                             'codigo_barra': it.codigo_barra,
                             'nombre': it.nombre,
@@ -928,7 +958,7 @@ def init_app(app):
                             'subtotal': float(it.subtotal or 0),
                         }
                         for it in p.items
-                    ],
+                    ], key=lambda x: (x['nombre'] or '').lower()),
                 })
             proveedores = [{'id': pv.id, 'nombre': pv.razon_social}
                            for pv in session.query(database.Provider).order_by(database.Provider.razon_social).all()]
@@ -980,6 +1010,21 @@ def init_app(app):
             if not pedido:
                 return jsonify({'error': 'Pedido no encontrado'}), 404
             items = session.query(database.PedidoItem).filter_by(pedido_id=pedido_id).all()
+
+            # Filtro opcional multi-token AND. Tokens separados por espacios o '+'.
+            # Cada token debe matchear nombre o codigo_barra. Ejemplo:
+            #   q="400 susp" → producto debe contener "400" Y "susp".
+            #   q="actron"   → producto debe contener "actron".
+            q_filter = (request.args.get('q') or '').strip().lower()
+            items_total_pedido = len(items)
+            if q_filter:
+                tokens = [t for t in q_filter.replace('+', ' ').split() if t]
+                if tokens:
+                    def _matches(it):
+                        nombre_l = (it.nombre or '').lower()
+                        cb_l = (it.codigo_barra or '').lower()
+                        return all(t in nombre_l or t in cb_l for t in tokens)
+                    items = [i for i in items if _matches(i)]
 
             # Bridge codigo_barra → observer_id, en 2 pasos:
             # 1) ATAJO: pedidos generados desde ObServer guardan el IdProducto como string
@@ -1203,6 +1248,11 @@ def init_app(app):
             'mix_monodroga': mix_droga_list,
             'mix_laboratorio': mix_lab_list,
             'estacionalidad': estacionalidad,
+            'filtro': {
+                'q': q_filter,
+                'items_filtrados': n_items,
+                'items_total': items_total_pedido,
+            } if q_filter else None,
         })
 
     @app.route('/api/pedido/<int:pedido_id>/vincular-observer', methods=['POST'])
@@ -1441,6 +1491,46 @@ def init_app(app):
                            p.codigo_barra_alt2, p.codigo_barra_alt3]:
                     if bc:
                         monodroga_by_bc[bc] = p.monodroga
+
+            # Map codigo_barra → tvc (tipo venta y control: 'L'=Libre, 'R'=Receta...).
+            # Resolución en 2 pasos: 1) si cb es OBS:N o numérico, lookup directo en
+            # obs_productos por observer_id; 2) sino, vía Producto.observer_id local.
+            tvc_by_cb = {}
+            cbs_pedido = [(it.codigo_barra or '').strip() for it in pedido.items if it.codigo_barra]
+            obs_ids_directos = {}
+            for cb in cbs_pedido:
+                obs_id = None
+                if cb.startswith('OBS:'):
+                    try: obs_id = int(cb[4:])
+                    except (ValueError, TypeError): pass
+                elif cb.isdigit() and len(cb) <= 7:
+                    try: obs_id = int(cb)
+                    except (ValueError, TypeError): pass
+                if obs_id is not None:
+                    obs_ids_directos[cb] = obs_id
+            # Vía Producto local (alts incluidos)
+            for p in all_prods:
+                if not p.observer_id:
+                    continue
+                for bc in [p.codigo_barra, p.codigo_barra_alt1,
+                           p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                    if bc and bc not in obs_ids_directos:
+                        obs_ids_directos[bc] = p.observer_id
+            todos_obs_ids = list({oid for oid in obs_ids_directos.values()})
+            droga_id_by_cb = {}
+            if todos_obs_ids:
+                obs_rows = session.query(database.ObsProducto.observer_id,
+                                          database.ObsProducto.id_tipo_venta_control,
+                                          database.ObsProducto.nombre_droga_observer)\
+                                  .filter(database.ObsProducto.observer_id.in_(todos_obs_ids)).all()
+                tvc_map = {oid: tvc for (oid, tvc, _) in obs_rows}
+                droga_map = {oid: drg for (oid, _, drg) in obs_rows}
+                for cb, oid in obs_ids_directos.items():
+                    if tvc_map.get(oid):
+                        tvc_by_cb[cb] = tvc_map[oid]
+                    if droga_map.get(oid):
+                        droga_id_by_cb[cb] = droga_map[oid]
+
             data['productos'] = [
                 {
                     'codigo_barra': it.codigo_barra,
@@ -1452,6 +1542,8 @@ def init_app(app):
                     'avg_monthly': float(it.avg_monthly) if it.avg_monthly else None,
                     'erp_qty': erp_stock_map.get(it.codigo_barra),
                     'monodroga': monodroga_by_bc.get(it.codigo_barra, ''),
+                    'tvc': tvc_by_cb.get(it.codigo_barra, ''),
+                    'monodroga_id': droga_id_by_cb.get(it.codigo_barra),
                 }
                 for it in pedido.items
             ]

@@ -38,6 +38,14 @@ TABLAS = [
     'obs_convenios',
     'obs_planes',
     'obs_clientes',
+    # Médicos (FKs: matriculas→medicos+colegios)
+    'obs_colegios_medicos',
+    'obs_medicos',
+    'obs_medicos_matriculas',
+    # Detalle de ventas (FKs: producto, cliente, OS, plan)
+    'obs_ventas_detalle',
+    # Códigos de barra (FK: producto)
+    'obs_codigos_barras',
 ]
 
 

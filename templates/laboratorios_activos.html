@@ -42,7 +42,7 @@
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
             </svg>
-            <input type="text" id="lab-search" placeholder="Buscar laboratorio…"
+            <input type="text" id="lab-search" placeholder='Buscar laboratorio (multi-token: "bayer cons" → tiene ambos)'
                    oninput="filtrar()"
                    class="w-full bg-surface-input border border-surface-border rounded-lg pl-9 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
         </div>
@@ -110,10 +110,13 @@
 
 <script>
 function filtrar() {
-    const q = document.getElementById('lab-search').value.trim().toLowerCase();
+    // Multi-token AND: "bayer cons" → fila debe contener ambos tokens.
+    const raw = document.getElementById('lab-search').value.trim().toLowerCase();
+    const tokens = raw.replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
     const est = document.getElementById('filter-estado').value;
     document.querySelectorAll('.lab-row').forEach(row => {
-        const matchQ = !q || row.dataset.nombre.includes(q);
+        const nombre = (row.dataset.nombre || '').toLowerCase();
+        const matchQ = tokens.length === 0 || tokens.every(t => nombre.includes(t));
         const matchE = !est || row.dataset.activo === est;
         row.style.display = (matchQ && matchE) ? '' : 'none';
     });

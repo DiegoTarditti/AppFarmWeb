@@ -68,13 +68,19 @@ def init_app(app):
             'convenios':            observer_source.sync_convenios,
             'planes':               observer_source.sync_planes,
             'clientes':             observer_source.sync_clientes,
+            'colegios_medicos':     observer_source.sync_colegios_medicos,
+            'medicos':              observer_source.sync_medicos,
+            'medicos_matriculas':   observer_source.sync_medicos_matriculas,
+            'ventas_detalle':       observer_source.sync_ventas_detalle,
         }
 
         # 'todo' corre en orden para respetar FKs
         orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
                  'productos', 'stock', 'ventas_mensuales',
                  'grupos_clientes', 'categorias_clientes',
-                 'obras_sociales', 'convenios', 'planes', 'clientes']
+                 'obras_sociales', 'convenios', 'planes', 'clientes',
+                 'colegios_medicos', 'medicos', 'medicos_matriculas',
+                 'ventas_detalle']
 
         if entidad == 'todo':
             ents = orden
@@ -267,7 +273,9 @@ def init_app(app):
             orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
                      'productos', 'stock', 'ventas_mensuales',
                      'grupos_clientes', 'categorias_clientes',
-                     'obras_sociales', 'convenios', 'planes', 'clientes']
+                     'obras_sociales', 'convenios', 'planes', 'clientes',
+                     'colegios_medicos', 'medicos', 'medicos_matriculas',
+                     'ventas_detalle']
             funcs = {
                 'laboratorios':         observer_source.sync_laboratorios,
                 'rubros':               observer_source.sync_rubros,
@@ -282,6 +290,10 @@ def init_app(app):
                 'convenios':            observer_source.sync_convenios,
                 'planes':               observer_source.sync_planes,
                 'clientes':             observer_source.sync_clientes,
+                'colegios_medicos':     observer_source.sync_colegios_medicos,
+                'medicos':              observer_source.sync_medicos,
+                'medicos_matriculas':   observer_source.sync_medicos_matriculas,
+                'ventas_detalle':       observer_source.sync_ventas_detalle,
             }
             for ent in orden:
                 _SYNC_ESTADO['paso_actual'] = ent

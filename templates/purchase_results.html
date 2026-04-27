@@ -58,10 +58,19 @@
                 </svg>
             </a>
 
-            <!-- Buscador -->
-            <input type="text" id="search" placeholder="Buscar producto..."
-                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-52 focus:outline-none focus:ring-1 focus:ring-brand"
+            <!-- Buscador (multi-token AND) -->
+            <input type="text" id="search" placeholder='Buscar (multi-token: "400 sus" → ambos)'
+                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-1 focus:ring-brand"
                    oninput="filterTable()">
+
+            <!-- Filtro venta libre / receta -->
+            <select id="filter-tvc" onchange="filterTable()"
+                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Todos los tipos</option>
+                <option value="libre">Solo Venta Libre</option>
+                <option value="receta">Solo Bajo Receta</option>
+                <option value="controlado">Solo Controlados</option>
+            </select>
 
             <!-- Filtro cobertura -->
             <div class="flex items-center gap-1.5">
@@ -201,11 +210,23 @@
                 data-sin-mov="{{ 'true' if sin_mov else 'false' }}"
                 data-is-pack="{{ 'true' if p.es_pack else 'false' }}"
                 data-tipo="{{ p.tipo or 'N' }}"
+                data-tvc="{{ p.tvc or '' }}"
+                data-es-libre="{{ 'true' if p.es_libre else 'false' }}"
                 data-cubre="{{ cov_days }}"
                 data-idx="{{ i }}">
 
                 <td class="px-3 py-2" style="max-width:260px">
-                    <div class="font-medium text-[#1e1e1e] leading-tight truncate">{{ p.nombre }}</div>
+                    <div class="font-medium text-[#1e1e1e] leading-tight truncate flex items-center gap-1.5">
+                        <span class="truncate">{{ p.nombre }}</span>
+                        {% if p.monodroga_id %}
+                        <button type="button"
+                                class="btn-cmp-labs flex-shrink-0 align-middle bg-violet-100 hover:bg-violet-200 text-violet-800 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-violet-300 transition-colors"
+                                data-droga="{{ p.monodroga_id }}"
+                                data-cb="{{ p.codigo_barra }}"
+                                data-nombre="{{ p.nombre }}"
+                                title="Comparar contra otros laboratorios con la misma monodroga">⇄ Otros labs</button>
+                        {% endif %}
+                    </div>
                     <div class="flex items-center gap-1 mt-0.5">
                         <span class="text-[#999] text-xs">{{ p.codigo_barra }}</span>
                         {% if p.es_pack %}
@@ -676,10 +697,12 @@ function recalcSummary() {
 }
 
 function filterTable() {
-    const q = document.getElementById('search').value.toLowerCase();
+    const q = document.getElementById('search').value;
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.build(q) : (() => true);
     const showAll = document.getElementById('show-all').checked;
     const onlyPacks = document.getElementById('only-packs').checked;
     const filterTipo = document.getElementById('filter-tipo').value;
+    const filterTvc = document.getElementById('filter-tvc')?.value || '';
     const maxCubreVal = document.getElementById('max-cubre').value;
     const maxCubre = maxCubreVal !== '' ? parseInt(maxCubreVal) : null;
 
@@ -688,15 +711,20 @@ function filterTable() {
         const noSales = tr.dataset.noSales === 'true';
         const isPack = tr.dataset.isPack === 'true';
         const tipo = tr.dataset.tipo || 'N';
+        const tvc = tr.dataset.tvc || '';
         const cubre = parseInt(tr.dataset.cubre ?? '9999');
 
-        const matchSearch = !q || name.includes(q);
+        const matchSearch = matchFn(name);
         const matchSales = showAll || !noSales;
         const matchCubre = maxCubre === null || cubre >= maxCubre;
         const matchPack = !onlyPacks || isPack;
         const matchTipo = !filterTipo || tipo === filterTipo;
+        let matchTvc = true;
+        if (filterTvc === 'libre') matchTvc = tvc === 'L';
+        else if (filterTvc === 'receta') matchTvc = (tvc === 'R' || tvc === 'A');
+        else if (filterTvc === 'controlado') matchTvc = ['1','2','3','4','5','6','7','8'].includes(tvc);
 
-        tr.style.display = (matchSearch && matchSales && matchCubre && matchPack && matchTipo) ? '' : 'none';
+        tr.style.display = (matchSearch && matchSales && matchCubre && matchPack && matchTipo && matchTvc) ? '' : 'none';
     });
 }
 
@@ -731,4 +759,6 @@ window.addEventListener('DOMContentLoaded', recalcSummary);
         </div>
     </div>
 </div>
+
+{% include '_comparar_labs.html' %}
 {% endblock %}

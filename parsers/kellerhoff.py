@@ -5,14 +5,13 @@ Creado desde el modo aprendizaje del conversor.
 Si el layout del proveedor cambia, reentrenar el patrón desde /converter.
 """
 import re
-from datetime import datetime
-
 import pdfplumber
-
+from datetime import datetime
 from helpers import _normalize_quadrupled, extract_text_with_ocr_fallback
 
-PATTERN = r"""^([\d.,]+)\s+([\d.,]+)\s+(.+?)\s*([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s*$"""
-FIELDS = ['codigo_barra', 'cantidad', 'descripcion', 'precio_publico', 'dto', 'precio_unitario', 'importe']
+
+PATTERN = r"""^([\d.,]+)\s+(.+?)\s*$"""
+FIELDS = ['codigo_barra', 'descripcion']
 
 
 def _to_float(s):

@@ -43,7 +43,15 @@
                     <option value="{{ lid }}" {% if lab_id == lid %}selected{% endif %}>{{ lname }}</option>
                     {% endfor %}
                 </select>
-                {% if lab_id %}
+                <span class="text-[10px] uppercase tracking-wide text-[#888] font-semibold ml-2">Tipo de venta:</span>
+                <select name="venta_tipo" onchange="this.form.submit()"
+                        class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs">
+                    <option value="">Todos</option>
+                    <option value="libre"      {% if venta_tipo == 'libre' %}selected{% endif %}>Solo Venta Libre</option>
+                    <option value="receta"     {% if venta_tipo == 'receta' %}selected{% endif %}>Solo Bajo Receta</option>
+                    <option value="controlado" {% if venta_tipo == 'controlado' %}selected{% endif %}>Solo Controlados</option>
+                </select>
+                {% if lab_id or venta_tipo %}
                 <a href="{{ url_for('informe_bajo_minimo') }}" class="text-[11px] text-[#888] hover:text-[#555] underline">limpiar</a>
                 {% endif %}
             </form>

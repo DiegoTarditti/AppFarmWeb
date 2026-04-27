@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Compra rápida{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">Compra rápida multi-droguería</h1>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">EN DESARROLLO</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-3xl mx-auto space-y-4">
+
+        <div class="bg-white border border-surface-border rounded-xl p-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2">📋 Diseño aprobado</h2>
+            <p class="text-sm text-[#555] mb-3">
+                El flujo está diseñado y documentado en el backlog. Las 6 decisiones
+                clave fueron tomadas con el usuario:
+            </p>
+            <ol class="text-sm text-[#555] space-y-1.5 ml-4 list-decimal">
+                <li>Combinación de descuentos: <strong>multiplicativa</strong> — `1 − Π(1 − dto_n)`</li>
+                <li><strong>5 niveles</strong> de descuento: base + transfer + producto + producto c/min + módulo</li>
+                <li>Optimizador con umbral 75% editable, criterio "$ ahorrado × rotación", "no clavos" por default</li>
+                <li>Mínimo de compra por droguería: aviso + sugerencias para completar (filtra clavos)</li>
+                <li>Vigencia descuentos: campo al importar, default +30 días</li>
+                <li>Conflicto de transfers: aviso al importar (Reemplazar / Sumar / Cancelar)</li>
+            </ol>
+        </div>
+
+        <div class="bg-white border border-surface-border rounded-xl p-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2">🛠 Estado de implementación</h2>
+            <ul class="text-sm space-y-1.5">
+                <li class="flex items-center gap-2">
+                    <span class="text-emerald-700">✓</span>
+                    <span><strong>Modelo `DescuentoBase`</strong> (matriz lab × drog) con datos seeded</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-emerald-700">✓</span>
+                    <span><strong>`Provider.compra_minima_pesos`</strong> agregado</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-emerald-700">✓</span>
+                    <span><strong>`obs_codigos_barras`</strong> con 129k EANs reales (del dump SQL Server)</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span>UI matriz `/descuentos-base` editable</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span>Extender `/ofertas/importar` con droguería + vigencia + conflicto</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span>Función `mejor_descuento(producto, lab)` + optimizador de módulos</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span>Pantalla `/compras/transfers` (panel previo)</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span><strong>Esta pantalla</strong> con tabla productos + dropdown drogerías + pre-pedidos</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span>Panel auditoría "Descuentos aplicados" con checkboxes desmarcables</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <span class="text-[#999]">○</span>
+                    <span>Export por droguería con plantillas existentes</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="bg-white border border-surface-border rounded-xl p-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2">📚 Documentación completa</h2>
+            <p class="text-sm text-[#555] mb-2">
+                El diseño detallado está en el backlog del proyecto:
+            </p>
+            <a href="https://github.com/DiegoTarditti/AppSeguimiento/blob/main/04-features.md#-diseño-compra-rápida-anotado-2026-04-27"
+               target="_blank"
+               class="text-sm text-brand hover:underline">
+                AppSeguimiento/04-features.md → Diseño compra rápida →
+            </a>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-xl p-5">
+            <h2 class="text-sm font-bold text-amber-900 mb-2">⏭ Mientras tanto</h2>
+            <p class="text-sm text-amber-900">
+                Podés seguir usando <a href="{{ url_for('informe_pedido_auto') }}" class="underline font-semibold">Armar pedido por laboratorio</a>
+                que es el flujo actual (parte del lab y va producto por producto).
+            </p>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

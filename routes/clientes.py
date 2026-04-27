@@ -28,13 +28,20 @@ def init_app(app):
         with database.get_db() as session:
             base = session.query(database.ObsCliente)
             if q:
-                like = f'%{q}%'
-                terms = [database.ObsCliente.apellido_nombre.ilike(like),
-                         database.ObsCliente.telefono.ilike(like),
-                         database.ObsCliente.domicilio_direccion.ilike(like)]
+                from helpers import multi_token_filter
+                # Match exacto por DNI si el query es solo numérico (atajo).
                 if q.isdigit():
-                    terms.append(database.ObsCliente.documento_numero == int(q))
-                base = base.filter(or_(*terms))
+                    base = base.filter(or_(
+                        database.ObsCliente.documento_numero == int(q),
+                        database.ObsCliente.telefono.ilike(f'%{q}%'),
+                    ))
+                else:
+                    clausula = multi_token_filter(q,
+                        database.ObsCliente.apellido_nombre,
+                        database.ObsCliente.telefono,
+                        database.ObsCliente.domicilio_direccion)
+                    if clausula is not None:
+                        base = base.filter(clausula)
             if grupo_id:
                 base = base.filter(database.ObsCliente.grupo_observer == grupo_id)
             if localidad:

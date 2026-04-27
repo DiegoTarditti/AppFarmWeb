@@ -21,13 +21,27 @@
 <div id="cmp-modal" class="hidden fixed inset-0 cmp-modal-bg z-[90] flex items-center justify-center p-4"
      onclick="if(event.target===this) cerrarComparar()">
     <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-auto p-6 shadow-2xl">
-        <div class="flex items-start justify-between mb-3 sticky top-0 bg-white pb-2 border-b border-surface-border">
-            <div class="min-w-0">
-                <p class="text-xs text-[#6f6f6f]">Alternativas por monodroga</p>
-                <p class="font-bold text-[#1e1e1e] text-base truncate">Tu producto: <span id="cmp-current-prod" class="text-amber-700"></span></p>
-                <p class="text-[11px] text-[#888] mt-0.5">Productos de otros laboratorios que cubren la misma droga.</p>
+        <div class="sticky top-0 bg-white pb-3 border-b border-surface-border mb-3 z-10">
+            <div class="flex items-start justify-between mb-3">
+                <div class="min-w-0">
+                    <p class="text-xs text-[#6f6f6f]">Alternativas por monodroga</p>
+                    <p class="font-bold text-[#1e1e1e] text-base truncate">Tu producto: <span id="cmp-current-prod" class="text-amber-700"></span></p>
+                    <p class="text-[11px] text-[#888] mt-0.5">Productos de otros laboratorios que cubren la misma droga.</p>
+                </div>
+                <button type="button" onclick="cerrarComparar()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none flex-shrink-0">✕</button>
             </div>
-            <button type="button" onclick="cerrarComparar()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none flex-shrink-0">✕</button>
+            <div class="flex items-center gap-2">
+                <div class="relative flex-1 max-w-md">
+                    <input id="cmp-filtro" type="text"
+                           placeholder='Filtrar (multi-token: "400 sus" → ambos)'
+                           class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
+                    <button type="button" id="cmp-filtro-clear"
+                            class="absolute right-2 top-1/2 -translate-y-1/2 text-[#bbb] hover:text-[#666] text-xs hidden">✕</button>
+                </div>
+                <span id="cmp-filtro-info" class="text-xs text-[#888]"></span>
+                <button type="button" id="cmp-filtro-reset" class="text-[11px] text-brand hover:underline hidden"
+                        title="Restaurar tokens del producto original">↻ tokens del producto</button>
+            </div>
         </div>
         <div id="cmp-body"></div>
     </div>
@@ -56,14 +70,173 @@
         return '>1a';
     }
 
+    // Extrae tokens útiles del nombre del producto disparador para pre-poblar
+    // el filtro. La gracia es comparar contra OTRAS marcas, así que solo
+    // conservamos lo que es genérico:
+    //   1. Una dosis (ej "600 mg", "4%", "200mcg")
+    //   2. Una forma farmacéutica (com/cap/sus/jar/...)
+    //   3. Un tamaño de envase (ej "x 10", "x 100")
+    //
+    // Descartamos palabras descriptivas tipo "RAPIDA", "ACCION", "BLAND",
+    // "PEDIATRICO", etc. — son específicas de la marca y filtrarían demasiado.
+    // Lista de formas farmacéuticas conocidas (tokens de 3-6 chars que SÍ queremos
+    // conservar aunque sean alfabéticos puros). Compartida entre auto-tokens y
+    // limpieza de marca.
+    const _FORMAS_FARMA = new Set(['com','cap','sus','jar','got','tab','gts','amp',
+        'fco','sol','gel','cre','ung','pom','sach','efer','susp','oral',
+        'suspension','jarabe','crema','blister','comprim','bland','liquido']);
+
+    // Cuando heredamos el filtro de otra pantalla (resumen del pedido), removemos
+    // los tokens "marca/descriptivos" — palabras alfabéticas largas que no son
+    // forma farmacéutica. Conservamos dosis, %, "x N" y formas conocidas.
+    function _limpiarMarcaDeFiltro(filtro) {
+        const limpio = String(filtro).toLowerCase()
+            .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+            .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+        const tokens = limpio.replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+        return tokens.filter(t => /\d/.test(t) || _FORMAS_FARMA.has(t));
+    }
+
+    function _tokensDelNombre(nombre) {
+        if (!nombre) return [];
+        const limpio = String(nombre).toLowerCase()
+            .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+            .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+
+        // Solo extraer la DOSIS (ej "600", "4%", "500 mg"). Un solo token mínimo
+        // es lo que mejor encuentra equivalentes entre laboratorios. Las palabras
+        // descriptivas (RAPIDA, ACCION, BLAND, PEDIATRICO, etc.) son específicas
+        // de cada marca y filtran demasiado — las omitimos del auto-fill.
+        // El usuario puede agregar manualmente "com/sus/x10" si quiere refinar.
+
+        // 1. Dosis con unidad (más confiable): "500 mg", "4%", "200mcg", "5g"
+        const conUnidad = limpio.match(/(\d+(?:[.,]\d+)?\s*(?:mg|mcg|ui|g|%))/);
+        if (conUnidad) return [conUnidad[1].replace(/\s+/, '')];
+
+        // 2. Fallback: primer número suelto entre 5 y 999 que NO sea tamaño "x N".
+        const matches = [...limpio.matchAll(/\b(\d{1,3})\b/g)];
+        for (const m of matches) {
+            const n = parseInt(m[1]);
+            if (n < 5 || n > 999) continue;
+            const before = limpio.slice(Math.max(0, m.index - 3), m.index);
+            if (/x\s*$/.test(before)) continue; // "x 10" → tamaño, no dosis
+            return [m[1]];
+        }
+        return [];
+    }
+
+    let _cmpData = null;       // último data del fetch (para re-render con filtro)
+    let _cmpCurrentCb = null;
+    let _cmpInitialTokens = []; // tokens auto-cargados al abrir
+
     window.openComparar = async function(drogaId, currentCb, currentNombre) {
         if (!drogaId) {
             alert('Este producto no tiene monodroga vinculada.');
             return;
         }
+        // Calcular tokens sugeridos antes del diálogo:
+        // - Si la página seteó `_cmpFiltroExtraResumen` (caso: click desde resumen
+        //   con filtro de presentación activo, ej "actron 600"), heredamos esos
+        //   tokens PERO sacando la marca.
+        // - Sino, derivar dosis del nombre del producto.
+        const filtroExtra = (window._cmpFiltroExtraResumen || '').trim();
+        let sugerencia = [];
+        if (filtroExtra) {
+            sugerencia = _limpiarMarcaDeFiltro(filtroExtra);
+            if (sugerencia.length === 0) sugerencia = _tokensDelNombre(currentNombre);
+        } else {
+            sugerencia = _tokensDelNombre(currentNombre);
+        }
+
+        // Paso 1: diálogo donde el usuario confirma/edita el filtro inicial.
+        // Después abre el modal grande con ese filtro aplicado.
+        _abrirDialogoFiltroInicial(currentNombre, sugerencia, (filtroFinal) => {
+            _abrirModalComparacion(drogaId, currentCb, currentNombre, filtroFinal);
+        });
+    };
+
+    function _abrirDialogoFiltroInicial(currentNombre, sugerencia, onConfirm) {
+        const overlay = document.createElement('div');
+        overlay.className = 'fixed inset-0 bg-black/40 z-[120] flex items-center justify-center p-4';
+        const sug = (sugerencia || []).join(' ');
+        const tokensExtra = _tokensDelNombre(currentNombre);
+        // Chips de sugerencias adicionales (dosis del nombre + formas comunes)
+        const chipsHtml = ['com','cap','sus','jar','got','tab','sach','gel','cre',...tokensExtra]
+            .filter((v,i,a) => a.indexOf(v) === i && v)
+            .map(t => `<button type="button" class="cmp-dlg-chip text-[11px] bg-[#f0f0f0] hover:bg-violet-100 hover:text-violet-800 border border-[#ddd] px-2 py-0.5 rounded transition-colors" data-token="${t}">+ ${t}</button>`)
+            .join('');
+        overlay.innerHTML = `
+            <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+                <p class="text-xs text-[#6f6f6f] mb-1">Comparar alternativas (otros laboratorios)</p>
+                <p class="text-sm text-[#1e1e1e] mb-3 font-medium truncate" title="${(currentNombre||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}">${(currentNombre||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}</p>
+                <label class="text-[10px] uppercase text-[#888] block mb-1 font-semibold">Filtro inicial (presentación)</label>
+                <input id="cmp-dlg-input" type="text"
+                       placeholder='ej. "600", "susp", "x10"'
+                       class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand mb-2">
+                <div class="flex flex-wrap gap-1 mb-3">
+                    ${chipsHtml}
+                </div>
+                <p class="text-[11px] text-[#888] mb-4">Multi-token AND: <span class="font-mono text-[10px]">"600 sus"</span> matchea presentaciones que tengan ambos. Editá libre, los chips suman al filtro.</p>
+                <div class="flex justify-between items-center">
+                    <button id="cmp-dlg-skip" type="button"
+                            class="text-xs text-[#888] hover:text-[#1e1e1e] underline">Sin filtro (ver todos)</button>
+                    <div class="flex gap-2">
+                        <button id="cmp-dlg-cancel" type="button"
+                                class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg">Cancelar</button>
+                        <button id="cmp-dlg-search" type="button"
+                                class="text-sm bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg">Comparar</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        const input = document.getElementById('cmp-dlg-input');
+        input.value = sug;
+        input.focus();
+        input.select();
+        const cerrar = () => overlay.remove();
+        const buscar = () => {
+            const v = input.value.trim();
+            cerrar();
+            onConfirm(v);
+        };
+        overlay.addEventListener('click', e => { if (e.target === overlay) cerrar(); });
+        document.getElementById('cmp-dlg-cancel').addEventListener('click', cerrar);
+        document.getElementById('cmp-dlg-search').addEventListener('click', buscar);
+        document.getElementById('cmp-dlg-skip').addEventListener('click', () => {
+            cerrar();
+            onConfirm('');
+        });
+        overlay.querySelectorAll('.cmp-dlg-chip').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const t = btn.dataset.token;
+                const cur = input.value.trim();
+                const tokens = cur.split(/\s+/).filter(Boolean);
+                if (tokens.includes(t)) {
+                    // toggle: si ya está, sacarlo
+                    input.value = tokens.filter(x => x !== t).join(' ');
+                } else {
+                    input.value = (cur ? cur + ' ' : '') + t;
+                }
+                input.focus();
+            });
+        });
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter')  { e.preventDefault(); buscar(); }
+            if (e.key === 'Escape') cerrar();
+        });
+    }
+
+    async function _abrirModalComparacion(drogaId, currentCb, currentNombre, filtroFinal) {
         const modal = document.getElementById('cmp-modal');
         modal.classList.remove('hidden');
         document.getElementById('cmp-current-prod').textContent = currentNombre || '';
+        _cmpCurrentCb = currentCb;
+        _cmpData = null;
+        _cmpInitialTokens = (filtroFinal || '').replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+        const filtroInput = document.getElementById('cmp-filtro');
+        if (filtroInput) filtroInput.value = _cmpInitialTokens.join(' ');
+        document.getElementById('cmp-filtro-clear').classList.toggle('hidden', _cmpInitialTokens.length === 0);
+        document.getElementById('cmp-filtro-reset').classList.toggle('hidden', _cmpInitialTokens.length === 0);
         document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999] p-4">Cargando alternativas…</p>';
         try {
             const r = await fetch(`/api/droga/${drogaId}/productos`, { credentials: 'same-origin' });
@@ -71,75 +244,152 @@
             if (!ct.includes('application/json')) {
                 throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
             }
-            const data = await r.json();
-            const grupos = data.grupos || [];
-            if (!grupos.length) {
-                document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999] p-4">Sin productos para esta droga.</p>';
-                return;
-            }
-            document.getElementById('cmp-body').innerHTML = grupos.map((g, idx) => {
-                const color = COLORS[idx % COLORS.length];
-                return `
-                <div class="mb-3 last:mb-0 border border-[#ececec] rounded-lg p-3">
-                    <p class="text-[11px] font-semibold mb-1" style="color:${color}">${_esc(g.lab)} <span class="text-[#888] font-normal">(${g.productos.length})</span></p>
-                    <table class="w-full text-xs">
-                        <thead class="text-[10px] uppercase text-[#aaa]">
-                            <tr>
-                                <th class="text-left py-1">Producto</th>
-                                <th class="text-right py-1 w-14">Stock</th>
-                                <th class="text-right py-1 w-16">Días</th>
-                                <th class="text-right py-1 w-16">Uni 3m</th>
-                                <th class="text-right py-1 w-16">Uni 12m</th>
-                                <th class="text-right py-1 w-20">$ 12m</th>
-                                <th class="text-right py-1 w-16">$/env</th>
-                                <th class="text-right py-1 w-16">Tend.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        ${g.productos.map(p => {
-                            const esActual = p.codigo_barra === currentCb || (p.observer_id && currentCb && p.observer_id == currentCb);
-                            const rowCls = esActual ? 'bg-amber-50 border-l-4 border-amber-400' : '';
-                            let diasCell = '<span class="text-[#bbb]">—</span>';
-                            if (p.dias_stock != null) {
-                                const dCls = _diasColor(p.dias_stock);
-                                diasCell = `<span style="color:${dCls}" class="font-semibold">${_diasLabel(p.dias_stock)}</span>`;
-                            } else if (p.stock > 0) {
-                                diasCell = '<span class="text-[#888]">∞</span>';
-                            }
-                            let tendCell = '<span class="text-[#bbb]">—</span>';
-                            if (p.momentum_pct != null) {
-                                const sube = p.momentum_pct >= 0;
-                                const cls = sube ? 'text-emerald-700' : 'text-red-700';
-                                tendCell = `<span class="${cls} font-semibold">${sube?'▲':'▼'} ${Math.abs(p.momentum_pct).toFixed(0)}%</span>`;
-                            }
-                            const bajaBadge = p.baja ? ' <span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>' : '';
-                            const opacityCls = p.baja ? 'opacity-70' : '';
-                            return `<tr class="border-t border-[#ececec] ${rowCls} ${opacityCls}">
-                                <td class="py-1 px-1.5">${esActual ? '<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 rounded mr-1">👉 ACTUAL</span>' : ''}${_esc(p.descripcion)}${bajaBadge}</td>
-                                <td class="py-1 px-1.5 text-right ${p.stock > 0 ? 'font-semibold text-emerald-700' : 'text-[#bbb]'}">${p.stock}</td>
-                                <td class="py-1 px-1.5 text-right">${diasCell}</td>
-                                <td class="py-1 px-1.5 text-right">${p.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
-                                <td class="py-1 px-1.5 text-right">${p.u12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
-                                <td class="py-1 px-1.5 text-right font-mono">${p.m12m > 0 ? '$'+p.m12m.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
-                                <td class="py-1 px-1.5 text-right font-mono">${p.precio_envase > 0 ? '$'+p.precio_envase.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
-                                <td class="py-1 px-1.5 text-right">${tendCell}</td>
-                            </tr>`;
-                        }).join('')}
-                        </tbody>
-                    </table>
-                </div>`;
-            }).join('');
+            _cmpData = await r.json();
+            _cmpRender();
         } catch (err) {
             document.getElementById('cmp-body').innerHTML = `<p class="text-sm text-red-700 p-4">Error: ${_esc(err.message)}</p>`;
         }
     };
 
+    function _normalizar(s) {
+        return String(s || '').toLowerCase()
+            .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+            .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+    }
+
+    function _cmpRender() {
+        if (!_cmpData) return;
+        const grupos = _cmpData.grupos || [];
+        const currentCb = _cmpCurrentCb;
+
+        // Tokens del filtro (multi-token AND)
+        const raw = (document.getElementById('cmp-filtro').value || '').toLowerCase();
+        const tokens = _normalizar(raw).replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+
+        function _matches(p) {
+            if (tokens.length === 0) return true;
+            const txt = _normalizar(p.descripcion || '');
+            return tokens.every(t => txt.includes(t));
+        }
+
+        // Filtrar grupos: cada grupo conserva solo productos que matchean,
+        // o el actual (siempre visible para referencia).
+        let totalVisibles = 0;
+        let totalGlobal = 0;
+        const gruposFiltrados = grupos.map(g => {
+            totalGlobal += g.productos.length;
+            const filtrados = g.productos.filter(p => {
+                const esActual = p.codigo_barra === currentCb || (p.observer_id && currentCb && p.observer_id == currentCb);
+                return esActual || _matches(p);
+            });
+            totalVisibles += filtrados.length;
+            return { lab: g.lab, productos: filtrados };
+        }).filter(g => g.productos.length > 0);
+
+        // Update info badge
+        const infoEl = document.getElementById('cmp-filtro-info');
+        if (tokens.length) {
+            infoEl.textContent = `${totalVisibles} de ${totalGlobal}`;
+            infoEl.className = 'text-xs ' + (totalVisibles === 0 ? 'text-red-600' : 'text-emerald-700');
+        } else {
+            infoEl.textContent = '';
+        }
+
+        if (!grupos.length) {
+            document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999] p-4">Sin productos para esta droga.</p>';
+            return;
+        }
+        if (!gruposFiltrados.length) {
+            document.getElementById('cmp-body').innerHTML = '<p class="text-sm text-[#999] p-4">Ningún producto coincide con el filtro. Limpiá el filtro o ajustá los tokens.</p>';
+            return;
+        }
+
+        document.getElementById('cmp-body').innerHTML = gruposFiltrados.map((g, idx) => {
+            const color = COLORS[idx % COLORS.length];
+            return `
+            <div class="mb-3 last:mb-0 border border-[#ececec] rounded-lg p-3">
+                <p class="text-[11px] font-semibold mb-1" style="color:${color}">${_esc(g.lab)} <span class="text-[#888] font-normal">(${g.productos.length})</span></p>
+                <table class="w-full text-xs">
+                    <thead class="text-[10px] uppercase text-[#aaa]">
+                        <tr>
+                            <th class="text-left py-1">Producto</th>
+                            <th class="text-right py-1 w-14">Stock</th>
+                            <th class="text-right py-1 w-16">Días</th>
+                            <th class="text-right py-1 w-16">Uni 3m</th>
+                            <th class="text-right py-1 w-16">Uni 12m</th>
+                            <th class="text-right py-1 w-20">$ 12m</th>
+                            <th class="text-right py-1 w-16">$/env</th>
+                            <th class="text-right py-1 w-16">Tend.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    ${g.productos.map(p => {
+                        const esActual = p.codigo_barra === currentCb || (p.observer_id && currentCb && p.observer_id == currentCb);
+                        const rowCls = esActual ? 'bg-amber-50 border-l-4 border-amber-400' : '';
+                        let diasCell = '<span class="text-[#bbb]">—</span>';
+                        if (p.dias_stock != null) {
+                            const dCls = _diasColor(p.dias_stock);
+                            diasCell = `<span style="color:${dCls}" class="font-semibold">${_diasLabel(p.dias_stock)}</span>`;
+                        } else if (p.stock > 0) {
+                            diasCell = '<span class="text-[#888]">∞</span>';
+                        }
+                        let tendCell = '<span class="text-[#bbb]">—</span>';
+                        if (p.momentum_pct != null) {
+                            const sube = p.momentum_pct >= 0;
+                            const cls = sube ? 'text-emerald-700' : 'text-red-700';
+                            tendCell = `<span class="${cls} font-semibold">${sube?'▲':'▼'} ${Math.abs(p.momentum_pct).toFixed(0)}%</span>`;
+                        }
+                        const bajaBadge = p.baja ? ' <span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888] ml-1">baja</span>' : '';
+                        const opacityCls = p.baja ? 'opacity-70' : '';
+                        return `<tr class="border-t border-[#ececec] ${rowCls} ${opacityCls}">
+                            <td class="py-1 px-1.5">${esActual ? '<span class="text-[10px] bg-amber-200 text-amber-900 px-1.5 rounded mr-1">👉 ACTUAL</span>' : ''}${_esc(p.descripcion)}${bajaBadge}</td>
+                            <td class="py-1 px-1.5 text-right ${p.stock > 0 ? 'font-semibold text-emerald-700' : 'text-[#bbb]'}">${p.stock}</td>
+                            <td class="py-1 px-1.5 text-right">${diasCell}</td>
+                            <td class="py-1 px-1.5 text-right">${p.u3m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+                            <td class="py-1 px-1.5 text-right">${p.u12m.toLocaleString('es-AR',{maximumFractionDigits:0})}</td>
+                            <td class="py-1 px-1.5 text-right font-mono">${p.m12m > 0 ? '$'+p.m12m.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
+                            <td class="py-1 px-1.5 text-right font-mono">${p.precio_envase > 0 ? '$'+p.precio_envase.toLocaleString('es-AR',{maximumFractionDigits:0}) : '<span class="text-[#bbb]">—</span>'}</td>
+                            <td class="py-1 px-1.5 text-right">${tendCell}</td>
+                        </tr>`;
+                    }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+        }).join('');
+    }
+
     window.cerrarComparar = function() {
         document.getElementById('cmp-modal').classList.add('hidden');
+        _cmpData = null;
+        _cmpCurrentCb = null;
     };
 
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') cerrarComparar();
+    });
+
+    // Listeners para filtro multi-token (client-side, sin debounce — ~hundreds de items max).
+    document.addEventListener('DOMContentLoaded', () => {
+        const inp = document.getElementById('cmp-filtro');
+        const btnClear = document.getElementById('cmp-filtro-clear');
+        const btnReset = document.getElementById('cmp-filtro-reset');
+        if (inp) inp.addEventListener('input', () => {
+            const v = inp.value.trim();
+            btnClear.classList.toggle('hidden', !v);
+            _cmpRender();
+        });
+        if (btnClear) btnClear.addEventListener('click', () => {
+            inp.value = '';
+            btnClear.classList.add('hidden');
+            _cmpRender();
+            inp.focus();
+        });
+        if (btnReset) btnReset.addEventListener('click', () => {
+            inp.value = _cmpInitialTokens.join(' ');
+            btnClear.classList.toggle('hidden', _cmpInitialTokens.length === 0);
+            _cmpRender();
+            inp.focus();
+        });
     });
 
     // Event delegation para botones con clase .btn-cmp-labs y data-attributes.

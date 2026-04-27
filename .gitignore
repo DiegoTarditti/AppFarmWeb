@@ -17,6 +17,8 @@ uploads/
 
 # Docker
 .env
+docker-compose.override.yml
+dc.sh
 
 # Claude Code
 .claude/

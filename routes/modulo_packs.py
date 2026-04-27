@@ -15,7 +15,7 @@ def init_app(app):
     @app.route('/modulo-packs')
     def modulo_packs_list():
         with database.get_db() as session:
-            all_prods = session.query(Producto).order_by(Producto.codigo_barra).all()
+            all_prods = session.query(Producto).order_by(Producto.descripcion).all()
             prod_map = {p.codigo_barra: p for p in all_prods}
             # Solo labs que tienen al menos un módulo
             labs_con_modulos = {

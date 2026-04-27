@@ -32,8 +32,8 @@
                 <h1 class="text-base font-bold text-[#1e1e1e]">Tabla de productos</h1>
                 <p class="text-xs text-[#6f6f6f]">Códigos de barra y equivalencias · ordenado por descripción</p>
             </div>
-            <input type="text" id="search" placeholder="Buscar descripción o código…"
-                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-56 focus:outline-none focus:ring-1 focus:ring-brand"
+            <input type="text" id="search" placeholder='Buscar (multi-token: "400 sus" → ambos)'
+                   class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-1 focus:ring-brand"
                    oninput="onFilterChange()">
             <select id="filter-lab" onchange="onFilterChange()"
                     class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
@@ -43,6 +43,16 @@
                 <option value="{{ lab.id }}" {% if request.args.get('lab')|string == lab.id|string %}selected{% endif %}>{{ lab.nombre }}</option>
                 {% endfor %}
             </select>
+            <div class="flex items-center gap-1.5">
+                <label for="filter-tvc" class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Tipo de venta:</label>
+                <select id="filter-tvc" onchange="onFilterChange()"
+                        class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    <option value="">Todos</option>
+                    <option value="libre">Solo Venta Libre</option>
+                    <option value="receta">Solo Bajo Receta</option>
+                    <option value="controlado">Solo Controlados</option>
+                </select>
+            </div>
             <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none">
                 <input type="checkbox" id="only-alt" onchange="onFilterChange()">
                 Solo con EAN alt.
@@ -235,11 +245,12 @@ function currentFilters() {
         lab: document.getElementById('filter-lab').value,
         only_alt: document.getElementById('only-alt').checked,
         only_pack: document.getElementById('only-pack').checked,
+        venta_tipo: document.getElementById('filter-tvc')?.value || '',
     };
 }
 
 function hasAnyFilter(f) {
-    return !!(f.q || f.lab || f.only_alt || f.only_pack);
+    return !!(f.q || f.lab || f.only_alt || f.only_pack || f.venta_tipo);
 }
 
 async function loadProductos() {
@@ -250,6 +261,7 @@ async function loadProductos() {
     if (f.lab) params.set('lab', f.lab);
     if (f.only_alt) params.set('only_alt', '1');
     if (f.only_pack) params.set('only_pack', '1');
+    if (f.venta_tipo) params.set('venta_tipo', f.venta_tipo);
     params.set('limit', PAGE_SIZE);
 
     const overlay = document.getElementById('loading-overlay');
@@ -311,6 +323,8 @@ function clearFilters() {
     document.getElementById('filter-lab').value = '';
     document.getElementById('only-alt').checked = false;
     document.getElementById('only-pack').checked = false;
+    const tvc = document.getElementById('filter-tvc');
+    if (tvc) tvc.value = '';
     loadProductos();
 }
 

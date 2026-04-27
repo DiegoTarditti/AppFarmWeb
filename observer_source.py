@@ -333,7 +333,7 @@ def sync_productos(session):
         with conn.cursor(as_dict=True) as cur:
             cur.execute("""
                 SELECT IdProducto, Producto, IdLaboratorio, IdSubRubro, IdNombresDrogas,
-                       CodigoAlfabeta, Troquel, CantidadDelEnvase,
+                       CodigoAlfabeta, IdTipoVentaYControl, Troquel, CantidadDelEnvase,
                        EsHabilitadoVenta, RequiereCadenaFrio, FechaBaja
                 FROM DW.Productos
             """)
@@ -349,6 +349,7 @@ def sync_productos(session):
                     subrubro_observer=int(sub) if sub is not None else None,
                     nombre_droga_observer=int(droga) if droga is not None else None,
                     codigo_alfabeta=(r['CodigoAlfabeta'] or '').strip() or None,
+                    id_tipo_venta_control=(r['IdTipoVentaYControl'] or '').strip() or None,
                     troquel=int(r['Troquel']) if r['Troquel'] is not None else None,
                     cantidad_envase=r['CantidadDelEnvase'],
                     es_habilitado_venta=bool(r['EsHabilitadoVenta']),
@@ -365,6 +366,230 @@ def sync_productos(session):
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'productos', n, duracion)
     return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_colegios_medicos(session):
+    from database import ObsColegioMedico, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdColegioMedico, Descripcion, IdProvincia, IdTipoColegio, FechaBaja FROM DW.ColegiosMedicos")
+            for r in cur.fetchall():
+                _upsert_obs(
+                    session, ObsColegioMedico, 'observer_id',
+                    int(r['IdColegioMedico']),
+                    descripcion=(r['Descripcion'] or '').strip() or None,
+                    id_provincia=(r['IdProvincia'] or '').strip() or None,
+                    id_tipo_colegio=(r['IdTipoColegio'] or '').strip() or None,
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'colegios_medicos', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_medicos(session):
+    from database import ObsMedico, now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdMedico, Medico, CUIT, Habilitado, FechaBaja FROM DW.Medicos")
+            for r in cur.fetchall():
+                _upsert_obs(
+                    session, ObsMedico, 'observer_id',
+                    int(r['IdMedico']),
+                    nombre=(r['Medico'] or '').strip() or '(sin nombre)',
+                    cuit=(r['CUIT'] or '').strip() or None,
+                    habilitado=bool(r['Habilitado']) if r['Habilitado'] is not None else None,
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+                if n % 5000 == 0:
+                    session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'medicos', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_medicos_matriculas(session):
+    from database import ObsColegioMedico, ObsMedico, ObsMedicoMatricula, now_ar
+    t0 = time.time()
+    conn = _connect(timeout=120)
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    medicos_validos = {i for (i,) in session.query(ObsMedico.observer_id).all()}
+    colegios_validos = {i for (i,) in session.query(ObsColegioMedico.observer_id).all()}
+    n = skipped = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdMedicoMatricula, IdMedico, Matricula, IdColegioMedico, FechaBaja FROM DW.MedicosMatriculas")
+            for r in cur.fetchall():
+                med = int(r['IdMedico']) if r['IdMedico'] is not None else None
+                if med is None or med not in medicos_validos:
+                    skipped += 1
+                    continue
+                col = int(r['IdColegioMedico']) if r['IdColegioMedico'] is not None else None
+                if col is not None and col not in colegios_validos:
+                    col = None
+                _upsert_obs(
+                    session, ObsMedicoMatricula, 'observer_id',
+                    int(r['IdMedicoMatricula']),
+                    medico_observer=med,
+                    matricula=(r['Matricula'] or '').strip() or None,
+                    colegio_observer=col,
+                    fecha_baja=r['FechaBaja'],
+                    sync_en=now_ar(),
+                )
+                n += 1
+                if n % 5000 == 0:
+                    session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'medicos_matriculas', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion, 'skipped_fk': skipped}
+
+
+def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia=None):
+    """Sync incremental de DW.ProductosVendidos (detalle por venta).
+
+    Args:
+        desde_fecha: si está, trae ventas con FechaEstadistica >= desde_fecha.
+                     Si None: usa MAX(fecha_estadistica) local + 1 día. Si no
+                     hay datos locales, arranca desde hoy - meses_default.
+        meses_default: cuántos meses traer en el primer sync (default 24).
+        id_farmacia: filtrar por farmacia (default OBSERVER_ID_FARMACIA).
+
+    Devuelve: {'upsert': n, 'duracion_ms': X, 'desde': fecha_iso, 'skipped_fk': N}.
+    """
+    from datetime import date, datetime, timedelta
+
+    from database import ObsCliente, ObsObraSocial, ObsPlan, ObsProducto, ObsVentaDetalle, now_ar
+
+    t0 = time.time()
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+
+    # Resolver desde_fecha si no viene
+    if desde_fecha is None:
+        last = session.query(ObsVentaDetalle.fecha_estadistica)\
+                      .filter(ObsVentaDetalle.id_farmacia == id_farmacia)\
+                      .order_by(ObsVentaDetalle.fecha_estadistica.desc()).limit(1).first()
+        if last and last[0]:
+            desde_fecha = last[0] + timedelta(days=1)
+        else:
+            desde_fecha = (date.today().replace(day=1)
+                           - timedelta(days=meses_default * 31))
+
+    if isinstance(desde_fecha, datetime):
+        desde_fecha = desde_fecha.date()
+
+    # Sets de FKs válidas para skipear
+    productos_validos    = {i for (i,) in session.query(ObsProducto.observer_id).all()}
+    clientes_validos     = {i for (i,) in session.query(ObsCliente.observer_id).all()}
+    obras_validas        = {i for (i,) in session.query(ObsObraSocial.observer_id).all()}
+    planes_validos       = {i for (i,) in session.query(ObsPlan.observer_id).all()}
+
+    conn = _connect(timeout=600)  # 10 min — es el sync más pesado
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = skipped = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT IdProductoVendido, IdOperacion, NumeroRenglon,
+                       IdProducto, IdCliente, IdMedico, IdMedicoMatricula,
+                       EsVentaParticular, IdObraSocialPrincipal, IdPlanPrincipal,
+                       IdPlanComplemento1, IdPlanComplemento2, IdPlanComplemento3,
+                       Cantidad, CantidadReconocidaPlanPrincipal,
+                       Importe, ImporteACargoOS, ACargoPlanPrincipal,
+                       ImporteEfectivo, ImporteTarjeta, ImporteCheque, ImporteCuentaCorriente,
+                       FechaDeOperacion, FechaEstadistica, [Año] AS Anio, Mes, Dia,
+                       IdFarmacia, IdCanalDeVenta
+                FROM DW.ProductosVendidos
+                WHERE FechaEstadistica >= %s AND IdFarmacia = %s
+            """, (desde_fecha, id_farmacia))
+
+            for r in cur.fetchall():
+                # FKs: skipear si producto no existe local (debería estar)
+                pid = int(r['IdProducto']) if r['IdProducto'] is not None else None
+                if pid is None or pid not in productos_validos:
+                    skipped += 1
+                    continue
+                cli = int(r['IdCliente']) if r['IdCliente'] is not None else None
+                if cli is not None and cli not in clientes_validos:
+                    cli = None
+                os_id = int(r['IdObraSocialPrincipal']) if r['IdObraSocialPrincipal'] is not None else None
+                if os_id is not None and os_id not in obras_validas:
+                    os_id = None
+                plan = int(r['IdPlanPrincipal']) if r['IdPlanPrincipal'] is not None else None
+                if plan is not None and plan not in planes_validos:
+                    plan = None
+
+                _upsert_obs(
+                    session, ObsVentaDetalle, 'id_producto_vendido',
+                    int(r['IdProductoVendido']),
+                    id_operacion=int(r['IdOperacion']) if r['IdOperacion'] is not None else None,
+                    numero_renglon=int(r['NumeroRenglon']) if r['NumeroRenglon'] is not None else None,
+                    producto_observer=pid,
+                    cliente_observer=cli,
+                    medico_observer=int(r['IdMedico']) if r['IdMedico'] is not None else None,
+                    medico_matricula_observer=int(r['IdMedicoMatricula']) if r['IdMedicoMatricula'] is not None else None,
+                    es_venta_particular=bool(r['EsVentaParticular']) if r['EsVentaParticular'] is not None else None,
+                    obra_social_observer=os_id,
+                    plan_principal_observer=plan,
+                    plan_complemento1_observer=int(r['IdPlanComplemento1']) if r['IdPlanComplemento1'] is not None else None,
+                    plan_complemento2_observer=int(r['IdPlanComplemento2']) if r['IdPlanComplemento2'] is not None else None,
+                    plan_complemento3_observer=int(r['IdPlanComplemento3']) if r['IdPlanComplemento3'] is not None else None,
+                    cantidad=r['Cantidad'],
+                    cantidad_reconocida_principal=r['CantidadReconocidaPlanPrincipal'],
+                    importe=r['Importe'],
+                    importe_a_cargo_os=r['ImporteACargoOS'],
+                    a_cargo_plan_principal=r['ACargoPlanPrincipal'],
+                    importe_efectivo=r['ImporteEfectivo'],
+                    importe_tarjeta=r['ImporteTarjeta'],
+                    importe_cheque=r['ImporteCheque'],
+                    importe_cuenta_corriente=r['ImporteCuentaCorriente'],
+                    fecha_operacion=r['FechaDeOperacion'],
+                    fecha_estadistica=r['FechaEstadistica'],
+                    anio=int(r['Anio']) if r['Anio'] is not None else None,
+                    mes=int(r['Mes']) if r['Mes'] is not None else None,
+                    dia=int(r['Dia']) if r['Dia'] is not None else None,
+                    id_farmacia=int(r['IdFarmacia']),
+                    canal_venta_observer=int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
+                    sync_en=now_ar(),
+                )
+                n += 1
+                if n % 5000 == 0:
+                    session.flush()
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'ventas_detalle', n, duracion)
+    return {
+        'upsert': n,
+        'duracion_ms': duracion,
+        'desde': desde_fecha.isoformat(),
+        'skipped_fk': skipped,
+    }
 
 
 def sync_grupos_clientes(session):
@@ -912,14 +1137,29 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
 
         # Puente EAN ↔ IdProducto: traer el codigo_barra real de la tabla
         # local `productos` cuando esté vinculada por observer_id.
-        # Si un producto de ObServer no está vinculado, queda sin EAN (None)
-        # — así el cliente puede detectarlo y resolver la vinculación.
-        from database import Producto
-        ean_por_observer = {
-            obs_id: cb for (obs_id, cb) in session.query(
+        # NUEVA LÓGICA (post import codbarras.txt 2026-04-27):
+        # Resolver EAN directamente desde obs_codigos_barras (Orden=1 = principal).
+        # Caída a productos.codigo_barra solo para casos sin EAN registrado en
+        # ObServer — quedará deprecado cuando obs_codigos_barras esté completo.
+        from database import ObsCodigoBarras, Producto
+        ean_por_observer = dict(
+            session.query(ObsCodigoBarras.producto_observer,
+                          ObsCodigoBarras.codigo_barras)
+            .filter(ObsCodigoBarras.producto_observer.in_(prod_ids),
+                    ObsCodigoBarras.orden == 1,
+                    ObsCodigoBarras.fecha_baja.is_(None)).all()
+        )
+        # Fallback: si algún obs_id no tiene EAN en codigos_barras, usar el
+        # bridge viejo de productos local.
+        ids_sin_ean = [i for i in prod_ids if i not in ean_por_observer]
+        if ids_sin_ean:
+            for (obs_id, cb) in session.query(
                 Producto.observer_id, Producto.codigo_barra
-            ).filter(Producto.observer_id.in_(prod_ids)).all() if cb
-        }
+            ).filter(Producto.observer_id.in_(ids_sin_ean),
+                     Producto.codigo_barra.isnot(None),
+                     ~Producto.codigo_barra.like('OBS:%')).all():
+                if cb:
+                    ean_por_observer[obs_id] = cb
 
         resultado = []
         for p in productos:
@@ -927,6 +1167,7 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
             ventas = [v_mapa.get((y, m), 0) for (y, m) in meses]
             if sum(ventas) == 0 and mapa_stock.get(p.observer_id, 0) == 0:
                 continue  # sin ventas ni stock → lo filtramos
+            tvc = (p.id_tipo_venta_control or '').strip()
             resultado.append({
                 'codigo_barra': ean_por_observer.get(p.observer_id) or '',
                 'observer_id': p.observer_id,
@@ -935,6 +1176,10 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                 'precio_pvp': 0,  # TODO: cuando tengamos precio en DW
                 'stock': mapa_stock.get(p.observer_id, 0),
                 'ventas': ventas,
+                'tvc': tvc,
+                'es_libre': tvc == 'L',
+                'es_receta': tvc in ('R', 'A'),
+                'es_controlado': tvc in ('1','2','3','4','5','6','7','8'),
             })
         return resultado
 

@@ -673,7 +673,10 @@ def init_app(app):
     @app.route('/api/invoice/<int:invoice_id>/differences', methods=['GET'])
     def invoice_differences(invoice_id):
         with database.get_db() as session:
-            differences = session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()
+            differences = (session.query(database.StockDifference)
+                           .filter_by(factura_id=invoice_id)
+                           .order_by(database.StockDifference.descripcion)
+                           .all())
             return jsonify([
             {
                 'id': d.id, 'codigo_barra': d.codigo_barra, 'descripcion': d.descripcion,
@@ -767,7 +770,10 @@ def init_app(app):
             if not invoice:
                 flash('Factura no encontrada.')
                 return redirect(url_for('index'))
-            items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
+            items = (session.query(database.InvoiceItem)
+                     .filter_by(factura_id=invoice_id)
+                     .order_by(database.InvoiceItem.descripcion)
+                     .all())
 
             # Build barcode → {monodroga, presentacion} map from Producto (incl. EANs alt)
             barcodes = [it.codigo_barra for it in items if it.codigo_barra]
@@ -796,7 +802,10 @@ def init_app(app):
         import openpyxl
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
-            items = session.query(database.InvoiceItem).filter_by(factura_id=invoice_id).all()
+            items = (session.query(database.InvoiceItem)
+                     .filter_by(factura_id=invoice_id)
+                     .order_by(database.InvoiceItem.descripcion)
+                     .all())
         if not invoice:
             return 'Factura no encontrada', 404
 
@@ -827,7 +836,10 @@ def init_app(app):
         import openpyxl
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
-            diffs = session.query(database.StockDifference).filter_by(factura_id=invoice_id).all()
+            diffs = (session.query(database.StockDifference)
+                     .filter_by(factura_id=invoice_id)
+                     .order_by(database.StockDifference.descripcion)
+                     .all())
         if not invoice:
             return 'Factura no encontrada', 404
 

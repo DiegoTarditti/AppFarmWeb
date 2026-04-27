@@ -295,13 +295,81 @@ function escHtml(s) { const d = document.createElement('div'); d.textContent = s
 function escAttr(s) { return (s||'').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
 // Auto-search from ?q= parameter
+// PR Vademécum no maneja bien queries muy específicos (ej. "ACTRON PEDIATRICO 4%
+// ORAL SUS x 100" devuelve 0 resultados). Cuando viene de un link interno con un
+// query largo, abrimos un mini-dialog sugiriendo la primera palabra alfabética
+// (típicamente la marca comercial — "ACTRON"), pre-seleccionada para que el
+// usuario pueda Enter directo o ajustar.
 document.addEventListener('DOMContentLoaded', () => {
+    const inp = document.getElementById('vad-search');
+    if (inp) inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+    });
+
     const params = new URLSearchParams(location.search);
     const q = params.get('q');
-    if (q) {
-        document.getElementById('vad-search').value = q;
-        doSearch();
+    if (!q) return;
+
+    inp.value = q;
+
+    // Primer token alfabético significativo (≥3 chars).
+    const tokens = q.split(/[\s.,()_\-]+/).filter(Boolean);
+    let primerToken = '';
+    for (const t of tokens) {
+        if (t.length >= 3 && /[a-zA-Záéíóúñ]/i.test(t)) {
+            primerToken = t;
+            break;
+        }
     }
+
+    if (!primerToken || primerToken.toLowerCase() === q.toLowerCase()) {
+        // Query corto/único → buscar directo.
+        doSearch();
+        return;
+    }
+
+    // Query largo → mostrar diálogo de confirmación con la sugerencia.
+    _mostrarDialogoBusqueda(q, primerToken);
 });
+
+function _mostrarDialogoBusqueda(qOriginal, sugerencia) {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 bg-black/40 z-[110] flex items-center justify-center p-4';
+    overlay.innerHTML = `
+        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+            <p class="text-xs text-[#6f6f6f] mb-1">PR Vademécum no acepta queries muy específicos</p>
+            <p class="text-sm text-[#1e1e1e] mb-3">Producto original: <span class="font-mono text-[12px] text-[#888]">${qOriginal.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}</span></p>
+            <label class="text-[11px] uppercase text-[#888] block mb-1">Buscar:</label>
+            <input id="vad-dialog-input" type="text"
+                   class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand mb-3">
+            <p class="text-[11px] text-[#888] mb-4">Tip: con la marca comercial alcanza (ej. "actron", "ibuprofeno"). Vademécum lista todas las presentaciones.</p>
+            <div class="flex justify-end gap-2">
+                <button id="vad-dialog-cancel" type="button"
+                        class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg">Cancelar</button>
+                <button id="vad-dialog-search" type="button"
+                        class="text-sm bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg">Buscar</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    const input = document.getElementById('vad-dialog-input');
+    input.value = sugerencia;
+    input.focus();
+    input.select();
+    const cerrar = () => overlay.remove();
+    const buscar = () => {
+        const v = input.value.trim();
+        cerrar();
+        if (!v) return;
+        document.getElementById('vad-search').value = v;
+        doSearch();
+    };
+    overlay.addEventListener('click', e => { if (e.target === overlay) cerrar(); });
+    document.getElementById('vad-dialog-cancel').addEventListener('click', cerrar);
+    document.getElementById('vad-dialog-search').addEventListener('click', buscar);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); buscar(); }
+        if (e.key === 'Escape') cerrar();
+    });
+}
 </script>
 {% endblock %}

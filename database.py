@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import DECIMAL, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, create_engine, text
+from sqlalchemy import DECIMAL, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, text
 
 _AR_TZ = timezone(timedelta(hours=-3))
 
@@ -94,6 +94,10 @@ class ObsProducto(Base):
     subrubro_observer      = Column(Integer, ForeignKey('obs_subrubros.observer_id'), nullable=True)
     nombre_droga_observer  = Column(Integer, ForeignKey('obs_nombres_drogas.observer_id'), nullable=True)
     codigo_alfabeta        = Column(String(10), nullable=True, index=True)
+    id_tipo_venta_control  = Column(String(1), nullable=True, index=True)  # DW.TiposVentaYControl: L=Venta Libre, R=Bajo Receta, A=Receta Archivada, 1-4=Psicotrópico, 5-8=Estupefaciente
+    # Descripción editable localmente. Si está, se muestra en lugar de `descripcion`.
+    # NO se toca al sincronizar desde Observer ni al pushear a Render.
+    descripcion_custom     = Column(String(200), nullable=True)
     troquel                = Column(Integer, nullable=True)
     cantidad_envase        = Column(DECIMAL(10, 3), nullable=True)
     es_habilitado_venta    = Column(Boolean, nullable=False, default=True)
@@ -125,6 +129,105 @@ class ObsVentaMensual(Base):
     monto             = Column(DECIMAL(14, 2), nullable=False, default=0)
     transacciones     = Column(Integer, nullable=False, default=0)
     sync_en           = Column(DateTime, default=now_ar)
+
+
+class ObsCodigoBarras(Base):
+    """Tabla lookup IdProducto → CodigoBarras (EAN). Importada manualmente
+    desde dbo.IdProductoCodigosBarras de ObServer (NO expuesta en schema DW).
+
+    Resuelve el problema histórico de no tener EAN real para los productos
+    de ObServer. Un producto puede tener múltiples EANs (orden 1=principal,
+    2/3=alternativos).
+    """
+    __tablename__ = 'obs_codigos_barras'
+    id_codigo_barras  = Column(Integer, primary_key=True, autoincrement=False)  # IdProductoCodigoBarras
+    producto_observer = Column(Integer, ForeignKey('obs_productos.observer_id'), nullable=False, index=True)
+    codigo_barras     = Column(String(20), nullable=False, index=True)
+    orden             = Column(Integer, nullable=False, default=1)  # 1 = principal, 2/3 = alt
+    fecha_ingreso     = Column(DateTime, nullable=True)
+    fecha_baja        = Column(DateTime, nullable=True, index=True)
+    sync_en           = Column(DateTime, default=now_ar)
+
+
+class ObsColegioMedico(Base):
+    __tablename__ = 'obs_colegios_medicos'
+    observer_id     = Column(Integer, primary_key=True, autoincrement=False)  # DW.ColegiosMedicos.IdColegioMedico
+    descripcion     = Column(String(100), nullable=True)
+    id_provincia    = Column(String(1), nullable=True)
+    id_tipo_colegio = Column(String(1), nullable=True)
+    fecha_baja      = Column(DateTime, nullable=True)
+    sync_en         = Column(DateTime, default=now_ar)
+
+
+class ObsMedico(Base):
+    __tablename__ = 'obs_medicos'
+    observer_id = Column(Integer, primary_key=True, autoincrement=False)  # DW.Medicos.IdMedico
+    nombre      = Column(String(100), nullable=False)
+    cuit        = Column(String(11), nullable=True, index=True)
+    habilitado  = Column(Boolean, nullable=True)
+    fecha_baja  = Column(DateTime, nullable=True)
+    sync_en     = Column(DateTime, default=now_ar)
+
+
+class ObsMedicoMatricula(Base):
+    __tablename__ = 'obs_medicos_matriculas'
+    observer_id      = Column(Integer, primary_key=True, autoincrement=False)  # DW.MedicosMatriculas.IdMedicoMatricula
+    medico_observer  = Column(Integer, ForeignKey('obs_medicos.observer_id'), nullable=False, index=True)
+    matricula        = Column(String(10), nullable=True, index=True)
+    colegio_observer = Column(Integer, ForeignKey('obs_colegios_medicos.observer_id'), nullable=True)
+    fecha_baja       = Column(DateTime, nullable=True)
+    sync_en          = Column(DateTime, default=now_ar)
+
+
+class ObsVentaDetalle(Base):
+    """Detalle de cada venta (cada renglón = un producto vendido en una operación).
+    Subset de las 66 columnas de DW.ProductosVendidos. Sync incremental por
+    FechaEstadistica. Granularidad inicial: últimos 24 meses.
+
+    Se popula con sync_ventas_detalle(). Permite armar:
+    - Ventas por OS / Plan / Convenio (cobranza, rentabilidad por OS).
+    - Top médicos prescriptores.
+    - Cliente → OS principal (derivada).
+    - Receta reconstruida agrupando por (cliente, médico, operación, fecha).
+    """
+    __tablename__ = 'obs_ventas_detalle'
+    id_producto_vendido            = Column(Integer, primary_key=True, autoincrement=False)  # IdProductoVendido
+    id_operacion                   = Column(Integer, nullable=True, index=True)
+    numero_renglon                 = Column(Integer, nullable=True)
+    # Producto
+    producto_observer              = Column(Integer, ForeignKey('obs_productos.observer_id'), nullable=False, index=True)
+    # Quién compra
+    cliente_observer               = Column(Integer, ForeignKey('obs_clientes.observer_id'), nullable=True, index=True)
+    medico_observer                = Column(Integer, nullable=True, index=True)
+    medico_matricula_observer      = Column(Integer, nullable=True)
+    # OS / Plan
+    es_venta_particular            = Column(Boolean, nullable=True)
+    obra_social_observer           = Column(Integer, ForeignKey('obs_obras_sociales.observer_id'), nullable=True, index=True)
+    plan_principal_observer        = Column(Integer, ForeignKey('obs_planes.observer_id'), nullable=True, index=True)
+    plan_complemento1_observer     = Column(Integer, nullable=True)
+    plan_complemento2_observer     = Column(Integer, nullable=True)
+    plan_complemento3_observer     = Column(Integer, nullable=True)
+    # Cantidades
+    cantidad                       = Column(DECIMAL(10, 3), nullable=True)
+    cantidad_reconocida_principal  = Column(DECIMAL(10, 3), nullable=True)
+    # Importes
+    importe                        = Column(DECIMAL(12, 2), nullable=True)
+    importe_a_cargo_os             = Column(DECIMAL(12, 2), nullable=True)
+    a_cargo_plan_principal         = Column(DECIMAL(12, 2), nullable=True)
+    importe_efectivo               = Column(DECIMAL(12, 2), nullable=True)
+    importe_tarjeta                = Column(DECIMAL(12, 2), nullable=True)
+    importe_cheque                 = Column(DECIMAL(12, 2), nullable=True)
+    importe_cuenta_corriente       = Column(DECIMAL(12, 2), nullable=True)
+    # Fecha
+    fecha_operacion                = Column(DateTime, nullable=True)
+    fecha_estadistica              = Column(Date, nullable=True, index=True)
+    anio                           = Column(Integer, nullable=True, index=True)
+    mes                            = Column(Integer, nullable=True)
+    dia                            = Column(Integer, nullable=True)
+    # Otros
+    id_farmacia                    = Column(Integer, nullable=False, index=True)
+    canal_venta_observer           = Column(Integer, nullable=True)
+    sync_en                        = Column(DateTime, default=now_ar)
 
 
 class ObsGrupoCliente(Base):
@@ -290,7 +393,35 @@ class Provider(Base):
     grabar_productos = Column(Integer, nullable=False, default=1)
     tipo = Column(String(20), nullable=False, default='drogueria')
     activo = Column(Boolean, nullable=False, default=True)
+    # Mínimo de compra para que la droguería acepte el pedido. NULL = sin mínimo.
+    compra_minima_pesos = Column(DECIMAL(14, 2), nullable=True)
     claims = relationship('Claim', back_populates='provider')
+
+
+class DescuentoBase(Base):
+    """Descuento base acordado entre laboratorio y droguería (acuerdo anual/semestral).
+    Es el primer nivel de descuento. Se acumula multiplicativamente con transfers,
+    ofertas por producto y módulos.
+
+    UNIQUE(laboratorio_id, drogueria_id): un único descuento base por combinación.
+    """
+    __tablename__ = 'descuentos_base'
+    id              = Column(Integer, primary_key=True)
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=False, index=True)
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id'),  nullable=False, index=True)
+    descuento_pct   = Column(DECIMAL(5, 2), nullable=False)  # Ej: 31.03 = 31.03%
+    plazo_pago      = Column(String(50), nullable=True)      # "30 dias", "contado", "45 dias"
+    vigencia_desde  = Column(Date, nullable=True)
+    vigencia_hasta  = Column(Date, nullable=True)
+    activo          = Column(Boolean, nullable=False, default=True)  # Para pausar sin borrar
+    observacion     = Column(Text, nullable=True)
+    creado_en       = Column(DateTime, default=now_ar)
+    actualizado_en  = Column(DateTime, default=now_ar, onupdate=now_ar)
+    laboratorio = relationship('Laboratorio')
+    drogueria   = relationship('Provider')
+    __table_args__ = (
+        UniqueConstraint('laboratorio_id', 'drogueria_id', name='uq_desc_base_lab_drog'),
+    )
 
 
 class InvoiceBatch(Base):
@@ -765,7 +896,10 @@ def init_db(database_url=None):
                         'obs_grupos_clientes', 'obs_categorias_clientes',
                         'obs_obras_sociales', 'obs_convenios', 'obs_planes',
                         'obs_clientes', 'clientes',
-                        'cron_log', 'mv_refresh_log')
+                        'cron_log', 'mv_refresh_log',
+                        'obs_colegios_medicos', 'obs_medicos',
+                        'obs_medicos_matriculas', 'obs_ventas_detalle',
+                        'descuentos_base', 'obs_codigos_barras')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
@@ -997,6 +1131,11 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_prod_lab ON obs_productos(laboratorio_observer)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_prod_alfabeta ON obs_productos(codigo_alfabeta)"))
+    conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS id_tipo_venta_control VARCHAR(1)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_prod_tvc ON obs_productos(id_tipo_venta_control)"))
+    conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS descripcion_custom VARCHAR(200)"))
+    # Provider: mínimo de compra (puede no estar en deploys viejos)
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS obs_stock (
             id_farmacia INTEGER NOT NULL,

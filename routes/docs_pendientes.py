@@ -149,29 +149,112 @@ def init_app(app):
 
     @app.route('/api/product/<path:barcode>/chart')
     def api_product_chart(barcode):
-        """Devuelve datos de ventas históricas de un producto desde ProductAnalytics."""
+        """Devuelve datos de ventas históricas de un producto.
+
+        Fuente principal: ProductAnalytics (poblado desde análisis de ventas
+        del usuario). Fallback: obs_productos + obs_ventas_mensuales (cuando
+        el barcode es un IdProducto numérico de ObServer o pseudo-EAN OBS:N
+        — caso típico de pedidos generados desde ObServer sin factura aún).
+        """
+        import os as _os
+        from datetime import datetime
         with database.get_db() as session:
             pa = session.get(database.ProductAnalytics, barcode)
-            if not pa:
-                return jsonify({'ok': False, 'error': 'Producto no encontrado. Procesá un análisis de ventas primero.'}), 404
-            ventas = []
-            if pa.ventas_json:
+            if pa:
+                ventas = []
+                if pa.ventas_json:
+                    try:
+                        ventas = json.loads(pa.ventas_json)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                return jsonify({
+                    'ok': True,
+                    'nombre': pa.descripcion or '',
+                    'codigo_barra': barcode,
+                    'ventas': ventas,
+                    'avg_monthly': float(pa.avg_monthly or 0),
+                    'slope': float(pa.slope or 0),
+                    'stock': pa.stock or 0,
+                    'rotacion': pa.rotacion or '',
+                    'tipo': pa.tipo or 'N',
+                    'start_month': pa.start_month or 4,
+                    'n_days': pa.n_days or 35,
+                    'sin_historial': len(ventas) == 0,
+                    'analizado_en': pa.actualizado_en.strftime('%d/%m/%Y') if pa.actualizado_en else None,
+                    'fuente': 'analisis',
+                })
+
+            # Fallback: resolver barcode → observer_id y traer del mirror.
+            obs_id = None
+            if barcode.startswith('OBS:'):
                 try:
-                    ventas = json.loads(pa.ventas_json)
-                except (json.JSONDecodeError, TypeError):
+                    obs_id = int(barcode[4:])
+                except (ValueError, TypeError):
                     pass
+            if obs_id is None:
+                try:
+                    obs_id = int(barcode)
+                except (ValueError, TypeError):
+                    pass
+            if obs_id is None:
+                # Bridge vía productos local
+                from sqlalchemy import or_ as _or
+                Producto = database.Producto
+                prod = (session.query(Producto)
+                        .filter(_or(Producto.codigo_barra == barcode,
+                                    Producto.codigo_barra_alt1 == barcode,
+                                    Producto.codigo_barra_alt2 == barcode,
+                                    Producto.codigo_barra_alt3 == barcode))
+                        .first())
+                if prod and prod.observer_id:
+                    obs_id = prod.observer_id
+
+            if obs_id is None:
+                return jsonify({'ok': False, 'error': 'Producto no encontrado. Procesá un análisis de ventas primero.'}), 404
+
+            obs_p = session.get(database.ObsProducto, obs_id)
+            if not obs_p:
+                return jsonify({'ok': False, 'error': 'Producto no encontrado en catálogo ObServer.'}), 404
+
+            id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+            hoy = datetime.now()
+            # Construir lista de los últimos 12 meses como (anio, mes)
+            meses = []
+            y, m = hoy.year, hoy.month
+            for _ in range(12):
+                meses.append((y, m))
+                m -= 1
+                if m == 0:
+                    m, y = 12, y - 1
+            meses.reverse()
+            # Stock actual
+            stock_row = (session.query(database.ObsStock.stock_actual)
+                         .filter(database.ObsStock.id_farmacia == id_farmacia,
+                                 database.ObsStock.producto_observer == obs_id).first())
+            stock = int(stock_row[0]) if stock_row else 0
+            # Ventas por mes
+            rows = (session.query(database.ObsVentaMensual.anio,
+                                   database.ObsVentaMensual.mes,
+                                   database.ObsVentaMensual.unidades)
+                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                            database.ObsVentaMensual.producto_observer == obs_id).all())
+            ventas_map = {(int(r[0]), int(r[1])): float(r[2] or 0) for r in rows}
+            ventas = [round(ventas_map.get((y, m), 0.0), 2) for (y, m) in meses]
+            n_full = max(1, len(ventas) - 1)  # excluye mes actual parcial
+            avg_monthly = sum(ventas[:n_full]) / n_full
             return jsonify({
                 'ok': True,
-                'nombre': pa.descripcion or '',
+                'nombre': obs_p.descripcion or '',
                 'codigo_barra': barcode,
                 'ventas': ventas,
-                'avg_monthly': float(pa.avg_monthly or 0),
-                'slope': float(pa.slope or 0),
-                'stock': pa.stock or 0,
-                'rotacion': pa.rotacion or '',
-                'tipo': pa.tipo or 'N',
-                'start_month': pa.start_month or 4,
-                'n_days': pa.n_days or 35,
-                'sin_historial': len(ventas) == 0,
-                'analizado_en': pa.actualizado_en.strftime('%d/%m/%Y') if pa.actualizado_en else None,
+                'avg_monthly': round(avg_monthly, 2),
+                'slope': 0,
+                'stock': stock,
+                'rotacion': '',
+                'tipo': 'N',
+                'start_month': meses[0][1],
+                'n_days': 30,
+                'sin_historial': sum(ventas) == 0,
+                'analizado_en': None,
+                'fuente': 'observer',
             })

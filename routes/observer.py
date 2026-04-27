@@ -28,6 +28,30 @@ def _user_tiene_observer(user):
 
 def init_app(app):
 
+    @app.route('/obs/producto/<int:observer_id>/descripcion', methods=['POST'])
+    @login_required
+    def obs_producto_descripcion(observer_id):
+        """Edita la descripción local de un producto del catálogo Observer.
+        Guarda en `obs_productos.descripcion_custom`. Si el valor coincide con
+        la descripción original o queda vacío, limpia el campo (vuelve a
+        mostrar la de Observer)."""
+        nueva = (request.json.get('descripcion') or '').strip() if request.is_json \
+                else (request.form.get('descripcion') or '').strip()
+        with database.get_db() as session:
+            p = session.get(database.ObsProducto, observer_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'Producto no encontrado'}), 404
+            if not nueva or nueva == (p.descripcion or '').strip():
+                p.descripcion_custom = None
+            else:
+                p.descripcion_custom = nueva[:200]
+            session.commit()
+            return jsonify({
+                'ok': True,
+                'descripcion': p.descripcion_custom or p.descripcion,
+                'tiene_desc_custom': bool(p.descripcion_custom),
+            })
+
     @app.route('/obs/productos')
     @login_required
     def obs_productos():
@@ -42,6 +66,8 @@ def init_app(app):
         # Default: incluir TODOS (incluso los con fecha_baja). El usuario puede activar
         # "solo activos" si quiere filtrar discontinuados.
         solo_activos = request.args.get('solo_activos') == '1'
+        # Filtro por tipo de venta y control: 'libre'=L, 'receta'=R/A, '' = todos.
+        venta_tipo = (request.args.get('venta_tipo') or '').strip()
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -56,13 +82,20 @@ def init_app(app):
             if solo_activos:
                 base = base.filter(database.ObsProducto.fecha_baja.is_(None))
             if q:
-                like = f'%{q}%'
-                base = base.filter(_or(
-                    database.ObsProducto.descripcion.ilike(like),
-                    database.ObsProducto.codigo_alfabeta.ilike(like),
-                ))
+                from helpers import multi_token_filter
+                clausula = multi_token_filter(q,
+                    database.ObsProducto.descripcion,
+                    database.ObsProducto.codigo_alfabeta)
+                if clausula is not None:
+                    base = base.filter(clausula)
             if lab_id:
                 base = base.filter(database.ObsProducto.laboratorio_observer == lab_id)
+            if venta_tipo == 'libre':
+                base = base.filter(database.ObsProducto.id_tipo_venta_control == 'L')
+            elif venta_tipo == 'receta':
+                base = base.filter(database.ObsProducto.id_tipo_venta_control.in_(['R', 'A']))
+            elif venta_tipo == 'controlado':
+                base = base.filter(database.ObsProducto.id_tipo_venta_control.in_(['1','2','3','4','5','6','7','8']))
 
             total = base.count()
             productos = (base.order_by(database.ObsProducto.descripcion)
@@ -126,21 +159,42 @@ def init_app(app):
                 ventas_12m = {po: float(u or 0) for po, u in rows}
 
             # EAN del bridge local (opcional)
-            ean_map = dict(
-                session.query(database.Producto.observer_id,
-                              database.Producto.codigo_barra)
-                .filter(database.Producto.observer_id.in_(obs_ids)).all()
-            ) if obs_ids else {}
+            # EAN real desde obs_codigos_barras (Orden=1 = principal).
+            # Fallback a productos.codigo_barra para casos sin EAN registrado.
+            ean_map = {}
+            if obs_ids:
+                ean_map = dict(
+                    session.query(database.ObsCodigoBarras.producto_observer,
+                                  database.ObsCodigoBarras.codigo_barras)
+                    .filter(database.ObsCodigoBarras.producto_observer.in_(obs_ids),
+                            database.ObsCodigoBarras.orden == 1,
+                            database.ObsCodigoBarras.fecha_baja.is_(None)).all()
+                )
+                # Fallback: agregar los que faltan vía bridge productos local
+                ids_sin = [i for i in obs_ids if i not in ean_map]
+                if ids_sin:
+                    for (oid, cb) in session.query(
+                        database.Producto.observer_id, database.Producto.codigo_barra
+                    ).filter(database.Producto.observer_id.in_(ids_sin),
+                             database.Producto.codigo_barra.isnot(None),
+                             ~database.Producto.codigo_barra.like('OBS:%')).all():
+                        if cb:
+                            ean_map[oid] = cb
 
             data = []
             for p in productos:
                 v3 = ventas_3m.get(p.observer_id, 0)
                 v12 = ventas_12m.get(p.observer_id, 0)
+                tvc = (p.id_tipo_venta_control or '').strip()
+                desc_custom = (getattr(p, 'descripcion_custom', None) or '').strip()
+                desc_mostrada = desc_custom or p.descripcion
                 data.append({
                     'observer_id':  p.observer_id,
                     'ean':          ean_map.get(p.observer_id) or '',
                     'codigo_alfabeta': p.codigo_alfabeta or '',
-                    'descripcion':  p.descripcion,
+                    'descripcion':         desc_mostrada,
+                    'descripcion_obs':     p.descripcion,
+                    'tiene_desc_custom':   bool(desc_custom),
                     'laboratorio':  labs_map.get(p.laboratorio_observer) or '—',
                     'monodroga':    drogas_map.get(p.nombre_droga_observer) or '',
                     'stock':        stock_map.get(p.observer_id, 0),
@@ -149,6 +203,10 @@ def init_app(app):
                     'total_3m':     v3,
                     'total_12m':    v12,
                     'baja':         p.fecha_baja is not None,
+                    'tvc':          tvc,
+                    'es_libre':     tvc == 'L',
+                    'es_receta':    tvc in ('R', 'A'),
+                    'es_controlado': tvc in ('1','2','3','4','5','6','7','8'),
                 })
 
             # Labs para el dropdown
@@ -162,6 +220,7 @@ def init_app(app):
                                page=page, last_page=last_page,
                                q=q, lab_id=lab_id, labs=labs,
                                solo_activos=solo_activos,
+                               venta_tipo=venta_tipo,
                                per_page=per_page)
 
     @app.route('/estadisticas/drogas')
@@ -193,13 +252,15 @@ def init_app(app):
                 return _estadisticas_drogas_live(session, q, page, per_page, offset,
                                                   id_farmacia, mv_estado)
 
-            # Filtro de nombre: resolver IDs de drogas que matchean
+            # Filtro de nombre: resolver IDs de drogas que matchean (multi-token AND).
             droga_ids_filtro = None
             if q:
-                like = f'%{q}%'
-                droga_ids_filtro = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
-                                    .filter(database.ObsNombreDroga.descripcion.ilike(like)).all()]
-                if not droga_ids_filtro:
+                from helpers import multi_token_filter
+                clausula = multi_token_filter(q, database.ObsNombreDroga.descripcion)
+                if clausula is not None:
+                    droga_ids_filtro = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
+                                        .filter(clausula).all()]
+                if droga_ids_filtro is not None and not droga_ids_filtro:
                     return render_template('estadisticas_drogas.html',
                                            drogas=[], total=0, page=1, last_page=1,
                                            q=q, per_page=per_page,
@@ -285,9 +346,12 @@ def init_app(app):
                         ym_expr.between(desde_12m, hasta))
                 .group_by(database.ObsProducto.nombre_droga_observer))
         if q:
-            like = f'%{q}%'
-            matching_ids = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
-                            .filter(database.ObsNombreDroga.descripcion.ilike(like)).all()]
+            from helpers import multi_token_filter
+            clausula = multi_token_filter(q, database.ObsNombreDroga.descripcion)
+            matching_ids = []
+            if clausula is not None:
+                matching_ids = [r[0] for r in session.query(database.ObsNombreDroga.observer_id)
+                                .filter(clausula).all()]
             if not matching_ids:
                 return render_template('estadisticas_drogas.html',
                                        drogas=[], total=0, page=1, last_page=1,
@@ -524,7 +588,8 @@ def init_app(app):
                 prods = (session.query(database.ObsProducto)
                          .filter(database.ObsProducto.nombre_droga_observer == droga_id,
                                  database.ObsProducto.laboratorio_observer == lab_id,
-                                 database.ObsProducto.fecha_baja.is_(None)).all())
+                                 database.ObsProducto.fecha_baja.is_(None))
+                         .order_by(database.ObsProducto.descripcion).all())
                 prod_ids = [p.observer_id for p in prods]
 
                 if not prod_ids:

@@ -446,7 +446,8 @@ function buildDropdownItems(type, items) {
     dd.classList.remove('hidden');
 }
 function filterDropdown(type) {
-    const q = document.getElementById('f-ean-' + type + '-search').value.toLowerCase().trim();
+    const q = document.getElementById('f-ean-' + type + '-search').value || '';
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.buildAnyOf(q) : (() => true);
     let src;
     if (type === 'pack') {
         const onlyPacks = document.getElementById('f-pack-only')?.checked;
@@ -454,7 +455,7 @@ function filterDropdown(type) {
     } else {
         src = PRODS_ALL;
     }
-    buildDropdownItems(type, (q ? src.filter(p => p.ean.includes(q) || p.desc.toLowerCase().includes(q)) : src).slice(0, 50));
+    buildDropdownItems(type, src.filter(p => matchFn([p.ean, p.desc])).slice(0, 50));
 }
 function showDropdown(type) { filterDropdown(type); }
 function selectEan(type, ean, desc) {
@@ -495,10 +496,9 @@ function filterEditDropdown(packId) {
     dd.classList.remove('hidden');
 
     // Feedback inmediato con resultados locales mientras esperamos el fetch
-    const qLow = q.toLowerCase();
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.buildAnyOf(q) : (() => true);
     const localHits = q.length < 2 ? [] :
-        PRODS_ALL.filter(p => (p.ean && p.ean.includes(q)) ||
-                              (p.desc && p.desc.toLowerCase().includes(qLow)))
+        PRODS_ALL.filter(p => matchFn([p.ean, p.desc]))
                  .slice(0, 15)
                  .map(p => ({ean: p.ean, desc: p.desc, fuente: 'local'}));
     renderDropdownResults(packId, dd, localHits, q.length < 2);

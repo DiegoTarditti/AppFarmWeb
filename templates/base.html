@@ -86,6 +86,43 @@
         {% block extra_print_css %}{% endblock %}
     </style>
     {% block extra_head %}{% endblock %}
+    <script>
+    // Helper global multi-token AND para filtros client-side.
+    // Toda búsqueda en el sistema (productos, drogas, labs, OS, etc.) usa esto.
+    // - Splittea por espacios o '+'.
+    // - Lowercase + sin acentos.
+    // - Devuelve función `(text) => bool`: true si TODOS los tokens están en text.
+    window.MultiTokenFilter = (function() {
+        function _norm(s) {
+            return String(s == null ? '' : s).toLowerCase()
+                .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+                .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u');
+        }
+        function tokens(query) {
+            return _norm(query).replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+        }
+        function build(query) {
+            const toks = tokens(query);
+            if (toks.length === 0) return () => true;
+            return (text) => {
+                const t = _norm(text);
+                return toks.every(k => t.includes(k));
+            };
+        }
+        function buildAnyOf(query) {
+            // Variante: el texto puede venir de varios campos. Devuelve función
+            // que recibe array de strings y matchea si TODOS los tokens están en
+            // CUALQUIER campo (idéntico semántica al backend con or_ por col).
+            const toks = tokens(query);
+            if (toks.length === 0) return () => true;
+            return (texts) => {
+                const blob = (Array.isArray(texts) ? texts : [texts]).map(_norm).join(' ');
+                return toks.every(k => blob.includes(k));
+            };
+        }
+        return { norm: _norm, tokens, build, buildAnyOf };
+    })();
+    </script>
 </head>
 <body class="min-h-screen flex font-sans">
 

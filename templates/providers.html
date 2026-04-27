@@ -485,15 +485,13 @@ function confirmDelete(id, name) {
 }
 
 function filterProviders() {
-    const q = (document.getElementById('prov-search').value || '').toLowerCase().trim();
+    const q = document.getElementById('prov-search').value || '';
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.buildAnyOf(q) : (() => true);
     const tipo = document.getElementById('prov-tipo').value;
     let visible = 0;
     document.querySelectorAll('.prov-row').forEach(row => {
-        const nombre = row.dataset.nombre || '';
-        const cuit = row.dataset.cuit || '';
-        const parser = row.dataset.parser || '';
+        const matchTexto = matchFn([row.dataset.nombre, row.dataset.cuit, row.dataset.parser]);
         const rowTipo = row.dataset.tipo || '';
-        const matchTexto = !q || nombre.includes(q) || cuit.includes(q) || parser.includes(q);
         const matchTipo = !tipo || rowTipo === tipo;
         const show = matchTexto && matchTipo;
         row.classList.toggle('hidden', !show);

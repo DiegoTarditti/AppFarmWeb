@@ -55,6 +55,20 @@
                         <strong>{{ stats.productos }}</strong> productos · sugerido <strong>{{ '{:,}'.format(stats.unidades_total).replace(',', '.') }}</strong> unidades · pérdida estimada <strong class="text-rose-700">{{ stats.perdida_mensual_total }} u/mes</strong> · <strong class="text-rose-700">${{ '{:,.0f}'.format(stats.perdida_pesos_total|default(0)).replace(',', '.') }}/mes</strong>
                     </p>
                 </div>
+                <form method="get" action="{{ url_for('informe_pedido_auto') }}" class="flex items-center gap-2 flex-wrap">
+                    <input type="hidden" name="lab_id" value="{{ lab_id }}">
+                    <span class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Tipo de venta:</span>
+                    <select name="venta_tipo" onchange="this.form.submit()"
+                            class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs">
+                        <option value="">Todos</option>
+                        <option value="libre"      {% if venta_tipo == 'libre' %}selected{% endif %}>Solo Venta Libre</option>
+                        <option value="receta"     {% if venta_tipo == 'receta' %}selected{% endif %}>Solo Bajo Receta</option>
+                        <option value="controlado" {% if venta_tipo == 'controlado' %}selected{% endif %}>Solo Controlados</option>
+                    </select>
+                    {% if venta_tipo %}
+                    <a href="{{ url_for('informe_pedido_auto', lab_id=lab_id) }}" class="text-[11px] text-[#888] hover:text-[#555] underline">limpiar</a>
+                    {% endif %}
+                </form>
             </div>
 
             {% set _cp = chart_perdida if chart_perdida is defined else None %}

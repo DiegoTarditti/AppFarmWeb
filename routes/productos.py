@@ -25,6 +25,7 @@ def init_app(app):
         lab = (request.args.get('lab') or '').strip()
         only_alt = request.args.get('only_alt') in ('1', 'true')
         only_pack = request.args.get('only_pack') in ('1', 'true')
+        venta_tipo = (request.args.get('venta_tipo') or '').strip()
         try:
             limit = min(int(request.args.get('limit') or 100), 500)
         except ValueError:
@@ -37,14 +38,15 @@ def init_app(app):
         with database.get_db() as session:
             base = session.query(Producto).options(joinedload(Producto.laboratorio))
             if q:
-                like = f'%{q.lower()}%'
-                base = base.filter(or_(
-                    func.lower(Producto.descripcion).like(like),
-                    Producto.codigo_barra.like(f'%{q}%'),
-                    Producto.codigo_barra_alt1.like(f'%{q}%'),
-                    Producto.codigo_barra_alt2.like(f'%{q}%'),
-                    Producto.codigo_barra_alt3.like(f'%{q}%'),
-                ))
+                from helpers import multi_token_filter
+                clausula = multi_token_filter(q,
+                    Producto.descripcion,
+                    Producto.codigo_barra,
+                    Producto.codigo_barra_alt1,
+                    Producto.codigo_barra_alt2,
+                    Producto.codigo_barra_alt3)
+                if clausula is not None:
+                    base = base.filter(clausula)
             if lab == '__none__':
                 base = base.filter(Producto.laboratorio_id.is_(None))
             elif lab:
@@ -60,9 +62,34 @@ def init_app(app):
                 ))
             if only_pack:
                 base = base.filter(Producto.es_pack == 1)
+            # Filtro por tipo de venta y control (vía obs_productos.id_tipo_venta_control)
+            if venta_tipo:
+                from database import ObsProducto
+                if venta_tipo == 'libre':
+                    tvc_vals = ['L']
+                elif venta_tipo == 'receta':
+                    tvc_vals = ['R', 'A']
+                elif venta_tipo == 'controlado':
+                    tvc_vals = ['1','2','3','4','5','6','7','8']
+                else:
+                    tvc_vals = []
+                if tvc_vals:
+                    sub = (session.query(ObsProducto.observer_id)
+                           .filter(ObsProducto.id_tipo_venta_control.in_(tvc_vals)).subquery())
+                    base = base.filter(Producto.observer_id.in_(sub))
 
             total = base.count()
             prods = base.order_by(Producto.descripcion).limit(limit).offset(offset).all()
+
+            # Resolver tvc por producto en batch (para mostrar el badge en la tabla)
+            from database import ObsProducto
+            obs_ids = [p.observer_id for p in prods if p.observer_id]
+            tvc_map = {}
+            if obs_ids:
+                tvc_map = dict(session.query(ObsProducto.observer_id,
+                                              ObsProducto.id_tipo_venta_control)
+                               .filter(ObsProducto.observer_id.in_(obs_ids)).all())
+
             data = [
                 {
                     'id': p.id,
@@ -76,6 +103,7 @@ def init_app(app):
                     'laboratorio_nombre': p.laboratorio.nombre if p.laboratorio else '',
                     'actualizado_en': p.actualizado_en.strftime('%d/%m/%Y') if p.actualizado_en else '',
                     'es_pack': p.es_pack or 0,
+                    'tvc': tvc_map.get(p.observer_id, '') if p.observer_id else '',
                 }
                 for p in prods
             ]
@@ -265,6 +293,11 @@ def init_app(app):
                 })
             resumen.sort(key=lambda r: r['ultimo_precio'])
 
+            # Diagnóstico para mejor mensaje en el frontend cuando no hay datos.
+            total_precios = session.query(ProductoPrecioHist.id).limit(1).first()
+            tabla_vacia = total_precios is None
+            es_pseudo_ean = ean.startswith('OBS:') or (ean.isdigit() and len(ean) <= 7)
+
             return jsonify({
                 'ok': True,
                 'ean': ean,
@@ -278,4 +311,6 @@ def init_app(app):
                 'series': series,
                 'resumen': resumen,
                 'detalle': detalle,
+                'tabla_vacia': tabla_vacia,
+                'es_pseudo_ean': es_pseudo_ean,
             })
