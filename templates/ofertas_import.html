@@ -68,6 +68,11 @@
 
         <input type="file" id="file-input" accept=".xlsx,.xls,.pdf,.jpg,.jpeg,.png,.webp,.bmp,.tiff,.tif"
                class="block w-full text-sm border border-surface-border rounded-lg px-3 py-2 file:bg-brand file:text-brand-dark file:font-semibold file:rounded-md file:border-0 file:px-3 file:py-1 file:mr-3 file:cursor-pointer">
+        {% if ruta_excels %}
+        <p class="text-[11px] text-[#888] mt-1.5">📁 Buscá el archivo en <code class="font-mono bg-[#f5f5f5] px-1 rounded">{{ ruta_excels }}</code> <span class="text-[10px]">(carpeta predeterminada de Excels — la cambiás en /settings)</span></p>
+        {% else %}
+        <p class="text-[11px] text-[#bbb] mt-1.5">💡 Tip: configurá una carpeta predeterminada en <a href="{{ url_for('settings') }}" class="underline hover:text-brand">/settings → Carpeta de Excels</a>.</p>
+        {% endif %}
         <button type="button" id="btn-parse"
                 class="mt-3 bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg text-sm">
             Analizar archivo →

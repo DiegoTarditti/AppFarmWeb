@@ -34,13 +34,17 @@ def init_app(app):
 
     @app.route('/modulos/import', methods=['GET'])
     @login_required
-    def modulos_import_page():
+    def modulos_import_page():  # type: ignore[reportUnusedFunction]
+        from helpers import get_config
+        cfg = get_config()
         with database.get_db() as session:
             labs = (session.query(Laboratorio)
                     .filter(Laboratorio.activo == True)  # noqa: E712
                     .order_by(Laboratorio.nombre).all())
             labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
-        return render_template('modulos_import.html', laboratorios=labs_data)
+        return render_template('modulos_import.html',
+                               laboratorios=labs_data,
+                               ruta_excels=cfg.get('ruta_excels', ''))
 
     @app.route('/api/modulos/import-preview', methods=['POST'])
     @login_required
