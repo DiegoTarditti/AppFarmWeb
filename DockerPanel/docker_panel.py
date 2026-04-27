@@ -1643,12 +1643,75 @@ class DockerPanel(tk.Tk):
         else:
             self.queue_badge.config(text=f"Cola: {n} pendiente{'s' if n > 1 else ''}", fg=YELLOW)
 
+    # Patrones que delatan que la app web crasheó al arrancar — Docker
+    # devuelve exit 0 al "reiniciar" pero la app adentro explota después.
+    _POST_CHECK_ERROR_PATTERNS = (
+        'traceback',
+        'syntaxerror',
+        'importerror',
+        'modulenotfounderror',
+        'gunicorn.errors.haltserver',
+        'worker failed to boot',
+        'application startup failed',
+        'exited with code',
+    )
+
+    def _post_check_web(self):
+        """Después de un restart/up/build, lee los logs últimos del web y
+        avisa si hay tracebacks. Docker reporta exit 0 incluso cuando
+        gunicorn crashea, así que sin este check te enterás recién al
+        abrir el browser y ver un 500.
+
+        Mantiene self._running=True durante el chequeo para que el panel
+        no acepte otros comandos mientras esperamos.
+        """
+        cwd = self.dir_var.get()
+        try:
+            r = subprocess.run(
+                "docker-compose logs --tail=40 web",
+                shell=True, cwd=cwd,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, encoding="utf-8", errors="replace", timeout=15,
+            )
+            logs = (r.stdout or '').lower()
+        except Exception as e:
+            self.after(0, self._append,
+                       f"  ⚠  No pude verificar logs post-restart: {e}\n", "dim")
+            self._running = False
+            return
+
+        hits = [p for p in self._POST_CHECK_ERROR_PATTERNS if p in logs]
+        if hits:
+            self.after(0, self._append,
+                       "\n⚠  Post-check: la app parece haber crasheado al arrancar.\n",
+                       "err")
+            self.after(0, self._append,
+                       f"   Detecté: {', '.join(hits)}\n", "err")
+            self.after(0, self._append,
+                       "   Mirá los logs completos: 'Logs Web (50 líneas)'.\n",
+                       "dim")
+            self.after(0, self._set_status, "● Error post-restart", RED)
+        else:
+            self.after(0, self._append,
+                       "  ✔  Post-check: app respondiendo, sin tracebacks.\n",
+                       "ok")
+            self.after(0, self._set_status, "● Listo", GREEN)
+        self._running = False
+
     def _exec(self, cmd):
         self._running = True
         cwd = self.dir_var.get()
         self.after(0, self._append, f"\n$ {cmd}\n", "cmd")
         self.after(0, self._append, f"  dir: {cwd}\n", "dim")
         self.after(0, self._set_status, "● Ejecutando…", YELLOW)
+
+        # ¿Es un comando que arranca/reinicia el web? Si lo es, post-check.
+        cmd_lower = cmd.lower()
+        debe_post_check = (
+            'restart web' in cmd_lower
+            or 'up -d' in cmd_lower
+            or 'build web' in cmd_lower
+        )
 
         try:
             self._proc = subprocess.Popen(
@@ -1661,9 +1724,21 @@ class DockerPanel(tk.Tk):
                 self.after(0, self._append, line, tag)
             self._proc.wait()
             rc = self._proc.returncode
+            post_check_pendiente = False
             if rc == 0:
                 self.after(0, self._append, "\n✔  Completado (exit 0)\n", "ok")
-                self.after(0, self._set_status, "● Listo", GREEN)
+                if debe_post_check:
+                    # Mantenemos el panel "ocupado" mientras esperamos al
+                    # post-check. Status queda en Verificando hasta que el
+                    # check decide Listo o Error.
+                    self.after(0, self._append,
+                               "  ⏳  Post-check: esperando 3s para verificar que la app levantó OK…\n",
+                               "dim")
+                    self.after(0, self._set_status, "● Verificando arranque…", YELLOW)
+                    self.after(3000, self._post_check_web)
+                    post_check_pendiente = True
+                else:
+                    self.after(0, self._set_status, "● Listo", GREEN)
                 self.after(500, self._refresh_status)
             else:
                 self.after(0, self._append, f"\n✖  Terminó con código {rc}\n", "err")
@@ -1671,9 +1746,13 @@ class DockerPanel(tk.Tk):
         except Exception as e:
             self.after(0, self._append, f"\n✖  {e}\n", "err")
             self.after(0, self._set_status, "● Error", RED)
+            post_check_pendiente = False
         finally:
-            self._running = False
             self._proc = None
+            # Si dejamos un post-check programado, NO liberamos _running —
+            # lo va a hacer _post_check_web cuando termine.
+            if not post_check_pendiente:
+                self._running = False
 
     def _stop_proc(self):
         """Interrumpe el proceso activo. Los comandos encolados siguen pendientes."""
