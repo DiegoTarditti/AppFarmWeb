@@ -2,8 +2,15 @@
 
    Uso desde la página contenedora:
      1. {% include '_comparar_labs.html' %} al final del body.
-     2. En cualquier tabla, agregar un botón:
-        <button onclick="openComparar(<droga_id>, '<codigo_barra>', '<nombre>')">⇄ Comparar otros labs</button>
+     2. En cualquier tabla, agregar un botón con data-attributes (más robusto
+        que onclick inline porque evita problemas de escape):
+        <button class="btn-cmp-labs"
+                data-droga="123"
+                data-cb="7791234567890"
+                data-nombre="PRODUCTO X">⇄</button>
+
+     Alternativamente, también podés llamar window.openComparar(droga, cb, nombre)
+     directamente.
 
    Necesita el endpoint /api/droga/<id>/productos para los datos.
 #}
@@ -133,6 +140,24 @@
 
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape') cerrarComparar();
+    });
+
+    // Event delegation para botones con clase .btn-cmp-labs y data-attributes.
+    // Más robusto que onclick inline (evita problemas de escape con comillas,
+    // unicode, etc. en la descripción).
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.btn-cmp-labs');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const droga = parseInt(btn.dataset.droga, 10);
+        const cb = btn.dataset.cb || '';
+        const nombre = btn.dataset.nombre || '';
+        if (!droga) {
+            alert('Este producto no tiene monodroga vinculada.');
+            return;
+        }
+        openComparar(droga, cb, nombre);
     });
 })();
 </script>

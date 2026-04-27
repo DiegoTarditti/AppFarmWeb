@@ -58,7 +58,12 @@
                                 <td class="p-1 text-center whitespace-nowrap">
                                     <button type="button" onclick="openChartObs({{ q.producto_id }})" class="text-violet-700 hover:text-violet-900 mr-1" title="Histórico">📊</button>
                                     {% if q.droga_id %}
-                                    <button type="button" onclick="openComparar({{ q.droga_id }}, {{ q.producto_id|string|tojson }}, {{ q.descripcion|tojson }})" class="text-emerald-700 hover:text-emerald-900" title="Comparar otros labs">⇄</button>
+                                    <button type="button"
+                                            class="btn-cmp-labs text-emerald-700 hover:text-emerald-900"
+                                            data-droga="{{ q.droga_id }}"
+                                            data-cb="{{ q.producto_id }}"
+                                            data-nombre="{{ q.descripcion }}"
+                                            title="Comparar otros labs">⇄</button>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -96,7 +101,12 @@
                             <td class="py-1.5 text-center whitespace-nowrap">
                                 <button type="button" onclick="openChartObs({{ p.producto_id }})" class="text-violet-700 hover:text-violet-900 mr-1" title="Histórico">📊</button>
                                 {% if p.droga_id %}
-                                <button type="button" onclick="openComparar({{ p.droga_id }}, {{ p.producto_id|string|tojson }}, {{ p.descripcion|tojson }})" class="text-emerald-700 hover:text-emerald-900" title="Comparar otros labs">⇄</button>
+                                <button type="button"
+                                        class="btn-cmp-labs text-emerald-700 hover:text-emerald-900"
+                                        data-droga="{{ p.droga_id }}"
+                                        data-cb="{{ p.producto_id }}"
+                                        data-nombre="{{ p.descripcion }}"
+                                        title="Comparar otros labs">⇄</button>
                                 {% endif %}
                             </td>
                         </tr>

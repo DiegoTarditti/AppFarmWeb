@@ -303,9 +303,11 @@
                                                 title="Histórico de ventas">📊</button>
                                         {% if r.droga_id %}
                                         <button type="button"
-                                                onclick="openComparar({{ r.droga_id }}, {{ (r.ean or r.producto_id|string)|tojson }}, {{ r.descripcion|tojson }})"
-                                                class="text-emerald-700 hover:text-emerald-900 text-base"
-                                                title="Comparar con otros laboratorios">⇄</button>
+                                                class="btn-cmp-labs inline-flex items-center gap-1 text-[11px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-300"
+                                                data-droga="{{ r.droga_id }}"
+                                                data-cb="{{ r.ean or r.producto_id }}"
+                                                data-nombre="{{ r.descripcion }}"
+                                                title="Comparar con otros laboratorios">⇄ Comparar</button>
                                         {% endif %}
                                     </td>
                                 </tr>
