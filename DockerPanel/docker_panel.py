@@ -1778,8 +1778,67 @@ class DockerPanel(tk.Tk):
 
 
 # === BEGIN HELPER HTTP (copy to unified panel) ===
+def _load_helper_whitelist():
+    """Devuelve la lista de rutas (realpath, normcase) que el helper puede leer.
+
+    Fuentes (en orden de precedencia, todas se acumulan):
+      1. ``carpeta=...`` del agente (lo que ya configuraba el panel para los PDFs).
+      2. ``helper_whitelist=path1|path2|...`` extra en agente_config.txt.
+
+    Si no hay nada → lista vacía → todo se rechaza con 403. Antes este endpoint
+    listaba/leía cualquier carpeta del filesystem (riesgo de leak). Ahora un
+    cliente malicioso solo accede a lo que el dueño del panel haya autorizado.
+    """
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
+    paths = []
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("carpeta="):
+                        v = line.split("=", 1)[1].strip()
+                        if v: paths.append(v)
+                    elif line.startswith("helper_whitelist="):
+                        for v in line.split("=", 1)[1].split("|"):
+                            v = v.strip()
+                            if v: paths.append(v)
+        except OSError:
+            pass
+    # Normalizar a realpath + normcase para comparar de forma segura en Windows.
+    out = []
+    for p in paths:
+        try:
+            rp = os.path.normcase(os.path.realpath(p))
+            if os.path.isdir(rp) and rp not in out:
+                out.append(rp)
+        except OSError:
+            continue
+    return out
+
+
+def _path_allowed(target_path, whitelist):
+    """¿``target_path`` está dentro de alguna carpeta de la whitelist?
+    Resuelve symlinks y normaliza para evitar bypass por ``..`` o ``\\\\?\\``."""
+    if not target_path or not whitelist:
+        return False
+    try:
+        rp = os.path.normcase(os.path.realpath(target_path))
+    except OSError:
+        return False
+    for allowed in whitelist:
+        # Match exacto o cualquier subcarpeta.
+        if rp == allowed or rp.startswith(allowed + os.sep):
+            return True
+    return False
+
+
 class _HelperHandler(http.server.BaseHTTPRequestHandler):
-    """Endpoints locales: /ping, /folder-files?path=…, /read-pdf?path=…"""
+    """Endpoints locales: /ping, /folder-files?path=…, /read-pdf?path=…
+
+    Whitelist: las únicas rutas accesibles son las definidas por el usuario en
+    ``agente_config.txt`` (campos ``carpeta=`` y ``helper_whitelist=``). Todo
+    lo demás devuelve 403."""
 
     def _cors(self):
         origin = self.headers.get("Origin", "")
@@ -1809,10 +1868,15 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
         if parsed.path == "/ping":
             return self._json(200, {"ok": True, "version": "unified", "port": HELPER_PORT})
 
+        # Whitelist se relee en cada request — refleja cambios de config sin reiniciar.
+        whitelist = _load_helper_whitelist()
+
         if parsed.path == "/folder-files":
             ruta = qs.get("path", [""])[0]
             if not ruta or not os.path.isdir(ruta):
                 return self._json(400, {"error": "path inválido o inaccesible"})
+            if not _path_allowed(ruta, whitelist):
+                return self._json(403, {"error": "ruta fuera de la whitelist. Configurala en agente_config.txt (carpeta= o helper_whitelist=)."})
             try:
                 files = []
                 for name in os.listdir(ruta):
@@ -1837,6 +1901,8 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
             full = qs.get("path", [""])[0]
             if not full or not os.path.isfile(full) or not full.lower().endswith(".pdf"):
                 return self._json(400, {"error": "path inválido"})
+            if not _path_allowed(full, whitelist):
+                return self._json(403, {"error": "archivo fuera de la whitelist. Configurala en agente_config.txt (carpeta= o helper_whitelist=)."})
             try:
                 with open(full, "rb") as f:
                     body = f.read()
