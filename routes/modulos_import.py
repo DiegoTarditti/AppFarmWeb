@@ -16,6 +16,7 @@ Diferencias clave respecto al de ofertas:
 El endpoint legacy /modulo-packs/importar sigue funcionando como fallback.
 """
 import os
+import re
 import tempfile
 
 from flask import jsonify, render_template, request
@@ -28,6 +29,121 @@ from routes.ofertas_import import (
     _previsualizar_pdf,
     _previsualizar_xlsx,
 )
+
+
+# ── Detección de packs (función pura, testeable sin DB) ───────────────────────
+
+_RE_PACK_XN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
+_RE_PACK_PALABRA = re.compile(r'\bPACK\b', re.IGNORECASE)
+_RE_ENVASE = re.compile(r'\b[xX]\s*(\d{1,4})\b')
+
+
+def _ean_o_codigo(it):
+    """EAN si tiene; si no, el código del proveedor; None si ninguno."""
+    e = (it.get('ean') or '').strip()
+    if e:
+        return e
+    return (it.get('codigo') or '').strip() or None
+
+
+def detectar_packs_modulos(items, usar_historico=False, sin_ventas_func=None):
+    """Detecta packs a partir de los ítems del wizard de módulos.
+
+    Por defecto: SOLO marca pack la fila amarilla del Excel (campo `_destacado`).
+    Si `usar_historico=True`, también aplica el combo:
+        primero del módulo + descripción contiene "PACK" + nunca vendido por ese código.
+
+    El regex `PACK X N` aporta la cantidad cuando está disponible (no marca por sí solo).
+    Heurística envase múltiplo: dentro del mismo módulo, sugiere ean_unidad y cantidad
+    cuando el envase de un pack es múltiplo del envase de otro item.
+
+    Args:
+        items: lista de dicts con keys {nombre_modulo, ean, codigo, descripcion,
+               _destacado (bool)}.
+        usar_historico: si True, aplica el combo + sin_ventas_func.
+        sin_ventas_func: callable(ean) -> bool. Si None, se asume que ningún
+                         producto tiene ventas (todos sin ventas).
+
+    Returns:
+        dict {ean: {confianza, razon, cantidad, ean_unidad_sug}}.
+    """
+    if not items:
+        return {}
+
+    if sin_ventas_func is None:
+        def sin_ventas_func(_):
+            return True
+
+    # 1. Agrupar por módulo en orden de aparición.
+    por_modulo = {}
+    for idx, it in enumerate(items):
+        nm = (it.get('nombre_modulo') or 'sin_nombre').strip() or 'sin_nombre'
+        por_modulo.setdefault(nm, [])
+        por_modulo[nm].append((idx, it))
+
+    pack_map = {}
+    for _nm, lst in por_modulo.items():
+        # Pre-calcular envases del módulo para sugerir ean_unidad.
+        envases = {}
+        for idx, prod in lst:
+            nums = _RE_ENVASE.findall(prod.get('descripcion') or '')
+            if nums:
+                envases[idx] = int(nums[-1])
+
+        for pos, (idx, prod) in enumerate(lst):
+            e = _ean_o_codigo(prod)
+            if not e:
+                continue
+            desc = prod.get('descripcion') or ''
+            destacado = bool(prod.get('_destacado'))
+            m_xn = _RE_PACK_XN.search(desc)
+            tiene_pack = bool(_RE_PACK_PALABRA.search(desc))
+            primero = (pos == 0 and len(lst) >= 2)
+            sin_v = sin_ventas_func(e)
+
+            combo = usar_historico and primero and tiene_pack and sin_v
+
+            if not destacado and not combo:
+                continue
+
+            cant_pack = int(m_xn.group(1)) if m_xn else None
+            cant_pack_del_regex = m_xn is not None
+            razon = []
+            if destacado:
+                razon.append('amarillo')
+            if combo:
+                razon.append('primero+pack+sin_ventas')
+            if m_xn:
+                razon.append(f'PACKx{cant_pack}')
+
+            # Sugerir ean_unidad por envase múltiplo. Si encontramos varios
+            # divisores, nos quedamos con el de mayor k. Si el cant_pack no
+            # vino del regex PACK X N, también lo actualizamos al mejor k.
+            ean_unidad = ''
+            env_i = envases.get(idx)
+            if env_i and env_i >= 2:
+                mejor_k = None
+                for j_idx, otro in lst:
+                    if j_idx == idx:
+                        continue
+                    env_j = envases.get(j_idx)
+                    if not env_j or env_j >= env_i:
+                        continue
+                    if env_i % env_j == 0:
+                        k = env_i // env_j
+                        if k >= 2 and (mejor_k is None or k > mejor_k):
+                            mejor_k = k
+                            ean_unidad = _ean_o_codigo(otro) or ''
+                            if not cant_pack_del_regex:
+                                cant_pack = k
+
+            pack_map[e] = {
+                'confianza': 'alta' if destacado else 'media',
+                'razon': '+'.join(razon),
+                'cantidad': cant_pack,
+                'ean_unidad_sug': ean_unidad,
+            }
+    return pack_map
 
 
 def init_app(app):
@@ -108,7 +224,6 @@ def init_app(app):
           - Nunca se vendió por ese código (sin ventas históricas)
         Cuando se cumplen los 3 → pack. El regex 'PACK X N' aporta cantidad.
         """
-        import re as _re
         import producto_matcher as pm
         from database import ObsVentaMensual, Producto
         data = request.get_json(silent=True) or {}
@@ -122,16 +237,6 @@ def init_app(app):
 
         if not items:
             return jsonify({'items': [], 'stats': {}})
-
-        def _ean_o_codigo(it):
-            e = (it.get('ean') or '').strip()
-            if e:
-                return e
-            return (it.get('codigo') or '').strip() or None
-
-        re_pack_xn = _re.compile(r'\bPACK\s*X\s*(\d+)\b', _re.IGNORECASE)
-        re_pack_palabra = _re.compile(r'\bPACK\b', _re.IGNORECASE)
-        re_envase = _re.compile(r'\b[xX]\s*(\d{1,4})\b')
 
         with database.get_db() as session:
             # 1. Match contra catálogo (mismo flujo que ofertas).
@@ -168,75 +273,11 @@ def init_app(app):
                     return True
                 return oid not in con_ventas
 
-            # 3. Agrupar por módulo en orden de aparición.
-            por_modulo = {}
-            for idx, it in enumerate(items):
-                nm = (it.get('nombre_modulo') or 'sin_nombre').strip() or 'sin_nombre'
-                por_modulo.setdefault(nm, [])
-                por_modulo[nm].append((idx, it))
-
-            pack_map = {}
-            for nm, lst in por_modulo.items():
-                # Pre-calcular envases del módulo para sugerir ean_unidad.
-                envases = {}
-                for idx, prod in lst:
-                    nums = re_envase.findall(prod.get('descripcion') or '')
-                    if nums:
-                        envases[idx] = int(nums[-1])
-
-                for pos, (idx, prod) in enumerate(lst):
-                    e = _ean_o_codigo(prod)
-                    if not e:
-                        continue
-                    desc = prod.get('descripcion') or ''
-                    destacado = bool(prod.get('_destacado'))
-                    m_xn = re_pack_xn.search(desc)
-                    tiene_pack = bool(re_pack_palabra.search(desc))
-                    primero = (pos == 0 and len(lst) >= 2)
-                    sin_v = _sin_ventas(e)
-
-                    # Combo lógica del usuario: primero del grupo + dice PACK
-                    # + nunca vendido por ese código. Solo aplica si el caller
-                    # pidió usar el histórico de ventas.
-                    combo = usar_historico and primero and tiene_pack and sin_v
-
-                    if not destacado and not combo:
-                        continue
-
-                    cant_pack = int(m_xn.group(1)) if m_xn else None
-                    razon = []
-                    if destacado:
-                        razon.append('amarillo')
-                    if combo:
-                        razon.append('primero+pack+sin_ventas')
-                    if m_xn:
-                        razon.append(f'PACKx{cant_pack}')
-
-                    # Sugerir ean_unidad por envase múltiplo dentro del módulo.
-                    ean_unidad = ''
-                    env_i = envases.get(idx)
-                    if env_i and env_i >= 2:
-                        mejor_k = None
-                        for j_idx, otro in lst:
-                            if j_idx == idx:
-                                continue
-                            env_j = envases.get(j_idx)
-                            if not env_j or env_j >= env_i:
-                                continue
-                            if env_i % env_j == 0:
-                                k = env_i // env_j
-                                if k >= 2 and (mejor_k is None or k > mejor_k):
-                                    mejor_k = k
-                                    ean_unidad = _ean_o_codigo(otro) or ''
-                                    if cant_pack is None:
-                                        cant_pack = k
-
-                    pack_map[e] = {
-                        'confianza': 'alta' if destacado else 'media',
-                        'razon': '+'.join(razon),
-                        'cantidad': cant_pack,
-                        'ean_unidad_sug': ean_unidad,
-                    }
+            # 3. Detección de packs (función pura, ver detectar_packs_modulos arriba).
+            pack_map = detectar_packs_modulos(
+                items, usar_historico=usar_historico,
+                sin_ventas_func=_sin_ventas if usar_historico else None,
+            )
 
             # 3. Combinar match + pack en cada entry.
             validados = []
