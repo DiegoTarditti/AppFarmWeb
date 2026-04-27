@@ -13,11 +13,21 @@ from datetime import date, timedelta
 from tkinter import filedialog, messagebox, ttk
 
 # ─── CLAVE PRIVADA ────────────────────────────────────────────────────────────
-# Debe ser idéntica a la de license_utils.py en el proyecto.
-_SECRET = "CAMBIAR-POR-UNA-CLAVE-SECRETA-LARGA-Y-UNICA"
+# Se lee de la env var LICENSE_SECRET. Debe ser idéntica en cada equipo que
+# verifica licencias (license_utils.py). Nunca commitear el valor real.
 # ──────────────────────────────────────────────────────────────────────────────
 
 LOG_FILE = os.path.join(os.path.dirname(__file__), "licencias_emitidas.csv")
+
+
+def _get_secret() -> bytes:
+    secret = os.environ.get('LICENSE_SECRET', '').strip()
+    if len(secret) < 32:
+        raise RuntimeError(
+            "LICENSE_SECRET no configurada o demasiado corta (>=32 chars). "
+            "Definila como env var antes de generar licencias."
+        )
+    return secret.encode()
 
 
 def generate_license(farmacia: str, fingerprint: str, expiry: str) -> str:
@@ -28,7 +38,7 @@ def generate_license(farmacia: str, fingerprint: str, expiry: str) -> str:
         "emitida": date.today().isoformat(),
     }
     payload = json.dumps(data, sort_keys=True, ensure_ascii=False)
-    sig = hmac.new(_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    sig = hmac.new(_get_secret(), payload.encode(), hashlib.sha256).hexdigest()
     return json.dumps({"data": data, "sig": sig}, ensure_ascii=False, indent=2)
 
 

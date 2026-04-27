@@ -12,7 +12,19 @@ from database import init_db
 
 app = Flask(__name__)
 CORS(app)
-app.secret_key = os.environ.get('SECRET_KEY', 'supersecretkey')
+
+# SECRET_KEY firma cookies de sesión. Sin un valor fuerte, las sesiones son
+# falsificables. Antes había un fallback 'supersecretkey' — eso desactivaba
+# la seguridad si alguien deployaba sin setear la env var. Ahora fallamos al
+# arrancar si falta o es débil. En desarrollo local, exportá una clave random
+# en el .env (ver .env.example).
+_secret_key = os.environ.get('SECRET_KEY', '').strip()
+if len(_secret_key) < 16:
+    raise RuntimeError(
+        "SECRET_KEY no configurada o demasiado corta (>=16 chars). "
+        "Definila como env var. Generá una con: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
+app.secret_key = _secret_key
 app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
 app.config['TEMPLATES_AUTO_RELOAD'] = True
 

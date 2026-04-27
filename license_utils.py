@@ -5,18 +5,30 @@ Incluir en el proyecto distribuido. NO incluir license_generator.py.
 import hashlib
 import hmac
 import json
+import os
 import platform
 import subprocess
 import uuid
 from datetime import date
 
 # ─── CLAVE PRIVADA ────────────────────────────────────────────────────────────
-# Debe ser idéntica en license_generator.py y en este archivo.
-# Nunca compartir ni publicar esta clave.
-_SECRET = "CAMBIAR-POR-UNA-CLAVE-SECRETA-LARGA-Y-UNICA"
+# Se lee de la env var LICENSE_SECRET. Debe ser idéntica en el equipo que
+# genera licencias (license_generator.py) y en cada equipo que las verifica.
+# Nunca commitear el valor real. Si falta, verify_license() falla — eso es
+# intencional para que un deploy mal configurado no quede con HMAC débil.
 # ──────────────────────────────────────────────────────────────────────────────
 
 LICENSE_PATH = '/app/license.dat'
+
+
+def _get_secret() -> bytes:
+    secret = os.environ.get('LICENSE_SECRET', '').strip()
+    if len(secret) < 32:
+        raise RuntimeError(
+            "LICENSE_SECRET no configurada o demasiado corta (>=32 chars). "
+            "Definila como env var en el equipo. La firma HMAC de licencias depende de esta clave."
+        )
+    return secret.encode()
 
 
 def get_fingerprint() -> str:
@@ -47,7 +59,7 @@ def verify_license(license_path: str = LICENSE_PATH) -> tuple:
 
     # Verificar firma
     payload = json.dumps(obj["data"], sort_keys=True, ensure_ascii=False)
-    expected = hmac.new(_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    expected = hmac.new(_get_secret(), payload.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(obj.get("sig", ""), expected):
         return False, "Licencia inválida o manipulada."
 
