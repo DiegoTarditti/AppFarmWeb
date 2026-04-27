@@ -709,6 +709,9 @@ def init_app(app):
     def show_results(invoice_id):
         with database.get_db() as session:
             invoice = session.get(database.Invoice, invoice_id)
+            if invoice is None:
+                flash('Factura no encontrada.', 'error')
+                return redirect(url_for('index'))
             saved_differences = get_saved_differences(session, invoice_id)
             differences = [
                 {
@@ -720,7 +723,7 @@ def init_app(app):
             ]
             total_unidades_calc = sum(
                 item.cantidad for item in invoice.items if item.cantidad
-            ) if invoice else 0
+            )
             return render_template('results.html', invoice=invoice, differences=differences,
                                    total_unidades_calc=total_unidades_calc)
 
