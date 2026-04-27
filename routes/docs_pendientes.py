@@ -147,7 +147,7 @@ def init_app(app):
             'docs_pendientes': {'count': count, 'ultimos': ultimos, 'max_id': max_id},
         })
 
-    @app.route('/api/product/<barcode>/chart')
+    @app.route('/api/product/<path:barcode>/chart')
     def api_product_chart(barcode):
         """Devuelve datos de ventas históricas de un producto desde ProductAnalytics."""
         with database.get_db() as session:

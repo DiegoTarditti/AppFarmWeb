@@ -468,14 +468,14 @@ function openChart(barcode) {
 
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
-    fetch('/api/product/' + barcode + '/chart', {credentials: 'same-origin'})
+    fetch('/api/product/' + encodeURIComponent(barcode) + '/chart', {credentials: 'same-origin'})
         .then(async r => {
             const ct = r.headers.get('content-type') || '';
             if (!ct.includes('application/json')) {
                 if (r.status === 401 || r.status === 302) {
                     throw new Error('Tu sesión expiró. Recargá la página.');
                 }
-                throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
+                throw new Error(`Servidor devolvió ${r.status} sin JSON. Código: ${barcode}`);
             }
             return r.json();
         })
