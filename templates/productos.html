@@ -141,9 +141,7 @@
                 <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
                     <th class="text-left px-3 py-2 rounded-tl-lg" style="min-width:240px">Descripción</th>
                     <th class="text-left px-3 py-2" style="width:130px">Cód. principal</th>
-                    <th class="text-left px-3 py-2" style="width:110px">EAN alt. 1</th>
-                    <th class="text-left px-3 py-2" style="width:110px">EAN alt. 2</th>
-                    <th class="text-left px-3 py-2" style="width:110px">EAN alt. 3</th>
+                    <th class="text-left px-3 py-2" style="width:130px" title="EANs alternativos. Click en un slot vacío para agregar.">EAN alt.</th>
                     <th class="text-left px-3 py-2" style="width:130px">Laboratorio</th>
                     <th class="text-left px-3 py-2" style="width:200px"
                         title="Catalogación estructurada: monodroga · concentración · forma · cantidad de envase. Vacío = falta extraer (corré el backfill en /catalogacion).">
@@ -223,9 +221,13 @@ function buildRow(p) {
         data-ispack="${p.es_pack ? 'true' : 'false'}">
         <td class="px-3 py-2 font-medium text-[#1e1e1e] editable-cell" data-id="${p.id}" data-field="descripcion">${escHtml(p.descripcion)}</td>
         <td class="px-3 py-2 font-mono text-[#555] text-[11px] editable-cell" data-id="${p.id}" data-field="codigo_barra">${escHtml(p.codigo_barra)}</td>
-        <td class="px-3 py-2 editable-cell" data-id="${p.id}" data-field="codigo_barra_alt1">${altCell(p.alt1)}</td>
-        <td class="px-3 py-2 editable-cell" data-id="${p.id}" data-field="codigo_barra_alt2">${altCell(p.alt2)}</td>
-        <td class="px-3 py-2 editable-cell" data-id="${p.id}" data-field="codigo_barra_alt3">${altCell(p.alt3)}</td>
+        <td class="px-3 py-2 align-top">
+            <div class="flex flex-col gap-1">
+                <div class="editable-cell" data-id="${p.id}" data-field="codigo_barra_alt1">${altCell(p.alt1)}</div>
+                <div class="editable-cell" data-id="${p.id}" data-field="codigo_barra_alt2">${altCell(p.alt2)}</div>
+                <div class="editable-cell" data-id="${p.id}" data-field="codigo_barra_alt3">${altCell(p.alt3)}</div>
+            </div>
+        </td>
         <td class="px-3 py-2">
             <form method="post" action="/producto/${p.id}/laboratorio" onchange="this.submit()">
                 <select name="laboratorio_id" title="Laboratorio"

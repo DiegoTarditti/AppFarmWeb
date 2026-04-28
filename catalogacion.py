@@ -173,6 +173,26 @@ def extraer_de_descripcion(descripcion):
             except (ValueError, IndexError):
                 continue
 
+    # Fallback: concentración como número "huérfano" (sin unidad pegada) en
+    # sólidos orales tipo "ACTRON 600 RAPIDA ACCION CAP x 10" donde 600 son mg
+    # implícitos. Solo aplica si la regex principal NO capturó concentración y
+    # la forma es CPR/CAP (sólido oral). Filtra el número de cantidad_envase.
+    if 'concentracion_mg' not in out and out.get('forma_farma') in ('CPR', 'CAP'):
+        cant_envase_int = int(out['cantidad_envase']) if out.get('cantidad_envase') else None
+        # Numero entre 1 y 1000, NO precedido por X/POR (esos son cantidad).
+        for m in re.finditer(r'(?<![A-Z\d/])(?<![X])\s(\d{1,4})(?![A-Z\d.,])', ' ' + desc + ' '):
+            try:
+                n = int(m.group(1))
+            except ValueError:
+                continue
+            if n < 1 or n > 1000:
+                continue
+            if cant_envase_int is not None and n == cant_envase_int:
+                continue
+            out['concentracion_mg'] = Decimal(n)
+            out['concentracion_unidad'] = 'MG'
+            break
+
     return out
 
 
