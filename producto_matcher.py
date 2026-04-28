@@ -326,13 +326,51 @@ def match_producto(*,
                         result.estrategia = 'ean_exacto'
                         result.confianza = CONFIANZA_ALTA
 
-        # Estrategia 2: alfabeta exacto
+        # Estrategia 2: alfabeta exacto.
+        # Salvaguardas:
+        #   a) Códigos cortos (<5 dígitos) son típicamente "código interno"
+        #      del lab (ej. Baliarda usa 1-4 dígitos). Mappear ciegamente
+        #      contra obs_productos.codigo_alfabeta da falsos positivos
+        #      catastróficos (BALIGLUC 565 → TENSOPRIL 20mg). Si el código
+        #      es corto, exigimos que matchee dentro del MISMO laboratorio.
+        #   b) Aunque el código sea largo, si nos pasaron lab_id y hay
+        #      varios productos con ese codigo_alfabeta en otros labs,
+        #      preferimos el del lab dado.
         if not result.producto and codigo_alfabeta:
             alf_clean = str(codigo_alfabeta).strip()
             alf_col = getattr(P, spec.alfabeta_field, None)
             if alf_clean and alf_col is not None:
-                prod = session.query(P).filter(alf_col == alf_clean).first()
-                if prod:
+                base_q = session.query(P).filter(alf_col == alf_clean)
+                prod = None
+                # Si hay lab, intentar primero filtrado por lab.
+                if laboratorio_id and lab_col is not None:
+                    prod = base_q.filter(lab_col == laboratorio_id).first()
+                # Fallback global solo si el código es "largo" (>=5 dígitos
+                # numéricos): asumimos que es código alfabeta real, no
+                # interno corto.
+                if prod is None:
+                    digits_only = ''.join(ch for ch in alf_clean if ch.isdigit())
+                    if len(digits_only) >= 5:
+                        prod = base_q.first()
+                if prod is not None:
+                    # SANITY CHECK: aunque el código alfabeta haya matcheado
+                    # exacto, validamos que las descripciones compartan
+                    # tokens significativos. Esto descarta falsos positivos
+                    # del estilo "BLAVIN 5 mg" vs "DEPAKENE CAP" (códigos
+                    # internos cortos colisionando entre labs distintos).
+                    # Si las descripciones no comparten al menos 1 token
+                    # significativo Y similitud >= 0.30, NO confiamos.
+                    if descripcion and getattr(prod, 'descripcion', None):
+                        toks_a = tokens_significativos(descripcion)
+                        toks_b = tokens_significativos(prod.descripcion)
+                        if toks_a and toks_b:
+                            sim = jaccard(toks_a, toks_b)
+                            comparten = bool(toks_a & toks_b)
+                            if not comparten or sim < 0.30:
+                                # Descartamos el match. Lo dejamos pasar a
+                                # las estrategias de descripción.
+                                prod = None
+                if prod is not None:
                     result.producto = prod
                     result.score = 1.0
                     result.estrategia = 'alfabeta_exacto'
@@ -729,11 +767,27 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                     encontrado = None
                     estrategia = ''
 
-                    # 1. alfabeta exacto
+                    # 1. alfabeta exacto. Doble salvaguarda:
+                    #   a) Solo confiamos si el código tiene >=5 dígitos
+                    #      (alfabeta real). Cortos (1-4) son código interno.
+                    #   b) Sanity check: las descripciones tienen que
+                    #      compartir al menos 1 token significativo Y
+                    #      jaccard >= 0.30. Sin esto: BLAVIN 19 → DEPAKENE.
                     if alf_in and alf_in in by_alfabeta:
-                        encontrado = by_alfabeta[alf_in]
-                        estrategia = 'alfabeta_exacto'
-                        score = 1.0
+                        digits = ''.join(ch for ch in alf_in if ch.isdigit())
+                        if len(digits) >= 5:
+                            cand = by_alfabeta[alf_in]
+                            cand_desc = getattr(cand, 'descripcion', '') or ''
+                            toks_a = tokens_significativos(desc_in)
+                            toks_b = tokens_significativos(cand_desc)
+                            ok_sanity = (
+                                bool(toks_a & toks_b)
+                                and jaccard(toks_a, toks_b) >= 0.30
+                            ) if (toks_a and toks_b) else True
+                            if ok_sanity:
+                                encontrado = cand
+                                estrategia = 'alfabeta_exacto'
+                                score = 1.0
 
                     # 2. descripcion exacta
                     if not encontrado:
