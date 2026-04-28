@@ -1099,21 +1099,24 @@ def init_app(app):
 
                 ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
 
-                ventas_3m = {pid: float(u or 0) for (pid, u) in session.query(
+                # Una sola query para 3m y 12m. El rango 3m está dentro del 12m,
+                # así que filtramos por 12m y sumamos condicionalmente con CASE.
+                # Antes eran 2 round-trips → 1.
+                from sqlalchemy import case
+                rows_ventas = session.query(
                     database.ObsVentaMensual.producto_observer,
-                    _f.sum(database.ObsVentaMensual.unidades))
-                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
-                            database.ObsVentaMensual.producto_observer.in_(obs_ids),
-                            ym_expr.between(desde_3m, hasta))
-                    .group_by(database.ObsVentaMensual.producto_observer).all()}
-
-                ventas_12m = {pid: float(u or 0) for (pid, u) in session.query(
-                    database.ObsVentaMensual.producto_observer,
-                    _f.sum(database.ObsVentaMensual.unidades))
-                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
-                            database.ObsVentaMensual.producto_observer.in_(obs_ids),
-                            ym_expr.between(desde_12m, hasta))
-                    .group_by(database.ObsVentaMensual.producto_observer).all()}
+                    _f.sum(case(
+                        (ym_expr.between(desde_3m, hasta),
+                         database.ObsVentaMensual.unidades),
+                        else_=0)).label('u3m'),
+                    _f.sum(database.ObsVentaMensual.unidades).label('u12m'),
+                ).filter(
+                    database.ObsVentaMensual.id_farmacia == id_farmacia,
+                    database.ObsVentaMensual.producto_observer.in_(obs_ids),
+                    ym_expr.between(desde_12m, hasta),
+                ).group_by(database.ObsVentaMensual.producto_observer).all()
+                ventas_3m = {pid: float(u3 or 0) for (pid, u3, _) in rows_ventas}
+                ventas_12m = {pid: float(u12 or 0) for (pid, _, u12) in rows_ventas}
 
                 # Serie mensual por producto (para estacionalidad agregada)
                 for (pid, anio, mes, u) in session.query(
