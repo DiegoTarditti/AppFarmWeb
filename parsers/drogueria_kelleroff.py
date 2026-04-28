@@ -1,9 +1,11 @@
 """
 Parser para: Drogueria Kelleroff
-CUIT: 
+CUIT:
 
-Generado automáticamente como plantilla base.
-Adaptar las expresiones regulares al formato exacto del PDF de este proveedor.
+⚠ DEPRECATED — auto-generado desde plantilla, los regexes nunca se completaron.
+Usar `kellerhoff.py` o `droguer_a_kellerhoff_s_a.py` (que sí están en uso).
+Este archivo se mantiene por compatibilidad si algún Provider antiguo tiene
+`parser_file='drogueria_kelleroff'` en DB. Migrar y borrar cuando se confirme.
 
 Cada ítem debe devolver un dict con:
   codigo_barra, cantidad, descripcion, precio_unitario (puede ser None), importe

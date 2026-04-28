@@ -942,6 +942,9 @@ def init_db(database_url=None):
                     try:
                         conn.execute(text(ddl))
                     except Exception:
+                        # Idempotente: si el tipo/sequence ya estaba limpio,
+                        # IF EXISTS de Postgres no debería tirar pero por las
+                        # dudas absorbemos. Es parte del workaround zombie pg_type.
                         pass
     Base.metadata.create_all(engine)
     is_sqlite = database_url.startswith('sqlite')
@@ -2004,8 +2007,13 @@ def _sqlite_add_columns(conn):
             ]:
                 if col not in existing_om:
                     conn.execute(text(f'ALTER TABLE ofertas_minimo ADD COLUMN {col} {sql_type}'))
-    except Exception:
-        pass
+    except Exception as e:
+        # Migración SQLite con varios pasos. Si falla algo (ej. ya estaba
+        # aplicado en formato distinto), seguimos. Loggeamos para detectar
+        # divergencias entre dev y prod.
+        import logging
+        logging.getLogger(__name__).warning(
+            'Migración SQLite ofertas_minimo falló (puede ser idempotente): %s', e)
 
     # Índices para queries frecuentes
     for stmt in [

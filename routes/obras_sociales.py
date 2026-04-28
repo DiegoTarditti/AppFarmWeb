@@ -1,7 +1,11 @@
 """Obras Sociales — dashboard y listado de dispensas.
 
-TODO: reemplazar _mock_dispensas() por consulta a la vista SQL v_dispensas_os
-cuando tengamos acceso a ObServer. El resto de la UI no debería cambiar.
+⚠ AÚN MOCK DATA. Plan de migración a datos reales:
+1. Sincronizar `DW.ProductosVendidos` detalle → tabla local `obs_ventas_detalle`
+   (ya está confirmado el schema, ver `c:/AppSeguimiento/10-obras-sociales.md`).
+2. Crear vista local `v_dispensas_os` que junte ventas + cliente + OS + plan + médico.
+3. Reemplazar `_mock_dispensas()` con queries reales contra esa vista.
+La UI no debería cambiar — solo cambia la fuente de datos.
 """
 
 import random

@@ -553,6 +553,8 @@ def init_app(app):
                     try:
                         invoice.fecha = _dt.date(y, mo, d)
                     except Exception:
+                        # Fecha inválida (ej. "31/02/2024") — dejamos la
+                        # fecha previa intacta y seguimos. No hace falta log.
                         pass
 
             aliases = {

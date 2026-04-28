@@ -100,8 +100,11 @@ def init_app(app):
             try:
                 parsed = parse_invoice_pdf(pdf_path, parser_file)
                 invoice_data = {**parsed, 'items': []}
-            except Exception:
-                pass
+            except Exception as e:
+                # Si el parser falla, seguimos con el invoice_data inicial
+                # (sin items). El user va a tener que cargar los datos a mano.
+                app.logger.warning('Parser %s falló sobre %s: %s',
+                                   parser_file, pdf_path, e)
 
         with database.get_db() as _s:
             try:
@@ -267,6 +270,7 @@ def init_app(app):
             try:
                 os.remove(tmp_path)
             except Exception:
+                # Cleanup best-effort. El SO va a limpiarlo igual al reiniciar.
                 pass
 
         items = []

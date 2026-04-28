@@ -1173,7 +1173,11 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                 'observer_id': p.observer_id,
                 'sin_vincular': p.observer_id not in ean_por_observer,
                 'nombre': p.descripcion,
-                'precio_pvp': 0,  # TODO: cuando tengamos precio en DW
+                # PVP actual no está expuesto directamente en DW.Productos.
+                # Lo derivamos del histórico (m12m/u12m) cuando hace falta;
+                # acá lo dejamos en 0 a propósito porque el caller no lo
+                # consume hoy. Si se necesita, calcular desde obs_ventas_mensuales.
+                'precio_pvp': 0,
                 'stock': mapa_stock.get(p.observer_id, 0),
                 'ventas': ventas,
                 'tvc': tvc,

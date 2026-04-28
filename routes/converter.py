@@ -129,8 +129,9 @@ def init_app(app):
                         'proveedor': meta.get('proveedor_razon', ''),
                         'cuit': meta.get('proveedor_cuit', ''),
                     })
-        except Exception:
-            pass
+        except Exception as e:
+            app.logger.warning('converter_index: error listando %s: %s',
+                               CONVERTER_DIR, e)
         return render_template('converter_index.html', files=files[:20])
 
     @app.route('/converter/check-duplicate', methods=['GET'])
@@ -904,8 +905,13 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
     if not os.path.exists(pdf_dest):
         try:
             shutil.copy(path, pdf_dest)
-        except Exception:
-            pass
+        except Exception as e:
+            # Best-effort: si la copia falla, el PDF queda solo en CONVERTER_DIR.
+            # No es crítico, pero si los logs muestran muchos de estos hay que
+            # revisar permisos/espacio en UPLOAD_FOLDER.
+            import logging
+            logging.getLogger(__name__).warning(
+                'No pude copiar %s a UPLOAD_FOLDER: %s', path, e)
 
     with database.get_db() as session:
         inv = database.Invoice(
