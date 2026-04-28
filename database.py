@@ -1052,7 +1052,34 @@ def init_db(database_url=None):
                         # IF EXISTS de Postgres no debería tirar pero por las
                         # dudas absorbemos. Es parte del workaround zombie pg_type.
                         pass
-    Base.metadata.create_all(engine)
+    # create_all puede fallar con "duplicate key ... pg_type_typname_nsp_index"
+    # cuando un deploy previo dejó un pg_type huérfano y el cleanup de arriba
+    # no lo cubrió (ej: tabla nueva todavía no en zombie_names, o race entre
+    # workers). En ese caso, parseamos el nombre del tipo del error, lo
+    # dropeamos y reintentamos una vez.
+    try:
+        Base.metadata.create_all(engine)
+    except Exception as exc:
+        if database_url.startswith('sqlite'):
+            raise
+        msg = str(exc)
+        if 'pg_type_typname_nsp_index' not in msg:
+            raise
+        import re as _re
+        m = _re.search(r'\(typname, typnamespace\)=\(([^,]+),', msg)
+        if not m:
+            raise
+        zombie = m.group(1)
+        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+            for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
+                        f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
+                        f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE'):
+                try:
+                    conn.execute(text(ddl))
+                except Exception:
+                    pass
+        # Reintento limpio (sin try/except: si vuelve a fallar, queremos saber).
+        Base.metadata.create_all(engine)
     is_sqlite = database_url.startswith('sqlite')
     # Migraciones incrementales: agrega columnas nuevas si no existen
     with engine.connect() as conn:

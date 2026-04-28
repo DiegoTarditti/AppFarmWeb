@@ -18,6 +18,7 @@ def init_app(app):
         q = (request.args.get('q') or '').strip()
         grupo_id = request.args.get('grupo_id', type=int)
         localidad = (request.args.get('localidad') or '').strip()
+        os_id = request.args.get('os_id', type=int)
         try:
             page = max(1, int(request.args.get('page', '1')))
         except ValueError:
@@ -46,6 +47,19 @@ def init_app(app):
                 base = base.filter(database.ObsCliente.grupo_observer == grupo_id)
             if localidad:
                 base = base.filter(database.ObsCliente.localidad.ilike(f'%{localidad}%'))
+            # Filtro por OS principal inferida (cliente_os_inferida)
+            if os_id is not None:
+                if os_id == 0:
+                    # 0 = "sin OS principal" (ningún match en cliente_os_inferida con OS)
+                    sub = (session.query(database.ClienteOsInferida.cliente_observer)
+                           .filter(database.ClienteOsInferida.obra_social_observer.isnot(None))
+                           .subquery())
+                    base = base.filter(~database.ObsCliente.observer_id.in_(sub))
+                else:
+                    sub = (session.query(database.ClienteOsInferida.cliente_observer)
+                           .filter(database.ClienteOsInferida.obra_social_observer == os_id)
+                           .subquery())
+                    base = base.filter(database.ObsCliente.observer_id.in_(sub))
 
             total = base.count()
             clientes_raw = (base.order_by(database.ObsCliente.apellido_nombre)
@@ -66,10 +80,42 @@ def init_app(app):
                                  session.query(database.Cliente.observer_id)
                                  .filter(database.Cliente.observer_id.in_(obs_ids)).all()}
 
+            # OS principal inferida por cliente (con confianza)
+            os_inferida_map = {}
+            if obs_ids:
+                rows = (session.query(database.ClienteOsInferida.cliente_observer,
+                                      database.ClienteOsInferida.obra_social_observer,
+                                      database.ClienteOsInferida.confianza_pct)
+                        .filter(database.ClienteOsInferida.cliente_observer.in_(obs_ids))
+                        .filter(database.ClienteOsInferida.obra_social_observer.isnot(None))
+                        .all())
+                os_ids_para_nombrar = {r[1] for r in rows}
+                os_nombres = dict(session.query(database.ObsObraSocial.observer_id,
+                                                database.ObsObraSocial.descripcion)
+                                  .filter(database.ObsObraSocial.observer_id.in_(os_ids_para_nombrar)).all()) if os_ids_para_nombrar else {}
+                for cli, os_obs, conf in rows:
+                    os_inferida_map[cli] = {
+                        'os_id': os_obs,
+                        'nombre': os_nombres.get(os_obs, f'OS#{os_obs}'),
+                        'confianza': float(conf) if conf is not None else None,
+                    }
+
             # Lista de grupos para el filtro
             grupos = (session.query(database.ObsGrupoCliente)
                       .filter(database.ObsGrupoCliente.fecha_baja.is_(None))
                       .order_by(database.ObsGrupoCliente.descripcion).all())
+
+            # Lista de OS con clientes inferidos (para dropdown del filtro)
+            from sqlalchemy import func as _func
+            os_con_clientes = (session.query(database.ObsObraSocial.observer_id,
+                                              database.ObsObraSocial.descripcion,
+                                              _func.count(database.ClienteOsInferida.cliente_observer))
+                                .join(database.ClienteOsInferida,
+                                      database.ClienteOsInferida.obra_social_observer == database.ObsObraSocial.observer_id)
+                                .filter(database.ObsObraSocial.fecha_baja.is_(None))
+                                .group_by(database.ObsObraSocial.observer_id, database.ObsObraSocial.descripcion)
+                                .order_by(_func.count(database.ClienteOsInferida.cliente_observer).desc())
+                                .all())
 
             clientes = []
             for c in clientes_raw:
@@ -83,6 +129,7 @@ def init_app(app):
                     'direccion': c.domicilio_direccion or '',
                     'grupo': grupos_map.get(c.grupo_observer, ''),
                     'tiene_extension': c.observer_id in con_extension,
+                    'os_inferida': os_inferida_map.get(c.observer_id),
                 })
 
             last_page = max(1, (total + per_page - 1) // per_page)
@@ -91,7 +138,9 @@ def init_app(app):
                                    total=total,
                                    grupos=[{'observer_id': g.observer_id,
                                             'descripcion': g.descripcion} for g in grupos],
-                                   q=q, grupo_id=grupo_id, localidad=localidad,
+                                   obras_sociales=[{'os_id': r[0], 'nombre': r[1], 'n_clientes': r[2]}
+                                                    for r in os_con_clientes],
+                                   q=q, grupo_id=grupo_id, localidad=localidad, os_id=os_id,
                                    page=page, last_page=last_page)
 
     @app.route('/clientes/stats')

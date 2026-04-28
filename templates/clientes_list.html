@@ -32,8 +32,16 @@
         </select>
         <input type="text" name="localidad" value="{{ localidad or '' }}" placeholder="Localidad"
                class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand w-40">
+        <select name="os_id" class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand min-w-[200px]"
+                title="Filtra por la OS principal inferida del cliente (basada en su histórico de ventas)">
+            <option value="">Todas las OS</option>
+            <option value="0" {% if os_id == 0 %}selected{% endif %}>— Sin OS principal —</option>
+            {% for os in obras_sociales %}
+            <option value="{{ os.os_id }}" {% if os_id == os.os_id %}selected{% endif %}>{{ os.nombre }} ({{ '{:,}'.format(os.n_clientes) }})</option>
+            {% endfor %}
+        </select>
         <button type="submit" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg">Filtrar</button>
-        {% if q or grupo_id or localidad %}
+        {% if q or grupo_id or localidad or os_id is not none %}
         <a href="{{ url_for('clientes_list') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>
         {% endif %}
     </form>
@@ -48,6 +56,7 @@
                     <th class="text-left px-3 py-2">Domicilio</th>
                     <th class="text-left px-3 py-2 w-32">Localidad</th>
                     <th class="text-left px-3 py-2 w-32">Grupo</th>
+                    <th class="text-left px-3 py-2 w-44">OS principal</th>
                     <th class="text-center px-3 py-2 w-12">Nota</th>
                 </tr>
             </thead>
@@ -60,13 +69,29 @@
                     <td class="px-3 py-2 text-xs text-[#888] truncate max-w-[300px]">{{ c.direccion }}</td>
                     <td class="px-3 py-2 text-xs text-[#555]">{{ c.localidad }}</td>
                     <td class="px-3 py-2 text-xs text-[#555]">{{ c.grupo }}</td>
+                    <td class="px-3 py-2 text-xs">
+                        {% if c.os_inferida %}
+                        <span class="inline-flex items-center gap-1.5">
+                            <span class="text-[#555] truncate max-w-[140px]" title="{{ c.os_inferida.nombre }} · confianza {{ '%.0f'|format(c.os_inferida.confianza or 0) }}%">{{ c.os_inferida.nombre }}</span>
+                            {% if c.os_inferida.confianza and c.os_inferida.confianza >= 80 %}
+                            <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">{{ '%.0f'|format(c.os_inferida.confianza) }}%</span>
+                            {% elif c.os_inferida.confianza and c.os_inferida.confianza >= 50 %}
+                            <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800">{{ '%.0f'|format(c.os_inferida.confianza) }}%</span>
+                            {% else %}
+                            <span class="text-[9px] font-bold px-1 py-0.5 rounded bg-[#f0f0f0] text-[#888]">{{ '%.0f'|format(c.os_inferida.confianza or 0) }}%</span>
+                            {% endif %}
+                        </span>
+                        {% else %}
+                        <span class="text-[#bbb]">—</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-2 text-center">
                         {% if c.tiene_extension %}<span class="text-emerald-600" title="Tiene datos locales">●</span>{% endif %}
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not clientes %}
-                <tr><td colspan="7" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
+                <tr><td colspan="8" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
                 {% endif %}
             </tbody>
         </table>
@@ -74,7 +99,7 @@
 
     {% if last_page > 1 %}
     <div class="flex items-center justify-center gap-2 text-sm">
-        {% set base_qs = 'q=' ~ (q or '') ~ '&grupo_id=' ~ (grupo_id or '') ~ '&localidad=' ~ (localidad or '') %}
+        {% set base_qs = 'q=' ~ (q or '') ~ '&grupo_id=' ~ (grupo_id or '') ~ '&localidad=' ~ (localidad or '') ~ ('&os_id=' ~ os_id if os_id is not none else '') %}
         {% if page > 1 %}<a href="?{{ base_qs }}&page={{ page - 1 }}" class="px-3 py-1.5 rounded-lg border border-surface-border hover:bg-[#f5f5f5]">← Anterior</a>{% endif %}
         <span class="text-[#6f6f6f]">Página <strong>{{ page }}</strong> de {{ last_page }}</span>
         {% if page < last_page %}<a href="?{{ base_qs }}&page={{ page + 1 }}" class="px-3 py-1.5 rounded-lg border border-surface-border hover:bg-[#f5f5f5]">Siguiente →</a>{% endif %}

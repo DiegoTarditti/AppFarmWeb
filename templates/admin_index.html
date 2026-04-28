@@ -89,6 +89,51 @@
         </div>
     </a>
 
+    <button type="button" onclick="recalcularOSClientes(this)"
+       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-pink-400 hover:shadow-sm transition-all">
+        <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-pink-100 text-pink-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-semibold text-sm">Recalcular OS principal por cliente</p>
+                <p class="text-xs text-[#6f6f6f] mt-1">
+                    Lee `obs_ventas_detalle` y, para cada cliente, infiere su obra social principal
+                    (la más frecuente) en la tabla `cliente_os_inferida`. Después se usa en filtros
+                    de <code>/clientes</code>. Idempotente — corre rápido (~5s para 80k clientes).
+                    <br><span class="text-pink-700 font-semibold">Ejecutar diariamente</span>
+                    o cuando hayas sincronizado nuevas ventas.
+                </p>
+                <p id="recalc-os-result" class="text-xs mt-2 hidden"></p>
+            </div>
+            <svg class="w-4 h-4 text-[#999] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </div>
+    </button>
+    <script>
+    async function recalcularOSClientes(btn) {
+        const resultEl = document.getElementById('recalc-os-result');
+        if (!confirm('Esto recalcula la OS principal de cada cliente desde el detalle de ventas. ¿Continuar?')) return;
+        btn.disabled = true;
+        resultEl.classList.remove('hidden', 'text-rose-700', 'text-emerald-700');
+        resultEl.classList.add('text-[#6f6f6f]');
+        resultEl.textContent = 'Procesando...';
+        try {
+            const r = await fetch("{{ url_for('api_recalcular_os_clientes') }}", { method: 'POST' });
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || 'Falló el recálculo');
+            resultEl.classList.remove('text-[#6f6f6f]');
+            resultEl.classList.add('text-emerald-700', 'font-semibold');
+            resultEl.textContent = `✓ Procesados ${data.procesados} clientes · con OS: ${data.con_os} · sin OS: ${data.sin_os}`;
+        } catch (e) {
+            resultEl.classList.remove('text-[#6f6f6f]');
+            resultEl.classList.add('text-rose-700');
+            resultEl.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+        }
+    }
+    </script>
+
     <a href="{{ url_for('admin_cron_log') }}"
        class="block bg-white border border-surface-border rounded-xl p-5 hover:border-violet-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">

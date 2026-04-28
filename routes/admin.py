@@ -120,6 +120,26 @@ def init_app(app):
         return render_template('admin_seed_proveedores.html',
                                resultado=resultado, ejecutado=ejecutar)
 
+    @app.route('/api/obs/recalcular-os-clientes', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_recalcular_os_clientes():
+        """Dispara `scripts.recalcular_os_por_cliente.recalcular()` y registra
+        el resultado en cron_log. Ideal para botón admin o cron diario.
+        """
+        import cron_log
+        from recalcular_os_por_cliente import recalcular
+        try:
+            with cron_log.registrar('recalcular_os_clientes', origen='web') as log:
+                res = recalcular()
+                log.metadata = {
+                    'procesados': res['procesados'],
+                    'con_os': res['con_os'],
+                    'sin_os': res['sin_os'],
+                }
+            return jsonify({'ok': True, **res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/admin/cleanup-inactivos', methods=['GET', 'POST'])
     @requiere_permiso('usuarios', 'admin')
     def admin_cleanup_inactivos():
