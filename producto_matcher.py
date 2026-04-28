@@ -354,6 +354,55 @@ def match_producto(*,
                         result.estrategia = 'ean_exacto'
                         result.confianza = CONFIANZA_ALTA
 
+        # Fallback EAN vía obs_codigos_barras: solo aplica al target Producto
+        # (no a ObsProducto) y cuando la estrategia 1 no encontró nada local.
+        # Resuelve EAN → observer_id → Producto local con ese observer_id.
+        # Si no existe Producto local pero sí obs_producto, lo auto-creamos para
+        # que la oferta/factura pueda quedar linkeada.
+        if not result.producto and ean and target == 'producto':
+            ean_clean = str(ean).strip()
+            try:
+                from database import (
+                    ObsCodigoBarras, ObsLaboratorio, ObsProducto, Producto, Laboratorio
+                )
+                obs_id_row = (session.query(ObsCodigoBarras.producto_observer)
+                              .filter(ObsCodigoBarras.codigo_barras == ean_clean,
+                                      ObsCodigoBarras.fecha_baja.is_(None))
+                              .first())
+                if obs_id_row:
+                    obs_pid = obs_id_row[0]
+                    prod = (session.query(Producto)
+                            .filter(Producto.observer_id == obs_pid)
+                            .first())
+                    if prod is None:
+                        # Auto-crear desde obs_producto
+                        op = session.get(ObsProducto, obs_pid)
+                        if op:
+                            # Resolver Laboratorio local por observer_id del lab.
+                            lab_id_local = None
+                            if op.laboratorio_observer:
+                                lab_local = (session.query(Laboratorio)
+                                             .filter(Laboratorio.observer_id == op.laboratorio_observer)
+                                             .first())
+                                if lab_local:
+                                    lab_id_local = lab_local.id
+                            prod = Producto(
+                                codigo_barra=ean_clean,
+                                descripcion=op.descripcion or '',
+                                laboratorio_id=lab_id_local,
+                                observer_id=obs_pid,
+                                codigo_alfabeta=op.codigo_alfabeta,
+                            )
+                            session.add(prod)
+                            session.flush()
+                    if prod:
+                        result.producto = prod
+                        result.score = 1.0
+                        result.estrategia = 'ean_obs_bridge'
+                        result.confianza = CONFIANZA_ALTA
+            except Exception:
+                pass
+
         # Estrategia 2: alfabeta exacto.
         # Salvaguardas:
         #   a) Códigos cortos (<5 dígitos) son típicamente "código interno"

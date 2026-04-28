@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% set hide_sidebar = True %}
+{% block title %}Compra del día — Farmacia{% endblock %}
+
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Compra del día</h1>
+    <p class="text-xs text-[#6f6f6f]">Horarios de cierre por droguería + countdown al próximo reparto.</p>
+    <div class="ml-auto">
+        <a href="{{ url_for('index') }}" class="text-xs text-sky-600 hover:underline">← Inicio</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-5">
+    {% for prov in proveedores %}
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden"
+         data-prov-id="{{ prov.id }}">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between gap-3 flex-wrap">
+            <div>
+                <h2 class="font-bold text-base text-[#1e1e1e]">{{ prov.nombre }}</h2>
+                <p class="text-xs text-[#6f6f6f]">Tope de pedido / próximo reparto</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <div class="bg-emerald-50 border border-emerald-300 rounded-lg px-3 py-2 min-w-[210px]">
+                    {% if prov.proximo_cierre %}
+                    <p class="text-[11px] uppercase text-[#6f6f6f] tracking-wide">Cierre próximo reparto</p>
+                    <p class="text-sm font-semibold text-emerald-700"
+                       data-cierre-hora>{{ prov.proximo_cierre.hora_str }} hs</p>
+                    <p class="text-xs text-[#1e1e1e]">
+                        Faltan <span class="font-mono font-bold" data-countdown>--:--:--</span>
+                    </p>
+                    {% else %}
+                    <p class="text-xs text-[#999]">Sin horarios cargados</p>
+                    {% endif %}
+                </div>
+                <a href="{{ url_for('compras_dia_armar', prov=prov.id) }}"
+                   class="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark font-bold text-sm">
+                    Armar pedido →
+                </a>
+                <button type="button" onclick="abrirEdicionHorarios({{ prov.id }}, this)"
+                        class="text-xs text-[#666] hover:text-[#1e1e1e] px-2 py-1 rounded border border-surface-border hover:bg-black/[0.04]">
+                    Editar horarios
+                </button>
+            </div>
+        </div>
+
+        <table class="w-full text-sm">
+            <thead class="bg-[#f0f0f0]">
+                <tr>
+                    {% for d in dias %}
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">{{ d }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {# Calculamos cuántas filas necesitamos: max horarios entre todos los días. #}
+                {% set max_filas = (prov.horarios_por_dia | map('length') | max) if prov.horarios_por_dia else 0 %}
+                {% for fila in range(max_filas) %}
+                <tr class="border-t border-surface-border">
+                    {% for horarios_dia in prov.horarios_por_dia %}
+                    <td class="px-3 py-1.5 text-center text-[#1e1e1e] font-mono">
+                        {% if fila < horarios_dia | length %}{{ horarios_dia[fila] }}{% else %}<span class="text-[#ccc]">—</span>{% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                {% if max_filas == 0 %}
+                <tr>
+                    <td colspan="7" class="text-center text-sm text-[#999] py-6">
+                        Sin horarios cargados. Tocá "Editar horarios" para agregar.
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+        No hay proveedores con horarios cargados. Agregá horarios desde acá o desde el panel de proveedores.
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Modal edición horarios -->
+<div id="modal-horarios" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4"
+     onclick="if(event.target===this) cerrarEdicion()">
+    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto p-5 shadow-2xl">
+        <div class="flex items-center justify-between mb-3 sticky top-0 bg-white pb-2 border-b border-surface-border">
+            <h2 class="text-base font-bold text-[#1e1e1e]">Editar horarios — <span id="modal-prov-nombre"></span></h2>
+            <button type="button" onclick="cerrarEdicion()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none">✕</button>
+        </div>
+        <div id="modal-grilla" class="grid grid-cols-7 gap-2 mb-3"></div>
+        <div class="border-t border-surface-border pt-3 flex items-end gap-2">
+            <div>
+                <label class="text-[10px] uppercase text-[#6f6f6f] font-semibold">Día</label>
+                <select id="add-dia" class="block bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm">
+                    <option value="0">Lun</option><option value="1">Mar</option><option value="2">Mié</option>
+                    <option value="3">Jue</option><option value="4">Vie</option><option value="5">Sáb</option>
+                    <option value="6">Dom</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-[10px] uppercase text-[#6f6f6f] font-semibold">Hora (HH:MM)</label>
+                <input type="text" id="add-hora" placeholder="09:30"
+                       class="block bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm w-24 font-mono">
+            </div>
+            <button type="button" onclick="agregarHora()"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm">
+                Agregar
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+let _provActual = null;
+
+async function abrirEdicionHorarios(provId, btn) {
+    _provActual = provId;
+    document.getElementById('modal-prov-nombre').textContent =
+        btn.closest('[data-prov-id]').querySelector('h2').textContent;
+    await refrescarGrilla();
+    document.getElementById('modal-horarios').classList.remove('hidden');
+}
+function cerrarEdicion() {
+    document.getElementById('modal-horarios').classList.add('hidden');
+    location.reload();  // recarga la matriz al cerrar
+}
+async function refrescarGrilla() {
+    const r = await fetch(`/api/compras/dia/horarios/${_provActual}`,
+                          {credentials: 'same-origin'});
+    const data = await r.json();
+    const horarios = data.horarios || [];
+    const porDia = {0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[]};
+    for (const h of horarios) porDia[h.dia_semana].push(h);
+
+    const grilla = document.getElementById('modal-grilla');
+    grilla.innerHTML = '';
+    for (let d = 0; d < 7; d++) {
+        const col = document.createElement('div');
+        col.className = 'border border-surface-border rounded-lg p-2 bg-[#fafafa]';
+        col.innerHTML = `<p class="text-[10px] uppercase text-[#666] font-bold mb-2">${DIAS[d]}</p>`;
+        for (const h of porDia[d]) {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between text-xs mb-1';
+            row.innerHTML = `<span class="font-mono">${h.hora}</span>
+                             <button onclick="borrarHora(${h.id})"
+                                     class="text-[#bbb] hover:text-rose-500 ml-1">✕</button>`;
+            col.appendChild(row);
+        }
+        grilla.appendChild(col);
+    }
+}
+async function agregarHora() {
+    const dia = parseInt(document.getElementById('add-dia').value);
+    const hora = document.getElementById('add-hora').value.trim();
+    if (!/^\d{2}:\d{2}$/.test(hora)) { alert('Hora debe ser HH:MM'); return; }
+    const r = await fetch(`/api/compras/dia/horarios/${_provActual}`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({dia_semana: dia, hora: hora}),
+    });
+    const data = await r.json();
+    if (!data.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+    document.getElementById('add-hora').value = '';
+    await refrescarGrilla();
+}
+async function borrarHora(id) {
+    if (!confirm('Borrar este horario?')) return;
+    await fetch(`/api/compras/dia/horarios/${_provActual}`, {
+        method: 'DELETE', headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({id: id}),
+    });
+    await refrescarGrilla();
+}
+
+// Countdown live: se refresca via API cada minuto + recálculo client-side cada segundo.
+const _cierres = {};
+
+function _formatHHMMSS(secs) {
+    secs = Math.max(0, Math.floor(secs));
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+async function refrescarCountdowns() {
+    const r = await fetch('/api/compras/dia/countdown', {credentials: 'same-origin'});
+    const data = await r.json();
+    if (!data.ok) return;
+    const ahora = Date.now();
+    for (const [pid, info] of Object.entries(data.cierres)) {
+        const target = new Date(info.fecha).getTime();
+        _cierres[pid] = {target, hora_str: info.hora_str};
+    }
+    actualizarUI();
+}
+function actualizarUI() {
+    const ahora = Date.now();
+    document.querySelectorAll('[data-prov-id]').forEach(card => {
+        const pid = card.dataset.provId;
+        const info = _cierres[pid];
+        const cd = card.querySelector('[data-countdown]');
+        const hora = card.querySelector('[data-cierre-hora]');
+        if (!info || !cd) return;
+        const secs = (info.target - ahora) / 1000;
+        cd.textContent = _formatHHMMSS(secs);
+        if (hora) hora.textContent = info.hora_str + ' hs';
+        if (secs <= 600) cd.classList.add('text-red-600');
+        else cd.classList.remove('text-red-600');
+    });
+}
+refrescarCountdowns();
+setInterval(actualizarUI, 1000);
+setInterval(refrescarCountdowns, 60000);  // cada 60s repulla
+</script>
+{% endblock %}

@@ -334,10 +334,10 @@ def _find_producto(session, codigo_barra):
         pass
     # 3. Match en obs_codigos_barras → resuelve por observer_id
     try:
-        from database import ObsCodigosBarras
-        m = (session.query(ObsCodigosBarras.producto_observer)
-             .filter(ObsCodigosBarras.codigo_barras == bc,
-                     ObsCodigosBarras.fecha_baja.is_(None))
+        from database import ObsCodigoBarras
+        m = (session.query(ObsCodigoBarras.producto_observer)
+             .filter(ObsCodigoBarras.codigo_barras == bc,
+                     ObsCodigoBarras.fecha_baja.is_(None))
              .first())
         if m:
             return (session.query(Producto)

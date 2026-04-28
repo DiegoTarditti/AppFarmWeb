@@ -113,6 +113,10 @@ def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descr
     ean = str(ean_resuelto).strip()
     if cod == ean:
         return  # nada para mappear
+    # Sanity check: el "codigo interno" debe ser un código corto, no descripción.
+    # Si supera 20 chars o tiene espacios (típico de un texto descriptivo), skip.
+    if len(cod) > 20 or ' ' in cod:
+        return
     # Asegurar que el Producto local existe con el EAN principal.
     # Si no existe, lo creamos con la descripción del Excel + lab.
     from database import Producto

@@ -47,6 +47,19 @@
     </span>
     {% endif %}
 
+    <!-- Filtro desde-hasta -->
+    <form method="get" class="flex items-center gap-1.5 ml-2">
+        {% if os_filter %}<input type="hidden" name="os" value="{{ os_filter }}">{% endif %}
+        {% if os_id_filter %}<input type="hidden" name="os_id" value="{{ os_id_filter }}">{% endif %}
+        {% if chart_metric %}<input type="hidden" name="metric" value="{{ chart_metric }}">{% endif %}
+        <label class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Desde</label>
+        <input type="date" name="desde" value="{{ desde }}" onchange="this.form.submit()"
+               class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
+        <label class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Hasta</label>
+        <input type="date" name="hasta" value="{{ hasta }}" onchange="this.form.submit()"
+               class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand">
+    </form>
+
     <!-- Toggle métrica del chart -->
     <div class="flex items-center gap-1 bg-[#f3f3f3] rounded-lg p-0.5 border border-surface-border ml-2"
          title="Métrica que se muestra en el gráfico de últimos 30 días">
@@ -266,7 +279,10 @@
                     {% for m in top_medicos %}
                     <tr class="hover:bg-black/[0.02]">
                         <td class="px-4 py-2 font-mono text-xs text-[#6f6f6f]">{{ m.matricula }}</td>
-                        <td class="px-4 py-2">{{ m.nombre }}</td>
+                        <td class="px-4 py-2">
+                            <a href="{{ url_for('medico_detalle', medico_id=m.matricula) }}"
+                               class="text-[#1e1e1e] hover:text-sky-700 font-medium">{{ m.nombre }}</a>
+                        </td>
                         <td class="px-4 py-2 text-right font-mono">{{ m.recetas }}</td>
                         <td class="px-4 py-2 text-right font-mono text-emerald-600">${{ m.importe | arg_currency }}</td>
                     </tr>

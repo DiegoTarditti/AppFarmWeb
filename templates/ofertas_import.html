@@ -493,16 +493,52 @@ async function aplicarPlantilla(camposPlantilla) {
         if (!r.ok) throw new Error('Error en inferencia');
         const data = await r.json();
         const mapping = data.mapping || {};
-        // Reemplazar mapping y columnas activas con SOLO lo de la plantilla.
+        // Aplicar lo que la inferencia detectó del set de campos de la plantilla,
+        // pero NO deactivar las otras columnas: el usuario las puede mapear a mano.
+        // Si en una corrida previa había mapeos para campos fuera de la plantilla,
+        // esos sí los limpiamos para que solo quede el mapping de la plantilla.
         _mapping = {};
-        const indices = new Set();
         for (const campo of camposPlantilla) {
             if (mapping[campo] != null) {
                 _mapping[campo] = mapping[campo];
-                indices.add(mapping[campo]);
             }
         }
-        _columnasActivas = indices;
+        // Heurística adicional para EAN: si la plantilla pide EAN pero la
+        // inferencia no lo detectó, buscar en las filas una columna que tenga
+        // en mayoría valores numéricos de 12-14 dígitos.
+        if (camposPlantilla.includes('ean') && _mapping.ean == null) {
+            for (let i = 0; i < (_headers.length || 0); i++) {
+                if (Object.values(_mapping).includes(i)) continue;
+                let hits = 0, total = 0;
+                for (const row of _rows.slice(0, 10)) {
+                    const v = String(row[i] ?? '').replace(/\s/g, '');
+                    if (v) {
+                        total++;
+                        if (/^\d{12,14}$/.test(v)) hits++;
+                    }
+                }
+                if (total >= 3 && hits / total >= 0.7) { _mapping.ean = i; break; }
+            }
+        }
+        // Heurística para descuento_psl: una columna con números 1-99
+        // (porcentaje) que NO sea ya el EAN ni cantidad mínima detectada.
+        if (camposPlantilla.includes('descuento_psl') && _mapping.descuento_psl == null) {
+            for (let i = 0; i < (_headers.length || 0); i++) {
+                if (Object.values(_mapping).includes(i)) continue;
+                let hits = 0, total = 0;
+                for (const row of _rows.slice(0, 10)) {
+                    const v = String(row[i] ?? '').trim().replace('%', '').replace(',', '.');
+                    if (v && !isNaN(parseFloat(v))) {
+                        total++;
+                        const n = parseFloat(v);
+                        if (n > 0 && n < 100) hits++;
+                    }
+                }
+                if (total >= 3 && hits / total >= 0.7) { _mapping.descuento_psl = i; break; }
+            }
+        }
+        // Mantener todas las columnas activas — el user destilda las que no quiere.
+        _columnasActivas = new Set(_headers.map((_, i) => i));
         _camposVisibles = new Set(Object.keys(_mapping));
         // Reportar al user qué quedó
         const resumen = camposPlantilla.map(c => mapping[c] != null
@@ -524,9 +560,9 @@ async function aplicarPlantilla(camposPlantilla) {
 }
 
 document.getElementById('btn-plantilla-completa').addEventListener('click', () =>
-    aplicarPlantilla(['codigo', 'descripcion', 'descuento_psl', 'unidades_minima']));
+    aplicarPlantilla(['ean', 'codigo', 'descripcion', 'descuento_psl', 'unidades_minima']));
 document.getElementById('btn-plantilla-simple').addEventListener('click', () =>
-    aplicarPlantilla(['codigo', 'descripcion', 'descuento_psl']));
+    aplicarPlantilla(['ean', 'codigo', 'descripcion', 'descuento_psl']));
 
 // Sincronizar selectores de lab entre paso 1 y paso 4: cualquiera que cambie
 // pisa al otro. Así la primera validación arranca con el lab elegido.

@@ -480,6 +480,56 @@ class DescuentoBase(Base):
     __table_args__ = (
         UniqueConstraint('laboratorio_id', 'drogueria_id', name='uq_desc_base_lab_drog'),
     )
+    # Descuento aplicable cuando NO hay transfer/oferta vigente para el producto.
+    # Suele ser un poco mayor que descuento_pct (que se usa combinado con la oferta).
+    # Si NULL → la pantalla cae a descuento_pct también para el caso "sin transfer".
+    descuento_pct_sin_transfer = Column(DECIMAL(5, 2), nullable=True)
+
+
+class ProveedorHorarioReparto(Base):
+    """Horarios de cierre/reparto por droguería.
+
+    Una fila por slot semanal. dia_semana: 0=Lunes, 1=Martes, ... 6=Domingo.
+    hora: hora de cierre (después de eso entra al próximo reparto).
+    """
+    __tablename__ = 'proveedor_horarios_reparto'
+    id            = Column(Integer, primary_key=True)
+    proveedor_id  = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
+                           nullable=False, index=True)
+    dia_semana    = Column(Integer, nullable=False)   # 0-6
+    hora          = Column(String(5), nullable=False)  # 'HH:MM' formato 24h, simple
+    activo        = Column(Boolean, nullable=False, default=True)
+    creado_en     = Column(DateTime, default=now_ar)
+    proveedor     = relationship('Provider')
+    __table_args__ = (
+        UniqueConstraint('proveedor_id', 'dia_semana', 'hora', name='uq_horario_prov_dia_hora'),
+    )
+
+
+class PedidoBorrador(Base):
+    """Borrador de pedido en armado por usuario y droguería.
+
+    Persiste el "A pedir" durante la sesión de armado para que sobreviva refreshes
+    y cambios de droguería sin perder el trabajo. Una fila por (drog × producto).
+    """
+    __tablename__ = 'pedido_borrador'
+    id              = Column(Integer, primary_key=True)
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
+                              nullable=False, index=True)
+    producto_id     = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'),
+                              nullable=True, index=True)
+    observer_id     = Column(Integer, nullable=True, index=True)  # ObsProducto.observer_id si aún no hay Producto local
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
+    cantidad        = Column(Integer, nullable=False, default=0)
+    dto_aplicado    = Column(DECIMAL(5, 2), nullable=True)  # snapshot del % aplicado al armar
+    motivo          = Column(String(40), nullable=True)     # 'transfer', 'sin_transfer', 'manual'
+    actualizado_en  = Column(DateTime, default=now_ar, onupdate=now_ar)
+    drogueria       = relationship('Provider')
+    laboratorio     = relationship('Laboratorio')
+    __table_args__ = (
+        UniqueConstraint('drogueria_id', 'producto_id', 'observer_id',
+                          name='uq_borrador_drog_prod'),
+    )
 
 
 class InvoiceBatch(Base):
@@ -631,6 +681,9 @@ class Producto(Base):
     accion_terapeutica = Column(String(200), nullable=True)
     actualizado_en = Column(DateTime, default=now_ar)
     ultima_compra = Column(Date, nullable=True)
+    # Compra rápida v2: exclusiones manuales del armado de pedido.
+    excluido_armado_actual = Column(Boolean, nullable=False, default=False)
+    no_pedir               = Column(Boolean, nullable=False, default=False)
     codigos_barra = relationship('ProductoCodigoBarra',
                                  back_populates='producto',
                                  cascade='all, delete-orphan',
@@ -1041,6 +1094,7 @@ def init_db(database_url=None):
                         'obs_colegios_medicos', 'obs_medicos',
                         'obs_medicos_matriculas', 'obs_ventas_detalle',
                         'descuentos_base', 'obs_codigos_barras',
+                        'proveedor_horarios_reparto', 'pedido_borrador',
                         'pack_equivalencias', 'cliente_os_inferida')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
@@ -1357,6 +1411,48 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS observer_id INTEGER UNIQUE"
     ))
+    # Compra rápida v2 (Kel/20j): columna nueva en descuentos_base + tablas
+    # proveedor_horarios_reparto y pedido_borrador.
+    conn.execute(text(
+        "ALTER TABLE descuentos_base ADD COLUMN IF NOT EXISTS descuento_pct_sin_transfer DECIMAL(5,2)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS excluido_armado_actual BOOLEAN NOT NULL DEFAULT FALSE"
+    ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS no_pedir BOOLEAN NOT NULL DEFAULT FALSE"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_prod_no_pedir ON productos (no_pedir) WHERE no_pedir = TRUE"
+    ))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
+            id SERIAL PRIMARY KEY,
+            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+            dia_semana INTEGER NOT NULL,
+            hora VARCHAR(5) NOT NULL,
+            activo BOOLEAN NOT NULL DEFAULT TRUE,
+            creado_en TIMESTAMP DEFAULT NOW(),
+            UNIQUE (proveedor_id, dia_semana, hora)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_horarios_prov ON proveedor_horarios_reparto (proveedor_id)"))
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS pedido_borrador (
+            id SERIAL PRIMARY KEY,
+            drogueria_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+            producto_id INTEGER REFERENCES productos(id) ON DELETE CASCADE,
+            observer_id INTEGER,
+            laboratorio_id INTEGER REFERENCES laboratorios(id),
+            cantidad INTEGER NOT NULL DEFAULT 0,
+            dto_aplicado DECIMAL(5,2),
+            motivo VARCHAR(40),
+            actualizado_en TIMESTAMP DEFAULT NOW(),
+            UNIQUE (drogueria_id, producto_id, observer_id)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_borrador_drog ON pedido_borrador (drogueria_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_borrador_obs  ON pedido_borrador (observer_id)"))
     # Espejo de ObServer: tablas obs_*
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS obs_laboratorios (

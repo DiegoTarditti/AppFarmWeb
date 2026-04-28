@@ -377,7 +377,8 @@ def init_app(app):
                                 metric_expr,
                            )
                            .filter(ObsVD.obra_social_observer == os_id_filter,
-                                   ObsVD.fecha_estadistica >= desde_30d)
+                                   ObsVD.fecha_estadistica >= desde_30d,
+                                   ObsVD.fecha_estadistica <= hasta)
                            .group_by(ObsVD.fecha_estadistica))
                 for fecha, val in serie_q.all():
                     if not fecha:
@@ -397,7 +398,8 @@ def init_app(app):
                                 metric_expr,
                            )
                            .filter(ObsVD.obra_social_observer.isnot(None),
-                                   ObsVD.fecha_estadistica >= desde_30d)
+                                   ObsVD.fecha_estadistica >= desde_30d,
+                                   ObsVD.fecha_estadistica <= hasta)
                            .group_by(ObsVD.fecha_estadistica, cat_expr))
                 for fecha, cat, val in serie_q.all():
                     if not fecha:
@@ -482,6 +484,8 @@ def init_app(app):
                                os_id_filter_nombre=os_id_filter_nombre,
                                os_options=os_options,
                                chart_metric=chart_metric,
+                               desde=desde.isoformat(),
+                               hasta=hasta.isoformat(),
                                mes_recetas=mes_recetas,
                                mes_os_total=mes_os_total,
                                mes_pac_total=mes_pac_total,
@@ -968,3 +972,171 @@ def init_app(app):
         )
         return send_file(buf, as_attachment=True, download_name=nombre,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    @app.route('/medico/<int:medico_id>')
+    def medico_detalle(medico_id):
+        """Análisis de un médico: donut por laboratorio + detalle por producto."""
+        from sqlalchemy import distinct, func
+        import os as _os
+        from database import (
+            ObsLaboratorio, ObsMedico, ObsObraSocial, ObsProducto,
+            ObsVentaDetalle, get_db,
+        )
+
+        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+
+        hoy = date.today()
+        # Default: últimos 6 meses (180 días).
+        desde_str = (request.args.get('desde') or '').strip()
+        hasta_str = (request.args.get('hasta') or '').strip()
+        try:
+            desde = date.fromisoformat(desde_str) if desde_str else (hoy - timedelta(days=180))
+        except ValueError:
+            desde = hoy - timedelta(days=180)
+        try:
+            hasta = date.fromisoformat(hasta_str) if hasta_str else hoy
+        except ValueError:
+            hasta = hoy
+        if hasta < desde:
+            desde, hasta = hasta, desde
+
+        os_filter_id = request.args.get('os_id', type=int)
+        lab_filter_id = request.args.get('lab_id', type=int)
+
+        with get_db() as session:
+            medico = session.get(ObsMedico, medico_id)
+            if not medico:
+                flash('Médico no encontrado.', 'error')
+                return redirect(url_for('os_dashboard'))
+
+            base_filters = [
+                ObsVentaDetalle.id_farmacia == id_farmacia,
+                ObsVentaDetalle.medico_observer == medico_id,
+                ObsVentaDetalle.fecha_estadistica >= desde,
+                ObsVentaDetalle.fecha_estadistica <= hasta,
+            ]
+            if os_filter_id:
+                base_filters.append(ObsVentaDetalle.obra_social_observer == os_filter_id)
+            if lab_filter_id:
+                # Subquery: productos de ese lab.
+                sub_prod = (session.query(ObsProducto.observer_id)
+                            .filter(ObsProducto.laboratorio_observer == lab_filter_id)
+                            .subquery())
+                base_filters.append(ObsVentaDetalle.producto_observer.in_(sub_prod))
+
+            # KPIs cabecera
+            kpi_q = (session.query(
+                        func.count(distinct(func.concat(
+                            ObsVentaDetalle.id_operacion, '|',
+                            func.coalesce(ObsVentaDetalle.cliente_observer, 0), '|',
+                            ObsVentaDetalle.fecha_estadistica,
+                        ))).label('recetas'),
+                        func.coalesce(func.sum(ObsVentaDetalle.cantidad), 0).label('unidades'),
+                        func.coalesce(func.sum(ObsVentaDetalle.importe), 0).label('total'),
+                        func.coalesce(func.sum(ObsVentaDetalle.importe_a_cargo_os), 0).label('os'),
+                    )
+                    .filter(*base_filters)).first()
+            kpi = {
+                'recetas':  int(kpi_q[0] or 0),
+                'unidades': float(kpi_q[1] or 0),
+                'total':    float(kpi_q[2] or 0),
+                'os':       float(kpi_q[3] or 0),
+                'paciente': float((kpi_q[2] or 0) - (kpi_q[3] or 0)),
+            }
+
+            # Donut: ventas por laboratorio (de los productos recetados).
+            lab_q = (session.query(
+                        ObsLaboratorio.observer_id,
+                        ObsLaboratorio.descripcion,
+                        func.count(distinct(func.concat(
+                            ObsVentaDetalle.id_operacion, '|',
+                            func.coalesce(ObsVentaDetalle.cliente_observer, 0),
+                        ))).label('recetas'),
+                        func.coalesce(func.sum(ObsVentaDetalle.importe), 0).label('importe'),
+                    )
+                    .join(ObsProducto, ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+                    .join(ObsLaboratorio, ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                    .filter(*base_filters)
+                    .group_by(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
+                    .order_by(func.sum(ObsVentaDetalle.importe).desc())
+                    .limit(20)).all()
+            donut_labs = [{
+                'lab_id': r[0], 'lab': r[1], 'recetas': int(r[2] or 0), 'importe': float(r[3] or 0)
+            } for r in lab_q]
+
+            # Detalle por producto.
+            prod_q = (session.query(
+                        ObsProducto.observer_id.label('prod_id'),
+                        ObsProducto.descripcion.label('prod'),
+                        ObsLaboratorio.descripcion.label('lab'),
+                        func.count(distinct(func.concat(
+                            ObsVentaDetalle.id_operacion, '|',
+                            func.coalesce(ObsVentaDetalle.cliente_observer, 0),
+                        ))).label('recetas'),
+                        func.coalesce(func.sum(ObsVentaDetalle.cantidad), 0).label('unidades'),
+                        func.coalesce(func.sum(ObsVentaDetalle.importe), 0).label('importe'),
+                        func.coalesce(func.sum(ObsVentaDetalle.importe_a_cargo_os), 0).label('os'),
+                    )
+                    .join(ObsProducto, ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+                    .outerjoin(ObsLaboratorio,
+                                ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                    .filter(*base_filters)
+                    .group_by(ObsProducto.observer_id, ObsProducto.descripcion,
+                              ObsLaboratorio.descripcion)
+                    .order_by(func.sum(ObsVentaDetalle.importe).desc())
+                    .limit(500)).all()
+            detalle = [{
+                'prod_id':  r[0],
+                'producto': r[1],
+                'lab':      r[2] or '—',
+                'recetas':  int(r[3] or 0),
+                'unidades': float(r[4] or 0),
+                'importe':  float(r[5] or 0),
+                'os':       float(r[6] or 0),
+                'paciente': float(r[5] or 0) - float(r[6] or 0),
+            } for r in prod_q]
+            # Totales para la fila al pie
+            totales = {
+                'recetas':  sum(d['recetas']  for d in detalle),
+                'unidades': sum(d['unidades'] for d in detalle),
+                'importe':  sum(d['importe']  for d in detalle),
+                'os':       sum(d['os']       for d in detalle),
+                'paciente': sum(d['paciente'] for d in detalle),
+            }
+
+            # Opciones para los selectores OS y Lab (las usadas por este médico).
+            os_opts = (session.query(ObsObraSocial.observer_id, ObsObraSocial.descripcion,
+                                      func.count(distinct(ObsVentaDetalle.id_operacion)).label('n'))
+                       .join(ObsVentaDetalle,
+                             ObsVentaDetalle.obra_social_observer == ObsObraSocial.observer_id)
+                       .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                               ObsVentaDetalle.medico_observer == medico_id,
+                               ObsVentaDetalle.fecha_estadistica >= desde,
+                               ObsVentaDetalle.fecha_estadistica <= hasta)
+                       .group_by(ObsObraSocial.observer_id, ObsObraSocial.descripcion)
+                       .order_by(func.count(distinct(ObsVentaDetalle.id_operacion)).desc())
+                       .limit(30).all())
+            os_options = [{'id': r[0], 'nombre': r[1], 'n': r[2]} for r in os_opts]
+            lab_options = sorted(
+                [{'id': l['lab_id'], 'nombre': l['lab']} for l in donut_labs if l['lab_id']],
+                key=lambda x: x['nombre'].lower()
+            )
+            os_filter_nombre = next((o['nombre'] for o in os_options if o['id'] == os_filter_id), None)
+            lab_filter_nombre = next((l['nombre'] for l in lab_options if l['id'] == lab_filter_id), None)
+
+        return render_template(
+            'medico_detalle.html',
+            medico=medico,
+            kpi=kpi,
+            donut_labs=donut_labs,
+            detalle=detalle,
+            totales=totales,
+            os_options=os_options,
+            lab_options=lab_options,
+            os_filter_id=os_filter_id,
+            lab_filter_id=lab_filter_id,
+            os_filter_nombre=os_filter_nombre,
+            lab_filter_nombre=lab_filter_nombre,
+            desde=desde.isoformat(),
+            hasta=hasta.isoformat(),
+        )

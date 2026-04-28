@@ -14,6 +14,7 @@ from auth import (
     permisos_default_rol,
     requiere_permiso,
     seed_admin_si_falta,
+    seed_pedidos_si_falta,
     verificar_password,
 )
 from database import Usuario
@@ -21,8 +22,9 @@ from helpers import now_ar
 
 
 def init_app(app):
-    # Garantizar admin inicial al arranque
+    # Garantizar admin inicial + user 'pedidos' al arranque
     seed_admin_si_falta()
+    seed_pedidos_si_falta()
 
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
@@ -45,6 +47,9 @@ def init_app(app):
             if user.debe_cambiar_password:
                 flash('Tenés que cambiar tu contraseña antes de continuar.', 'warning')
                 return redirect(url_for('auth_cambiar_password'))
+            # Rol 'pedidos' tiene una sola pantalla — saltearse el index.
+            if user.rol == 'pedidos':
+                return redirect(request.args.get('next') or url_for('compras_dia'))
             return redirect(request.args.get('next') or url_for('index'))
         return render_template('login.html')
 
@@ -188,4 +193,4 @@ def init_app(app):
 
 
 # Lista de roles válidos usada en crear/editar
-PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin'}
+PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos'}

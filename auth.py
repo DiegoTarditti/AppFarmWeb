@@ -39,6 +39,10 @@ PERMISOS_POR_ROL = {
         'dashboard': 'ver', 'procesos': 'ver', 'pedidos': 'ver',
         'facturas': 'ver', 'productos': 'ver',
     },
+    # Rol acotado a /compras/dia (armado de pedidos a droguerías).
+    'pedidos': {
+        'pedidos': 'editar',
+    },
 }
 
 
@@ -125,6 +129,31 @@ def seed_admin_si_falta():
             session.commit()
         except IntegrityError:
             # Otro worker ganó la carrera — el admin ya existe.
+            session.rollback()
+
+
+def seed_pedidos_si_falta():
+    """Crea usuario `pedidos` (pass `pedidos123`, debe cambiar) si no existe.
+    Rol acotado: solo /compras/dia. Llamar después de seed_admin_si_falta."""
+    from sqlalchemy.exc import IntegrityError
+    with database.get_db() as session:
+        ya = session.query(Usuario).filter_by(username='pedidos').first()
+        if ya:
+            return
+        u = Usuario(
+            username='pedidos',
+            email=None,
+            password_hash=hash_password('pedidos123'),
+            nombre_completo='Operador de pedidos',
+            rol='pedidos',
+            permisos_json=json.dumps(permisos_default_rol('pedidos')),
+            activo=True,
+            debe_cambiar_password=True,
+        )
+        session.add(u)
+        try:
+            session.commit()
+        except IntegrityError:
             session.rollback()
 
 

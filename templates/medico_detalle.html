@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+{% block title %}{{ medico.nombre or 'Médico' }} — Análisis{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block main %}
+<!-- Top bar -->
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">{{ medico.nombre or 'Médico' }}</h1>
+    <span class="text-xs text-[#999] font-mono">#{{ medico.observer_id }}</span>
+
+    <form method="get" class="flex items-center gap-1.5 ml-2">
+        {% if os_filter_id %}<input type="hidden" name="os_id" value="{{ os_filter_id }}">{% endif %}
+        {% if lab_filter_id %}<input type="hidden" name="lab_id" value="{{ lab_filter_id }}">{% endif %}
+        <label class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Desde</label>
+        <input type="date" name="desde" value="{{ desde }}" onchange="this.form.submit()"
+               class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs">
+        <label class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Hasta</label>
+        <input type="date" name="hasta" value="{{ hasta }}" onchange="this.form.submit()"
+               class="bg-surface-input border border-surface-border rounded-lg px-2 py-1 text-xs">
+    </form>
+
+    <select onchange="if(this.value) location.search = updateParam('os_id', this.value); else location.search = clearParam('os_id')"
+            class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-xs max-w-[220px]"
+            title="Obra Social">
+        <option value="">Todas las OS</option>
+        {% for o in os_options %}
+        <option value="{{ o.id }}" {% if os_filter_id == o.id %}selected{% endif %}>{{ o.nombre }} ({{ o.n }})</option>
+        {% endfor %}
+    </select>
+
+    <select onchange="if(this.value) location.search = updateParam('lab_id', this.value); else location.search = clearParam('lab_id')"
+            class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-xs max-w-[220px]"
+            title="Laboratorio">
+        <option value="">Todos los laboratorios</option>
+        {% for l in lab_options %}
+        <option value="{{ l.id }}" {% if lab_filter_id == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+        {% endfor %}
+    </select>
+
+    <div class="ml-auto">
+        <a href="{{ url_for('os_dashboard') }}" class="text-xs text-sky-600 hover:underline">← Dashboard OS</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-4">
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-[11px] text-[#6f6f6f] uppercase tracking-wide font-semibold">Recetas</p>
+            <p class="text-2xl font-bold mt-1">{{ kpi.recetas }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-[11px] text-[#6f6f6f] uppercase tracking-wide font-semibold">Unidades</p>
+            <p class="text-2xl font-bold mt-1">{{ '%.0f' % kpi.unidades }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-[11px] text-[#6f6f6f] uppercase tracking-wide font-semibold">Importe total</p>
+            <p class="text-2xl font-bold text-[#1e1e1e] mt-1">${{ kpi.total | arg_currency }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-[11px] text-[#6f6f6f] uppercase tracking-wide font-semibold">A cargo OS</p>
+            <p class="text-2xl font-bold text-emerald-600 mt-1">${{ kpi.os | arg_currency }}</p>
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border p-4">
+            <p class="text-[11px] text-[#6f6f6f] uppercase tracking-wide font-semibold">A cargo paciente</p>
+            <p class="text-2xl font-bold mt-1">${{ kpi.paciente | arg_currency }}</p>
+        </div>
+    </div>
+
+    <!-- Donut: recetas por laboratorio -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div class="bg-surface rounded-xl border border-surface-border p-4 lg:col-span-2">
+            <h3 class="font-bold text-[#1e1e1e] mb-2">Recetas por laboratorio</h3>
+            <p class="text-xs text-[#6f6f6f] mb-3">Top 20 — agrupado por lab del producto recetado.</p>
+            {% if donut_labs %}
+            <div class="h-72">
+                <canvas id="donut-labs"></canvas>
+            </div>
+            {% else %}
+            <p class="text-sm text-[#999] py-8 text-center">Sin datos en el rango.</p>
+            {% endif %}
+        </div>
+        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+            <div class="px-4 py-2 border-b border-surface-border">
+                <h4 class="text-sm font-semibold text-[#1e1e1e]">Resumen labs</h4>
+            </div>
+            <div class="overflow-y-auto max-h-72">
+                <table class="w-full text-xs">
+                    <tbody>
+                    {% for l in donut_labs %}
+                    <tr class="border-b border-surface-border hover:bg-black/[0.02]">
+                        <td class="px-3 py-1.5">
+                            <a href="{{ url_for('medico_detalle', medico_id=medico.observer_id, lab_id=l.lab_id, desde=desde, hasta=hasta) }}"
+                               class="text-[#1e1e1e] hover:text-sky-700">{{ l.lab }}</a>
+                        </td>
+                        <td class="px-3 py-1.5 text-right font-mono">{{ l.recetas }}</td>
+                        <td class="px-3 py-1.5 text-right font-mono text-emerald-700">${{ l.importe | arg_currency }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detalle por producto -->
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <h3 class="font-bold text-[#1e1e1e]">Detalle por producto</h3>
+            <span class="text-xs text-[#6f6f6f]">{{ detalle | length }} producto{{ 's' if detalle|length != 1 }}</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#f0f0f0]">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
+                        <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
+                        <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Recetas</th>
+                        <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Unidades</th>
+                        <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Importe</th>
+                        <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">A cargo OS</th>
+                        <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Paciente</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-surface-border">
+                    {% for d in detalle %}
+                    <tr class="hover:bg-black/[0.02]">
+                        <td class="px-3 py-1.5">{{ d.producto }}</td>
+                        <td class="px-3 py-1.5 text-[#6f6f6f]">{{ d.lab }}</td>
+                        <td class="px-3 py-1.5 text-right font-mono">{{ d.recetas }}</td>
+                        <td class="px-3 py-1.5 text-right font-mono">{{ '%.0f' % d.unidades }}</td>
+                        <td class="px-3 py-1.5 text-right font-mono">${{ d.importe | arg_currency }}</td>
+                        <td class="px-3 py-1.5 text-right font-mono text-emerald-700">${{ d.os | arg_currency }}</td>
+                        <td class="px-3 py-1.5 text-right font-mono">${{ d.paciente | arg_currency }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="bg-[#f5f5f5] sticky bottom-0">
+                    <tr class="border-t-2 border-surface-border">
+                        <td class="px-3 py-2 font-bold" colspan="2">TOTAL</td>
+                        <td class="px-3 py-2 text-right font-mono font-bold">{{ totales.recetas }}</td>
+                        <td class="px-3 py-2 text-right font-mono font-bold">{{ '%.0f' % totales.unidades }}</td>
+                        <td class="px-3 py-2 text-right font-mono font-bold">${{ totales.importe | arg_currency }}</td>
+                        <td class="px-3 py-2 text-right font-mono font-bold text-emerald-700">${{ totales.os | arg_currency }}</td>
+                        <td class="px-3 py-2 text-right font-mono font-bold">${{ totales.paciente | arg_currency }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function updateParam(key, val) {
+    const u = new URLSearchParams(location.search);
+    u.set(key, val);
+    return '?' + u.toString();
+}
+function clearParam(key) {
+    const u = new URLSearchParams(location.search);
+    u.delete(key);
+    return '?' + u.toString();
+}
+
+const donutData = {{ donut_labs | tojson }};
+if (donutData && donutData.length > 0) {
+    const colors = [
+        '#0ea5e9', '#8b5cf6', '#f59e0b', '#10b981', '#ef4444', '#ec4899',
+        '#14b8a6', '#f97316', '#84cc16', '#6366f1', '#a855f7', '#06b6d4',
+        '#eab308', '#22c55e', '#dc2626', '#db2777', '#0891b2', '#7c3aed',
+        '#65a30d', '#9333ea',
+    ];
+    new Chart(document.getElementById('donut-labs'), {
+        type: 'doughnut',
+        data: {
+            labels: donutData.map(d => d.lab),
+            datasets: [{
+                data: donutData.map(d => d.recetas),
+                backgroundColor: colors.slice(0, donutData.length),
+                borderWidth: 1,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { font: { size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.label}: ${ctx.parsed} recetas (${(ctx.parsed * 100 / donutData.reduce((a,b) => a + b.recetas, 0)).toFixed(1)}%)`,
+                    },
+                },
+            },
+        },
+    });
+}
+</script>
+{% endblock %}
