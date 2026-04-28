@@ -786,6 +786,88 @@ def init_app(app):
             'cualquier_atrasado':  cualquier_atrasado,
         })
 
+    @app.route('/api/diagnose-eans')
+    @login_required
+    def api_diagnose_eans():
+        """Diagnóstico: cuántos productos del catálogo Observer tienen EAN
+        registrado en obs_codigos_barras, agrupado por estado del Orden.
+
+        Útil para entender por qué un producto X aparece como 'sin EAN'.
+        Pasá ?nombre=AMOXIDAL para ver la situación específica de esos.
+        """
+        from sqlalchemy import func as _f
+        nombre = (request.args.get('nombre') or '').strip()
+        with database.get_db() as session:
+            # Total productos activos
+            base = session.query(database.ObsProducto).filter(
+                database.ObsProducto.fecha_baja.is_(None))
+            if nombre:
+                base = base.filter(database.ObsProducto.descripcion.ilike(f'%{nombre}%'))
+            total = base.count()
+            obs_ids = [p[0] for p in base.with_entities(database.ObsProducto.observer_id).all()]
+            if not obs_ids:
+                return jsonify({'ok': True, 'total': 0, 'mensaje': 'Sin productos'})
+
+            # Contar por estado en obs_codigos_barras
+            con_ean_orden1_vivo = session.query(
+                _f.count(_f.distinct(database.ObsCodigoBarras.producto_observer))
+            ).filter(
+                database.ObsCodigoBarras.producto_observer.in_(obs_ids),
+                database.ObsCodigoBarras.orden == 1,
+                database.ObsCodigoBarras.fecha_baja.is_(None),
+            ).scalar() or 0
+
+            con_ean_cualquier_orden_vivo = session.query(
+                _f.count(_f.distinct(database.ObsCodigoBarras.producto_observer))
+            ).filter(
+                database.ObsCodigoBarras.producto_observer.in_(obs_ids),
+                database.ObsCodigoBarras.fecha_baja.is_(None),
+            ).scalar() or 0
+
+            con_ean_baja = session.query(
+                _f.count(_f.distinct(database.ObsCodigoBarras.producto_observer))
+            ).filter(
+                database.ObsCodigoBarras.producto_observer.in_(obs_ids),
+                database.ObsCodigoBarras.fecha_baja.isnot(None),
+            ).scalar() or 0
+
+            # Total de filas en obs_codigos_barras (cobertura general).
+            total_codigos_barras = session.query(database.ObsCodigoBarras).count()
+
+            # Muestra: 5 productos del filtro y qué tienen.
+            muestra = []
+            for p in base.limit(5).all():
+                rows = session.query(
+                    database.ObsCodigoBarras.codigo_barras,
+                    database.ObsCodigoBarras.orden,
+                    database.ObsCodigoBarras.fecha_baja,
+                ).filter(
+                    database.ObsCodigoBarras.producto_observer == p.observer_id
+                ).order_by(database.ObsCodigoBarras.orden).all()
+                muestra.append({
+                    'observer_id': p.observer_id,
+                    'descripcion': p.descripcion,
+                    'codigo_alfabeta': p.codigo_alfabeta,
+                    'codigos_barras': [
+                        {'codigo': r[0], 'orden': r[1],
+                         'baja': bool(r[2])}
+                        for r in rows
+                    ],
+                })
+
+            return jsonify({
+                'ok': True,
+                'filtro_nombre': nombre or '(todos)',
+                'total_productos': total,
+                'con_ean_orden1_vivo': con_ean_orden1_vivo,
+                'con_ean_cualquier_orden_vivo': con_ean_cualquier_orden_vivo,
+                'con_ean_solo_baja': con_ean_baja,
+                'sin_ningun_ean': total - con_ean_cualquier_orden_vivo,
+                'pct_con_ean_vivo': round(con_ean_cualquier_orden_vivo / total * 100, 1) if total else 0,
+                'total_filas_obs_codigos_barras_global': total_codigos_barras,
+                'muestra_primeros_5': muestra,
+            })
+
     @app.route('/observer/schema')
     @login_required
     def observer_schema():
