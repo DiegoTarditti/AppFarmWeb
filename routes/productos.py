@@ -205,6 +205,118 @@ def init_app(app):
             session.commit()
             return {'ok': True}
 
+    # ─── Catalogación estructurada ────────────────────────────────────────────
+
+    @app.route('/catalogacion')
+    def catalogacion_panel():
+        return render_template('catalogacion.html')
+
+    @app.route('/api/catalogacion/backfill', methods=['POST'])
+    def api_catalogacion_backfill():
+        """Ejecuta el backfill de atributos estructurados sobre todos los productos.
+
+        Idempotente: solo recalcula los productos cuya descripción cambió o que
+        nunca se procesaron. Devuelve métricas para mostrar en el UI.
+        """
+        from catalogacion import backfill_todos
+        try:
+            n_total, n_act, n_sin = backfill_todos()
+            return jsonify({
+                'ok': True,
+                'total': n_total,
+                'actualizados': n_act,
+                'sin_datos': n_sin,
+            })
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
+    @app.route('/api/catalogacion/stats')
+    def api_catalogacion_stats():
+        """Resumen de cobertura del catálogo estructurado."""
+        from sqlalchemy import func
+        from database import ProductoAtributo
+        with database.get_db() as session:
+            total_prods = session.query(func.count(Producto.id)).scalar()
+            total_atrib = session.query(func.count(ProductoAtributo.producto_id)).scalar()
+            por_fuente = dict(session.query(ProductoAtributo.fuente, func.count())
+                              .group_by(ProductoAtributo.fuente).all())
+            con_droga = session.query(func.count(ProductoAtributo.producto_id)) \
+                               .filter(ProductoAtributo.monodroga_norm.isnot(None)).scalar()
+            con_conc  = session.query(func.count(ProductoAtributo.producto_id)) \
+                               .filter(ProductoAtributo.concentracion_mg.isnot(None)).scalar()
+            con_forma = session.query(func.count(ProductoAtributo.producto_id)) \
+                               .filter(ProductoAtributo.forma_farma.isnot(None)).scalar()
+            con_cant  = session.query(func.count(ProductoAtributo.producto_id)) \
+                               .filter(ProductoAtributo.cantidad_envase.isnot(None)).scalar()
+            return jsonify({
+                'total_productos': total_prods,
+                'con_atributos': total_atrib,
+                'cobertura_pct': round(total_atrib * 100.0 / total_prods, 1) if total_prods else 0,
+                'por_fuente': por_fuente,
+                'completitud': {
+                    'monodroga': con_droga,
+                    'concentracion': con_conc,
+                    'forma_farma': con_forma,
+                    'cantidad_envase': con_cant,
+                },
+            })
+
+    @app.route('/api/producto/<int:prod_id>/atributos', methods=['GET', 'POST'])
+    def api_producto_atributos(prod_id):
+        """GET devuelve los atributos. POST permite editar manualmente (fuente='manual')."""
+        from database import ProductoAtributo
+        from catalogacion import _normalizar_droga
+        with database.get_db() as session:
+            prod = session.get(Producto, prod_id)
+            if not prod:
+                return jsonify({'error': 'Producto no encontrado'}), 404
+            atr = session.get(ProductoAtributo, prod_id)
+            if request.method == 'GET':
+                if not atr:
+                    return jsonify({'producto_id': prod_id, 'atributos': None})
+                return jsonify({
+                    'producto_id': prod_id,
+                    'descripcion': prod.descripcion,
+                    'atributos': {
+                        'monodroga': atr.monodroga_display,
+                        'concentracion_mg': float(atr.concentracion_mg) if atr.concentracion_mg else None,
+                        'concentracion_unidad': atr.concentracion_unidad,
+                        'forma_farma': atr.forma_farma,
+                        'cantidad_envase': float(atr.cantidad_envase) if atr.cantidad_envase else None,
+                        'via_admin': atr.via_admin,
+                        'fuente': atr.fuente,
+                        'confianza': atr.confianza,
+                        'extraido_en': atr.extraido_en.strftime('%Y-%m-%d %H:%M') if atr.extraido_en else None,
+                    },
+                })
+            # POST: editar manualmente
+            data = request.get_json(silent=True) or {}
+            if not atr:
+                atr = ProductoAtributo(producto_id=prod_id)
+                session.add(atr)
+            for f in ['concentracion_unidad', 'forma_farma', 'via_admin']:
+                if f in data:
+                    setattr(atr, f, (data.get(f) or None) and str(data[f]).strip().upper())
+            for f in ['concentracion_mg', 'cantidad_envase']:
+                if f in data:
+                    val = data.get(f)
+                    if val in (None, ''):
+                        setattr(atr, f, None)
+                    else:
+                        try:
+                            setattr(atr, f, float(str(val).replace(',', '.')))
+                        except ValueError:
+                            return jsonify({'error': f'{f} inválido'}), 400
+            if 'monodroga' in data:
+                m = (data.get('monodroga') or '').strip()
+                atr.monodroga_display = m or None
+                atr.monodroga_norm = _normalizar_droga(m) if m else None
+            atr.fuente = 'manual'
+            atr.confianza = 'ALTA'
+            atr.extraido_en = database.now_ar()
+            session.commit()
+            return jsonify({'ok': True})
+
     # ─── Análisis histórico de precios ───────────────────────────────────────
 
     @app.route('/precios/<ean>')

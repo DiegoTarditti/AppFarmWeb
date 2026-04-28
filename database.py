@@ -621,6 +621,37 @@ class Producto(Base):
     ultima_compra = Column(Date, nullable=True)
 
 
+class ProductoAtributo(Base):
+    """Atributos estructurados de un producto: droga, concentración, forma, cantidad.
+
+    1-a-1 con Producto. Se puebla mezclando 3 fuentes (en este orden de confianza):
+      1. obs_productos (cantidad_envase, nombre_droga, codigo_alfabeta, troquel) → fuente='observer'
+      2. Regex sobre descripción (concentracion_mg, forma_farma, via) → fuente='regex'
+      3. LLM fallback para descripciones residuales → fuente='llm'
+
+    Si el usuario corrige a mano: fuente='manual' (no se pisa con backfill posterior).
+
+    Sirve para:
+      - Match dimensional de ofertas (droga + concentración + cantidad + forma)
+      - Filtros / agrupaciones / dashboards transversales (BI por droga, por forma, etc.)
+      - Identificación rápida sin EAN
+    """
+    __tablename__ = 'producto_atributos'
+    producto_id        = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), primary_key=True)
+    monodroga_norm     = Column(String(200), nullable=True, index=True)  # lower-case sin acentos para match
+    monodroga_display  = Column(String(200), nullable=True)              # case original para mostrar
+    concentracion_mg   = Column(DECIMAL(12, 4), nullable=True, index=True)  # ej 500, 250.5, 0.05
+    concentracion_unidad = Column(String(15), nullable=True)             # MG, MCG, G, UI, %, MG/ML, MG/5ML
+    forma_farma        = Column(String(10), nullable=True, index=True)   # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
+    cantidad_envase    = Column(DECIMAL(10, 3), nullable=True)           # 16, 100, 10
+    via_admin          = Column(String(10), nullable=True)               # ORAL, IV, IM, SC, TOP, OFT, NAS, OTI, INH, RECT, VAG
+    fuente             = Column(String(15), nullable=False, default='regex')  # observer / regex / llm / manual / mixto
+    confianza          = Column(String(8),  nullable=False, default='MEDIA')  # ALTA / MEDIA / BAJA
+    raw_descripcion    = Column(String(300), nullable=True)              # snapshot de la descripción cuando se extrajo (detección de drift)
+    extraido_en        = Column(DateTime, default=now_ar)
+    producto = relationship('Producto', backref='atributos')
+
+
 class Modulo(Base):
     """Módulo de descuento: agrupación de packs de un laboratorio."""
     __tablename__ = 'modulos'
@@ -961,7 +992,7 @@ def init_db(database_url=None):
         zombie_names = ('export_templates', 'ofertas_minimo', 'procesos_compra',
                         'analisis_sesiones', 'usuarios',
                         'plantillas_exportacion', 'plantilla_campos',
-                        'plantillas', 'producto_precios_hist',
+                        'plantillas', 'producto_precios_hist', 'producto_atributos',
                         'obs_laboratorios', 'obs_rubros', 'obs_subrubros',
                         'obs_nombres_drogas', 'obs_productos', 'obs_stock',
                         'obs_sync_log', 'obs_ventas_mensuales',
@@ -1644,6 +1675,28 @@ def _pg_add_columns(conn):
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_codigo_barra ON producto_precios_hist (codigo_barra)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_proveedor    ON producto_precios_hist (proveedor_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_precios_fecha        ON producto_precios_hist (fecha)"))
+    # Atributos estructurados de productos (1-a-1 con productos): droga, concentración,
+    # forma farmacéutica, cantidad de envase. Se puebla con backfill incremental.
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS producto_atributos (
+            producto_id          INTEGER PRIMARY KEY REFERENCES productos(id) ON DELETE CASCADE,
+            monodroga_norm       VARCHAR(200),
+            monodroga_display    VARCHAR(200),
+            concentracion_mg     DECIMAL(12, 4),
+            concentracion_unidad VARCHAR(15),
+            forma_farma          VARCHAR(10),
+            cantidad_envase      DECIMAL(10, 3),
+            via_admin            VARCHAR(10),
+            fuente               VARCHAR(15) NOT NULL DEFAULT 'regex',
+            confianza            VARCHAR(8)  NOT NULL DEFAULT 'MEDIA',
+            raw_descripcion      VARCHAR(300),
+            extraido_en          TIMESTAMP DEFAULT NOW()
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_droga    ON producto_atributos (monodroga_norm)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_conc     ON producto_atributos (concentracion_mg)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_forma    ON producto_atributos (forma_farma)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_fuente   ON producto_atributos (fuente)"))
     # Backfill: si la tabla está vacía pero hay facturas cargadas, generar snapshots
     # desde los InvoiceItem existentes. Se ejecuta una sola vez.
     try:
