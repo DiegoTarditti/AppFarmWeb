@@ -270,6 +270,16 @@ una tarea aparte.
 - **Síntoma**: cada cambio de schema requiere agregar `ALTER TABLE IF NOT EXISTS`. Frágil para cambios complejos (renombre, drop, mover datos).
 - **Plan**: migrar a Alembic cuando aparezca un cambio que no se pueda hacer así.
 
+### Auto-sync del DockerPanel hace hammer-loop al fallar
+- **Síntoma**: si el sync falla por timeout, `last_run` solo se persiste en éxito → cada 60 s el loop ve `delta_min >= arranque_min(180)` → vuelve a disparar → gunicorn worker timeout → repeat. Llena los logs de `WORKER TIMEOUT` y `Limpiando Render…`.
+- **Workaround actual**: apagar `autosync_enabled` en `agente_config.txt`.
+- **Solución definitiva**: persistir `last_attempt` en cada intento (no solo `last_run` en éxito) y aplicar backoff exponencial cuando hay N fallas seguidas. Ver `DockerPanel/docker_panel.py:1462`.
+
+### `init_db()` bloquea el boot del worker en Render
+- **Síntoma**: backfills inline en migración (ej. `producto_codigos_barra`, `producto_precios_hist`) corren en cada worker al import time. En Render con `--workers 2` sin `--preload`, dos workers ejecutan los backfills en paralelo sobre el Postgres remoto, hacen contención, el HTTP port no abre a tiempo y Render aborta el deploy con `No open HTTP ports detected`.
+- **Workaround actual** (2026-04-28): `--preload` en el CMD del Dockerfile → master corre `init_db` una sola vez antes de forkear workers.
+- **Solución definitiva**: mover backfills a un management script one-shot (o disparar con env-var) para que NO corran en el path crítico de boot.
+
 ---
 
 ## ✅ Hechos recientes (histórico)

@@ -1791,64 +1791,11 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pcb_producto ON producto_codigos_barra (producto_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pcb_codigo   ON producto_codigos_barra (codigo_barra)"))
-    # Backfill desde productos.codigo_barra/alt1/2/3: en CONEXIÓN APARTE con
-    # AUTOCOMMIT. Si los INSERT fallan, no aborta la transacción de migración
-    # principal (cualquier error queda contenido). Idempotente: solo corre si
-    # producto_codigos_barra está vacío.
-    try:
-        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as bf_conn:
-            hay = bf_conn.execute(text("SELECT 1 FROM producto_codigos_barra LIMIT 1")).first()
-            if not hay:
-                bf_conn.execute(text("""
-                    INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
-                    SELECT id, codigo_barra, TRUE, 'legacy_principal'
-                    FROM productos
-                    WHERE codigo_barra IS NOT NULL AND codigo_barra <> ''
-                    ON CONFLICT (producto_id, codigo_barra) DO NOTHING
-                """))
-                for col in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
-                    bf_conn.execute(text(f"""
-                        INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
-                        SELECT id, {col}, FALSE, 'legacy_alt'
-                        FROM productos
-                        WHERE {col} IS NOT NULL AND {col} <> ''
-                        ON CONFLICT (producto_id, codigo_barra) DO NOTHING
-                    """))
-    except Exception:
-        pass
-    # Backfill: si la tabla está vacía pero hay facturas cargadas, generar snapshots
-    # desde los InvoiceItem existentes. CONEXIÓN APARTE con AUTOCOMMIT — si falla,
-    # NO aborta la transacción de migración principal.
-    try:
-        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as bf_conn:
-            hay_precios = bf_conn.execute(text("SELECT 1 FROM producto_precios_hist LIMIT 1")).first()
-            if not hay_precios:
-                bf_conn.execute(text("""
-                    INSERT INTO producto_precios_hist
-                        (codigo_barra, proveedor_id, proveedor_razon, fecha,
-                         dto_pct, precio_unitario, importe, factura_id, tipo_comprobante)
-                    SELECT
-                        fi.codigo_barra,
-                        p.id,
-                        f.proveedor_razon,
-                        f.fecha,
-                        fi.dto,
-                        CASE WHEN f.tipo_comprobante = 'NCR' THEN -fi.precio_unitario ELSE fi.precio_unitario END,
-                        CASE WHEN f.tipo_comprobante = 'NCR' THEN -fi.importe         ELSE fi.importe         END,
-                        f.id,
-                        f.tipo_comprobante
-                    FROM factura_items fi
-                    JOIN facturas f ON f.id = fi.factura_id
-                    LEFT JOIN proveedores p ON (
-                        (p.cuit IS NOT NULL AND p.cuit = f.proveedor_cuit)
-                        OR (p.cuit IS NULL AND p.razon_social = f.proveedor_razon)
-                    )
-                    WHERE fi.codigo_barra IS NOT NULL AND fi.codigo_barra <> ''
-                      AND f.fecha IS NOT NULL
-                """))
-    except Exception:
-        # Si falla el backfill (ej: columnas faltantes en tablas viejas), no bloquear el boot.
-        pass
+    # Backfills movidos a thread background (ver _ejecutar_backfills_async al final
+    # de init_db). En Render, correr estos INSERTs masivos en el path crítico de
+    # boot hace que el HTTP port no abra a tiempo y el deploy falle con
+    # "No open HTTP ports detected". Ahora arrancan después de que el master ya
+    # forkeó los workers y el port está accesible.
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS usuarios (
             id SERIAL PRIMARY KEY,
