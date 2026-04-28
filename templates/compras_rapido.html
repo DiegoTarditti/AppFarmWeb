@@ -108,6 +108,91 @@
     </div>
     {% endif %}
 
+    {# ─── Auditoría descuentos aplicados ─── #}
+    {% if descuentos_aplicados %}
+    <details class="bg-white border border-surface-border rounded-xl group" {% if descuentos_excluidos_csv %}open{% endif %}>
+        <summary class="px-4 py-2 cursor-pointer hover:bg-black/[0.02] flex items-center gap-2 select-none">
+            <svg class="w-3.5 h-3.5 text-[#bbb] transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+            <span class="text-xs font-semibold text-[#1e1e1e]">🔍 Auditoría: descuentos aplicados</span>
+            <span class="text-[11px] text-[#888]">{{ descuentos_aplicados|length }} descuento{{ '' if descuentos_aplicados|length == 1 else 's' }} en uso</span>
+            {% set _excl_count = descuentos_aplicados|selectattr('excluido')|list|length %}
+            {% if _excl_count %}
+            <span class="text-[10px] font-bold uppercase bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded">{{ _excl_count }} desmarcado{{ '' if _excl_count == 1 else 's' }}</span>
+            {% endif %}
+            <span class="ml-auto text-[11px] text-[#888]">Click para abrir/cerrar</span>
+        </summary>
+        <div class="px-4 pb-3 pt-1 border-t border-surface-border">
+            <p class="text-[11px] text-[#888] mb-2">Cada fila es un descuento que el sistema sumó al armar las opciones. Desmarcá los que no querés que se apliquen y aplicá para recalcular.</p>
+            <form method="get" id="form-auditoria-dto" class="space-y-1.5">
+                {# Reenviar todos los filtros vigentes excepto excluir_dto #}
+                {% if umbral_match %}<input type="hidden" name="umbral" value="{{ umbral_match }}">{% endif %}
+                {% if venta_tipo %}<input type="hidden" name="venta_tipo" value="{{ venta_tipo }}">{% endif %}
+                {% if solo_clavos %}<input type="hidden" name="solo_clavos" value="1">{% endif %}
+                {% if not excluir_clavos %}<input type="hidden" name="excluir_clavos" value="0">{% endif %}
+                {% if labs_seleccionados %}<input type="hidden" name="labs" value="{{ labs_seleccionados|map(attribute='id')|join(',') }}">{% endif %}
+                <table class="w-full text-xs">
+                    <thead class="text-[10px] uppercase text-[#888]">
+                        <tr>
+                            <th class="text-left py-1 w-10">Aplicar</th>
+                            <th class="text-left py-1">Descuento</th>
+                            <th class="text-left py-1 w-20">Nivel</th>
+                            <th class="text-right py-1 w-14">% off</th>
+                            <th class="text-right py-1 w-14">Usado en</th>
+                            <th class="text-left py-1 w-20">Plazo</th>
+                            <th class="text-left py-1 w-20">Vence</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#f0f0f0]">
+                        {% for d in descuentos_aplicados %}
+                        <tr class="{% if d.excluido %}bg-rose-50/40{% endif %}">
+                            <td class="py-1.5 text-center">
+                                <input type="checkbox" name="_aplicar_{{ d.id }}" value="1"
+                                       {% if not d.excluido %}checked{% endif %}
+                                       class="dto-aplicar-chk accent-violet-600"
+                                       data-id="{{ d.id }}">
+                            </td>
+                            <td class="py-1.5 text-[#1e1e1e]">{{ d.label }}</td>
+                            <td class="py-1.5 text-[#666] text-[10px] uppercase">{{ d.nivel }}</td>
+                            <td class="py-1.5 text-right font-mono font-semibold {% if d.excluido %}text-rose-700 line-through{% else %}text-emerald-700{% endif %}">{{ '%.2f'|format(d.pct|float) }}%</td>
+                            <td class="py-1.5 text-right font-mono">{{ d.usado_en }}</td>
+                            <td class="py-1.5 text-[#666]">{{ d.plazo or '—' }}</td>
+                            <td class="py-1.5 text-[#666]">{{ d.vigencia or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <input type="hidden" name="excluir_dto" id="excluir_dto" value="{{ descuentos_excluidos_csv }}">
+                <div class="flex items-center justify-end gap-2 mt-2">
+                    {% if descuentos_excluidos_csv %}
+                    <a href="?{% if labs_seleccionados %}labs={{ labs_seleccionados|map(attribute='id')|join(',') }}&{% endif %}{% if venta_tipo %}venta_tipo={{ venta_tipo }}&{% endif %}umbral={{ umbral_match }}"
+                       class="text-xs text-[#888] hover:text-[#1e1e1e] underline">↻ Restaurar todos</a>
+                    {% endif %}
+                    <button type="submit" class="bg-brand hover:bg-brand-hover text-white text-xs font-semibold px-3 py-1.5 rounded">
+                        Recalcular con estos descuentos →
+                    </button>
+                </div>
+            </form>
+            <script>
+            (function() {
+                const form = document.getElementById('form-auditoria-dto');
+                if (!form) return;
+                form.addEventListener('submit', e => {
+                    const desmarcados = [];
+                    form.querySelectorAll('.dto-aplicar-chk').forEach(chk => {
+                        if (!chk.checked) desmarcados.push(chk.dataset.id);
+                    });
+                    document.getElementById('excluir_dto').value = desmarcados.join(',');
+                    // Quitar los _aplicar_* del query string (no los necesitamos persistir).
+                    form.querySelectorAll('.dto-aplicar-chk').forEach(chk => chk.removeAttribute('name'));
+                });
+            })();
+            </script>
+        </div>
+    </details>
+    {% endif %}
+
     <!-- Tabla principal -->
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <table class="w-full text-sm">

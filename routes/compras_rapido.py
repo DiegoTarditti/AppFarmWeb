@@ -264,11 +264,20 @@ def init_app(app):
                             }
                         descuentos_aplicados[did]['usado_en'] += 1
 
+            # Auditoría: ordenar descuentos por % desc (los más impactantes
+            # arriba) para el panel.
+            descuentos_aplicados_lst = sorted(
+                descuentos_aplicados.values(),
+                key=lambda d: -float(d.get('pct') or 0),
+            )
+
             return render_template('compras_rapido.html',
                                    productos=productos,
                                    total_productos=total_productos,
                                    sin_descuentos=sin_descuentos,
                                    drogs_referenciadas=list(drogs_referenciadas.values()),
+                                   descuentos_aplicados=descuentos_aplicados_lst,
+                                   descuentos_excluidos_csv=','.join(sorted(descuentos_excluidos)),
                                    umbral_match=umbral_match,
                                    venta_tipo=venta_tipo,
                                    excluir_clavos=excluir_clavos,
