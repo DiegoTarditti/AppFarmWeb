@@ -25,6 +25,7 @@ Para limpiar todo lo demo y recrear:
     docker exec appfarmweb-web-1 sh -c "cd /app && python -m scripts.seed_demo_5_labs --reset"
 """
 import argparse
+import os
 import random
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -36,7 +37,10 @@ from database import (
     Producto, get_db, init_db, now_ar,
 )
 
-ID_FARMACIA = 1
+# El sistema usa OBSERVER_ID_FARMACIA (default 10525) en /compras/rapido y
+# en todos los queries de obs_stock / obs_ventas_mensuales. El seed tiene
+# que poblar exactamente esa farmacia para que los datos aparezcan.
+ID_FARMACIA = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
 RNG_SEED = 42  # determinístico
 OBS_LAB_BASE = 990000   # observer_ids para los labs demo
 OBS_PROD_BASE = 990000  # observer_ids para los productos demo
