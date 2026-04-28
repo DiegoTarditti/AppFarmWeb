@@ -37,6 +37,63 @@ def _to_float(v):
         return None
 
 
+def _normalizar_descripcion_proveedor(s):
+    """Primer proceso de normalización: limpia ruido típico de descripciones
+    de proveedores antes del matching.
+
+    Reglas (orden importa):
+    1. Tokens adyacentes idénticos → uno. Cubre el caso típico
+       "BALIGLUC AP 1000 1000 mg" → "BALIGLUC AP 1000 mg".
+       Aplica a duplicados numéricos (1000 1000), alfa (AP AP) y mixtos.
+    2. Espacios múltiples → uno. ("a  b" → "a b").
+    3. Trim.
+
+    NO toca:
+    - Mayúsculas/minúsculas (el matcher ya normaliza).
+    - Acentos (idem).
+    - Puntuación interna ("comp.lib.prol" se mantiene — el matcher
+      normaliza los puntos).
+
+    Args:
+        s: str — descripción cruda del Excel/PDF.
+
+    Returns:
+        (str_limpio, lista_de_cambios)
+        lista_de_cambios es [(regla, antes, despues), ...] o vacía si no
+        hubo cambios. Sirve para auditar en la UI.
+    """
+    if not s or not isinstance(s, str):
+        return s, []
+    cambios = []
+    # Tokens adyacentes idénticos (case-insensitive para detección, pero
+    # preservamos el casing del primero). "1000 1000" → "1000".
+    tokens = s.split()
+    out = []
+    skip = False
+    for i, tok in enumerate(tokens):
+        if skip:
+            skip = False
+            continue
+        if (i + 1 < len(tokens)
+                and tok.lower() == tokens[i + 1].lower()
+                and len(tok) >= 1):
+            cambios.append(('dup_token', tok + ' ' + tokens[i + 1], tok))
+            out.append(tok)
+            skip = True
+        else:
+            out.append(tok)
+    limpio = ' '.join(out).strip()
+    # Colapsar espacios múltiples (defensa por si el Excel los traía).
+    import re as _re
+    limpio2 = _re.sub(r'\s+', ' ', limpio)
+    if limpio2 != limpio:
+        cambios.append(('espacios', limpio, limpio2))
+        limpio = limpio2
+    if limpio == s:
+        return s, []
+    return limpio, cambios
+
+
 def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descripcion):
     """Cuando un import resuelve `codigo_interno → ean_real`, persiste la
     equivalencia en `Producto.codigo_barra_alt1/2/3` para que cualquier flujo
@@ -420,23 +477,43 @@ def init_app(app):
         if not items:
             return jsonify({'items': [], 'stats': {}})
 
-        items_para_match = [
-            {
+        # PASO 0: Normalización de entrada. Limpiamos artefactos típicos del
+        # proveedor (tokens duplicados como "1000 1000 mg") ANTES de matchear.
+        # Guardamos qué se cambió para mostrarlo en la UI.
+        normalizaciones = []   # [(idx, original, limpia, cambios)]
+        items_para_match = []
+        for idx, it in enumerate(items):
+            desc_orig = it.get('descripcion') or ''
+            desc_limpia, cambios = _normalizar_descripcion_proveedor(desc_orig)
+            if cambios:
+                normalizaciones.append({
+                    'idx': idx,
+                    'original': desc_orig,
+                    'limpia': desc_limpia,
+                    'cambios': cambios,
+                })
+            items_para_match.append({
                 'ean': it.get('ean'),
                 'codigo_alfabeta': it.get('codigo'),
-                'descripcion': it.get('descripcion'),
+                'descripcion': desc_limpia,
                 'precio': it.get('precio'),
-            }
-            for it in items
-        ]
+            })
 
         with database.get_db() as session:
             results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
 
+        # Mapa idx → descripción limpia (para anotar en cada entry)
+        norm_by_idx = {n['idx']: n for n in normalizaciones}
         validados = []
         stats = {'ok': 0, 'warning': 0, 'fuzzy': 0, 'not_found': 0, 'sin_precio_previo': 0}
-        for it, res in zip(items, results):
+        for idx_item, (it, res) in enumerate(zip(items, results)):
             entry = dict(it)
+            if idx_item in norm_by_idx:
+                n = norm_by_idx[idx_item]
+                entry['_descripcion_original'] = n['original']
+                entry['_descripcion_limpia'] = n['limpia']
+                entry['descripcion'] = n['limpia']  # usamos la limpia de aquí en adelante
+                entry['_normalizado'] = True
             if res.producto is None:
                 entry['_status'] = 'not_found'
                 entry['_motivo'] = 'No está en el catálogo local'
@@ -487,7 +564,13 @@ def init_app(app):
 
             validados.append(entry)
 
-        return jsonify({'items': validados, 'stats': stats, 'total': len(validados)})
+        return jsonify({
+            'items': validados,
+            'stats': stats,
+            'total': len(validados),
+            'normalizaciones': normalizaciones,
+            'normalizados_count': len(normalizaciones),
+        })
 
     @app.route('/api/ofertas/import-candidatos', methods=['POST'])
     @login_required
