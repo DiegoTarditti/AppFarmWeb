@@ -63,6 +63,16 @@ def init_app(app):
                 .subquery()
             )
 
+            # Filtros aplicados para evitar valores irreales que distorsionaban
+            # la lectura del tablero (antes mostraba ~1428 productos / $43M):
+            #   1. fecha_baja IS NULL → solo productos activos.
+            #   2. id_tipo_venta_control IN ('L','R','A') o NULL → excluye
+            #      controlados (psicotrópicos/estupefacientes 1-8 tienen flujo
+            #      distinto y no aplican al "para reponer ya").
+            #   3. u12m > 0 → no contar clavos absolutos (sin venta histórica).
+            #   4. minimo <= u12m / 2 → excluye mínimos mal cargados en
+            #      ObServer: si el mínimo es > 50% de las ventas anuales, está
+            #      sobredimensionado y va a aparecer perpetuamente "bajo mínimo".
             bajo_min_q = (
                 session.query(
                     stock_q.c.stock,
@@ -74,6 +84,16 @@ def init_app(app):
                 .join(ObsProducto, ObsProducto.observer_id == stock_q.c.pid)
                 .filter(ObsProducto.fecha_baja.is_(None))
                 .filter(stock_q.c.stock < stock_q.c.minimo)
+                # Tipo de venta válido (L=Libre, R=Receta, A=Archivada). Los
+                # controlados ('1'-'8') quedan fuera. NULL los aceptamos para
+                # no perder productos donde el campo aún no se sincronizó.
+                .filter(
+                    (ObsProducto.id_tipo_venta_control.in_(['L', 'R', 'A'])) |
+                    (ObsProducto.id_tipo_venta_control.is_(None))
+                )
+                # Excluye clavos absolutos y mínimos sobredimensionados.
+                .filter(ventas_12m.c.u12m > 0)
+                .filter(stock_q.c.minimo <= ventas_12m.c.u12m / 2)
             )
 
             n_bajo_min = 0
