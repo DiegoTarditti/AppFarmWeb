@@ -171,18 +171,46 @@
     });
 
     // Event delegation: cualquier botón con clase .btn-cmp-drog y data-cb
-    document.addEventListener('click', e => {
+    document.addEventListener('click', async e => {
         const btn = e.target.closest('.btn-cmp-drog');
         if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
-        const cb = btn.dataset.cb || '';
-        const nombre = btn.dataset.nombre || '';
-        if (!cb) {
-            alert('Este producto no tiene código de barras.');
+        const cb = (btn.dataset.cb || '').trim();
+        const nombre = (btn.dataset.nombre || '').trim();
+        if (cb) {
+            openComparDrog(cb, nombre);
             return;
         }
-        openComparDrog(cb, nombre);
+        // Fallback: el item se cargó sin EAN. Intentar resolver por nombre.
+        if (!nombre || nombre.length < 3) {
+            alert('Este producto no tiene EAN ni nombre suficiente para buscar.');
+            return;
+        }
+        // Indicador rápido visual
+        const txtOriginal = btn.textContent;
+        btn.textContent = '⏳';
+        try {
+            const r = await fetch('/api/producto-resolver?nombre=' + encodeURIComponent(nombre),
+                                  { credentials: 'same-origin' });
+            const data = await r.json();
+            if (!data.ok || !data.ean) {
+                alert('Este producto fue cargado sin EAN. No lo encontré por nombre tampoco.\n\n' +
+                      'Tip: cargá una factura con este producto para que el sistema le asigne código.');
+                return;
+            }
+            // Pseudo-EAN OBS: avisamos al user que es matching aproximado
+            if (data.ean.startsWith('OBS:')) {
+                alert('Este producto se cargó sin EAN. Lo resolví por nombre aproximado contra el catálogo ObServer (sin EAN real registrado).');
+            }
+            // Persistir el cb resuelto en el botón para próximos clicks
+            btn.dataset.cb = data.ean;
+            openComparDrog(data.ean, data.descripcion || nombre);
+        } catch (err) {
+            alert('Error resolviendo producto: ' + err.message);
+        } finally {
+            btn.textContent = txtOriginal;
+        }
     });
 })();
 </script>

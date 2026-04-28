@@ -224,6 +224,62 @@ def init_app(app):
                 }
         return render_template('precios_historico.html', ean=ean, producto=producto_info)
 
+    @app.route('/api/producto-resolver')
+    def api_producto_resolver():
+        """Resuelve un EAN a partir del nombre del producto.
+
+        Útil cuando un PedidoItem se creó sin código (ej. compras rápidas
+        antiguas) y queremos disparar acciones que requieren EAN
+        (comparar droguerías, gráfico histórico, etc.).
+
+        Retorna: {ok, ean, descripcion, source} donde source = 'producto'
+        si match por catálogo local, 'obs' si match por catálogo Observer.
+        """
+        from sqlalchemy import or_
+        nombre = (request.args.get('nombre') or '').strip()
+        if not nombre or len(nombre) < 3:
+            return jsonify({'ok': False, 'error': 'Nombre vacío o muy corto'}), 400
+
+        with database.get_db() as session:
+            # 1. Match exacto en Producto local
+            prod = (session.query(database.Producto)
+                    .filter(database.Producto.descripcion.ilike(nombre)).first())
+            if prod and prod.codigo_barra:
+                return jsonify({
+                    'ok': True, 'ean': prod.codigo_barra,
+                    'descripcion': prod.descripcion, 'source': 'producto_exacto',
+                })
+            # 2. Match contains en Producto local
+            prod = (session.query(database.Producto)
+                    .filter(database.Producto.descripcion.ilike(f'%{nombre}%')).first())
+            if prod and prod.codigo_barra:
+                return jsonify({
+                    'ok': True, 'ean': prod.codigo_barra,
+                    'descripcion': prod.descripcion, 'source': 'producto_contains',
+                })
+            # 3. Match en ObsProducto + EAN principal de obs_codigos_barras
+            obs = (session.query(database.ObsProducto)
+                   .filter(or_(database.ObsProducto.descripcion.ilike(nombre),
+                               database.ObsProducto.descripcion.ilike(f'%{nombre}%')))
+                   .filter(database.ObsProducto.fecha_baja.is_(None))
+                   .order_by(database.ObsProducto.descripcion).first())
+            if obs:
+                cb_row = (session.query(database.ObsCodigoBarras.codigo_barra)
+                          .filter(database.ObsCodigoBarras.producto_observer == obs.observer_id)
+                          .order_by(database.ObsCodigoBarras.orden).first())
+                if cb_row:
+                    return jsonify({
+                        'ok': True, 'ean': cb_row[0],
+                        'descripcion': obs.descripcion, 'source': 'obs',
+                    })
+                # Como último recurso, pseudo-EAN
+                return jsonify({
+                    'ok': True, 'ean': f'OBS:{obs.observer_id}',
+                    'descripcion': obs.descripcion, 'source': 'obs_pseudo',
+                })
+
+        return jsonify({'ok': False, 'error': 'Producto no encontrado por nombre'}), 404
+
     @app.route('/api/precios/<ean>')
     def api_precios_historico(ean):
         """Devuelve la serie de precios históricos de un EAN agrupada por proveedor.
