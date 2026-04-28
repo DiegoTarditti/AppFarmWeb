@@ -477,6 +477,38 @@ def init_app(app):
         if not items:
             return jsonify({'items': [], 'stats': {}})
 
+        # GUARD: detectar si el archivo parece ser un MÓDULO de descuento
+        # (no ofertas). El flujo correcto es /modulos-import. Si se cuela
+        # acá, los títulos como "MOD. AMOIXIDAL" / "MOD Invierno 1" nunca
+        # van a matchear y el user pierde tiempo.
+        import re as _re_mod
+        _PAT_TITULO_MOD = _re_mod.compile(
+            r'^\s*(mod\.|mod\s|modulo|módulo|m[oó]dulo|grupo|combo)\b',
+            _re_mod.IGNORECASE
+        )
+        titulos_modulo = []
+        for idx, it in enumerate(items):
+            desc = (it.get('descripcion') or '').strip()
+            if desc and _PAT_TITULO_MOD.match(desc):
+                titulos_modulo.append({'idx': idx, 'descripcion': desc})
+
+        # Si hay >=3 líneas con prefijo MOD/MÓDULO/GRUPO → es claramente un
+        # archivo de módulos. Bloqueamos sin matchear.
+        if len(titulos_modulo) >= 3:
+            return jsonify({
+                'es_modulo': True,
+                'titulos_modulo': titulos_modulo[:20],
+                'titulos_count': len(titulos_modulo),
+                'total_items': len(items),
+                'hint': (
+                    f'Detecté {len(titulos_modulo)} líneas que parecen títulos '
+                    f'de módulo (empiezan con "MOD.", "MÓDULO", "GRUPO" o '
+                    f'similar). Este archivo va por "Importar módulos" '
+                    f'(/modulos-import), no por ofertas.'
+                ),
+                'redirect_url': '/modulos-import',
+            }), 422
+
         # PASO 0: Normalización de entrada. Limpiamos artefactos típicos del
         # proveedor (tokens duplicados como "1000 1000 mg") ANTES de matchear.
         # Guardamos qué se cambió para mostrarlo en la UI.

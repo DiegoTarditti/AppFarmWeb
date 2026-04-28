@@ -997,6 +997,19 @@ async function validarItems(opciones={}) {
             AnalisisOverlay.setProgreso(70);
         }
         const data = await r.json();
+        if (r.status === 422 && data.es_modulo) {
+            // GUARD: archivo es un módulo, no ofertas → redirigir.
+            if (!silencioso && window.AnalisisOverlay) {
+                AnalisisOverlay.cerrar();
+            }
+            const muestra = (data.titulos_modulo || []).slice(0, 5)
+                .map(t => '  • ' + t.descripcion).join('\n');
+            const msg = `${data.hint}\n\nLíneas detectadas (primeras 5):\n${muestra}\n\n¿Vamos a "Importar módulos"?`;
+            if (confirm(msg)) {
+                window.location.href = data.redirect_url || '/modulos-import';
+            }
+            return false;
+        }
         if (!r.ok) {
             if (!silencioso && window.AnalisisOverlay) {
                 AnalisisOverlay.setPaso(2, 'error', data.error || 'error');
