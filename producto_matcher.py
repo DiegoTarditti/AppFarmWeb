@@ -86,12 +86,23 @@ _STOPWORDS = {
 
 
 def normalizar_texto(s) -> str:
-    """Lowercase + sin acentos + sin puntuación + colapsa espacios."""
+    """Lowercase + sin acentos + sin puntuación + colapsa espacios.
+
+    Además mergea nomenclaturas farma del estilo "B 12" → "b12" (vitaminas
+    y formulaciones con letra+número espaciado). Sin esto, "XEDENOL B 12"
+    tokenizaba {xedenol, 12} (la 'b' suelta se filtra por len<2) y
+    "XEDENOL B12" tokenizaba {xedenol, b12} → match al 50%.
+
+    Limitado a letras comunes en farma (b, c, d, e, k) para evitar mergear
+    cosas no deseadas como "x 5".
+    """
     if s is None:
         return ''
     s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
     s = s.lower()
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
+    # Merge letra-vitamina + número adyacentes ("b 12" → "b12").
+    s = re.sub(r'\b([bcdek])\s+(\d+)\b', r'\1\2', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
 
