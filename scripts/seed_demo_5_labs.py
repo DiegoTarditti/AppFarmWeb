@@ -210,6 +210,10 @@ def upsert_obs_producto(session, obs_id, descripcion, lab_obs_id, monodroga_obs_
             fecha_baja=None,
         )
         session.add(p)
+        # Flush ANTES de agregar el ObsCodigoBarras (FK a obs_productos):
+        # SQLAlchemy unit-of-work no siempre resuelve el orden por FK con
+        # batch inserts, y la FK falla si el código se inserta primero.
+        session.flush()
     else:
         p.descripcion = descripcion
         p.laboratorio_observer = lab_obs_id
