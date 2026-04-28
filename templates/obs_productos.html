@@ -104,7 +104,16 @@
                     <td class="px-3 py-2 text-right text-[#888] text-xs">{{ p.minimo if p.minimo else '—' }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ p.prom_3m if p.prom_3m else '—' }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ p.prom_12m if p.prom_12m else '—' }}</td>
-                    <td class="px-3 py-2 text-[11px] font-mono text-[#888]">{{ p.codigo_alfabeta or '—' }}</td>
+                    <td class="px-3 py-2 text-[11px] font-mono text-[#888] whitespace-nowrap">
+                        {% if p.codigo_alfabeta %}
+                        <span>{{ p.codigo_alfabeta }}</span>
+                        <button type="button"
+                                class="btn-alfabeta ml-1 text-emerald-700 hover:text-emerald-900"
+                                data-cod-alfabeta="{{ p.codigo_alfabeta }}"
+                                data-nombre="{{ p.descripcion }}"
+                                title="Buscar precios en alfabeta.net">💲</button>
+                        {% else %}—{% endif %}
+                    </td>
                     <td class="px-3 py-2 text-[11px] font-mono">
                         {% if p.ean %}
                             <span class="text-emerald-700">{{ p.ean }}</span>

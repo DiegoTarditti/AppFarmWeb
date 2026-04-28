@@ -266,6 +266,10 @@
                                         title="Comparar precios del mismo EAN entre droguerías"
                                         data-cb="{{ it.codigo_barra }}"
                                         data-nombre="{{ it.nombre }}">⇄ Drog.</button>
+                                <button type="button"
+                                        class="btn-alfabeta flex-shrink-0 text-[#999] hover:text-emerald-600 text-xs transition-colors"
+                                        title="Buscar precio en alfabeta.net"
+                                        data-nombre="{{ it.nombre }}">💲</button>
                                 <span class="truncate">{{ it.nombre }}</span>
                             </div>
                         </td>
@@ -307,6 +311,10 @@
                                     title="Comparar precios del mismo EAN entre droguerías"
                                     data-cb="{{ it.codigo_barra }}"
                                     data-nombre="{{ it.nombre }}">⇄ Drog.</button>
+                            <button type="button"
+                                    class="btn-alfabeta flex-shrink-0 text-[#999] hover:text-emerald-600 text-xs transition-colors"
+                                    title="Buscar precio en alfabeta.net"
+                                    data-nombre="{{ it.nombre }}">💲</button>
                             <p class="flex-1 text-sm font-medium text-[#1e1e1e] leading-snug">{{ it.nombre }}</p>
                         </div>
                         <p class="text-[10px] text-[#bbb] font-mono mb-2">{{ it.codigo_barra }}</p>
@@ -1359,4 +1367,5 @@ function cerrarAlternativas() {
 </script>
 
 {% include '_comparar_droguerias.html' %}
+{% include '_alfabeta_link.html' %}
 {% endblock %}

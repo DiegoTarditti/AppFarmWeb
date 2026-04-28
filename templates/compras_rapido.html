@@ -218,6 +218,9 @@
                     data-nombre="{{ p.descripcion }}"
                     data-precio="0">
                     <td class="px-3 py-2 text-[#1e1e1e]">
+                        <button type="button" class="btn-alfabeta align-middle text-[#999] hover:text-emerald-600 mr-1 text-xs transition-colors"
+                                data-nombre="{{ p.descripcion }}"
+                                title="Buscar precio en alfabeta.net">💲</button>
                         {{ p.descripcion }}
                         {% if p.es_clavo %}<span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-red-100 text-red-700 ml-1" title="Sin venta últimos 3 meses">clavo</span>{% endif %}
                     </td>
@@ -548,5 +551,7 @@ async function generarTodos() {
 
 document.addEventListener('DOMContentLoaded', recalcularResumen);
 </script>
+
+{% include '_alfabeta_link.html' %}
 
 {% endblock %}

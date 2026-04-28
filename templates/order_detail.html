@@ -944,7 +944,7 @@ function renderModulosRaw() {
                 : `<span class="text-[#999]">${unidadesPorSlot}</span>`;
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
-                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(it.ean)}${it.descripcion}</td>
+                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(it.ean)}${ALFA_BTN(it.descripcion)}${it.descripcion}</td>
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
@@ -1252,7 +1252,7 @@ function renderOfertasTable() {
         offResult.forEach(it => {
             html += `<tr class="data-row">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${it.nombre}</td>
+                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
                 <td class="px-2 text-right font-bold text-brand">${it.cantidad}</td>
             </tr>`;
         });
@@ -1386,7 +1386,7 @@ function renderResumen() {
             : '';
         html += `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.02] transition-colors"
                      data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}" data-tvc="${_tvc}">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${packBadge}${d.nombre}${_cmpLabsBtn}${monoLine}</td>
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${ALFA_BTN(d.nombre)}${packBadge}${d.nombre}${_cmpLabsBtn}${monoLine}</td>
             <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
             <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
             <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
@@ -1849,7 +1849,7 @@ function renderOfertasConMinimoTable() {
             const rowCls = initOk ? 'data-row bg-emerald-50' : 'data-row';
             html += `<tr class="${rowCls}" id="row-ofmin-${it.ean}">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${it.nombre}</td>
+                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
                 <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
@@ -1895,7 +1895,7 @@ function renderOfertasConMinimoTable() {
         grupo.items.forEach(it => {
             html += `<tr class="data-row">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${it.nombre}</td>
+                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
                 <td class="px-2 text-right">
@@ -2034,6 +2034,12 @@ function printStep(step) {
 // ─── Gráfico histórico producto ───────────────────────────────────────────────
 const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 let chartInstance = null;
+const ALFA_BTN = nombre => {
+    const n = (nombre || '').toString().trim();
+    if (!n) return '';
+    const safe = n.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return `<button type="button" class="btn-alfabeta align-middle text-[#999] hover:text-emerald-600 mr-1 text-xs transition-colors" data-nombre="${safe}" title="Buscar precio en alfabeta.net">💲</button>`;
+};
 const CHART_BTN = ean => `<span class="inline-flex items-center gap-0.5 mr-1.5 align-middle flex-shrink-0">
     <button onclick="openChart('${ean}')" title="Ver gráfico histórico"
         class="inline-flex items-center text-[#999] hover:text-amber-500 transition-colors">
@@ -2196,6 +2202,7 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') closeHistChart
 </div>
 
 {% include '_comparar_labs.html' %}
+{% include '_alfabeta_link.html' %}
 
 <script>
 // Hook ANTES del listener delegado de _comparar_labs.html: cuando el click viene

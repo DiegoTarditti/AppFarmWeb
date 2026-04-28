@@ -1,0 +1,40 @@
+{# Botón "💲 Alfabeta" — abre alfabeta.net/precio en nueva tab con
+   el código alfabeta o nombre del producto.
+
+   Uso:
+     1. {% include '_alfabeta_link.html' %} al final del body (una vez por página).
+     2. Botón con clase `.btn-alfabeta` y data-attributes:
+        <button class="btn-alfabeta"
+                data-cod-alfabeta="7592"
+                data-nombre="AMOXIDAL 1g">💲</button>
+     3. O llamar window.openAlfabeta(codigo, nombre) directamente.
+
+   Si después la farmacia tiene cuenta paga + API de Alfabeta, este
+   partial se reemplaza por una llamada interna al backend que devuelva
+   precios reales sin abrir tab.
+#}
+<script>
+(function() {
+    const ALFABETA_BASE = 'https://www.alfabeta.net/precio/';
+
+    window.openAlfabeta = function(codigo, nombre) {
+        const q = (codigo && String(codigo).trim()) || (nombre && String(nombre).trim()) || '';
+        if (!q) {
+            alert('Sin código alfabeta ni nombre — no puedo buscar.');
+            return;
+        }
+        const url = ALFABETA_BASE + '?buscar=' + encodeURIComponent(q);
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    document.addEventListener('click', e => {
+        const btn = e.target.closest('.btn-alfabeta');
+        if (!btn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const cod = btn.dataset.codAlfabeta || '';
+        const nombre = btn.dataset.nombre || '';
+        openAlfabeta(cod, nombre);
+    });
+})();
+</script>
