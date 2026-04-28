@@ -40,7 +40,7 @@ from typing import Optional
 # y no aportan distinción.
 _STOPWORDS = {
     # Formas farmacéuticas (sinónimos)
-    'comp', 'com', 'comprimido', 'comprimidos', 'cpr',
+    'comp', 'com', 'compr', 'comprimido', 'comprimidos', 'cpr',
     'cap', 'caps', 'capsula', 'capsulas',
     'tab', 'tableta', 'tabletas',
     'amp', 'ampolla', 'ampollas',
@@ -188,6 +188,7 @@ class MatchResult:
     confianza: str = CONFIANZA_NONE
     warnings: list = field(default_factory=list)
     candidatos_top: list = field(default_factory=list)
+    candidatos_count: int = 0   # cantidad de productos del pool con jaccard >= UMBRAL_CAND
     debug: dict = field(default_factory=dict)
 
     def to_dict(self):
@@ -815,6 +816,12 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                             score = 1.0
 
                     # 3. tokens superset / fuzzy
+                    # Mientras iteramos también contamos cuántos obs son
+                    # "candidatos razonables" (jaccard >= UMBRAL_CAND).
+                    # Sirve para que la UI muestre "sin candidatos" upfront
+                    # en items donde sabemos que el modal va a venir vacío.
+                    UMBRAL_CAND = 0.20
+                    candidatos_count = 0
                     if not encontrado:
                         toks_in = tokens_significativos(desc_in)
                         if toks_in:
@@ -826,6 +833,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                                 if toks_o and toks_in.issubset(toks_o):
                                     supersets.append(obs)
                                 s = jaccard(toks_in, toks_o)
+                                if s >= UMBRAL_CAND:
+                                    candidatos_count += 1
                                 if s > mejor_score:
                                     mejor = obs
                                     mejor_score = s
@@ -847,6 +856,12 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                         res.estrategia = estrategia + '_obs'
                         res.confianza = _confianza(score)
                         res.warnings.append('match_observer')
+                        results[i] = res
+                    else:
+                        # Sigue como not_found: guardamos el conteo de
+                        # candidatos en el MatchResult para que el caller
+                        # pueda decidir qué UI mostrar.
+                        res.candidatos_count = candidatos_count
                         results[i] = res
 
         return results

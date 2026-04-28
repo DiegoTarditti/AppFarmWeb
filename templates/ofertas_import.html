@@ -1146,9 +1146,16 @@ function renderValidacion(stats) {
                             origenBadge = '<span class="text-[9px] text-sky-700 bg-sky-100 border border-sky-300 px-1 rounded">fuzzy</span>';
                         }
                     }
-                    const accion = status === 'not_found'
-                        ? `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300" data-idx="${it._idx}">🔍 Buscar similar</button>`
-                        : '';
+                    let accion = '';
+                    if (status === 'not_found') {
+                        if (it._sin_candidatos) {
+                            accion = `<span class="text-[10px] bg-[#f3f4f6] text-[#888] px-2 py-0.5 rounded border border-[#ddd]" title="No hay productos en el catálogo con tokens en común. Probablemente sea un producto nuevo.">— sin candidatos —</span>`;
+                        } else {
+                            const cc = it._candidatos_count || 0;
+                            const lbl = cc > 0 ? `🔍 Buscar similar (${cc})` : '🔍 Buscar similar';
+                            accion = `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300" data-idx="${it._idx}">${lbl}</button>`;
+                        }
+                    }
                     const motivoExtra = (status === 'warning')
                         ? `<div class="text-[9px] text-amber-700 italic">${escapeHtml(it._motivo || '')}</div>`
                         : '';
@@ -1270,11 +1277,19 @@ let _rapidoIdx = -1;
 let _rapidoCandidatos = [];
 
 function abrirModoRapido() {
+    // Skipea items que sabemos que no tienen candidatos en el catálogo
+    // (jaccard < 0.20 contra TODOS los obs). No tiene sentido mostrarlos
+    // en el modal porque el listado de candidatos va a venir vacío.
     const pendientes = _items
         .map((it, i) => ({it, i}))
-        .filter(({it}) => it._status === 'not_found');
+        .filter(({it}) => it._status === 'not_found' && !it._sin_candidatos);
+    const sinCand = _items.filter(it => it._status === 'not_found' && it._sin_candidatos).length;
     if (!pendientes.length) {
-        alert('No hay items pendientes de vincular.');
+        if (sinCand > 0) {
+            alert(`No hay items vinculables. ${sinCand} están marcados "sin candidatos" — esos productos no existen en el catálogo (probablemente son nuevos).`);
+        } else {
+            alert('No hay items pendientes de vincular.');
+        }
         return;
     }
     document.getElementById('rapido-modal').classList.remove('hidden');

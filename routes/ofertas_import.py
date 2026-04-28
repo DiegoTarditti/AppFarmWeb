@@ -518,6 +518,12 @@ def init_app(app):
                 entry['_status'] = 'not_found'
                 entry['_motivo'] = 'No está en el catálogo local'
                 entry['_candidatos_top'] = res.candidatos_top
+                # Pre-conteo de candidatos del pool obs (jaccard >= 0.20).
+                # Si es 0, la UI puede mostrar "sin candidatos" sin que el
+                # user tenga que clickear "Buscar similar" para descubrirlo.
+                cc = getattr(res, 'candidatos_count', 0) or 0
+                entry['_candidatos_count'] = cc
+                entry['_sin_candidatos'] = (cc == 0)
                 stats['not_found'] += 1
             else:
                 p = res.producto
