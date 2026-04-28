@@ -85,6 +85,17 @@
             <option value="os" {% if tipo_filter == 'os' %}selected{% endif %}>Solo c/Obra Social</option>
             <option value="particular" {% if tipo_filter == 'particular' %}selected{% endif %}>Solo particulares</option>
         </select>
+
+        <select name="cobertura" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                title="Cobertura por receta (% a cargo OS sobre total)">
+            <option value="">Toda cobertura</option>
+            <option value="0%"     {% if cob_filter == '0%' %}selected{% endif %}>Cobertura 0% (todo paciente)</option>
+            <option value="1-39%"  {% if cob_filter == '1-39%' %}selected{% endif %}>1–39%</option>
+            <option value="40-69%" {% if cob_filter == '40-69%' %}selected{% endif %}>40–69%</option>
+            <option value="70-99%" {% if cob_filter == '70-99%' %}selected{% endif %}>70–99%</option>
+            <option value="100%"   {% if cob_filter == '100%' %}selected{% endif %}>100% (sin cargo)</option>
+        </select>
         {% endif %}
 
         <div class="flex items-center gap-1">

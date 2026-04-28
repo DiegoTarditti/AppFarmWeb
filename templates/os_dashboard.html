@@ -47,6 +47,19 @@
     </span>
     {% endif %}
 
+    <!-- Toggle métrica del chart -->
+    <div class="flex items-center gap-1 bg-[#f3f3f3] rounded-lg p-0.5 border border-surface-border ml-2"
+         title="Métrica que se muestra en el gráfico de últimos 30 días">
+        <a href="?{% if os_filter %}os={{ os_filter }}&{% endif %}{% if os_id_filter %}os_id={{ os_id_filter }}&{% endif %}metric=importe"
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if chart_metric == 'importe' %}bg-white shadow-sm text-[#1e1e1e]{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+            $ Importe
+        </a>
+        <a href="?{% if os_filter %}os={{ os_filter }}&{% endif %}{% if os_id_filter %}os_id={{ os_id_filter }}&{% endif %}metric=cantidad"
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if chart_metric == 'cantidad' %}bg-white shadow-sm text-[#1e1e1e]{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+            # Recetas
+        </a>
+    </div>
+
     <div class="ml-auto flex items-center gap-2">
         <a href="{{ url_for('os_dispensas') }}"
            class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg transition-colors">
@@ -77,7 +90,8 @@
         </div>
     </div>
 
-    <!-- Breakdown por OS -->
+    <!-- Breakdown por OS — solo cuando NO hay filtro individual (modo zoom oculta cards) -->
+    {% if not os_id_filter %}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {% for code, info in por_os.items() %}
         <div class="bg-surface rounded-xl border border-surface-border p-4">
@@ -111,19 +125,50 @@
         </div>
         {% endfor %}
     </div>
+    {% endif %}
 
     <!-- Serie diaria -->
     <div class="bg-surface rounded-xl border border-surface-border p-4">
         <div class="flex items-center justify-between mb-3">
-            <h3 class="font-bold text-[#1e1e1e]">Importe a cargo OS — últimos 30 días</h3>
+            <h3 class="font-bold text-[#1e1e1e]">
+                {% if chart_metric == 'cantidad' %}Recetas{% else %}Importe a cargo OS{% endif %} — últimos 30 días
+            </h3>
         </div>
         <div class="h-64">
             <canvas id="chart-serie"></canvas>
         </div>
     </div>
 
-    <!-- Top 10 OS individuales del mes -->
-    {% if top_os %}
+    <!-- Distribución por cobertura (% a cargo OS por receta) -->
+    {% if cobertura_buckets %}
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <div>
+                <h3 class="font-bold text-[#1e1e1e]">Distribución por cobertura — del mes</h3>
+                <p class="text-xs text-[#6f6f6f]">Recetas agrupadas por % a cargo OS. Click en un rango para filtrar las dispensas.</p>
+            </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-0 divide-x divide-surface-border">
+            {% set cob_colors = {'0%': 'rose', '1-39%': 'amber', '40-69%': 'sky', '70-99%': 'violet', '100%': 'emerald'} %}
+            {% for b in cobertura_buckets %}
+            {% set color = cob_colors.get(b.rango, 'gray') %}
+            <a href="{{ url_for('os_dispensas', cobertura=b.rango) }}"
+               class="px-4 py-4 text-center hover:bg-black/[0.02] transition-colors block">
+                <span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide bg-{{ color }}-100 text-{{ color }}-800">
+                    {{ b.rango }}
+                </span>
+                <p class="text-2xl font-bold text-[#1e1e1e] mt-2">{{ b.recetas }}</p>
+                <p class="text-[11px] text-[#6f6f6f]">{{ b.pct_recetas }}% del total</p>
+                <p class="text-xs text-emerald-700 font-mono mt-1">${{ b.importe_os | arg_currency }}</p>
+                <p class="text-[10px] text-[#999]">a cargo OS</p>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Top 10 OS individuales del mes — oculto en modo zoom -->
+    {% if top_os and not os_id_filter %}
     <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
         <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
             <h3 class="font-bold text-[#1e1e1e]">Top 10 obras sociales — del mes</h3>
@@ -264,39 +309,39 @@ const labels = serieData.map(d => {
     const [y, m, day] = d.fecha.split('-');
     return `${day}/${m}`;
 });
+const isZoom = serieData.length > 0 && 'OS' in serieData[0];
+const datasets = isZoom
+    ? [{
+        label: {{ os_id_filter_nombre | tojson }} || 'OS',
+        data: serieData.map(d => d.OS || 0),
+        backgroundColor: 'rgba(16, 185, 129, 0.8)',
+    }]
+    : [
+        { label: 'PAMI',  data: serieData.map(d => d.PAMI),  backgroundColor: 'rgba(14, 165, 233, 0.8)' },
+        { label: 'IAPOS', data: serieData.map(d => d.IAPOS), backgroundColor: 'rgba(139, 92, 246, 0.8)' },
+        { label: 'OTROS', data: serieData.map(d => d.OTROS || 0), backgroundColor: 'rgba(245, 158, 11, 0.8)' },
+    ];
+const chartMetric = {{ chart_metric | tojson }};
+const formatVal = chartMetric === 'cantidad'
+    ? v => v.toLocaleString('es-AR')
+    : v => '$' + v.toLocaleString('es-AR', {maximumFractionDigits: 0});
 new Chart(document.getElementById('chart-serie'), {
     type: 'bar',
     data: {
         labels: labels,
-        datasets: [
-            {
-                label: 'PAMI',
-                data: serieData.map(d => d.PAMI),
-                backgroundColor: 'rgba(14, 165, 233, 0.8)',
-            },
-            {
-                label: 'IAPOS',
-                data: serieData.map(d => d.IAPOS),
-                backgroundColor: 'rgba(139, 92, 246, 0.8)',
-            },
-            {
-                label: 'OTROS',
-                data: serieData.map(d => d.OTROS || 0),
-                backgroundColor: 'rgba(245, 158, 11, 0.8)',
-            },
-        ],
+        datasets: datasets,
     },
     options: {
         responsive: true,
         maintainAspectRatio: false,
         scales: {
             x: { stacked: true, grid: { display: false } },
-            y: { stacked: true, ticks: { callback: v => '$' + v.toLocaleString('es-AR') } },
+            y: { stacked: true, ticks: { callback: formatVal } },
         },
         plugins: {
             tooltip: {
                 callbacks: {
-                    label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toLocaleString('es-AR', {maximumFractionDigits: 0})}`,
+                    label: ctx => `${ctx.dataset.label}: ${formatVal(ctx.parsed.y)}`,
                 },
             },
         },

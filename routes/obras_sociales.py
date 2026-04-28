@@ -152,8 +152,22 @@ def init_app(app):
         import database
 
         hoy = datetime.now().date()
-        primer_dia = hoy.replace(day=1)
-        desde_30d = hoy - timedelta(days=29)
+        # Rango configurable por querystring. Default: mes corriente.
+        desde_str = (request.args.get('desde') or '').strip()
+        hasta_str = (request.args.get('hasta') or '').strip()
+        try:
+            desde = date.fromisoformat(desde_str) if desde_str else hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = date.fromisoformat(hasta_str) if hasta_str else hoy
+        except ValueError:
+            hasta = hoy
+        if hasta < desde:
+            desde, hasta = hasta, desde
+        primer_dia = desde   # se sigue llamando así abajo, refactor mínimo
+        # El chart muestra los últimos 30 días HASTA "hasta" (no a partir de hoy fijo).
+        desde_30d = hasta - timedelta(days=29)
 
         os_filter = (request.args.get('os') or '').upper()
         if os_filter not in ('PAMI', 'IAPOS', 'OTROS'):
@@ -163,6 +177,10 @@ def init_app(app):
             os_id_filter = int(request.args.get('os_id') or 0) or None
         except (ValueError, TypeError):
             os_id_filter = None
+        # Métrica del chart: 'importe' (default) o 'cantidad' (recetas).
+        chart_metric = request.args.get('metric') or 'importe'
+        if chart_metric not in ('importe', 'cantidad'):
+            chart_metric = 'importe'
 
         with database.get_db() as session:
             ObsVD = database.ObsVentaDetalle
@@ -194,10 +212,11 @@ def init_app(app):
                 else_='OTROS',
             )
 
-            # Filtro base: solo ventas con OS (no particulares).
+            # Filtro base: solo ventas con OS (no particulares), dentro del rango desde-hasta.
             base_filters = [
                 ObsVD.obra_social_observer.isnot(None),
-                ObsVD.fecha_estadistica >= primer_dia,
+                ObsVD.fecha_estadistica >= desde,
+                ObsVD.fecha_estadistica <= hasta,
             ]
             otros_ids_full = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
             if os_id_filter:
@@ -239,80 +258,158 @@ def init_app(app):
                 pass
             else:
                 for cat_code, ids in (('PAMI', pami_ids), ('IAPOS', iapos_ids), ('OTROS', otros_ids)):
-                if not ids:
-                    por_os[cat_code] = {'recetas': 0, 'importe_os': 0, 'importe_paciente': 0}
-                    continue
-                r = (session.query(
-                        _f.count(distinct(_f.concat(
-                            ObsVD.id_operacion, '|',
-                            _f.coalesce(ObsVD.cliente_observer, 0), '|',
-                            _f.coalesce(ObsVD.medico_observer, 0), '|',
-                            ObsVD.fecha_estadistica,
-                        ))),
-                        _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0),
-                        _f.coalesce(_f.sum(_f.coalesce(ObsVD.importe, 0)
-                                            - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0),
-                     )
-                     .filter(ObsVD.obra_social_observer.in_(list(ids)),
-                             ObsVD.fecha_estadistica >= primer_dia)
-                     .first())
-                por_os[cat_code] = {
-                    'recetas': int(r[0] or 0),
-                    'importe_os': float(r[1] or 0),
-                    'importe_paciente': float(r[2] or 0),
-                }
-
-            # Top 10 OS individuales del mes (todas, ordenadas por importe a cargo OS).
-            top_os_q = (session.query(
-                            ObsVD.obra_social_observer,
+                    if not ids:
+                        por_os[cat_code] = {'recetas': 0, 'importe_os': 0, 'importe_paciente': 0}
+                        continue
+                    r = (session.query(
                             _f.count(distinct(_f.concat(
                                 ObsVD.id_operacion, '|',
                                 _f.coalesce(ObsVD.cliente_observer, 0), '|',
                                 _f.coalesce(ObsVD.medico_observer, 0), '|',
                                 ObsVD.fecha_estadistica,
-                            ))).label('recetas'),
-                            _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('importe_os'),
+                            ))),
+                            _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0),
                             _f.coalesce(_f.sum(_f.coalesce(ObsVD.importe, 0)
-                                                - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0).label('importe_pac'),
-                        )
-                        .filter(ObsVD.obra_social_observer.isnot(None),
-                                ObsVD.fecha_estadistica >= primer_dia)
-                        .group_by(ObsVD.obra_social_observer)
-                        .order_by(_f.sum(ObsVD.importe_a_cargo_os).desc())
-                        .limit(10)).all()
-            top_os = [{
-                'os_id': oid,
-                'nombre': os_descrs.get(oid) or f'OS #{oid}',
-                'categoria': os_to_cat.get(oid) or 'OTROS',
-                'recetas': int(rec or 0),
-                'importe_os': float(imp_os or 0),
-                'importe_paciente': float(imp_pac or 0),
-            } for (oid, rec, imp_os, imp_pac) in top_os_q]
+                                                - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0),
+                         )
+                         .filter(ObsVD.obra_social_observer.in_(list(ids)),
+                                 ObsVD.fecha_estadistica >= desde,
+                                 ObsVD.fecha_estadistica <= hasta)
+                         .first())
+                    por_os[cat_code] = {
+                        'recetas': int(r[0] or 0),
+                        'importe_os': float(r[1] or 0),
+                        'importe_paciente': float(r[2] or 0),
+                    }
 
-            # Serie diaria últimos 30 días por categoría (PAMI, IAPOS y OTROS).
+            # Distribución por cobertura — porcentaje a cargo OS por receta.
+            # Buckets: 0%, 1-39%, 40-69%, 70-99%, 100%.
+            # Calculado a nivel receta (group by id_operacion + cliente + medico + fecha).
+            cob_buckets_q = (session.query(
+                                _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('imp_os'),
+                                _f.coalesce(_f.sum(ObsVD.importe), 0).label('imp_total'),
+                            )
+                            .filter(*base_filters)
+                            .group_by(ObsVD.id_operacion,
+                                      ObsVD.cliente_observer,
+                                      ObsVD.medico_observer,
+                                      ObsVD.fecha_estadistica)).all()
+            cob_dist = {
+                '0%':       {'recetas': 0, 'importe_os': 0.0, 'importe_total': 0.0},
+                '1-39%':    {'recetas': 0, 'importe_os': 0.0, 'importe_total': 0.0},
+                '40-69%':   {'recetas': 0, 'importe_os': 0.0, 'importe_total': 0.0},
+                '70-99%':   {'recetas': 0, 'importe_os': 0.0, 'importe_total': 0.0},
+                '100%':     {'recetas': 0, 'importe_os': 0.0, 'importe_total': 0.0},
+            }
+            for imp_os, imp_total in cob_buckets_q:
+                imp_os = float(imp_os or 0)
+                imp_total = float(imp_total or 0)
+                if imp_total <= 0:
+                    pct = 0.0
+                else:
+                    pct = imp_os / imp_total * 100
+                if pct <= 0:        bucket = '0%'
+                elif pct < 40:      bucket = '1-39%'
+                elif pct < 70:      bucket = '40-69%'
+                elif pct < 100:     bucket = '70-99%'
+                else:               bucket = '100%'
+                cob_dist[bucket]['recetas']        += 1
+                cob_dist[bucket]['importe_os']     += imp_os
+                cob_dist[bucket]['importe_total']  += imp_total
+            total_recetas_cob = sum(b['recetas'] for b in cob_dist.values())
+            cobertura_buckets = [
+                {'rango': k, 'recetas': v['recetas'],
+                 'importe_os': round(v['importe_os'], 2),
+                 'importe_total': round(v['importe_total'], 2),
+                 'pct_recetas': round((v['recetas'] / total_recetas_cob * 100), 1) if total_recetas_cob else 0}
+                for k, v in cob_dist.items()
+            ]
+
+            # Top 10 OS individuales del mes — solo cuando NO hay filtro individual.
+            top_os = []
+            if not os_id_filter:
+                top_os_q = (session.query(
+                                ObsVD.obra_social_observer,
+                                _f.count(distinct(_f.concat(
+                                    ObsVD.id_operacion, '|',
+                                    _f.coalesce(ObsVD.cliente_observer, 0), '|',
+                                    _f.coalesce(ObsVD.medico_observer, 0), '|',
+                                    ObsVD.fecha_estadistica,
+                                ))).label('recetas'),
+                                _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('importe_os'),
+                                _f.coalesce(_f.sum(_f.coalesce(ObsVD.importe, 0)
+                                                    - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0).label('importe_pac'),
+                            )
+                            .filter(ObsVD.obra_social_observer.isnot(None),
+                                    ObsVD.fecha_estadistica >= desde,
+                                 ObsVD.fecha_estadistica <= hasta)
+                            .group_by(ObsVD.obra_social_observer)
+                            .order_by(_f.sum(ObsVD.importe_a_cargo_os).desc())
+                            .limit(10)).all()
+                top_os = [{
+                    'os_id': oid,
+                    'nombre': os_descrs.get(oid) or f'OS #{oid}',
+                    'categoria': os_to_cat.get(oid) or 'OTROS',
+                    'recetas': int(rec or 0),
+                    'importe_os': float(imp_os or 0),
+                    'importe_paciente': float(imp_pac or 0),
+                } for (oid, rec, imp_os, imp_pac) in top_os_q]
+
+            # Serie diaria últimos 30 días.
+            # Modo normal: 3 series (PAMI/IAPOS/OTROS). Modo zoom: 1 sola serie con la OS filtrada.
+            # Métrica: 'importe' suma importe_a_cargo_os, 'cantidad' cuenta recetas únicas.
+            if chart_metric == 'cantidad':
+                metric_expr = _f.count(distinct(_f.concat(
+                    ObsVD.id_operacion, '|',
+                    _f.coalesce(ObsVD.cliente_observer, 0), '|',
+                    _f.coalesce(ObsVD.medico_observer, 0), '|',
+                    ObsVD.fecha_estadistica,
+                )))
+            else:
+                metric_expr = _f.sum(ObsVD.importe_a_cargo_os)
             serie_dict = {}
-            for i in range(30):
-                d = hoy - timedelta(days=29 - i)
-                serie_dict[d.isoformat()] = {'PAMI': 0.0, 'IAPOS': 0.0, 'OTROS': 0.0}
-            serie_q = (session.query(
-                            ObsVD.fecha_estadistica,
-                            cat_expr.label('cat'),
-                            _f.sum(ObsVD.importe_a_cargo_os),
-                       )
-                       .filter(ObsVD.obra_social_observer.isnot(None),
-                               ObsVD.fecha_estadistica >= desde_30d)
-                       .group_by(ObsVD.fecha_estadistica, cat_expr))
-            for fecha, cat, imp in serie_q.all():
-                if not fecha:
-                    continue
-                key = fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha)
-                if key in serie_dict and cat in ('PAMI', 'IAPOS', 'OTROS'):
-                    serie_dict[key][cat] += float(imp or 0)
-            serie_list = [{'fecha': k,
-                           'PAMI': round(v['PAMI'], 2),
-                           'IAPOS': round(v['IAPOS'], 2),
-                           'OTROS': round(v['OTROS'], 2)}
-                          for k, v in serie_dict.items()]
+            if os_id_filter:
+                for i in range(30):
+                    d = hoy - timedelta(days=29 - i)
+                    serie_dict[d.isoformat()] = {'OS': 0.0}
+                serie_q = (session.query(
+                                ObsVD.fecha_estadistica,
+                                metric_expr,
+                           )
+                           .filter(ObsVD.obra_social_observer == os_id_filter,
+                                   ObsVD.fecha_estadistica >= desde_30d)
+                           .group_by(ObsVD.fecha_estadistica))
+                for fecha, val in serie_q.all():
+                    if not fecha:
+                        continue
+                    key = fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha)
+                    if key in serie_dict:
+                        serie_dict[key]['OS'] = float(val or 0)
+                serie_list = [{'fecha': k, 'OS': round(v['OS'], 2)}
+                              for k, v in serie_dict.items()]
+            else:
+                for i in range(30):
+                    d = hoy - timedelta(days=29 - i)
+                    serie_dict[d.isoformat()] = {'PAMI': 0.0, 'IAPOS': 0.0, 'OTROS': 0.0}
+                serie_q = (session.query(
+                                ObsVD.fecha_estadistica,
+                                cat_expr.label('cat'),
+                                metric_expr,
+                           )
+                           .filter(ObsVD.obra_social_observer.isnot(None),
+                                   ObsVD.fecha_estadistica >= desde_30d)
+                           .group_by(ObsVD.fecha_estadistica, cat_expr))
+                for fecha, cat, val in serie_q.all():
+                    if not fecha:
+                        continue
+                    key = fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha)
+                    if key in serie_dict and cat in ('PAMI', 'IAPOS', 'OTROS'):
+                        serie_dict[key][cat] += float(val or 0)
+                serie_list = [{'fecha': k,
+                               'PAMI': round(v['PAMI'], 2),
+                               'IAPOS': round(v['IAPOS'], 2),
+                               'OTROS': round(v['OTROS'], 2)}
+                              for k, v in serie_dict.items()]
 
             # Top médicos del mes (filtrado por OS si aplica).
             med_q = (session.query(
@@ -384,6 +481,7 @@ def init_app(app):
                                os_id_filter=os_id_filter,
                                os_id_filter_nombre=os_id_filter_nombre,
                                os_options=os_options,
+                               chart_metric=chart_metric,
                                mes_recetas=mes_recetas,
                                mes_os_total=mes_os_total,
                                mes_pac_total=mes_pac_total,
@@ -393,6 +491,7 @@ def init_app(app):
                                top_medicos=top_medicos,
                                top_productos=top_productos,
                                top_os=top_os,
+                               cobertura_buckets=cobertura_buckets,
                                lotes=lotes)
 
     def _query_dispensas(filtros, session, id_farmacia):
@@ -407,13 +506,14 @@ def init_app(app):
         from sqlalchemy import case, func
 
         from database import (
-            ObsCliente, ObsObraSocial, ObsPlan, ObsProducto, ObsVentaDetalle,
+            ObsCliente, ObsConvenio, ObsObraSocial, ObsPlan, ObsProducto, ObsVentaDetalle,
         )
 
         os_filter_id = filtros.get('os_filter_id')
         med_filter_id = filtros.get('med_filter_id')
         prod_filter_id = filtros.get('prod_filter_id')
         plan_filter_id = filtros.get('plan_filter_id')
+        cob_filter = filtros.get('cob_filter') or ''
         desde = filtros['desde']
         hasta = filtros['hasta']
         tipo_filter = filtros.get('tipo_filter') or ''
@@ -464,6 +564,26 @@ def init_app(app):
         if plan_filter_id:
             recetas_q = recetas_q.having(
                 func.min(ObsVentaDetalle.plan_principal_observer) == plan_filter_id)
+        if cob_filter:
+            # Cobertura % por receta = sum(importe_a_cargo_os) / sum(importe).
+            # Aplicamos como HAVING sobre el grupo de líneas de la receta.
+            sum_os = func.sum(ObsVentaDetalle.importe_a_cargo_os)
+            sum_total = func.sum(ObsVentaDetalle.importe)
+            # En SQL no podemos dividir si total=0; protegemos con CASE.
+            pct_expr = case(
+                (sum_total > 0, sum_os * 100.0 / sum_total),
+                else_=0.0,
+            )
+            if cob_filter == '0%':
+                recetas_q = recetas_q.having(pct_expr <= 0)
+            elif cob_filter == '1-39%':
+                recetas_q = recetas_q.having(pct_expr > 0).having(pct_expr < 40)
+            elif cob_filter == '40-69%':
+                recetas_q = recetas_q.having(pct_expr >= 40).having(pct_expr < 70)
+            elif cob_filter == '70-99%':
+                recetas_q = recetas_q.having(pct_expr >= 70).having(pct_expr < 100)
+            elif cob_filter == '100%':
+                recetas_q = recetas_q.having(pct_expr >= 100)
         if tipo_filter == 'particular':
             recetas_q = recetas_q.having(particular_agg == 1)
         elif tipo_filter == 'os':
@@ -676,6 +796,9 @@ def init_app(app):
         med_filter_id = request.args.get('medico_id', type=int)
         prod_filter_id = request.args.get('producto_id', type=int)
         plan_filter_id = request.args.get('plan_id', type=int)
+        cob_filter = (request.args.get('cobertura') or '').strip()
+        if cob_filter not in ('0%', '1-39%', '40-69%', '70-99%', '100%'):
+            cob_filter = ''
         desde_str = (request.args.get('desde') or '').strip()
         hasta_str = (request.args.get('hasta') or '').strip()
         tipo_filter = (request.args.get('tipo') or '').strip()
@@ -694,6 +817,7 @@ def init_app(app):
             'med_filter_id': med_filter_id,
             'prod_filter_id': prod_filter_id,
             'plan_filter_id': plan_filter_id,
+            'cob_filter': cob_filter,
             'desde': desde,
             'hasta': hasta,
             'tipo_filter': tipo_filter,
@@ -725,11 +849,13 @@ def init_app(app):
                 med_nombre = m.nombre if m and m.nombre else f"Médico #{filtros['med_filter_id']}"
             prod_nombre = None
             if filtros.get('prod_filter_id'):
-                p = session.get(ObsProducto, filtros['prod_filter_id'])
+                from database import ObsProducto as _ObsProducto
+                p = session.get(_ObsProducto, filtros['prod_filter_id'])
                 prod_nombre = p.descripcion if p else f"Producto #{filtros['prod_filter_id']}"
             plan_nombre = None
             if filtros.get('plan_filter_id'):
-                pl = session.get(ObsPlan, filtros['plan_filter_id'])
+                from database import ObsPlan as _ObsPlan
+                pl = session.get(_ObsPlan, filtros['plan_filter_id'])
                 plan_nombre = pl.descripcion if pl else f"Plan #{filtros['plan_filter_id']}"
 
         return render_template(
@@ -742,6 +868,7 @@ def init_app(app):
             med_filter_id=filtros.get('med_filter_id'),
             prod_filter_id=filtros.get('prod_filter_id'),
             plan_filter_id=filtros.get('plan_filter_id'),
+            cob_filter=filtros.get('cob_filter') or '',
             med_nombre=med_nombre,
             prod_nombre=prod_nombre,
             plan_nombre=plan_nombre,
