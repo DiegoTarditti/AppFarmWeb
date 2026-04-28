@@ -15,7 +15,13 @@
         <span class="text-emerald-600 font-semibold">${{ total_os | arg_currency }}</span> OS /
         <span class="font-semibold">${{ total_pac | arg_currency }}</span> paciente
     </span>
-    <div class="ml-auto">
+    <div class="ml-auto flex items-center gap-3">
+        {% if es_real and dispensas %}
+        <a href="{{ url_for('os_dispensas_export', os_id=os_filter_id, tipo=tipo_filter, q=q_text, desde=desde, hasta=hasta) }}"
+           class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1">
+            📥 Exportar Excel
+        </a>
+        {% endif %}
         <a href="{{ url_for('os_dashboard') }}"
            class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1">
             ← Dashboard
