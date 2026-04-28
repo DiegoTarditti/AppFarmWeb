@@ -32,8 +32,22 @@ from routes.ofertas_import import (
 
 # ── Detección de packs (función pura, testeable sin DB) ───────────────────────
 
-_RE_PACK_XN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
-_RE_PACK_PALABRA = re.compile(r'\bPACK\b', re.IGNORECASE)
+# Palabras que indican "envase exterior" (pack/display/bandeja/etc.) seguido
+# de "X N". Si una descripción termina con `<palabra> X N`, asumimos pack
+# de N unidades del mismo producto. Ej: "AMOXIDAL 500 X 8 CIREX X 10" → 10
+# cajas. "CIREX" es el contenedor exterior del laboratorio Roemmers.
+_PALABRAS_PACK = (
+    'PACK', 'BANDEJA', 'DISPLAY', 'EXHIBIDOR', 'CIREX', 'BOX',
+    'OBSEQUIO', 'COMBO', 'KIT',
+)
+_RE_PACK_XN = re.compile(
+    r'\b(?:' + '|'.join(_PALABRAS_PACK) + r')\s*X\s*(\d+)\b',
+    re.IGNORECASE
+)
+_RE_PACK_PALABRA = re.compile(
+    r'\b(?:' + '|'.join(_PALABRAS_PACK) + r')\b',
+    re.IGNORECASE
+)
 _RE_ENVASE = re.compile(r'\b[xX]\s*(\d{1,4})\b')
 
 
