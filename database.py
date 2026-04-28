@@ -48,6 +48,18 @@ class Config(Base):
     # Keep-alive: evitar que Render duerma el servicio vía self-ping periódico
     keep_alive_enabled = Column(Boolean, nullable=False, default=False)
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
+    # Backups automáticos (ejecutados por DockerPanel host)
+    backup_ruta_remota        = Column(String(500), nullable=True)   # UNC tipo \\server-1\backups\farmacia
+    backup_hora               = Column(Integer, nullable=False, default=17)  # 0-23
+    backup_diarios_max        = Column(Integer, nullable=False, default=7)
+    backup_semanales_max      = Column(Integer, nullable=False, default=0)
+    backup_quincenales_max    = Column(Integer, nullable=False, default=1)
+    backup_mensuales_max      = Column(Integer, nullable=False, default=0)
+    # Status del último backup (lo escribe DockerPanel via API)
+    backup_ultimo_status      = Column(String(10), nullable=True)    # 'OK' / 'FAIL' / NULL
+    backup_ultimo_corrida_en  = Column(DateTime, nullable=True)
+    backup_ultimo_error       = Column(String(500), nullable=True)
+    backup_ultimo_tamano_mb   = Column(DECIMAL(10, 2), nullable=True)
     # Ruta local al ejecutable del DockerPanel (solo usada desde localhost)
     dockerpanel_ruta = Column(String(500), nullable=True)
     # Observer: cuántos meses hacia atrás trae sync_ventas_mensuales
@@ -1439,6 +1451,20 @@ def _pg_add_columns(conn):
     # el INSERT explota con NOT NULL porque no les ponemos valor).
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_enabled BOOLEAN NOT NULL DEFAULT FALSE"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS keep_alive_interval_min INTEGER NOT NULL DEFAULT 10"))
+    # Backups automáticos
+    for ddl in [
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ruta_remota VARCHAR(500)",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_hora INTEGER NOT NULL DEFAULT 17",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_diarios_max INTEGER NOT NULL DEFAULT 7",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_semanales_max INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_quincenales_max INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_mensuales_max INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ultimo_status VARCHAR(10)",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ultimo_corrida_en TIMESTAMP",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ultimo_error VARCHAR(500)",
+        "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ultimo_tamano_mb DECIMAL(10, 2)",
+    ]:
+        conn.execute(text(ddl))
     # Asegurar DEFAULT en observer_ventas_meses (si se agregó sin default en versiones previas).
     conn.execute(text("ALTER TABLE configuracion ALTER COLUMN observer_ventas_meses SET DEFAULT 16"))
     conn.execute(text(
