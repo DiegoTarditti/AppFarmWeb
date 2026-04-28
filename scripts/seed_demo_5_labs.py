@@ -466,8 +466,30 @@ def seed_5_labs(reset=False):
         session.commit()
         print(f'   ✓ {ofertas_count} ofertas creadas')
 
-        print('\n✅ Seed completo. Probá /compras/rapido con los 5 labs DEMO.')
-        print(f'   Ir a: /compras/rapido?labs={",".join(str(lab_ids[ln]) for ln in LABS_DATA.keys())}')
+        # ── 7) Diagnóstico final para confirmar que /compras/rapido los ve ──
+        print('\n🔎 Verificación final:')
+        from sqlalchemy import func
+        labs_demo_ids = list(lab_ids.values())
+        n_descuentos = (session.query(DescuentoBase)
+                        .filter(DescuentoBase.laboratorio_id.in_(labs_demo_ids),
+                                DescuentoBase.activo == True).count())  # noqa: E712
+        print(f'   • DescuentoBase activos para labs DEMO: {n_descuentos}')
+        n_stock_bajo = (session.query(ObsStock)
+                        .filter(ObsStock.id_farmacia == ID_FARMACIA,
+                                ObsStock.producto_observer >= OBS_PROD_BASE,
+                                ObsStock.minimo.isnot(None),
+                                ObsStock.minimo > 0,
+                                ObsStock.stock_actual < ObsStock.minimo).count())
+        print(f'   • Productos DEMO bajo mínimo (id_farmacia={ID_FARMACIA}): {n_stock_bajo}')
+        n_ventas = (session.query(func.count(ObsVentaMensual.producto_observer.distinct()))
+                    .filter(ObsVentaMensual.id_farmacia == ID_FARMACIA,
+                            ObsVentaMensual.producto_observer >= OBS_PROD_BASE).scalar())
+        print(f'   • Productos DEMO con ventas registradas: {n_ventas}')
+        if n_descuentos == 0 or n_stock_bajo == 0:
+            print('\n⚠ ALGO NO CARGÓ. Revisá el log arriba — probablemente una excepción silenciosa.')
+        else:
+            print('\n✅ Seed completo. Probá /compras/rapido con los 5 labs DEMO.')
+            print(f'   Ir a: /compras/rapido?labs={",".join(str(i) for i in labs_demo_ids)}')
 
 
 if __name__ == '__main__':
