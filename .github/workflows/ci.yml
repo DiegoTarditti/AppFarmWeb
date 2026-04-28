@@ -58,3 +58,53 @@ jobs:
         env:
           DATABASE_URL: "sqlite:///:memory:"
         run: pytest -q --tb=short
+
+  tag-stable:
+    name: Tag production-stable (post-deploy)
+    runs-on: ubuntu-latest
+    needs: [syntax, lint, tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # necesario para mover tags
+
+      - name: Verificar deploy de Render
+        id: health
+        env:
+          HEALTH_URL: ${{ secrets.RENDER_HEALTH_URL }}
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "::warning::Secret RENDER_HEALTH_URL no configurado. Skipeando."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Esperar a que Render termine el build (build típico ~3 min).
+          echo "Esperando 90s antes del 1er chequeo (Render build)…"
+          sleep 90
+          # Probar hasta 5 min más con backoff.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            code=$(curl -sk -o /tmp/h.txt -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            echo "Intento $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "Health OK."
+              echo "ok=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::Health check NO pasó en 6 min. NO se taggea production-stable."
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Mover tag production-stable
+        if: steps.health.outputs.ok == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Forzar (la idea del tag es siempre apuntar al último commit con health OK)
+          git tag -f production-stable "${{ github.sha }}"
+          git push origin -f production-stable
+          echo "✅ production-stable → ${{ github.sha }}"
