@@ -1130,6 +1130,83 @@ def init_db(database_url=None):
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
 
+    # Backfills lentos en background (no bloquean el boot del worker).
+    # En Render, correr estos INSERTs en el path crítico hace que el HTTP port
+    # no abra a tiempo y el deploy falle con "No open HTTP ports detected".
+    if not is_sqlite:
+        import threading as _th
+        _th.Thread(target=_ejecutar_backfills_async, daemon=True).start()
+
+
+def _ejecutar_backfills_async():
+    """Backfills idempotentes que se ejecutan post-boot.
+
+    Cada uno chequea si la tabla está vacía antes de insertar — si ya hubo un
+    deploy anterior que los corrió, son no-op. Cualquier excepción queda
+    contenida; no afecta al worker que está sirviendo HTTP.
+    """
+    if engine is None:
+        return
+    try:
+        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as bf_conn:
+            # producto_codigos_barra ← productos.codigo_barra/alt1/2/3
+            try:
+                hay = bf_conn.execute(text(
+                    "SELECT 1 FROM producto_codigos_barra LIMIT 1"
+                )).first()
+                if not hay:
+                    bf_conn.execute(text("""
+                        INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
+                        SELECT id, codigo_barra, TRUE, 'legacy_principal'
+                        FROM productos
+                        WHERE codigo_barra IS NOT NULL AND codigo_barra <> ''
+                        ON CONFLICT (producto_id, codigo_barra) DO NOTHING
+                    """))
+                    for col in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
+                        bf_conn.execute(text(f"""
+                            INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
+                            SELECT id, {col}, FALSE, 'legacy_alt'
+                            FROM productos
+                            WHERE {col} IS NOT NULL AND {col} <> ''
+                            ON CONFLICT (producto_id, codigo_barra) DO NOTHING
+                        """))
+            except Exception:
+                pass
+            # producto_precios_hist ← factura_items × facturas
+            try:
+                hay_precios = bf_conn.execute(text(
+                    "SELECT 1 FROM producto_precios_hist LIMIT 1"
+                )).first()
+                if not hay_precios:
+                    bf_conn.execute(text("""
+                        INSERT INTO producto_precios_hist
+                            (codigo_barra, proveedor_id, proveedor_razon, fecha,
+                             dto_pct, precio_unitario, importe, factura_id, tipo_comprobante)
+                        SELECT
+                            fi.codigo_barra,
+                            p.id,
+                            f.proveedor_razon,
+                            f.fecha,
+                            fi.dto,
+                            CASE WHEN f.tipo_comprobante = 'NCR' THEN -fi.precio_unitario ELSE fi.precio_unitario END,
+                            CASE WHEN f.tipo_comprobante = 'NCR' THEN -fi.importe         ELSE fi.importe         END,
+                            f.id,
+                            f.tipo_comprobante
+                        FROM factura_items fi
+                        JOIN facturas f ON f.id = fi.factura_id
+                        LEFT JOIN proveedores p ON (
+                            (p.cuit IS NOT NULL AND p.cuit = f.proveedor_cuit)
+                            OR (p.cuit IS NULL AND p.razon_social = f.proveedor_razon)
+                        )
+                        WHERE fi.codigo_barra IS NOT NULL AND fi.codigo_barra <> ''
+                          AND f.fecha IS NOT NULL
+                    """))
+            except Exception:
+                pass
+    except Exception:
+        # Si ni la conexión arranca, lo dejamos pasar — son backfills opcionales.
+        pass
+
 
 def _crear_matviews(conn):
     """Crea las vistas materializadas (una vez, idempotente).
