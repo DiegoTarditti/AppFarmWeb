@@ -188,6 +188,27 @@ const _FUENTE_COLOR = {
     llm:      'bg-amber-100 text-amber-800 border-amber-200',
 };
 
+function stockCell(p) {
+    const erp = (p.stock_erp != null) ? p.stock_erp : null;
+    const obs = (p.stock_obs != null) ? p.stock_obs : null;
+    if (erp == null && obs == null) return '<span class="text-[#ccc]">—</span>';
+    const erpTxt = erp != null ? `<span class="text-[#1e1e1e] font-semibold">${erp}</span>` : '<span class="text-[#ccc]">—</span>';
+    const obsTxt = obs != null ? `<span class="text-[#888]">${obs}</span>` : '<span class="text-[#ccc]">—</span>';
+    return `${erpTxt} <span class="text-[#bbb]">/</span> ${obsTxt}`;
+}
+
+const _TVC_COLOR = {
+    'L':  'bg-emerald-100 text-emerald-800 border-emerald-200',
+    'R':  'bg-amber-100 text-amber-800 border-amber-200',
+    'A':  'bg-amber-100 text-amber-800 border-amber-200',
+};
+function tvcCell(tvc, label) {
+    if (!tvc) return '<span class="text-[#ccc]">—</span>';
+    const isCtrl = /^[1-8]$/.test(tvc);
+    const cls = isCtrl ? 'bg-rose-100 text-rose-800 border-rose-200' : (_TVC_COLOR[tvc] || 'bg-[#f0f0f0] text-[#555] border-[#ddd]');
+    return `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cls}" title="Tipo de venta: ${tvc}">${escHtml(label || tvc)}</span>`;
+}
+
 function atributosCell(p) {
     const a = p.atributos;
     if (!a) {
@@ -256,6 +277,9 @@ function buildRow(p) {
             <div class="flex items-center justify-end gap-1 text-[10px]">
                 <button onclick="openChart('${escHtml(p.codigo_barra)}')" title="Ventas históricas"
                         class="px-1.5 py-1 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors font-semibold">📈 Vts</button>
+                ${p.droga_id ? `<button class="btn-cmp-labs px-1.5 py-1 rounded border border-cyan-300 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 transition-colors font-semibold"
+                                        data-droga="${p.droga_id}" data-cb="${escHtml(p.codigo_barra)}" data-nombre="${escHtml(p.descripcion)}"
+                                        title="Comparar otros labs (misma droga)">⇄ Lab</button>` : ''}
                 <a href="/vademecum?q=${encodeURIComponent(p.descripcion)}" title="Vademécum"
                    class="px-1.5 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 transition-colors font-semibold">VAD</a>
                 <a href="/precios/${encodeURIComponent(p.codigo_barra)}" title="Historial de precios por proveedor"
@@ -459,4 +483,7 @@ async function crearProducto() {
 
 window.addEventListener('DOMContentLoaded', loadProductos);
 </script>
+
+{% include '_grafico_historico.html' %}
+{% include '_comparar_labs.html' %}
 {% endblock %}

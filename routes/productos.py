@@ -327,7 +327,7 @@ def init_app(app):
     def api_producto_codigos(prod_id):
         """GET: lista todos los EANs del producto (tabla 1-a-N + obs).
         POST: agrega un EAN nuevo. Body: {codigo_barra, fuente?}."""
-        from database import ObsCodigosBarras, ProductoCodigoBarra
+        from database import ObsCodigoBarras, ProductoCodigoBarra
         with database.get_db() as session:
             prod = session.get(Producto, prod_id)
             if not prod:
@@ -339,9 +339,9 @@ def init_app(app):
                                      ProductoCodigoBarra.id).all())
                 obs_eans = []
                 if prod.observer_id:
-                    obs_eans = (session.query(ObsCodigosBarras)
+                    obs_eans = (session.query(ObsCodigoBarras)
                                 .filter_by(producto_observer=prod.observer_id)
-                                .order_by(ObsCodigosBarras.orden).all())
+                                .order_by(ObsCodigoBarras.orden).all())
                 return jsonify({
                     'locales': [{
                         'id': c.id,

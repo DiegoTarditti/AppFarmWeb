@@ -249,6 +249,17 @@ una tarea aparte.
 - **Esfuerzo**: 1 día.
 - **Cómo**: ya existe `pagos_ajustes_cc`. Agregar campo de vencimiento + alerta cuando se acerque.
 
+### Horarios de reparto por droguería + countdown al próximo cierre
+- **Trigger**: cuando empieces a usar Compra Rápida en serio — saber a qué hora cierra cada droguería ayuda a priorizar emisión.
+- **Esfuerzo**: 4-6 horas.
+- **Referencia**: el widget que tienen las droguerías en su web (matriz por día de la semana × franjas horarias 07:10/10:20/15:00/19:00, contador "Faltan 03:29:24 hs al cierre del próximo reparto", fecha del próximo reparto).
+- **Cómo**:
+  - Tabla `proveedor_horarios_reparto(proveedor_id, dia_semana 0-6, hora TIME)` — cada fila un slot.
+  - UI editor en `/provider/<id>/horarios` (matriz tipo grilla, igual que la captura).
+  - Helper en server: `proximo_cierre(proveedor_id) → datetime` calcula el próximo slot futuro respetando día actual.
+  - Widget en compras_rapido (panel transfers o sticky header): chips por droguería con countdown live (`HH:MM:SS`) hasta el próximo cierre. Si quedan menos de N min → chip rojo "Cerrá ahora si querés que entre hoy".
+- **Por qué**: el principal driver de ansiedad al armar un pedido grande es perderse el cierre. Tener el contador a la vista decide cuándo emitir.
+
 ---
 
 ## 🐞 Bugs conocidos / limitaciones
@@ -274,6 +285,11 @@ una tarea aparte.
 - **Síntoma**: si el sync falla por timeout, `last_run` solo se persiste en éxito → cada 60 s el loop ve `delta_min >= arranque_min(180)` → vuelve a disparar → gunicorn worker timeout → repeat. Llena los logs de `WORKER TIMEOUT` y `Limpiando Render…`.
 - **Workaround actual**: apagar `autosync_enabled` en `agente_config.txt`.
 - **Solución definitiva**: persistir `last_attempt` en cada intento (no solo `last_run` en éxito) y aplicar backoff exponencial cuando hay N fallas seguidas. Ver `DockerPanel/docker_panel.py:1462`.
+
+### Post-check del DockerPanel da falsos positivos por logs históricos
+- **Síntoma**: después de un restart exitoso, el aviso `⚠ Post-check: la app parece haber crasheado al arrancar — Detecté: traceback, importerror` aparece igual porque scanea el log entero, incluyendo trazas anteriores al restart.
+- **Solución**: limitar el scan a las líneas que tienen timestamp posterior al `Starting gunicorn` más reciente, o usar `docker logs --since=<timestamp>` con el momento del restart.
+- **Workaround actual**: ignorar el aviso si la app responde (curl /health → 200).
 
 ### `init_db()` bloquea el boot del worker en Render
 - **Síntoma**: backfills inline en migración (ej. `producto_codigos_barra`, `producto_precios_hist`) corren en cada worker al import time. En Render con `--workers 2` sin `--preload`, dos workers ejecutan los backfills en paralelo sobre el Postgres remoto, hacen contención, el HTTP port no abre a tiempo y Render aborta el deploy con `No open HTTP ports detected`.
