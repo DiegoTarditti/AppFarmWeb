@@ -548,6 +548,24 @@ def init_app(app):
                     mp.ean_unidad = str(data['ean_unidad']).strip()
                 if 'cantidad' in data:
                     mp.cantidad = int(data['cantidad'])
+                # Si quedó una equivalencia válida (pack distinto a unidad),
+                # persistirla en pack_equivalencias para auto-aplicar en
+                # imports futuros de cualquier módulo.
+                if mp.ean_pack and mp.ean_unidad and mp.ean_pack != mp.ean_unidad:
+                    pe = (session.query(database.PackEquivalencia)
+                          .filter_by(ean_pack=mp.ean_pack[:30]).first())
+                    if not pe:
+                        session.add(database.PackEquivalencia(
+                            ean_pack=mp.ean_pack[:30],
+                            ean_unidad=mp.ean_unidad[:30],
+                            cantidad=mp.cantidad or 1,
+                            desc_pack=(mp.descripcion or '')[:255] or None,
+                            aprendido_de=mp.modulo_id,
+                        ))
+                    else:
+                        pe.ean_unidad = mp.ean_unidad[:30]
+                        if mp.cantidad and mp.cantidad >= 1:
+                            pe.cantidad = mp.cantidad
                 if 'cant_modulo' in data:
                     mp.cant_modulo = int(data['cant_modulo']) if data['cant_modulo'] is not None else None
                 if 'desc_pct' in data:

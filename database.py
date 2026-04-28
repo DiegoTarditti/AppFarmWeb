@@ -785,6 +785,33 @@ class HomeCardClick(Base):
     clicked_at = Column(DateTime, default=now_ar, nullable=False, index=True)
 
 
+class PackEquivalencia(Base):
+    """Equivalencia global ean_pack → ean_unidad aprendida al resolver packs
+    de módulos. Una vez que un pack se resuelve manualmente o por heurística,
+    queda persistido acá para que CUALQUIER módulo futuro que lo use lo
+    aplique automáticamente sin pedirle al user que vuelva a resolver.
+
+    Por ej: si en el módulo Roemmers Abril aprendiste que
+    7795345000459 (pack AMOXIDAL X 8 CIREX X 10) → 7795345000282 (X 8
+    individual), en Roemmers Mayo el mismo pack se auto-resuelve.
+
+    UNIQUE(ean_pack): un pack tiene UNA equivalencia. Si surge ambigüedad
+    (mismo pack con distintas unidades), el último upsert gana — esto es
+    excepcional, los packs no cambian de unidad.
+    """
+    __tablename__ = 'pack_equivalencias'
+    id              = Column(Integer, primary_key=True)
+    ean_pack        = Column(String(30), nullable=False, unique=True, index=True)
+    ean_unidad      = Column(String(30), nullable=False)
+    cantidad        = Column(Integer, nullable=False, default=1)  # cuántas unidades en el pack
+    desc_pack       = Column(String(255), nullable=True)
+    desc_unidad     = Column(String(255), nullable=True)
+    aprendido_de    = Column(Integer, ForeignKey('modulos.id', ondelete='SET NULL'),
+                             nullable=True)   # módulo donde se aprendió por primera vez
+    creado_en       = Column(DateTime, default=now_ar)
+    actualizado_en  = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
 class ProductoPrecioHist(Base):
     """Snapshot de precio por producto + proveedor en cada factura importada.
     Append-only: cada fila es un punto histórico.
@@ -924,7 +951,8 @@ def init_db(database_url=None):
                         'cron_log', 'mv_refresh_log',
                         'obs_colegios_medicos', 'obs_medicos',
                         'obs_medicos_matriculas', 'obs_ventas_detalle',
-                        'descuentos_base', 'obs_codigos_barras')
+                        'descuentos_base', 'obs_codigos_barras',
+                        'pack_equivalencias')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

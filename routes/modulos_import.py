@@ -292,6 +292,31 @@ def init_app(app):
                 sin_ventas_func=_sin_ventas if usar_historico else None,
             )
 
+            # 3.4. Lookup en pack_equivalencias APRENDIDAS de imports
+            # anteriores. Si en otro módulo este mismo ean_pack ya se
+            # resolvió, lo auto-aplicamos sin pedirle al user.
+            eans_pack_a_resolver = [
+                e for e, info in pack_map.items()
+                if not info.get('ean_unidad_sug')
+            ]
+            if eans_pack_a_resolver:
+                aprendidas = (
+                    session.query(database.PackEquivalencia)
+                    .filter(database.PackEquivalencia.ean_pack.in_(
+                        eans_pack_a_resolver[:500]))
+                    .all()
+                )
+                for pe in aprendidas:
+                    if pe.ean_pack in pack_map:
+                        pack_map[pe.ean_pack]['ean_unidad_sug'] = pe.ean_unidad
+                        # Si la cant aprendida no coincide con la actual,
+                        # priorizamos la aprendida (usuario la confirmó antes).
+                        if pe.cantidad and pe.cantidad >= 2:
+                            pack_map[pe.ean_pack]['cantidad'] = pe.cantidad
+                        pack_map[pe.ean_pack]['razon'] = (
+                            (pack_map[pe.ean_pack].get('razon', '') + '+aprendido').lstrip('+')
+                        )
+
             # 3.5. Lookup de descripción para los EANs unidad sugeridos por
             # la heurística envase-múltiplo. Sin esto, el user ve solo un
             # número en el input "EAN unidad" y no sabe a qué producto
@@ -442,6 +467,26 @@ def init_app(app):
                     cant_modulo = int(cant_modulo) if cant_modulo not in (None, '') else None
                 except (TypeError, ValueError):
                     cant_modulo = None
+
+                # Persistir equivalencia global pack→unidad para que otros
+                # módulos futuros la apliquen sin re-resolver.
+                if es_pack and ean_unidad and str(ean_unidad) != ean_pack:
+                    pe = (session.query(database.PackEquivalencia)
+                          .filter_by(ean_pack=ean_pack[:30]).first())
+                    if not pe:
+                        session.add(database.PackEquivalencia(
+                            ean_pack=ean_pack[:30],
+                            ean_unidad=str(ean_unidad)[:30],
+                            cantidad=cant_pack or 1,
+                            desc_pack=(str(it.get('descripcion') or ''))[:255] or None,
+                            desc_unidad=(str(it.get('_desc_unidad_sugerido') or ''))[:255] or None,
+                            aprendido_de=modulo.id,
+                        ))
+                    else:
+                        # Actualizar si cambió la unidad o cantidad
+                        pe.ean_unidad = str(ean_unidad)[:30]
+                        if cant_pack and cant_pack >= 1:
+                            pe.cantidad = cant_pack
 
                 session.add(ModuloPack(
                     ean_pack=ean_pack[:30],
