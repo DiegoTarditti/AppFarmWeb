@@ -260,6 +260,36 @@ una tarea aparte.
   - Widget en compras_rapido (panel transfers o sticky header): chips por droguería con countdown live (`HH:MM:SS`) hasta el próximo cierre. Si quedan menos de N min → chip rojo "Cerrá ahora si querés que entre hoy".
 - **Por qué**: el principal driver de ansiedad al armar un pedido grande es perderse el cierre. Tener el contador a la vista decide cuándo emitir.
 
+### Compras Kellerhoff con mínimo (TRF + IVA + indicador stock)
+- **Trigger**: Diego va a explicar el detalle.
+- **Referencia**: captura del sitio de pedidos de Kellerhoff (28-04-2026). Layout por fila:
+  - Producto + foto + chips `» TRF` (transfer) y `+IVA`.
+  - Precio normal · Precio TRF (descuentado) · % descuento (ej 39,99 / 41,37) · "Min. N" (cantidad mínima para el descuento) · precio neto (post-descuento + IVA).
+  - Semáforo de disponibilidad (verde / rojo) por fila.
+  - Input cantidad a pedir.
+  - Botón "Mostrar ofertas" abajo.
+- **Pendiente**: Diego pasa contexto de qué quiere replicar/integrar de esta vista (probablemente ligado a "Pedidos a droguerías/laboratorios" abajo y al sistema de mínimos por producto).
+
+### Pantalla "Pedidos a droguerías/laboratorios" estilo ObServer
+- **Trigger**: cuando madures Compra Rápida y quieras una vista equivalente a la de ObServer para hacer pedidos manuales fuera del flujo "rápido".
+- **Esfuerzo**: 1-2 días (la base ya existe — `/order/<id>` y `/compras/rapido` cubren ~70%).
+- **Referencia**: captura de ObServer (28-04-2026). Layout:
+  - **Header**: proveedor selector + botones `Guardar pedido / Agregar producto / Imprimir`.
+  - **Tabs**: `Parámetros` | `Unidades a reponer`.
+  - **Panel KPIs por producto seleccionado**: Existencia · Pedidos · Encargados · Mínimo · Máximo · Rep.Auto · Período (Quincenal/Mensual/etc) · Reposición (Mínimo/Máximo) · Venta Anual.
+  - **Mini-charts inline**: "Evolución de ventas del período" (Q-3, Q-1) + "Evolución de ventas anual" (12 meses, barras + línea de tendencia).
+  - **Tabla central** (scroll horizontal) con columnas: Sugerido · Encargado · Falta (SÍ/NO badge) · **A Pedir** (input editable) · Stock · Producto · Laboratorio · Precio · Motivo (Mínimo/Máximo) · Es Fraccionado · Cant.Disp · Disp · Mín.Oferta · Ofertas · Precio · Conflicto · Nombres drogas · Nombres drogas presentación.
+- **Lo que aporta sobre lo que ya tenemos**:
+  1. Mini-charts inline por producto seleccionado (hoy abrimos el modal `_grafico_historico` por click).
+  2. Columna `Conflicto` que marca si hay descuento/oferta mejor en otra droguería para el mismo EAN.
+  3. Toggle período/reposición desde la cabecera (afecta toda la tabla en vivo).
+  4. Botón `Imprimir` con layout listo para ObServer (no solo XLSX).
+- **Cómo**:
+  - Reutilizar query de Compra Rápida pero con UI tabular tipo Excel.
+  - Endpoint `/api/compras/conflictos?ean=...` que devuelve si hay mejor opción en otra drog.
+  - Mini-chart por fila usando `Chart.js` con `type: 'bar'` de altura ~40px.
+- **Relacionado**: este flujo se complementa con el de horarios de reparto (arriba) — pantalla unificada de "armado de pedido" donde ves countdown + sugerido + conflictos.
+
 ---
 
 ## 🐞 Bugs conocidos / limitaciones

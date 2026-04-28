@@ -219,9 +219,10 @@ def init_app(app):
             mes_pac_total = float(row[2] or 0) if row else 0
             mes_ticket_prom = ((mes_os_total + mes_pac_total) / mes_recetas) if mes_recetas else 0
 
-            # Breakdown por categoría (sin filtro os_filter, mostramos las 2 grandes).
+            # Breakdown por categoría: PAMI, IAPOS y OTROS.
+            otros_ids = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
             por_os = {}
-            for cat_code, ids in (('PAMI', pami_ids), ('IAPOS', iapos_ids)):
+            for cat_code, ids in (('PAMI', pami_ids), ('IAPOS', iapos_ids), ('OTROS', otros_ids)):
                 if not ids:
                     por_os[cat_code] = {'recetas': 0, 'importe_os': 0, 'importe_paciente': 0}
                     continue
@@ -244,6 +245,33 @@ def init_app(app):
                     'importe_os': float(r[1] or 0),
                     'importe_paciente': float(r[2] or 0),
                 }
+
+            # Top 10 OS individuales del mes (todas, ordenadas por importe a cargo OS).
+            top_os_q = (session.query(
+                            ObsVD.obra_social_observer,
+                            _f.count(distinct(_f.concat(
+                                ObsVD.id_operacion, '|',
+                                _f.coalesce(ObsVD.cliente_observer, 0), '|',
+                                _f.coalesce(ObsVD.medico_observer, 0), '|',
+                                ObsVD.fecha_estadistica,
+                            ))).label('recetas'),
+                            _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('importe_os'),
+                            _f.coalesce(_f.sum(_f.coalesce(ObsVD.importe, 0)
+                                                - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0).label('importe_pac'),
+                        )
+                        .filter(ObsVD.obra_social_observer.isnot(None),
+                                ObsVD.fecha_estadistica >= primer_dia)
+                        .group_by(ObsVD.obra_social_observer)
+                        .order_by(_f.sum(ObsVD.importe_a_cargo_os).desc())
+                        .limit(10)).all()
+            top_os = [{
+                'os_id': oid,
+                'nombre': os_descrs.get(oid) or f'OS #{oid}',
+                'categoria': os_to_cat.get(oid) or 'OTROS',
+                'recetas': int(rec or 0),
+                'importe_os': float(imp_os or 0),
+                'importe_paciente': float(imp_pac or 0),
+            } for (oid, rec, imp_os, imp_pac) in top_os_q]
 
             # Serie diaria últimos 30 días por categoría (solo PAMI e IAPOS).
             serie_dict = {}
@@ -280,7 +308,7 @@ def init_app(app):
                      .limit(10)).all()
             med_ids = [r[0] for r in med_q if r[0]]
             med_nombres = dict(session.query(database.ObsMedico.observer_id,
-                                              database.ObsMedico.medico)
+                                              database.ObsMedico.nombre)
                                .filter(database.ObsMedico.observer_id.in_(med_ids)).all()) if med_ids else {}
             top_medicos = [{
                 'matricula': str(m_id),
