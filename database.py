@@ -927,15 +927,41 @@ def init_db(database_url=None):
                         'descuentos_base', 'obs_codigos_barras')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
-                # ¿Hay una tabla real (relkind='r') con ese nombre? Si sí, no tocar nada.
+                # Caso A: hay tabla real en public → no tocar.
                 real_table = conn.execute(text("""
                     SELECT 1 FROM pg_class c
                     JOIN pg_namespace n ON n.oid = c.relnamespace
                     WHERE n.nspname = 'public' AND c.relname = :t AND c.relkind = 'r'
                 """), {'t': tname}).first()
                 if real_table:
+                    # Adicional: chequear si hay pg_type con ese nombre PERO en
+                    # un namespace distinto al de la tabla, o sin tabla matching.
+                    # Eso es zombie aunque la tabla "principal" exista — bloquea
+                    # CREATE TABLE de SQLAlchemy con UniqueViolation.
+                    huerfanos = conn.execute(text("""
+                        SELECT t.typnamespace
+                        FROM pg_type t
+                        LEFT JOIN pg_class c
+                            ON c.relname = t.typname
+                           AND c.relnamespace = t.typnamespace
+                           AND c.relkind = 'r'
+                        WHERE t.typname = :t AND c.oid IS NULL
+                    """), {'t': tname}).fetchall()
+                    for (ns,) in huerfanos:
+                        try:
+                            # Resolver el schema del namespace y dropear con FQN.
+                            schema = conn.execute(text(
+                                'SELECT nspname FROM pg_namespace WHERE oid = :o'
+                            ), {'o': ns}).scalar()
+                            if schema:
+                                conn.execute(text(
+                                    f'DROP TYPE IF EXISTS "{schema}"."{tname}" CASCADE'
+                                ))
+                        except Exception:
+                            pass
                     continue
-                # No hay tabla real pero puede quedar pg_type / secuencia / vista huérfana.
+                # Caso B: no hay tabla real pero puede quedar pg_type / secuencia
+                # / vista huérfana en CUALQUIER schema.
                 for ddl in (f'DROP TABLE IF EXISTS "{tname}" CASCADE',
                             f'DROP TYPE IF EXISTS "{tname}" CASCADE',
                             f'DROP SEQUENCE IF EXISTS "{tname}_id_seq" CASCADE'):
