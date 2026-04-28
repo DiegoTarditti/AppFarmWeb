@@ -286,6 +286,27 @@ class ObsPlan(Base):
     sync_en           = Column(DateTime, default=now_ar)
 
 
+class ClienteOsInferida(Base):
+    """OS principal inferida por cliente — derivada del histórico de ventas.
+    DW.Clientes NO expone IdObraSocialPrincipal directamente, así que
+    calculamos la OS más frecuente por cliente desde obs_ventas_detalle.
+
+    Tabla puente: NO se toca en el sync de obs_clientes (que viene de
+    Observer). Se recalcula con `recalcular_os_por_cliente()` (cron o
+    manual). Permite filtros instantáneos tipo 'clientes de PAMI' sin
+    escanear el detalle de ventas cada vez.
+    """
+    __tablename__ = 'cliente_os_inferida'
+    cliente_observer       = Column(Integer, ForeignKey('obs_clientes.observer_id'),
+                                    primary_key=True, autoincrement=False)
+    obra_social_observer   = Column(Integer, ForeignKey('obs_obras_sociales.observer_id'),
+                                    nullable=True, index=True)
+    n_dispensas            = Column(Integer, nullable=False, default=0)   # cuántas veces compró con esta OS
+    n_dispensas_total      = Column(Integer, nullable=False, default=0)   # total dispensas del cliente (con o sin OS)
+    confianza_pct          = Column(DECIMAL(5, 2), nullable=True)         # n_dispensas / n_dispensas_total * 100
+    calculado_en           = Column(DateTime, default=now_ar)
+
+
 class ObsCliente(Base):
     __tablename__ = 'obs_clientes'
     observer_id           = Column(Integer, primary_key=True, autoincrement=False)  # DW.Clientes.IdCliente
@@ -952,7 +973,7 @@ def init_db(database_url=None):
                         'obs_colegios_medicos', 'obs_medicos',
                         'obs_medicos_matriculas', 'obs_ventas_detalle',
                         'descuentos_base', 'obs_codigos_barras',
-                        'pack_equivalencias')
+                        'pack_equivalencias', 'cliente_os_inferida')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
