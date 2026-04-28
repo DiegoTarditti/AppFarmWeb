@@ -26,6 +26,33 @@ def init_app(app):
     seed_admin_si_falta()
     seed_pedidos_si_falta()
 
+    # ── Guard global para rol 'pedidos' ─────────────────────────────────
+    # Sólo puede navegar a /compras/* y a las APIs que use ese flujo.
+    # Cualquier otro path lo redirige a /compras/dia.
+    _PEDIDOS_PATHS_OK = (
+        '/compras/', '/api/compras/', '/api/producto/',
+        '/api/observer-product/', '/api/lab-drog/',
+        '/pedidos-emitidos', '/api/pedido-emitido/',
+        '/static/',
+    )
+    _PEDIDOS_PATHS_OK_EXACT = {
+        '/login', '/logout', '/cambiar-password', '/health',
+        '/api/notifications', '/api/sync-status', '/api/dockerpanel-info',
+    }
+
+    @app.before_request
+    def _restrict_rol_pedidos():
+        if not current_user.is_authenticated:
+            return None
+        if getattr(current_user, 'rol', None) != 'pedidos':
+            return None
+        p = request.path or '/'
+        if p in _PEDIDOS_PATHS_OK_EXACT:
+            return None
+        if any(p.startswith(pref) for pref in _PEDIDOS_PATHS_OK):
+            return None
+        return redirect(url_for('compras_dia'))
+
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
         if current_user.is_authenticated:
@@ -81,6 +108,8 @@ def init_app(app):
                 user.debe_cambiar_password = False
                 session.commit()
             flash('Contraseña actualizada.', 'success')
+            if current_user.rol == 'pedidos':
+                return redirect(url_for('compras_dia'))
             return redirect(url_for('index'))
         return render_template('cambiar_password.html')
 

@@ -923,6 +923,134 @@ def init_app(app):
                 'analizado_en': None,
             })
 
+    @app.route('/api/observer-product/<int:observer_id>/chart-mes')
+    @login_required
+    def api_observer_product_chart_mes(observer_id):
+        """Gráfico del último mes (30 días) por DÍA, desde obs_ventas_detalle.
+
+        Devuelve labels = ['DD/MM' x 30] y data = unidades vendidas ese día.
+        """
+        from datetime import date as _date, timedelta
+        from database import ObsVentaDetalle
+        with database.get_db() as session:
+            obs = session.get(ObsProducto, observer_id)
+            if not obs:
+                return jsonify({'ok': False, 'error': 'Producto ObServer no encontrado'}), 404
+
+            hoy = _date.today()
+            desde = hoy - timedelta(days=29)  # ventana de 30 días incluyendo hoy
+            rows = (session.query(
+                        ObsVentaDetalle.fecha_estadistica,
+                        func.coalesce(func.sum(ObsVentaDetalle.cantidad), 0),
+                    )
+                    .filter(ObsVentaDetalle.producto_observer == observer_id,
+                            ObsVentaDetalle.fecha_estadistica.isnot(None),
+                            ObsVentaDetalle.fecha_estadistica >= desde,
+                            ObsVentaDetalle.fecha_estadistica <= hoy)
+                    .group_by(ObsVentaDetalle.fecha_estadistica)
+                    .all())
+            por_fecha = {r[0]: float(r[1] or 0) for r in rows}
+            labels, datos = [], []
+            d = desde
+            while d <= hoy:
+                labels.append(d.strftime('%d/%m'))
+                datos.append(round(por_fecha.get(d, 0), 2))
+                d += timedelta(days=1)
+            total = sum(datos)
+            avg = total / 30.0
+            return jsonify({
+                'ok': True,
+                'nombre': obs.descripcion or '',
+                'observer_id': observer_id,
+                'labels': labels,
+                'data': datos,
+                'total_30d': round(total, 2),
+                'avg_diario': round(avg, 2),
+                'desde': desde.isoformat(),
+                'hasta': hoy.isoformat(),
+            })
+
+    @app.route('/api/observer-product/<int:observer_id>/ingresos-mes')
+    @login_required
+    def api_observer_product_ingresos_mes(observer_id):
+        """Ingresos (factura_items) + Pedidos (pedido_emitido_item) por día,
+        últimos 30 días.
+
+        - Ingresos: mapea observer_id → códigos de barra (Producto + obs_codigos_barras).
+          NCR resta.
+        - Pedidos: usa observer_id directo de pedido_emitido_item.
+        """
+        from datetime import date as _date, timedelta
+        from database import (Invoice, InvoiceItem, ObsCodigoBarras, Producto,
+                              PedidoEmitido, PedidoEmitidoItem)
+        with database.get_db() as session:
+            obs = session.get(ObsProducto, observer_id)
+            if not obs:
+                return jsonify({'ok': False, 'error': 'Producto ObServer no encontrado'}), 404
+
+            codigos = set()
+            # Vía obs_codigos_barras (todas las orden, sin baja)
+            for r in (session.query(ObsCodigoBarras.codigo_barras)
+                      .filter(ObsCodigoBarras.producto_observer == observer_id,
+                              ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                if r[0]: codigos.add(r[0])
+            # Vía Producto local (codigo_barra + alts)
+            prod = (session.query(Producto)
+                    .filter(Producto.observer_id == observer_id).first())
+            if prod:
+                for c in (prod.codigo_barra, prod.codigo_barra_alt1,
+                          prod.codigo_barra_alt2, prod.codigo_barra_alt3):
+                    if c: codigos.add(c)
+
+            hoy = _date.today()
+            desde = hoy - timedelta(days=29)
+            por_fecha = {}
+            if codigos:
+                rows = (session.query(Invoice.fecha,
+                                      func.coalesce(func.sum(InvoiceItem.cantidad), 0))
+                        .join(InvoiceItem, InvoiceItem.factura_id == Invoice.id)
+                        .filter(InvoiceItem.codigo_barra.in_(list(codigos)))
+                        .filter(Invoice.fecha >= desde,
+                                Invoice.fecha <= hoy)
+                        .group_by(Invoice.fecha).all())
+                por_fecha = {r[0]: float(r[1] or 0) for r in rows}
+
+            # Pedidos por día (cantidad_pedida agregada por fecha del pedido).
+            ped_rows = (session.query(
+                            func.date(PedidoEmitido.fecha),
+                            func.coalesce(func.sum(PedidoEmitidoItem.cantidad_pedida), 0))
+                        .join(PedidoEmitido,
+                              PedidoEmitido.id == PedidoEmitidoItem.pedido_id)
+                        .filter(PedidoEmitidoItem.observer_id == observer_id,
+                                func.date(PedidoEmitido.fecha) >= desde,
+                                func.date(PedidoEmitido.fecha) <= hoy)
+                        .group_by(func.date(PedidoEmitido.fecha))
+                        .all())
+            por_fecha_ped = {r[0]: float(r[1] or 0) for r in ped_rows}
+
+            labels, datos, datos_ped = [], [], []
+            d = desde
+            while d <= hoy:
+                labels.append(d.strftime('%d/%m'))
+                datos.append(round(por_fecha.get(d, 0), 2))
+                datos_ped.append(round(por_fecha_ped.get(d, 0), 2))
+                d += timedelta(days=1)
+            total = sum(datos)
+            total_ped = sum(datos_ped)
+            return jsonify({
+                'ok': True,
+                'nombre': obs.descripcion or '',
+                'observer_id': observer_id,
+                'codigos_resueltos': len(codigos),
+                'labels': labels,
+                'data': datos,
+                'total_30d': round(total, 2),
+                'pedido_data': datos_ped,
+                'pedido_total_30d': round(total_ped, 2),
+                'desde': desde.isoformat(),
+                'hasta': hoy.isoformat(),
+            })
+
     @app.route('/api/informes/buscar-droga')
     @login_required
     def api_buscar_droga():

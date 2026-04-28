@@ -3,6 +3,26 @@
 {% set hide_sidebar = True %}
 {% block title %}Armar pedido — {{ prov.razon_social }}{% endblock %}
 
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    /* Zebra: alterna en filas cubiertas (no amber). */
+    tbody tr.producto-row:not(.bg-amber-50):nth-of-type(even) {
+        background-color: #F1F8F4;
+    }
+    /* Forzar la cadena html→body→main column a altura fija para que el
+       .scroll-wrapper sea el único scroll y el sticky del gráfico se ancle
+       a su tope (sino el body scrollea y sticky deja de funcionar). */
+    html, body { height: 100%; overflow: hidden; }
+    body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
+    .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
+    /* El thead sticky tiene que quedar DEBAJO del panel del gráfico (también
+       sticky top:0). Le damos un offset = altura aprox del panel. */
+    #panel-grafico { z-index: 30; }
+    table.tabla-armar thead { position: sticky; top: var(--chart-h, 360px); z-index: 20; }
+</style>
+{% endblock %}
+
 {% block main %}
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">📦 Armar pedido — <span class="text-amber-700">{{ prov.razon_social }}</span></h1>
@@ -12,15 +32,89 @@
     </span>
     {% endif %}
     <span class="text-xs text-[#6f6f6f] ml-auto">
-        {{ total_items }} candidatos bajo mínimo
+        {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
     </span>
+    <a href="{{ url_for('pedidos_emitidos_list') }}" class="text-xs text-sky-600 hover:underline">📋 Pedidos emitidos</a>
+    <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs text-sky-600 hover:underline">Editar matriz lab × drog</a>
     <a href="{{ url_for('compras_dia') }}" class="text-xs text-sky-600 hover:underline">← Volver</a>
 </div>
 
-<div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
-    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
-        <table class="w-full text-sm">
-            <thead class="bg-[#f0f0f0] sticky top-0">
+{% if pendientes_anteriores %}
+<div class="bg-rose-50 border-b border-rose-200 px-4 sm:px-6 py-2">
+    <p class="text-xs font-bold text-rose-800 mb-1">🔁 {{ pendientes_anteriores | length }} pendientes de pedidos anteriores (NO_VINO)</p>
+    <div class="flex flex-wrap gap-2">
+        {% for it in pendientes_anteriores %}
+        <button type="button"
+                onclick='reagregarPendiente({{ it | tojson }})'
+                class="text-[11px] bg-white border border-rose-300 text-rose-800 hover:bg-rose-100 px-2 py-0.5 rounded"
+                title="Pedido #{{ it.pedido_id }} — {{ it.pedido_fecha.strftime('%d/%m') }}">
+            <b>{{ it.pendiente }}u</b> · {{ it.desc | truncate(40) }} <span class="text-[#999]">({{ it.lab_nombre }})</span>
+        </button>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
+    <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…"
+           class="bg-white border border-mint rounded px-2 py-1 text-sm w-72">
+    <input type="text" id="filtro-lab" placeholder="Filtrar lab…"
+           class="bg-white border border-mint rounded px-2 py-1 text-sm w-56">
+    <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
+        <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
+        Solo venta libre
+    </label>
+    <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
+        <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
+        Solo con sugerencia (subir/bajar)
+    </label>
+    <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
+
+    <div class="relative ml-auto">
+        <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
+               class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-72">
+        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-40 w-[420px] max-h-80 overflow-auto"></div>
+    </div>
+</div>
+
+<!-- Wrapper scrolleable con altura fija: sticky se ancla al tope. -->
+<div class="scroll-wrapper">
+
+<!-- Panel gráfico sticky arriba (split: Año | Mes) -->
+<div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
+    <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate mb-2">
+        Seleccioná un producto de la lista para ver el gráfico
+    </p>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <!-- Año -->
+        <div>
+            <div class="flex items-center justify-between mb-1">
+                <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Año (12m)</p>
+            </div>
+            <div class="bg-white border border-surface-border rounded-lg relative" style="height:240px">
+                <canvas id="chart-canvas-anio"></canvas>
+                <p id="chart-empty-anio" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
+            </div>
+            <div class="grid grid-cols-4 gap-1.5 mt-1.5" id="chart-stats-grid"></div>
+        </div>
+        <!-- Mes -->
+        <div>
+            <div class="flex items-center justify-between mb-1">
+                <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Mes (30 días)</p>
+                <p id="chart-stats-mes" class="text-[10px] text-[#6f6f6f] font-mono">&nbsp;</p>
+            </div>
+            <div class="bg-white border border-surface-border rounded-lg relative" style="height:240px">
+                <canvas id="chart-canvas-mes"></canvas>
+                <p id="chart-empty-mes" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="px-4 sm:px-6 py-4">
+    <div class="bg-surface rounded-xl border border-surface-border">
+        <table class="w-full text-sm tabla-armar">
+            <thead class="bg-[#f0f0f0]">
                 <tr>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
@@ -33,18 +127,46 @@
             </thead>
             <tbody class="divide-y divide-surface-border">
                 {% for it in items %}
-                <tr class="hover:bg-black/[0.02]"
-                    data-pid="{{ it.pid }}" data-prod-id="{{ it.producto_id_local or '' }}">
-                    <td class="px-3 py-1.5">{{ it.desc }}</td>
-                    <td class="px-3 py-1.5 text-[#666]">{{ it.lab_nombre }}</td>
+                <tr class="{% if not it.cubre_lab %}bg-amber-50{% endif %} hover:bg-emerald-50/50 cursor-pointer producto-row"
+                    data-pid="{{ it.pid }}" data-prod-id="{{ it.producto_id_local or '' }}"
+                    data-nombre="{{ it.desc | e }}"
+                    data-lab="{{ (it.lab_nombre or '') | e }}"
+                    data-tvc="{{ it.tvc or '' }}"
+                    data-sug="{{ it.min_sugerencia or '' }}"
+                    onclick="seleccionarProducto(this)">
+                    <td class="px-3 py-1.5">
+                        {% if it.tipo == 'C' %}
+                        <span class="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded mr-1 font-bold" title="Va por promedio de ventas (consumo estable)">Prom Vtas</span>
+                        {% endif %}
+                        {{ it.desc }}
+                    </td>
+                    <td class="px-3 py-1.5 text-[#666]">
+                        {{ it.lab_nombre }}
+                        {% if not it.cubre_lab %}
+                        <span class="text-[10px] text-amber-700 font-bold ml-1" title="Esta drog no cubre el lab — pasa a la cola del próximo prov">⚠ otra drog</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-1.5 text-right font-mono">{{ it.stock }}</td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.minimo }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-[#666] whitespace-nowrap">
+                        {{ it.minimo }}
+                        {% if it.min_sugerencia == 'up' %}
+                        <span class="text-[10px] bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded ml-1"
+                              title="Sugerido {{ it.min_sugerido }} · cobertura actual {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d">Subir mín. → {{ it.min_sugerido }}</span>
+                        {% elif it.min_sugerencia == 'down' %}
+                        <span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded ml-1"
+                              title="Sugerido {{ it.min_sugerido }} · cobertura actual {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d">Bajar mín. → {{ it.min_sugerido }}</span>
+                        {% elif it.min_sugerencia == 'ok' %}
+                        <span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-1"
+                              title="Cobertura {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d — en rango">OK</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.u12m }}</td>
-                    <td class="px-3 py-1.5 text-right">
+                    <td class="px-3 py-1.5 text-right" onclick="event.stopPropagation()">
                         <input type="number" min="0" value="{{ it.a_pedir }}"
+                               {% if not it.cubre_lab %}disabled{% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
                     </td>
-                    <td class="px-3 py-1.5 text-center">
+                    <td class="px-3 py-1.5 text-center" onclick="event.stopPropagation()">
                         {% if it.producto_id_local %}
                         <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
                                 title="Sacar hasta que vuelva a llegar al mínimo"
@@ -69,12 +191,15 @@
     </div>
 
     <div class="mt-4 flex items-center justify-end gap-3">
-        <button class="bg-brand hover:bg-brand-hover text-brand-dark font-bold px-4 py-2 rounded-lg"
-                onclick="alert('TODO Fase 5 — emitir + plantilla')">
+        <span id="emitir-status" class="text-[11px] text-[#3f6650]"></span>
+        <button id="btn-emitir"
+                class="bg-brand hover:bg-brand-hover text-brand-dark font-bold px-4 py-2 rounded-lg"
+                onclick="emitirPedido()">
             Generar pedido →
         </button>
     </div>
 </div>
+</div>{# /flex-1 overflow-auto wrapper #}
 
 <script>
 async function excluir(prodId, modo, btn) {
@@ -90,8 +215,387 @@ async function excluir(prodId, modo, btn) {
     });
     const data = await r.json();
     if (!data.ok) { alert('Error: ' + (data.error || '')); btn.disabled = false; return; }
-    // Saco la fila del DOM.
     btn.closest('tr').remove();
+}
+
+// Gráfico sticky split: Año (rico) + Mes (simple), ambos visibles.
+const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+let _chartAnio = null;
+let _chartMes = null;
+let _selectedPid = null;
+
+function seleccionarProducto(row) {
+    document.querySelectorAll('.producto-row').forEach(r =>
+        r.classList.remove('ring-2', 'ring-emerald-500', 'ring-inset'));
+    row.classList.add('ring-2', 'ring-emerald-500', 'ring-inset');
+    _selectedPid = row.dataset.pid;
+    document.getElementById('chart-titulo').textContent = row.dataset.nombre;
+    cargarChartAnio();
+    cargarChartMes();
+}
+
+async function cargarChartAnio() {
+    document.getElementById('chart-empty-anio').classList.add('hidden');
+    try {
+        const r = await fetch(`/api/observer-product/${_selectedPid}/chart`, {credentials: 'same-origin'});
+        const d = await r.json();
+        if (!d.ok) { errorAnio('Error: ' + (d.error || 'sin datos')); return; }
+        renderAnio(d);
+    } catch (e) { errorAnio('Error de red'); }
+}
+
+async function cargarChartMes() {
+    document.getElementById('chart-empty-mes').classList.add('hidden');
+    try {
+        const [rv, ri] = await Promise.all([
+            fetch(`/api/observer-product/${_selectedPid}/chart-mes`, {credentials: 'same-origin'}),
+            fetch(`/api/observer-product/${_selectedPid}/ingresos-mes`, {credentials: 'same-origin'}),
+        ]);
+        const dv = await rv.json();
+        const di = await ri.json();
+        if (!dv.ok) { errorMes('Error: ' + (dv.error || 'sin datos')); return; }
+        renderMes(dv, di.ok ? di : null);
+    } catch (e) { errorMes('Error de red'); }
+}
+
+function errorAnio(msg) {
+    const e = document.getElementById('chart-empty-anio');
+    e.textContent = msg; e.classList.remove('hidden');
+    if (_chartAnio) { _chartAnio.destroy(); _chartAnio = null; }
+    document.getElementById('chart-stats-grid').innerHTML = '';
+}
+function errorMes(msg) {
+    const e = document.getElementById('chart-empty-mes');
+    e.textContent = msg; e.classList.remove('hidden');
+    if (_chartMes) { _chartMes.destroy(); _chartMes = null; }
+    document.getElementById('chart-stats-mes').textContent = '';
+}
+
+// Render rico anual con proyección + tendencia + stock/mín + stats grid.
+function renderAnio(p) {
+    const avg = p.avg_monthly||0, slope = p.slope||0, rot = p.rotacion||'B';
+    const rC = {A:'#15803d',M:'#b45309',B:'#dc2626'}, rL = {A:'Alta',M:'Media',B:'Baja'};
+    const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
+    const minimo = p.minimo || 0;
+    const stockBajoMin = minimo > 0 && p.stock < minimo;
+    const grid = document.getElementById('chart-stats-grid');
+
+    if (p.sin_historial || !p.ventas || !p.ventas.length) {
+        const statsSinHist = [
+            {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+            {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?'#dc2626':(p.stock<=0?'#f87171':'#1e1e1e')},
+        ];
+        if (minimo > 0) statsSinHist.push({l:'Mín.',v:minimo,c:'#7c3aed'});
+        statsSinHist.push({l:'Cobertura',v:sd,c:'#888'});
+        grid.innerHTML = statsSinHist.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1.5 text-center"><p class="text-[9px] text-[#888] uppercase tracking-wide">${s.l}</p><p class="text-xs font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+        if (_chartAnio) { _chartAnio.destroy(); _chartAnio = null; }
+        const empty = document.getElementById('chart-empty-anio');
+        empty.textContent = 'Sin historial mensual.';
+        empty.classList.remove('hidden');
+        return;
+    }
+    const ventas = p.ventas, sm = p.start_month||4, FM = 11, N_D = p.n_days||35;
+    const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm-1+i)%12]);
+    const today = new Date(), de = today.getDate(), dim = new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+    const ps = ventas[11]||0;
+    const pf = (avg>0&&de>0) ? Math.round(ps+(avg/dim)*(dim-de)) : (ps>0&&de>0?Math.round(ps*dim/de):0);
+    const pr = Math.max(0, pf-ps);
+    const vals = ventas.slice(0,FM), mx = (FM-1)/2, my = vals.reduce((a,b)=>a+b,0)/FM;
+    const nF = N_D>=35?2:1;
+    const fv = [];
+    for (let o=0;o<nF;o++) {
+        const si = (avg>0&&ventas[o]>0)?ventas[o]/avg:1.0, th = Math.min(FM+o-mx,2.0);
+        fv.push(Math.max(0,Math.round(avg*si+slope*th)));
+    }
+    const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→'), tc = 12+nF;
+    const tC = avg>0?avg*0.6:Infinity;
+    const tL = Array.from({length:tc},(_,i)=>{const r=my+slope*(i-mx);return Math.max(0,avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r);});
+    const labels = [...monthLabels.map((m,i)=>i===11?m+'*':m),...fl];
+    const hd = [...ventas,...Array(nF).fill(null)], fd = [...Array(12).fill(null),...fv];
+    const blp = {id:'barLabels',afterDraw(chart){
+        const ctx2=chart.ctx,yS=chart.scales.y;
+        chart.data.datasets.forEach((d,di)=>{
+            const meta=chart.getDatasetMeta(di);
+            if(meta.type!=='bar') return;
+            meta.data.forEach((bar,i)=>{
+                const v=d.data[i]; if(v==null||v<=0) return;
+                if(di===0&&i===11&&pr>0){
+                    const yt=yS.getPixelForValue(pf),hw=bar.width/2;
+                    ctx2.save();ctx2.fillStyle='rgba(234,179,8,0.22)';ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
+                    ctx2.strokeStyle='rgba(234,179,8,0.7)';ctx2.lineWidth=1;ctx2.setLineDash([3,2]);ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt);ctx2.restore();
+                    ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle='#64748b';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-2);ctx2.restore();
+                    ctx2.save();ctx2.font='bold 8px sans-serif';ctx2.fillStyle='#b45309';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-2);ctx2.restore();
+                    return;
+                }
+                ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle=di===1?'rgba(34,197,94,0.9)':'#888';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-2);ctx2.restore();
+            });
+        });
+    }};
+    const ctx = document.getElementById('chart-canvas-anio').getContext('2d');
+    if (_chartAnio) _chartAnio.destroy();
+    _chartAnio = new Chart(ctx, {
+        type:'bar', plugins:[blp],
+        data:{labels, datasets:[
+            {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(56,189,248,0.45)',borderColor:'rgba(56,189,248,0.75)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(34,197,94,0.35)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
+            {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
+            ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+            ...(minimo>0?[{label:'Mínimo',data:Array(tc).fill(minimo),type:'line',borderColor:'#7c3aed',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+            plugins:{legend:{labels:{color:'#888',font:{size:10},boxWidth:14,padding:8}},tooltip:{backgroundColor:'#fff',titleColor:'#1e1e1e',bodyColor:'#555',borderColor:'#e0e0e0',borderWidth:1}},
+            scales:{x:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:9}}},y:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:9}},beginAtZero:true}}}
+    });
+    const ss = slope>0.05?'↑':slope<-0.05?'↓':'→', sc = slope>0.05?'#4ade80':slope<-0.05?'#f87171':'#888';
+    const stats = [
+        {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+        {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+        {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
+        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?'#dc2626':(p.stock<=0?'#f87171':'#1e1e1e')},
+    ];
+    if (minimo > 0) stats.push({l:'Mín.',v:minimo,c:'#7c3aed'});
+    stats.push({l:'Cobertura',v:sd,c:'#888'});
+    if (ps>0) stats.push({l:`Mes (${de}/${dim}d)`,v:`${ps}/~${pf}`,c:'#b45309'});
+    grid.innerHTML = stats.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1.5 text-center"><p class="text-[9px] text-[#888] uppercase tracking-wide">${s.l}</p><p class="text-xs font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+}
+
+function renderMes(d, ing) {
+    const hayIng = ing && ing.data && ing.data.some(v => v > 0);
+    const hayPed = ing && ing.pedido_data && ing.pedido_data.some(v => v > 0);
+    const partes = [`Salidas ${d.total_30d}u (prom ${d.avg_diario}/d)`];
+    if (hayPed) partes.push(`Pedido ${ing.pedido_total_30d}u`);
+    if (hayIng) partes.push(`Entradas ${ing.total_30d}u`);
+    document.getElementById('chart-stats-mes').textContent = partes.join(' · ');
+
+    if (_chartMes) _chartMes.destroy();
+    const ctx = document.getElementById('chart-canvas-mes').getContext('2d');
+    const datasets = [{
+        type: 'bar', label: 'Salidas', data: d.data,
+        backgroundColor: 'rgba(34,197,94,0.45)', borderColor: '#22c55e',
+        borderWidth: 1, borderRadius: 2, order: 3,
+    }];
+    if (hayPed) {
+        datasets.push({
+            type: 'bar', label: 'Pedido', data: ing.pedido_data,
+            backgroundColor: 'rgba(245,158,11,0.45)', borderColor: '#f59e0b',
+            borderWidth: 1, borderRadius: 2, order: 2,
+        });
+    }
+    if (hayIng) {
+        datasets.push({
+            type: 'bar', label: 'Entradas', data: ing.data,
+            backgroundColor: 'rgba(59,130,246,0.45)', borderColor: '#3b82f6',
+            borderWidth: 1, borderRadius: 2, order: 1,
+        });
+    }
+    _chartMes = new Chart(ctx, {
+        data: {labels: d.labels, datasets},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: {mode: 'index', intersect: false},
+            plugins: {legend: {display: hayIng || hayPed,
+                                labels: {color: '#888', font: {size: 9}, boxWidth: 12, padding: 6}},
+                      tooltip: {backgroundColor: '#fff', titleColor: '#1e1e1e', bodyColor: '#555', borderColor: '#e0e0e0', borderWidth: 1}},
+            scales: {x: {grid: {display: false}, ticks: {color: '#999', font: {size: 9}}},
+                     y: {grid: {color: '#eee'}, ticks: {color: '#999', font: {size: 9}}, beginAtZero: true}},
+        }
+    });
+}
+
+// Filtros tokenizados (producto + lab, AND)
+const _filtroProd = document.getElementById('filtro-prod');
+const _filtroLab  = document.getElementById('filtro-lab');
+const _filtroCount = document.getElementById('filtro-count');
+const _totalRows = document.querySelectorAll('.producto-row').length;
+
+const _filtroLibre = document.getElementById('filtro-libre');
+const _filtroSug = document.getElementById('filtro-sug');
+
+function aplicarFiltros() {
+    const fnProd = window.MultiTokenFilter.build(_filtroProd.value);
+    const fnLab  = window.MultiTokenFilter.build(_filtroLab.value);
+    const soloLibre = _filtroLibre.checked;
+    const soloSug = _filtroSug.checked;
+    let visibles = 0;
+    document.querySelectorAll('.producto-row').forEach(row => {
+        const sug = row.dataset.sug || '';
+        const ok = fnProd(row.dataset.nombre)
+            && fnLab(row.dataset.lab || '')
+            && (!soloLibre || row.dataset.tvc === 'L')
+            && (!soloSug || sug === 'up' || sug === 'down');
+        row.style.display = ok ? '' : 'none';
+        if (ok) visibles++;
+    });
+    _filtroCount.textContent = (_filtroProd.value || _filtroLab.value || soloLibre || soloSug)
+        ? `${visibles} / ${_totalRows} visibles`
+        : '';
+}
+_filtroProd.addEventListener('input', aplicarFiltros);
+_filtroLab.addEventListener('input', aplicarFiltros);
+_filtroLibre.addEventListener('change', aplicarFiltros);
+_filtroSug.addEventListener('change', aplicarFiltros);
+
+// Mide el alto real del panel del gráfico y lo usa de offset del thead sticky.
+function _ajustarOffsetThead() {
+    const panel = document.getElementById('panel-grafico');
+    if (!panel) return;
+    document.documentElement.style.setProperty('--chart-h', panel.offsetHeight + 'px');
+}
+_ajustarOffsetThead();
+window.addEventListener('resize', _ajustarOffsetThead);
+new ResizeObserver(_ajustarOffsetThead).observe(document.getElementById('panel-grafico'));
+
+// ── Agregar producto último momento ─────────────────────────────────
+const _PROV_ID = {{ prov.id }};
+const _agregarInput = document.getElementById('agregar-q');
+const _agregarResults = document.getElementById('agregar-results');
+let _agregarTimer = null;
+
+_agregarInput.addEventListener('input', () => {
+    clearTimeout(_agregarTimer);
+    const q = _agregarInput.value.trim();
+    if (q.length < 2) { _agregarResults.classList.add('hidden'); return; }
+    _agregarTimer = setTimeout(() => buscarParaAgregar(q), 250);
+});
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('#agregar-q') && !e.target.closest('#agregar-results')) {
+        _agregarResults.classList.add('hidden');
+    }
+});
+
+async function buscarParaAgregar(q) {
+    try {
+        const r = await fetch(`/api/compras/dia/buscar-producto?q=${encodeURIComponent(q)}&prov=${_PROV_ID}`,
+                              {credentials: 'same-origin'});
+        const d = await r.json();
+        if (!d.ok) { _agregarResults.classList.add('hidden'); return; }
+        if (!d.items.length) {
+            _agregarResults.innerHTML = '<div class="px-3 py-2 text-xs text-[#999]">Sin resultados</div>';
+        } else {
+            _agregarResults.innerHTML = d.items.map(it => `
+                <div class="px-3 py-2 text-sm hover:bg-emerald-50 cursor-pointer border-b border-surface-border last:border-0"
+                     data-item='${JSON.stringify(it).replace(/'/g, "&apos;")}'>
+                    <div class="flex items-center gap-2">
+                        <span class="flex-1 truncate">${it.desc}</span>
+                        <span class="text-[10px] text-[#888]">${it.lab_nombre}</span>
+                    </div>
+                    <div class="text-[10px] text-[#888] mt-0.5">
+                        stock ${it.stock} · mín ${it.minimo} · u12m ${it.u12m}
+                        ${it.cubre_lab ? '<span class="text-emerald-700 font-bold">✓ cubre</span>' : '<span class="text-amber-700">⚠ otra drog</span>'}
+                    </div>
+                </div>`).join('');
+            _agregarResults.querySelectorAll('[data-item]').forEach(el => {
+                el.addEventListener('click', () => {
+                    agregarFila(JSON.parse(el.dataset.item));
+                });
+            });
+        }
+        _agregarResults.classList.remove('hidden');
+    } catch (e) { /* silent */ }
+}
+
+function agregarFila(it) {
+    const tbody = document.querySelector('table tbody');
+    // Si ya existe, sólo seleccionarla.
+    const existing = tbody.querySelector(`tr.producto-row[data-pid="${it.pid}"]`);
+    if (existing) {
+        existing.scrollIntoView({behavior: 'smooth', block: 'center'});
+        seleccionarProducto(existing);
+        cerrarAgregar();
+        return;
+    }
+    const tr = document.createElement('tr');
+    tr.className = (it.cubre_lab ? '' : 'bg-amber-50 ') +
+                   'hover:bg-emerald-50/50 cursor-pointer producto-row ring-2 ring-blue-400 ring-inset';
+    tr.dataset.pid = it.pid;
+    tr.dataset.prodId = it.producto_id_local || '';
+    tr.dataset.nombre = it.desc;
+    tr.dataset.lab = it.lab_nombre;
+    tr.onclick = () => seleccionarProducto(tr);
+    tr.innerHTML = `
+        <td class="px-3 py-1.5">
+            <span class="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded mr-1 font-bold">+ NUEVO</span>
+            ${it.desc}
+        </td>
+        <td class="px-3 py-1.5 text-[#666]">
+            ${it.lab_nombre}
+            ${it.cubre_lab ? '' : '<span class="text-[10px] text-amber-700 font-bold ml-1">⚠ otra drog</span>'}
+        </td>
+        <td class="px-3 py-1.5 text-right font-mono">${it.stock}</td>
+        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.minimo}</td>
+        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.u12m}</td>
+        <td class="px-3 py-1.5 text-right" onclick="event.stopPropagation()">
+            <input type="number" min="0" value="${it.a_pedir}"
+                   ${it.cubre_lab ? '' : 'disabled'}
+                   class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
+        </td>
+        <td class="px-3 py-1.5 text-center" onclick="event.stopPropagation()">
+            <button onclick="this.closest('tr').remove()"
+                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100">
+                ✕ Quitar
+            </button>
+        </td>`;
+    tbody.insertBefore(tr, tbody.firstChild);
+    seleccionarProducto(tr);
+    cerrarAgregar();
+}
+
+function cerrarAgregar() {
+    _agregarInput.value = '';
+    _agregarResults.classList.add('hidden');
+}
+
+// ── Reagregar pendiente de pedido anterior ──────────────────────────
+function reagregarPendiente(it) {
+    // Convertir el shape del pendiente a lo que agregarFila espera.
+    agregarFila({
+        pid: it.pid,
+        producto_id_local: it.producto_id_local,
+        desc: it.desc,
+        lab_nombre: it.lab_nombre,
+        stock: 0, minimo: 0, u12m: 0,
+        a_pedir: it.pendiente,
+        cubre_lab: true,
+    });
+}
+
+// ── Emitir pedido ───────────────────────────────────────────────────
+async function emitirPedido() {
+    const status = document.getElementById('emitir-status');
+    const btn = document.getElementById('btn-emitir');
+    const items = [];
+    document.querySelectorAll('.producto-row').forEach(row => {
+        const input = row.querySelector('input[type="number"]');
+        if (!input || input.disabled) return;
+        const cantidad = parseInt(input.value || 0);
+        if (cantidad <= 0) return;
+        items.push({
+            observer_id: parseInt(row.dataset.pid) || null,
+            producto_id_local: parseInt(row.dataset.prodId) || null,
+            descripcion: row.dataset.nombre,
+            lab_nombre: row.dataset.lab,
+            cantidad,
+        });
+    });
+    if (!items.length) { status.textContent = 'No hay items con cantidad > 0.'; return; }
+    if (!confirm(`Emitir pedido a ${ {{ prov.razon_social | tojson }} } con ${items.length} items (${items.reduce((a,b)=>a+b.cantidad,0)} u)?`)) return;
+    btn.disabled = true; status.textContent = 'Emitiendo…';
+    try {
+        const r = await fetch('/api/compras/dia/emitir', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({prov_id: _PROV_ID, items}),
+        });
+        const d = await r.json();
+        if (!d.ok) { status.textContent = 'Error: ' + (d.error || ''); btn.disabled = false; return; }
+        status.textContent = '✓ Pedido #' + d.pedido_id + ' emitido';
+        setTimeout(() => { location.href = '/pedidos-emitidos/' + d.pedido_id; }, 700);
+    } catch (e) {
+        status.textContent = 'Error de red'; btn.disabled = false;
+    }
 }
 </script>
 {% endblock %}

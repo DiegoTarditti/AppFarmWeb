@@ -9,7 +9,7 @@ de este rol (ver decisión de roles).
 from datetime import datetime
 
 from flask import jsonify, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from sqlalchemy import text
 
@@ -19,6 +19,33 @@ from services.horarios import horarios_por_dia, proximo_cierre
 
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+
+def _recalc_item_canonico(it):
+    """Canónico = COALESCE(confirmada_obs, revisada_op, 0). Setea estado."""
+    if it.cantidad_confirmada_obs is not None:
+        rec = it.cantidad_confirmada_obs
+    elif it.cantidad_revisada_op is not None:
+        rec = it.cantidad_revisada_op
+    else:
+        rec = 0
+    it.cantidad_recibida = max(0, rec)
+    if it.cantidad_revisada_op is None and it.cantidad_confirmada_obs is None:
+        it.estado = 'PENDIENTE'
+    elif it.cantidad_recibida <= 0 and it.cantidad_pedida > 0:
+        it.estado = 'NO_VINO'
+    else:
+        it.estado = 'RECIBIDO'
+
+
+def _recalc_pedido(p):
+    estados = [i.estado for i in p.items]
+    if all(e != 'PENDIENTE' for e in estados):
+        p.estado = 'CERRADO'
+    elif any(e in ('RECIBIDO', 'NO_VINO') for e in estados):
+        p.estado = 'RECIBIDO_PARCIAL'
+    else:
+        p.estado = 'ABIERTO'
 
 
 def init_app(app):
@@ -139,7 +166,9 @@ def init_app(app):
         """
         from sqlalchemy import func
         from database import (
+            Laboratorio, LaboratorioDrogueria,
             ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Producto,
+            PedidoEmitido, PedidoEmitidoItem,
         )
 
         prov_id = request.args.get('prov', type=int)
@@ -159,11 +188,19 @@ def init_app(app):
             ).filter(ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
               .group_by(ObsStock.producto_observer).subquery())
 
-            # Ventas 12m por producto.
+            # Ventas 12m por producto (agregado para tabla).
             v12_q = (session.query(
                 ObsVentaMensual.producto_observer.label('pid'),
                 func.sum(ObsVentaMensual.unidades).label('u12m'),
             ).group_by(ObsVentaMensual.producto_observer).subquery())
+
+            # Ventas detalladas por mes para alimentar purchase_engine.
+            # Construimos el array de 12 meses ventas[0..11] terminando en el mes actual.
+            from datetime import date as _date
+            hoy_d = _date.today()
+            end_month = hoy_d.month
+            start_month = ((end_month - 11 - 1) % 12) + 1  # mes-11 (1..12)
+            start_year = hoy_d.year if start_month <= end_month else hoy_d.year - 1
 
             # Cleanup temporal de exclusión.
             session.execute(text("""
@@ -180,6 +217,7 @@ def init_app(app):
             base = (session.query(
                 ObsProducto.observer_id.label('pid'),
                 ObsProducto.descripcion.label('desc'),
+                ObsProducto.id_tipo_venta_control.label('tvc'),
                 ObsLaboratorio.observer_id.label('lab_obs_id'),
                 ObsLaboratorio.descripcion.label('lab_nombre'),
                 stock_q.c.stock,
@@ -208,6 +246,23 @@ def init_app(app):
                         .filter(ObsProducto.observer_id.in_(obs_pids)).all())
                 sub_de_prod = dict(rows)
 
+            # Cargar ventas mes-a-mes para los productos en juego.
+            ventas_por_pid = {pid: [0]*12 for pid in [r.pid for r in base]}
+            if ventas_por_pid:
+                rows_vm = (session.query(ObsVentaMensual.producto_observer,
+                                          ObsVentaMensual.anio,
+                                          ObsVentaMensual.mes,
+                                          func.sum(ObsVentaMensual.unidades))
+                           .filter(ObsVentaMensual.producto_observer.in_(list(ventas_por_pid.keys())))
+                           .group_by(ObsVentaMensual.producto_observer,
+                                     ObsVentaMensual.anio, ObsVentaMensual.mes)
+                           .all())
+                for pid_v, anio, mes, uds in rows_vm:
+                    # Slot 0..11: ventas[0]=start_month, ventas[11]=end_month
+                    offset = (anio - start_year) * 12 + (mes - start_month)
+                    if 0 <= offset <= 11 and pid_v in ventas_por_pid:
+                        ventas_por_pid[pid_v][offset] += int(uds or 0)
+
             # Resolver Producto local + flags excluido / no_pedir.
             local_por_obs = {}
             if obs_pids:
@@ -220,6 +275,18 @@ def init_app(app):
                     'lab_local_id': r[4],
                 } for r in rows}
 
+            # Labs cubiertos por esta droguería (LaboratorioDrogueria).
+            labs_cubiertos = set(
+                r[0] for r in session.query(LaboratorioDrogueria.laboratorio_id)
+                .filter(LaboratorioDrogueria.drogueria_id == prov_id).all()
+            )
+            # Map lab observer → lab local id (para resolver cuando Producto local
+            # no tiene laboratorio_id pero sí tenemos el match Observer).
+            lab_obs_to_local = dict(
+                session.query(Laboratorio.observer_id, Laboratorio.id)
+                .filter(Laboratorio.observer_id.isnot(None)).all()
+            )
+
             items = []
             for r in base:
                 # Filtro rubro Medicamentos
@@ -229,24 +296,412 @@ def init_app(app):
                 local = local_por_obs.get(r.pid)
                 if local and (local['excluido'] or local['no_pedir']):
                     continue
+                lab_local_id = (local['lab_local_id'] if local else None) \
+                                or lab_obs_to_local.get(r.lab_obs_id)
+                cubre_lab = lab_local_id in labs_cubiertos
+                from purchase_engine import (analyze_product,
+                                              start_month_idx_from_period,
+                                              tipo_producto, AVG_DAYS_PER_MONTH)
+                u12m_int = int(r.u12m or 0)
+                min_actual = int(r.minimo or 0)
+                stock_actual = int(r.stock or 0)
+                ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
+
+                # Tipo C (crónico) vs N (normal).
+                tipo = tipo_producto(ventas_arr)
+                # Forecast a 7 días con estacionalidad + prorrateo + slope amortiguado si C.
+                sidx = start_month_idx_from_period(start_month, end_month)
+                _qty, fcst7, slope, _peak, _low, _comment, sin_mov = analyze_product(
+                    ventas_arr, stock_actual, n_days=7, start_month_idx=sidx,
+                    data_start_month=start_month, end_month=end_month, tipo=tipo,
+                )
+                import math
+                min_sugerido = int(math.ceil(fcst7)) if fcst7 > 0 else 0
+                # Promedio mensual con prorrateo si aplica (igual que analyze_purchase).
+                from purchase_engine import _prorate_partial, FULL_MONTHS
+                _pp = _prorate_partial(ventas_arr, end_month)
+                if _pp is not None:
+                    avg_m = (sum(ventas_arr[:FULL_MONTHS]) + _pp) / (FULL_MONTHS + 1)
+                else:
+                    avg_m = sum(ventas_arr[:FULL_MONTHS]) / FULL_MONTHS if FULL_MONTHS else 0
+                avg_diario = avg_m / AVG_DAYS_PER_MONTH if avg_m else 0
+                cobertura_d = (round(min_actual / avg_diario)
+                               if avg_diario > 0 and min_actual > 0 else None)
+                # Sugerencia up/down/ok comparando contra el forecast 7d.
+                if u12m_int == 0 or sin_mov:
+                    min_sugerencia = None
+                elif min_actual == 0 or min_actual < min_sugerido * 0.6:
+                    min_sugerencia = 'up'
+                elif min_sugerido > 0 and min_actual > min_sugerido * 2.0:
+                    min_sugerencia = 'down'
+                else:
+                    min_sugerencia = 'ok'
+
                 items.append({
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
                     'desc': r.desc,
                     'lab_nombre': r.lab_nombre or '—',
-                    'stock': int(r.stock or 0),
-                    'minimo': int(r.minimo or 0),
-                    'u12m': int(r.u12m or 0),
-                    'a_pedir': max(0, int(r.minimo or 0) - int(r.stock or 0)),
+                    'lab_local_id': lab_local_id,
+                    'tvc': r.tvc,
+                    'tipo': tipo,  # 'C' crónico, 'N' normal
+                    'stock': stock_actual,
+                    'minimo': min_actual,
+                    'min_sugerido': min_sugerido,
+                    'min_sugerencia': min_sugerencia,
+                    'cobertura_d': cobertura_d,
+                    'u12m': u12m_int,
+                    'a_pedir': max(0, min_actual - stock_actual),
+                    'cubre_lab': cubre_lab,
                 })
-            items.sort(key=lambda x: x['desc'].lower())
+            items.sort(key=lambda x: (not x['cubre_lab'], x['desc'].lower()))
 
             cierre = proximo_cierre(session, prov_id)
+
+            # Pendientes de pedidos anteriores a esta drog: pedida > recibida.
+            # Incluye estado=NO_VINO y RECIBIDO_PARCIAL (recibida < pedida).
+            pendientes_anteriores = []
+            ped_rows = (session.query(PedidoEmitidoItem, PedidoEmitido)
+                        .join(PedidoEmitido,
+                              PedidoEmitido.id == PedidoEmitidoItem.pedido_id)
+                        .filter(PedidoEmitido.drogueria_id == prov_id,
+                                PedidoEmitidoItem.estado.in_(('NO_VINO', 'RECIBIDO')),
+                                PedidoEmitidoItem.cantidad_recibida < PedidoEmitidoItem.cantidad_pedida)
+                        .order_by(PedidoEmitido.fecha.desc())
+                        .all())
+            for it, ped in ped_rows:
+                pendiente = max(0, (it.cantidad_pedida or 0) - (it.cantidad_recibida or 0))
+                if pendiente <= 0:
+                    continue
+                pendientes_anteriores.append({
+                    'item_id': it.id,
+                    'pedido_id': ped.id,
+                    'pedido_fecha': ped.fecha,
+                    'pid': it.observer_id,
+                    'producto_id_local': it.producto_id_local,
+                    'desc': it.descripcion,
+                    'lab_nombre': it.lab_nombre or '—',
+                    'pendiente': pendiente,
+                })
 
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
-                                   cierre=cierre)
+                                   cubre=sum(1 for i in items if i['cubre_lab']),
+                                   pendientes=sum(1 for i in items if not i['cubre_lab']),
+                                   cierre=cierre,
+                                   pendientes_anteriores=pendientes_anteriores)
+
+    @app.route('/api/compras/dia/buscar-producto')
+    @login_required
+    def api_compras_dia_buscar_producto():
+        """Busca producto ObServer por descripción tokenizada (AND).
+        Devuelve datos listos para agregar como fila al armado: stock, mínimo,
+        u12m, lab, cubre_lab según la droguería pasada por ?prov.
+        """
+        from sqlalchemy import func, and_
+        from database import (
+            Laboratorio, LaboratorioDrogueria,
+            ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Producto,
+        )
+        q = (request.args.get('q') or '').strip()
+        prov_id = request.args.get('prov', type=int)
+        if len(q) < 2 or not prov_id:
+            return jsonify({'ok': True, 'items': []})
+
+        # Tokenizar y armar filtros AND sobre descripcion (case-insensitive).
+        tokens = [t for t in q.split() if t]
+        with get_db() as session:
+            query = (session.query(ObsProducto.observer_id,
+                                    ObsProducto.descripcion,
+                                    ObsLaboratorio.observer_id.label('lab_obs_id'),
+                                    ObsLaboratorio.descripcion.label('lab_nombre'))
+                     .outerjoin(ObsLaboratorio,
+                                ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                     .filter(ObsProducto.fecha_baja.is_(None)))
+            for tok in tokens:
+                query = query.filter(ObsProducto.descripcion.ilike(f'%{tok}%'))
+            base = query.order_by(ObsProducto.descripcion).limit(20).all()
+
+            obs_ids = [r.observer_id for r in base]
+            if not obs_ids:
+                return jsonify({'ok': True, 'items': []})
+
+            stock_rows = dict(session.query(
+                ObsStock.producto_observer,
+                func.sum(ObsStock.stock_actual)
+            ).filter(ObsStock.producto_observer.in_(obs_ids))
+             .group_by(ObsStock.producto_observer).all())
+            min_rows = dict(session.query(
+                ObsStock.producto_observer,
+                func.sum(ObsStock.minimo)
+            ).filter(ObsStock.producto_observer.in_(obs_ids),
+                     ObsStock.minimo.isnot(None))
+             .group_by(ObsStock.producto_observer).all())
+            v12_rows = dict(session.query(
+                ObsVentaMensual.producto_observer,
+                func.sum(ObsVentaMensual.unidades)
+            ).filter(ObsVentaMensual.producto_observer.in_(obs_ids))
+             .group_by(ObsVentaMensual.producto_observer).all())
+
+            local_rows = {r[0]: r for r in (
+                session.query(Producto.observer_id, Producto.id, Producto.laboratorio_id)
+                .filter(Producto.observer_id.in_(obs_ids)).all())}
+            lab_obs_to_local = dict(session.query(
+                Laboratorio.observer_id, Laboratorio.id
+            ).filter(Laboratorio.observer_id.isnot(None)).all())
+            labs_cubiertos = set(r[0] for r in session.query(
+                LaboratorioDrogueria.laboratorio_id
+            ).filter(LaboratorioDrogueria.drogueria_id == prov_id).all())
+
+            items = []
+            for r in base:
+                local = local_rows.get(r.observer_id)
+                lab_local_id = (local[2] if local else None) or lab_obs_to_local.get(r.lab_obs_id)
+                stock = int(stock_rows.get(r.observer_id, 0) or 0)
+                minimo = int(min_rows.get(r.observer_id, 0) or 0)
+                items.append({
+                    'pid': r.observer_id,
+                    'producto_id_local': local[1] if local else None,
+                    'desc': r.descripcion,
+                    'lab_nombre': r.lab_nombre or '—',
+                    'stock': stock,
+                    'minimo': minimo,
+                    'u12m': int(v12_rows.get(r.observer_id, 0) or 0),
+                    'a_pedir': max(0, minimo - stock) if minimo else 1,
+                    'cubre_lab': lab_local_id in labs_cubiertos,
+                })
+            return jsonify({'ok': True, 'items': items})
+
+    @app.route('/compras/labs-drogerias')
+    @login_required
+    def labs_drogerias_matriz():
+        """Matriz lab × droguería: marca por qué drogerías va cada laboratorio.
+        Persiste en LaboratorioDrogueria (tabla simple sin descuento).
+        """
+        from database import Laboratorio, LaboratorioDrogueria
+        with get_db() as session:
+            # Mostramos todos los labs (incluso inactivos) — el catálogo viene
+            # con muchos marcados activo=false que igual se piden.
+            labs = (session.query(Laboratorio)
+                    .order_by(Laboratorio.nombre).all())
+            drogs = (session.query(Provider)
+                     .filter(Provider.activo.is_(True),
+                             Provider.tipo == 'drogueria')
+                     .order_by(Provider.razon_social).all())
+            existentes = set(
+                (r.laboratorio_id, r.drogueria_id)
+                for r in session.query(LaboratorioDrogueria).all()
+            )
+            labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+            drogs_data = [{'id': d.id, 'nombre': d.razon_social} for d in drogs]
+            matriz = {}  # {lab_id: set(drog_ids)}
+            for (lab_id, drog_id) in existentes:
+                matriz.setdefault(lab_id, set()).add(drog_id)
+        return render_template('labs_drogerias.html',
+                               labs=labs_data, drogs=drogs_data,
+                               matriz={k: list(v) for k, v in matriz.items()})
+
+    @app.route('/api/lab-drog/toggle', methods=['POST'])
+    @login_required
+    def api_lab_drog_toggle():
+        """Body: {laboratorio_id, drogueria_id, activo: bool}.
+        Crea/borra el match. Idempotente."""
+        from database import LaboratorioDrogueria
+        data = request.get_json(silent=True) or {}
+        try:
+            lab_id  = int(data.get('laboratorio_id') or 0)
+            drog_id = int(data.get('drogueria_id') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'IDs inválidos'}), 400
+        if not lab_id or not drog_id:
+            return jsonify({'ok': False, 'error': 'lab y drog requeridos'}), 400
+        activo = bool(data.get('activo'))
+        with get_db() as session:
+            row = (session.query(LaboratorioDrogueria)
+                   .filter_by(laboratorio_id=lab_id, drogueria_id=drog_id).first())
+            if activo and not row:
+                session.add(LaboratorioDrogueria(
+                    laboratorio_id=lab_id, drogueria_id=drog_id))
+                session.commit()
+            elif not activo and row:
+                session.delete(row)
+                session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/compras/dia/emitir', methods=['POST'])
+    @login_required
+    def api_compras_dia_emitir():
+        """Snapshot del armado a PedidoEmitido + PedidoEmitidoItem.
+        Body: {prov_id, items: [{observer_id, producto_id_local, descripcion,
+                                  lab_nombre, cantidad}], observacion?}
+        """
+        from database import PedidoEmitido, PedidoEmitidoItem
+        data = request.get_json(silent=True) or {}
+        try:
+            prov_id = int(data.get('prov_id') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'prov_id inválido'}), 400
+        items = data.get('items') or []
+        if not prov_id or not items:
+            return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+        with get_db() as session:
+            ped = PedidoEmitido(
+                drogueria_id=prov_id,
+                usuario=getattr(current_user, 'username', None),
+                total_items=len(items),
+                total_unidades=sum(int(it.get('cantidad') or 0) for it in items),
+                observacion=(data.get('observacion') or None),
+            )
+            session.add(ped)
+            session.flush()
+            for it in items:
+                cant = int(it.get('cantidad') or 0)
+                if cant <= 0:
+                    continue
+                session.add(PedidoEmitidoItem(
+                    pedido_id=ped.id,
+                    observer_id=it.get('observer_id') or None,
+                    producto_id_local=it.get('producto_id_local') or None,
+                    descripcion=it.get('descripcion') or '',
+                    lab_nombre=it.get('lab_nombre') or None,
+                    cantidad_pedida=cant,
+                    cantidad_recibida=0,
+                    estado='PENDIENTE',
+                ))
+            session.commit()
+            return jsonify({'ok': True, 'pedido_id': ped.id})
+
+    @app.route('/pedidos-emitidos')
+    @login_required
+    def pedidos_emitidos_list():
+        from datetime import timedelta
+        from database import PedidoEmitido
+        from helpers import now_ar
+        es_pedidos = getattr(current_user, 'rol', None) == 'pedidos'
+        with get_db() as session:
+            q = session.query(PedidoEmitido)
+            if es_pedidos:
+                # El rol pedidos solo ve los no cerrados de los últimos 30 días.
+                desde = now_ar() - timedelta(days=30)
+                q = q.filter(PedidoEmitido.estado != 'CERRADO',
+                             PedidoEmitido.fecha >= desde)
+            peds = q.order_by(PedidoEmitido.fecha.desc()).all()
+            data = []
+            for p in peds:
+                pendientes = sum(1 for i in p.items if i.estado == 'PENDIENTE')
+                no_vino = sum(1 for i in p.items if i.estado == 'NO_VINO')
+                recibidos = sum(1 for i in p.items if i.estado == 'RECIBIDO')
+                data.append({
+                    'id': p.id,
+                    'fecha': p.fecha,
+                    'drog': p.drogueria.razon_social if p.drogueria else '—',
+                    'total_items': p.total_items,
+                    'total_unidades': p.total_unidades,
+                    'estado': p.estado,
+                    'usuario': p.usuario or '—',
+                    'pendientes': pendientes,
+                    'no_vino': no_vino,
+                    'recibidos': recibidos,
+                })
+        return render_template('pedidos_emitidos_list.html', pedidos=data)
+
+    @app.route('/pedidos-emitidos/<int:pedido_id>')
+    @login_required
+    def pedido_emitido_detalle(pedido_id):
+        from database import PedidoEmitido
+        with get_db() as session:
+            p = session.get(PedidoEmitido, pedido_id)
+            if not p:
+                return redirect(url_for('pedidos_emitidos_list'))
+            items = sorted(p.items, key=lambda i: (i.descripcion or '').lower())
+            ped_data = {
+                'id': p.id, 'fecha': p.fecha, 'estado': p.estado,
+                'drog': p.drogueria.razon_social if p.drogueria else '—',
+                'usuario': p.usuario or '—', 'observacion': p.observacion or '',
+                'total_items': p.total_items, 'total_unidades': p.total_unidades,
+                'items': [{
+                    'id': i.id, 'observer_id': i.observer_id,
+                    'descripcion': i.descripcion, 'lab': i.lab_nombre or '—',
+                    'pedida': i.cantidad_pedida,
+                    'revisada': i.cantidad_revisada_op,    # None si nunca tocada
+                    'confirmada': i.cantidad_confirmada_obs,
+                    'recibida': i.cantidad_recibida,
+                    'estado': i.estado,
+                } for i in items],
+            }
+        es_pedidos = getattr(current_user, 'rol', None) == 'pedidos'
+        solo_lectura = es_pedidos and ped_data['estado'] == 'CERRADO'
+        return render_template('pedido_emitido_detalle.html',
+                               pedido=ped_data, solo_lectura=solo_lectura)
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>/recepcion', methods=['POST'])
+    @login_required
+    def api_pedido_recepcion(pedido_id):
+        """Primera revisión manual del operador.
+
+        Body: {items: [{id, revisada}]}. `revisada` es la cantidad que entró
+        según el operador (default = cantidad_pedida; si "no entró" → 0).
+        Si la confirmación de Observer ya está cargada, NO la pisa.
+        """
+        from database import PedidoEmitido, PedidoEmitidoItem
+        from helpers import now_ar
+        data = request.get_json(silent=True) or {}
+        items_in = {int(it['id']): it for it in (data.get('items') or []) if it.get('id')}
+        with get_db() as session:
+            p = session.get(PedidoEmitido, pedido_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+            if (getattr(current_user, 'rol', None) == 'pedidos'
+                    and p.estado == 'CERRADO'):
+                return jsonify({'ok': False, 'error': 'Pedido cerrado, solo lectura'}), 403
+            ahora = now_ar()
+            for it in p.items:
+                if it.id not in items_in:
+                    continue
+                payload = items_in[it.id]
+                try:
+                    rev = int(payload.get('revisada') or 0)
+                except (TypeError, ValueError):
+                    rev = 0
+                it.cantidad_revisada_op = max(0, rev)
+                it.revisada_en = ahora
+                _recalc_item_canonico(it)
+            _recalc_pedido(p)
+            session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>/confirmacion-observer', methods=['POST'])
+    @login_required
+    def api_pedido_confirmacion_observer(pedido_id):
+        """Carga ingresos confirmados desde Observer (export manual por ahora).
+
+        Body: {items: [{id, confirmada}]}. Pisa cantidad_confirmada_obs y
+        actualiza el canónico (que pasa a tener prioridad sobre revisada_op).
+        """
+        from database import PedidoEmitido, PedidoEmitidoItem
+        from helpers import now_ar
+        data = request.get_json(silent=True) or {}
+        items_in = {int(it['id']): it for it in (data.get('items') or []) if it.get('id')}
+        with get_db() as session:
+            p = session.get(PedidoEmitido, pedido_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+            ahora = now_ar()
+            for it in p.items:
+                if it.id not in items_in:
+                    continue
+                payload = items_in[it.id]
+                try:
+                    conf = int(payload.get('confirmada') or 0)
+                except (TypeError, ValueError):
+                    conf = 0
+                it.cantidad_confirmada_obs = max(0, conf)
+                it.confirmada_en = ahora
+                _recalc_item_canonico(it)
+            _recalc_pedido(p)
+            session.commit()
+        return jsonify({'ok': True})
 
     @app.route('/api/producto/<int:prod_id>/excluir', methods=['POST'])
     @login_required

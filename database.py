@@ -486,6 +486,81 @@ class DescuentoBase(Base):
     descuento_pct_sin_transfer = Column(DECIMAL(5, 2), nullable=True)
 
 
+class PedidoEmitido(Base):
+    """Pedido enviado a una droguería desde Compra del Día.
+
+    Snapshot del armado al momento de "Generar pedido". Permite tracking
+    de recepción manual hasta que tengamos sync real de ingresos.
+
+    Estados:
+    - ABIERTO: emitido, sin recibir nada.
+    - RECIBIDO_PARCIAL: al menos un item con cantidad_recibida > 0.
+    - CERRADO: todos los items con estado != 'PENDIENTE'.
+    """
+    __tablename__ = 'pedido_emitido'
+    id              = Column(Integer, primary_key=True)
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
+                              nullable=False, index=True)
+    fecha           = Column(DateTime, default=now_ar, nullable=False, index=True)
+    usuario         = Column(String(50), nullable=True)
+    total_items     = Column(Integer, nullable=False, default=0)
+    total_unidades  = Column(Integer, nullable=False, default=0)
+    estado          = Column(String(20), nullable=False, default='ABIERTO')
+    observacion     = Column(Text, nullable=True)
+    drogueria       = relationship('Provider')
+    items           = relationship('PedidoEmitidoItem', back_populates='pedido',
+                                   cascade='all, delete-orphan')
+
+
+class PedidoEmitidoItem(Base):
+    """Detalle de un PedidoEmitido — un renglón por producto pedido."""
+    __tablename__ = 'pedido_emitido_item'
+    id                  = Column(Integer, primary_key=True)
+    pedido_id           = Column(Integer, ForeignKey('pedido_emitido.id', ondelete='CASCADE'),
+                                  nullable=False, index=True)
+    observer_id         = Column(Integer, nullable=True, index=True)
+    producto_id_local   = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'),
+                                  nullable=True, index=True)
+    descripcion         = Column(String(200), nullable=False)
+    lab_nombre          = Column(String(150), nullable=True)
+    cantidad_pedida     = Column(Integer, nullable=False, default=0)
+    # Dos vías de recepción:
+    # 1) Primera revisión: el operador marca manualmente al recibir (típicamente
+    #    sólo toca lo que NO entró; lo demás queda en cantidad_pedida).
+    cantidad_revisada_op   = Column(Integer, nullable=True)
+    revisada_en            = Column(DateTime, nullable=True)
+    # 2) Confirmación: se llena desde el ingreso real de ObServer (cuando esté
+    #    disponible). Pisa la primera revisión si difiere.
+    cantidad_confirmada_obs = Column(Integer, nullable=True)
+    confirmada_en           = Column(DateTime, nullable=True)
+    # Canónico = COALESCE(confirmada_obs, revisada_op, 0). Mantengo cantidad_recibida
+    # como cache para queries simples — se actualiza al guardar revisión/confirmación.
+    cantidad_recibida   = Column(Integer, nullable=False, default=0)
+    estado              = Column(String(20), nullable=False, default='PENDIENTE')  # PENDIENTE/RECIBIDO/NO_VINO
+    pedido              = relationship('PedidoEmitido', back_populates='items')
+
+
+class LaboratorioDrogueria(Base):
+    """Match simple lab × droguería: indica por qué drogerías se pide cada lab.
+
+    Independiente de DescuentoBase (que tiene el % de descuento). Sirve para
+    saber rápido si un producto cae en el armado de una droguería.
+    Un lab puede ir por más de una droguería (ej. NUTRICIA BAGÓ por Kel y 20J).
+    """
+    __tablename__ = 'laboratorio_drogueria'
+    id              = Column(Integer, primary_key=True)
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id', ondelete='CASCADE'),
+                              nullable=False, index=True)
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
+                              nullable=False, index=True)
+    creado_en       = Column(DateTime, default=now_ar)
+    laboratorio     = relationship('Laboratorio')
+    drogueria       = relationship('Provider')
+    __table_args__ = (
+        UniqueConstraint('laboratorio_id', 'drogueria_id', name='uq_lab_drog'),
+    )
+
+
 class ProveedorHorarioReparto(Base):
     """Horarios de cierre/reparto por droguería.
 
@@ -1095,6 +1170,8 @@ def init_db(database_url=None):
                         'obs_medicos_matriculas', 'obs_ventas_detalle',
                         'descuentos_base', 'obs_codigos_barras',
                         'proveedor_horarios_reparto', 'pedido_borrador',
+                        'laboratorio_drogueria',
+                        'pedido_emitido', 'pedido_emitido_item',
                         'pack_equivalencias', 'cliente_os_inferida')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
@@ -1425,6 +1502,17 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_prod_no_pedir ON productos (no_pedir) WHERE no_pedir = TRUE"
     ))
+    # Recepción de pedidos: 4 columnas nuevas para 2 vías (operador + Observer).
+    for ddl in (
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS cantidad_revisada_op INTEGER",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS revisada_en TIMESTAMP",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS cantidad_confirmada_obs INTEGER",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS confirmada_en TIMESTAMP",
+    ):
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            pass
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
             id SERIAL PRIMARY KEY,

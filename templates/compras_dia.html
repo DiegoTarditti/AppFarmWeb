@@ -7,9 +7,11 @@
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Compra del día</h1>
     <p class="text-xs text-[#6f6f6f]">Horarios de cierre por droguería + countdown al próximo reparto.</p>
+    {% if current_user.rol != 'pedidos' %}
     <div class="ml-auto">
         <a href="{{ url_for('index') }}" class="text-xs text-sky-600 hover:underline">← Inicio</a>
     </div>
+    {% endif %}
 </div>
 
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-5">
