@@ -139,78 +139,189 @@ def init_app(app):
 
     @app.route('/obras-sociales')
     def os_dashboard():
-        data = _mock_dispensas()
+        """Dashboard de OS — datos reales desde obs_ventas_detalle.
+
+        Usa categorías 'PAMI'/'IAPOS'/'OTROS' detectando por la descripción de
+        la OS. Una "receta" = grupo de líneas con el mismo (id_operacion,
+        cliente, medico) en el mismo día (DW.Recetas no expone esto, lo
+        reconstruimos).
+        """
+        from sqlalchemy import case, distinct
+        from sqlalchemy import func as _f
+
+        import database
+
         hoy = datetime.now().date()
         primer_dia = hoy.replace(day=1)
+        desde_30d = hoy - timedelta(days=29)
 
-        # Filtro de OS
         os_filter = (request.args.get('os') or '').upper()
-        if os_filter in ('PAMI', 'IAPOS'):
-            data_f = [d for d in data if d['os_codigo'] == os_filter]
-        else:
-            data_f = data
+        if os_filter not in ('PAMI', 'IAPOS'):
             os_filter = ''
 
-        # Del mes corriente
-        mes = [d for d in data_f if d['fecha_venta'].date() >= primer_dia]
-        mes_recetas = len(mes)
-        mes_os_total = sum(d['importe_os'] for d in mes)
-        mes_pac_total = sum(d['importe_paciente'] for d in mes)
-        mes_ticket_prom = (mes_os_total + mes_pac_total) / mes_recetas if mes_recetas else 0
+        with database.get_db() as session:
+            ObsVD = database.ObsVentaDetalle
 
-        # Breakdown por OS
-        por_os = {}
-        for os_code in ('PAMI', 'IAPOS'):
-            sub = [d for d in data if d['os_codigo'] == os_code and d['fecha_venta'].date() >= primer_dia]
-            por_os[os_code] = {
-                'recetas': len(sub),
-                'importe_os': sum(d['importe_os'] for d in sub),
-                'importe_paciente': sum(d['importe_paciente'] for d in sub),
-            }
+            # Mapear cada OS observada a categoría (PAMI/IAPOS/OTROS).
+            os_obs_ids = [r[0] for r in session.query(distinct(ObsVD.obra_social_observer))
+                          .filter(ObsVD.obra_social_observer.isnot(None)).all()]
+            os_descrs = dict(session.query(database.ObsObraSocial.observer_id,
+                                            database.ObsObraSocial.descripcion).all())
 
-        # Serie diaria últimos 30 días
-        serie = {}
-        for i in range(30):
-            d = hoy - timedelta(days=29 - i)
-            serie[d.isoformat()] = {'PAMI': 0.0, 'IAPOS': 0.0}
-        for d in data:
-            k = d['fecha_venta'].date().isoformat()
-            if k in serie:
-                serie[k][d['os_codigo']] += d['importe_os']
-        serie_list = [{'fecha': k, 'PAMI': round(v['PAMI'], 2), 'IAPOS': round(v['IAPOS'], 2)}
-                      for k, v in serie.items()]
+            def categoria(os_id):
+                if os_id is None:
+                    return None
+                desc = (os_descrs.get(os_id) or '').upper()
+                if 'PAMI' in desc:
+                    return 'PAMI'
+                if 'IAPOS' in desc:
+                    return 'IAPOS'
+                return 'OTROS'
 
-        # Top médicos y productos (del filtro)
-        med_acc = {}
-        prod_acc = {}
-        for d in mes:
-            m_key = (d['medico_matricula'], d['medico_nombre'])
-            med_acc[m_key] = med_acc.get(m_key, {'recetas': 0, 'importe': 0.0})
-            med_acc[m_key]['recetas'] += 1
-            med_acc[m_key]['importe'] += d['importe_os']
-            for it in d['items']:
-                p_key = it['descripcion']
-                prod_acc[p_key] = prod_acc.get(p_key, {'unidades': 0, 'importe': 0.0})
-                prod_acc[p_key]['unidades'] += it['cantidad']
-                prod_acc[p_key]['importe'] += it['importe_os']
-        top_medicos = sorted([
-            {'matricula': m[0], 'nombre': m[1], **v} for m, v in med_acc.items()
-        ], key=lambda x: x['importe'], reverse=True)[:10]
-        top_productos = sorted([
-            {'descripcion': k, **v} for k, v in prod_acc.items()
-        ], key=lambda x: x['importe'], reverse=True)[:10]
+            os_to_cat = {oid: categoria(oid) for oid in os_obs_ids}
+            pami_ids = {oid for oid, c in os_to_cat.items() if c == 'PAMI'}
+            iapos_ids = {oid for oid, c in os_to_cat.items() if c == 'IAPOS'}
 
-        # Lotes abiertos (mock: agrupación por OS de todo lo pendiente)
-        lotes = []
-        for os_code in ('PAMI', 'IAPOS'):
-            sub = [d for d in data if d['os_codigo'] == os_code and d['estado'] == 'pendiente']
-            if sub:
-                lotes.append({
-                    'os_codigo': os_code,
-                    'cantidad_recetas': len(sub),
-                    'importe_os': sum(d['importe_os'] for d in sub),
-                    'fecha_apertura': min(d['fecha_venta'] for d in sub).date(),
-                })
+            # CASE expr para SQL
+            cat_expr = case(
+                (ObsVD.obra_social_observer.in_(list(pami_ids) or [-1]), 'PAMI'),
+                (ObsVD.obra_social_observer.in_(list(iapos_ids) or [-1]), 'IAPOS'),
+                else_='OTROS',
+            )
+
+            # Filtro base: solo ventas con OS (no particulares).
+            base_filters = [
+                ObsVD.obra_social_observer.isnot(None),
+                ObsVD.fecha_estadistica >= primer_dia,
+            ]
+            if os_filter == 'PAMI':
+                base_filters.append(ObsVD.obra_social_observer.in_(list(pami_ids) or [-1]))
+            elif os_filter == 'IAPOS':
+                base_filters.append(ObsVD.obra_social_observer.in_(list(iapos_ids) or [-1]))
+
+            # Card "del mes corriente": agrupar por receta (id_operacion + medico + cliente + fecha).
+            # Para contar recetas únicas y sumar importes.
+            recetas_q = (session.query(
+                            _f.count(distinct(_f.concat(
+                                ObsVD.id_operacion, '|',
+                                _f.coalesce(ObsVD.cliente_observer, 0), '|',
+                                _f.coalesce(ObsVD.medico_observer, 0), '|',
+                                ObsVD.fecha_estadistica,
+                            ))).label('recetas'),
+                            _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('importe_os'),
+                            _f.coalesce(_f.sum(_f.coalesce(ObsVD.importe, 0)
+                                                - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0).label('importe_pac'),
+                         )
+                         .filter(*base_filters))
+            row = recetas_q.first()
+            mes_recetas = int(row[0] or 0) if row else 0
+            mes_os_total = float(row[1] or 0) if row else 0
+            mes_pac_total = float(row[2] or 0) if row else 0
+            mes_ticket_prom = ((mes_os_total + mes_pac_total) / mes_recetas) if mes_recetas else 0
+
+            # Breakdown por categoría (sin filtro os_filter, mostramos las 2 grandes).
+            por_os = {}
+            for cat_code, ids in (('PAMI', pami_ids), ('IAPOS', iapos_ids)):
+                if not ids:
+                    por_os[cat_code] = {'recetas': 0, 'importe_os': 0, 'importe_paciente': 0}
+                    continue
+                r = (session.query(
+                        _f.count(distinct(_f.concat(
+                            ObsVD.id_operacion, '|',
+                            _f.coalesce(ObsVD.cliente_observer, 0), '|',
+                            _f.coalesce(ObsVD.medico_observer, 0), '|',
+                            ObsVD.fecha_estadistica,
+                        ))),
+                        _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0),
+                        _f.coalesce(_f.sum(_f.coalesce(ObsVD.importe, 0)
+                                            - _f.coalesce(ObsVD.importe_a_cargo_os, 0)), 0),
+                     )
+                     .filter(ObsVD.obra_social_observer.in_(list(ids)),
+                             ObsVD.fecha_estadistica >= primer_dia)
+                     .first())
+                por_os[cat_code] = {
+                    'recetas': int(r[0] or 0),
+                    'importe_os': float(r[1] or 0),
+                    'importe_paciente': float(r[2] or 0),
+                }
+
+            # Serie diaria últimos 30 días por categoría (solo PAMI e IAPOS).
+            serie_dict = {}
+            for i in range(30):
+                d = hoy - timedelta(days=29 - i)
+                serie_dict[d.isoformat()] = {'PAMI': 0.0, 'IAPOS': 0.0}
+            serie_q = (session.query(
+                            ObsVD.fecha_estadistica,
+                            cat_expr.label('cat'),
+                            _f.sum(ObsVD.importe_a_cargo_os),
+                       )
+                       .filter(ObsVD.obra_social_observer.isnot(None),
+                               ObsVD.fecha_estadistica >= desde_30d)
+                       .group_by(ObsVD.fecha_estadistica, cat_expr))
+            for fecha, cat, imp in serie_q.all():
+                if not fecha:
+                    continue
+                key = fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha)
+                if key in serie_dict and cat in ('PAMI', 'IAPOS'):
+                    serie_dict[key][cat] += float(imp or 0)
+            serie_list = [{'fecha': k, 'PAMI': round(v['PAMI'], 2), 'IAPOS': round(v['IAPOS'], 2)}
+                          for k, v in serie_dict.items()]
+
+            # Top médicos del mes (filtrado por OS si aplica).
+            med_q = (session.query(
+                        ObsVD.medico_observer,
+                        _f.count(distinct(ObsVD.id_operacion)).label('recetas'),
+                        _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('importe'),
+                     )
+                     .filter(*base_filters)
+                     .filter(ObsVD.medico_observer.isnot(None))
+                     .group_by(ObsVD.medico_observer)
+                     .order_by(_f.sum(ObsVD.importe_a_cargo_os).desc())
+                     .limit(10)).all()
+            med_ids = [r[0] for r in med_q if r[0]]
+            med_nombres = dict(session.query(database.ObsMedico.observer_id,
+                                              database.ObsMedico.medico)
+                               .filter(database.ObsMedico.observer_id.in_(med_ids)).all()) if med_ids else {}
+            top_medicos = [{
+                'matricula': str(m_id),
+                'nombre': med_nombres.get(m_id, f'Médico #{m_id}'),
+                'recetas': int(rec or 0),
+                'importe': float(imp or 0),
+            } for (m_id, rec, imp) in med_q]
+
+            # Top productos del mes (filtrado por OS si aplica).
+            prod_q = (session.query(
+                        ObsVD.producto_observer,
+                        _f.coalesce(_f.sum(ObsVD.cantidad), 0).label('unidades'),
+                        _f.coalesce(_f.sum(ObsVD.importe_a_cargo_os), 0).label('importe'),
+                      )
+                      .filter(*base_filters)
+                      .group_by(ObsVD.producto_observer)
+                      .order_by(_f.sum(ObsVD.importe_a_cargo_os).desc())
+                      .limit(10)).all()
+            prod_ids = [r[0] for r in prod_q]
+            prod_descrs = dict(session.query(database.ObsProducto.observer_id,
+                                              database.ObsProducto.descripcion)
+                               .filter(database.ObsProducto.observer_id.in_(prod_ids)).all()) if prod_ids else {}
+            top_productos = [{
+                'descripcion': prod_descrs.get(pid, f'Producto #{pid}'),
+                'unidades': int(uds or 0),
+                'importe': float(imp or 0),
+            } for (pid, uds, imp) in prod_q]
+
+            # "Lotes abiertos": no tenemos lote real en DW. Como aproximación:
+            # recetas del mes que aún no fueron presentadas (asumimos todas
+            # están "abiertas" hasta que tengamos el dato de lote).
+            lotes = []
+            for cat_code in ('PAMI', 'IAPOS'):
+                info = por_os.get(cat_code, {})
+                if info.get('recetas', 0) > 0:
+                    lotes.append({
+                        'os_codigo': cat_code,
+                        'cantidad_recetas': info['recetas'],
+                        'importe_os': info['importe_os'],
+                        'fecha_apertura': primer_dia,
+                    })
 
         return render_template('os_dashboard.html',
                                os_filter=os_filter,
