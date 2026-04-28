@@ -63,11 +63,14 @@ _STOPWORDS = {
     'recubierto', 'rec', 'recubiertos', 'recubiertas',
     'efervescente', 'efe', 'efervescentes',
     'mast', 'masticable', 'masticables',
-    'lib', 'liberacion', 'prolongada', 'lp',
+    'lib', 'liberacion', 'prolongada',
     # Características de comprimido (no aportan diferenciación)
     'ran', 'ranurado', 'ranurados', 'ranurada', 'ranuradas',
     'bi', 'bicapa', 'tri', 'tricapa',
-    'ap', 'ar', 'sr', 'cr', 'xr',          # liberación: AP, AR, SR, CR, XR
+    # AP/AR/SR/CR/XR/LP NO van en stopwords: son sufijos de
+    # acción/liberación prolongada que diferencian productos
+    # (BALIGLUC ≠ BALIGLUC AP). Sacarlos provocaba empate de tokens
+    # en bulk match y dejaba ítems como not_found erróneamente.
     'blister', 'blisters', 'bl',
     'ps', 'p',                              # p.bl. (perlas blister)
     # Unidades de medida
