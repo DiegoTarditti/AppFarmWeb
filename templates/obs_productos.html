@@ -7,6 +7,12 @@
     <h1 class="text-base font-bold text-[#1e1e1e]">Catálogo ObServer</h1>
     <span class="text-xs text-[#6f6f6f]">{{ '{:,}'.format(total) }} productos</span>
     <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-800">OBS</span>
+    {% if total_sin_ean is defined and total_sin_ean > 0 %}
+    <span class="text-[10px] text-[#888]"
+          title="Productos sin EAN registrado en obs_codigos_barras. Los demás datos (stock, ventas, alfabeta) sí están vinculados.">
+        · {{ '{:,}'.format(total_sin_ean) }} sin EAN
+    </span>
+    {% endif %}
 </div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
@@ -103,7 +109,7 @@
                         {% if p.ean %}
                             <span class="text-emerald-700">{{ p.ean }}</span>
                         {% else %}
-                            <span class="text-[#bbb]">sin vincular</span>
+                            <span class="text-[#bbb]" title="Este producto no tiene EAN registrado en obs_codigos_barras. El resto de los datos (stock, ventas, alfabeta) sí están vinculados.">sin EAN</span>
                         {% endif %}
                     </td>
                 </tr>

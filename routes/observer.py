@@ -162,18 +162,27 @@ def init_app(app):
                         .group_by(database.ObsVentaMensual.producto_observer).all())
                 ventas_12m = {po: float(u or 0) for po, u in rows}
 
-            # EAN del bridge local (opcional)
-            # EAN real desde obs_codigos_barras (Orden=1 = principal).
-            # Fallback a productos.codigo_barra para casos sin EAN registrado.
+            # EAN del bridge: preferimos Orden=1 vivo, después cualquier
+            # otro Orden vivo, después fallback a productos local.
+            # (Antes solo aceptábamos Orden=1 → quedaban "sin vincular"
+            # productos que sí tienen EAN registrado pero con Orden=2+
+            # o con fecha_baja en su Orden=1.)
             ean_map = {}
             if obs_ids:
-                ean_map = dict(
-                    session.query(database.ObsCodigoBarras.producto_observer,
-                                  database.ObsCodigoBarras.codigo_barras)
-                    .filter(database.ObsCodigoBarras.producto_observer.in_(obs_ids),
-                            database.ObsCodigoBarras.orden == 1,
-                            database.ObsCodigoBarras.fecha_baja.is_(None)).all()
-                )
+                # Traemos todos los EANs vivos, ordenados por Orden asc.
+                # Tomamos el primero (Orden más bajo) que aparezca por producto.
+                rows_ean = (session.query(
+                                database.ObsCodigoBarras.producto_observer,
+                                database.ObsCodigoBarras.codigo_barras,
+                                database.ObsCodigoBarras.orden,
+                            )
+                            .filter(database.ObsCodigoBarras.producto_observer.in_(obs_ids),
+                                    database.ObsCodigoBarras.fecha_baja.is_(None))
+                            .order_by(database.ObsCodigoBarras.orden.asc()).all())
+                for (oid, cb, _orden) in rows_ean:
+                    if oid not in ean_map and cb:
+                        ean_map[oid] = cb
+
                 # Fallback: agregar los que faltan vía bridge productos local
                 ids_sin = [i for i in obs_ids if i not in ean_map]
                 if ids_sin:
@@ -219,9 +228,15 @@ def init_app(app):
                     .filter(database.ObsLaboratorio.fecha_baja.is_(None))
                     .order_by(database.ObsLaboratorio.descripcion).all())
 
+        # Cuántos del page actual no tienen EAN. Útil para que el user
+        # entienda por qué tantos dicen 'sin EAN' — sin contar todo el
+        # catálogo (sería caro), solo lo visible.
+        total_sin_ean = sum(1 for d in data if not d.get('ean'))
+
         last_page = max(1, (total + per_page - 1) // per_page)
         return render_template('obs_productos.html',
                                productos=data, total=total,
+                               total_sin_ean=total_sin_ean,
                                page=page, last_page=last_page,
                                q=q, lab_id=lab_id, labs=labs,
                                solo_activos=solo_activos,
