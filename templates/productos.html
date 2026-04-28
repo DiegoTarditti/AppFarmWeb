@@ -145,6 +145,10 @@
                     <th class="text-left px-3 py-2" style="width:110px">EAN alt. 2</th>
                     <th class="text-left px-3 py-2" style="width:110px">EAN alt. 3</th>
                     <th class="text-left px-3 py-2" style="width:130px">Laboratorio</th>
+                    <th class="text-left px-3 py-2" style="width:200px"
+                        title="Catalogación estructurada: monodroga · concentración · forma · cantidad de envase. Vacío = falta extraer (corré el backfill en /catalogacion).">
+                        🧬 Catalogación
+                    </th>
                     <th class="text-right px-3 py-2" style="width:70px">P.PVP</th>
                     <th class="text-center px-3 py-2" style="width:52px"
                         title="Marcar si es un pack (ej: blíster x2, display x12). Si lo marcás, cargá en 'EAN alt. 1' el código de la unidad individual para que el auto-complete funcione en Módulos de descuento.">
@@ -176,6 +180,35 @@ function altCell(val) {
     return val ? `<span class="alt-badge">${escHtml(val)}</span>` : '<span class="text-[#ccc] placeholder">—</span>';
 }
 
+const _FUENTE_COLOR = {
+    observer: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    mixto:    'bg-violet-100 text-violet-800 border-violet-200',
+    regex:    'bg-sky-100 text-sky-800 border-sky-200',
+    manual:   'bg-rose-100 text-rose-800 border-rose-200',
+    llm:      'bg-amber-100 text-amber-800 border-amber-200',
+};
+
+function atributosCell(p) {
+    const a = p.atributos;
+    if (!a) {
+        return '<a href="/catalogacion" class="text-[10px] text-[#bbb] hover:text-amber-600 underline" title="Sin atributos. Click para ir a /catalogacion y correr el backfill.">— extraer</a>';
+    }
+    const partes = [];
+    if (a.monodroga)             partes.push(`<span class="font-semibold text-[#1e1e1e]">${escHtml(a.monodroga)}</span>`);
+    if (a.concentracion_mg !== null && a.concentracion_unidad) {
+        const num = Number.isInteger(a.concentracion_mg) ? a.concentracion_mg : a.concentracion_mg.toFixed(2).replace(/\.?0+$/, '');
+        partes.push(`<span class="text-[#555]">${num} ${escHtml(a.concentracion_unidad)}</span>`);
+    }
+    if (a.forma_farma)           partes.push(`<span class="text-[#888]">${escHtml(a.forma_farma)}</span>`);
+    if (a.cantidad_envase)       partes.push(`<span class="text-[#888]">x${a.cantidad_envase % 1 === 0 ? a.cantidad_envase : a.cantidad_envase.toFixed(1)}</span>`);
+    const cls = _FUENTE_COLOR[a.fuente] || 'bg-[#f0f0f0] text-[#555] border-[#ddd]';
+    const tooltip = `Fuente: ${a.fuente} · confianza ${a.confianza}`;
+    return `<span class="inline-flex items-center gap-1.5 text-[11px]" title="${tooltip}">
+        <span class="text-[9px] font-bold px-1 py-0.5 rounded border ${cls}">${a.fuente}</span>
+        ${partes.join(' · ')}
+    </span>`;
+}
+
 function buildRow(p) {
     const hasAlt = p.alt1 || p.alt2 || p.alt3;
     const labSel = LAB_OPTIONS.replace(`value="${p.laboratorio_id}"`, `value="${p.laboratorio_id}" selected`);
@@ -202,6 +235,7 @@ function buildRow(p) {
                 </select>
             </form>
         </td>
+        <td class="px-3 py-2">${atributosCell(p)}</td>
         <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
             ${p.precio_pvp ? '$' + parseInt(p.precio_pvp) : '<span class="text-[#ccc] placeholder">—</span>'}
         </td>
@@ -226,6 +260,13 @@ function buildRow(p) {
                    class="w-8 h-8 flex items-center justify-center rounded text-[#888] hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l-4-4 4-4M4 4h16v16H4z"/>
+                    </svg>
+                </a>
+                <a href="/producto/${p.id}"
+                   title="Ficha completa del producto (atributos, ObServer, precios)"
+                   class="w-8 h-8 flex items-center justify-center rounded text-[#888] hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
                     </svg>
                 </a>
                 <button onclick="deleteProducto(${p.id}, this)" title="Eliminar producto"

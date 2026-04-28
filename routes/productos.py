@@ -82,13 +82,30 @@ def init_app(app):
             prods = base.order_by(Producto.descripcion).limit(limit).offset(offset).all()
 
             # Resolver tvc por producto en batch (para mostrar el badge en la tabla)
-            from database import ObsProducto
+            from database import ObsProducto, ProductoAtributo
             obs_ids = [p.observer_id for p in prods if p.observer_id]
             tvc_map = {}
             if obs_ids:
                 tvc_map = dict(session.query(ObsProducto.observer_id,
                                               ObsProducto.id_tipo_venta_control)
                                .filter(ObsProducto.observer_id.in_(obs_ids)).all())
+
+            # Atributos catalogados en batch
+            prod_ids = [p.id for p in prods]
+            atributos_map = {}
+            if prod_ids:
+                atrs = (session.query(ProductoAtributo)
+                        .filter(ProductoAtributo.producto_id.in_(prod_ids)).all())
+                for a in atrs:
+                    atributos_map[a.producto_id] = {
+                        'monodroga': a.monodroga_display,
+                        'concentracion_mg': float(a.concentracion_mg) if a.concentracion_mg else None,
+                        'concentracion_unidad': a.concentracion_unidad,
+                        'forma_farma': a.forma_farma,
+                        'cantidad_envase': float(a.cantidad_envase) if a.cantidad_envase else None,
+                        'fuente': a.fuente,
+                        'confianza': a.confianza,
+                    }
 
             data = [
                 {
@@ -104,6 +121,7 @@ def init_app(app):
                     'actualizado_en': p.actualizado_en.strftime('%d/%m/%Y') if p.actualizado_en else '',
                     'es_pack': p.es_pack or 0,
                     'tvc': tvc_map.get(p.observer_id, '') if p.observer_id else '',
+                    'atributos': atributos_map.get(p.id),
                 }
                 for p in prods
             ]
@@ -210,6 +228,92 @@ def init_app(app):
     @app.route('/catalogacion')
     def catalogacion_panel():
         return render_template('catalogacion.html')
+
+    @app.route('/producto/<int:prod_id>')
+    def producto_detalle(prod_id):
+        """Ficha del producto: identificación + atributos + historial precios + ventas."""
+        from database import ProductoAtributo
+        with database.get_db() as session:
+            prod = session.get(Producto, prod_id)
+            if not prod:
+                return render_template('producto_detalle.html', producto=None), 404
+            atr = session.get(ProductoAtributo, prod_id)
+            obs = None
+            if prod.observer_id:
+                from database import ObsNombreDroga, ObsProducto
+                op = session.get(ObsProducto, prod.observer_id)
+                if op:
+                    obs_droga = session.get(ObsNombreDroga, op.nombre_droga_observer) if op.nombre_droga_observer else None
+                    obs = {
+                        'observer_id': op.observer_id,
+                        'descripcion': op.descripcion,
+                        'cantidad_envase': float(op.cantidad_envase) if op.cantidad_envase else None,
+                        'troquel': op.troquel,
+                        'codigo_alfabeta': op.codigo_alfabeta,
+                        'tvc': op.id_tipo_venta_control,
+                        'cadena_frio': op.requiere_cadena_frio,
+                        'baja': op.fecha_baja,
+                        'monodroga': obs_droga.descripcion if obs_droga else None,
+                    }
+            producto = {
+                'id': prod.id,
+                'codigo_barra': prod.codigo_barra,
+                'descripcion': prod.descripcion or '',
+                'alts': [a for a in (prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3) if a],
+                'precio_pvp': float(prod.precio_pvp) if prod.precio_pvp else None,
+                'es_pack': bool(prod.es_pack),
+                'laboratorio': prod.laboratorio.nombre if prod.laboratorio else None,
+                'codigo_alfabeta': prod.codigo_alfabeta,
+                'observer_id': prod.observer_id,
+                'ultima_compra': prod.ultima_compra.strftime('%d/%m/%Y') if prod.ultima_compra else None,
+                'actualizado_en': prod.actualizado_en.strftime('%d/%m/%Y') if prod.actualizado_en else None,
+                'monodroga_legacy': prod.monodroga,
+                'presentacion_legacy': prod.presentacion,
+                'accion_terapeutica_legacy': prod.accion_terapeutica,
+            }
+            atributos = None
+            if atr:
+                atributos = {
+                    'monodroga_display': atr.monodroga_display,
+                    'concentracion_mg': float(atr.concentracion_mg) if atr.concentracion_mg else None,
+                    'concentracion_unidad': atr.concentracion_unidad,
+                    'forma_farma': atr.forma_farma,
+                    'cantidad_envase': float(atr.cantidad_envase) if atr.cantidad_envase else None,
+                    'via_admin': atr.via_admin,
+                    'fuente': atr.fuente,
+                    'confianza': atr.confianza,
+                    'extraido_en': atr.extraido_en.strftime('%d/%m/%Y %H:%M') if atr.extraido_en else None,
+                }
+        return render_template('producto_detalle.html',
+                               producto=producto, atributos=atributos, obs=obs)
+
+    @app.route('/api/producto/<int:prod_id>/recatalogar', methods=['POST'])
+    def api_producto_recatalogar(prod_id):
+        """Re-extrae atributos de UN producto (usa obs + regex). No pisa fuente='manual'."""
+        from catalogacion import upsert_atributos
+        with database.get_db() as session:
+            prod = session.get(Producto, prod_id)
+            if not prod:
+                return jsonify({'error': 'No encontrado'}), 404
+            try:
+                atr = upsert_atributos(prod, session, force=True)
+                session.commit()
+                if not atr:
+                    return jsonify({'ok': True, 'atributos': None,
+                                    'mensaje': 'No se pudo extraer nada de la descripción'})
+                return jsonify({'ok': True, 'atributos': {
+                    'monodroga_display': atr.monodroga_display,
+                    'concentracion_mg': float(atr.concentracion_mg) if atr.concentracion_mg else None,
+                    'concentracion_unidad': atr.concentracion_unidad,
+                    'forma_farma': atr.forma_farma,
+                    'cantidad_envase': float(atr.cantidad_envase) if atr.cantidad_envase else None,
+                    'via_admin': atr.via_admin,
+                    'fuente': atr.fuente,
+                    'confianza': atr.confianza,
+                }})
+            except Exception as e:
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
 
     @app.route('/api/catalogacion/backfill', methods=['POST'])
     def api_catalogacion_backfill():

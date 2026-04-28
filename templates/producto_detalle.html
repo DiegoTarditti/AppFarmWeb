@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}{{ producto.descripcion if producto else 'Producto no encontrado' }}{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+{% endblock %}
+
+{% block main %}
+
+{% if not producto %}
+<div class="flex-1 flex items-center justify-center">
+    <div class="text-center text-[#999]">
+        <p class="text-lg font-semibold">Producto no encontrado</p>
+        <a href="{{ url_for('productos_list') }}" class="text-sm text-sky-600 hover:underline mt-3 inline-block">← Volver a productos</a>
+    </div>
+</div>
+{% else %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+        <div class="min-w-0">
+            <h1 class="text-base font-bold text-[#1e1e1e] truncate">{{ producto.descripcion }}</h1>
+            <p class="text-sm text-[#6f6f6f] mt-0.5">
+                <span class="font-mono text-xs">EAN {{ producto.codigo_barra }}</span>
+                {% if producto.laboratorio %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-800 text-xs font-semibold">{{ producto.laboratorio }}</span>{% endif %}
+                {% if producto.es_pack %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-semibold">PACK</span>{% endif %}
+            </p>
+        </div>
+        <a href="{{ url_for('productos_list') }}" class="text-xs text-sky-600 hover:underline">← Productos</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+
+    <!-- Identificación -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-white rounded-xl border border-surface-border p-5">
+            <p class="font-semibold text-sm mb-3">📋 Identificación</p>
+            <dl class="text-sm space-y-2">
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">Código principal</dt><dd class="font-mono">{{ producto.codigo_barra }}</dd></div>
+                {% for alt in producto.alts %}
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">EAN alt. {{ loop.index }}</dt><dd class="font-mono text-[#555]">{{ alt }}</dd></div>
+                {% endfor %}
+                {% if producto.codigo_alfabeta %}
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">Cód. Alfabeta</dt><dd class="font-mono">{{ producto.codigo_alfabeta }}</dd></div>
+                {% endif %}
+                {% if producto.observer_id %}
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">Observer ID</dt><dd class="font-mono">{{ producto.observer_id }}</dd></div>
+                {% endif %}
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">PVP</dt><dd class="font-mono font-semibold">{{ '$' + ('{:,.2f}'.format(producto.precio_pvp)|replace(',','X')|replace('.',',')|replace('X','.')) if producto.precio_pvp else '—' }}</dd></div>
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
+                <div class="flex justify-between gap-3"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
+            </dl>
+        </div>
+
+        <!-- Atributos catalogados -->
+        <div class="bg-white rounded-xl border border-surface-border p-5">
+            <div class="flex items-center justify-between mb-3">
+                <p class="font-semibold text-sm">🧬 Atributos estructurados</p>
+                <button onclick="reExtraer()" id="btn-reextraer"
+                        class="text-[11px] px-2 py-1 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold">
+                    🔄 Re-extraer
+                </button>
+            </div>
+            {% if atributos %}
+            <div class="mb-3 flex items-center gap-2 text-[10px]">
+                {% set fuente_color = {'observer':'emerald','mixto':'violet','regex':'sky','manual':'rose','llm':'amber'} %}
+                {% set c = fuente_color.get(atributos.fuente, 'slate') %}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-{{ c }}-100 text-{{ c }}-800 border border-{{ c }}-200 font-bold uppercase">{{ atributos.fuente }}</span>
+                <span class="text-[#888]">confianza <strong>{{ atributos.confianza }}</strong></span>
+                {% if atributos.extraido_en %}<span class="text-[#aaa]">· {{ atributos.extraido_en }}</span>{% endif %}
+            </div>
+            {% endif %}
+            <form id="form-atributos" class="text-sm space-y-2.5">
+                <div class="grid grid-cols-3 gap-2 items-center">
+                    <label class="text-[#888]">Monodroga</label>
+                    <input type="text" name="monodroga" value="{{ atributos.monodroga_display if atributos else '' }}"
+                           class="col-span-2 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                </div>
+                <div class="grid grid-cols-3 gap-2 items-center">
+                    <label class="text-[#888]">Concentración</label>
+                    <div class="col-span-2 flex gap-2">
+                        <input type="text" name="concentracion_mg" value="{{ atributos.concentracion_mg if atributos and atributos.concentracion_mg else '' }}"
+                               class="flex-1 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-brand">
+                        <input type="text" name="concentracion_unidad" value="{{ atributos.concentracion_unidad if atributos else '' }}" placeholder="MG / % / UI"
+                               class="w-24 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                    </div>
+                </div>
+                <div class="grid grid-cols-3 gap-2 items-center">
+                    <label class="text-[#888]">Forma</label>
+                    <input type="text" name="forma_farma" value="{{ atributos.forma_farma if atributos else '' }}" placeholder="CPR / CAP / SUSP / GTS / AMP"
+                           class="col-span-2 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                </div>
+                <div class="grid grid-cols-3 gap-2 items-center">
+                    <label class="text-[#888]">Cantidad envase</label>
+                    <input type="text" name="cantidad_envase" value="{{ atributos.cantidad_envase if atributos and atributos.cantidad_envase else '' }}"
+                           class="col-span-2 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-brand">
+                </div>
+                <div class="grid grid-cols-3 gap-2 items-center">
+                    <label class="text-[#888]">Vía</label>
+                    <input type="text" name="via_admin" value="{{ atributos.via_admin if atributos else '' }}" placeholder="ORAL / IV / TOP / OFT"
+                           class="col-span-2 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                </div>
+                <div class="flex items-center gap-2 pt-1">
+                    <button type="button" onclick="guardarAtributos()" id="btn-save-atr"
+                            class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-xs px-3 py-1.5 rounded-lg">💾 Guardar manual</button>
+                    <span id="save-status" class="text-xs"></span>
+                </div>
+                <p class="text-[10px] text-[#aaa] mt-1">Editar y guardar marca este producto como <code>fuente=manual</code> y no se pisa al re-correr el backfill.</p>
+            </form>
+        </div>
+    </div>
+
+    {% if obs %}
+    <div class="bg-white rounded-xl border border-surface-border p-5">
+        <p class="font-semibold text-sm mb-3">🔗 Datos de ObServer</p>
+        <dl class="text-sm grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Descripción ObServer</dt><dd class="text-[#1e1e1e]">{{ obs.descripcion }}</dd></div>
+            {% if obs.monodroga %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Monodroga</dt><dd class="text-[#1e1e1e]">{{ obs.monodroga }}</dd></div>{% endif %}
+            {% if obs.cantidad_envase %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cant. envase</dt><dd class="font-mono">{{ obs.cantidad_envase }}</dd></div>{% endif %}
+            {% if obs.troquel %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Troquel</dt><dd class="font-mono">{{ obs.troquel }}</dd></div>{% endif %}
+            {% if obs.codigo_alfabeta %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cód. Alfabeta</dt><dd class="font-mono">{{ obs.codigo_alfabeta }}</dd></div>{% endif %}
+            {% if obs.tvc %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Tipo venta</dt><dd class="font-mono">{{ obs.tvc }}</dd></div>{% endif %}
+            {% if obs.cadena_frio %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">⚠ Cadena frío</dt><dd class="text-rose-700 font-bold">SÍ</dd></div>{% endif %}
+            {% if obs.baja %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Baja</dt><dd class="text-rose-700">{{ obs.baja.strftime('%d/%m/%Y') }}</dd></div>{% endif %}
+        </dl>
+    </div>
+    {% endif %}
+
+    <!-- Histórico de precios embebido -->
+    <div class="bg-white rounded-xl border border-surface-border p-5">
+        <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-sm">📈 Histórico de precios por proveedor</p>
+            <a href="{{ url_for('precios_historico', ean=producto.codigo_barra) }}" class="text-xs text-sky-600 hover:underline">Ver completo →</a>
+        </div>
+        <div id="precios-loading" class="text-center text-sm text-[#999] py-6">Cargando…</div>
+        <div id="precios-empty" class="hidden text-center text-sm text-[#999] py-6">Sin compras registradas para este EAN.</div>
+        <div id="precios-content" class="hidden">
+            <div style="height:240px"><canvas id="chart"></canvas></div>
+            <table class="w-full text-xs mt-4">
+                <thead class="bg-[#f5f5f5] text-[#888] uppercase tracking-wide text-[10px]">
+                    <tr>
+                        <th class="text-left px-3 py-1.5">Proveedor</th>
+                        <th class="text-right px-3 py-1.5">Último</th>
+                        <th class="text-right px-3 py-1.5">Mín</th>
+                        <th class="text-right px-3 py-1.5">Máx</th>
+                        <th class="text-right px-3 py-1.5">Variación</th>
+                        <th class="text-right px-3 py-1.5">N</th>
+                    </tr>
+                </thead>
+                <tbody id="resumen-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const PROD_ID = {{ producto.id }};
+const EAN = {{ producto.codigo_barra|tojson }};
+
+function fmtMoney(v) {
+    if (v === null || v === undefined) return '<span class="text-[#bbb]">—</span>';
+    return '$' + Number(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPct(v) {
+    if (v === null || v === undefined) return '<span class="text-[#bbb]">—</span>';
+    const cls = v > 0 ? 'text-red-600' : v < 0 ? 'text-emerald-600' : 'text-[#888]';
+    return `<span class="${cls} font-semibold">${v > 0 ? '+' : ''}${v.toFixed(1)}%</span>`;
+}
+
+const COLORS = ['#EAB308','#3B82F6','#EF4444','#10B981','#8B5CF6','#F59E0B','#EC4899','#06B6D4'];
+
+async function cargarPrecios() {
+    const r = await fetch('/api/precios/' + encodeURIComponent(EAN)).then(r => r.json());
+    document.getElementById('precios-loading').classList.add('hidden');
+    if (!r.ok || r.detalle.length === 0) {
+        document.getElementById('precios-empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('precios-content').classList.remove('hidden');
+    document.getElementById('resumen-body').innerHTML = r.resumen.map((res, i) => `
+        <tr>
+            <td class="px-3 py-1.5 text-xs font-semibold" style="border-left: 3px solid ${COLORS[i % COLORS.length]}">${res.proveedor}</td>
+            <td class="px-3 py-1.5 text-right text-xs font-mono font-semibold">${fmtMoney(res.ultimo_precio)}</td>
+            <td class="px-3 py-1.5 text-right text-xs font-mono text-[#888]">${fmtMoney(res.min)}</td>
+            <td class="px-3 py-1.5 text-right text-xs font-mono text-[#888]">${fmtMoney(res.max)}</td>
+            <td class="px-3 py-1.5 text-right text-xs">${fmtPct(res.variacion_pct)}</td>
+            <td class="px-3 py-1.5 text-right text-xs">${res.n_puntos}</td>
+        </tr>
+    `).join('');
+    const datasets = Object.entries(r.series).map(([prov, pts], i) => ({
+        label: prov,
+        data: pts.sort((a,b) => a.x.localeCompare(b.x)),
+        borderColor: COLORS[i % COLORS.length],
+        backgroundColor: COLORS[i % COLORS.length] + '33',
+        pointRadius: 3, borderWidth: 2, tension: 0.1,
+    }));
+    new Chart(document.getElementById('chart').getContext('2d'), {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
+            scales: {
+                x: { type: 'time', time: { unit: 'month', displayFormats: { month: 'MMM yy' } }, grid: { color: '#f0f0f0' } },
+                y: { ticks: { callback: v => '$' + Number(v).toLocaleString('es-AR') }, grid: { color: '#f0f0f0' } },
+            },
+        },
+    });
+}
+
+async function guardarAtributos() {
+    const form = document.getElementById('form-atributos');
+    const fd = new FormData(form);
+    const data = {};
+    fd.forEach((v, k) => { data[k] = v; });
+    const status = document.getElementById('save-status');
+    status.textContent = 'guardando…'; status.className = 'text-xs text-[#888]';
+    try {
+        const r = await fetch(`/api/producto/${PROD_ID}/atributos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        }).then(r => r.json());
+        if (r.error) throw new Error(r.error);
+        status.textContent = '✓ guardado · marcado como manual'; status.className = 'text-xs text-emerald-700 font-semibold';
+        setTimeout(() => location.reload(), 800);
+    } catch (e) {
+        status.textContent = '✗ ' + e.message; status.className = 'text-xs text-rose-700 font-semibold';
+    }
+}
+
+async function reExtraer() {
+    const btn = document.getElementById('btn-reextraer');
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="inline-block w-2.5 h-2.5 border-2 border-current border-t-transparent rounded-full animate-spin"></span> Extrayendo…';
+    try {
+        const r = await fetch(`/api/producto/${PROD_ID}/recatalogar`, { method: 'POST' }).then(r => r.json());
+        if (r.error) throw new Error(r.error);
+        location.reload();
+    } catch (e) {
+        alert('Falló: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = original;
+    }
+}
+
+cargarPrecios();
+</script>
+
+{% endif %}
+{% endblock %}
