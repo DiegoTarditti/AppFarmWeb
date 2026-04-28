@@ -18,8 +18,7 @@ from flask_login import login_required
 from sqlalchemy import distinct, func
 
 import database
-from database import (ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock,
-                      ObsVentaMensual, Producto)
+from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock, ObsVentaMensual, Producto
 
 
 def _ventana_12m():
@@ -46,6 +45,7 @@ def sugerir_drogueria_para_lab(session, lab_nombre):
         lab_nombre: nombre del laboratorio (string, como en Pedido.laboratorio).
     """
     from sqlalchemy import func
+
     from database import Pedido, Provider
 
     if not lab_nombre:

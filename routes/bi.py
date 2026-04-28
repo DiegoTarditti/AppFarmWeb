@@ -18,8 +18,7 @@ from flask_login import login_required
 from sqlalchemy import func
 
 import database
-from database import (ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual,
-                      Producto)
+from database import ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Producto
 
 
 def _mes_anterior_ym():

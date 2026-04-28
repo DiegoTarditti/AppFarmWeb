@@ -11,7 +11,15 @@ from werkzeug.utils import secure_filename
 
 import database
 from database import AnalisisSesion, ErpStock, Laboratorio, ModuloPack, Pedido, PedidoItem, Producto
-from helpers import PURCHASE_FOLDER, UPLOAD_FOLDER, _add_alt_barcode, _upsert_pedido_items, _upsert_producto, get_config, now_ar
+from helpers import (
+    PURCHASE_FOLDER,
+    UPLOAD_FOLDER,
+    _add_alt_barcode,
+    _upsert_pedido_items,
+    _upsert_producto,
+    get_config,
+    now_ar,
+)
 from parsers.sales_history import parse_sales_history_pdf
 from parsers.sales_history_html import parse_sales_history_html
 from parsers.sales_history_xls import parse_sales_history_xls

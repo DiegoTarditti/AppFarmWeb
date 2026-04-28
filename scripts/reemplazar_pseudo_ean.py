@@ -8,7 +8,7 @@ Uso:
     docker exec appfarmweb-web-1 sh -c "cd /app && python -m scripts.reemplazar_pseudo_ean"
 """
 import database
-from database import (ObsCodigoBarras, PedidoItem, Producto, get_db, init_db)
+from database import ObsCodigoBarras, PedidoItem, Producto, get_db, init_db
 
 
 def main():
@@ -64,7 +64,7 @@ def main():
         # 3. Resumen
         residuales = session.query(Producto.id).filter(Producto.codigo_barra.like('OBS:%')).count()
         print(f'\n  Residuales con pseudo-EAN: {residuales} productos')
-        print(f'  (Estos son productos que aún no tienen EAN cargado en obs_codigos_barras)')
+        print('  (Estos son productos que aún no tienen EAN cargado en obs_codigos_barras)')
 
 
 if __name__ == '__main__':

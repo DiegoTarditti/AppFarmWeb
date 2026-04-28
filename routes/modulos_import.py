@@ -30,7 +30,6 @@ from routes.ofertas_import import (
     _previsualizar_xlsx,
 )
 
-
 # ── Detección de packs (función pura, testeable sin DB) ───────────────────────
 
 _RE_PACK_XN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)

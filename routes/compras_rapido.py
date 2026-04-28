@@ -14,8 +14,7 @@ from flask_login import login_required
 from sqlalchemy import func
 
 import database
-from database import (Laboratorio, ObsLaboratorio, ObsProducto, ObsStock,
-                       ObsVentaMensual, Provider)
+from database import Laboratorio, ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Provider
 from services.descuentos import mejor_descuento
 
 

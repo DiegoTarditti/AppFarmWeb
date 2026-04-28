@@ -56,10 +56,10 @@ def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descr
     ean = str(ean_resuelto).strip()
     if cod == ean:
         return  # nada para mappear
-    from helpers import _add_alt_barcode, _upsert_producto
     # Asegurar que el Producto local existe con el EAN principal.
     # Si no existe, lo creamos con la descripción del Excel + lab.
     from database import Producto
+    from helpers import _add_alt_barcode, _upsert_producto
     prod = session.query(Producto).filter_by(codigo_barra=ean).first()
     if not prod:
         _upsert_producto(session, ean, descripcion or '', laboratorio_id=lab_id)
@@ -344,8 +344,8 @@ def init_app(app):
     @app.route('/ofertas/import', methods=['GET'])
     @login_required
     def ofertas_import_page():  # type: ignore[reportUnusedFunction]
-        from helpers import get_config
         from database import Provider
+        from helpers import get_config
         cfg = get_config()
         with database.get_db() as session:
             labs = (session.query(Laboratorio)

@@ -1,7 +1,20 @@
 import os
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import DECIMAL, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, text
+from sqlalchemy import (
+    DECIMAL,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    create_engine,
+    text,
+)
 
 _AR_TZ = timezone(timedelta(hours=-3))
 

@@ -14,9 +14,7 @@ Uso:
 from datetime import date, timedelta
 
 import database
-from database import (DescuentoBase, Laboratorio, OfertaMinimo, Provider,
-                       get_db, init_db, now_ar)
-
+from database import DescuentoBase, Laboratorio, OfertaMinimo, Provider, get_db, init_db, now_ar
 
 # Descuento base STANDARD validado con el ejemplo del usuario:
 # 31.03% base + 25% transfer = 48.27% (coincide con el "% PVP" 48.29 del Excel
@@ -130,7 +128,7 @@ def seed():
             print(f'   {lab.nombre:<20}{drog.razon_social:<35}'
                   f'{float(db_.descuento_pct):>7.2f}%{db_.plazo_pago or "":>15}')
 
-        print(f'\n📌 Mínimos de compra:')
+        print('\n📌 Mínimos de compra:')
         for prov in session.query(Provider).filter(
                 Provider.compra_minima_pesos.isnot(None)).all():
             print(f'   {prov.razon_social}: ${float(prov.compra_minima_pesos):,.0f}')
