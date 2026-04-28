@@ -99,13 +99,17 @@ function renderHistChart(p) {
     const avg = p.avg_monthly||0, slope = p.slope||0, rot = p.rotacion||'B';
     const rC = {A:'#15803d',M:'#b45309',B:'#dc2626'}, rL = {A:'Alta',M:'Media',B:'Baja'};
     const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
+    const minimo = p.minimo || 0;
+    const stockBajoMin = minimo > 0 && p.stock < minimo;
     if (p.sin_historial || !p.ventas || !p.ventas.length) {
-        document.getElementById('hist-chart-stats').innerHTML = [
+        const statsSinHist = [
             {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
             {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
-            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
-            {l:'Cobertura',v:sd,c:'#888'},
-        ].map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?'#dc2626':(p.stock<=0?'#f87171':'#1e1e1e')},
+        ];
+        if (minimo > 0) statsSinHist.push({l:'Mín.',v:minimo,c:'#7c3aed'});
+        statsSinHist.push({l:'Cobertura',v:sd,c:'#888'});
+        document.getElementById('hist-chart-stats').innerHTML = statsSinHist.map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
         const n = document.getElementById('hist-chart-note');
         n.textContent = 'Sin historial mensual. Procesá un análisis de ventas para ver el gráfico.';
         n.classList.remove('hidden');
@@ -158,6 +162,7 @@ function renderHistChart(p) {
             {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
             {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
             ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+            ...(minimo>0?[{label:'Mínimo',data:Array(tc).fill(minimo),type:'line',borderColor:'#7c3aed',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
         ]},
         options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
             plugins:{legend:{labels:{color:'#888',font:{size:10},boxWidth:20,padding:12}},tooltip:{backgroundColor:'#fff',titleColor:'#1e1e1e',bodyColor:'#555',borderColor:'#e0e0e0',borderWidth:1}},
@@ -168,9 +173,10 @@ function renderHistChart(p) {
         {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
         {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
         {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
-        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:p.stock<=0?'#f87171':'#1e1e1e'},
-        {l:'Cobertura',v:sd,c:'#888'},
+        {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?'#dc2626':(p.stock<=0?'#f87171':'#1e1e1e')},
     ];
+    if (minimo > 0) stats.push({l:'Mín.',v:minimo,c:'#7c3aed'});
+    stats.push({l:'Cobertura',v:sd,c:'#888'});
     if (ps>0) stats.push({l:`Mes actual (${de}/${dim}d)`,v:`${ps} / ~${pf}`,c:'#b45309'});
     document.getElementById('hist-chart-stats').innerHTML = stats.map(s=>`<div class="bg-white rounded-lg px-3 py-2.5 text-center"><p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">${s.l}</p><p class="text-sm font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
 }

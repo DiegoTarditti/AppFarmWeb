@@ -1091,11 +1091,15 @@ def init_app(app):
                     database.ObsProducto.observer_id.in_(obs_ids)).all()
                 obs_data = {p.observer_id: p for p in obs_prods}
 
-                stock_map = dict(session.query(
+                # Stock + mínimo en una sola query.
+                rows_stock = session.query(
                     database.ObsStock.producto_observer,
-                    database.ObsStock.stock_actual)
-                    .filter(database.ObsStock.id_farmacia == id_farmacia,
-                            database.ObsStock.producto_observer.in_(obs_ids)).all())
+                    database.ObsStock.stock_actual,
+                    database.ObsStock.minimo,
+                ).filter(database.ObsStock.id_farmacia == id_farmacia,
+                         database.ObsStock.producto_observer.in_(obs_ids)).all()
+                stock_map = {r[0]: int(r[1] or 0) for r in rows_stock}
+                minimo_map = {r[0]: int(r[2] or 0) for r in rows_stock if r[2] is not None}
 
                 ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
 
@@ -1149,6 +1153,7 @@ def init_app(app):
                 obs_id = cb_to_obs.get(cb)
                 op = obs_data.get(obs_id) if obs_id else None
                 stock = int(stock_map.get(obs_id, 0) or 0) if obs_id else 0
+                minimo = int(minimo_map.get(obs_id, 0) or 0) if obs_id else 0
                 u3m = ventas_3m.get(obs_id, 0) if obs_id else 0
                 u12m = ventas_12m.get(obs_id, 0) if obs_id else 0
                 cantidad = int(it.cantidad or 0)
@@ -1172,6 +1177,7 @@ def init_app(app):
                     'tiene_obs':      obs_id is not None,
                     'baja':           bool(op.fecha_baja) if op else False,
                     'stock':          stock,
+                    'minimo':         minimo,
                     'u3m':            u3m,
                     'u12m':           u12m,
                     'avg_mensual':    round(u3m / 3, 2),

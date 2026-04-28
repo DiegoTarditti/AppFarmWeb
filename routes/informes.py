@@ -878,10 +878,15 @@ def init_app(app):
                 if 0 <= offset <= 11:
                     ventas_arr[offset] += int(v.unidades or 0)
 
-            # Stock: sumamos sobre todas las farmacias si hay datos.
+            # Stock + mínimo: sumamos sobre todas las farmacias si hay datos.
             from database import ObsStock
-            stock_total = (session.query(func.coalesce(func.sum(ObsStock.stock_actual), 0))
-                           .filter(ObsStock.producto_observer == observer_id).scalar() or 0)
+            stock_row = (session.query(
+                            func.coalesce(func.sum(ObsStock.stock_actual), 0),
+                            func.coalesce(func.sum(ObsStock.minimo), 0),
+                         )
+                         .filter(ObsStock.producto_observer == observer_id).first())
+            stock_total = int(stock_row[0] or 0) if stock_row else 0
+            minimo_total = int(stock_row[1] or 0) if stock_row else 0
 
             no_cero = [v for v in ventas_arr if v > 0]
             avg = sum(no_cero) / len(no_cero) if no_cero else 0
@@ -908,7 +913,8 @@ def init_app(app):
                 'ventas': ventas_arr,
                 'avg_monthly': float(avg),
                 'slope': float(slope),
-                'stock': int(stock_total),
+                'stock': stock_total,
+                'minimo': minimo_total,
                 'rotacion': rot,
                 'tipo': 'N',
                 'start_month': start_m,

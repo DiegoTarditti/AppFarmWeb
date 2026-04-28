@@ -57,6 +57,7 @@
                     <th class="text-left px-3 py-2">Laboratorio</th>
                     <th class="text-left px-3 py-2">Monodroga</th>
                     <th class="text-right px-3 py-2 w-16">Stock</th>
+                    <th class="text-right px-3 py-2 w-14" title="Stock mínimo configurado en ObServer">Mín</th>
                     <th class="text-right px-3 py-2 w-20" title="Promedio mensual últimos 3 meses">Prom 3m</th>
                     <th class="text-right px-3 py-2 w-20" title="Promedio mensual últimos 12 meses">Prom 12m</th>
                     <th class="text-left px-3 py-2 w-28">Alfabeta</th>
@@ -92,7 +93,9 @@
                         <span>—</span>
                         {% endif %}
                     </td>
-                    <td class="px-3 py-2 text-right {% if p.stock > 0 %}font-semibold text-emerald-700{% else %}text-[#bbb]{% endif %}">{{ p.stock }}</td>
+                    <td class="px-3 py-2 text-right {% if p.stock > 0 %}font-semibold {% if p.minimo > 0 and p.stock < p.minimo %}text-rose-700{% else %}text-emerald-700{% endif %}{% else %}text-[#bbb]{% endif %}"
+                        {% if p.minimo > 0 and p.stock < p.minimo %}title="Bajo mínimo ({{ p.stock }} < {{ p.minimo }})"{% endif %}>{{ p.stock }}</td>
+                    <td class="px-3 py-2 text-right text-[#888] text-xs">{{ p.minimo if p.minimo else '—' }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ p.prom_3m if p.prom_3m else '—' }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ p.prom_12m if p.prom_12m else '—' }}</td>
                     <td class="px-3 py-2 text-[11px] font-mono text-[#888]">{{ p.codigo_alfabeta or '—' }}</td>
@@ -106,7 +109,7 @@
                 </tr>
                 {% endfor %}
                 {% if not productos %}
-                <tr><td colspan="9" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
+                <tr><td colspan="10" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>
                 {% endif %}
             </tbody>
         </table>

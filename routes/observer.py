@@ -113,15 +113,19 @@ def init_app(app):
                               database.ObsNombreDroga.descripcion).all()
             )
 
-            # Stock actual
+            # Stock actual + mínimo configurado
             stock_map = {}
+            minimo_map = {}
             if obs_ids:
-                for po, sa in (session.query(
+                for po, sa, mi in (session.query(
                         database.ObsStock.producto_observer,
-                        database.ObsStock.stock_actual)
+                        database.ObsStock.stock_actual,
+                        database.ObsStock.minimo)
                         .filter(database.ObsStock.id_farmacia == id_farmacia,
                                 database.ObsStock.producto_observer.in_(obs_ids)).all()):
                     stock_map[po] = int(sa or 0)
+                    if mi is not None:
+                        minimo_map[po] = int(mi)
 
             # Agregados de ventas: total 3m y 12m
             ventas_3m = ventas_12m = {}
@@ -198,6 +202,7 @@ def init_app(app):
                     'laboratorio':  labs_map.get(p.laboratorio_observer) or '—',
                     'monodroga':    drogas_map.get(p.nombre_droga_observer) or '',
                     'stock':        stock_map.get(p.observer_id, 0),
+                    'minimo':       minimo_map.get(p.observer_id, 0),
                     'prom_3m':      round(v3 / 3, 1),
                     'prom_12m':     round(v12 / 12, 1),
                     'total_3m':     v3,

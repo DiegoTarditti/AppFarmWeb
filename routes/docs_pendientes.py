@@ -167,6 +167,23 @@ def init_app(app):
                         ventas = json.loads(pa.ventas_json)
                     except (json.JSONDecodeError, TypeError):
                         pass
+                # ProductAnalytics no almacena el mínimo. Lo buscamos en
+                # paralelo en obs_stock vía bridge productos.observer_id.
+                minimo = 0
+                from sqlalchemy import or_ as _or
+                _Producto = database.Producto
+                prod_local = (session.query(_Producto)
+                              .filter(_or(_Producto.codigo_barra == barcode,
+                                          _Producto.codigo_barra_alt1 == barcode,
+                                          _Producto.codigo_barra_alt2 == barcode,
+                                          _Producto.codigo_barra_alt3 == barcode))
+                              .first())
+                if prod_local and prod_local.observer_id:
+                    from sqlalchemy import func as _f
+                    m_row = (session.query(_f.coalesce(_f.sum(database.ObsStock.minimo), 0))
+                             .filter(database.ObsStock.producto_observer == prod_local.observer_id)
+                             .scalar())
+                    minimo = int(m_row or 0)
                 return jsonify({
                     'ok': True,
                     'nombre': pa.descripcion or '',
@@ -175,6 +192,7 @@ def init_app(app):
                     'avg_monthly': float(pa.avg_monthly or 0),
                     'slope': float(pa.slope or 0),
                     'stock': pa.stock or 0,
+                    'minimo': minimo,
                     'rotacion': pa.rotacion or '',
                     'tipo': pa.tipo or 'N',
                     'start_month': pa.start_month or 4,
@@ -227,11 +245,15 @@ def init_app(app):
                 if m == 0:
                     m, y = 12, y - 1
             meses.reverse()
-            # Stock actual
-            stock_row = (session.query(database.ObsStock.stock_actual)
+            # Stock actual + mínimo configurado en ObServer
+            stock_row = (session.query(
+                            database.ObsStock.stock_actual,
+                            database.ObsStock.minimo,
+                         )
                          .filter(database.ObsStock.id_farmacia == id_farmacia,
                                  database.ObsStock.producto_observer == obs_id).first())
             stock = int(stock_row[0]) if stock_row else 0
+            minimo = int(stock_row[1] or 0) if stock_row else 0
             # Ventas por mes
             rows = (session.query(database.ObsVentaMensual.anio,
                                    database.ObsVentaMensual.mes,
@@ -250,6 +272,7 @@ def init_app(app):
                 'avg_monthly': round(avg_monthly, 2),
                 'slope': 0,
                 'stock': stock,
+                'minimo': minimo,
                 'rotacion': '',
                 'tipo': 'N',
                 'start_month': meses[0][1],
