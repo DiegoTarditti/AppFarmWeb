@@ -7,7 +7,9 @@
 <!-- Top bar -->
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">Dispensas Obras Sociales</h1>
+    {% if not es_real %}
     <span class="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-semibold">MOCK</span>
+    {% endif %}
     <span class="text-xs text-[#6f6f6f]">
         {{ total_recetas }} receta{{ 's' if total_recetas != 1 }} ·
         <span class="text-emerald-600 font-semibold">${{ total_os | arg_currency }}</span> OS /
@@ -24,39 +26,24 @@
 <!-- Filtros -->
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
     <form method="get" class="flex items-center gap-2 flex-wrap text-sm">
-        <select name="os" onchange="this.form.submit()"
+        {% if es_real %}
+        <select name="os_id" onchange="this.form.submit()"
                 class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-            <option value="">Todas las OS</option>
-            <option value="PAMI" {% if os_filter == 'PAMI' %}selected{% endif %}>PAMI</option>
-            <option value="IAPOS" {% if os_filter == 'IAPOS' %}selected{% endif %}>IAPOS</option>
-        </select>
-
-        <select name="plan" onchange="this.form.submit()"
-                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-            <option value="">Todos los planes</option>
-            {% if not os_filter or os_filter == 'PAMI' %}
-            <optgroup label="PAMI">
-                {% for p in planes_pami %}
-                <option value="{{ p }}" {% if plan_filter == p %}selected{% endif %}>{{ p }}</option>
-                {% endfor %}
-            </optgroup>
-            {% endif %}
-            {% if not os_filter or os_filter == 'IAPOS' %}
-            <optgroup label="IAPOS">
-                {% for p in planes_iapos %}
-                <option value="{{ p }}" {% if plan_filter == p %}selected{% endif %}>{{ p }}</option>
-                {% endfor %}
-            </optgroup>
-            {% endif %}
+            <option value="">Todas las OS (top 30)</option>
+            {% for o in os_options %}
+            <option value="{{ o.id }}" {% if os_filter_id == o.id %}selected{% endif %}>
+                {{ o.nombre }} ({{ o.n }})
+            </option>
+            {% endfor %}
         </select>
 
         <select name="tipo" onchange="this.form.submit()"
                 class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
-            <option value="">Todos los tipos</option>
-            <option value="electronica" {% if tipo_filter == 'electronica' %}selected{% endif %}>Electrónica</option>
-            <option value="manual" {% if tipo_filter == 'manual' %}selected{% endif %}>Manual</option>
-            <option value="OPF" {% if tipo_filter == 'OPF' %}selected{% endif %}>OPF</option>
+            <option value="">Todas las ventas</option>
+            <option value="os" {% if tipo_filter == 'os' %}selected{% endif %}>Solo c/Obra Social</option>
+            <option value="particular" {% if tipo_filter == 'particular' %}selected{% endif %}>Solo particulares</option>
         </select>
+        {% endif %}
 
         <div class="flex items-center gap-1">
             <label class="text-xs text-[#6f6f6f]">Desde</label>
@@ -69,14 +56,14 @@
                    class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
         </div>
 
-        <input type="text" name="q" value="{{ q_text }}" placeholder="Afiliado / DNI / médico / ticket…"
+        <input type="text" name="q" value="{{ q_text }}" placeholder="Cliente / DNI / OS / N° operación…"
                class="flex-1 min-w-[220px] bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
 
         <button type="submit"
                 class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm transition-colors">
             Filtrar
         </button>
-        {% if os_filter or plan_filter or tipo_filter or q_text or desde or hasta %}
+        {% if os_filter_id or tipo_filter or q_text %}
         <a href="{{ url_for('os_dispensas') }}"
            class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-2">Limpiar</a>
         {% endif %}
@@ -107,10 +94,16 @@
                     {{ d.fecha_venta.strftime('%d/%m %H:%M') }}
                 </td>
                 <td class="px-3 py-2">
-                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded {% if d.os_codigo == 'PAMI' %}bg-sky-100 text-sky-800{% else %}bg-violet-100 text-violet-800{% endif %}">
-                        {{ d.os_codigo }}
+                    {% if d.particular %}
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">Particular</span>
+                    {% else %}
+                    <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-sky-100 text-sky-800" title="{{ d.os_nombre }}">
+                        {{ d.os_nombre[:18] if d.os_nombre else '—' }}
                     </span>
+                    {% if d.os_plan %}
                     <p class="text-[11px] text-[#6f6f6f] mt-0.5">{{ d.os_plan }}</p>
+                    {% endif %}
+                    {% endif %}
                 </td>
                 <td class="px-3 py-2 font-mono text-xs text-brand">{{ d.ticket_validacion }}</td>
                 <td class="px-3 py-2">
