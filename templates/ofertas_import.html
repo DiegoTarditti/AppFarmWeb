@@ -250,8 +250,12 @@
                 <span>variación de precio &gt;30%</span>
             </label>
             <label class="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" id="incluir-not-found" class="w-3.5 h-3.5 accent-red-600">
+                <input type="checkbox" id="incluir-not-found" class="w-3.5 h-3.5 accent-red-600" checked>
                 <span>no encontrados (sin verificar)</span>
+            </label>
+            <label class="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" id="incluir-fuzzy" class="w-3.5 h-3.5 accent-sky-600" checked>
+                <span>fuzzy (match aproximado)</span>
             </label>
         </div>
 
@@ -1038,12 +1042,21 @@ function renderValidacion(stats) {
         </div>
     `;
 
-    // Renderizar detalle de items con problemas
+    // Renderizar detalle de items con problemas. Filtra según los checkboxes
+    // "Incluir:" (warning / not_found / fuzzy). Por default mostramos
+    // not_found + fuzzy; warning queda fuera salvo que el user lo tilde.
     const detalle = document.getElementById('validacion-detalle');
     if (detalle) {
+        const showWarn  = document.getElementById('incluir-warning')?.checked || false;
+        const showNF    = document.getElementById('incluir-not-found')?.checked || false;
+        const showFuzzy = document.getElementById('incluir-fuzzy')?.checked || false;
+        const visibles = new Set();
+        if (showWarn)  visibles.add('warning');
+        if (showNF)    visibles.add('not_found');
+        if (showFuzzy) visibles.add('fuzzy');
         const problematicos = _items
             .map((it, idx) => ({...it, _idx: idx}))
-            .filter(it => ['warning', 'not_found', 'fuzzy'].includes(it._status));
+            .filter(it => visibles.has(it._status));
         if (!problematicos.length) {
             detalle.innerHTML = '<p class="text-xs text-[#999]">Ningún item con problemas. ✓</p>';
         } else {
@@ -1432,6 +1445,15 @@ document.getElementById('reemplazar').addEventListener('change', (e) => {
     document.getElementById('confirm-modo').textContent = e.target.checked
         ? '⚠ Modo REEMPLAZAR: se borran las ofertas existentes antes de importar.'
         : 'Modo upsert: actualiza si el EAN/código ya existe, agrega si no.';
+});
+
+// Filtros "Incluir:" — re-render del detalle + recálculo del contador.
+['incluir-warning', 'incluir-not-found', 'incluir-fuzzy'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', () => {
+        recalcularStats();
+        actualizarConfirmCount();
+    });
 });
 
 async function _confirmarEImportar() {
