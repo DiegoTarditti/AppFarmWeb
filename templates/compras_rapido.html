@@ -214,6 +214,8 @@
                 <tr class="hover:bg-black/[0.02] item-row {% if p.es_clavo %}opacity-60{% endif %}"
                     data-obs-id="{{ p.observer_id }}"
                     data-lab-id="{{ p.lab_id_local or '' }}"
+                    data-cb=""
+                    data-nombre="{{ p.descripcion }}"
                     data-precio="0">
                     <td class="px-3 py-2 text-[#1e1e1e]">
                         {{ p.descripcion }}
@@ -414,41 +416,134 @@ function elegirDrogueria(obsId, radio) {
     recalcularResumen();
 }
 
+// drogs: id → {nombre, items_detalle: [{obsId, cb, nombre, cant, dto}], items: cant_total, dto_avg: [...]}
+let _resumenActual = {};
+
 function recalcularResumen() {
-    const drogs = {};  // drog_id → {nombre, items: [...]}
+    _resumenActual = {};
     document.querySelectorAll('tr.item-row').forEach(row => {
         const obsId = row.dataset.obsId;
         const cantInput = row.querySelector('.cant-input');
         const cant = parseInt(cantInput?.value || 0);
         if (cant <= 0) return;
-        // Droguería elegida (radio checked)
         const radio = document.querySelector(`input[name="drog-${obsId}"]:checked`);
         if (!radio) return;
         const drogId = radio.value;
         const drogNombre = radio.dataset.drogNombre;
         const dto = parseFloat(radio.dataset.dto);
-        if (!drogs[drogId]) drogs[drogId] = {nombre: drogNombre, items: 0, dto_avg: []};
-        drogs[drogId].items += cant;
-        drogs[drogId].dto_avg.push(dto);
+        if (!_resumenActual[drogId]) _resumenActual[drogId] = {
+            nombre: drogNombre, items: 0, dto_avg: [], items_detalle: []
+        };
+        _resumenActual[drogId].items += cant;
+        _resumenActual[drogId].dto_avg.push(dto);
+        _resumenActual[drogId].items_detalle.push({
+            observer_id: parseInt(obsId, 10),
+            codigo_barra: row.dataset.cb || '',
+            nombre: row.dataset.nombre || '',
+            cantidad: cant,
+            descuento_pct: dto,
+        });
     });
 
     const cont = document.getElementById('resumen-drogs');
-    if (Object.keys(drogs).length === 0) {
+    if (Object.keys(_resumenActual).length === 0) {
         cont.innerHTML = '<p class="text-xs text-[#888]">Sin productos seleccionados.</p>';
         return;
     }
-    const lista = Object.entries(drogs).sort((a, b) => b[1].items - a[1].items);
+    const lista = Object.entries(_resumenActual).sort((a, b) => b[1].items - a[1].items);
     cont.innerHTML = lista.map(([id, d]) => {
         const dtoProm = d.dto_avg.reduce((a,b)=>a+b,0) / d.dto_avg.length;
         return `<div class="flex items-center gap-3 p-3 bg-violet-50 border border-violet-200 rounded-lg">
             <span class="text-2xl">📦</span>
             <div class="flex-1">
                 <p class="font-bold text-[#1e1e1e]">${d.nombre}</p>
-                <p class="text-xs text-[#666]">${d.items} unidades · descuento promedio ${dtoProm.toFixed(2)}%</p>
+                <p class="text-xs text-[#666]">${d.items} unidades · descuento promedio ${dtoProm.toFixed(2)}% · ${d.items_detalle.length} productos</p>
             </div>
-            <button class="text-xs bg-violet-700 hover:bg-violet-600 text-white font-semibold px-3 py-1.5 rounded-lg" onclick="alert('Export pendiente: fase 8')">Exportar</button>
+            <button class="text-xs bg-violet-700 hover:bg-violet-600 text-white font-semibold px-3 py-1.5 rounded-lg"
+                    onclick="generarPedido('${id}')">Crear pedido →</button>
         </div>`;
     }).join('');
+
+    // Botón global "Crear todos los pedidos"
+    if (Object.keys(_resumenActual).length > 1) {
+        cont.innerHTML += `<div class="flex justify-end pt-2">
+            <button class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg"
+                    onclick="generarTodos()">Crear los ${Object.keys(_resumenActual).length} pedidos →</button>
+        </div>`;
+    }
+}
+
+async function _crearPedidos(prePedidos) {
+    const r = await fetch('/compras/rapido/crear-pedidos', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({pre_pedidos: prePedidos}),
+    });
+    const ct = r.headers.get('content-type') || '';
+    if (!ct.includes('application/json')) {
+        if (r.status === 401 || r.status === 302) {
+            throw new Error('Sesión expirada. Recargá la página.');
+        }
+        throw new Error(`Servidor devolvió ${r.status} sin JSON.`);
+    }
+    return r.json();
+}
+
+async function generarPedido(drogId) {
+    const d = _resumenActual[drogId];
+    if (!d) return;
+    const pre = [{
+        drogueria_id: parseInt(drogId, 10),
+        drogueria_nombre: d.nombre,
+        items: d.items_detalle,
+    }];
+    try {
+        const data = await _crearPedidos(pre);
+        if (!data.ok || !data.pedidos || !data.pedidos.length) {
+            alert('No se creó el pedido: ' + (data.error || 'sin items'));
+            return;
+        }
+        // Redirigir al pedido creado para ofertar export con plantilla.
+        window.location.href = '/order/' + data.pedidos[0].pedido_id;
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function generarTodos() {
+    const pre = Object.entries(_resumenActual).map(([id, d]) => ({
+        drogueria_id: parseInt(id, 10),
+        drogueria_nombre: d.nombre,
+        items: d.items_detalle,
+    }));
+    try {
+        const data = await _crearPedidos(pre);
+        if (!data.ok || !data.pedidos || !data.pedidos.length) {
+            alert('No se creó ningún pedido: ' + (data.error || 'sin items'));
+            return;
+        }
+        // Mostrar lista de pedidos creados con link.
+        const lista = data.pedidos.map(p =>
+            `<li class="py-1.5 border-b border-[#eee] last:border-0">
+                <a href="/order/${p.pedido_id}" target="_blank" class="text-violet-700 hover:underline font-semibold">#${p.pedido_id} — ${p.drogueria_nombre}</a>
+                <span class="text-xs text-[#888]">· ${p.n_items} items</span>
+            </li>`).join('');
+        const div = document.createElement('div');
+        div.className = 'fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4';
+        div.innerHTML = `<div class="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <p class="font-bold text-[#1e1e1e] mb-1">✓ ${data.pedidos.length} pedidos creados</p>
+            <p class="text-xs text-[#888] mb-3">Cada uno está listo para exportar con la plantilla de su droguería desde la pantalla del pedido.</p>
+            <ul class="text-sm text-[#1e1e1e]">${lista}</ul>
+            <div class="flex justify-end gap-2 mt-4">
+                <button onclick="this.closest('.fixed').remove()" class="text-sm text-[#888] hover:text-[#1e1e1e]">Cerrar</button>
+                <a href="/orders" class="text-sm bg-brand hover:bg-brand-hover text-white font-semibold px-3 py-1.5 rounded">Ver Pedidos guardados →</a>
+            </div>
+        </div>`;
+        document.body.appendChild(div);
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', recalcularResumen);

@@ -14,7 +14,17 @@ from flask_login import login_required
 from sqlalchemy import func
 
 import database
-from database import Laboratorio, ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Provider
+from database import (
+    Laboratorio,
+    ObsLaboratorio,
+    ObsProducto,
+    ObsStock,
+    ObsVentaMensual,
+    Pedido,
+    PedidoItem,
+    Provider,
+)
+from helpers import now_ar
 from services.descuentos import mejor_descuento
 
 
@@ -285,3 +295,90 @@ def init_app(app):
                                    labs_seleccionados=labs_seleccionados_data,
                                    labs_disponibles=labs_disponibles_data,
                                    labs_con_descuento_count=len(labs_con_descuento_ids))
+
+    @app.route('/compras/rapido/crear-pedidos', methods=['POST'])
+    @login_required
+    def compras_rapido_crear_pedidos():
+        """Crea N Pedidos (uno por droguería) a partir de los pre-pedidos
+        armados en /compras/rapido. Devuelve los pedido_ids creados.
+
+        Body JSON esperado:
+            {
+                "pre_pedidos": [
+                    {
+                        "drogueria_id": 12,
+                        "drogueria_nombre": "Bernabó",
+                        "items": [
+                            {"observer_id": 1234, "codigo_barra": "7791...",
+                             "nombre": "AMOXIDAL 500", "cantidad": 6,
+                             "descuento_pct": 31.5}
+                        ]
+                    },
+                    ...
+                ]
+            }
+        """
+        data = request.get_json(silent=True) or {}
+        pre_pedidos = data.get('pre_pedidos') or []
+        if not pre_pedidos:
+            return jsonify({'ok': False, 'error': 'pre_pedidos vacío'}), 400
+
+        creados = []
+        with database.get_db() as session:
+            for pp in pre_pedidos:
+                drog_id = pp.get('drogueria_id')
+                drog_nombre = (pp.get('drogueria_nombre') or '').strip() or 'Droguería'
+                items = pp.get('items') or []
+                if not drog_id or not items:
+                    continue
+                # Verificar que la droguería existe
+                prov = session.get(Provider, int(drog_id))
+                if not prov:
+                    continue
+
+                pedido_items = []
+                for it in items:
+                    cant = int(it.get('cantidad') or 0)
+                    if cant <= 0:
+                        continue
+                    cb = (it.get('codigo_barra') or '').strip()
+                    if not cb:
+                        # Pseudo-EAN si solo tenemos observer_id
+                        oid = it.get('observer_id')
+                        if oid:
+                            cb = f'OBS:{oid}'
+                        else:
+                            continue
+                    pedido_items.append(PedidoItem(
+                        codigo_barra=cb[:30],
+                        nombre=(it.get('nombre') or '')[:200],
+                        cantidad=cant,
+                        precio_pvp=0,
+                        subtotal=0,
+                    ))
+
+                if not pedido_items:
+                    continue
+
+                pedido = Pedido(
+                    laboratorio=f'Compra rápida — {drog_nombre}',
+                    farmacia='',
+                    periodo=f'Compra rápida {now_ar().strftime("%Y-%m-%d")}',
+                    n_days=0,
+                    items=pedido_items,
+                    estado='PENDIENTE',
+                    canal='drogueria',
+                    partner_id=int(drog_id),
+                    canal_elegido_en=now_ar(),
+                )
+                session.add(pedido)
+                session.flush()
+                creados.append({
+                    'pedido_id': pedido.id,
+                    'drogueria_id': int(drog_id),
+                    'drogueria_nombre': drog_nombre,
+                    'n_items': len(pedido_items),
+                })
+            session.commit()
+
+        return jsonify({'ok': True, 'pedidos': creados})
