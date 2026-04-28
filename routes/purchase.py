@@ -1703,15 +1703,9 @@ def init_app(app):
                 pedido = session.get(Pedido, pedido_id)
                 lab_id = None
                 if pedido and pedido.laboratorio:
-                    lab_name = pedido.laboratorio.strip()
-                    lab = session.query(Laboratorio).filter(
-                        Laboratorio.nombre.ilike(lab_name)
-                    ).first()
-                    if not lab:
-                        lab = Laboratorio(nombre=lab_name)
-                        session.add(lab)
-                        session.flush()
-                    lab_id = lab.id
+                    from helpers import get_or_create_laboratorio
+                    lab = get_or_create_laboratorio(session, pedido.laboratorio.strip())
+                    lab_id = lab.id if lab else None
 
                 saved = 0
                 for m in matches:

@@ -392,6 +392,65 @@ def init_app(app):
                 session.rollback()
                 return jsonify({'error': str(e)}), 500
 
+    @app.route('/api/match-dimensional', methods=['GET'])
+    def api_match_dimensional():
+        """Busca candidatos para un EAN/descripción que NO matchea ninguna fuente.
+
+        Query params:
+          - ean (opcional): EAN del producto/oferta no resuelto.
+          - desc (opcional): descripción libre. Si viene, se extraen atributos.
+          - droga, conc_mg, conc_unit, forma, cantidad: si pasás los atributos directos.
+
+        Devuelve top 10 candidatos rankeados por score (5+ = probable, 7+ = casi seguro).
+        """
+        from catalogacion import match_dimensional_candidatos
+        from helpers import _find_producto
+
+        ean = (request.args.get('ean') or '').strip()
+        desc = (request.args.get('desc') or '').strip()
+        droga = (request.args.get('droga') or '').strip().lower() or None
+        conc_mg = request.args.get('conc_mg')
+        conc_unit = (request.args.get('conc_unit') or '').strip().upper() or None
+        forma = (request.args.get('forma') or '').strip().upper() or None
+        cantidad = request.args.get('cantidad')
+
+        with database.get_db() as session:
+            # Si llegó EAN, primero chequear si matchea (en cuyo caso no hace falta dimensional)
+            if ean:
+                prod = _find_producto(session, ean)
+                if prod:
+                    return jsonify({
+                        'matched_directly': True,
+                        'producto': {
+                            'id': prod.id,
+                            'codigo_barra': prod.codigo_barra,
+                            'descripcion': prod.descripcion,
+                        },
+                    })
+
+            try:
+                conc_mg_f = float(conc_mg) if conc_mg else None
+                cantidad_f = float(cantidad) if cantidad else None
+            except ValueError:
+                return jsonify({'error': 'Parámetros numéricos inválidos'}), 400
+
+            candidatos = match_dimensional_candidatos(
+                session,
+                descripcion=desc or None,
+                monodroga_norm=droga,
+                concentracion_mg=conc_mg_f,
+                concentracion_unidad=conc_unit,
+                forma_farma=forma,
+                cantidad_envase=cantidad_f,
+                limit=10,
+            )
+            return jsonify({
+                'matched_directly': False,
+                'ean': ean or None,
+                'desc': desc or None,
+                'candidatos': candidatos,
+            })
+
     @app.route('/api/catalogacion/backfill', methods=['POST'])
     def api_catalogacion_backfill():
         """Ejecuta el backfill de atributos estructurados sobre todos los productos.

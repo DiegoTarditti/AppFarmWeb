@@ -72,12 +72,15 @@ def init_app(app):
             flash('El nombre es obligatorio.')
             return redirect(url_for('laboratorios_list'))
         with database.get_db() as session:
-            existing = session.query(Laboratorio).filter(Laboratorio.nombre.ilike(nombre)).first()
-            if existing:
-                flash('Ya existe un laboratorio con ese nombre.')
-            else:
-                session.add(Laboratorio(nombre=nombre))
-                session.commit()
+            from helpers import _normalizar_nombre_entidad, get_or_create_laboratorio
+            # Detectar duplicado por nombre normalizado (no solo case-insensitive)
+            norm_nuevo = _normalizar_nombre_entidad(nombre)
+            for c in session.query(Laboratorio).all():
+                if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
+                    flash(f'Ya existe un laboratorio: "{c.nombre}". No se creó duplicado.')
+                    return redirect(url_for('laboratorios_list'))
+            get_or_create_laboratorio(session, nombre)
+            session.commit()
         return redirect(url_for('laboratorios_list'))
 
     @app.route('/laboratorio/<int:lab_id>/edit', methods=['POST'])
@@ -87,10 +90,18 @@ def init_app(app):
             flash('El nombre es obligatorio.')
             return redirect(url_for('laboratorios_list'))
         with database.get_db() as session:
+            from helpers import _normalizar_nombre_entidad
             lab = session.get(Laboratorio, lab_id)
-            if lab:
-                lab.nombre = nombre
-                session.commit()
+            if not lab:
+                return redirect(url_for('laboratorios_list'))
+            # Si el nombre nuevo colisiona con OTRO lab (normalizado), avisar.
+            norm_nuevo = _normalizar_nombre_entidad(nombre)
+            for c in session.query(Laboratorio).filter(Laboratorio.id != lab_id).all():
+                if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
+                    flash(f'Ya existe otro laboratorio: "{c.nombre}". No se renombró para evitar duplicado.')
+                    return redirect(url_for('laboratorios_list'))
+            lab.nombre = nombre
+            session.commit()
         return redirect(url_for('laboratorios_list'))
 
     @app.route('/laboratorio/<int:lab_id>/delete', methods=['POST'])
@@ -127,31 +138,37 @@ def init_app(app):
 
         remotos = labs_remotos
 
+        from helpers import _normalizar_nombre_entidad
         nuevos = actualizados = vinculados = duplicados = 0
         with database.get_db() as session:
             existentes_por_obs = {l.observer_id: l for l in
                                   session.query(Laboratorio)
                                   .filter(Laboratorio.observer_id.isnot(None)).all()}
-            existentes_por_nom = {l.nombre.lower(): l for l in
-                                  session.query(Laboratorio).all()}
+            # Dedup por normalizado profundo (sin acentos, sin sufijo societario):
+            # 'Roemmers' y 'Roemmers S.A.' van a la misma clave 'roemmers'.
+            existentes_por_norm = {_normalizar_nombre_entidad(l.nombre): l for l in
+                                   session.query(Laboratorio).all()}
 
             for r in remotos:
                 obs_id = r['id']
                 nom = r['nombre']
                 if not nom:
                     continue
+                nom_norm = _normalizar_nombre_entidad(nom)
 
                 lab = existentes_por_obs.get(obs_id)
                 if lab:
-                    # Evitar rename que choque contra otro nombre existente
-                    if lab.nombre != nom and nom.lower() not in existentes_por_nom:
-                        del existentes_por_nom[lab.nombre.lower()]
+                    # Evitar rename que choque contra otro nombre normalizado existente
+                    if lab.nombre != nom and nom_norm not in existentes_por_norm:
+                        old_norm = _normalizar_nombre_entidad(lab.nombre)
+                        if old_norm in existentes_por_norm:
+                            del existentes_por_norm[old_norm]
                         lab.nombre = nom
-                        existentes_por_nom[nom.lower()] = lab
+                        existentes_por_norm[nom_norm] = lab
                         actualizados += 1
                     continue
 
-                lab = existentes_por_nom.get(nom.lower())
+                lab = existentes_por_norm.get(nom_norm)
                 if lab:
                     # Segundo obs_id con mismo nombre → ignorar (duplicado en ObServer)
                     if lab.observer_id and lab.observer_id != obs_id:
@@ -165,7 +182,7 @@ def init_app(app):
                 # Nuevo: insertar y registrarlo para dedup en esta misma corrida
                 nuevo = Laboratorio(nombre=nom, observer_id=obs_id, activo=False)
                 session.add(nuevo)
-                existentes_por_nom[nom.lower()] = nuevo
+                existentes_por_norm[nom_norm] = nuevo
                 existentes_por_obs[obs_id] = nuevo
                 nuevos += 1
 

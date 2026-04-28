@@ -116,6 +116,138 @@ def _ensure_parser_file(parser_name, razon_social, cuit=''):
             f.write(content)
 
 
+def _normalizar_nombre_entidad(nombre):
+    """Normaliza nombre de laboratorio/proveedor para comparación deduplicada.
+
+    Pipeline:
+      1. lowercase
+      2. quitar acentos
+      3. quitar sufijos societarios (S.A., S.R.L., S.A.S., LTDA, S.C., S.H.)
+      4. quitar prefijos genéricos (DROGUERÍA, LABORATORIO, LAB., DROG.)
+      5. colapsar espacios y signos repetidos
+      6. quitar puntos y comas extras
+
+    Casos cubiertos:
+      'Droguería Suizo Argentina S.A.' → 'suizo argentina'
+      'DROGUERIA SUIZO ARGENTINA SA'   → 'suizo argentina'
+      'Roemmers'                       → 'roemmers'
+      'Roemmers S.A.I.C.F.'            → 'roemmers'
+    """
+    if not nombre:
+        return ''
+    import unicodedata
+    s = str(nombre).strip().lower()
+    # Quitar acentos
+    s = ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
+    # Quitar sufijos societarios al final (en orden, los más largos primero)
+    sufijos = [
+        r'\bs\.?a\.?i\.?c\.?(?:f\.?)?\b',  # S.A.I.C., S.A.I.C.F.
+        r'\bs\.?a\.?s\.?\b',
+        r'\bs\.?r\.?l\.?\b',
+        r'\bs\.?a\.?\b',
+        r'\bs\.?c\.?\b',
+        r'\bs\.?h\.?\b',
+        r'\bltda\.?\b',
+    ]
+    for sufijo in sufijos:
+        s = re.sub(sufijo + r'\s*$', '', s).strip()
+    # Quitar prefijos genéricos
+    prefijos = [r'^drogueria\s+', r'^drog\.?\s+', r'^laboratorio\s+', r'^lab\.?\s+']
+    for pref in prefijos:
+        s = re.sub(pref, '', s).strip()
+    # Colapsar puntos, comas y espacios múltiples
+    s = re.sub(r'[.,]+', ' ', s)
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
+def get_or_create_laboratorio(session, nombre, observer_id=None, activo=True):
+    """Devuelve un Laboratorio existente o crea uno nuevo.
+
+    Deduplicación robusta por nombre normalizado (case-insensitive, sin acentos,
+    sin sufijos societarios). Si encuentra match, devuelve el existente —
+    nunca crea duplicado aunque el usuario tipee variantes.
+
+    Args:
+        session: sesión SQLAlchemy abierta
+        nombre: nombre tal cual lo tipeó el usuario
+        observer_id: si viene, prioriza match por observer_id (puente a Observer)
+        activo: solo aplica si crea uno nuevo
+
+    Returns:
+        instancia Laboratorio (puede ser nueva — no llama commit, eso es responsabilidad del caller)
+    """
+    nombre = (nombre or '').strip()
+    if not nombre:
+        return None
+    # 1. Match por observer_id (si viene): el bridge a Observer es 1-a-1.
+    if observer_id is not None:
+        existente = session.query(database.Laboratorio).filter_by(observer_id=observer_id).first()
+        if existente:
+            return existente
+    # 2. Match por nombre normalizado (defensa contra variantes "Roemmers" / "Roemmers S.A." / "ROEMMERS")
+    norm_buscado = _normalizar_nombre_entidad(nombre)
+    if norm_buscado:
+        candidatos = session.query(database.Laboratorio).all()
+        for c in candidatos:
+            if _normalizar_nombre_entidad(c.nombre) == norm_buscado:
+                # Si el existente no tiene observer_id pero el nuevo sí, asignárselo
+                if observer_id is not None and not c.observer_id:
+                    c.observer_id = observer_id
+                return c
+    # 3. No existe → crear
+    nuevo = database.Laboratorio(nombre=nombre, observer_id=observer_id, activo=activo)
+    session.add(nuevo)
+    session.flush()
+    return nuevo
+
+
+def get_or_create_proveedor(session, razon_social, cuit=None, **extras):
+    """Devuelve un Provider existente o crea uno nuevo.
+
+    Match por orden:
+      1. CUIT exacto (si viene y existe)
+      2. Razón social normalizada (sin acentos, sin sufijos societarios)
+
+    Si encuentra match, devuelve el existente. Solo crea si genuinamente no hay.
+    NO llama commit — el caller decide cuándo persistir.
+
+    Args:
+        session, razon_social, cuit, **extras: campos extra del Provider
+            (domicilio, parser_file, tipo, etc.)
+    """
+    razon_social = (razon_social or '').strip()
+    cuit = (cuit or '').strip() or None
+    # 1. Match por CUIT
+    if cuit:
+        existente = session.query(database.Provider).filter_by(cuit=cuit).first()
+        if existente:
+            # Completar campos vacíos del existente con los nuevos (no pisa lo que ya está).
+            for k, v in extras.items():
+                if v and not getattr(existente, k, None):
+                    setattr(existente, k, v)
+            return existente
+    # 2. Match por razón social normalizada
+    if razon_social:
+        norm = _normalizar_nombre_entidad(razon_social)
+        if norm:
+            for c in session.query(database.Provider).all():
+                if _normalizar_nombre_entidad(c.razon_social) == norm:
+                    if cuit and not c.cuit:
+                        c.cuit = cuit
+                    for k, v in extras.items():
+                        if v and not getattr(c, k, None):
+                            setattr(c, k, v)
+                    return c
+    # 3. No existe → crear
+    if not razon_social:
+        return None
+    nuevo = database.Provider(razon_social=razon_social, cuit=cuit, **extras)
+    session.add(nuevo)
+    session.flush()
+    return nuevo
+
+
 def _get_or_create_provider_by_name(razon_social, cuit='', parser_name=''):
     with database.get_db() as session:
         provider = None

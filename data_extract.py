@@ -192,16 +192,19 @@ def parse_erp_excel(excel_path):
 
 
 def get_or_create_provider(session, razon_social, cuit=None, domicilio=None, parser_file=None):
-    from sqlalchemy import func
+    from helpers import _normalizar_nombre_entidad
     razon_social = (razon_social or '').strip()
     cuit = (cuit or '').strip()
     provider = None
     if cuit:
         provider = session.query(Provider).filter_by(cuit=cuit).first()
+    # Match por razón social normalizada profundo (sin acentos, sin sufijo societario).
     if not provider and razon_social:
-        provider = session.query(Provider).filter(
-            func.lower(Provider.razon_social) == razon_social.lower()
-        ).first()
+        norm_buscado = _normalizar_nombre_entidad(razon_social)
+        for c in session.query(Provider).all():
+            if _normalizar_nombre_entidad(c.razon_social) == norm_buscado:
+                provider = c
+                break
     if not provider and razon_social:
         provider = Provider(razon_social=razon_social, cuit=cuit or None,
                             domicilio=domicilio, parser_file=parser_file)

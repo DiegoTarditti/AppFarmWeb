@@ -638,14 +638,17 @@ def init_app(app):
             if provider_id:
                 prov = session.get(database.Provider, int(provider_id))
             if not prov and provider_name:
-                prov = session.query(database.Provider).filter(
-                    database.Provider.razon_social.ilike(f'%{provider_name}%')
-                ).first()
+                from helpers import _normalizar_nombre_entidad, get_or_create_proveedor
+                norm_buscado = _normalizar_nombre_entidad(provider_name)
+                for c in session.query(database.Provider).all():
+                    if _normalizar_nombre_entidad(c.razon_social) == norm_buscado:
+                        prov = c
+                        break
                 if not prov:
-                    prov = database.Provider(razon_social=provider_name, cuit=cuit or None)
-                    session.add(prov)
+                    prov = get_or_create_proveedor(session, provider_name, cuit=cuit or None)
                     session.commit()
-                    session.refresh(prov)
+                    if prov:
+                        session.refresh(prov)
             if not prov:
                 return jsonify({'error': 'Falta proveedor (id o nombre)'}), 400
 

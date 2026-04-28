@@ -122,28 +122,32 @@ def init_app(app):
 
         with database.get_db() as session:
             try:
+                from helpers import (
+                    _normalizar_nombre_entidad,
+                    get_or_create_laboratorio,
+                    get_or_create_proveedor,
+                )
                 if tipo == 'laboratorio':
-                    existe = session.query(Laboratorio).filter(
-                        func.lower(Laboratorio.nombre) == nombre.lower()).first()
-                    if existe:
-                        return jsonify({'data': {'id': existe.id, 'nombre': existe.nombre},
-                                        'created': False})
-                    nuevo = Laboratorio(nombre=nombre)
-                    session.add(nuevo)
+                    norm_nuevo = _normalizar_nombre_entidad(nombre)
+                    # ¿Ya existe (con normalización profunda)?
+                    for c in session.query(Laboratorio).all():
+                        if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
+                            return jsonify({'data': {'id': c.id, 'nombre': c.nombre},
+                                            'created': False})
+                    nuevo = get_or_create_laboratorio(session, nombre)
                     session.commit()
                     return jsonify({'data': {'id': nuevo.id, 'nombre': nuevo.nombre},
                                     'created': True})
 
                 # drogueria | proveedor → Provider
                 prov_tipo = 'drogueria' if tipo == 'drogueria' else 'proveedor'
-                existe = session.query(Provider).filter(
-                    func.lower(Provider.razon_social) == nombre.lower(),
-                    Provider.tipo == prov_tipo).first()
-                if existe:
-                    return jsonify({'data': {'id': existe.id, 'nombre': existe.razon_social},
-                                    'created': False})
-                nuevo = Provider(razon_social=nombre, tipo=prov_tipo)
-                session.add(nuevo)
+                norm_nuevo = _normalizar_nombre_entidad(nombre)
+                # Match por razón social normalizada + tipo
+                for c in session.query(Provider).filter_by(tipo=prov_tipo).all():
+                    if _normalizar_nombre_entidad(c.razon_social) == norm_nuevo:
+                        return jsonify({'data': {'id': c.id, 'nombre': c.razon_social},
+                                        'created': False})
+                nuevo = get_or_create_proveedor(session, nombre, tipo=prov_tipo)
                 session.commit()
                 return jsonify({'data': {'id': nuevo.id, 'nombre': nuevo.razon_social},
                                 'created': True})

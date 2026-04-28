@@ -133,17 +133,18 @@ def init_app(app):
                     if prov:
                         return jsonify({'provider_id': prov.id})
 
-                existing = session.query(database.Provider).filter(
-                    database.Provider.razon_social.ilike(f'%{name}%')
-                ).first()
-                if existing:
-                    return jsonify({'provider_id': existing.id})
-
-                prov = database.Provider(razon_social=name)
-                session.add(prov)
+                from helpers import _normalizar_nombre_entidad, get_or_create_proveedor
+                # Match por nombre normalizado profundo (no solo ilike '%X%')
+                norm_buscado = _normalizar_nombre_entidad(name)
+                if norm_buscado:
+                    for c in session.query(database.Provider).all():
+                        if _normalizar_nombre_entidad(c.razon_social) == norm_buscado:
+                            return jsonify({'provider_id': c.id})
+                prov = get_or_create_proveedor(session, name)
                 session.commit()
-                session.refresh(prov)
-                return jsonify({'provider_id': prov.id})
+                if prov:
+                    session.refresh(prov)
+                return jsonify({'provider_id': prov.id if prov else None})
             except Exception as e:
                 session.rollback()
                 return jsonify({'error': str(e)}), 500

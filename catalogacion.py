@@ -288,3 +288,93 @@ def backfill_todos(session=None, log=None):
         return _run(session)
     with database.get_db() as s:
         return _run(s)
+
+
+# ─── 5. Match dimensional ───────────────────────────────────────────────────
+
+def match_dimensional_candidatos(session, descripcion=None, monodroga_norm=None,
+                                  concentracion_mg=None, concentracion_unidad=None,
+                                  forma_farma=None, cantidad_envase=None,
+                                  limit=10):
+    """Busca productos con atributos similares.
+
+    Si pasás `descripcion`, primero extrae atributos de ahí (con regex) y los
+    usa para la búsqueda. Si pasás los atributos directos, los usa tal cual.
+
+    Score (cuánto matchea cada candidato):
+      - Misma droga (norm):        +5  (la dimensión más fuerte)
+      - Misma concentración_mg:    +3
+      - Misma forma_farma:         +2
+      - Misma cantidad_envase:     +2
+
+    Devuelve lista de candidatos con su score, ordenados desc.
+    Score >= 5 = match probable. Score >= 7 = match casi seguro.
+    """
+    # Si nos dan una descripción, extraer atributos primero
+    if descripcion and not (concentracion_mg or forma_farma or cantidad_envase):
+        atrs = extraer_de_descripcion(descripcion)
+        concentracion_mg = concentracion_mg or atrs.get('concentracion_mg')
+        concentracion_unidad = concentracion_unidad or atrs.get('concentracion_unidad')
+        forma_farma = forma_farma or atrs.get('forma_farma')
+        cantidad_envase = cantidad_envase or atrs.get('cantidad_envase')
+
+    # Sin ningún atributo conocido → no podemos buscar nada útil
+    if not (monodroga_norm or concentracion_mg or forma_farma or cantidad_envase):
+        return []
+
+    # Query base: trae todos los ProductoAtributo que matchean AL MENOS UN atributo.
+    # Después calculamos score en Python.
+    from sqlalchemy import or_
+    filtros = []
+    if monodroga_norm:
+        filtros.append(ProductoAtributo.monodroga_norm == monodroga_norm)
+    if concentracion_mg is not None:
+        from decimal import Decimal
+        filtros.append(ProductoAtributo.concentracion_mg == Decimal(str(concentracion_mg)))
+    if forma_farma:
+        filtros.append(ProductoAtributo.forma_farma == forma_farma)
+    if cantidad_envase is not None:
+        from decimal import Decimal
+        filtros.append(ProductoAtributo.cantidad_envase == Decimal(str(cantidad_envase)))
+
+    if not filtros:
+        return []
+
+    candidatos = (session.query(ProductoAtributo)
+                  .filter(or_(*filtros))
+                  .all())
+
+    resultados = []
+    for c in candidatos:
+        score = 0
+        if monodroga_norm and c.monodroga_norm == monodroga_norm:
+            score += 5
+        if concentracion_mg is not None and c.concentracion_mg is not None:
+            from decimal import Decimal
+            if c.concentracion_mg == Decimal(str(concentracion_mg)):
+                score += 3
+        if forma_farma and c.forma_farma == forma_farma:
+            score += 2
+        if cantidad_envase is not None and c.cantidad_envase is not None:
+            from decimal import Decimal
+            if c.cantidad_envase == Decimal(str(cantidad_envase)):
+                score += 2
+        if score == 0:
+            continue
+        prod = session.get(Producto, c.producto_id)
+        if not prod:
+            continue
+        resultados.append({
+            'producto_id': c.producto_id,
+            'codigo_barra': prod.codigo_barra,
+            'descripcion': prod.descripcion,
+            'monodroga': c.monodroga_display,
+            'concentracion': f'{c.concentracion_mg} {c.concentracion_unidad}' if c.concentracion_mg else None,
+            'forma_farma': c.forma_farma,
+            'cantidad_envase': float(c.cantidad_envase) if c.cantidad_envase else None,
+            'score': score,
+            'fuente': c.fuente,
+            'confianza': c.confianza,
+        })
+    resultados.sort(key=lambda r: -r['score'])
+    return resultados[:limit]
