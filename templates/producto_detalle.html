@@ -39,10 +39,6 @@
         <div class="bg-white rounded-xl border border-surface-border p-5">
             <p class="font-semibold text-sm mb-3">📋 Identificación</p>
             <dl class="text-sm space-y-2">
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Código principal</dt><dd class="font-mono">{{ producto.codigo_barra }}</dd></div>
-                {% for alt in producto.alts %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">EAN alt. {{ loop.index }}</dt><dd class="font-mono text-[#555]">{{ alt }}</dd></div>
-                {% endfor %}
                 {% if producto.codigo_alfabeta %}
                 <div class="flex justify-between gap-3"><dt class="text-[#888]">Cód. Alfabeta</dt><dd class="font-mono">{{ producto.codigo_alfabeta }}</dd></div>
                 {% endif %}
@@ -53,6 +49,25 @@
                 <div class="flex justify-between gap-3"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
                 <div class="flex justify-between gap-3"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
             </dl>
+            <!-- EANs (1-a-N) -->
+            <div class="mt-4 pt-4 border-t border-[#eee]">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-xs uppercase tracking-wide text-[#6f6f6f] font-bold">📦 Códigos de barra</p>
+                    <button type="button" onclick="document.getElementById('add-cb-form').classList.toggle('hidden')"
+                            class="text-[11px] px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">+ Agregar</button>
+                </div>
+                <ul id="cb-list" class="space-y-1.5 text-xs">
+                    <li class="text-[#bbb]">Cargando…</li>
+                </ul>
+                <form id="add-cb-form" class="hidden mt-2 flex gap-2 items-center">
+                    <input type="text" id="new-cb-input" placeholder="Nuevo EAN" maxlength="20"
+                           title="Nuevo código de barra para este producto"
+                           class="flex-1 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-brand">
+                    <button type="button" onclick="agregarCB()" class="bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-2.5 py-1 rounded">✓</button>
+                    <button type="button" onclick="document.getElementById('add-cb-form').classList.add('hidden')" class="text-xs text-[#888] hover:text-[#1e1e1e]">✕</button>
+                </form>
+                <p class="text-[10px] text-[#aaa] mt-2">Sin límite de cantidad. El marcado como <strong>principal</strong> se sincroniza con <code>productos.codigo_barra</code>.</p>
+            </div>
         </div>
 
         <!-- Atributos catalogados -->
@@ -83,8 +98,9 @@
                 <div class="grid grid-cols-3 gap-2 items-center">
                     <label for="atr-concentracion" class="text-[#888]">Concentración</label>
                     <div class="col-span-2 flex gap-2">
-                        <input type="text" id="atr-concentracion" name="concentracion_mg" value="{{ atributos.concentracion_mg if atributos and atributos.concentracion_mg else '' }}"
-                               title="Cantidad numérica de la dosis (ej: 500)"
+                        <input type="text" id="atr-concentracion" name="concentracion_mg"
+                               value="{{ atributos.concentracion_mg if atributos and atributos.concentracion_mg else '' }}"
+                               title="Cantidad numérica de la dosis (ej: 500)" placeholder="500"
                                class="flex-1 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-brand">
                         <input type="text" name="concentracion_unidad" value="{{ atributos.concentracion_unidad if atributos else '' }}" placeholder="MG / % / UI"
                                title="Unidad de la concentración"
@@ -252,6 +268,84 @@ async function reExtraer() {
 }
 
 cargarPrecios();
+
+// ─── EANs (1-a-N) ────────────────────────────────────────────────────────
+const FUENTE_BADGE = {
+    legacy_principal: ['bg-amber-100 text-amber-800 border-amber-200', 'principal'],
+    legacy_alt: ['bg-[#f0f0f0] text-[#666] border-[#ddd]', 'legacy'],
+    manual:    ['bg-rose-100 text-rose-800 border-rose-200', 'manual'],
+    factura:   ['bg-sky-100 text-sky-800 border-sky-200', 'factura'],
+    cruce:     ['bg-violet-100 text-violet-800 border-violet-200', 'cruce'],
+    observer:  ['bg-emerald-100 text-emerald-800 border-emerald-200', 'observer'],
+    import:    ['bg-blue-100 text-blue-800 border-blue-200', 'import'],
+};
+async function cargarCBs() {
+    try {
+        const r = await fetch(`/api/producto/${PROD_ID}/codigos`).then(r => r.json());
+        const ul = document.getElementById('cb-list');
+        const filas = [];
+        // Locales
+        for (const c of r.locales || []) {
+            const [cls, label] = FUENTE_BADGE[c.fuente] || ['bg-[#f0f0f0] text-[#666] border-[#ddd]', c.fuente];
+            const crown = c.es_principal
+                ? '<span class="text-amber-600 mr-1" title="EAN principal">★</span>'
+                : `<button type="button" onclick="hacerPrincipal(${c.id})" title="Marcar como principal" class="text-[#bbb] hover:text-amber-600 mr-1">☆</button>`;
+            const del = c.es_principal
+                ? ''
+                : `<button type="button" onclick="borrarCB(${c.id})" title="Quitar" class="text-[#bbb] hover:text-rose-600 ml-1">✕</button>`;
+            filas.push(`<li class="flex items-center gap-1.5">
+                ${crown}
+                <span class="font-mono ${c.es_principal ? 'font-bold text-[#1e1e1e]' : 'text-[#555]'}">${c.codigo_barra}</span>
+                <span class="text-[9px] font-bold px-1 py-0.5 rounded border ${cls}">${label}</span>
+                ${del}
+            </li>`);
+        }
+        // Observer (read-only)
+        for (const o of r.observer || []) {
+            if (o.baja) continue;
+            // Si ya está en locales, no duplicar
+            if ((r.locales || []).some(l => l.codigo_barra === o.codigo_barra)) continue;
+            filas.push(`<li class="flex items-center gap-1.5">
+                <span class="text-[#bbb] mr-1" title="EAN sincronizado de Observer (read-only)">⛓</span>
+                <span class="font-mono text-[#555]">${o.codigo_barra}</span>
+                <span class="text-[9px] font-bold px-1 py-0.5 rounded border bg-emerald-100 text-emerald-800 border-emerald-200">observer</span>
+                <span class="text-[10px] text-[#aaa] ml-auto">orden ${o.orden}</span>
+            </li>`);
+        }
+        ul.innerHTML = filas.length
+            ? filas.join('')
+            : '<li class="text-[#bbb] italic text-xs">Sin EANs registrados.</li>';
+    } catch (e) {
+        document.getElementById('cb-list').innerHTML = '<li class="text-rose-600 text-xs">Error: ' + e.message + '</li>';
+    }
+}
+async function agregarCB() {
+    const inp = document.getElementById('new-cb-input');
+    const cb = inp.value.trim();
+    if (!cb) return;
+    const r = await fetch(`/api/producto/${PROD_ID}/codigos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo_barra: cb, fuente: 'manual' }),
+    }).then(r => r.json());
+    if (r.error) { alert(r.error); return; }
+    inp.value = '';
+    document.getElementById('add-cb-form').classList.add('hidden');
+    cargarCBs();
+}
+async function hacerPrincipal(cbId) {
+    if (!confirm('Marcar este EAN como principal? Se sincroniza con productos.codigo_barra.')) return;
+    const r = await fetch(`/api/producto/${PROD_ID}/codigos/${cbId}`, { method: 'PATCH' }).then(r => r.json());
+    if (r.error) { alert(r.error); return; }
+    location.reload();
+}
+async function borrarCB(cbId) {
+    if (!confirm('Quitar este EAN del producto?')) return;
+    const r = await fetch(`/api/producto/${PROD_ID}/codigos/${cbId}`, { method: 'DELETE' }).then(r => r.json());
+    if (r.error) { alert(r.error); return; }
+    cargarCBs();
+}
+cargarCBs();
 
 // Auto-extraer la primera vez que se abre la ficha si todavía no hay atributos.
 // Si el regex/obs no aporta nada, queda igual (vacío) — el usuario edita manual.

@@ -619,6 +619,30 @@ class Producto(Base):
     accion_terapeutica = Column(String(200), nullable=True)
     actualizado_en = Column(DateTime, default=now_ar)
     ultima_compra = Column(Date, nullable=True)
+    codigos_barra = relationship('ProductoCodigoBarra',
+                                 back_populates='producto',
+                                 cascade='all, delete-orphan',
+                                 order_by='desc(ProductoCodigoBarra.es_principal), ProductoCodigoBarra.id')
+
+
+class ProductoCodigoBarra(Base):
+    """EANs de un producto en una relación 1-a-N (reemplazo gradual de alt1/2/3).
+
+    Uno de los registros tiene `es_principal=True`; ese se sincroniza con
+    `Producto.codigo_barra` para no romper código viejo. El resto son
+    alternativos (sin límite a diferencia de los 3 slots fijos).
+
+    Trazabilidad: cada EAN sabe de dónde vino (`fuente` + `factura_id`).
+    """
+    __tablename__ = 'producto_codigos_barra'
+    id           = Column(Integer, primary_key=True)
+    producto_id  = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), nullable=False, index=True)
+    codigo_barra = Column(String(20), nullable=False, index=True)
+    es_principal = Column(Boolean, nullable=False, default=False)
+    fuente       = Column(String(20), nullable=False, default='manual')  # manual / factura / observer / import / cruce / legacy_alt
+    factura_id   = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
+    creado_en    = Column(DateTime, default=now_ar)
+    producto = relationship('Producto', back_populates='codigos_barra')
 
 
 class ProductoAtributo(Base):
@@ -993,6 +1017,7 @@ def init_db(database_url=None):
                         'analisis_sesiones', 'usuarios',
                         'plantillas_exportacion', 'plantilla_campos',
                         'plantillas', 'producto_precios_hist', 'producto_atributos',
+                        'producto_codigos_barra',
                         'obs_laboratorios', 'obs_rubros', 'obs_subrubros',
                         'obs_nombres_drogas', 'obs_productos', 'obs_stock',
                         'obs_sync_log', 'obs_ventas_mensuales',
@@ -1724,6 +1749,42 @@ def _pg_add_columns(conn):
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_conc     ON producto_atributos (concentracion_mg)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_forma    ON producto_atributos (forma_farma)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_fuente   ON producto_atributos (fuente)"))
+    # EANs por producto en 1-a-N (reemplazo gradual de alt1/2/3).
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS producto_codigos_barra (
+            id           SERIAL PRIMARY KEY,
+            producto_id  INTEGER NOT NULL REFERENCES productos(id) ON DELETE CASCADE,
+            codigo_barra VARCHAR(20) NOT NULL,
+            es_principal BOOLEAN NOT NULL DEFAULT FALSE,
+            fuente       VARCHAR(20) NOT NULL DEFAULT 'manual',
+            factura_id   INTEGER REFERENCES facturas(id) ON DELETE SET NULL,
+            creado_en    TIMESTAMP DEFAULT NOW(),
+            UNIQUE (producto_id, codigo_barra)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pcb_producto ON producto_codigos_barra (producto_id)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pcb_codigo   ON producto_codigos_barra (codigo_barra)"))
+    # Backfill: si la tabla está vacía, copiar codigo_barra (principal) y los
+    # 3 alts existentes de productos. Idempotente — solo corre la 1ra vez.
+    try:
+        hay_pcb = conn.execute(text("SELECT 1 FROM producto_codigos_barra LIMIT 1")).first()
+        if not hay_pcb:
+            conn.execute(text("""
+                INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
+                SELECT id, codigo_barra, TRUE, 'legacy_principal'
+                FROM productos
+                WHERE codigo_barra IS NOT NULL AND codigo_barra <> ''
+            """))
+            for col in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
+                conn.execute(text(f"""
+                    INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
+                    SELECT id, {col}, FALSE, 'legacy_alt'
+                    FROM productos
+                    WHERE {col} IS NOT NULL AND {col} <> ''
+                    ON CONFLICT (producto_id, codigo_barra) DO NOTHING
+                """))
+    except Exception:
+        pass
     # Backfill: si la tabla está vacía pero hay facturas cargadas, generar snapshots
     # desde los InvoiceItem existentes. Se ejecuta una sola vez.
     try:

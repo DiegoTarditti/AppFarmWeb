@@ -166,19 +166,20 @@ def get_config():
 # ── Product helpers ──────────────────────────────────────────────────────────
 
 def _find_producto(session, codigo_barra):
-    """Busca un producto por:
-      1. `productos.codigo_barra` o sus 3 alts (alt1/2/3) — match local rápido.
-      2. Fallback: `obs_codigos_barras.codigo_barras` → resuelve a `productos`
-         vía `observer_id`. Cubre el caso N>4 EANs por producto cuando los
-         3 slots de alt locales no alcanzan (Observer puede tener 5+ EANs
-         por producto).
+    """Busca un producto por EAN. Consulta en orden:
+      1. `productos.codigo_barra` o `alt1/2/3` (legacy local, rápido).
+      2. `producto_codigos_barra` (1-a-N local, reemplazo gradual de alts).
+      3. `obs_codigos_barras` → resuelve vía `observer_id` (1-a-N de Observer).
 
-    Solo hace la 2da query si la 1ra falla, así no impacta performance.
+    Cada query solo corre si la anterior falla. La 1ra es la cobertura más
+    amplia hoy (los alts locales se llenaron con cruces históricos), así que
+    la mayoría de los matches no llegan a tocar las otras tablas.
     """
     from sqlalchemy import or_
     bc = str(codigo_barra).strip()
     if not bc:
         return None
+    # 1. Match en productos (legacy 4 slots)
     prod = session.query(Producto).filter(
         or_(
             Producto.codigo_barra == bc,
@@ -189,21 +190,30 @@ def _find_producto(session, codigo_barra):
     ).first()
     if prod is not None:
         return prod
-    # Fallback a obs_codigos_barras (N EANs por producto Observer)
+    # 2. Match en producto_codigos_barra (1-a-N local)
+    try:
+        from database import ProductoCodigoBarra
+        m = (session.query(ProductoCodigoBarra.producto_id)
+             .filter(ProductoCodigoBarra.codigo_barra == bc)
+             .first())
+        if m:
+            return session.get(Producto, m[0])
+    except Exception:
+        pass
+    # 3. Match en obs_codigos_barras → resuelve por observer_id
     try:
         from database import ObsCodigosBarras
-        match = (session.query(ObsCodigosBarras.producto_observer)
-                 .filter(ObsCodigosBarras.codigo_barras == bc,
-                         ObsCodigosBarras.fecha_baja.is_(None))
-                 .first())
-        if not match:
-            return None
-        return (session.query(Producto)
-                .filter(Producto.observer_id == match[0])
-                .first())
+        m = (session.query(ObsCodigosBarras.producto_observer)
+             .filter(ObsCodigosBarras.codigo_barras == bc,
+                     ObsCodigosBarras.fecha_baja.is_(None))
+             .first())
+        if m:
+            return (session.query(Producto)
+                    .filter(Producto.observer_id == m[0])
+                    .first())
     except Exception:
-        # Si la tabla no existe (env sin Observer sincronizado), no rompe.
-        return None
+        pass
+    return None
 
 
 def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
@@ -269,8 +279,13 @@ def _upsert_pedido_items(session, items, observer_bridge=False):
                     prod.observer_id = obs_id
 
 
-def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt):
-    """Agrega un código alternativo al producto ERP si no está ya registrado."""
+def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt, fuente='manual', factura_id=None):
+    """Agrega un código alternativo al producto ERP si no está ya registrado.
+
+    Escribe en ambos lados durante la migración:
+      - Si hay slot libre en alt1/2/3: lo llena (compat con código que aún lee alts).
+      - SIEMPRE inserta en producto_codigos_barra (1-a-N, sin límite, con trazabilidad).
+    """
     if not codigo_barra_erp or not codigo_barra_alt:
         return
     codigo_barra_erp = str(codigo_barra_erp).strip()
@@ -280,15 +295,30 @@ def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt):
     prod = session.query(Producto).filter_by(codigo_barra=codigo_barra_erp).first()
     if not prod:
         return
-    existing = {prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3}
-    if codigo_barra_alt in existing:
-        return
-    if not prod.codigo_barra_alt1:
-        prod.codigo_barra_alt1 = codigo_barra_alt
-    elif not prod.codigo_barra_alt2:
-        prod.codigo_barra_alt2 = codigo_barra_alt
-    elif not prod.codigo_barra_alt3:
-        prod.codigo_barra_alt3 = codigo_barra_alt
+    existing = {prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3, prod.codigo_barra}
+    if codigo_barra_alt not in existing:
+        if not prod.codigo_barra_alt1:
+            prod.codigo_barra_alt1 = codigo_barra_alt
+        elif not prod.codigo_barra_alt2:
+            prod.codigo_barra_alt2 = codigo_barra_alt
+        elif not prod.codigo_barra_alt3:
+            prod.codigo_barra_alt3 = codigo_barra_alt
+        # Si los 3 slots están ocupados, no rompe — la nueva tabla acepta sin límite.
+    # Tabla 1-a-N: insert idempotente (UNIQUE constraint).
+    try:
+        from database import ProductoCodigoBarra
+        ya = (session.query(ProductoCodigoBarra.id)
+              .filter_by(producto_id=prod.id, codigo_barra=codigo_barra_alt).first())
+        if not ya:
+            session.add(ProductoCodigoBarra(
+                producto_id=prod.id,
+                codigo_barra=codigo_barra_alt,
+                es_principal=False,
+                fuente=fuente,
+                factura_id=factura_id,
+            ))
+    except Exception:
+        pass
 
 
 # ── Bulk product upsert ──────────────────────────────────────────────────────

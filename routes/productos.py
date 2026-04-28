@@ -287,6 +287,83 @@ def init_app(app):
         return render_template('producto_detalle.html',
                                producto=producto, atributos=atributos, obs=obs)
 
+    @app.route('/api/producto/<int:prod_id>/codigos', methods=['GET', 'POST'])
+    def api_producto_codigos(prod_id):
+        """GET: lista todos los EANs del producto (tabla 1-a-N + obs).
+        POST: agrega un EAN nuevo. Body: {codigo_barra, fuente?}."""
+        from database import ObsCodigosBarras, ProductoCodigoBarra
+        with database.get_db() as session:
+            prod = session.get(Producto, prod_id)
+            if not prod:
+                return jsonify({'error': 'Producto no encontrado'}), 404
+            if request.method == 'GET':
+                locales = (session.query(ProductoCodigoBarra)
+                           .filter_by(producto_id=prod_id)
+                           .order_by(ProductoCodigoBarra.es_principal.desc(),
+                                     ProductoCodigoBarra.id).all())
+                obs_eans = []
+                if prod.observer_id:
+                    obs_eans = (session.query(ObsCodigosBarras)
+                                .filter_by(producto_observer=prod.observer_id)
+                                .order_by(ObsCodigosBarras.orden).all())
+                return jsonify({
+                    'locales': [{
+                        'id': c.id,
+                        'codigo_barra': c.codigo_barra,
+                        'es_principal': c.es_principal,
+                        'fuente': c.fuente,
+                        'factura_id': c.factura_id,
+                        'creado_en': c.creado_en.strftime('%d/%m/%Y') if c.creado_en else None,
+                    } for c in locales],
+                    'observer': [{
+                        'codigo_barra': o.codigo_barras,
+                        'orden': o.orden,
+                        'baja': o.fecha_baja.strftime('%d/%m/%Y') if o.fecha_baja else None,
+                    } for o in obs_eans],
+                })
+            data = request.get_json(silent=True) or {}
+            cb = (data.get('codigo_barra') or '').strip()
+            if not cb:
+                return jsonify({'error': 'codigo_barra requerido'}), 400
+            ya = (session.query(ProductoCodigoBarra.id)
+                  .filter_by(producto_id=prod_id, codigo_barra=cb).first())
+            if ya:
+                return jsonify({'error': 'Ese código ya está cargado para este producto'}), 409
+            session.add(ProductoCodigoBarra(
+                producto_id=prod_id,
+                codigo_barra=cb,
+                es_principal=False,
+                fuente=(data.get('fuente') or 'manual').strip(),
+            ))
+            session.commit()
+            return jsonify({'ok': True})
+
+    @app.route('/api/producto/<int:prod_id>/codigos/<int:cb_id>', methods=['DELETE', 'PATCH'])
+    def api_producto_codigo_modificar(prod_id, cb_id):
+        """DELETE: borra. PATCH: marca como principal (desmarca al resto)."""
+        from database import ProductoCodigoBarra
+        with database.get_db() as session:
+            cb = session.get(ProductoCodigoBarra, cb_id)
+            if not cb or cb.producto_id != prod_id:
+                return jsonify({'error': 'No encontrado'}), 404
+            if request.method == 'DELETE':
+                if cb.es_principal:
+                    return jsonify({'error': 'No podés borrar el principal. Marcá otro como principal primero.'}), 400
+                session.delete(cb)
+                session.commit()
+                return jsonify({'ok': True})
+            # PATCH: marcar como principal
+            (session.query(ProductoCodigoBarra)
+             .filter_by(producto_id=prod_id)
+             .update({'es_principal': False}))
+            cb.es_principal = True
+            # Sincronizar productos.codigo_barra con el nuevo principal (compat).
+            prod = session.get(Producto, prod_id)
+            if prod:
+                prod.codigo_barra = cb.codigo_barra
+            session.commit()
+            return jsonify({'ok': True})
+
     @app.route('/api/producto/<int:prod_id>/recatalogar', methods=['POST'])
     def api_producto_recatalogar(prod_id):
         """Re-extrae atributos de UN producto (usa obs + regex). No pisa fuente='manual'."""
