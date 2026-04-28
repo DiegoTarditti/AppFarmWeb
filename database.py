@@ -674,8 +674,8 @@ class ProductoAtributo(Base):
     """
     __tablename__ = 'producto_atributos'
     producto_id        = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), primary_key=True)
-    monodroga_norm     = Column(String(200), nullable=True, index=True)  # lower-case sin acentos para match
-    monodroga_display  = Column(String(200), nullable=True)              # case original para mostrar
+    monodroga_norm     = Column(String(500), nullable=True, index=True)  # lower-case sin acentos para match
+    monodroga_display  = Column(String(500), nullable=True)              # case original para mostrar
     concentracion_mg   = Column(DECIMAL(12, 4), nullable=True, index=True)  # ej 500, 250.5, 0.05
     concentracion_unidad = Column(String(15), nullable=True)             # MG, MCG, G, UI, %, MG/ML, MG/5ML
     forma_farma        = Column(String(10), nullable=True, index=True)   # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
@@ -1835,8 +1835,8 @@ def _pg_add_columns(conn):
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS producto_atributos (
             producto_id          INTEGER PRIMARY KEY REFERENCES productos(id) ON DELETE CASCADE,
-            monodroga_norm       VARCHAR(200),
-            monodroga_display    VARCHAR(200),
+            monodroga_norm       VARCHAR(500),
+            monodroga_display    VARCHAR(500),
             concentracion_mg     DECIMAL(12, 4),
             concentracion_unidad VARCHAR(15),
             forma_farma          VARCHAR(10),
@@ -1848,6 +1848,10 @@ def _pg_add_columns(conn):
             extraido_en          TIMESTAMP DEFAULT NOW()
         )
     """))
+    # Bump VARCHAR(200) → VARCHAR(500) en monodroga_* (polivitamínicos largos
+    # como SUPRADYN MAGNESIO superan 200 chars con todas las vitaminas listadas).
+    conn.execute(text("ALTER TABLE producto_atributos ALTER COLUMN monodroga_norm    TYPE VARCHAR(500)"))
+    conn.execute(text("ALTER TABLE producto_atributos ALTER COLUMN monodroga_display TYPE VARCHAR(500)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_droga    ON producto_atributos (monodroga_norm)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_conc     ON producto_atributos (concentracion_mg)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_forma    ON producto_atributos (forma_farma)"))
