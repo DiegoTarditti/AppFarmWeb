@@ -166,10 +166,20 @@ def get_config():
 # ── Product helpers ──────────────────────────────────────────────────────────
 
 def _find_producto(session, codigo_barra):
-    """Busca un producto por código principal o cualquier alternativo (alt1/2/3)."""
+    """Busca un producto por:
+      1. `productos.codigo_barra` o sus 3 alts (alt1/2/3) — match local rápido.
+      2. Fallback: `obs_codigos_barras.codigo_barras` → resuelve a `productos`
+         vía `observer_id`. Cubre el caso N>4 EANs por producto cuando los
+         3 slots de alt locales no alcanzan (Observer puede tener 5+ EANs
+         por producto).
+
+    Solo hace la 2da query si la 1ra falla, así no impacta performance.
+    """
     from sqlalchemy import or_
     bc = str(codigo_barra).strip()
-    return session.query(Producto).filter(
+    if not bc:
+        return None
+    prod = session.query(Producto).filter(
         or_(
             Producto.codigo_barra == bc,
             Producto.codigo_barra_alt1 == bc,
@@ -177,6 +187,23 @@ def _find_producto(session, codigo_barra):
             Producto.codigo_barra_alt3 == bc,
         )
     ).first()
+    if prod is not None:
+        return prod
+    # Fallback a obs_codigos_barras (N EANs por producto Observer)
+    try:
+        from database import ObsCodigosBarras
+        match = (session.query(ObsCodigosBarras.producto_observer)
+                 .filter(ObsCodigosBarras.codigo_barras == bc,
+                         ObsCodigosBarras.fecha_baja.is_(None))
+                 .first())
+        if not match:
+            return None
+        return (session.query(Producto)
+                .filter(Producto.observer_id == match[0])
+                .first())
+    except Exception:
+        # Si la tabla no existe (env sin Observer sincronizado), no rompe.
+        return None
 
 
 def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
