@@ -34,11 +34,47 @@
     <form method="get" class="flex items-center gap-2 flex-wrap text-sm">
         {% if es_real %}
         <select name="os_id" onchange="this.form.submit()"
-                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand"
+                title="Obra Social">
             <option value="">Todas las OS (top 30)</option>
             {% for o in os_options %}
             <option value="{{ o.id }}" {% if os_filter_id == o.id %}selected{% endif %}>
                 {{ o.nombre }} ({{ o.n }})
+            </option>
+            {% endfor %}
+        </select>
+
+        {% if plan_options %}
+        <select name="plan_id" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand max-w-[200px]"
+                title="Plan{% if os_filter_id %} (de la OS seleccionada){% else %} — elegí una OS arriba para limitar la lista{% endif %}">
+            <option value="">{% if os_filter_id %}Todos los planes de la OS{% else %}Todos los planes (top 30){% endif %}</option>
+            {% for p in plan_options %}
+            <option value="{{ p.id }}" {% if plan_filter_id == p.id %}selected{% endif %}>
+                {{ p.nombre }} ({{ p.n }})
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+
+        <select name="medico_id" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand max-w-[200px]"
+                title="Médico (top 30 del período)">
+            <option value="">Todos los médicos</option>
+            {% for m in med_options %}
+            <option value="{{ m.id }}" {% if med_filter_id == m.id %}selected{% endif %}>
+                {{ m.nombre }} ({{ m.n }})
+            </option>
+            {% endfor %}
+        </select>
+
+        <select name="producto_id" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand max-w-[220px]"
+                title="Producto (top 30 del período)">
+            <option value="">Todos los productos</option>
+            {% for p in prod_options %}
+            <option value="{{ p.id }}" {% if prod_filter_id == p.id %}selected{% endif %}>
+                {{ p.nombre }} ({{ p.n }})
             </option>
             {% endfor %}
         </select>

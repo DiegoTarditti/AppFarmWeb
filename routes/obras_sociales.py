@@ -156,8 +156,13 @@ def init_app(app):
         desde_30d = hoy - timedelta(days=29)
 
         os_filter = (request.args.get('os') or '').upper()
-        if os_filter not in ('PAMI', 'IAPOS'):
+        if os_filter not in ('PAMI', 'IAPOS', 'OTROS'):
             os_filter = ''
+        # Filtro adicional por una OS individual (id de obs_obras_sociales).
+        try:
+            os_id_filter = int(request.args.get('os_id') or 0) or None
+        except (ValueError, TypeError):
+            os_id_filter = None
 
         with database.get_db() as session:
             ObsVD = database.ObsVentaDetalle
@@ -194,10 +199,15 @@ def init_app(app):
                 ObsVD.obra_social_observer.isnot(None),
                 ObsVD.fecha_estadistica >= primer_dia,
             ]
-            if os_filter == 'PAMI':
+            otros_ids_full = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
+            if os_id_filter:
+                base_filters.append(ObsVD.obra_social_observer == os_id_filter)
+            elif os_filter == 'PAMI':
                 base_filters.append(ObsVD.obra_social_observer.in_(list(pami_ids) or [-1]))
             elif os_filter == 'IAPOS':
                 base_filters.append(ObsVD.obra_social_observer.in_(list(iapos_ids) or [-1]))
+            elif os_filter == 'OTROS':
+                base_filters.append(ObsVD.obra_social_observer.in_(list(otros_ids_full) or [-1]))
 
             # Card "del mes corriente": agrupar por receta (id_operacion + medico + cliente + fecha).
             # Para contar recetas únicas y sumar importes.
@@ -220,9 +230,15 @@ def init_app(app):
             mes_ticket_prom = ((mes_os_total + mes_pac_total) / mes_recetas) if mes_recetas else 0
 
             # Breakdown por categoría: PAMI, IAPOS y OTROS.
+            # Si filtraste por una OS individual, NO mostramos los breakdowns
+            # generales (modo zoom: ves solo lo que filtraste).
             otros_ids = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
             por_os = {}
-            for cat_code, ids in (('PAMI', pami_ids), ('IAPOS', iapos_ids), ('OTROS', otros_ids)):
+            if os_id_filter:
+                # En modo zoom no se calculan los cards de categoría.
+                pass
+            else:
+                for cat_code, ids in (('PAMI', pami_ids), ('IAPOS', iapos_ids), ('OTROS', otros_ids)):
                 if not ids:
                     por_os[cat_code] = {'recetas': 0, 'importe_os': 0, 'importe_paciente': 0}
                     continue
@@ -273,11 +289,11 @@ def init_app(app):
                 'importe_paciente': float(imp_pac or 0),
             } for (oid, rec, imp_os, imp_pac) in top_os_q]
 
-            # Serie diaria últimos 30 días por categoría (solo PAMI e IAPOS).
+            # Serie diaria últimos 30 días por categoría (PAMI, IAPOS y OTROS).
             serie_dict = {}
             for i in range(30):
                 d = hoy - timedelta(days=29 - i)
-                serie_dict[d.isoformat()] = {'PAMI': 0.0, 'IAPOS': 0.0}
+                serie_dict[d.isoformat()] = {'PAMI': 0.0, 'IAPOS': 0.0, 'OTROS': 0.0}
             serie_q = (session.query(
                             ObsVD.fecha_estadistica,
                             cat_expr.label('cat'),
@@ -290,9 +306,12 @@ def init_app(app):
                 if not fecha:
                     continue
                 key = fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha)
-                if key in serie_dict and cat in ('PAMI', 'IAPOS'):
+                if key in serie_dict and cat in ('PAMI', 'IAPOS', 'OTROS'):
                     serie_dict[key][cat] += float(imp or 0)
-            serie_list = [{'fecha': k, 'PAMI': round(v['PAMI'], 2), 'IAPOS': round(v['IAPOS'], 2)}
+            serie_list = [{'fecha': k,
+                           'PAMI': round(v['PAMI'], 2),
+                           'IAPOS': round(v['IAPOS'], 2),
+                           'OTROS': round(v['OTROS'], 2)}
                           for k, v in serie_dict.items()]
 
             # Top médicos del mes (filtrado por OS si aplica).
@@ -351,8 +370,20 @@ def init_app(app):
                         'fecha_apertura': primer_dia,
                     })
 
+        # Lista de OS para el dropdown de filtro individual (solo las que tienen
+        # actividad en el período visible — evita 879 opciones inertes).
+        os_options = sorted(
+            [{'os_id': oid, 'nombre': os_descrs.get(oid) or f'OS #{oid}'}
+             for oid in os_obs_ids],
+            key=lambda x: x['nombre'].lower()
+        )
+        os_id_filter_nombre = os_descrs.get(os_id_filter) if os_id_filter else None
+
         return render_template('os_dashboard.html',
                                os_filter=os_filter,
+                               os_id_filter=os_id_filter,
+                               os_id_filter_nombre=os_id_filter_nombre,
+                               os_options=os_options,
                                mes_recetas=mes_recetas,
                                mes_os_total=mes_os_total,
                                mes_pac_total=mes_pac_total,
@@ -361,6 +392,7 @@ def init_app(app):
                                serie=serie_list,
                                top_medicos=top_medicos,
                                top_productos=top_productos,
+                               top_os=top_os,
                                lotes=lotes)
 
     def _query_dispensas(filtros, session, id_farmacia):
@@ -379,6 +411,9 @@ def init_app(app):
         )
 
         os_filter_id = filtros.get('os_filter_id')
+        med_filter_id = filtros.get('med_filter_id')
+        prod_filter_id = filtros.get('prod_filter_id')
+        plan_filter_id = filtros.get('plan_filter_id')
         desde = filtros['desde']
         hasta = filtros['hasta']
         tipo_filter = filtros.get('tipo_filter') or ''
@@ -415,6 +450,20 @@ def init_app(app):
         if os_filter_id:
             recetas_q = recetas_q.having(
                 func.min(ObsVentaDetalle.obra_social_observer) == os_filter_id)
+        if med_filter_id:
+            recetas_q = recetas_q.filter(ObsVentaDetalle.medico_observer == med_filter_id)
+        if prod_filter_id:
+            # Solo recetas que tengan AL MENOS UN item con ese producto.
+            sub_op = (session.query(ObsVentaDetalle.id_operacion)
+                      .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
+                              ObsVentaDetalle.fecha_estadistica >= desde,
+                              ObsVentaDetalle.fecha_estadistica <= hasta,
+                              ObsVentaDetalle.producto_observer == prod_filter_id)
+                      .distinct().subquery())
+            recetas_q = recetas_q.filter(ObsVentaDetalle.id_operacion.in_(sub_op))
+        if plan_filter_id:
+            recetas_q = recetas_q.having(
+                func.min(ObsVentaDetalle.plan_principal_observer) == plan_filter_id)
         if tipo_filter == 'particular':
             recetas_q = recetas_q.having(particular_agg == 1)
         elif tipo_filter == 'os':
@@ -425,9 +474,10 @@ def init_app(app):
         cli_ids = {r.cli_id for r in recetas_full if r.cli_id}
         os_ids = {r.os_id for r in recetas_full if r.os_id}
         plan_ids = {r.plan_id for r in recetas_full if r.plan_id}
+        med_ids = {r.med_id for r in recetas_full if r.med_id}
         op_ids = [r.op_id for r in recetas_full if r.op_id]
 
-        cli_map, os_map, plan_map = {}, {}, {}
+        cli_map, os_map, plan_map, med_map = {}, {}, {}, {}
         if cli_ids:
             for c in session.query(ObsCliente).filter(
                     ObsCliente.observer_id.in_(list(cli_ids))).all():
@@ -440,6 +490,11 @@ def init_app(app):
             for p in session.query(ObsPlan).filter(
                     ObsPlan.observer_id.in_(list(plan_ids))).all():
                 plan_map[p.observer_id] = p
+        if med_ids:
+            from database import ObsMedico
+            for m in session.query(ObsMedico).filter(
+                    ObsMedico.observer_id.in_(list(med_ids))).all():
+                med_map[m.observer_id] = m
 
         items_por_receta = {}
         if op_ids:
@@ -481,7 +536,7 @@ def init_app(app):
             cli = cli_map.get(r.cli_id)
             os_obj = os_map.get(r.os_id)
             plan_obj = plan_map.get(r.plan_id)
-            afiliado_nombre = cli.apellido_nombre if cli else '(sin cliente)'
+            afiliado_nombre = cli.apellido_nombre if cli else ''
             afiliado_dni = (
                 f'{cli.documento_tipo or "DNI"} {cli.documento_numero}'
                 if cli and cli.documento_numero else ''
@@ -510,7 +565,7 @@ def init_app(app):
                 'afiliado_nro': afiliado_dni,
                 'afiliado_dni': afiliado_dni,
                 'medico_id': r.med_id,
-                'medico_nombre': f'Médico #{r.med_id}' if r.med_id else '—',
+                'medico_nombre': (med_map.get(r.med_id).nombre if r.med_id and med_map.get(r.med_id) and med_map.get(r.med_id).nombre else (f'Médico #{r.med_id}' if r.med_id else '—')),
                 'medico_matricula': r.med_id or '',
                 'receta_tipo': '—',
                 'receta_fecha_emision': r.fecha,
@@ -542,11 +597,85 @@ def init_app(app):
         os_options = [{'id': o.observer_id, 'nombre': o.descripcion, 'n': o.n}
                       for o in top_os]
 
-        return dispensas, total_recetas, total_os, total_pac, os_options
+        # Top 30 médicos del período (cantidad de recetas).
+        from database import ObsMedico
+        top_med = (session.query(
+                        ObsMedico.observer_id,
+                        ObsMedico.nombre,
+                        func.count(func.distinct(ObsVentaDetalle.id_operacion)).label('n'),
+                    )
+                    .join(ObsVentaDetalle,
+                          ObsVentaDetalle.medico_observer == ObsMedico.observer_id)
+                    .filter(
+                        ObsVentaDetalle.id_farmacia == id_farmacia,
+                        ObsVentaDetalle.fecha_estadistica >= desde,
+                        ObsVentaDetalle.fecha_estadistica <= hasta,
+                    )
+                    .group_by(ObsMedico.observer_id, ObsMedico.nombre)
+                    .order_by(func.count(func.distinct(ObsVentaDetalle.id_operacion)).desc())
+                    .limit(30).all())
+        med_options = [{'id': m.observer_id, 'nombre': m.nombre or f'Médico #{m.observer_id}', 'n': m.n}
+                       for m in top_med]
+
+        # Top 30 productos del período (cantidad de líneas).
+        top_prod = (session.query(
+                        ObsProducto.observer_id,
+                        ObsProducto.descripcion,
+                        func.count(ObsVentaDetalle.id_producto_vendido).label('n'),
+                    )
+                    .join(ObsVentaDetalle,
+                          ObsVentaDetalle.producto_observer == ObsProducto.observer_id)
+                    .filter(
+                        ObsVentaDetalle.id_farmacia == id_farmacia,
+                        ObsVentaDetalle.fecha_estadistica >= desde,
+                        ObsVentaDetalle.fecha_estadistica <= hasta,
+                    )
+                    .group_by(ObsProducto.observer_id, ObsProducto.descripcion)
+                    .order_by(func.count(ObsVentaDetalle.id_producto_vendido).desc())
+                    .limit(30).all())
+        prod_options = [{'id': p.observer_id, 'nombre': p.descripcion, 'n': p.n}
+                        for p in top_prod]
+
+        # Planes — filtrados por OS si se seleccionó una; sino los más usados del período.
+        if os_filter_id:
+            plan_q = (session.query(ObsPlan.observer_id, ObsPlan.descripcion,
+                                    func.count(ObsVentaDetalle.id_producto_vendido).label('n'))
+                      .join(ObsVentaDetalle,
+                            ObsVentaDetalle.plan_principal_observer == ObsPlan.observer_id)
+                      .join(ObsConvenio, ObsConvenio.observer_id == ObsPlan.convenio_observer)
+                      .filter(
+                          ObsVentaDetalle.id_farmacia == id_farmacia,
+                          ObsVentaDetalle.fecha_estadistica >= desde,
+                          ObsVentaDetalle.fecha_estadistica <= hasta,
+                          ObsConvenio.obra_social_observer == os_filter_id,
+                      )
+                      .group_by(ObsPlan.observer_id, ObsPlan.descripcion)
+                      .order_by(func.count(ObsVentaDetalle.id_producto_vendido).desc())
+                      .limit(50).all())
+        else:
+            plan_q = (session.query(ObsPlan.observer_id, ObsPlan.descripcion,
+                                    func.count(ObsVentaDetalle.id_producto_vendido).label('n'))
+                      .join(ObsVentaDetalle,
+                            ObsVentaDetalle.plan_principal_observer == ObsPlan.observer_id)
+                      .filter(
+                          ObsVentaDetalle.id_farmacia == id_farmacia,
+                          ObsVentaDetalle.fecha_estadistica >= desde,
+                          ObsVentaDetalle.fecha_estadistica <= hasta,
+                      )
+                      .group_by(ObsPlan.observer_id, ObsPlan.descripcion)
+                      .order_by(func.count(ObsVentaDetalle.id_producto_vendido).desc())
+                      .limit(30).all())
+        plan_options = [{'id': p.observer_id, 'nombre': p.descripcion, 'n': p.n}
+                        for p in plan_q]
+
+        return dispensas, total_recetas, total_os, total_pac, os_options, med_options, prod_options, plan_options
 
     def _parse_filtros_dispensas():
-        """Parsea querystring → dict con desde/hasta/os/tipo/q."""
+        """Parsea querystring → dict con desde/hasta/os/tipo/q/medico/producto."""
         os_filter_id = request.args.get('os_id', type=int)
+        med_filter_id = request.args.get('medico_id', type=int)
+        prod_filter_id = request.args.get('producto_id', type=int)
+        plan_filter_id = request.args.get('plan_id', type=int)
         desde_str = (request.args.get('desde') or '').strip()
         hasta_str = (request.args.get('hasta') or '').strip()
         tipo_filter = (request.args.get('tipo') or '').strip()
@@ -562,6 +691,9 @@ def init_app(app):
             hasta = hoy
         return {
             'os_filter_id': os_filter_id,
+            'med_filter_id': med_filter_id,
+            'prod_filter_id': prod_filter_id,
+            'plan_filter_id': plan_filter_id,
             'desde': desde,
             'hasta': hasta,
             'tipo_filter': tipo_filter,
@@ -583,8 +715,22 @@ def init_app(app):
         filtros = _parse_filtros_dispensas()
 
         with get_db() as session:
-            dispensas, total_recetas, total_os, total_pac, os_options = (
+            dispensas, total_recetas, total_os, total_pac, os_options, med_options, prod_options, plan_options = (
                 _query_dispensas(filtros, session, id_farmacia))
+            # Resolver nombre del médico/producto/plan seleccionado para mostrar en el chip.
+            med_nombre = None
+            if filtros.get('med_filter_id'):
+                from database import ObsMedico
+                m = session.get(ObsMedico, filtros['med_filter_id'])
+                med_nombre = m.nombre if m and m.nombre else f"Médico #{filtros['med_filter_id']}"
+            prod_nombre = None
+            if filtros.get('prod_filter_id'):
+                p = session.get(ObsProducto, filtros['prod_filter_id'])
+                prod_nombre = p.descripcion if p else f"Producto #{filtros['prod_filter_id']}"
+            plan_nombre = None
+            if filtros.get('plan_filter_id'):
+                pl = session.get(ObsPlan, filtros['plan_filter_id'])
+                plan_nombre = pl.descripcion if pl else f"Plan #{filtros['plan_filter_id']}"
 
         return render_template(
             'os_dispensas.html',
@@ -593,7 +739,16 @@ def init_app(app):
             total_os=total_os,
             total_pac=total_pac,
             os_filter_id=filtros['os_filter_id'],
+            med_filter_id=filtros.get('med_filter_id'),
+            prod_filter_id=filtros.get('prod_filter_id'),
+            plan_filter_id=filtros.get('plan_filter_id'),
+            med_nombre=med_nombre,
+            prod_nombre=prod_nombre,
+            plan_nombre=plan_nombre,
             os_options=os_options,
+            med_options=med_options,
+            prod_options=prod_options,
+            plan_options=plan_options,
             tipo_filter=filtros['tipo_filter'],
             q_text=filtros['q'],
             desde=filtros['desde'].isoformat(),
@@ -619,7 +774,7 @@ def init_app(app):
         filtros = _parse_filtros_dispensas()
 
         with get_db() as session:
-            dispensas, total_recetas, total_os, total_pac, _os_options = (
+            dispensas, total_recetas, total_os, total_pac, _os_options, _med_options, _prod_options, _plan_options = (
                 _query_dispensas(filtros, session, id_farmacia))
 
         wb = Workbook()

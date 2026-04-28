@@ -14,7 +14,7 @@
 
     <div class="flex items-center gap-1 bg-[#f3f3f3] rounded-lg p-0.5 border border-surface-border">
         <a href="{{ url_for('os_dashboard') }}"
-           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if not os_filter %}bg-white shadow-sm text-[#1e1e1e]{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if not os_filter and not os_id_filter %}bg-white shadow-sm text-[#1e1e1e]{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
             Todas
         </a>
         <a href="{{ url_for('os_dashboard', os='PAMI') }}"
@@ -25,7 +25,27 @@
            class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if os_filter == 'IAPOS' %}bg-white shadow-sm text-violet-700{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
             IAPOS
         </a>
+        <a href="{{ url_for('os_dashboard', os='OTROS') }}"
+           class="px-3 py-1 rounded-md text-xs font-medium transition-colors {% if os_filter == 'OTROS' %}bg-white shadow-sm text-amber-700{% else %}text-[#6f6f6f] hover:text-[#1e1e1e]{% endif %}">
+            OTROS
+        </a>
     </div>
+
+    <select onchange="if(this.value) location.href='{{ url_for('os_dashboard') }}?os_id='+this.value; else location.href='{{ url_for('os_dashboard') }}'"
+            class="text-xs border border-surface-border bg-white rounded-lg px-2 py-1.5 max-w-[260px]"
+            title="Filtrar por una obra social específica">
+        <option value="">— filtrar por OS individual —</option>
+        {% for o in os_options %}
+        <option value="{{ o.os_id }}" {% if os_id_filter == o.os_id %}selected{% endif %}>{{ o.nombre }}</option>
+        {% endfor %}
+    </select>
+
+    {% if os_id_filter %}
+    <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-800 font-semibold">
+        Filtro: {{ os_id_filter_nombre }}
+        <a href="{{ url_for('os_dashboard') }}" class="ml-1 hover:text-emerald-900">✕</a>
+    </span>
+    {% endif %}
 
     <div class="ml-auto flex items-center gap-2">
         <a href="{{ url_for('os_dispensas') }}"
@@ -58,16 +78,21 @@
     </div>
 
     <!-- Breakdown por OS -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {% for code, info in por_os.items() %}
         <div class="bg-surface rounded-xl border border-surface-border p-4">
             <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full {% if code == 'PAMI' %}bg-sky-500{% else %}bg-violet-500{% endif %}"></span>
+                    <span class="w-2 h-2 rounded-full {% if code == 'PAMI' %}bg-sky-500{% elif code == 'IAPOS' %}bg-violet-500{% else %}bg-amber-500{% endif %}"></span>
                     <h3 class="font-bold text-[#1e1e1e]">{{ code }}</h3>
                 </div>
+                {% if code != 'OTROS' %}
                 <a href="{{ url_for('os_dispensas', os=code) }}"
                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">Ver dispensas →</a>
+                {% else %}
+                <a href="{{ url_for('os_dispensas') }}"
+                   class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]" title="Todas las OS distintas a PAMI/IAPOS">Ver dispensas →</a>
+                {% endif %}
             </div>
             <div class="grid grid-cols-3 gap-2 text-sm">
                 <div>
@@ -96,6 +121,44 @@
             <canvas id="chart-serie"></canvas>
         </div>
     </div>
+
+    <!-- Top 10 OS individuales del mes -->
+    {% if top_os %}
+    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <h3 class="font-bold text-[#1e1e1e]">Top 10 obras sociales — del mes</h3>
+            <a href="{{ url_for('obras_sociales_catalogo') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">Ver catálogo completo (879 OS) →</a>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="bg-[#f0f0f0]">
+                <tr>
+                    <th class="px-4 py-2 text-left text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Obra Social</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">Recetas</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">A cargo OS</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide">A cargo paciente</th>
+                    <th class="px-4 py-2 text-right text-[11px] text-[#6f6f6f] font-semibold uppercase tracking-wide"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for os in top_os %}
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-4 py-2">
+                        <span class="w-2 h-2 inline-block rounded-full mr-1.5 {% if os.categoria == 'PAMI' %}bg-sky-500{% elif os.categoria == 'IAPOS' %}bg-violet-500{% else %}bg-amber-500{% endif %}"></span>
+                        <a href="{{ url_for('obra_social_catalogo_detail', observer_id=os.os_id) }}" class="text-[#1e1e1e] hover:text-sky-700 font-medium">{{ os.nombre }}</a>
+                    </td>
+                    <td class="px-4 py-2 text-right font-mono">{{ os.recetas }}</td>
+                    <td class="px-4 py-2 text-right font-mono text-emerald-600">${{ os.importe_os | arg_currency }}</td>
+                    <td class="px-4 py-2 text-right font-mono">${{ os.importe_paciente | arg_currency }}</td>
+                    <td class="px-4 py-2 text-right">
+                        <a href="{{ url_for('os_dispensas', os_id=os.os_id) }}"
+                           class="text-xs text-sky-600 hover:underline">Dispensas →</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
 
     <!-- Lotes abiertos -->
     {% if lotes %}
@@ -193,11 +256,6 @@
         </div>
     </div>
 
-    <!-- Nota -->
-    <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
-        <p class="font-semibold mb-1">Datos de prueba (mock)</p>
-        <p class="text-xs">Todas las cifras son generadas aleatoriamente. Al conectar la vista <code class="font-mono bg-amber-100 px-1 rounded">v_dispensas_os</code> de ObServer, la UI se mantiene igual y sólo cambia la fuente.</p>
-    </div>
 </div>
 
 <script>
@@ -220,6 +278,11 @@ new Chart(document.getElementById('chart-serie'), {
                 label: 'IAPOS',
                 data: serieData.map(d => d.IAPOS),
                 backgroundColor: 'rgba(139, 92, 246, 0.8)',
+            },
+            {
+                label: 'OTROS',
+                data: serieData.map(d => d.OTROS || 0),
+                backgroundColor: 'rgba(245, 158, 11, 0.8)',
             },
         ],
     },
