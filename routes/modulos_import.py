@@ -292,6 +292,28 @@ def init_app(app):
                 sin_ventas_func=_sin_ventas if usar_historico else None,
             )
 
+            # 3.5. Lookup de descripción para los EANs unidad sugeridos por
+            # la heurística envase-múltiplo. Sin esto, el user ve solo un
+            # número en el input "EAN unidad" y no sabe a qué producto
+            # corresponde.
+            eans_sugeridos = {p['ean_unidad_sug'] for p in pack_map.values()
+                              if p.get('ean_unidad_sug')}
+            desc_unidad_map = {}
+            if eans_sugeridos:
+                # Buscar en obs_productos primero (catálogo más amplio),
+                # después en Producto local. Limit por seguridad.
+                rows_obs = (
+                    session.query(database.ObsProducto.codigo_barra,
+                                  database.ObsProducto.descripcion)
+                    .filter(database.ObsProducto.codigo_barra.in_(
+                        list(eans_sugeridos)[:500]))
+                    .filter(database.ObsProducto.fecha_baja.is_(None))
+                    .all()
+                )
+                for cb, desc in rows_obs:
+                    if cb and desc:
+                        desc_unidad_map[cb] = desc
+
             # 3. Combinar match + pack en cada entry.
             validados = []
             stats = {'ok': 0, 'fuzzy': 0, 'not_found': 0,
@@ -329,7 +351,9 @@ def init_app(app):
                     entry['_pack_confianza'] = pack_info.get('confianza', 'media')
                     entry['_pack_razon'] = pack_info.get('razon', '')
                     entry['_cantidad_pack'] = pack_info.get('cantidad')
-                    entry['_ean_unidad_sugerido'] = pack_info.get('ean_unidad_sug')
+                    ean_sug = pack_info.get('ean_unidad_sug') or ''
+                    entry['_ean_unidad_sugerido'] = ean_sug
+                    entry['_desc_unidad_sugerido'] = desc_unidad_map.get(ean_sug, '') if ean_sug else ''
                     if pack_info.get('confianza') == 'alta':
                         stats['pack_auto'] += 1
                     else:

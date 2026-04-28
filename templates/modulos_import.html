@@ -416,14 +416,28 @@ function renderPacksTable() {
             : (it._es_pack ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 ml-1">PACK?</span>' : '');
         const cantPack = it._cantidad_pack || '';
         const eanUnidad = it._ean_unidad_sugerido || '';
+        const descUnidad = it._desc_unidad_sugerido || '';
+        // Si es pack y no hay EAN unidad sugerido → botón para buscar manualmente
+        // candidatos del catálogo (reusa /api/ofertas/import-candidatos).
+        const buscarBtn = (it._es_pack && !eanUnidad)
+            ? `<button type="button" class="btn-buscar-unidad text-[9px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-1.5 py-0.5 rounded border border-violet-300 ml-1" data-idx="${idx}" title="Buscar candidatos del catálogo por descripción">🔍</button>`
+            : '';
+        const descLabel = descUnidad
+            ? `<div class="text-[9px] text-emerald-700 truncate max-w-[260px] mt-0.5" title="${escapeHtml(descUnidad)}">→ ${escapeHtml(descUnidad)}</div>`
+            : '';
         html.push(`<tr data-idx="${idx}" class="${banda} hover:brightness-95">
             <td class="px-2 py-1 text-center"><input type="checkbox" class="pack-chk" data-idx="${idx}" ${checked}></td>
             <td class="px-2 py-1 font-mono text-[10px] whitespace-nowrap">${escapeHtml(it.ean || it.codigo || '')}</td>
             <td class="px-2 py-1">
-                <input type="text" class="pack-ean-unidad w-32 font-mono text-[10px] border border-surface-border rounded px-1 py-0.5"
-                       data-idx="${idx}" value="${escapeHtml(eanUnidad)}"
-                       placeholder="${it._es_pack ? 'EAN unidad' : '—'}"
-                       ${it._es_pack ? '' : 'disabled style="background:#fafafa"'}>
+                <div class="flex items-start gap-1">
+                    <input type="text" class="pack-ean-unidad w-32 font-mono text-[10px] border border-surface-border rounded px-1 py-0.5"
+                           data-idx="${idx}" value="${escapeHtml(eanUnidad)}"
+                           placeholder="${it._es_pack ? 'EAN unidad' : '—'}"
+                           ${it._es_pack ? '' : 'disabled style="background:#fafafa"'}>
+                    ${buscarBtn}
+                </div>
+                ${descLabel}
+                <div id="cand-unidad-${idx}" class="hidden mt-1"></div>
             </td>
             <td class="px-2 py-1">${escapeHtml(it.descripcion || '')}${badge}</td>
             <td class="px-2 py-1 text-right whitespace-nowrap">${it.cantidad ?? ''}</td>
@@ -462,6 +476,62 @@ function renderPacksTable() {
         const v = (inp.value || '').trim();
         _validados[i]._ean_unidad_sugerido = v || null;
     }));
+    // Botón "🔍 Buscar unidad": fetch candidatos del catálogo por descripción
+    // del pack y dejar que el user elija. Reusa el endpoint de ofertas.
+    body.querySelectorAll('.btn-buscar-unidad').forEach(btn => btn.addEventListener('click', async e => {
+        const i = parseInt(btn.dataset.idx, 10);
+        await buscarUnidadCandidatos(i);
+    }));
+}
+
+async function buscarUnidadCandidatos(idx) {
+    const it = _validados[idx];
+    if (!it) return;
+    const slot = document.getElementById('cand-unidad-' + idx);
+    if (!slot) return;
+    slot.classList.remove('hidden');
+    slot.innerHTML = '<p class="text-[10px] text-[#888] italic">Buscando candidatos…</p>';
+    const labId = document.getElementById('lab-select')?.value;
+    try {
+        const r = await fetch('/api/ofertas/import-candidatos', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                descripcion: it.descripcion || '',
+                laboratorio_id: labId ? parseInt(labId, 10) : null,
+                top: 8,
+            }),
+        });
+        const data = await r.json();
+        const cands = data.candidatos || [];
+        if (!cands.length) {
+            slot.innerHTML = '<p class="text-[10px] text-amber-700 italic">Sin candidatos cercanos en el catálogo.</p>';
+            return;
+        }
+        slot.innerHTML = '<div class="border border-violet-200 bg-violet-50 rounded p-1 space-y-0.5">' +
+            cands.map(c => {
+                const ean = c.ean || c.codigo_barra || '';
+                const desc = c.descripcion || c.producto_descripcion || '';
+                const score = c.score != null ? Math.round(c.score * 100) + '%' : '';
+                return `<button type="button" class="cand-pick block w-full text-left text-[10px] hover:bg-violet-100 rounded px-1.5 py-0.5"
+                        data-idx="${idx}" data-ean="${escapeHtml(ean)}" data-desc="${escapeHtml(desc)}">
+                        <span class="font-mono text-[#666]">${escapeHtml(ean)}</span>
+                        <span class="text-[#1e1e1e]">${escapeHtml(desc)}</span>
+                        <span class="text-violet-700 font-semibold ml-1">${score}</span>
+                    </button>`;
+            }).join('') + '</div>';
+        slot.querySelectorAll('.cand-pick').forEach(b => b.addEventListener('click', () => {
+            const i = parseInt(b.dataset.idx, 10);
+            const ean = b.dataset.ean;
+            const desc = b.dataset.desc;
+            _validados[i]._ean_unidad_sugerido = ean;
+            _validados[i]._desc_unidad_sugerido = desc;
+            renderPacksTable();   // re-render con la equivalencia ya resuelta
+        }));
+    } catch (err) {
+        slot.innerHTML = `<p class="text-[10px] text-red-700">Error: ${escapeHtml(err.message)}</p>`;
+    }
 }
 
 function actualizarPackCount() {
