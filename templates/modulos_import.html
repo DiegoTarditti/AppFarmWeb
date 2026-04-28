@@ -364,8 +364,6 @@ async function validarItems({reentrar = false} = {}) {
         const data = await r.json();
         if (!r.ok) { alert('Error: ' + (data.error || '')); return; }
         _validados = data.items;
-        const packs = _validados.filter(it => it._es_pack);
-        console.log('[modulos] packs detectados:', packs.length, packs.slice(0, 5));
         renderPacksTable();
         if (!reentrar) setStep(3);
         if (histStatus) histStatus.textContent = '';
