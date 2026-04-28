@@ -81,14 +81,20 @@ def init_app(app):
             total = base.count()
             prods = base.order_by(Producto.descripcion).limit(limit).offset(offset).all()
 
-            # Resolver tvc por producto en batch (para mostrar el badge en la tabla)
+            # Resolver tvc + droga por producto en batch
             from database import ObsProducto, ProductoAtributo
             obs_ids = [p.observer_id for p in prods if p.observer_id]
             tvc_map = {}
+            droga_map = {}
             if obs_ids:
-                tvc_map = dict(session.query(ObsProducto.observer_id,
-                                              ObsProducto.id_tipo_venta_control)
-                               .filter(ObsProducto.observer_id.in_(obs_ids)).all())
+                rows = (session.query(ObsProducto.observer_id,
+                                       ObsProducto.id_tipo_venta_control,
+                                       ObsProducto.nombre_droga_observer)
+                        .filter(ObsProducto.observer_id.in_(obs_ids)).all())
+                for oid, tvc, droga in rows:
+                    tvc_map[oid] = tvc
+                    if droga:
+                        droga_map[oid] = droga
 
             # Atributos catalogados en batch
             prod_ids = [p.id for p in prods]
@@ -107,6 +113,31 @@ def init_app(app):
                         'confianza': a.confianza,
                     }
 
+            # Stock en batch: ERP local (por codigo_barra) + ObServer (por observer_id)
+            from database import ErpStock, ObsStock
+            stock_erp_map = {}
+            cb_list = [p.codigo_barra for p in prods if p.codigo_barra]
+            if cb_list:
+                rows = (session.query(ErpStock.codigo_barra, ErpStock.cantidad)
+                        .filter(ErpStock.codigo_barra.in_(cb_list)).all())
+                stock_erp_map = dict(rows)
+            stock_obs_map = {}
+            if obs_ids:
+                rows = (session.query(ObsStock.producto_observer, ObsStock.stock_actual)
+                        .filter(ObsStock.producto_observer.in_(obs_ids)).all())
+                stock_obs_map = dict(rows)
+
+            def _tvc_label(t):
+                if not t:
+                    return ''
+                if t == 'L':
+                    return 'Libre'
+                if t in ('R', 'A'):
+                    return 'Receta'
+                if t in ('1','2','3','4','5','6','7','8'):
+                    return f'Ctrl·{t}'
+                return t
+
             data = [
                 {
                     'id': p.id,
@@ -119,8 +150,13 @@ def init_app(app):
                     'laboratorio_id': p.laboratorio_id or '',
                     'laboratorio_nombre': p.laboratorio.nombre if p.laboratorio else '',
                     'actualizado_en': p.actualizado_en.strftime('%d/%m/%Y') if p.actualizado_en else '',
+                    'ultima_compra': p.ultima_compra.strftime('%d/%m/%Y') if p.ultima_compra else '',
                     'es_pack': p.es_pack or 0,
                     'tvc': tvc_map.get(p.observer_id, '') if p.observer_id else '',
+                    'tvc_label': _tvc_label(tvc_map.get(p.observer_id, '') if p.observer_id else ''),
+                    'droga_id': droga_map.get(p.observer_id) if p.observer_id else None,
+                    'stock_erp': stock_erp_map.get(p.codigo_barra),
+                    'stock_obs': stock_obs_map.get(p.observer_id) if p.observer_id else None,
                     'atributos': atributos_map.get(p.id),
                 }
                 for p in prods

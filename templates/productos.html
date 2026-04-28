@@ -143,17 +143,19 @@
                     <th class="text-left px-3 py-2" style="width:130px">Cód. principal</th>
                     <th class="text-left px-3 py-2" style="width:130px" title="EANs alternativos. Click en un slot vacío para agregar.">EAN alt.</th>
                     <th class="text-left px-3 py-2" style="width:130px">Laboratorio</th>
-                    <th class="text-left px-3 py-2" style="width:200px"
+                    <th class="text-left px-3 py-2" style="width:280px"
                         title="Catalogación estructurada: monodroga · concentración · forma · cantidad de envase. Vacío = falta extraer (corré el backfill en /catalogacion).">
                         🧬 Catalogación
                     </th>
+                    <th class="text-right px-3 py-2" style="width:80px" title="Stock: ERP local / ObServer">Stock</th>
+                    <th class="text-right px-3 py-2" style="width:90px" title="Última fecha de compra (factura cargada)">Últ. compra</th>
+                    <th class="text-left px-3 py-2"  style="width:80px" title="Tipo de venta: Libre · Receta · Controlado N (1-8)">T. venta</th>
                     <th class="text-right px-3 py-2" style="width:70px">P.PVP</th>
                     <th class="text-center px-3 py-2" style="width:52px"
                         title="Marcar si es un pack (ej: blíster x2, display x12). Si lo marcás, cargá en 'EAN alt. 1' el código de la unidad individual para que el auto-complete funcione en Módulos de descuento.">
                         Pack ⓘ
                     </th>
-                    <th class="text-right px-3 py-2" style="width:80px">Actualizado</th>
-                    <th class="px-3 py-2 rounded-tr-lg" style="width:56px"></th>
+                    <th class="px-3 py-2 rounded-tr-lg" style="width:170px">Acciones</th>
                 </tr>
             </thead>
             <tbody id="table-body"></tbody>
@@ -238,6 +240,9 @@ function buildRow(p) {
             </form>
         </td>
         <td class="px-3 py-2">${atributosCell(p)}</td>
+        <td class="px-3 py-2 text-right text-[11px] text-[#555]" title="ERP local / ObServer">${stockCell(p)}</td>
+        <td class="px-3 py-2 text-right text-[11px] text-[#666]">${escHtml(p.ultima_compra) || '<span class="text-[#ccc]">—</span>'}</td>
+        <td class="px-3 py-2 text-[11px]">${tvcCell(p.tvc, p.tvc_label)}</td>
         <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
             ${p.precio_pvp ? '$' + parseInt(p.precio_pvp) : '<span class="text-[#ccc] placeholder">—</span>'}
         </td>
@@ -247,36 +252,18 @@ function buildRow(p) {
                    title="Si es pack, cargá el EAN de la unidad individual en 'EAN alt. 1' para que se auto-complete en Módulos de descuento."
                    class="w-3.5 h-3.5 accent-amber-500 cursor-pointer">
         </td>
-        <td class="px-3 py-2 text-right text-[#999]">${escHtml(p.actualizado_en)}</td>
-        <td class="px-3 py-2 text-center">
-            <div class="flex items-center justify-center gap-1">
-                <a href="/vademecum?q=${encodeURIComponent(p.descripcion)}"
-                   title="Buscar en Vademécum"
-                   class="w-8 h-8 flex items-center justify-center rounded text-[#888] hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
-                    </svg>
-                </a>
-                <a href="/precios/${encodeURIComponent(p.codigo_barra)}"
-                   title="Historial de precios por proveedor"
-                   class="w-8 h-8 flex items-center justify-center rounded text-[#888] hover:text-emerald-600 hover:bg-emerald-50 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l-4-4 4-4M4 4h16v16H4z"/>
-                    </svg>
-                </a>
-                <a href="/producto/${p.id}"
-                   title="Ficha completa del producto (atributos, ObServer, precios)"
-                   class="w-8 h-8 flex items-center justify-center rounded text-[#888] hover:text-violet-600 hover:bg-violet-50 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                    </svg>
-                </a>
+        <td class="px-3 py-2">
+            <div class="flex items-center justify-end gap-1 text-[10px]">
+                <button onclick="openChart('${escHtml(p.codigo_barra)}')" title="Ventas históricas"
+                        class="px-1.5 py-1 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors font-semibold">📈 Vts</button>
+                <a href="/vademecum?q=${encodeURIComponent(p.descripcion)}" title="Vademécum"
+                   class="px-1.5 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 transition-colors font-semibold">VAD</a>
+                <a href="/precios/${encodeURIComponent(p.codigo_barra)}" title="Historial de precios por proveedor"
+                   class="px-1.5 py-1 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-colors font-semibold">$</a>
+                <a href="/producto/${p.id}" title="Ficha completa"
+                   class="px-1.5 py-1 rounded border border-violet-300 text-violet-800 bg-violet-50 hover:bg-violet-100 transition-colors font-semibold">Fic</a>
                 <button onclick="deleteProducto(${p.id}, this)" title="Eliminar producto"
-                        class="w-6 h-6 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                </button>
+                        class="px-1.5 py-1 rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 transition-colors font-semibold">×</button>
             </div>
         </td>
     </tr>`;
