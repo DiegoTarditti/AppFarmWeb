@@ -1054,9 +1054,16 @@ function renderValidacion(stats) {
         if (showWarn)  visibles.add('warning');
         if (showNF)    visibles.add('not_found');
         if (showFuzzy) visibles.add('fuzzy');
+        const _statusPrio = {'not_found': 0, 'warning': 1, 'fuzzy': 2};
         const problematicos = _items
             .map((it, idx) => ({...it, _idx: idx}))
-            .filter(it => visibles.has(it._status));
+            .filter(it => visibles.has(it._status))
+            .sort((a, b) => {
+                const pa = _statusPrio[a._status] ?? 9;
+                const pb = _statusPrio[b._status] ?? 9;
+                if (pa !== pb) return pa - pb;
+                return (a.descripcion || '').localeCompare(b.descripcion || '');
+            });
         if (!problematicos.length) {
             detalle.innerHTML = '<p class="text-xs text-[#999]">Ningún item con problemas. ✓</p>';
         } else {
@@ -1076,7 +1083,7 @@ function renderValidacion(stats) {
                 </thead>`;
             detalle.innerHTML = '<table class="w-full text-xs">' + thead +
                 '<tbody class="divide-y divide-[#ececec]">' +
-                problematicos.slice(0, 50).map(it => {
+                problematicos.slice(0, 200).map(it => {
                     const status = it._status;
                     const colorCls = status === 'not_found' ? 'text-red-700' :
                                      status === 'warning' ? 'text-amber-700' :
@@ -1120,7 +1127,7 @@ function renderValidacion(stats) {
                         <td class="py-1 pr-2">${accion}</td>
                     </tr>`;
                 }).join('') +
-                (problematicos.length > 50 ? `<tr><td colspan="8" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 50} más</td></tr>` : '') +
+                (problematicos.length > 200 ? `<tr><td colspan="8" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 200} más (refiná el filtro de "Incluir:")</td></tr>` : '') +
                 '</tbody></table>';
 
             // Listeners de los botones "Buscar similar"
