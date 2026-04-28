@@ -59,7 +59,7 @@
         <div class="bg-white rounded-xl border border-surface-border p-5">
             <div class="flex items-center justify-between mb-3">
                 <p class="font-semibold text-sm">🧬 Atributos estructurados</p>
-                <button onclick="reExtraer()" id="btn-reextraer"
+                <button type="button" onclick="reExtraer()" id="btn-reextraer"
                         class="text-[11px] px-2 py-1 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold">
                     🔄 Re-extraer
                 </button>
@@ -75,16 +75,19 @@
             {% endif %}
             <form id="form-atributos" class="text-sm space-y-2.5">
                 <div class="grid grid-cols-3 gap-2 items-center">
-                    <label class="text-[#888]">Monodroga</label>
-                    <input type="text" name="monodroga" value="{{ atributos.monodroga_display if atributos else '' }}"
+                    <label for="atr-monodroga" class="text-[#888]">Monodroga</label>
+                    <input type="text" id="atr-monodroga" name="monodroga" value="{{ atributos.monodroga_display if atributos else '' }}"
+                           title="Nombre de la droga / principio activo"
                            class="col-span-2 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
                 </div>
                 <div class="grid grid-cols-3 gap-2 items-center">
-                    <label class="text-[#888]">Concentración</label>
+                    <label for="atr-concentracion" class="text-[#888]">Concentración</label>
                     <div class="col-span-2 flex gap-2">
-                        <input type="text" name="concentracion_mg" value="{{ atributos.concentracion_mg if atributos and atributos.concentracion_mg else '' }}"
+                        <input type="text" id="atr-concentracion" name="concentracion_mg" value="{{ atributos.concentracion_mg if atributos and atributos.concentracion_mg else '' }}"
+                               title="Cantidad numérica de la dosis (ej: 500)"
                                class="flex-1 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-brand">
                         <input type="text" name="concentracion_unidad" value="{{ atributos.concentracion_unidad if atributos else '' }}" placeholder="MG / % / UI"
+                               title="Unidad de la concentración"
                                class="w-24 bg-[#f9f9f9] border border-[#e0e0e0] rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
                     </div>
                 </div>
@@ -138,7 +141,7 @@
         <div id="precios-loading" class="text-center text-sm text-[#999] py-6">Cargando…</div>
         <div id="precios-empty" class="hidden text-center text-sm text-[#999] py-6">Sin compras registradas para este EAN.</div>
         <div id="precios-content" class="hidden">
-            <div style="height:240px"><canvas id="chart"></canvas></div>
+            <div class="h-60"><canvas id="chart"></canvas></div>
             <table class="w-full text-xs mt-4">
                 <thead class="bg-[#f5f5f5] text-[#888] uppercase tracking-wide text-[10px]">
                     <tr>
@@ -249,6 +252,20 @@ async function reExtraer() {
 }
 
 cargarPrecios();
+
+// Auto-extraer la primera vez que se abre la ficha si todavía no hay atributos.
+// Si el regex/obs no aporta nada, queda igual (vacío) — el usuario edita manual.
+{% if not atributos %}
+(async () => {
+    try {
+        const r = await fetch(`/api/producto/${PROD_ID}/recatalogar`, { method: 'POST' }).then(r => r.json());
+        if (r.ok && r.atributos) {
+            // Hubo extracción exitosa: recargar para mostrar los datos.
+            location.reload();
+        }
+    } catch (e) { /* silencioso; el usuario puede dar click en Re-extraer */ }
+})();
+{% endif %}
 </script>
 
 {% endif %}
