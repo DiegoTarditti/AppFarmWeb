@@ -138,6 +138,229 @@ def _mock_dispensas():
 def init_app(app):
 
     @app.route('/obras-sociales')
+    def os_index():
+        """Hub del módulo OS con cards estilo /informes, agrupadas por
+        dimensión de análisis (macro / médico / medicamento / paciente /
+        convenio / operativo / temporal / estratégico).
+        """
+        return render_template('os_index.html')
+
+    @app.route('/obras-sociales/rentabilidad')
+    def os_rentabilidad():
+        """Rentabilidad real por OS: PVP - costo estimado - descuento OS.
+
+        El "costo estimado" se calcula cruzando obs_ventas_detalle.producto_observer
+        contra el último precio_unitario de factura_items (vía producto_codigos_barra
+        + productos.observer_id). Productos sin compra registrada quedan fuera del
+        cálculo de costo (se reportan como 'sin costo conocido').
+        """
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+        desde_str = (request.args.get('desde') or '').strip()
+        hasta_str = (request.args.get('hasta') or '').strip()
+        try:
+            desde = _date.fromisoformat(desde_str) if desde_str else hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(hasta_str) if hasta_str else hoy
+        except ValueError:
+            hasta = hoy
+        if hasta < desde:
+            desde, hasta = hasta, desde
+
+        return render_template('os_rentabilidad.html',
+                               desde=desde.isoformat(), hasta=hasta.isoformat())
+
+    @app.route('/api/obras-sociales/rentabilidad')
+    def api_os_rentabilidad():
+        """JSON con KPIs + ranking + alertas + serie temporal.
+
+        Query params: desde, hasta (YYYY-MM-DD).
+        """
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+
+        with database.get_db() as session:
+            # Query principal: agrega por OS, calcula costo cruzando productos
+            sql = _text('''
+                WITH ultima_compra AS (
+                    SELECT codigo_barra, precio_unitario,
+                           ROW_NUMBER() OVER (PARTITION BY codigo_barra
+                                              ORDER BY id DESC) AS rn
+                    FROM factura_items
+                    WHERE precio_unitario IS NOT NULL AND precio_unitario > 0
+                      AND codigo_barra IS NOT NULL
+                ),
+                costo_por_observer AS (
+                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                    FROM ultima_compra uc
+                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                    JOIN productos p ON p.id = pcb.producto_id
+                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                    GROUP BY p.observer_id
+                )
+                SELECT
+                    ovd.obra_social_observer AS os_id,
+                    COALESCE(oos.descripcion, 'Sin OS') AS os_nombre,
+                    SUM(ovd.importe) AS facturado,
+                    SUM(COALESCE(ovd.importe_a_cargo_os, 0)) AS a_cargo_os,
+                    SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                             THEN ovd.cantidad * cpo.costo_unitario ELSE 0 END) AS costo_estimado,
+                    SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                             THEN ovd.importe ELSE 0 END) AS facturado_con_costo,
+                    COUNT(*) AS dispensas,
+                    SUM(CASE WHEN cpo.costo_unitario IS NULL THEN 1 ELSE 0 END) AS dispensas_sin_costo,
+                    COUNT(DISTINCT ovd.id_operacion) AS recetas
+                FROM obs_ventas_detalle ovd
+                LEFT JOIN costo_por_observer cpo ON cpo.observer_id = ovd.producto_observer
+                LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                  AND ovd.obra_social_observer IS NOT NULL
+                GROUP BY ovd.obra_social_observer, oos.descripcion
+                ORDER BY (SUM(ovd.importe) - SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                                                     THEN ovd.cantidad * cpo.costo_unitario ELSE 0 END)) DESC
+            ''')
+            rows = session.execute(sql, {'desde': desde, 'hasta': hasta}).fetchall()
+
+            ranking = []
+            tot_fact = 0.0
+            tot_costo = 0.0
+            tot_a_cargo = 0.0
+            tot_dispensas = 0
+            tot_dispensas_sin_costo = 0
+            tot_facturado_con_costo = 0.0
+            for r in rows:
+                fact = float(r.facturado or 0)
+                costo = float(r.costo_estimado or 0)
+                fact_cc = float(r.facturado_con_costo or 0)
+                a_cargo = float(r.a_cargo_os or 0)
+                ganancia = fact_cc - costo  # solo de líneas con costo conocido
+                margen_pct = (ganancia / fact_cc * 100) if fact_cc > 0 else None
+                cobertura_costo_pct = (fact_cc / fact * 100) if fact > 0 else 0
+                ranking.append({
+                    'os_id': r.os_id,
+                    'os_nombre': r.os_nombre,
+                    'facturado': round(fact, 2),
+                    'a_cargo_os': round(a_cargo, 2),
+                    'costo_estimado': round(costo, 2),
+                    'facturado_con_costo': round(fact_cc, 2),
+                    'ganancia': round(ganancia, 2),
+                    'margen_pct': round(margen_pct, 2) if margen_pct is not None else None,
+                    'cobertura_costo_pct': round(cobertura_costo_pct, 1),
+                    'dispensas': int(r.dispensas or 0),
+                    'dispensas_sin_costo': int(r.dispensas_sin_costo or 0),
+                    'recetas': int(r.recetas or 0),
+                })
+                tot_fact += fact
+                tot_costo += costo
+                tot_a_cargo += a_cargo
+                tot_facturado_con_costo += fact_cc
+                tot_dispensas += int(r.dispensas or 0)
+                tot_dispensas_sin_costo += int(r.dispensas_sin_costo or 0)
+
+            tot_ganancia = tot_facturado_con_costo - tot_costo
+            tot_margen_pct = (tot_ganancia / tot_facturado_con_costo * 100) if tot_facturado_con_costo > 0 else None
+            tot_cobertura = (tot_facturado_con_costo / tot_fact * 100) if tot_fact > 0 else 0
+
+            # Alertas: OS con margen negativo o muy bajo
+            alertas = []
+            for r in ranking:
+                if r['margen_pct'] is not None:
+                    if r['margen_pct'] < 0:
+                        alertas.append({
+                            'tipo': 'critico',
+                            'os_nombre': r['os_nombre'],
+                            'mensaje': f"Margen NEGATIVO ({r['margen_pct']}%) — perdés ${abs(r['ganancia']):,.0f} en {r['dispensas']} dispensas",
+                        })
+                    elif r['margen_pct'] < 15:
+                        alertas.append({
+                            'tipo': 'advertencia',
+                            'os_nombre': r['os_nombre'],
+                            'mensaje': f"Margen bajo ({r['margen_pct']}%). Revisar descuento o reemplazar.",
+                        })
+
+            # Serie temporal: facturado y ganancia por día
+            sql_dia = _text('''
+                WITH ultima_compra AS (
+                    SELECT codigo_barra, precio_unitario,
+                           ROW_NUMBER() OVER (PARTITION BY codigo_barra ORDER BY id DESC) AS rn
+                    FROM factura_items
+                    WHERE precio_unitario IS NOT NULL AND precio_unitario > 0
+                      AND codigo_barra IS NOT NULL
+                ),
+                costo_por_observer AS (
+                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                    FROM ultima_compra uc
+                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                    JOIN productos p ON p.id = pcb.producto_id
+                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                    GROUP BY p.observer_id
+                )
+                SELECT
+                    ovd.fecha_estadistica AS fecha,
+                    SUM(ovd.importe) AS facturado,
+                    SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                             THEN ovd.cantidad * cpo.costo_unitario ELSE 0 END) AS costo,
+                    SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                             THEN ovd.importe ELSE 0 END) AS facturado_con_costo
+                FROM obs_ventas_detalle ovd
+                LEFT JOIN costo_por_observer cpo ON cpo.observer_id = ovd.producto_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                  AND ovd.obra_social_observer IS NOT NULL
+                GROUP BY ovd.fecha_estadistica
+                ORDER BY ovd.fecha_estadistica
+            ''')
+            rows_dia = session.execute(sql_dia, {'desde': desde, 'hasta': hasta}).fetchall()
+            serie = [{
+                'fecha': r.fecha.isoformat() if r.fecha else None,
+                'facturado': float(r.facturado or 0),
+                'ganancia': float(r.facturado_con_costo or 0) - float(r.costo or 0),
+                'costo': float(r.costo or 0),
+            } for r in rows_dia]
+
+        return jsonify({
+            'desde': desde.isoformat(),
+            'hasta': hasta.isoformat(),
+            'kpis': {
+                'facturado_total': round(tot_fact, 2),
+                'costo_estimado': round(tot_costo, 2),
+                'ganancia_bruta': round(tot_ganancia, 2),
+                'margen_pct': round(tot_margen_pct, 2) if tot_margen_pct is not None else None,
+                'a_cargo_os': round(tot_a_cargo, 2),
+                'a_cargo_os_pct': round(tot_a_cargo / tot_fact * 100, 1) if tot_fact > 0 else 0,
+                'dispensas': tot_dispensas,
+                'dispensas_sin_costo': tot_dispensas_sin_costo,
+                'cobertura_costo_pct': round(tot_cobertura, 1),
+            },
+            'ranking': ranking,
+            'alertas': alertas,
+            'serie_temporal': serie,
+        })
+
+    @app.route('/obras-sociales/dashboard')
     def os_dashboard():
         """Dashboard de OS — datos reales desde obs_ventas_detalle.
 
