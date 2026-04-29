@@ -74,10 +74,14 @@ CONCENTRACION_RX = re.compile(
 _UNIDADES_DOSIS = ('MG', 'MCG', 'G', '%', 'UI', 'MG/ML', 'MG/5ML', 'MCG/ML', 'UI/ML', 'G/L')
 _FORMAS_LIQUIDAS = ('SUSP', 'SOL', 'GTS', 'COL', 'GEL', 'LOC', 'SPRAY')
 
-# Cantidad de envase: "X 16", "X16", "POR 30", "30 COMP", "30 CAP", "30 UN"
+# Cantidad de envase: "X 16", "X16", "POR 30", "30 COMP", "30 CAP", "30 UN".
+# Cierre con (?!\d) en lugar de \b para que "X 60ML" capture 60 — el \b no
+# rompe entre dígito y letra alfabética. Permitimos letras después
+# (típico en SUSP "X 60ML", "X 30G") pero NO más dígitos (eso sería
+# parte del mismo número).
 CANTIDAD_PATTERNS = [
-    re.compile(r'\bX\s*(\d{1,4})\b', re.IGNORECASE),
-    re.compile(r'\bPOR\s*(\d{1,4})\b', re.IGNORECASE),
+    re.compile(r'\bX\s*(\d{1,4})(?!\d)', re.IGNORECASE),
+    re.compile(r'\bPOR\s*(\d{1,4})(?!\d)', re.IGNORECASE),
     re.compile(r'\b(\d{1,4})\s*(?:COMPR(?:IMIDOS?)?|CPR|COMP|C[AÁ]PSULAS?|CAP|UN(?:IDADES)?|UND)\b', re.IGNORECASE),
 ]
 
@@ -176,11 +180,17 @@ def extraer_de_descripcion(descripcion):
     # Fallback: concentración como número "huérfano" (sin unidad pegada) en
     # sólidos orales tipo "ACTRON 600 RAPIDA ACCION CAP x 10" donde 600 son mg
     # implícitos. Solo aplica si la regex principal NO capturó concentración y
-    # la forma es CPR/CAP (sólido oral). Filtra el número de cantidad_envase.
+    # la forma es CPR/CAP (sólido oral).
+    #
+    # El regex acepta cualquier número precedido por inicio o espacio
+    # (incluso si la palabra previa es alfabética como ACTRON/IBUPIRAC).
+    # Filtra:
+    #   - números fuera de rango 1-1000
+    #   - el número de cantidad_envase si ya se capturó (`X 10` → 10)
+    #   - números cuya palabra previa es "X" o "POR" (multiplicador de cant)
     if 'concentracion_mg' not in out and out.get('forma_farma') in ('CPR', 'CAP'):
         cant_envase_int = int(out['cantidad_envase']) if out.get('cantidad_envase') else None
-        # Numero entre 1 y 1000, NO precedido por X/POR (esos son cantidad).
-        for m in re.finditer(r'(?<![A-Z\d/])(?<![X])\s(\d{1,4})(?![A-Z\d.,])', ' ' + desc + ' '):
+        for m in re.finditer(r'(?:^|\s)(\d{1,4})(?![A-Z\d.,])', desc + ' '):
             try:
                 n = int(m.group(1))
             except ValueError:
@@ -188,6 +198,11 @@ def extraer_de_descripcion(descripcion):
             if n < 1 or n > 1000:
                 continue
             if cant_envase_int is not None and n == cant_envase_int:
+                continue
+            # Excluir números precedidos directamente por "X" o "POR" (cant)
+            prev = desc[:m.start()].rstrip()
+            ultima_palabra = prev.split()[-1].upper() if prev.split() else ''
+            if ultima_palabra in ('X', 'POR'):
                 continue
             out['concentracion_mg'] = Decimal(n)
             out['concentracion_unidad'] = 'MG'
