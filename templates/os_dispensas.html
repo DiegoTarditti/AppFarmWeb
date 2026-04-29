@@ -109,6 +109,21 @@
                    class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
         </div>
 
+        {% if es_real %}
+        <div class="flex items-center gap-1" title="Importe total de la receta (mín)">
+            <label class="text-xs text-[#6f6f6f]">$ mín</label>
+            <input type="number" step="any" name="importe_min" value="{{ importe_min if importe_min is not none else '' }}"
+                   placeholder="0" onchange="this.form.submit()"
+                   class="w-24 bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+        <div class="flex items-center gap-1" title="Importe total de la receta (máx)">
+            <label class="text-xs text-[#6f6f6f]">$ máx</label>
+            <input type="number" step="any" name="importe_max" value="{{ importe_max if importe_max is not none else '' }}"
+                   placeholder="∞" onchange="this.form.submit()"
+                   class="w-24 bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+        </div>
+        {% endif %}
+
         <input type="text" name="q" value="{{ q_text }}" placeholder="Cliente / DNI / OS / N° operación…"
                class="flex-1 min-w-[220px] bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
 

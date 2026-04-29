@@ -518,6 +518,8 @@ def init_app(app):
         prod_filter_id = filtros.get('prod_filter_id')
         plan_filter_id = filtros.get('plan_filter_id')
         cob_filter = filtros.get('cob_filter') or ''
+        importe_min = filtros.get('importe_min')
+        importe_max = filtros.get('importe_max')
         desde = filtros['desde']
         hasta = filtros['hasta']
         tipo_filter = filtros.get('tipo_filter') or ''
@@ -592,6 +594,11 @@ def init_app(app):
             recetas_q = recetas_q.having(particular_agg == 1)
         elif tipo_filter == 'os':
             recetas_q = recetas_q.having(particular_agg == 0)
+        # Filtro por importe total de la receta (rango).
+        if importe_min is not None:
+            recetas_q = recetas_q.having(func.sum(ObsVentaDetalle.importe) >= importe_min)
+        if importe_max is not None:
+            recetas_q = recetas_q.having(func.sum(ObsVentaDetalle.importe) <= importe_max)
 
         recetas_full = recetas_q.limit(500).all()
 
@@ -803,6 +810,18 @@ def init_app(app):
         cob_filter = (request.args.get('cobertura') or '').strip()
         if cob_filter not in ('0%', '1-39%', '40-69%', '70-99%', '100%'):
             cob_filter = ''
+        # Filtro por importe total de la receta (rango). Útil para detectar
+        # recetas grandes (cobranza alta) o muy chicas (filtro de ruido).
+        try:
+            importe_min = float((request.args.get('importe_min') or '').strip()) \
+                if (request.args.get('importe_min') or '').strip() else None
+        except ValueError:
+            importe_min = None
+        try:
+            importe_max = float((request.args.get('importe_max') or '').strip()) \
+                if (request.args.get('importe_max') or '').strip() else None
+        except ValueError:
+            importe_max = None
         desde_str = (request.args.get('desde') or '').strip()
         hasta_str = (request.args.get('hasta') or '').strip()
         tipo_filter = (request.args.get('tipo') or '').strip()
@@ -822,6 +841,8 @@ def init_app(app):
             'prod_filter_id': prod_filter_id,
             'plan_filter_id': plan_filter_id,
             'cob_filter': cob_filter,
+            'importe_min': importe_min,
+            'importe_max': importe_max,
             'desde': desde,
             'hasta': hasta,
             'tipo_filter': tipo_filter,
@@ -873,6 +894,8 @@ def init_app(app):
             prod_filter_id=filtros.get('prod_filter_id'),
             plan_filter_id=filtros.get('plan_filter_id'),
             cob_filter=filtros.get('cob_filter') or '',
+            importe_min=filtros.get('importe_min'),
+            importe_max=filtros.get('importe_max'),
             med_nombre=med_nombre,
             prod_nombre=prod_nombre,
             plan_nombre=plan_nombre,
