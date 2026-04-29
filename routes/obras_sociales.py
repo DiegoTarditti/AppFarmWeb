@@ -180,6 +180,19 @@ def init_app(app):
 
     @app.route('/api/obras-sociales/rentabilidad')
     def api_os_rentabilidad():
+        """JSON con KPIs + ranking + alertas + serie temporal."""
+        try:
+            return _api_os_rentabilidad_inner()
+        except Exception as exc:
+            import traceback
+            app.logger.exception('api_os_rentabilidad falló')
+            return jsonify({
+                'error': str(exc),
+                'tipo': type(exc).__name__,
+                'traceback_resumen': traceback.format_exc().splitlines()[-5:],
+            }), 500
+
+    def _api_os_rentabilidad_inner():
         """JSON con KPIs + ranking + alertas + serie temporal.
 
         Query params: desde, hasta (YYYY-MM-DD).
