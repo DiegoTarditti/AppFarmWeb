@@ -88,23 +88,25 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Quién prescribe qué. Detección de fugas, fidelización, especialidades.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_medicos') }}"
+                   class="block bg-indigo-50/60 border border-indigo-200 rounded-xl p-4 hover:bg-indigo-100/60 hover:border-indigo-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-lg flex-shrink-0">🏆</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⭐ NUEVO</span>
                     </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Top prescriptores por OS</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ranking de médicos por OS — quién te trae cada cartera.</p>
-                </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Análisis de médicos</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ranking + detección de fugas (caída &gt;50% vs período anterior) + heatmap Médico × OS para detectar dependencias.</p>
+                </a>
 
-                <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_medicos') }}"
+                   class="block bg-indigo-50/60 border border-indigo-200 rounded-xl p-4 hover:bg-indigo-100/60 hover:border-indigo-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">📉</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Listo</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Médicos con fuga</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Médicos que prescribían y dejaron de hacerlo. Detección temprana de pérdida.</p>
-                </div>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Detección automática dentro de 'Análisis de médicos'. Alerta si un médico cayó &gt;50% o se fue.</p>
+                </a>
 
                 <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">

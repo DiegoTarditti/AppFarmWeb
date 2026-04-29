@@ -360,6 +360,307 @@ def init_app(app):
             'serie_temporal': serie,
         })
 
+    @app.route('/obras-sociales/medicos')
+    def os_medicos():
+        """Análisis por médico prescriptor: ranking, fugas, heatmap OS."""
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+        return render_template('os_medicos.html',
+                               desde=desde.isoformat(), hasta=hasta.isoformat())
+
+    @app.route('/api/obras-sociales/medicos')
+    def api_os_medicos():
+        """JSON: ranking + fugas + heatmap por médico."""
+        from datetime import date as _date
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+        try:
+            os_id = int(request.args.get('os_id', '')) or None
+        except ValueError:
+            os_id = None
+
+        # Período anterior del mismo largo (para detectar fugas)
+        delta = (hasta - desde).days + 1
+        desde_ant = desde - _td(days=delta)
+        hasta_ant = desde - _td(days=1)
+
+        os_filter_sql = ''
+        params = {'desde': desde, 'hasta': hasta,
+                  'desde_ant': desde_ant, 'hasta_ant': hasta_ant}
+        if os_id:
+            os_filter_sql = 'AND ovd.obra_social_observer = :os_id'
+            params['os_id'] = os_id
+
+        with database.get_db() as session:
+            # Ranking principal: médico con sus métricas
+            sql_ranking = _text(f'''
+                WITH actual AS (
+                    SELECT
+                        ovd.medico_observer AS med_id,
+                        SUM(ovd.importe) AS importe,
+                        COUNT(DISTINCT ovd.id_operacion) AS recetas,
+                        COUNT(DISTINCT ovd.cliente_observer) AS pacientes,
+                        COUNT(DISTINCT ovd.producto_observer) AS productos,
+                        COUNT(DISTINCT ovd.obra_social_observer) AS n_os,
+                        MAX(ovd.fecha_estadistica) AS ultima_receta
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.medico_observer IS NOT NULL
+                      {os_filter_sql}
+                    GROUP BY ovd.medico_observer
+                ),
+                anterior AS (
+                    SELECT
+                        ovd.medico_observer AS med_id,
+                        SUM(ovd.importe) AS importe_ant,
+                        COUNT(DISTINCT ovd.id_operacion) AS recetas_ant
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN :desde_ant AND :hasta_ant
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.medico_observer IS NOT NULL
+                      {os_filter_sql}
+                    GROUP BY ovd.medico_observer
+                ),
+                os_principal AS (
+                    SELECT med_id, os_nombre, os_id, recetas_os
+                    FROM (
+                        SELECT
+                            ovd.medico_observer AS med_id,
+                            ovd.obra_social_observer AS os_id,
+                            COALESCE(oos.descripcion, 'Sin OS') AS os_nombre,
+                            COUNT(DISTINCT ovd.id_operacion) AS recetas_os,
+                            ROW_NUMBER() OVER (PARTITION BY ovd.medico_observer
+                                               ORDER BY COUNT(DISTINCT ovd.id_operacion) DESC) AS rn
+                        FROM obs_ventas_detalle ovd
+                        LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                        WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                          AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                          AND ovd.medico_observer IS NOT NULL
+                        GROUP BY ovd.medico_observer, ovd.obra_social_observer, oos.descripcion
+                    ) sub
+                    WHERE rn = 1
+                )
+                SELECT
+                    a.med_id,
+                    om.nombre AS medico_nombre,
+                    (SELECT MIN(matricula) FROM obs_medicos_matriculas mm
+                     WHERE mm.medico_observer = a.med_id) AS matricula,
+                    a.importe,
+                    a.recetas,
+                    a.pacientes,
+                    a.productos,
+                    a.n_os,
+                    a.ultima_receta,
+                    osp.os_nombre AS os_principal,
+                    osp.recetas_os,
+                    COALESCE(an.importe_ant, 0) AS importe_ant,
+                    COALESCE(an.recetas_ant, 0) AS recetas_ant
+                FROM actual a
+                LEFT JOIN obs_medicos om ON om.observer_id = a.med_id
+                LEFT JOIN anterior an ON an.med_id = a.med_id
+                LEFT JOIN os_principal osp ON osp.med_id = a.med_id
+                ORDER BY a.importe DESC
+                LIMIT 200
+            ''')
+            rows = session.execute(sql_ranking, params).fetchall()
+
+            ranking = []
+            tot_imp = tot_recetas = tot_pac = 0
+            for r in rows:
+                imp = float(r.importe or 0)
+                imp_ant = float(r.importe_ant or 0)
+                var_pct = ((imp - imp_ant) / imp_ant * 100) if imp_ant > 0 else None
+                pct_top_os = (r.recetas_os / r.recetas * 100) if r.recetas else 0
+                ranking.append({
+                    'med_id': r.med_id,
+                    'nombre': r.medico_nombre or f'Médico #{r.med_id}',
+                    'matricula': r.matricula or '',
+                    'importe': round(imp, 2),
+                    'recetas': int(r.recetas or 0),
+                    'pacientes': int(r.pacientes or 0),
+                    'productos': int(r.productos or 0),
+                    'n_os': int(r.n_os or 0),
+                    'ticket_prom': round(imp / r.recetas, 2) if r.recetas else 0,
+                    'os_principal': r.os_principal or '',
+                    'os_principal_pct': round(pct_top_os, 1),
+                    'importe_ant': round(imp_ant, 2),
+                    'recetas_ant': int(r.recetas_ant or 0),
+                    'variacion_pct': round(var_pct, 1) if var_pct is not None else None,
+                    'ultima_receta': r.ultima_receta.isoformat() if r.ultima_receta else None,
+                })
+                tot_imp += imp
+                tot_recetas += int(r.recetas or 0)
+                tot_pac += int(r.pacientes or 0)  # NB: doble-conteo si paciente atendido por 2 médicos
+
+            # Pareto top 5
+            top5_imp = sum(r['importe'] for r in ranking[:5])
+            top5_pct = (top5_imp / tot_imp * 100) if tot_imp > 0 else 0
+
+            # Médicos con FUGA (estaban activos antes y bajaron mucho o desaparecieron)
+            sql_fugas = _text('''
+                WITH ant AS (
+                    SELECT
+                        ovd.medico_observer AS med_id,
+                        SUM(ovd.importe) AS importe_ant,
+                        COUNT(DISTINCT ovd.id_operacion) AS recetas_ant
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN :desde_ant AND :hasta_ant
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.medico_observer IS NOT NULL
+                    GROUP BY ovd.medico_observer
+                    HAVING COUNT(DISTINCT ovd.id_operacion) >= 5
+                ),
+                act AS (
+                    SELECT
+                        ovd.medico_observer AS med_id,
+                        SUM(ovd.importe) AS importe_act,
+                        COUNT(DISTINCT ovd.id_operacion) AS recetas_act
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.medico_observer IS NOT NULL
+                    GROUP BY ovd.medico_observer
+                )
+                SELECT
+                    ant.med_id,
+                    om.nombre AS medico_nombre,
+                    ant.importe_ant,
+                    ant.recetas_ant,
+                    COALESCE(act.importe_act, 0) AS importe_act,
+                    COALESCE(act.recetas_act, 0) AS recetas_act
+                FROM ant
+                LEFT JOIN act ON act.med_id = ant.med_id
+                LEFT JOIN obs_medicos om ON om.observer_id = ant.med_id
+                WHERE COALESCE(act.importe_act, 0) < ant.importe_ant * 0.5
+                ORDER BY (ant.importe_ant - COALESCE(act.importe_act, 0)) DESC
+                LIMIT 30
+            ''')
+            rows_fugas = session.execute(sql_fugas, {'desde': desde, 'hasta': hasta,
+                                                     'desde_ant': desde_ant, 'hasta_ant': hasta_ant}).fetchall()
+            fugas = []
+            for r in rows_fugas:
+                imp_a = float(r.importe_ant or 0)
+                imp_n = float(r.importe_act or 0)
+                caida_pct = ((imp_a - imp_n) / imp_a * 100) if imp_a > 0 else 0
+                fugas.append({
+                    'med_id': r.med_id,
+                    'nombre': r.medico_nombre or f'Médico #{r.med_id}',
+                    'importe_ant': round(imp_a, 2),
+                    'importe_act': round(imp_n, 2),
+                    'recetas_ant': int(r.recetas_ant or 0),
+                    'recetas_act': int(r.recetas_act or 0),
+                    'caida_pct': round(caida_pct, 1),
+                    'estado': 'fuga_total' if r.recetas_act == 0 else 'fuga_parcial',
+                })
+
+            # Heatmap top 20 médicos × top 10 OS
+            top_med_ids = [r['med_id'] for r in ranking[:20]]
+            sql_top_os = _text('''
+                SELECT
+                    ovd.obra_social_observer AS os_id,
+                    COALESCE(oos.descripcion, 'Sin OS') AS os_nombre,
+                    SUM(ovd.importe) AS importe
+                FROM obs_ventas_detalle ovd
+                LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                  AND ovd.obra_social_observer IS NOT NULL
+                GROUP BY ovd.obra_social_observer, oos.descripcion
+                ORDER BY SUM(ovd.importe) DESC
+                LIMIT 10
+            ''')
+            top_os = session.execute(sql_top_os, {'desde': desde, 'hasta': hasta}).fetchall()
+            top_os_ids = [r.os_id for r in top_os]
+            top_os_nombres = [{'os_id': r.os_id, 'nombre': r.os_nombre} for r in top_os]
+
+            heatmap = []
+            if top_med_ids and top_os_ids:
+                from sqlalchemy import bindparam
+                sql_heat = _text(f'''
+                    SELECT
+                        ovd.medico_observer AS med_id,
+                        ovd.obra_social_observer AS os_id,
+                        SUM(ovd.importe) AS importe
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.medico_observer = ANY(:med_ids)
+                      AND ovd.obra_social_observer = ANY(:os_ids)
+                    GROUP BY ovd.medico_observer, ovd.obra_social_observer
+                ''')
+                rows_heat = session.execute(sql_heat, {
+                    'desde': desde, 'hasta': hasta,
+                    'med_ids': top_med_ids, 'os_ids': top_os_ids
+                }).fetchall()
+                for r in rows_heat:
+                    heatmap.append({
+                        'med_id': r.med_id,
+                        'os_id': r.os_id,
+                        'importe': float(r.importe or 0),
+                    })
+
+            # OS list para dropdown filtro
+            sql_os_list = _text('''
+                SELECT DISTINCT oos.observer_id, oos.descripcion
+                FROM obs_ventas_detalle ovd
+                JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND oos.fecha_baja IS NULL
+                ORDER BY oos.descripcion
+            ''')
+            obras_sociales = [{'os_id': r[0], 'nombre': r[1]}
+                              for r in session.execute(sql_os_list, {'desde': desde, 'hasta': hasta}).fetchall()]
+
+        return jsonify({
+            'desde': desde.isoformat(),
+            'hasta': hasta.isoformat(),
+            'desde_ant': desde_ant.isoformat(),
+            'hasta_ant': hasta_ant.isoformat(),
+            'os_id': os_id,
+            'kpis': {
+                'n_medicos': len(ranking),
+                'recetas': tot_recetas,
+                'importe': round(tot_imp, 2),
+                'top5_imp': round(top5_imp, 2),
+                'top5_pct': round(top5_pct, 1),
+                'n_fugas': len(fugas),
+                'fugas_importe_perdido': round(sum(f['importe_ant'] - f['importe_act'] for f in fugas), 2),
+            },
+            'ranking': ranking,
+            'fugas': fugas,
+            'heatmap': {
+                'medicos': [{'med_id': r['med_id'], 'nombre': r['nombre'], 'matricula': r['matricula']} for r in ranking[:20]],
+                'obras_sociales': top_os_nombres,
+                'celdas': heatmap,
+            },
+            'obras_sociales': obras_sociales,
+        })
+
     @app.route('/obras-sociales/antiguedad')
     def os_antiguedad():
         """Aging report: cuánto tenés a cobrar de cada OS, agrupado por buckets

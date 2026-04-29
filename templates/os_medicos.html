@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+{% block title %}Médicos prescriptores{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .kpi-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; }
+    .kpi-value { font-size: 22px; font-weight: bold; color: #1e1e1e; margin-top: 4px; }
+    .kpi-sub { font-size: 11px; color: #6f6f6f; margin-top: 2px; }
+    .alert-row { padding: 8px 12px; border-radius: 8px; font-size: 12px; }
+    .alert-critico { background: #fee; border-left: 3px solid #dc2626; color: #991b1b; }
+    .alert-advertencia { background: #fff7ed; border-left: 3px solid #f59e0b; color: #92400e; }
+    .var-up { color: #16a34a; }
+    .var-down { color: #dc2626; font-weight: 600; }
+    .var-flat { color: #888; }
+    /* Heatmap */
+    .hm-table { border-collapse: separate; border-spacing: 2px; }
+    .hm-table th { font-size: 9px; padding: 4px; text-align: center; color: #666;
+                   max-width: 80px; word-wrap: break-word; }
+    .hm-table th.hm-row-label { text-align: left; max-width: 220px; padding: 4px 8px; font-weight: 500; color: #1e1e1e; }
+    .hm-cell { width: 60px; height: 28px; border-radius: 4px; text-align: center;
+               font-size: 9px; padding: 6px 2px; cursor: default; transition: transform 0.1s; }
+    .hm-cell:hover { transform: scale(1.15); z-index: 10; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+    .hm-cell.empty { background: #f5f5f5; color: #ccc; }
+</style>
+{% endblock %}
+
+{% block main %}
+
+{% include '_os_loader.html' %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">👨‍⚕️ Médicos prescriptores</h1>
+        <p class="text-xs text-[#6f6f6f] mt-0.5">Quién te trae cada cartera. Detección de fugas. Heatmap de dependencias por OS.</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2 text-xs">
+        <a href="{{ url_for('os_index') }}" class="text-sky-600 hover:underline">← OS</a>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
+    <label for="filtro-desde" class="text-xs text-[#3f6650] font-semibold">Desde:</label>
+    <input type="date" id="filtro-desde" value="{{ desde }}" title="Fecha de inicio del período"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs">
+    <label for="filtro-hasta" class="text-xs text-[#3f6650] font-semibold">Hasta:</label>
+    <input type="date" id="filtro-hasta" value="{{ hasta }}" title="Fecha de fin del período"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs">
+    <label for="filtro-os" class="text-xs text-[#3f6650] font-semibold">OS:</label>
+    <select id="filtro-os" title="Filtrar por una OS específica"
+            class="bg-white border border-mint rounded px-2 py-1 text-xs">
+        <option value="">Todas las OS</option>
+    </select>
+    <button type="button" onclick="aplicarFiltros()"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1 rounded">
+        Aplicar
+    </button>
+    <button type="button" onclick="atajoFecha('mes')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">Mes</button>
+    <button type="button" onclick="atajoFecha('30d')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">30 días</button>
+    <button type="button" onclick="atajoFecha('12m')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">12 meses</button>
+    <input type="text" id="filtro-buscar" title="Buscar médico (multi-token)"
+           placeholder="Buscar médico/matrícula…" oninput="filtrarRanking()"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs ml-auto w-72">
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5 max-w-7xl mx-auto w-full">
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div class="kpi-card">
+            <p class="kpi-label">👨‍⚕️ Médicos prescriptores</p>
+            <p class="kpi-value" id="kpi-medicos">—</p>
+            <p class="kpi-sub" id="kpi-medicos-sub">cargando…</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">📋 Recetas</p>
+            <p class="kpi-value" id="kpi-recetas">—</p>
+        </div>
+        <div class="kpi-card border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white">
+            <p class="kpi-label">💰 Facturado por prescripción</p>
+            <p class="kpi-value text-emerald-700" id="kpi-importe">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">📊 Concentración top 5</p>
+            <p class="kpi-value" id="kpi-top5">—</p>
+            <p class="kpi-sub" id="kpi-top5-sub"></p>
+        </div>
+        <div class="kpi-card border-2 border-rose-300 bg-gradient-to-br from-rose-50 to-white">
+            <p class="kpi-label">⚠ Fugas detectadas</p>
+            <p class="kpi-value text-rose-700" id="kpi-fugas">—</p>
+            <p class="kpi-sub" id="kpi-fugas-sub">vs período anterior</p>
+        </div>
+    </div>
+
+    <!-- Top 15 chart -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <p class="font-semibold text-sm mb-2">📊 Top 15 médicos por importe</p>
+        <div class="h-96"><canvas id="chart-top"></canvas></div>
+    </div>
+
+    <!-- Fugas detectadas -->
+    <div id="fugas-wrap" class="hidden bg-white border border-rose-200 rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-rose-200 bg-rose-50 flex items-center justify-between">
+            <p class="font-semibold text-sm text-rose-800">🚨 Médicos con fuga (caída &gt;50% vs período anterior)</p>
+            <span id="fugas-meta" class="text-xs text-rose-700"></span>
+        </div>
+        <div class="overflow-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-rose-50 text-[10px] uppercase text-rose-800 tracking-wide">
+                    <tr>
+                        <th class="text-left px-3 py-2">Médico</th>
+                        <th class="text-right px-3 py-2">Antes (importe)</th>
+                        <th class="text-right px-3 py-2">Ahora (importe)</th>
+                        <th class="text-right px-3 py-2">Caída</th>
+                        <th class="text-right px-3 py-2">Recetas (antes/ahora)</th>
+                        <th class="text-center px-3 py-2">Estado</th>
+                    </tr>
+                </thead>
+                <tbody id="fugas-body" class="divide-y divide-rose-100"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Heatmap Médico × OS -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-sm">🔥 Dependencias: Top 20 médicos × Top 10 OS</p>
+            <span class="text-xs text-[#6f6f6f]">Color = importe que cada médico genera con cada OS</span>
+        </div>
+        <div class="overflow-auto">
+            <div id="heatmap-wrap"></div>
+        </div>
+    </div>
+
+    <!-- Tabla maestra -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-sm">🏆 Ranking completo (top 200)</p>
+            <span class="text-xs text-[#6f6f6f]" id="ranking-meta"></span>
+        </div>
+        <div class="overflow-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#f5f5f5] text-[10px] uppercase text-[#666] tracking-wide">
+                    <tr>
+                        <th class="text-left px-3 py-2 w-8">#</th>
+                        <th class="text-left px-3 py-2">Médico</th>
+                        <th class="text-left px-3 py-2">Mat.</th>
+                        <th class="text-right px-3 py-2">Recetas</th>
+                        <th class="text-right px-3 py-2">Pacientes</th>
+                        <th class="text-right px-3 py-2">Productos</th>
+                        <th class="text-left px-3 py-2">OS principal</th>
+                        <th class="text-right px-3 py-2">Ticket prom.</th>
+                        <th class="text-right px-3 py-2">Importe</th>
+                        <th class="text-right px-3 py-2" title="Variación vs período anterior">Var.</th>
+                        <th class="text-right px-3 py-2">% total</th>
+                    </tr>
+                </thead>
+                <tbody id="ranking-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+let _chart = null;
+let _data = null;
+
+function fmtMoney(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {maximumFractionDigits: 0}); }
+function fmtMoneyDec(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function fmtPct(v) { if (v === null || v === undefined) return '—'; return v.toFixed(1) + '%'; }
+function multiTokenMatch(haystack, query) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(t => t);
+    if (!tokens.length) return true;
+    const h = haystack.toLowerCase();
+    return tokens.every(t => h.includes(t));
+}
+
+async function cargar() {
+    const desde = document.getElementById('filtro-desde').value;
+    const hasta = document.getElementById('filtro-hasta').value;
+    const os = document.getElementById('filtro-os').value;
+    const params = new URLSearchParams({desde, hasta});
+    if (os) params.set('os_id', os);
+
+    OSLoader.show('Analizando médicos…',
+                  'Calculando ranking, detectando fugas y armando heatmap por OS.');
+    try {
+        const r = await fetch(`/api/obras-sociales/medicos?${params.toString()}`);
+        if (!r.ok) {
+            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+            return;
+        }
+        _data = await r.json();
+        renderKPIs(_data.kpis);
+        renderOSDropdown(_data.obras_sociales, os);
+        renderChart(_data.ranking.slice(0, 15));
+        renderFugas(_data.fugas);
+        renderHeatmap(_data.heatmap);
+        renderRanking(_data.ranking);
+        OSLoader.hide();
+    } catch (e) {
+        OSLoader.error('Error de conexión', 'Revisá la conexión y volvé a intentar.');
+    }
+}
+
+function renderKPIs(k) {
+    document.getElementById('kpi-medicos').textContent = k.n_medicos.toLocaleString('es-AR');
+    document.getElementById('kpi-medicos-sub').textContent = `${k.recetas.toLocaleString('es-AR')} recetas totales`;
+    document.getElementById('kpi-recetas').textContent = k.recetas.toLocaleString('es-AR');
+    document.getElementById('kpi-importe').textContent = fmtMoney(k.importe);
+    document.getElementById('kpi-top5').textContent = fmtPct(k.top5_pct);
+    document.getElementById('kpi-top5-sub').textContent = `top 5 → ${fmtMoney(k.top5_imp)}`;
+    document.getElementById('kpi-fugas').textContent = k.n_fugas.toLocaleString('es-AR');
+    document.getElementById('kpi-fugas-sub').innerHTML = k.fugas_importe_perdido > 0
+        ? `<span class="text-rose-700">≈ ${fmtMoney(k.fugas_importe_perdido)} perdidos</span>`
+        : 'sin caídas significativas';
+}
+
+function renderOSDropdown(obrasSociales, selected) {
+    const sel = document.getElementById('filtro-os');
+    if (sel.options.length > 1) return;
+    for (const os of obrasSociales) {
+        const opt = document.createElement('option');
+        opt.value = os.os_id;
+        opt.textContent = os.nombre;
+        if (String(os.os_id) === String(selected)) opt.selected = true;
+        sel.appendChild(opt);
+    }
+}
+
+function renderChart(top15) {
+    if (_chart) _chart.destroy();
+    const ctx = document.getElementById('chart-top').getContext('2d');
+    _chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: top15.map(m => {
+                const n = m.nombre.length > 35 ? m.nombre.slice(0, 32) + '…' : m.nombre;
+                return m.matricula ? `${n} (${m.matricula})` : n;
+            }),
+            datasets: [{
+                label: 'Importe',
+                data: top15.map(m => m.importe),
+                backgroundColor: 'rgba(99,102,241,0.7)',
+                borderColor: '#6366f1',
+                borderWidth: 1,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {display: false},
+                tooltip: { callbacks: { label: ctx => 'Importe: ' + fmtMoneyDec(ctx.parsed.x) } },
+            },
+            scales: {
+                x: {ticks: {callback: v => '$' + Number(v).toLocaleString('es-AR')}, grid: {color: '#f0f0f0'}},
+                y: {grid: {display: false}, ticks: {font: {size: 10}}},
+            },
+        },
+    });
+}
+
+function renderFugas(fugas) {
+    const wrap = document.getElementById('fugas-wrap');
+    const body = document.getElementById('fugas-body');
+    document.getElementById('fugas-meta').textContent = `${fugas.length} médicos`;
+    if (!fugas.length) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    body.innerHTML = fugas.map(f => `
+        <tr class="hover:bg-rose-50/40">
+            <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[300px]" title="${f.nombre}">${f.nombre}</td>
+            <td class="px-3 py-2 text-right font-mono">${fmtMoney(f.importe_ant)}</td>
+            <td class="px-3 py-2 text-right font-mono ${f.importe_act > 0 ? '' : 'text-rose-700 font-bold'}">${fmtMoney(f.importe_act)}</td>
+            <td class="px-3 py-2 text-right font-mono text-rose-700 font-bold">−${f.caida_pct.toFixed(1)}%</td>
+            <td class="px-3 py-2 text-right text-xs text-[#666]">${f.recetas_ant} → ${f.recetas_act}</td>
+            <td class="px-3 py-2 text-center">
+                ${f.estado === 'fuga_total'
+                    ? '<span class="text-[10px] font-bold uppercase bg-rose-200 text-rose-900 px-2 py-0.5 rounded">SE FUE</span>'
+                    : '<span class="text-[10px] font-bold uppercase bg-amber-100 text-amber-800 px-2 py-0.5 rounded">CAYÓ</span>'}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function colorEscalaCalor(valor, max) {
+    if (max <= 0 || !valor) return '#f5f5f5';
+    const pct = Math.min(1, valor / max);
+    // Blanco → amber → rojo
+    if (pct < 0.3) {
+        const t = pct / 0.3;
+        return `rgba(254,243,199,${0.4 + t * 0.4})`;  // amber pálido
+    } else if (pct < 0.7) {
+        const t = (pct - 0.3) / 0.4;
+        return `rgba(252,${165 - t * 90},${85 - t * 30},${0.7 + t * 0.2})`;
+    } else {
+        const t = (pct - 0.7) / 0.3;
+        return `rgba(${239 - t * 30},${68 - t * 40},${68 - t * 40},${0.85 + t * 0.15})`;
+    }
+}
+
+function renderHeatmap(hm) {
+    const wrap = document.getElementById('heatmap-wrap');
+    if (!hm.medicos.length || !hm.obras_sociales.length) {
+        wrap.innerHTML = '<p class="text-sm text-[#999] py-8 text-center">Sin datos para el heatmap.</p>';
+        return;
+    }
+    // Indexar celdas
+    const idx = {};  // `${med_id}_${os_id}` → importe
+    let max = 0;
+    for (const c of hm.celdas) {
+        idx[`${c.med_id}_${c.os_id}`] = c.importe;
+        if (c.importe > max) max = c.importe;
+    }
+    let html = '<table class="hm-table"><thead><tr><th class="hm-row-label"></th>';
+    for (const os of hm.obras_sociales) {
+        const nom = os.nombre.length > 16 ? os.nombre.slice(0, 14) + '…' : os.nombre;
+        html += `<th title="${os.nombre}">${nom}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+    for (const med of hm.medicos) {
+        html += `<tr><th class="hm-row-label" title="${med.nombre}">${med.nombre}</th>`;
+        for (const os of hm.obras_sociales) {
+            const v = idx[`${med.med_id}_${os.os_id}`] || 0;
+            const bg = v > 0 ? colorEscalaCalor(v, max) : '#f5f5f5';
+            const txt = v > 0 ? '$' + Math.round(v / 1000) + 'k' : '';
+            const tip = v > 0 ? `${med.nombre} × ${os.nombre}: ${fmtMoneyDec(v)}` : '';
+            html += `<td><div class="hm-cell ${v > 0 ? '' : 'empty'}" style="background:${bg}" title="${tip}">${txt}</div></td>`;
+        }
+        html += '</tr>';
+    }
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
+function renderRanking(ranking) {
+    const filtro = document.getElementById('filtro-buscar').value.trim();
+    const filtrados = filtro ? ranking.filter(r =>
+        multiTokenMatch(r.nombre + ' ' + (r.matricula || ''), filtro)
+    ) : ranking;
+    const totalImp = ranking.reduce((s, r) => s + r.importe, 0);
+    document.getElementById('ranking-meta').textContent =
+        filtro ? `${filtrados.length} de ${ranking.length} médicos` : `${ranking.length} médicos`;
+    const body = document.getElementById('ranking-body');
+    body.innerHTML = filtrados.map((r, i) => {
+        let varHtml = '<span class="var-flat">—</span>';
+        if (r.variacion_pct !== null) {
+            const cls = r.variacion_pct < -10 ? 'var-down' :
+                        r.variacion_pct >  10 ? 'var-up' : 'var-flat';
+            const sign = r.variacion_pct > 0 ? '+' : '';
+            varHtml = `<span class="${cls}">${sign}${r.variacion_pct.toFixed(1)}%</span>`;
+        }
+        const pctTotal = totalImp > 0 ? (r.importe / totalImp * 100) : 0;
+        return `
+            <tr class="hover:bg-[#fafafa]">
+                <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
+                <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[260px]" title="${r.nombre}">${r.nombre}</td>
+                <td class="px-3 py-2 font-mono text-xs text-[#666]">${r.matricula || '—'}</td>
+                <td class="px-3 py-2 text-right">${r.recetas.toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right text-[#666]">${r.pacientes.toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right text-[#666]">${r.productos.toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-xs truncate max-w-[180px]" title="${r.os_principal}">
+                    ${r.os_principal}
+                    <span class="text-[10px] text-[#999]">(${r.os_principal_pct}%)</span>
+                </td>
+                <td class="px-3 py-2 text-right font-mono text-xs">${fmtMoney(r.ticket_prom)}</td>
+                <td class="px-3 py-2 text-right font-mono font-semibold">${fmtMoney(r.importe)}</td>
+                <td class="px-3 py-2 text-right text-xs">${varHtml}</td>
+                <td class="px-3 py-2 text-right text-[#666] text-xs">${pctTotal.toFixed(1)}%</td>
+            </tr>
+        `;
+    }).join('');
+    if (!filtrados.length) {
+        body.innerHTML = '<tr><td colspan="11" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>';
+    }
+}
+
+function filtrarRanking() { if (_data) renderRanking(_data.ranking); }
+function aplicarFiltros() { cargar(); }
+function atajoFecha(tipo) {
+    const hoy = new Date();
+    const hasta = hoy.toISOString().slice(0, 10);
+    let desde;
+    if (tipo === 'mes') { desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10); }
+    else if (tipo === '30d') { desde = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10); }
+    else if (tipo === '12m') { desde = new Date(hoy.getFullYear() - 1, hoy.getMonth(), hoy.getDate()).toISOString().slice(0, 10); }
+    document.getElementById('filtro-desde').value = desde;
+    document.getElementById('filtro-hasta').value = hasta;
+    cargar();
+}
+
+cargar();
+</script>
+
+{% endblock %}
