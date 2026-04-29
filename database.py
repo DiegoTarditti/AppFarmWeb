@@ -1241,6 +1241,32 @@ def init_db(database_url=None):
                         # IF EXISTS de Postgres no debería tirar pero por las
                         # dudas absorbemos. Es parte del workaround zombie pg_type.
                         pass
+            # Crear tablas críticas explícitamente acá (AUTOCOMMIT) para que
+            # NO dependan de la transacción de _pg_add_columns. Si una migración
+            # más arriba en _pg_add_columns abortaba la transacción, las CREATE
+            # TABLE inline de tablas nuevas como panel_comandos nunca corrían y
+            # los endpoints que las usaban tiraban "relation does not exist".
+            try:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS panel_comandos (
+                        id SERIAL PRIMARY KEY,
+                        comando VARCHAR(40) NOT NULL,
+                        estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+                        solicitado_en TIMESTAMP NOT NULL DEFAULT NOW(),
+                        solicitado_por VARCHAR(80),
+                        tomado_en TIMESTAMP,
+                        ejecutado_en TIMESTAMP,
+                        duracion_ms INTEGER,
+                        resultado TEXT,
+                        origen VARCHAR(40)
+                    )
+                """))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_panel_comandos_estado "
+                    "ON panel_comandos(estado, solicitado_en)"
+                ))
+            except Exception:
+                pass
     # create_all puede fallar con dos índices distintos cuando hay objetos
     # huérfanos de un deploy previo:
     #   - pg_type_typname_nsp_index   → pg_type zombie (composite type huérfano)
@@ -2123,10 +2149,25 @@ def _pg_add_columns(conn):
     # inline en el CREATE TABLE, pero si se creó antes de ese cambio, falta. Acá
     # garantizamos que esté — el backfill `ON CONFLICT (producto_id, codigo_barra)`
     # lo necesita o tira "no unique or exclusion constraint matching".
-    conn.execute(text(
-        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pcb_producto_codigo "
-        "ON producto_codigos_barra (producto_id, codigo_barra)"
-    ))
+    # Antes de crear, chequear duplicados — sin esto, si hay dupes el CREATE
+    # UNIQUE INDEX rompe y aborta la transacción completa de _pg_add_columns,
+    # haciendo que migraciones posteriores (CREATE TABLE panel_comandos, etc.)
+    # nunca corran.
+    pcb_dup = conn.execute(text(
+        "SELECT producto_id, codigo_barra, COUNT(*) AS n FROM producto_codigos_barra "
+        "GROUP BY producto_id, codigo_barra HAVING COUNT(*) > 1 LIMIT 1"
+    )).first()
+    if pcb_dup:
+        import logging
+        logging.getLogger(__name__).warning(
+            'producto_codigos_barra tiene duplicados (producto_id=%s codigo_barra=%s aparece %s veces). '
+            'No se crea uq_pcb_producto_codigo hasta resolverlos.', pcb_dup[0], pcb_dup[1], pcb_dup[2]
+        )
+    else:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_pcb_producto_codigo "
+            "ON producto_codigos_barra (producto_id, codigo_barra)"
+        ))
     # Backfills movidos a thread background (ver _ejecutar_backfills_async al final
     # de init_db). En Render, correr estos INSERTs masivos en el path crítico de
     # boot hace que el HTTP port no abra a tiempo y el deploy falle con
