@@ -42,7 +42,9 @@ def exigir_login():
     rutas_publicas = {'auth_login', 'static', 'health', 'docs_pendientes_upload_api',
                       'api_auto_sync', 'api_auto_sync_status',
                       # Crons externos: auth propia via X-Cron-Secret header.
-                      'api_cron_recalcular_os_clientes'}
+                      'api_cron_recalcular_os_clientes',
+                      # Panel remoto: auth propia via X-Panel-Token header.
+                      'api_panel_proximo', 'api_panel_resultado'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
     if not current_user.is_authenticated:
