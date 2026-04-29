@@ -1,0 +1,279 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+{% block title %}Antigüedad de OS{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .kpi-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; }
+    .kpi-value { font-size: 22px; font-weight: bold; color: #1e1e1e; margin-top: 4px; }
+    .kpi-sub { font-size: 11px; color: #6f6f6f; margin-top: 2px; }
+    .alert-row { padding: 8px 12px; border-radius: 8px; font-size: 12px; }
+    .alert-critico { background: #fee; border-left: 3px solid #dc2626; color: #991b1b; }
+    .alert-advertencia { background: #fff7ed; border-left: 3px solid #f59e0b; color: #92400e; }
+    .bucket-bar {
+        display: flex; height: 22px; border-radius: 4px; overflow: hidden;
+        background: #f3f4f6; min-width: 200px;
+    }
+    .bucket-bar > div { transition: width 0.3s ease; }
+    .b-fresco { background: #10b981; }   /* verde — 0-30 OK */
+    .b-medio  { background: #fbbf24; }   /* amber — 31-60 atención */
+    .b-viejo  { background: #f97316; }   /* naranja — 61-90 problema */
+    .b-muy-viejo { background: #ef4444; }/* rojo — 91-180 grave */
+    .b-mas-viejo { background: #991b1b; }/* rojo oscuro — >180 crítico */
+</style>
+{% endblock %}
+
+{% block main %}
+
+{% include '_os_loader.html' %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">📥 Antigüedad de cuenta corriente OS</h1>
+        <p class="text-xs text-[#6f6f6f] mt-0.5">Cuánto tenés a cobrar de cada OS, distribuido por antigüedad. Detectá deuda vieja sin liquidar.</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2 text-xs">
+        <span id="header-fecha" class="text-[#888]"></span>
+        <a href="{{ url_for('os_index') }}" class="text-sky-600 hover:underline">← OS</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5 max-w-7xl mx-auto w-full">
+
+    <!-- KPIs por bucket -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div class="kpi-card border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white">
+            <p class="kpi-label">💰 Total a cobrar</p>
+            <p class="kpi-value text-emerald-700" id="kpi-total">—</p>
+            <p class="kpi-sub" id="kpi-total-sub">cargando…</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🟢 0-30 días</p>
+            <p class="kpi-value text-emerald-600" id="kpi-b1">—</p>
+            <p class="kpi-sub" id="kpi-b1-sub"></p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🟡 31-60 días</p>
+            <p class="kpi-value text-amber-600" id="kpi-b2">—</p>
+            <p class="kpi-sub" id="kpi-b2-sub"></p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🟠 61-90 días</p>
+            <p class="kpi-value text-orange-600" id="kpi-b3">—</p>
+            <p class="kpi-sub" id="kpi-b3-sub"></p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🔴 91-180 días</p>
+            <p class="kpi-value text-red-600" id="kpi-b4">—</p>
+            <p class="kpi-sub" id="kpi-b4-sub"></p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">⚫ >180 días</p>
+            <p class="kpi-value text-red-900" id="kpi-b5">—</p>
+            <p class="kpi-sub" id="kpi-b5-sub"></p>
+        </div>
+    </div>
+
+    <!-- Alertas -->
+    <div id="alertas-wrap" class="hidden bg-white border border-surface-border rounded-xl p-4">
+        <p class="font-semibold text-sm mb-2 flex items-center gap-2">🚨 Alertas de cobranza</p>
+        <div id="alertas-list" class="space-y-1.5"></div>
+    </div>
+
+    <!-- Chart distribución global -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <p class="font-semibold text-sm mb-3">📊 Distribución global por antigüedad</p>
+        <div class="h-32 flex items-center"><canvas id="chart-global"></canvas></div>
+    </div>
+
+    <!-- Ranking de OS con bucket bar -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-sm">🏥 Por obra social</p>
+            <input type="text" id="filtro-buscar" title="Buscar OS (multi-token)"
+                   placeholder="Buscar OS…" oninput="filtrarRanking()"
+                   class="bg-white border border-surface-border rounded px-2 py-1 text-xs w-64">
+        </div>
+        <div class="overflow-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#f5f5f5] text-[10px] uppercase text-[#666] tracking-wide">
+                    <tr>
+                        <th class="text-left px-3 py-2">Obra Social</th>
+                        <th class="text-right px-3 py-2">Total pendiente</th>
+                        <th class="text-left px-3 py-2 min-w-[200px]">Distribución</th>
+                        <th class="text-right px-3 py-2 text-emerald-700">0-30</th>
+                        <th class="text-right px-3 py-2 text-amber-700">31-60</th>
+                        <th class="text-right px-3 py-2 text-orange-700">61-90</th>
+                        <th class="text-right px-3 py-2 text-red-700">91-180</th>
+                        <th class="text-right px-3 py-2 text-red-900">>180</th>
+                        <th class="text-right px-3 py-2">% Viejo</th>
+                        <th class="text-right px-3 py-2">Recetas</th>
+                    </tr>
+                </thead>
+                <tbody id="ranking-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="text-[11px] text-[#999] text-center pt-2">
+        El "total pendiente" usa <code class="font-mono text-[10px]">importe_a_cargo_os</code> de cada dispensa.
+        Asume que ninguna OS liquidó todavía (vista pesimista).
+        Cuando se sume tabla de cobros/liquidaciones, el cálculo refleja deuda real.
+    </p>
+
+</div>
+
+<script>
+let _chart = null;
+let _data = null;
+
+function fmtMoney(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {maximumFractionDigits: 0}); }
+function fmtMoneyDec(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function fmtPct(v) { if (v === null || v === undefined) return '—'; return v.toFixed(1) + '%'; }
+function multiTokenMatch(haystack, query) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(t => t);
+    if (!tokens.length) return true;
+    const h = haystack.toLowerCase();
+    return tokens.every(t => h.includes(t));
+}
+
+async function cargar() {
+    OSLoader.show('Calculando antigüedad de cobranza…',
+                  'Cruzando ventas pendientes con su fecha. Esto tarda unos segundos.');
+    try {
+        const r = await fetch('/api/obras-sociales/antiguedad');
+        if (!r.ok) {
+            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+            return;
+        }
+        _data = await r.json();
+        document.getElementById('header-fecha').textContent = `Hoy: ${formatearFecha(_data.hoy)}`;
+        renderKPIs(_data.kpis);
+        renderAlertas(_data.alertas);
+        renderChartGlobal(_data.kpis);
+        renderRanking(_data.ranking);
+        OSLoader.hide();
+    } catch (e) {
+        OSLoader.error('Error de conexión', 'Revisá la conexión y volvé a intentar.');
+    }
+}
+
+function formatearFecha(s) {
+    if (!s) return '—';
+    const [y, m, d] = s.split('-');
+    return `${d}/${m}/${y}`;
+}
+
+function renderKPIs(k) {
+    document.getElementById('kpi-total').textContent = fmtMoney(k.total_pendiente);
+    document.getElementById('kpi-total-sub').textContent = `${k.n_os} OS · ${k.recetas.toLocaleString('es-AR')} recetas`;
+
+    const setBucket = (id, v, totalPend) => {
+        document.getElementById(id).textContent = fmtMoney(v);
+        const pct = totalPend > 0 ? (v / totalPend * 100).toFixed(1) : 0;
+        document.getElementById(id + '-sub').textContent = `${pct}% del total`;
+    };
+    setBucket('kpi-b1', k.b1_30, k.total_pendiente);
+    setBucket('kpi-b2', k.b31_60, k.total_pendiente);
+    setBucket('kpi-b3', k.b61_90, k.total_pendiente);
+    setBucket('kpi-b4', k.b91_180, k.total_pendiente);
+    setBucket('kpi-b5', k.b181_mas, k.total_pendiente);
+}
+
+function renderAlertas(alertas) {
+    const wrap = document.getElementById('alertas-wrap');
+    const list = document.getElementById('alertas-list');
+    if (!alertas.length) { wrap.classList.add('hidden'); return; }
+    wrap.classList.remove('hidden');
+    list.innerHTML = alertas.map(a => `
+        <div class="alert-row alert-${a.tipo}">
+            <strong>${a.os_nombre}:</strong> ${a.mensaje}
+        </div>
+    `).join('');
+}
+
+function renderChartGlobal(k) {
+    if (_chart) _chart.destroy();
+    const ctx = document.getElementById('chart-global').getContext('2d');
+    _chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Total a cobrar'],
+            datasets: [
+                {label: '0-30 días',   data: [k.b1_30],    backgroundColor: '#10b981'},
+                {label: '31-60 días',  data: [k.b31_60],   backgroundColor: '#fbbf24'},
+                {label: '61-90 días',  data: [k.b61_90],   backgroundColor: '#f97316'},
+                {label: '91-180 días', data: [k.b91_180],  backgroundColor: '#ef4444'},
+                {label: '>180 días',   data: [k.b181_mas], backgroundColor: '#991b1b'},
+            ],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {position: 'bottom', labels: {font: {size: 11}, padding: 8, usePointStyle: true}},
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${fmtMoneyDec(ctx.parsed.x)}`,
+                    },
+                },
+            },
+            scales: {
+                x: {stacked: true, ticks: {callback: v => '$' + Number(v).toLocaleString('es-AR')}, grid: {color: '#f0f0f0'}},
+                y: {stacked: true, grid: {display: false}},
+            },
+        },
+    });
+}
+
+function bucketBar(r) {
+    const t = r.total_pendiente;
+    if (t <= 0) return '<span class="text-[#bbb]">—</span>';
+    const pct = (v) => Math.max(0, (v / t * 100));
+    return `<div class="bucket-bar" title="Distribución 0-30 / 31-60 / 61-90 / 91-180 / >180">
+        <div class="b-fresco"     style="width: ${pct(r.b1_30)}%"     title="0-30: ${fmtMoneyDec(r.b1_30)}"></div>
+        <div class="b-medio"      style="width: ${pct(r.b31_60)}%"    title="31-60: ${fmtMoneyDec(r.b31_60)}"></div>
+        <div class="b-viejo"      style="width: ${pct(r.b61_90)}%"    title="61-90: ${fmtMoneyDec(r.b61_90)}"></div>
+        <div class="b-muy-viejo"  style="width: ${pct(r.b91_180)}%"   title="91-180: ${fmtMoneyDec(r.b91_180)}"></div>
+        <div class="b-mas-viejo"  style="width: ${pct(r.b181_mas)}%"  title=">180: ${fmtMoneyDec(r.b181_mas)}"></div>
+    </div>`;
+}
+
+function renderRanking(ranking) {
+    const filtro = document.getElementById('filtro-buscar').value.trim();
+    const filtrados = filtro ? ranking.filter(r => multiTokenMatch(r.os_nombre, filtro)) : ranking;
+    const body = document.getElementById('ranking-body');
+    body.innerHTML = filtrados.map(r => {
+        let viejoClass = 'text-emerald-700';
+        if (r.viejo_pct >= 30) viejoClass = 'text-orange-700 font-bold';
+        if (r.viejo_pct >= 60) viejoClass = 'text-red-700 font-bold';
+        return `
+            <tr class="hover:bg-[#fafafa]">
+                <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[260px]" title="${r.os_nombre}">${r.os_nombre}</td>
+                <td class="px-3 py-2 text-right font-mono font-semibold text-emerald-700">${fmtMoney(r.total_pendiente)}</td>
+                <td class="px-3 py-2">${bucketBar(r)}</td>
+                <td class="px-3 py-2 text-right font-mono text-emerald-700 text-xs">${fmtMoney(r.b1_30)}</td>
+                <td class="px-3 py-2 text-right font-mono text-amber-700 text-xs">${fmtMoney(r.b31_60)}</td>
+                <td class="px-3 py-2 text-right font-mono text-orange-700 text-xs">${fmtMoney(r.b61_90)}</td>
+                <td class="px-3 py-2 text-right font-mono text-red-700 text-xs">${fmtMoney(r.b91_180)}</td>
+                <td class="px-3 py-2 text-right font-mono text-red-900 text-xs">${fmtMoney(r.b181_mas)}</td>
+                <td class="px-3 py-2 text-right ${viejoClass}">${fmtPct(r.viejo_pct)}</td>
+                <td class="px-3 py-2 text-right text-[#666]">${r.recetas.toLocaleString('es-AR')}</td>
+            </tr>
+        `;
+    }).join('');
+    if (!filtrados.length) {
+        body.innerHTML = '<tr><td colspan="10" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>';
+    }
+}
+
+function filtrarRanking() {
+    if (_data) renderRanking(_data.ranking);
+}
+
+cargar();
+</script>
+
+{% endblock %}

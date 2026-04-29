@@ -59,14 +59,15 @@
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Calendario de cobros estimados según condiciones de cada OS. "Esta semana vencen $1.8M".</p>
                 </div>
 
-                <div class="block bg-emerald-50/30 border border-dashed border-emerald-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_antiguedad') }}"
+                   class="block bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 hover:bg-emerald-100/60 hover:border-emerald-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">📥</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⭐ NUEVO</span>
                     </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Recetas vs cobradas</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Delta entre dispensado y cobrado por OS. Plata atrapada en cuenta corriente.</p>
-                </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Antigüedad de cobranza</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Cuánto te debe cada OS y desde hace cuánto. Buckets 0-30/31-60/61-90/91-180/&gt;180. Detectá deuda vieja sin liquidar.</p>
+                </a>
 
                 <div class="block bg-emerald-50/30 border border-dashed border-emerald-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">

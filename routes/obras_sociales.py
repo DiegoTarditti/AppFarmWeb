@@ -360,6 +360,138 @@ def init_app(app):
             'serie_temporal': serie,
         })
 
+    @app.route('/obras-sociales/antiguedad')
+    def os_antiguedad():
+        """Aging report: cuánto tenés a cobrar de cada OS, agrupado por buckets
+        de antigüedad. Sirve para detectar OS con deuda vieja sin liquidar.
+        """
+        return render_template('os_antiguedad.html')
+
+    @app.route('/api/obras-sociales/antiguedad')
+    def api_os_antiguedad():
+        """JSON con aging por OS.
+
+        Buckets: 0-30, 31-60, 61-90, 91-180, >180 días.
+        Asume que importe_a_cargo_os representa deuda pendiente (no cobrada).
+        Si en el futuro se suma una tabla de cobros/liquidaciones, restamos.
+        """
+        from datetime import date as _date
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+
+        with database.get_db() as session:
+            # Aging por OS — un solo query con buckets
+            sql = _text('''
+                SELECT
+                    ovd.obra_social_observer AS os_id,
+                    COALESCE(oos.descripcion, 'Sin OS') AS os_nombre,
+                    SUM(COALESCE(ovd.importe_a_cargo_os, 0)) AS total_pendiente,
+                    SUM(CASE WHEN (:hoy - ovd.fecha_estadistica) <= 30
+                             THEN COALESCE(ovd.importe_a_cargo_os, 0) ELSE 0 END) AS b1_30,
+                    SUM(CASE WHEN (:hoy - ovd.fecha_estadistica) > 30
+                              AND (:hoy - ovd.fecha_estadistica) <= 60
+                             THEN COALESCE(ovd.importe_a_cargo_os, 0) ELSE 0 END) AS b31_60,
+                    SUM(CASE WHEN (:hoy - ovd.fecha_estadistica) > 60
+                              AND (:hoy - ovd.fecha_estadistica) <= 90
+                             THEN COALESCE(ovd.importe_a_cargo_os, 0) ELSE 0 END) AS b61_90,
+                    SUM(CASE WHEN (:hoy - ovd.fecha_estadistica) > 90
+                              AND (:hoy - ovd.fecha_estadistica) <= 180
+                             THEN COALESCE(ovd.importe_a_cargo_os, 0) ELSE 0 END) AS b91_180,
+                    SUM(CASE WHEN (:hoy - ovd.fecha_estadistica) > 180
+                             THEN COALESCE(ovd.importe_a_cargo_os, 0) ELSE 0 END) AS b181_mas,
+                    COUNT(*) AS dispensas,
+                    COUNT(DISTINCT ovd.id_operacion) AS recetas,
+                    MIN(ovd.fecha_estadistica) AS fecha_mas_vieja,
+                    MAX(ovd.fecha_estadistica) AS fecha_mas_nueva
+                FROM obs_ventas_detalle ovd
+                LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                WHERE COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                  AND ovd.obra_social_observer IS NOT NULL
+                  AND COALESCE(ovd.importe_a_cargo_os, 0) > 0
+                GROUP BY ovd.obra_social_observer, oos.descripcion
+                HAVING SUM(COALESCE(ovd.importe_a_cargo_os, 0)) > 0
+                ORDER BY SUM(COALESCE(ovd.importe_a_cargo_os, 0)) DESC
+            ''')
+            rows = session.execute(sql, {'hoy': hoy}).fetchall()
+
+            ranking = []
+            tot = {'pendiente': 0.0, 'b1_30': 0.0, 'b31_60': 0.0, 'b61_90': 0.0,
+                   'b91_180': 0.0, 'b181_mas': 0.0}
+            tot_dispensas = tot_recetas = 0
+            for r in rows:
+                b1 = float(r.b1_30 or 0)
+                b2 = float(r.b31_60 or 0)
+                b3 = float(r.b61_90 or 0)
+                b4 = float(r.b91_180 or 0)
+                b5 = float(r.b181_mas or 0)
+                pendiente = float(r.total_pendiente or 0)
+                viejo_pct = ((b3 + b4 + b5) / pendiente * 100) if pendiente > 0 else 0
+                ranking.append({
+                    'os_id': r.os_id,
+                    'os_nombre': r.os_nombre,
+                    'total_pendiente': round(pendiente, 2),
+                    'b1_30': round(b1, 2),
+                    'b31_60': round(b2, 2),
+                    'b61_90': round(b3, 2),
+                    'b91_180': round(b4, 2),
+                    'b181_mas': round(b5, 2),
+                    'viejo_pct': round(viejo_pct, 1),  # % >60 días
+                    'dispensas': int(r.dispensas or 0),
+                    'recetas': int(r.recetas or 0),
+                    'fecha_mas_vieja': r.fecha_mas_vieja.isoformat() if r.fecha_mas_vieja else None,
+                    'fecha_mas_nueva': r.fecha_mas_nueva.isoformat() if r.fecha_mas_nueva else None,
+                })
+                tot['pendiente'] += pendiente
+                tot['b1_30'] += b1
+                tot['b31_60'] += b2
+                tot['b61_90'] += b3
+                tot['b91_180'] += b4
+                tot['b181_mas'] += b5
+                tot_dispensas += int(r.dispensas or 0)
+                tot_recetas += int(r.recetas or 0)
+
+            # Alertas
+            alertas = []
+            for r in ranking:
+                viejo = r['b91_180'] + r['b181_mas']
+                if r['b181_mas'] > 0 and r['b181_mas'] / r['total_pendiente'] > 0.2:
+                    alertas.append({
+                        'tipo': 'critico',
+                        'os_nombre': r['os_nombre'],
+                        'mensaje': f"${r['b181_mas']:,.0f} con MÁS DE 180 DÍAS sin liquidar ({r['b181_mas']/r['total_pendiente']*100:.0f}% del total). Reclamar urgente.",
+                    })
+                elif viejo > 0 and viejo / r['total_pendiente'] > 0.4:
+                    alertas.append({
+                        'tipo': 'advertencia',
+                        'os_nombre': r['os_nombre'],
+                        'mensaje': f"${viejo:,.0f} con más de 90 días pendiente ({viejo/r['total_pendiente']*100:.0f}% del total).",
+                    })
+
+        return jsonify({
+            'hoy': hoy.isoformat(),
+            'kpis': {
+                'total_pendiente': round(tot['pendiente'], 2),
+                'b1_30': round(tot['b1_30'], 2),
+                'b31_60': round(tot['b31_60'], 2),
+                'b61_90': round(tot['b61_90'], 2),
+                'b91_180': round(tot['b91_180'], 2),
+                'b181_mas': round(tot['b181_mas'], 2),
+                'pct_b1_30': round(tot['b1_30'] / tot['pendiente'] * 100, 1) if tot['pendiente'] > 0 else 0,
+                'pct_viejo': round((tot['b61_90'] + tot['b91_180'] + tot['b181_mas']) / tot['pendiente'] * 100, 1) if tot['pendiente'] > 0 else 0,
+                'n_os': len(ranking),
+                'dispensas': tot_dispensas,
+                'recetas': tot_recetas,
+            },
+            'ranking': ranking,
+            'alertas': alertas,
+        })
+
     @app.route('/obras-sociales/productos-rentabilidad')
     def os_productos_rentabilidad():
         """Ranking de productos por margen, cruzado con OS asociadas.
