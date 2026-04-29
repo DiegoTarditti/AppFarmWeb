@@ -36,7 +36,8 @@
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
         <span id="header-fecha" class="text-[#888]"></span>
-        <a href="{{ url_for('os_index') }}" class="text-sky-600 hover:underline">← OS</a>
+        {% set pantalla_actual = 'Antigüedad de cobranza' %}
+        {% include '_os_breadcrumb.html' %}
     </div>
 </div>
 

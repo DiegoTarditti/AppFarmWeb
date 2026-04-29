@@ -25,10 +25,8 @@
             📥 Exportar Excel
         </a>
         {% endif %}
-        <a href="{{ url_for('os_dashboard') }}"
-           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1">
-            ← Dashboard
-        </a>
+        {% set pantalla_actual = 'Listado de dispensas' %}
+        {% include '_os_breadcrumb.html' %}
     </div>
 </div>
 
@@ -82,7 +80,7 @@
             {% endfor %}
         </select>
 
-        <select name="tipo" onchange="this.form.submit()"
+        <select name="tipo" onchange="this.form.submit()" title="Tipo de venta (con OS / particular)"
                 class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
             <option value="">Todas las ventas</option>
             <option value="os" {% if tipo_filter == 'os' %}selected{% endif %}>Solo c/Obra Social</option>
@@ -102,13 +100,15 @@
         {% endif %}
 
         <div class="flex items-center gap-1">
-            <label class="text-xs text-[#6f6f6f]">Desde</label>
-            <input type="date" name="desde" value="{{ desde }}" onchange="this.form.submit()"
+            <label for="filtro-desde" class="text-xs text-[#6f6f6f]">Desde</label>
+            <input type="date" id="filtro-desde" name="desde" value="{{ desde }}" onchange="this.form.submit()"
+                   title="Fecha de inicio del período"
                    class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
         </div>
         <div class="flex items-center gap-1">
-            <label class="text-xs text-[#6f6f6f]">Hasta</label>
-            <input type="date" name="hasta" value="{{ hasta }}" onchange="this.form.submit()"
+            <label for="filtro-hasta" class="text-xs text-[#6f6f6f]">Hasta</label>
+            <input type="date" id="filtro-hasta" name="hasta" value="{{ hasta }}" onchange="this.form.submit()"
+                   title="Fecha de fin del período"
                    class="bg-surface-input border border-surface-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
         </div>
 

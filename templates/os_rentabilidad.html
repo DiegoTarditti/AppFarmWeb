@@ -29,7 +29,8 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Margen real = Facturado − Costo estimado · ranking por ganancia, no volumen.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
-        <a href="{{ url_for('os_index') }}" class="text-sky-600 hover:underline">← OS</a>
+        {% set pantalla_actual = 'Rentabilidad por OS' %}
+        {% include '_os_breadcrumb.html' %}
     </div>
 </div>
 

@@ -25,7 +25,8 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Productos rankeados por ganancia neta. Filtrá por OS para ver qué te conviene de cada una.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
-        <a href="{{ url_for('os_index') }}" class="text-sky-600 hover:underline">← OS</a>
+        {% set pantalla_actual = 'Top productos por margen' %}
+        {% include '_os_breadcrumb.html' %}
     </div>
 </div>
 
