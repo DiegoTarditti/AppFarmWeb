@@ -43,6 +43,7 @@ KEEPALIVE_DEFAULT_MIN = 10
 
 # ── Configuración de comandos ──────────────────────────────────────────────────
 COMMANDS = [
+    ("⬇️  Pull código + Restart",  "git pull && docker-compose restart web",  "#10B981"),
     ("🔄  Reiniciar Web",         "docker-compose restart web",              "#2563EB"),
     ("🏗️  Rebuild Web",           "docker-compose build web",                "#7C3AED"),
     ("🏗️  Rebuild Todo",          "docker-compose build",                    "#7C3AED"),
@@ -234,6 +235,12 @@ class DockerPanel(tk.Tk):
         threading.Thread(target=self._auto_sync_loop, daemon=True).start()
         self.after(500, self._update_autosync_label)
         # === END AUTO-SYNC ===
+
+        # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
+        self._panel_remoto_stop = threading.Event()
+        threading.Thread(target=self._panel_remoto_loop, daemon=True).start()
+        self.after(500, self._update_panel_remoto_label)
+        # === END PANEL REMOTO ===
 
     def _ask_project_dir(self):
         dlg = _StartupDialog(self)
@@ -428,6 +435,35 @@ class DockerPanel(tk.Tk):
         btn_sync_cfg.bind("<Leave>", lambda e: btn_sync_cfg.config(bg=SURFACE))
         # === END AUTO-SYNC ===
 
+        # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
+        tk.Label(left, text="PANEL REMOTO", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
+
+        btn_panel_toggle = tk.Button(
+            left, text="📡  Panel remoto: ON/OFF",
+            font=("Segoe UI", 9, "bold"),
+            bg="#1a2a3a", fg="#7fb8ff",
+            activebackground="#2a3a4a", activeforeground="#7fb8ff",
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=self._toggle_panel_remoto,
+        )
+        btn_panel_toggle.pack(fill="x", pady=2)
+        btn_panel_toggle.bind("<Enter>", lambda e: btn_panel_toggle.config(bg="#2a4a6a"))
+        btn_panel_toggle.bind("<Leave>", lambda e: btn_panel_toggle.config(bg="#1a2a3a"))
+
+        btn_panel_cfg = tk.Button(
+            left, text="⚙  Configurar panel remoto…",
+            font=("Segoe UI", 9),
+            bg=SURFACE, fg=FG,
+            activebackground=BORDER, activeforeground=FG,
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=self._config_panel_remoto,
+        )
+        btn_panel_cfg.pack(fill="x", pady=2)
+        btn_panel_cfg.bind("<Enter>", lambda e: btn_panel_cfg.config(bg=BORDER))
+        btn_panel_cfg.bind("<Leave>", lambda e: btn_panel_cfg.config(bg=SURFACE))
+        # === END PANEL REMOTO ===
+
         tk.Frame(left, bg=BORDER, height=1).pack(fill="x", pady=8)
 
         tk.Button(left, text="⛔  Detener proceso",
@@ -578,6 +614,19 @@ class DockerPanel(tk.Tk):
         self._autosync_lbl.pack(side="right", padx=4)
         self._autosync_lbl.bind("<Button-1>", lambda e: self._config_autosync())
         # === END AUTO-SYNC ===
+
+        # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
+        tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
+        self._panel_remoto_lbl = tk.Label(
+            self._status_bar,
+            text="○ panel · off",
+            font=("Segoe UI", 8),
+            bg="#111113", fg=FG_DIM,
+            cursor="hand2",
+        )
+        self._panel_remoto_lbl.pack(side="right", padx=4)
+        self._panel_remoto_lbl.bind("<Button-1>", lambda e: self._config_panel_remoto())
+        # === END PANEL REMOTO ===
 
         # Indicador de PDFs pendientes en carpeta local + botón Revisar
         tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
@@ -1595,6 +1644,320 @@ class DockerPanel(tk.Tk):
         else:
             self._autosync_lbl.config(text="● auto-sync · pendiente", fg="#EAB308")
     # === END AUTO-SYNC ===
+
+    # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
+    # Hilo que polea Render cada N segundos buscando comandos pendientes
+    # encolados desde la UI /admin/panel. Cuando hay uno, lo ejecuta acá
+    # (en la PC farmacia) y reporta el resultado de vuelta a Render.
+    # Sin abrir puertos en la farmacia. Auth: header X-Panel-Token.
+    PANEL_REMOTO_DEFAULT_URL = "https://farmacia-web-rj1z.onrender.com"
+    PANEL_REMOTO_DEFAULT_SEG = 8
+    PANEL_REMOTO_OUTPUT_LIMIT = 30000  # caracteres a reportar (Render trimma a 32k igual)
+
+    def _comandos_remotos_whitelist(self):
+        """Mapeo nombre_comando → lista de pasos (cmd shell, descripción).
+        Se ejecutan en serie; si uno falla, se aborta y se reporta error.
+        Los comandos viven en el directorio del proyecto (self.dir_var.get()).
+        """
+        return {
+            'pull_restart':  [('git pull', 'pull'), ('docker-compose restart web', 'restart')],
+            'restart':       [('docker-compose restart web', 'restart')],
+            'restart_full':  [('docker-compose down', 'down'), ('docker-compose up -d', 'up')],
+            'logs':          [('docker-compose logs --tail=50 web', 'logs')],
+            'status':        [('docker-compose ps', 'ps')],
+            'version':       [('git rev-parse --short HEAD', 'rev'),
+                              ('git log -1 --format=%s%n%cI', 'last_commit')],
+            'sync_now':      [('python sync_observer.py', 'sync')],
+        }
+
+    def _load_panel_remoto_config(self):
+        """Lee config del panel remoto desde agente_config.txt."""
+        cfg_path = self._get_agente_config_path()
+        cfg = {
+            'enabled': False,
+            'url': self.PANEL_REMOTO_DEFAULT_URL,
+            'token': '',
+            'seg': self.PANEL_REMOTO_DEFAULT_SEG,
+        }
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("panel_remoto_enabled="):
+                        cfg['enabled'] = line.split("=", 1)[1].lower() in ("true", "1", "si")
+                    elif line.startswith("panel_remoto_url="):
+                        cfg['url'] = line.split("=", 1)[1]
+                    elif line.startswith("panel_remoto_token="):
+                        cfg['token'] = line.split("=", 1)[1]
+                    elif line.startswith("panel_remoto_seg="):
+                        try: cfg['seg'] = max(3, min(60, int(line.split("=", 1)[1])))
+                        except ValueError: pass
+        return cfg
+
+    def _save_panel_remoto_config(self, cfg):
+        """Persiste solo las claves del panel remoto, preservando lo demás."""
+        cfg_path = self._get_agente_config_path()
+        # Leer archivo actual y reemplazar solo las claves panel_remoto_*
+        keys = ('panel_remoto_enabled', 'panel_remoto_url',
+                'panel_remoto_token', 'panel_remoto_seg')
+        existing = []
+        if os.path.isfile(cfg_path):
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not any(line.startswith(k + "=") for k in keys):
+                        existing.append(line.rstrip("\n"))
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            for line in existing:
+                f.write(line + "\n")
+            f.write(f"panel_remoto_enabled={'true' if cfg['enabled'] else 'false'}\n")
+            f.write(f"panel_remoto_url={cfg['url']}\n")
+            f.write(f"panel_remoto_token={cfg['token']}\n")
+            f.write(f"panel_remoto_seg={cfg['seg']}\n")
+
+    def _panel_remoto_loop(self):
+        """Loop principal: polea cada N seg si está enabled."""
+        while not self._panel_remoto_stop.is_set():
+            try:
+                cfg = self._load_panel_remoto_config()
+            except Exception:
+                cfg = {'enabled': False, 'url': '', 'token': '', 'seg': 8}
+            if cfg['enabled'] and cfg['url'] and cfg['token']:
+                try:
+                    self._panel_remoto_tick(cfg)
+                except Exception as e:
+                    ts = datetime.datetime.now().strftime("%H:%M:%S")
+                    self.after(0, self._append, f"  ⚠  {ts} panel-remoto error: {e}\n", "err")
+            seg = max(3, min(60, int(cfg['seg'])))
+            for _ in range(seg):
+                if self._panel_remoto_stop.is_set():
+                    return
+                time.sleep(1)
+
+    def _panel_remoto_tick(self, cfg):
+        """Una iteración: pedir próximo comando, ejecutarlo, reportar."""
+        proximo_url = cfg['url'].rstrip('/') + '/api/panel/comandos/proximo?origen=dockerpanel'
+        req = urllib.request.Request(
+            proximo_url,
+            headers={'X-Panel-Token': cfg['token'], 'User-Agent': 'DockerPanel-PanelRemoto'},
+            method='GET',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:
+                data = json.loads(r.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 503):
+                # Token mal o endpoint deshabilitado en server. Log + sigue dormido.
+                ts = datetime.datetime.now().strftime("%H:%M:%S")
+                self.after(0, self._append,
+                           f"  ⚠  {ts} panel-remoto auth/503 ({e.code}): {e.reason}\n", "err")
+            return
+        if not data.get('ok') or not data.get('comando'):
+            return  # nada pendiente
+        cmd_info = data['comando']
+        cmd_id = cmd_info['id']
+        cmd_name = cmd_info['comando']
+        solicitado_por = cmd_info.get('solicitado_por', '?')
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        self.after(0, self._append,
+                   f"\n📡  {ts} panel-remoto: ejecutando #{cmd_id} '{cmd_name}' (pedido por {solicitado_por})\n",
+                   "cmd")
+        self._update_panel_remoto_label_text(f"● panel · ejecutando #{cmd_id}", YELLOW)
+        # Ejecutar
+        whitelist = self._comandos_remotos_whitelist()
+        steps = whitelist.get(cmd_name)
+        t0 = time.time()
+        if not steps:
+            estado = 'error'
+            output = f'Comando "{cmd_name}" no está en el whitelist del DockerPanel.'
+        else:
+            estado, output = self._ejecutar_comando_remoto(steps)
+        dur_ms = int((time.time() - t0) * 1000)
+        # Reportar
+        reporte_url = cfg['url'].rstrip('/') + f'/api/panel/comandos/{cmd_id}/resultado'
+        body = json.dumps({
+            'estado': estado,
+            'resultado': output[-self.PANEL_REMOTO_OUTPUT_LIMIT:],
+            'duracion_ms': dur_ms,
+        }).encode('utf-8')
+        req2 = urllib.request.Request(
+            reporte_url, data=body,
+            headers={'X-Panel-Token': cfg['token'],
+                     'Content-Type': 'application/json',
+                     'User-Agent': 'DockerPanel-PanelRemoto'},
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req2, timeout=15) as r2:
+                _ = r2.read()
+        except (urllib.error.URLError, OSError) as e:
+            self.after(0, self._append,
+                       f"  ⚠  panel-remoto: reporte falló para #{cmd_id}: {e}\n", "err")
+        ts2 = datetime.datetime.now().strftime("%H:%M:%S")
+        tag = "ok" if estado == 'ok' else "err"
+        self.after(0, self._append,
+                   f"  {'✔' if estado == 'ok' else '✗'} {ts2} panel-remoto #{cmd_id} → {estado} ({dur_ms}ms)\n",
+                   tag)
+        self._update_panel_remoto_label()
+
+    def _ejecutar_comando_remoto(self, steps):
+        """Ejecuta una secuencia de pasos y devuelve (estado, output_combinado).
+        Estado 'ok' si todos los pasos terminaron con returncode 0; 'error' al primer fallo.
+        """
+        cwd = self.dir_var.get()
+        out_lines = []
+        for cmd, desc in steps:
+            out_lines.append(f"$ {cmd}")
+            try:
+                proc = subprocess.run(
+                    cmd, shell=True, cwd=cwd,
+                    capture_output=True, text=True, timeout=300,
+                    encoding='utf-8', errors='replace',
+                )
+                if proc.stdout:
+                    out_lines.append(proc.stdout.rstrip())
+                if proc.stderr:
+                    out_lines.append('[stderr] ' + proc.stderr.rstrip())
+                out_lines.append(f'[exit={proc.returncode}]')
+                if proc.returncode != 0:
+                    return 'error', '\n'.join(out_lines)
+            except subprocess.TimeoutExpired:
+                out_lines.append(f'[TIMEOUT >300s en paso "{desc}"]')
+                return 'error', '\n'.join(out_lines)
+            except Exception as e:
+                out_lines.append(f'[EXCEPCIÓN en paso "{desc}": {e}]')
+                return 'error', '\n'.join(out_lines)
+        return 'ok', '\n'.join(out_lines)
+
+    def _update_panel_remoto_label(self):
+        """Refresca el indicador visual del panel remoto en la status bar."""
+        try:
+            cfg = self._load_panel_remoto_config()
+        except Exception:
+            cfg = {'enabled': False, 'token': '', 'seg': 8}
+        if not hasattr(self, '_panel_remoto_lbl'):
+            return
+        if cfg['enabled'] and cfg['token']:
+            self._panel_remoto_lbl.config(
+                text=f"● panel · poll cada {cfg['seg']}s", fg=GREEN)
+        elif cfg['enabled'] and not cfg['token']:
+            self._panel_remoto_lbl.config(
+                text="⚠ panel · falta token", fg=YELLOW)
+        else:
+            self._panel_remoto_lbl.config(text="○ panel · off", fg=FG_DIM)
+
+    def _update_panel_remoto_label_text(self, text, color):
+        """Actualizar el texto del label desde un thread non-UI."""
+        if not hasattr(self, '_panel_remoto_lbl'):
+            return
+        self.after(0, lambda: self._panel_remoto_lbl.config(text=text, fg=color))
+
+    def _toggle_panel_remoto(self):
+        """Toggle ON/OFF rápido del panel remoto. Si nunca se configuró,
+        abre el diálogo para que el user meta token + URL."""
+        cfg = self._load_panel_remoto_config()
+        if not cfg['token']:
+            self._config_panel_remoto()
+            return
+        cfg['enabled'] = not cfg['enabled']
+        self._save_panel_remoto_config(cfg)
+        self._update_panel_remoto_label()
+        estado = "ON" if cfg['enabled'] else "OFF"
+        self._append(f"\n📡  Panel remoto: {estado}\n", "ok")
+
+    def _config_panel_remoto(self):
+        """Diálogo de configuración (URL, token, intervalo + toggle)."""
+        cfg = self._load_panel_remoto_config()
+        dlg = tk.Toplevel(self)
+        dlg.title("Configurar Panel remoto")
+        dlg.configure(bg=BG)
+        dlg.geometry("520x340")
+        dlg.transient(self)
+        dlg.grab_set()
+
+        tk.Label(dlg, text="Panel remoto — buzón de comandos en Render",
+                 bg=BG, fg=FG, font=("Segoe UI", 10, "bold")).pack(pady=(12, 4), padx=12, anchor="w")
+        tk.Label(dlg,
+                 text=("DockerPanel polea Render cada N segundos buscando comandos\n"
+                       "(deploy, restart, sync) encolados desde /admin/panel."),
+                 bg=BG, fg=FG_DIM, font=("Segoe UI", 9), justify="left"
+                 ).pack(padx=12, anchor="w")
+
+        url_var = tk.StringVar(value=cfg['url'])
+        token_var = tk.StringVar(value=cfg['token'])
+        seg_var = tk.StringVar(value=str(cfg['seg']))
+        enabled_var = tk.BooleanVar(value=cfg['enabled'])
+
+        def row(label, var, show=None, width=44):
+            f = tk.Frame(dlg, bg=BG); f.pack(fill="x", padx=12, pady=4)
+            tk.Label(f, text=label, bg=BG, fg=FG, font=("Segoe UI", 9),
+                     width=14, anchor="w").pack(side="left")
+            ent = tk.Entry(f, textvariable=var, bg=SURFACE, fg=FG, insertbackground=FG,
+                           relief="flat", font=("Segoe UI", 9), width=width, show=show)
+            ent.pack(side="left", fill="x", expand=True)
+            return ent
+
+        row("URL Render:", url_var)
+        row("Token (X-Panel-Token):", token_var, show="•")
+        row("Polling cada (seg):", seg_var, width=8)
+
+        chk = tk.Checkbutton(
+            dlg, text="Habilitado", variable=enabled_var,
+            bg=BG, fg=FG, selectcolor=SURFACE, font=("Segoe UI", 9),
+            activebackground=BG, activeforeground=FG,
+        )
+        chk.pack(padx=12, pady=(8, 4), anchor="w")
+
+        # Botones
+        btn_row = tk.Frame(dlg, bg=BG); btn_row.pack(fill="x", padx=12, pady=(12, 12))
+
+        def probar():
+            url = url_var.get().strip()
+            token = token_var.get().strip()
+            if not url or not token:
+                messagebox.showwarning("Falta data", "URL y token son obligatorios.", parent=dlg)
+                return
+            try:
+                req = urllib.request.Request(
+                    url.rstrip('/') + '/api/panel/comandos/proximo?origen=dockerpanel-test',
+                    headers={'X-Panel-Token': token, 'User-Agent': 'DockerPanel-Test'},
+                )
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    code = r.getcode()
+                    body = r.read().decode('utf-8', 'replace')
+                messagebox.showinfo(
+                    "OK", f"Conexión exitosa (HTTP {code}).\nRespuesta: {body[:300]}",
+                    parent=dlg)
+            except urllib.error.HTTPError as e:
+                messagebox.showerror(
+                    "Falló", f"HTTP {e.code} {e.reason}\n{e.read().decode('utf-8', 'replace')[:300]}",
+                    parent=dlg)
+            except Exception as e:
+                messagebox.showerror("Falló", f"{type(e).__name__}: {e}", parent=dlg)
+
+        def guardar():
+            try:
+                seg = max(3, min(60, int(seg_var.get())))
+            except ValueError:
+                seg = 8
+            self._save_panel_remoto_config({
+                'enabled': enabled_var.get(),
+                'url': url_var.get().strip(),
+                'token': token_var.get().strip(),
+                'seg': seg,
+            })
+            self._update_panel_remoto_label()
+            dlg.destroy()
+
+        tk.Button(btn_row, text="Probar conexión", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=FG, activebackground=BORDER,
+                  relief="flat", padx=12, pady=6, command=probar).pack(side="left")
+        tk.Button(btn_row, text="Cancelar", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=FG, activebackground=BORDER,
+                  relief="flat", padx=12, pady=6, command=dlg.destroy).pack(side="right", padx=(6, 0))
+        tk.Button(btn_row, text="Guardar", font=("Segoe UI", 9, "bold"),
+                  bg="#1a3a2a", fg=GREEN, activebackground="#2a4a3a",
+                  relief="flat", padx=14, pady=6, command=guardar).pack(side="right")
+    # === END PANEL REMOTO ===
 
     # === BEGIN HELPER HTTP (copy to unified panel) ===
     def _set_helper_status(self, ok, err=None):

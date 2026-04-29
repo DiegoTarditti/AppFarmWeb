@@ -233,3 +233,148 @@ def init_app(app):
         ]
         return render_template('admin_reset_datos.html',
                                grupos=grupos_lista, logs=logs)
+
+    # ── Panel de comandos remotos ──────────────────────────────────────
+    # Buzón de comandos en Render que la PC farmacia (DockerPanel) consume
+    # vía polling outbound. Permite deployar / ejecutar comandos desde
+    # cualquier device sin necesidad de exponer la red de la farmacia.
+    PANEL_COMANDOS_WHITELIST = {
+        'pull_restart': 'Pull código + Restart Web',
+        'restart': 'Restart Web',
+        'restart_full': 'Down + Up (recreate)',
+        'logs': 'Logs Web (50 líneas)',
+        'status': 'Estado contenedores',
+        'version': 'Versión deployada (git rev)',
+        'sync_now': 'Sync ObServer ahora',
+    }
+
+    @app.route('/admin/panel')
+    @requiere_permiso('usuarios', 'admin')
+    def admin_panel():
+        """UI del buzón de comandos: dropdown + historial."""
+        with database.get_db() as session:
+            recientes = (session.query(database.PanelComando)
+                         .order_by(database.PanelComando.solicitado_en.desc())
+                         .limit(30).all())
+        return render_template('admin_panel.html',
+                               whitelist=PANEL_COMANDOS_WHITELIST,
+                               recientes=recientes)
+
+    @app.route('/admin/panel/comandos', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def admin_panel_encolar():
+        """Encola un comando para que DockerPanel lo agarre en su próximo polling."""
+        from flask_login import current_user
+        if request.is_json:
+            comando = ((request.get_json(silent=True) or {}).get('comando') or '').strip()
+        else:
+            comando = (request.form.get('comando') or '').strip()
+        if comando not in PANEL_COMANDOS_WHITELIST:
+            if request.is_json:
+                return jsonify({'ok': False, 'error': 'Comando no permitido'}), 400
+            flash('Comando no permitido.', 'error')
+            return redirect(url_for('admin_panel'))
+        username = getattr(current_user, 'username', None) or 'admin'
+        with database.get_db() as session:
+            cmd = database.PanelComando(
+                comando=comando, estado='pendiente', solicitado_por=username,
+            )
+            session.add(cmd)
+            session.commit()
+            cmd_id = cmd.id
+        if request.is_json:
+            return jsonify({'ok': True, 'id': cmd_id, 'comando': comando})
+        flash(f'Comando "{PANEL_COMANDOS_WHITELIST[comando]}" encolado (#{cmd_id}). DockerPanel lo levantará en el próximo poll.', 'success')
+        return redirect(url_for('admin_panel'))
+
+    @app.route('/admin/panel/comandos/recientes')
+    @requiere_permiso('usuarios', 'admin')
+    def admin_panel_recientes():
+        """JSON con últimos N comandos para auto-refresh de la UI."""
+        try:
+            limit = min(50, max(5, int(request.args.get('limit', '30'))))
+        except ValueError:
+            limit = 30
+        with database.get_db() as session:
+            rows = (session.query(database.PanelComando)
+                    .order_by(database.PanelComando.solicitado_en.desc())
+                    .limit(limit).all())
+            recientes = [{
+                'id': r.id, 'comando': r.comando, 'estado': r.estado,
+                'solicitado_en': r.solicitado_en.isoformat() if r.solicitado_en else None,
+                'solicitado_por': r.solicitado_por,
+                'tomado_en': r.tomado_en.isoformat() if r.tomado_en else None,
+                'ejecutado_en': r.ejecutado_en.isoformat() if r.ejecutado_en else None,
+                'duracion_ms': r.duracion_ms,
+                'resultado': (r.resultado[:8000] if r.resultado else None),
+                'origen': r.origen,
+            } for r in rows]
+        return jsonify({'ok': True, 'comandos': recientes})
+
+    def _check_panel_token():
+        """Valida el header X-Panel-Token contra la env var PANEL_REMOTO_TOKEN.
+        Si la env var no está set en el server, el endpoint queda deshabilitado (503)."""
+        expected = os.environ.get('PANEL_REMOTO_TOKEN', '').strip()
+        if not expected:
+            return False, ('PANEL_REMOTO_TOKEN no configurado en el server', 503)
+        provided = (request.headers.get('X-Panel-Token') or '').strip()
+        if not provided or provided != expected:
+            return False, ('Token inválido', 401)
+        return True, None
+
+    @app.route('/api/panel/comandos/proximo', methods=['GET'])
+    def api_panel_proximo():
+        """DockerPanel polea acá. Devuelve el próximo comando pendiente y lo
+        marca como en_proceso atómicamente. Si no hay nada, devuelve null.
+        """
+        from sqlalchemy import text as _text
+
+        from database import now_ar
+        ok, err = _check_panel_token()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
+        origen = (request.args.get('origen') or 'dockerpanel').strip()[:40]
+        with database.get_db() as session:
+            # SELECT FOR UPDATE SKIP LOCKED para que múltiples workers no agarren el mismo
+            row = session.execute(_text(
+                "SELECT id FROM panel_comandos WHERE estado = 'pendiente' "
+                "ORDER BY solicitado_en ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
+            )).first()
+            if not row:
+                return jsonify({'ok': True, 'comando': None})
+            cmd = session.get(database.PanelComando, row[0])
+            cmd.estado = 'en_proceso'
+            cmd.tomado_en = now_ar()
+            cmd.origen = origen
+            session.commit()
+            return jsonify({'ok': True, 'comando': {
+                'id': cmd.id, 'comando': cmd.comando,
+                'solicitado_en': cmd.solicitado_en.isoformat(),
+                'solicitado_por': cmd.solicitado_por,
+            }})
+
+    @app.route('/api/panel/comandos/<int:cmd_id>/resultado', methods=['POST'])
+    def api_panel_resultado(cmd_id):
+        """DockerPanel reporta acá. Body JSON: {estado: ok|error, resultado: str, duracion_ms?}"""
+        from database import now_ar
+        ok, err = _check_panel_token()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
+        data = request.get_json(silent=True) or {}
+        estado = (data.get('estado') or '').strip()
+        if estado not in ('ok', 'error'):
+            return jsonify({'ok': False, 'error': 'estado inválido'}), 400
+        resultado = (data.get('resultado') or '')[:32000]
+        duracion = data.get('duracion_ms')
+        with database.get_db() as session:
+            cmd = session.get(database.PanelComando, cmd_id)
+            if not cmd:
+                return jsonify({'ok': False, 'error': 'Comando no existe'}), 404
+            if cmd.estado not in ('en_proceso', 'pendiente'):
+                return jsonify({'ok': False, 'error': f'Comando ya está en estado {cmd.estado}'}), 409
+            cmd.estado = estado
+            cmd.resultado = resultado
+            cmd.duracion_ms = int(duracion) if isinstance(duracion, (int, float)) else None
+            cmd.ejecutado_en = now_ar()
+            session.commit()
+        return jsonify({'ok': True, 'id': cmd_id, 'estado': estado})

@@ -209,6 +209,23 @@ una tarea aparte.
 - **Esfuerzo**: 30 min.
 - **Cómo**: `/admin/health` con: estado de DB, conteo de tablas, último sync, espacio disponible, versión deployada. Útil para diagnóstico rápido.
 
+### ~~Render como "buzón de comandos remotos" para DockerPanel~~ ✅ HECHO 2026-04-29
+**Implementado**:
+- Tabla `panel_comandos` + migración inline + agregada al whitelist de pg_type cleanup.
+- Endpoints en `routes/admin.py`: `/admin/panel` (UI), `POST /admin/panel/comandos` (encolar), `GET /admin/panel/comandos/recientes` (auto-refresh JSON), `GET /api/panel/comandos/proximo` (DockerPanel polea), `POST /api/panel/comandos/<id>/resultado` (DockerPanel reporta).
+- Template `admin_panel.html` con dropdown + tabla auto-refresh c/3s + modal de resultado.
+- Auth runner: header `X-Panel-Token` validado contra env var `PANEL_REMOTO_TOKEN` (fail-safe 503 si no está set).
+- DockerPanel: thread `_panel_remoto_loop`, config en `agente_config.txt` (`panel_remoto_*`), botones ON/OFF + Configurar, label en status bar, diálogo con botón "Probar conexión".
+- Whitelist de comandos en DockerPanel: `pull_restart`, `restart`, `restart_full`, `logs`, `status`, `version`, `sync_now`.
+
+**Pendiente para etapa 2**:
+- Setear `PANEL_REMOTO_TOKEN` en Render (env var) y configurar el mismo token en el DockerPanel de la farmacia.
+- Multi-farmacia: cuando se vendan más instancias, el `origen` del comando ya está reportado, falta UI para filtrar/escalar.
+- Heartbeat: comando periódico (cada N min) que la farmacia auto-genere reportando `version` y se vea en el panel cuándo fue el último heartbeat.
+
+### ~~Bot de Telegram~~ (descartado a favor del buzón Render)
+- Mantener nota: si por alguna razón se necesita un canal de comandos por *push* (que la PC reciba inmediatamente sin polling), Telegram long-polling sigue siendo la alternativa. Por ahora el polling outbound al buzón Render alcanza.
+
 ---
 
 ## 🌟 Features pendientes

@@ -134,6 +134,24 @@
     }
     </script>
 
+    <a href="{{ url_for('admin_panel') }}"
+       class="block bg-white border border-surface-border rounded-xl p-5 hover:border-emerald-400 hover:shadow-sm transition-all">
+        <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 117.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-semibold text-sm">📡 Panel remoto · Comandos a la farmacia</p>
+                <p class="text-xs text-[#6f6f6f] mt-1">
+                    Encolá comandos (deploy, restart, sync, logs) desde acá → la PC de la
+                    farmacia los agarra vía polling y reporta el resultado. No requiere abrir
+                    puertos en la farmacia.
+                </p>
+            </div>
+            <svg class="w-4 h-4 text-[#999] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </div>
+    </a>
+
     <a href="{{ url_for('admin_cron_log') }}"
        class="block bg-white border border-surface-border rounded-xl p-5 hover:border-violet-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">

@@ -382,6 +382,25 @@ class CronLog(Base):
     error = Column(Text, nullable=True)
 
 
+class PanelComando(Base):
+    """Buzón de comandos remotos: vos los encolás desde Render, la PC farmacia
+    los ejecuta vía polling outbound (DockerPanel no necesita estar accesible).
+
+    Flujo: estado pendiente → en_proceso → ok / error.
+    """
+    __tablename__ = 'panel_comandos'
+    id = Column(Integer, primary_key=True)
+    comando = Column(String(40), nullable=False)  # whitelist: pull_restart, restart, restart_full, logs, status, version, sync_now
+    estado = Column(String(20), nullable=False, default='pendiente', index=True)  # pendiente / en_proceso / ok / error
+    solicitado_en = Column(DateTime, default=now_ar, nullable=False, index=True)
+    solicitado_por = Column(String(80), nullable=True)  # username del que lo encoló
+    tomado_en = Column(DateTime, nullable=True)  # cuando DockerPanel lo agarró
+    ejecutado_en = Column(DateTime, nullable=True)  # cuando terminó
+    duracion_ms = Column(Integer, nullable=True)
+    resultado = Column(Text, nullable=True)  # stdout/stderr resumido
+    origen = Column(String(40), nullable=True)  # 'dockerpanel' u otro identificador del runner
+
+
 class MvRefreshLog(Base):
     """Log de cada refresh de una vista materializada.
 
@@ -1172,7 +1191,8 @@ def init_db(database_url=None):
                         'proveedor_horarios_reparto', 'pedido_borrador',
                         'laboratorio_drogueria',
                         'pedido_emitido', 'pedido_emitido_item',
-                        'pack_equivalencias', 'cliente_os_inferida')
+                        'pack_equivalencias', 'cliente_os_inferida',
+                        'panel_comandos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -1663,6 +1683,22 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hcc_user ON home_card_clicks(usuario_id, clicked_at DESC)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hcc_card ON home_card_clicks(card_id)"))
+    # Buzón de comandos remotos para DockerPanel
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS panel_comandos (
+            id SERIAL PRIMARY KEY,
+            comando VARCHAR(40) NOT NULL,
+            estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+            solicitado_en TIMESTAMP NOT NULL DEFAULT NOW(),
+            solicitado_por VARCHAR(80),
+            tomado_en TIMESTAMP,
+            ejecutado_en TIMESTAMP,
+            duracion_ms INTEGER,
+            resultado TEXT,
+            origen VARCHAR(40)
+        )
+    """))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_panel_comandos_estado ON panel_comandos(estado, solicitado_en)"))
     # Puente en productos
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))

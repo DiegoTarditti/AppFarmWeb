@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Panel remoto{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="{{ url_for('admin_index') }}" class="text-[#6f6f6f] hover:text-[#1e1e1e] text-sm">← Admin</a>
+    <h1 class="text-base font-bold text-[#1e1e1e]">📡 Panel remoto — buzón de comandos</h1>
+    <span id="status-chip" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
+        cargando…
+    </span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4 max-w-5xl mx-auto w-full">
+
+    <!-- Explicación -->
+    <div class="bg-sky-50 border border-sky-200 rounded-xl p-3 text-[12px] text-sky-900 leading-snug">
+        <p><strong>¿Cómo funciona?</strong> Encolás un comando acá → la PC de la farmacia
+        (DockerPanel) lo agarra en su próximo polling (cada 5–10 seg) → lo ejecuta y
+        reporta el resultado. No requiere abrir puertos en la farmacia.</p>
+        <p class="mt-1.5"><strong>Auth runner:</strong> el DockerPanel manda el header
+        <code class="bg-white px-1 rounded">X-Panel-Token</code> que matchea con la env var
+        <code class="bg-white px-1 rounded">PANEL_REMOTO_TOKEN</code> del server. Si la env
+        var no está seteada, el endpoint queda en 503 (fail-safe).</p>
+    </div>
+
+    <!-- Form encolar -->
+    <form method="post" action="{{ url_for('admin_panel_encolar') }}"
+          class="bg-white border border-surface-border rounded-xl p-4 flex items-end gap-3 flex-wrap">
+        <div class="flex-1 min-w-[260px]">
+            <label class="text-[10px] uppercase font-semibold text-[#888]">Comando</label>
+            <select name="comando" required
+                    class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm">
+                {% for cmd, label in whitelist.items() %}
+                <option value="{{ cmd }}">{{ label }} <span class="text-[#888]">({{ cmd }})</span></option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit"
+                class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-5 py-2 rounded-lg text-sm">
+            ▶ Encolar
+        </button>
+    </form>
+
+    <!-- Historial -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <h2 class="font-bold text-sm text-[#1e1e1e]">Últimos 30 comandos</h2>
+            <span class="text-[11px] text-[#888]">auto-refresh cada 3s</span>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs">
+                <thead class="bg-[#f5f5f5] uppercase text-[10px] text-[#888]">
+                    <tr>
+                        <th class="px-3 py-2 text-left">#</th>
+                        <th class="px-3 py-2 text-left">Comando</th>
+                        <th class="px-3 py-2 text-left">Estado</th>
+                        <th class="px-3 py-2 text-left">Pedido</th>
+                        <th class="px-3 py-2 text-left">Quien</th>
+                        <th class="px-3 py-2 text-left">Tomado</th>
+                        <th class="px-3 py-2 text-left">Terminó</th>
+                        <th class="px-3 py-2 text-right">Dur. (ms)</th>
+                    </tr>
+                </thead>
+                <tbody id="historial-body" class="divide-y divide-surface-border">
+                    <tr><td colspan="8" class="px-3 py-8 text-center text-[#999]">cargando…</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal resultado -->
+    <div id="resultado-modal"
+         class="hidden fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+         onclick="if(event.target===this) cerrarResultado()">
+        <div class="bg-white rounded-2xl max-w-3xl w-full max-h-[85vh] overflow-auto p-5 shadow-2xl">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-base font-bold text-[#1e1e1e]" id="rm-titulo">Resultado</h2>
+                <button type="button" onclick="cerrarResultado()" class="text-[#999] hover:text-rose-600 text-2xl px-2">✕</button>
+            </div>
+            <pre id="rm-body" class="bg-[#0d0d0d] text-emerald-300 text-xs p-3 rounded-lg overflow-auto whitespace-pre-wrap font-mono"></pre>
+        </div>
+    </div>
+</div>
+
+<script>
+const ESTADO_BADGE = {
+    'pendiente':  ['bg-amber-100', 'text-amber-800', '⏳ pendiente'],
+    'en_proceso': ['bg-sky-100', 'text-sky-800', '⚡ en proceso'],
+    'ok':         ['bg-emerald-100', 'text-emerald-800', '✓ ok'],
+    'error':      ['bg-rose-100', 'text-rose-800', '✗ error'],
+};
+
+function fmtFecha(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
+let _resultadosCache = {};
+
+async function refrescar() {
+    try {
+        const r = await fetch('{{ url_for("admin_panel_recientes") }}?limit=30');
+        const data = await r.json();
+        if (!data.ok) return;
+        const rows = data.comandos;
+        const body = document.getElementById('historial-body');
+        if (!rows.length) {
+            body.innerHTML = '<tr><td colspan="8" class="px-3 py-6 text-center text-[#999]">Sin comandos.</td></tr>';
+        } else {
+            body.innerHTML = rows.map(r => {
+                _resultadosCache[r.id] = r;
+                const [bg, fg, label] = ESTADO_BADGE[r.estado] || ['bg-slate-100', 'text-slate-700', r.estado];
+                const isClickable = r.resultado || r.estado === 'error';
+                return `
+                    <tr class="${isClickable ? 'hover:bg-[#f5f5f5] cursor-pointer' : ''}"
+                        ${isClickable ? `onclick="verResultado(${r.id})"` : ''}>
+                        <td class="px-3 py-1.5 font-mono text-[11px] text-[#888]">${r.id}</td>
+                        <td class="px-3 py-1.5 font-mono text-[11px] text-[#1e1e1e]">${r.comando}</td>
+                        <td class="px-3 py-1.5">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${bg} ${fg}">${label}</span>
+                        </td>
+                        <td class="px-3 py-1.5 text-[#666]">${fmtFecha(r.solicitado_en)}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${r.solicitado_por || '—'}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${fmtFecha(r.tomado_en)}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${fmtFecha(r.ejecutado_en)}</td>
+                        <td class="px-3 py-1.5 text-right font-mono text-[#888]">${r.duracion_ms ?? '—'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        // Status chip
+        const enProceso = rows.filter(r => r.estado === 'en_proceso').length;
+        const pendientes = rows.filter(r => r.estado === 'pendiente').length;
+        const chip = document.getElementById('status-chip');
+        if (pendientes > 0) {
+            chip.textContent = `${pendientes} pendiente${pendientes>1?'s':''} · ${enProceso} en proceso`;
+            chip.className = 'text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold';
+        } else if (enProceso > 0) {
+            chip.textContent = `${enProceso} en proceso`;
+            chip.className = 'text-[11px] px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold';
+        } else {
+            chip.textContent = 'sin pendientes';
+            chip.className = 'text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-semibold';
+        }
+    } catch (e) {
+        console.error('refrescar fail', e);
+    }
+}
+
+function verResultado(id) {
+    const r = _resultadosCache[id];
+    if (!r) return;
+    document.getElementById('rm-titulo').textContent = `#${id} · ${r.comando} · ${r.estado}`;
+    document.getElementById('rm-body').textContent = r.resultado || '(sin output)';
+    document.getElementById('resultado-modal').classList.remove('hidden');
+}
+function cerrarResultado() {
+    document.getElementById('resultado-modal').classList.add('hidden');
+}
+
+refrescar();
+setInterval(refrescar, 3000);
+</script>
+{% endblock %}
