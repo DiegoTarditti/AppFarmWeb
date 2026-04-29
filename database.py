@@ -2034,8 +2034,15 @@ def _pg_add_columns(conn):
     """))
     # Bump VARCHAR(200) → VARCHAR(500) en monodroga_* (polivitamínicos largos
     # como SUPRADYN MAGNESIO superan 200 chars con todas las vitaminas listadas).
-    conn.execute(text("ALTER TABLE producto_atributos ALTER COLUMN monodroga_norm    TYPE VARCHAR(500)"))
-    conn.execute(text("ALTER TABLE producto_atributos ALTER COLUMN monodroga_display TYPE VARCHAR(500)"))
+    # Wrappeado por seguridad ante re-runs parciales o renombre futuro de columna.
+    for _alter in (
+        "ALTER TABLE producto_atributos ALTER COLUMN monodroga_norm    TYPE VARCHAR(500)",
+        "ALTER TABLE producto_atributos ALTER COLUMN monodroga_display TYPE VARCHAR(500)",
+    ):
+        try:
+            conn.execute(text(_alter))
+        except Exception:
+            pass
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_droga    ON producto_atributos (monodroga_norm)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_conc     ON producto_atributos (concentracion_mg)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_forma    ON producto_atributos (forma_farma)"))
