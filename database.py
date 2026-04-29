@@ -1639,6 +1639,13 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_vtas_anio_mes ON obs_ventas_mensuales(anio, mes)"))
+    # Composite indexes para análisis OS — las queries del módulo filtran por una entidad
+    # (OS / médico / cliente / producto) y rango de fechas. Sin estos índices, full scan
+    # de 891k filas en cada request del módulo OS.
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ovd_os_fecha ON obs_ventas_detalle(obra_social_observer, fecha_estadistica)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ovd_medico_fecha ON obs_ventas_detalle(medico_observer, fecha_estadistica)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ovd_cliente_fecha ON obs_ventas_detalle(cliente_observer, fecha_estadistica)"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ovd_producto_fecha ON obs_ventas_detalle(producto_observer, fecha_estadistica)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     # Rutas predeterminadas adicionales (cliente local)
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_excels VARCHAR(500)"))
