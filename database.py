@@ -390,15 +390,16 @@ class PanelComando(Base):
     """
     __tablename__ = 'panel_comandos'
     id = Column(Integer, primary_key=True)
-    comando = Column(String(40), nullable=False)  # whitelist: pull_restart, restart, restart_full, logs, status, version, sync_now
-    estado = Column(String(20), nullable=False, default='pendiente', index=True)  # pendiente / en_proceso / ok / error
-    solicitado_en = Column(DateTime, default=now_ar, nullable=False, index=True)
-    solicitado_por = Column(String(80), nullable=True)  # username del que lo encoló
-    tomado_en = Column(DateTime, nullable=True)  # cuando DockerPanel lo agarró
-    ejecutado_en = Column(DateTime, nullable=True)  # cuando terminó
+    comando = Column(String(40), nullable=False)
+    # estado: pendiente / en_proceso / ok / error
+    estado = Column(String(20), nullable=False, default='pendiente')
+    solicitado_en = Column(DateTime, default=now_ar, nullable=False)
+    solicitado_por = Column(String(80), nullable=True)
+    tomado_en = Column(DateTime, nullable=True)
+    ejecutado_en = Column(DateTime, nullable=True)
     duracion_ms = Column(Integer, nullable=True)
-    resultado = Column(Text, nullable=True)  # stdout/stderr resumido
-    origen = Column(String(40), nullable=True)  # 'dockerpanel' u otro identificador del runner
+    resultado = Column(Text, nullable=True)
+    origen = Column(String(40), nullable=True)
 
 
 class MvRefreshLog(Base):
@@ -1240,28 +1241,40 @@ def init_db(database_url=None):
                         # IF EXISTS de Postgres no debería tirar pero por las
                         # dudas absorbemos. Es parte del workaround zombie pg_type.
                         pass
-    # create_all puede fallar con "duplicate key ... pg_type_typname_nsp_index"
-    # cuando un deploy previo dejó un pg_type huérfano y el cleanup de arriba
-    # no lo cubrió (ej: tabla nueva todavía no en zombie_names, o race entre
-    # workers). En ese caso, parseamos el nombre del tipo del error, lo
-    # dropeamos y reintentamos una vez.
+    # create_all puede fallar con dos índices distintos cuando hay objetos
+    # huérfanos de un deploy previo:
+    #   - pg_type_typname_nsp_index   → pg_type zombie (composite type huérfano)
+    #   - pg_class_relname_nsp_index  → pg_class zombie (sequence/index/table huérfano)
+    # En ambos casos parseamos el nombre del culpable, lo dropeamos y reintentamos.
     try:
         Base.metadata.create_all(engine)
     except Exception as exc:
         if database_url.startswith('sqlite'):
             raise
         msg = str(exc)
-        if 'pg_type_typname_nsp_index' not in msg:
-            raise
         import re as _re
-        m = _re.search(r'\(typname, typnamespace\)=\(([^,]+),', msg)
-        if not m:
+        zombie = None
+        # pg_type huérfano → DETAIL: Key (typname, typnamespace)=(NAME, ...)
+        if 'pg_type_typname_nsp_index' in msg:
+            m = _re.search(r'\(typname, typnamespace\)=\(([^,]+),', msg)
+            if m:
+                zombie = m.group(1)
+        # pg_class huérfano (sequence, index, vista) → Key (relname, relnamespace)=(NAME, ...)
+        elif 'pg_class_relname_nsp_index' in msg:
+            m = _re.search(r'\(relname, relnamespace\)=\(([^,]+),', msg)
+            if m:
+                zombie = m.group(1)
+                # Si el nombre termina en _id_seq, también dropeamos la tabla padre.
+                if zombie.endswith('_id_seq'):
+                    parent = zombie[:-len('_id_seq')]
+                    zombie = parent  # los DROP de abajo cubren tabla + sequence
+        if not zombie:
             raise
-        zombie = m.group(1)
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
                         f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
-                        f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE'):
+                        f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE',
+                        f'DROP SEQUENCE IF EXISTS "{zombie}" CASCADE'):
                 try:
                     conn.execute(text(ddl))
                 except Exception:
