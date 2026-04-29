@@ -360,6 +360,187 @@ def init_app(app):
             'serie_temporal': serie,
         })
 
+    @app.route('/obras-sociales/productos-rentabilidad')
+    def os_productos_rentabilidad():
+        """Ranking de productos por margen, cruzado con OS asociadas.
+
+        Útil para: ver qué productos generan más ganancia neta y con qué
+        OS están asociados. Detectar productos con margen negativo.
+        """
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+
+        return render_template('os_productos_rentabilidad.html',
+                               desde=desde.isoformat(), hasta=hasta.isoformat())
+
+    @app.route('/api/obras-sociales/productos-rentabilidad')
+    def api_os_productos_rentabilidad():
+        """JSON: ranking de productos por margen + KPIs.
+
+        Filtros: desde, hasta, os_id (opcional), limit (top N).
+        """
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+        try:
+            limit = max(10, min(int(request.args.get('limit', '100')), 500))
+        except ValueError:
+            limit = 100
+        try:
+            os_id = int(request.args.get('os_id', '')) or None
+        except ValueError:
+            os_id = None
+
+        with database.get_db() as session:
+            params = {'desde': desde, 'hasta': hasta, 'limit': limit}
+            os_filter_sql = ''
+            if os_id is not None:
+                os_filter_sql = 'AND ovd.obra_social_observer = :os_id'
+                params['os_id'] = os_id
+
+            sql = _text(f'''
+                WITH ultima_compra AS (
+                    SELECT codigo_barra, precio_unitario,
+                           ROW_NUMBER() OVER (PARTITION BY codigo_barra ORDER BY id DESC) AS rn
+                    FROM factura_items
+                    WHERE precio_unitario IS NOT NULL AND precio_unitario > 0
+                      AND codigo_barra IS NOT NULL
+                ),
+                costo_por_observer AS (
+                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                    FROM ultima_compra uc
+                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                    JOIN productos p ON p.id = pcb.producto_id
+                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                    GROUP BY p.observer_id
+                )
+                SELECT
+                    op.observer_id AS prod_observer,
+                    op.descripcion AS prod_nombre,
+                    cpo.costo_unitario AS costo_unitario,
+                    SUM(ovd.cantidad) AS unidades,
+                    SUM(ovd.importe) AS facturado,
+                    SUM(COALESCE(ovd.importe_a_cargo_os, 0)) AS a_cargo_os,
+                    SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                             THEN ovd.cantidad * cpo.costo_unitario ELSE 0 END) AS costo_estimado,
+                    SUM(CASE WHEN cpo.costo_unitario IS NOT NULL
+                             THEN ovd.importe ELSE 0 END) AS facturado_con_costo,
+                    COUNT(*) AS dispensas,
+                    COUNT(DISTINCT ovd.id_operacion) AS recetas,
+                    COUNT(DISTINCT ovd.obra_social_observer) AS n_os
+                FROM obs_ventas_detalle ovd
+                JOIN obs_productos op ON op.observer_id = ovd.producto_observer
+                LEFT JOIN costo_por_observer cpo ON cpo.observer_id = ovd.producto_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                  AND ovd.obra_social_observer IS NOT NULL
+                  {os_filter_sql}
+                GROUP BY op.observer_id, op.descripcion, cpo.costo_unitario
+                HAVING SUM(ovd.importe) > 0
+                ORDER BY (SUM(CASE WHEN cpo.costo_unitario IS NOT NULL THEN ovd.importe ELSE 0 END)
+                          - SUM(CASE WHEN cpo.costo_unitario IS NOT NULL THEN ovd.cantidad * cpo.costo_unitario ELSE 0 END)) DESC
+                LIMIT :limit
+            ''')
+            rows = session.execute(sql, params).fetchall()
+
+            ranking = []
+            tot_fact = tot_costo = tot_facturado_con_costo = tot_a_cargo = 0.0
+            tot_unidades = tot_dispensas = 0
+            n_negativos = n_sin_costo = 0
+            for r in rows:
+                fact = float(r.facturado or 0)
+                costo = float(r.costo_estimado or 0)
+                fact_cc = float(r.facturado_con_costo or 0)
+                a_cargo = float(r.a_cargo_os or 0)
+                ganancia = fact_cc - costo
+                margen_pct = (ganancia / fact_cc * 100) if fact_cc > 0 else None
+                tiene_costo = r.costo_unitario is not None
+                if margen_pct is not None and margen_pct < 0:
+                    n_negativos += 1
+                if not tiene_costo:
+                    n_sin_costo += 1
+                ranking.append({
+                    'prod_observer': r.prod_observer,
+                    'descripcion': r.prod_nombre,
+                    'costo_unitario': float(r.costo_unitario) if r.costo_unitario else None,
+                    'unidades': float(r.unidades or 0),
+                    'facturado': round(fact, 2),
+                    'a_cargo_os': round(a_cargo, 2),
+                    'costo_estimado': round(costo, 2),
+                    'ganancia': round(ganancia, 2),
+                    'margen_pct': round(margen_pct, 2) if margen_pct is not None else None,
+                    'dispensas': int(r.dispensas or 0),
+                    'recetas': int(r.recetas or 0),
+                    'n_os': int(r.n_os or 0),
+                    'tiene_costo': tiene_costo,
+                })
+                tot_fact += fact
+                tot_costo += costo
+                tot_facturado_con_costo += fact_cc
+                tot_a_cargo += a_cargo
+                tot_unidades += float(r.unidades or 0)
+                tot_dispensas += int(r.dispensas or 0)
+
+            tot_ganancia = tot_facturado_con_costo - tot_costo
+            tot_margen_pct = (tot_ganancia / tot_facturado_con_costo * 100) if tot_facturado_con_costo > 0 else None
+
+            # Lista de OS para el dropdown filtro
+            sql_os = _text('''
+                SELECT DISTINCT oos.observer_id, oos.descripcion
+                FROM obs_ventas_detalle ovd
+                JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND oos.fecha_baja IS NULL
+                ORDER BY oos.descripcion
+            ''')
+            obras_sociales = [
+                {'os_id': r[0], 'nombre': r[1]}
+                for r in session.execute(sql_os, {'desde': desde, 'hasta': hasta}).fetchall()
+            ]
+
+        return jsonify({
+            'desde': desde.isoformat(),
+            'hasta': hasta.isoformat(),
+            'os_id': os_id,
+            'kpis': {
+                'productos_en_top': len(ranking),
+                'facturado_total': round(tot_fact, 2),
+                'costo_estimado': round(tot_costo, 2),
+                'ganancia_bruta': round(tot_ganancia, 2),
+                'margen_pct': round(tot_margen_pct, 2) if tot_margen_pct is not None else None,
+                'a_cargo_os': round(tot_a_cargo, 2),
+                'unidades_total': int(tot_unidades),
+                'dispensas_total': tot_dispensas,
+                'productos_negativos': n_negativos,
+                'productos_sin_costo': n_sin_costo,
+            },
+            'ranking': ranking,
+            'obras_sociales': obras_sociales,
+        })
+
     @app.route('/obras-sociales/dashboard')
     def os_dashboard():
         """Dashboard de OS — datos reales desde obs_ventas_detalle.

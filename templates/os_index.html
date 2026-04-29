@@ -133,14 +133,15 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Qué se vende, con qué margen, qué hay que stockear.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_productos_rentabilidad') }}"
+                   class="block bg-sky-50/60 border border-sky-200 rounded-xl p-4 hover:bg-sky-100/60 hover:border-sky-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">💵</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-lg flex-shrink-0">💵</div>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⭐ NUEVO</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Top productos por margen</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ranking de productos por ganancia neta y mix de OS asociado.</p>
-                </div>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ranking de productos por ganancia neta. Filtrá por OS, ordenado por ganancia, alertas de productos en pérdida.</p>
+                </a>
 
                 <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">

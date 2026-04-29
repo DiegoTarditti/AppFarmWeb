@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+{% block title %}Top productos por margen{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .kpi-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; }
+    .kpi-value { font-size: 22px; font-weight: bold; color: #1e1e1e; margin-top: 4px; }
+    .kpi-sub { font-size: 11px; color: #6f6f6f; margin-top: 2px; }
+    .row-margen-positivo { color: #16a34a; font-weight: 600; }
+    .row-margen-bajo { color: #ea580c; font-weight: 600; }
+    .row-margen-negativo { color: #dc2626; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block main %}
+
+{% include '_os_loader.html' %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">💵 Top productos por margen</h1>
+        <p class="text-xs text-[#6f6f6f] mt-0.5">Productos rankeados por ganancia neta. Filtrá por OS para ver qué te conviene de cada una.</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2 text-xs">
+        <a href="{{ url_for('os_index') }}" class="text-sky-600 hover:underline">← OS</a>
+    </div>
+</div>
+
+<div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
+    <label for="filtro-desde" class="text-xs text-[#3f6650] font-semibold">Desde:</label>
+    <input type="date" id="filtro-desde" value="{{ desde }}" title="Fecha de inicio del período"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs">
+    <label for="filtro-hasta" class="text-xs text-[#3f6650] font-semibold">Hasta:</label>
+    <input type="date" id="filtro-hasta" value="{{ hasta }}" title="Fecha de fin del período"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs">
+    <label for="filtro-os" class="text-xs text-[#3f6650] font-semibold">OS:</label>
+    <select id="filtro-os" title="Obra social a analizar"
+            class="bg-white border border-mint rounded px-2 py-1 text-xs">
+        <option value="">Todas las OS</option>
+    </select>
+    <label for="filtro-limit" class="text-xs text-[#3f6650] font-semibold">Top:</label>
+    <select id="filtro-limit" title="Cantidad de productos a mostrar"
+            class="bg-white border border-mint rounded px-2 py-1 text-xs">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+        <option value="200">200</option>
+        <option value="500">500</option>
+    </select>
+    <button type="button" onclick="aplicarFiltros()"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1 rounded">
+        Aplicar
+    </button>
+    <button type="button" onclick="atajoFecha('mes')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">Mes</button>
+    <button type="button" onclick="atajoFecha('30d')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">30 días</button>
+    <button type="button" onclick="atajoFecha('12m')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">12 meses</button>
+    <input type="text" id="filtro-buscar" title="Buscar producto (multi-token)"
+           placeholder="Buscar producto…" oninput="filtrarRanking()"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs ml-auto w-64">
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5 max-w-7xl mx-auto w-full">
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div class="kpi-card">
+            <p class="kpi-label">📦 Productos en top</p>
+            <p class="kpi-value" id="kpi-productos">—</p>
+            <p class="kpi-sub" id="kpi-productos-sub">cargando…</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">💰 Facturado</p>
+            <p class="kpi-value" id="kpi-facturado">—</p>
+            <p class="kpi-sub" id="kpi-unidades"></p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">📦 Costo estimado</p>
+            <p class="kpi-value text-[#6f6f6f]" id="kpi-costo">—</p>
+        </div>
+        <div class="kpi-card border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-white">
+            <p class="kpi-label">💚 Ganancia</p>
+            <p class="kpi-value text-emerald-700" id="kpi-ganancia">—</p>
+            <p class="kpi-sub" id="kpi-margen">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🔴 Productos en pérdida</p>
+            <p class="kpi-value text-red-700" id="kpi-negativos">—</p>
+            <p class="kpi-sub">margen &lt; 0%</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">⚠ Sin costo conocido</p>
+            <p class="kpi-value text-amber-700" id="kpi-sin-costo">—</p>
+            <p class="kpi-sub">no se calculó margen</p>
+        </div>
+    </div>
+
+    <!-- Top 15 horizontal bar chart -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+            <p class="font-semibold text-sm">📊 Top 15 productos por ganancia</p>
+            <span class="text-xs text-[#6f6f6f]" id="chart-meta"></span>
+        </div>
+        <div class="h-96"><canvas id="chart-top"></canvas></div>
+    </div>
+
+    <!-- Tabla ranking -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-sm">🏆 Ranking completo</p>
+            <span class="text-xs text-[#6f6f6f]" id="ranking-meta"></span>
+        </div>
+        <div class="overflow-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#f5f5f5] text-[10px] uppercase text-[#666] tracking-wide">
+                    <tr>
+                        <th class="text-left px-3 py-2 w-8">#</th>
+                        <th class="text-left px-3 py-2">Producto</th>
+                        <th class="text-right px-3 py-2">Unidades</th>
+                        <th class="text-right px-3 py-2">Facturado</th>
+                        <th class="text-right px-3 py-2">Costo</th>
+                        <th class="text-right px-3 py-2">Ganancia</th>
+                        <th class="text-right px-3 py-2">Margen %</th>
+                        <th class="text-right px-3 py-2">Disp.</th>
+                        <th class="text-center px-3 py-2" title="Cantidad de OS distintas que dispensaron este producto">N OS</th>
+                    </tr>
+                </thead>
+                <tbody id="ranking-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="text-[11px] text-[#999] text-center pt-2">
+        Costo estimado calculado con el último <code class="font-mono text-[10px]">precio_unitario</code> de
+        <code class="font-mono text-[10px]">factura_items</code>. Productos sin compra registrada quedan fuera del cálculo de margen.
+    </p>
+
+</div>
+
+<script>
+let _chart = null;
+let _data = null;
+
+function fmtMoney(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {maximumFractionDigits: 0}); }
+function fmtMoneyDec(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function fmtPct(v) { if (v === null || v === undefined) return '—'; return v.toFixed(1) + '%'; }
+function multiTokenMatch(haystack, query) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(t => t);
+    if (!tokens.length) return true;
+    const h = haystack.toLowerCase();
+    return tokens.every(t => h.includes(t));
+}
+
+async function cargar() {
+    const desde = document.getElementById('filtro-desde').value;
+    const hasta = document.getElementById('filtro-hasta').value;
+    const os = document.getElementById('filtro-os').value;
+    const limit = document.getElementById('filtro-limit').value;
+    const params = new URLSearchParams({desde, hasta, limit});
+    if (os) params.set('os_id', os);
+
+    OSLoader.show('Calculando rentabilidad por producto…',
+                  'Cruzando ventas con costos y agrupando por producto. Tarda unos segundos.');
+    try {
+        const r = await fetch(`/api/obras-sociales/productos-rentabilidad?${params.toString()}`);
+        if (!r.ok) {
+            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+            return;
+        }
+        _data = await r.json();
+        renderKPIs(_data.kpis);
+        renderOSDropdown(_data.obras_sociales, os);
+        renderChart(_data.ranking.slice(0, 15));
+        renderRanking(_data.ranking);
+        OSLoader.hide();
+    } catch (e) {
+        OSLoader.error('Error de conexión', 'Revisá la conexión y volvé a intentar.');
+    }
+}
+
+function renderKPIs(k) {
+    document.getElementById('kpi-productos').textContent = k.productos_en_top.toLocaleString('es-AR');
+    document.getElementById('kpi-productos-sub').textContent = `${k.dispensas_total.toLocaleString('es-AR')} dispensas`;
+    document.getElementById('kpi-facturado').textContent = fmtMoney(k.facturado_total);
+    document.getElementById('kpi-unidades').textContent = `${k.unidades_total.toLocaleString('es-AR')} unidades`;
+    document.getElementById('kpi-costo').textContent = fmtMoney(k.costo_estimado);
+    document.getElementById('kpi-ganancia').textContent = fmtMoney(k.ganancia_bruta);
+    if (k.margen_pct !== null) {
+        let cls = 'text-emerald-700 font-semibold';
+        if (k.margen_pct < 0) cls = 'text-red-700 font-semibold';
+        else if (k.margen_pct < 15) cls = 'text-amber-700 font-semibold';
+        document.getElementById('kpi-margen').innerHTML = `<span class="${cls}">${fmtPct(k.margen_pct)} margen</span>`;
+    }
+    document.getElementById('kpi-negativos').textContent = k.productos_negativos.toLocaleString('es-AR');
+    document.getElementById('kpi-sin-costo').textContent = k.productos_sin_costo.toLocaleString('es-AR');
+}
+
+function renderOSDropdown(obrasSociales, selected) {
+    const sel = document.getElementById('filtro-os');
+    if (sel.options.length > 1) return;  // ya cargado
+    sel.innerHTML = '<option value="">Todas las OS</option>';
+    for (const os of obrasSociales) {
+        const opt = document.createElement('option');
+        opt.value = os.os_id;
+        opt.textContent = os.nombre;
+        if (String(os.os_id) === String(selected)) opt.selected = true;
+        sel.appendChild(opt);
+    }
+}
+
+function renderChart(top15) {
+    if (_chart) _chart.destroy();
+    document.getElementById('chart-meta').textContent = `${top15.length} productos`;
+    const ctx = document.getElementById('chart-top').getContext('2d');
+    _chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: top15.map(p => p.descripcion.length > 50 ? p.descripcion.slice(0, 47) + '…' : p.descripcion),
+            datasets: [{
+                label: 'Ganancia',
+                data: top15.map(p => p.ganancia),
+                backgroundColor: top15.map(p => p.margen_pct < 0 ? 'rgba(220,38,38,0.7)' : 'rgba(16,185,129,0.7)'),
+                borderColor: top15.map(p => p.margen_pct < 0 ? '#dc2626' : '#10b981'),
+                borderWidth: 1,
+            }],
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {display: false},
+                tooltip: {
+                    callbacks: {
+                        label: ctx => 'Ganancia: ' + fmtMoneyDec(ctx.parsed.x),
+                    },
+                },
+            },
+            scales: {
+                x: {ticks: {callback: v => '$' + Number(v).toLocaleString('es-AR')}, grid: {color: '#f0f0f0'}},
+                y: {grid: {display: false}, ticks: {font: {size: 10}}},
+            },
+        },
+    });
+}
+
+function renderRanking(ranking) {
+    const filtro = document.getElementById('filtro-buscar').value.trim();
+    const filtrados = filtro ? ranking.filter(r => multiTokenMatch(r.descripcion, filtro)) : ranking;
+    document.getElementById('ranking-meta').textContent =
+        filtro ? `${filtrados.length} de ${ranking.length} productos` : `${ranking.length} productos`;
+    const body = document.getElementById('ranking-body');
+    body.innerHTML = filtrados.map((r, i) => {
+        let mClass = 'row-margen-positivo';
+        let mEmoji = '🟢';
+        if (r.margen_pct === null) { mClass = 'text-[#999]'; mEmoji = '—'; }
+        else if (r.margen_pct < 0) { mClass = 'row-margen-negativo'; mEmoji = '🔴'; }
+        else if (r.margen_pct < 15) { mClass = 'row-margen-bajo'; mEmoji = '🟡'; }
+        const pctMargen = r.margen_pct === null ? '—' : `${mEmoji} ${r.margen_pct.toFixed(1)}%`;
+        return `
+            <tr class="hover:bg-[#fafafa]">
+                <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
+                <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[400px]" title="${r.descripcion}">${r.descripcion}</td>
+                <td class="px-3 py-2 text-right text-[#666]">${Number(r.unidades).toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right font-mono">${fmtMoney(r.facturado)}</td>
+                <td class="px-3 py-2 text-right font-mono text-[#888]">${r.tiene_costo ? fmtMoney(r.costo_estimado) : '<span class="text-amber-700">s/d</span>'}</td>
+                <td class="px-3 py-2 text-right font-mono font-semibold">${r.tiene_costo ? fmtMoney(r.ganancia) : '—'}</td>
+                <td class="px-3 py-2 text-right font-mono ${mClass}">${pctMargen}</td>
+                <td class="px-3 py-2 text-right text-[#666]">${r.dispensas.toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-center text-[#666]">${r.n_os}</td>
+            </tr>
+        `;
+    }).join('');
+    if (!filtrados.length) {
+        body.innerHTML = '<tr><td colspan="9" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>';
+    }
+}
+
+function filtrarRanking() {
+    if (_data) renderRanking(_data.ranking);
+}
+
+function aplicarFiltros() { cargar(); }
+
+function atajoFecha(tipo) {
+    const hoy = new Date();
+    const hasta = hoy.toISOString().slice(0, 10);
+    let desde;
+    if (tipo === 'mes') {
+        desde = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().slice(0, 10);
+    } else if (tipo === '30d') {
+        desde = new Date(hoy.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    } else if (tipo === '12m') {
+        desde = new Date(hoy.getFullYear() - 1, hoy.getMonth(), hoy.getDate()).toISOString().slice(0, 10);
+    }
+    document.getElementById('filtro-desde').value = desde;
+    document.getElementById('filtro-hasta').value = hasta;
+    cargar();
+}
+
+cargar();
+</script>
+
+{% endblock %}
