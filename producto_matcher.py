@@ -354,6 +354,29 @@ def match_producto(*,
                         result.estrategia = 'ean_exacto'
                         result.confianza = CONFIANZA_ALTA
 
+        # Estrategia 1b: EAN exacto en producto_codigos_barra (tabla 1-a-N).
+        # Solo aplica al target 'producto'. La tabla 1-a-N es el reemplazo
+        # gradual de los slots alt1/2/3 — productos que se vincularon vía
+        # match dimensional, factura, o CRUD manual desde la ficha quedan
+        # acá, no en las columnas legacy.
+        if not result.producto and ean and target == 'producto':
+            ean_clean = str(ean).strip()
+            if ean_clean:
+                try:
+                    from database import ProductoCodigoBarra
+                    pid_row = (session.query(ProductoCodigoBarra.producto_id)
+                               .filter(ProductoCodigoBarra.codigo_barra == ean_clean)
+                               .first())
+                    if pid_row:
+                        prod = session.get(P, pid_row[0])
+                        if prod is not None:
+                            result.producto = prod
+                            result.score = 1.0
+                            result.estrategia = 'ean_exacto_1aN'
+                            result.confianza = CONFIANZA_ALTA
+                except Exception:
+                    pass
+
         # Fallback EAN vía obs_codigos_barras: solo aplica al target Producto
         # (no a ObsProducto) y cuando la estrategia 1 no encontró nada local.
         # Resuelve EAN → observer_id → Producto local con ese observer_id.
