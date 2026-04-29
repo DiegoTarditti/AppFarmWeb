@@ -312,29 +312,24 @@ def compare_invoice_vs_erp(session, factura_id):
     erp_by_desc = {_normalize(item.descripcion): item for item in all_erp if item.descripcion}
 
     # Expandir erp_by_barcode con códigos alternativos de la tabla productos.
-    # Busca productos que tengan CUALQUIER barcode del ERP (principal o alt).
+    # Busca productos que tengan CUALQUIER barcode del ERP (legacy alt1/2/3,
+    # tabla 1-a-N producto_codigos_barra, u observer). Usa los helpers
+    # bulk de helpers.py que consultan la cascada completa.
+    from helpers import _find_productos_bulk, _get_all_barcodes
     erp_barcodes = set(erp_by_barcode.keys())
     if erp_barcodes:
-        from sqlalchemy import or_
-        prods_con_alts = session.query(Producto).filter(
-            or_(
-                Producto.codigo_barra.in_(erp_barcodes),
-                Producto.codigo_barra_alt1.in_(erp_barcodes),
-                Producto.codigo_barra_alt2.in_(erp_barcodes),
-                Producto.codigo_barra_alt3.in_(erp_barcodes),
-            )
-        ).all()
-        for p in prods_con_alts:
-            # Encontrar cuál barcode del producto está en ERP
+        prods_map = _find_productos_bulk(session, erp_barcodes)
+        prods_unicos = {p.id: p for p in prods_map.values()}.values()
+        for p in prods_unicos:
+            todos_bcs = _get_all_barcodes(session, p)
             erp_item = None
-            for bc in [p.codigo_barra, p.codigo_barra_alt1, p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                if bc and bc in erp_by_barcode:
+            for bc in todos_bcs:
+                if bc in erp_by_barcode:
                     erp_item = erp_by_barcode[bc]
                     break
             if erp_item:
-                # Agregar todos los barcodes del producto al diccionario de búsqueda
-                for bc in [p.codigo_barra, p.codigo_barra_alt1, p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                    if bc and bc not in erp_by_barcode:
+                for bc in todos_bcs:
+                    if bc not in erp_by_barcode:
                         erp_by_barcode[bc] = erp_item
 
     # Segunda pasada: expansión desde el lado de la factura.
@@ -342,26 +337,18 @@ def compare_invoice_vs_erp(session, factura_id):
     # todos sus equivalentes al diccionario ERP si alguno ya está en él.
     invoice_barcodes_fac = {item.codigo_barra for item in invoice_items if item.codigo_barra}
     if invoice_barcodes_fac:
-        from sqlalchemy import or_
-        prods_fac = session.query(Producto).filter(
-            or_(
-                Producto.codigo_barra.in_(invoice_barcodes_fac),
-                Producto.codigo_barra_alt1.in_(invoice_barcodes_fac),
-                Producto.codigo_barra_alt2.in_(invoice_barcodes_fac),
-                Producto.codigo_barra_alt3.in_(invoice_barcodes_fac),
-            )
-        ).all()
-        for p in prods_fac:
-            all_bcs = [p.codigo_barra, p.codigo_barra_alt1, p.codigo_barra_alt2, p.codigo_barra_alt3]
-            # Ver si algún barcode del grupo ya tiene un item ERP asociado
+        prods_map = _find_productos_bulk(session, invoice_barcodes_fac)
+        prods_unicos = {p.id: p for p in prods_map.values()}.values()
+        for p in prods_unicos:
+            all_bcs = _get_all_barcodes(session, p)
             erp_item = None
             for bc in all_bcs:
-                if bc and bc in erp_by_barcode:
+                if bc in erp_by_barcode:
                     erp_item = erp_by_barcode[bc]
                     break
             if erp_item:
                 for bc in all_bcs:
-                    if bc and bc not in erp_by_barcode:
+                    if bc not in erp_by_barcode:
                         erp_by_barcode[bc] = erp_item
 
     # Cargar proveedor, estrategia de match y mappings
@@ -489,20 +476,14 @@ def get_erp_items_with_issues(session, invoice_id):
     invoice_items = session.query(InvoiceItem).filter_by(factura_id=invoice_id).all()
     invoice_barcodes = {item.codigo_barra for item in invoice_items if item.codigo_barra}
 
-    # Expandir invoice_barcodes con alts de la tabla productos
+    # Expandir invoice_barcodes con TODOS los alts del producto (legacy +
+    # tabla 1-a-N + observer). Usa helpers bulk.
     if invoice_barcodes:
-        prods = session.query(Producto).filter(
-            or_(
-                Producto.codigo_barra.in_(invoice_barcodes),
-                Producto.codigo_barra_alt1.in_(invoice_barcodes),
-                Producto.codigo_barra_alt2.in_(invoice_barcodes),
-                Producto.codigo_barra_alt3.in_(invoice_barcodes),
-            )
-        ).all()
-        for p in prods:
-            for bc in [p.codigo_barra, p.codigo_barra_alt1, p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                if bc:
-                    invoice_barcodes.add(bc)
+        from helpers import _find_productos_bulk, _get_all_barcodes
+        prods_map = _find_productos_bulk(session, invoice_barcodes)
+        for p in {pp.id: pp for pp in prods_map.values()}.values():
+            for bc in _get_all_barcodes(session, p):
+                invoice_barcodes.add(bc)
 
     all_erp = session.query(ErpStock).all()
     return [erp for erp in all_erp if erp.codigo_barra not in invoice_barcodes]

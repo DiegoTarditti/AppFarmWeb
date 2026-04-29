@@ -170,14 +170,8 @@ def init_app(app):
                 # ProductAnalytics no almacena el mínimo. Lo buscamos en
                 # paralelo en obs_stock vía bridge productos.observer_id.
                 minimo = 0
-                from sqlalchemy import or_ as _or
-                _Producto = database.Producto
-                prod_local = (session.query(_Producto)
-                              .filter(_or(_Producto.codigo_barra == barcode,
-                                          _Producto.codigo_barra_alt1 == barcode,
-                                          _Producto.codigo_barra_alt2 == barcode,
-                                          _Producto.codigo_barra_alt3 == barcode))
-                              .first())
+                from helpers import _find_producto
+                prod_local = _find_producto(session, barcode)
                 if prod_local and prod_local.observer_id:
                     from sqlalchemy import func as _f
                     m_row = (session.query(_f.coalesce(_f.sum(database.ObsStock.minimo), 0))
@@ -215,15 +209,9 @@ def init_app(app):
                 except (ValueError, TypeError):
                     pass
             if obs_id is None:
-                # Bridge vía productos local
-                from sqlalchemy import or_ as _or
-                Producto = database.Producto
-                prod = (session.query(Producto)
-                        .filter(_or(Producto.codigo_barra == barcode,
-                                    Producto.codigo_barra_alt1 == barcode,
-                                    Producto.codigo_barra_alt2 == barcode,
-                                    Producto.codigo_barra_alt3 == barcode))
-                        .first())
+                # Bridge vía productos local (cascada legacy + 1-a-N + obs)
+                from helpers import _find_producto
+                prod = _find_producto(session, barcode)
                 if prod and prod.observer_id:
                     obs_id = prod.observer_id
 

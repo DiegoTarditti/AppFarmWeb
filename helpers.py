@@ -297,6 +297,132 @@ def get_config():
 
 # ── Product helpers ──────────────────────────────────────────────────────────
 
+def _get_all_barcodes(session, producto):
+    """Devuelve TODOS los EANs asociados a un producto, consultando:
+      1. Las columnas legacy (codigo_barra + codigo_barra_alt1/2/3).
+      2. La tabla 1-a-N `producto_codigos_barra`.
+      3. La tabla `obs_codigos_barras` si el producto tiene observer_id.
+
+    Args:
+        session: SQLAlchemy session.
+        producto: instancia de Producto.
+
+    Returns:
+        list[str] sin duplicados.
+    """
+    if not producto:
+        return []
+    out = []
+    seen = set()
+    # 1. Legacy
+    for bc in (producto.codigo_barra, producto.codigo_barra_alt1,
+               producto.codigo_barra_alt2, producto.codigo_barra_alt3):
+        if bc and bc not in seen:
+            seen.add(bc)
+            out.append(bc)
+    # 2. Tabla 1-a-N local
+    try:
+        from database import ProductoCodigoBarra
+        for cb, in (session.query(ProductoCodigoBarra.codigo_barra)
+                    .filter_by(producto_id=producto.id).all()):
+            if cb and cb not in seen:
+                seen.add(cb)
+                out.append(cb)
+    except Exception:
+        pass
+    # 3. Observer
+    if getattr(producto, 'observer_id', None):
+        try:
+            from database import ObsCodigoBarras
+            for cb, in (session.query(ObsCodigoBarras.codigo_barras)
+                        .filter_by(producto_observer=producto.observer_id)
+                        .filter(ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                if cb and cb not in seen:
+                    seen.add(cb)
+                    out.append(cb)
+        except Exception:
+            pass
+    return out
+
+
+def _find_productos_bulk(session, eans):
+    """Versión bulk de `_find_producto`. Para una lista de EANs devuelve
+    `{ean: Producto}` consultando la cascada completa:
+
+      1. `productos.codigo_barra` o `alt1/2/3` IN (eans)
+      2. `producto_codigos_barra` (1-a-N local) IN (eans)
+      3. `obs_codigos_barras` IN (eans) → resuelve vía observer_id
+
+    Útil para flujos como `data_extract` que cruzan listas grandes de
+    códigos de barra contra el catálogo. Evita N queries individuales.
+
+    Args:
+        session: SQLAlchemy session.
+        eans: iterable de strings.
+
+    Returns:
+        dict {ean: Producto}. Solo incluye los EANs que matchearon.
+    """
+    from sqlalchemy import or_
+    eans_clean = list({str(e).strip() for e in eans if e and str(e).strip()})
+    if not eans_clean:
+        return {}
+    out = {}
+    # 1. Match en productos (legacy: principal + alt1/2/3)
+    prods = session.query(Producto).filter(
+        or_(
+            Producto.codigo_barra.in_(eans_clean),
+            Producto.codigo_barra_alt1.in_(eans_clean),
+            Producto.codigo_barra_alt2.in_(eans_clean),
+            Producto.codigo_barra_alt3.in_(eans_clean),
+        )
+    ).all()
+    for p in prods:
+        for bc in (p.codigo_barra, p.codigo_barra_alt1,
+                   p.codigo_barra_alt2, p.codigo_barra_alt3):
+            if bc and bc in eans_clean and bc not in out:
+                out[bc] = p
+    pendientes = [e for e in eans_clean if e not in out]
+    # 2. Match en producto_codigos_barra (1-a-N local)
+    if pendientes:
+        try:
+            from database import ProductoCodigoBarra
+            rows = (session.query(ProductoCodigoBarra.codigo_barra,
+                                  ProductoCodigoBarra.producto_id)
+                    .filter(ProductoCodigoBarra.codigo_barra.in_(pendientes))
+                    .all())
+            if rows:
+                ids = {pid for _, pid in rows}
+                prod_map = {p.id: p for p in
+                            session.query(Producto).filter(Producto.id.in_(ids)).all()}
+                for ean, pid in rows:
+                    if pid in prod_map and ean not in out:
+                        out[ean] = prod_map[pid]
+                pendientes = [e for e in pendientes if e not in out]
+        except Exception:
+            pass
+    # 3. Match en obs_codigos_barras (resuelve por observer_id)
+    if pendientes:
+        try:
+            from database import ObsCodigoBarras
+            rows = (session.query(ObsCodigoBarras.codigo_barras,
+                                  ObsCodigoBarras.producto_observer)
+                    .filter(ObsCodigoBarras.codigo_barras.in_(pendientes),
+                            ObsCodigoBarras.fecha_baja.is_(None))
+                    .all())
+            if rows:
+                obs_ids = {oid for _, oid in rows}
+                prod_map = {p.observer_id: p for p in
+                            session.query(Producto)
+                            .filter(Producto.observer_id.in_(obs_ids)).all()}
+                for ean, oid in rows:
+                    if oid in prod_map and ean not in out:
+                        out[ean] = prod_map[oid]
+        except Exception:
+            pass
+    return out
+
+
 def _find_producto(session, codigo_barra):
     """Busca un producto por EAN. Consulta en orden:
       1. `productos.codigo_barra` o `alt1/2/3` (legacy local, rápido).
