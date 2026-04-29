@@ -1,6 +1,7 @@
 """Producto routes: list, CRUD, API + análisis histórico de precios."""
 
 from flask import jsonify, render_template, request
+from flask_login import login_required
 
 import database
 from database import Laboratorio, Producto, ProductoPrecioHist
@@ -324,6 +325,7 @@ def init_app(app):
                                producto=producto, atributos=atributos, obs=obs)
 
     @app.route('/api/producto/<int:prod_id>/codigos', methods=['GET', 'POST'])
+    @login_required
     def api_producto_codigos(prod_id):
         """GET: lista todos los EANs del producto (tabla 1-a-N + obs).
         POST: agrega un EAN nuevo. Body: {codigo_barra, fuente?}."""
@@ -375,6 +377,7 @@ def init_app(app):
             return jsonify({'ok': True})
 
     @app.route('/api/producto/<int:prod_id>/codigos/<int:cb_id>', methods=['DELETE', 'PATCH'])
+    @login_required
     def api_producto_codigo_modificar(prod_id, cb_id):
         """DELETE: borra. PATCH: marca como principal (desmarca al resto)."""
         from database import ProductoCodigoBarra
@@ -429,6 +432,7 @@ def init_app(app):
                 return jsonify({'error': str(e)}), 500
 
     @app.route('/api/match-dimensional', methods=['GET'])
+    @login_required
     def api_match_dimensional():
         """Busca candidatos para un EAN/descripción que NO matchea ninguna fuente.
 
@@ -488,6 +492,7 @@ def init_app(app):
             })
 
     @app.route('/api/catalogacion/backfill', methods=['POST'])
+    @login_required
     def api_catalogacion_backfill():
         """Ejecuta el backfill de atributos estructurados sobre todos los productos.
 

@@ -330,8 +330,16 @@ def init_app(app):
                 with database.get_db() as session:
                     matched = _find_productos_bulk(session, eans_a_chequear)
                     eans_no_match = [e for e in eans_a_chequear if e not in matched]
-        except Exception:
-            # Si falla el chequeo, no rompemos el verify — solo no mostramos el botón.
+        except Exception as e:
+            # Si falla el chequeo, no rompemos el verify — solo no mostramos
+            # el botón. Loguear el error para que el bug NO sea silencioso
+            # (caso típico: tabla producto_codigos_barra no creada en un
+            # deploy nuevo, o helpers no importables por circular import).
+            from flask import current_app
+            current_app.logger.warning(
+                'Match dimensional bulk lookup falló en /converter/<token>/verify: %s',
+                e,
+            )
             eans_no_match = []
 
         return render_template('converter_verify.html',
