@@ -118,7 +118,9 @@ window.OSHistorico = (function () {
                         },
                     },
                     datalabels: {
-                        display: (ctx) => ctx.dataset.label === 'Importe' && ctx.parsed.y > 0,
+                        display: (ctx) => ctx.dataset.label === 'Importe'
+                                          && ctx.parsed != null
+                                          && (ctx.parsed.y ?? 0) > 0,
                         anchor: 'end', align: 'end', clamp: true,
                         color: '#1e1e1e', font: {size: 9, weight: 'bold'},
                         formatter: (v) => fmtMoneyCompact(v),
