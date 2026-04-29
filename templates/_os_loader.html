@@ -120,6 +120,15 @@
 </div>
 
 <script>
+// Si la página se restaura del back-forward cache, el overlay puede quedar
+// visible — lo ocultamos al volver. Solo afecta navegación con botón "atrás".
+window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+        const ov = document.getElementById('os-loader');
+        if (ov) ov.classList.add('osl-hidden');
+    }
+});
+
 window.OSLoader = (function () {
     const overlay = () => document.getElementById('os-loader');
     const card = () => document.getElementById('osl-card');

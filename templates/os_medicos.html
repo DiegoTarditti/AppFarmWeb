@@ -4,6 +4,8 @@
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<script>Chart.register(ChartDataLabels);</script>
 <style>
     .kpi-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; }
     .kpi-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; }
@@ -30,6 +32,60 @@
 {% block main %}
 
 {% include '_os_loader.html' %}
+
+<!-- Modal de detalle médico -->
+<div id="modal-medico" class="hidden fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm
+                              flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarModalMedico()">
+    <div class="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-auto p-5 shadow-2xl">
+        <div class="flex items-center justify-between mb-3 sticky top-0 bg-white pb-3 border-b border-surface-border">
+            <div>
+                <h2 class="text-base font-bold text-[#1e1e1e]" id="mm-nombre">—</h2>
+                <p class="text-xs text-[#6f6f6f]" id="mm-meta">—</p>
+            </div>
+            <button type="button" onclick="cerrarModalMedico()"
+                    class="text-[#999] hover:text-rose-600 text-2xl leading-none px-2">✕</button>
+        </div>
+
+        <div id="mm-loading" class="text-center py-12 text-[#999]">
+            <div class="inline-block w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+            <p class="text-sm">Cargando histórico…</p>
+        </div>
+
+        <div id="mm-content" class="hidden space-y-4">
+            <!-- 2 charts side-by-side: 12 meses + último mes diario -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div class="bg-white border border-surface-border rounded-xl p-3">
+                    <p class="font-semibold text-xs mb-2 text-[#666]">📊 Últimos 12 meses (por mes)</p>
+                    <div class="h-64"><canvas id="mm-chart-mes"></canvas></div>
+                </div>
+                <div class="bg-white border border-surface-border rounded-xl p-3">
+                    <p class="font-semibold text-xs mb-2 text-[#666]">📅 Últimos 30 días (por día)</p>
+                    <div class="h-64"><canvas id="mm-chart-dia"></canvas></div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+                    <div class="px-3 py-2 border-b border-surface-border bg-[#f9f9f9]">
+                        <p class="font-semibold text-xs">🏥 Top 10 OS</p>
+                    </div>
+                    <table class="w-full text-xs">
+                        <tbody id="mm-top-os" class="divide-y divide-surface-border"></tbody>
+                    </table>
+                </div>
+                <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+                    <div class="px-3 py-2 border-b border-surface-border bg-[#f9f9f9]">
+                        <p class="font-semibold text-xs">💊 Top 10 productos</p>
+                    </div>
+                    <table class="w-full text-xs">
+                        <tbody id="mm-top-prod" class="divide-y divide-surface-border"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <div>
@@ -171,6 +227,14 @@ let _chart = null;
 let _data = null;
 
 function fmtMoney(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {maximumFractionDigits: 0}); }
+function fmtMoneyCompact(v) {
+    if (v === null || v === undefined || v === 0) return '';
+    const n = Math.abs(v);
+    if (n >= 1e9) return '$' + (v/1e9).toFixed(1) + 'B';
+    if (n >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return '$' + Math.round(v/1e3) + 'k';
+    return '$' + Math.round(v);
+}
 function fmtMoneyDec(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 function fmtPct(v) { if (v === null || v === undefined) return '—'; return v.toFixed(1) + '%'; }
 function multiTokenMatch(haystack, query) {
@@ -259,6 +323,11 @@ function renderChart(top15) {
             plugins: {
                 legend: {display: false},
                 tooltip: { callbacks: { label: ctx => 'Importe: ' + fmtMoneyDec(ctx.parsed.x) } },
+                datalabels: {
+                    anchor: 'end', align: 'end', clamp: true,
+                    color: '#1e1e1e', font: {size: 10, weight: 'bold'},
+                    formatter: (v) => fmtMoneyCompact(v),
+                },
             },
             scales: {
                 x: {ticks: {callback: v => '$' + Number(v).toLocaleString('es-AR')}, grid: {color: '#f0f0f0'}},
@@ -275,7 +344,7 @@ function renderFugas(fugas) {
     if (!fugas.length) { wrap.classList.add('hidden'); return; }
     wrap.classList.remove('hidden');
     body.innerHTML = fugas.map(f => `
-        <tr class="hover:bg-rose-50/40">
+        <tr class="hover:bg-rose-100 cursor-pointer" onclick='abrirModalMedico(${f.med_id}, ${JSON.stringify(f.nombre)})' title="Click para ver histórico mensual + top OS + top productos">
             <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[300px]" title="${f.nombre}">${f.nombre}</td>
             <td class="px-3 py-2 text-right font-mono">${fmtMoney(f.importe_ant)}</td>
             <td class="px-3 py-2 text-right font-mono ${f.importe_act > 0 ? '' : 'text-rose-700 font-bold'}">${fmtMoney(f.importe_act)}</td>
@@ -359,7 +428,7 @@ function renderRanking(ranking) {
         }
         const pctTotal = totalImp > 0 ? (r.importe / totalImp * 100) : 0;
         return `
-            <tr class="hover:bg-[#fafafa]">
+            <tr class="hover:bg-indigo-50 cursor-pointer" onclick='abrirModalMedico(${r.med_id}, ${JSON.stringify(r.nombre)})' title="Click para ver histórico mensual + top OS + top productos">
                 <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[260px]" title="${r.nombre}">${r.nombre}</td>
                 <td class="px-3 py-2 font-mono text-xs text-[#666]">${r.matricula || '—'}</td>
@@ -383,6 +452,123 @@ function renderRanking(ranking) {
 }
 
 function filtrarRanking() { if (_data) renderRanking(_data.ranking); }
+
+// ─── Modal histórico médico ──────────────────────────────────────────
+let _mmChartMes = null;
+let _mmChartDia = null;
+
+async function abrirModalMedico(medId, nombre) {
+    document.getElementById('mm-nombre').textContent = nombre;
+    document.getElementById('mm-meta').textContent = 'Cargando histórico…';
+    document.getElementById('mm-loading').classList.remove('hidden');
+    document.getElementById('mm-content').classList.add('hidden');
+    document.getElementById('modal-medico').classList.remove('hidden');
+    if (_mmChartMes) { _mmChartMes.destroy(); _mmChartMes = null; }
+    if (_mmChartDia) { _mmChartDia.destroy(); _mmChartDia = null; }
+
+    try {
+        const r = await fetch(`/api/obras-sociales/medicos/${medId}/historico`);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+            document.getElementById('mm-loading').innerHTML =
+                `<p class="text-rose-600 text-sm py-8">${data.error || 'Error ' + r.status}</p>`;
+            return;
+        }
+        const m = data.medico;
+        document.getElementById('mm-nombre').textContent = m.nombre;
+        document.getElementById('mm-meta').textContent =
+            `Matrícula: ${m.matricula || '—'} · ${data.desde_mes} → ${data.hasta}`;
+        document.getElementById('mm-loading').classList.add('hidden');
+        document.getElementById('mm-content').classList.remove('hidden');
+
+        // Helper para crear cada chart
+        const baseOpciones = {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: {position: 'bottom', labels: {font: {size: 10}, padding: 6}},
+                tooltip: {
+                    callbacks: {
+                        label: (ctx) => ctx.dataset.label === 'Importe'
+                            ? `Importe: $${Math.round(ctx.parsed.y).toLocaleString('es-AR')}`
+                            : `Recetas: ${ctx.parsed.y}`,
+                    },
+                },
+            },
+            scales: {
+                x: {grid: {display: false}, ticks: {font: {size: 9}}},
+                y1: {position: 'left', ticks: {callback: v => '$' + Number(v).toLocaleString('es-AR'), font: {size: 9}}, grid: {color: '#f0f0f0'}},
+                y2: {position: 'right', ticks: {stepSize: 1, font: {size: 9}}, grid: {display: false}},
+            },
+        };
+
+        // Chart por mes (12m)
+        _mmChartMes = new Chart(document.getElementById('mm-chart-mes').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: data.serie_mes.map(s => {
+                    const [y, mm] = s.mes.split('-');
+                    return `${mm}/${y.slice(2)}`;
+                }),
+                datasets: [
+                    {label: 'Importe', data: data.serie_mes.map(s => s.importe),
+                     backgroundColor: 'rgba(99,102,241,0.7)', borderColor: '#6366f1', borderWidth: 1, yAxisID: 'y1'},
+                    {label: 'Recetas', data: data.serie_mes.map(s => s.recetas),
+                     backgroundColor: 'rgba(16,185,129,0.4)', borderColor: '#10b981',
+                     borderWidth: 1.5, type: 'line', yAxisID: 'y2', tension: 0.2, pointRadius: 2},
+                ],
+            },
+            options: baseOpciones,
+        });
+
+        // Chart por día (30 días)
+        _mmChartDia = new Chart(document.getElementById('mm-chart-dia').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: data.serie_dia.map(s => {
+                    const [, mm, dd] = s.fecha.split('-');
+                    return `${dd}/${mm}`;
+                }),
+                datasets: [
+                    {label: 'Importe', data: data.serie_dia.map(s => s.importe),
+                     backgroundColor: 'rgba(99,102,241,0.7)', borderColor: '#6366f1', borderWidth: 1, yAxisID: 'y1'},
+                    {label: 'Recetas', data: data.serie_dia.map(s => s.recetas),
+                     backgroundColor: 'rgba(16,185,129,0.4)', borderColor: '#10b981',
+                     borderWidth: 1.5, type: 'line', yAxisID: 'y2', tension: 0.2, pointRadius: 2},
+                ],
+            },
+            options: baseOpciones,
+        });
+
+        // Top OS
+        const totalOS = data.top_os.reduce((s, o) => s + o.importe, 0);
+        document.getElementById('mm-top-os').innerHTML = data.top_os.map(o => `
+            <tr class="hover:bg-[#fafafa]">
+                <td class="px-3 py-1.5 truncate max-w-[180px]" title="${o.nombre}">${o.nombre}</td>
+                <td class="px-3 py-1.5 text-right font-mono">${fmtMoney(o.importe)}</td>
+                <td class="px-3 py-1.5 text-right text-[#888] text-[10px]">${o.recetas} rec · ${totalOS > 0 ? (o.importe / totalOS * 100).toFixed(0) : 0}%</td>
+            </tr>
+        `).join('') || '<tr><td colspan="3" class="px-3 py-4 text-center text-[#999]">Sin datos.</td></tr>';
+
+        // Top productos
+        document.getElementById('mm-top-prod').innerHTML = data.top_productos.map(p => `
+            <tr class="hover:bg-[#fafafa]">
+                <td class="px-3 py-1.5 truncate max-w-[200px]" title="${p.descripcion}">${p.descripcion}</td>
+                <td class="px-3 py-1.5 text-right font-mono">${fmtMoney(p.importe)}</td>
+                <td class="px-3 py-1.5 text-right text-[#888] text-[10px]">${Math.round(p.unidades)} u · ${p.recetas} rec</td>
+            </tr>
+        `).join('') || '<tr><td colspan="3" class="px-3 py-4 text-center text-[#999]">Sin datos.</td></tr>';
+    } catch (e) {
+        document.getElementById('mm-loading').innerHTML =
+            `<p class="text-rose-600 text-sm py-8">Error: ${e.message}</p>`;
+    }
+}
+
+function cerrarModalMedico() {
+    document.getElementById('modal-medico').classList.add('hidden');
+    if (_mmChart) { _mmChart.destroy(); _mmChart = null; }
+}
+window.abrirModalMedico = abrirModalMedico;
+window.cerrarModalMedico = cerrarModalMedico;
 function aplicarFiltros() { cargar(); }
 function atajoFecha(tipo) {
     const hoy = new Date();
