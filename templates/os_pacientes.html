@@ -30,6 +30,7 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Quién aporta el 80% (Pareto). Detección de inactivos. Top clientes por importe.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
+        {% include '_os_data_badge.html' %}
         {% set pantalla_actual = 'Análisis de pacientes' %}
         {% include '_os_breadcrumb.html' %}
     </div>
@@ -97,14 +98,31 @@
 
     <!-- Pareto chart -->
     <div class="bg-white border border-surface-border rounded-xl p-4">
-        <p class="font-semibold text-sm mb-2">📊 Curva de Pareto — concentración del facturado</p>
+        <div class="flex items-start justify-between gap-3 mb-2">
+            <p class="font-semibold text-sm">📊 Curva de Pareto — concentración del facturado</p>
+            <details class="text-[11px] text-[#6f6f6f] max-w-md">
+                <summary class="cursor-pointer hover:text-sky-700 select-none">¿Qué es esto? 💡</summary>
+                <div class="mt-1.5 p-2 bg-indigo-50/60 border border-indigo-200 rounded leading-snug text-[11px]">
+                    <p><strong>Regla 80/20</strong>: en la mayoría de las farmacias, ~20% de los pacientes
+                    aporta el 80% del facturado. La curva muestra cómo se acumula el ingreso a medida que
+                    sumás clientes (de mayor a menor).</p>
+                    <p class="mt-1.5"><strong>Cómo leerlo:</strong> el eje X son tus pacientes ordenados.
+                    El eje Y es el % acumulado de facturación. Mientras más empinada la curva al inicio,
+                    más concentrado está el negocio en pocos clientes (riesgo si uno se va).</p>
+                    <p class="mt-1.5"><strong>Para qué sirve:</strong> identificar quiénes son tus
+                    "pacientes VIP" para priorizar atención, fidelización y stock de sus drogas habituales.</p>
+                </div>
+            </details>
+        </div>
         <div class="h-72"><canvas id="chart-pareto"></canvas></div>
     </div>
 
     <!-- Inactivos -->
     <div id="inactivos-wrap" class="hidden bg-white border border-rose-200 rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-rose-200 bg-rose-50 flex items-center justify-between">
-            <p class="font-semibold text-sm text-rose-800">😴 Pacientes inactivos crónicos — oportunidad de reactivación</p>
+            <p class="font-semibold text-sm text-rose-800 flex items-center gap-2">😴 Pacientes inactivos crónicos — oportunidad de reactivación
+                <span class="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-normal">📊 Click en fila → histórico</span>
+            </p>
             <span id="inactivos-meta" class="text-xs text-rose-700"></span>
         </div>
         <div class="overflow-auto">
@@ -114,6 +132,7 @@
                         <th class="text-left px-3 py-2">Paciente</th>
                         <th class="text-left px-3 py-2">DNI</th>
                         <th class="text-left px-3 py-2">Teléfono</th>
+                        <th class="text-left px-3 py-2">OS principal</th>
                         <th class="text-right px-3 py-2">Recetas (12m)</th>
                         <th class="text-right px-3 py-2">Importe (12m)</th>
                         <th class="text-left px-3 py-2">Última visita</th>
@@ -128,7 +147,9 @@
     <!-- Tabla maestra -->
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
-            <p class="font-semibold text-sm">🏆 Ranking de pacientes (top 200)</p>
+            <p class="font-semibold text-sm flex items-center gap-2">🏆 Ranking de pacientes (top 200)
+                <span class="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-normal">📊 Click en fila → histórico</span>
+            </p>
             <span class="text-xs text-[#6f6f6f]" id="ranking-meta"></span>
         </div>
         <div class="overflow-auto">
@@ -307,6 +328,10 @@ function renderInactivos(inactivos) {
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[260px]" title="${p.nombre}">${p.nombre}</td>
                 <td class="px-3 py-2 font-mono text-xs text-[#666]">${p.dni || '—'}</td>
                 <td class="px-3 py-2 text-xs text-[#666]">${p.telefono || '—'}</td>
+                <td class="px-3 py-2 text-xs truncate max-w-[160px]" title="${p.os_principal}">
+                    ${p.os_principal || '—'}
+                    ${p.os_principal_pct ? `<span class="text-[10px] text-[#999]">(${p.os_principal_pct}%)</span>` : ''}
+                </td>
                 <td class="px-3 py-2 text-right">${p.recetas_hist}</td>
                 <td class="px-3 py-2 text-right font-mono">${fmtMoney(p.importe_hist)}</td>
                 <td class="px-3 py-2 text-xs">${fmtFecha(p.ultima_visita)}</td>

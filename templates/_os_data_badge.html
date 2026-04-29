@@ -1,0 +1,48 @@
+{# Chip de estado de datos para el módulo OS.
+   Auto-fetch a /api/obras-sociales/data-status al cargar y muestra:
+     ✓ Datos reales · N dispensas · al DD/MM · sync HH:MM
+
+   Uso:
+     {% include '_os_data_badge.html' %}
+   Lo agregás donde quieras que aparezca (típicamente arriba a la derecha
+   del header de cada pantalla).
+#}
+<span id="os-data-badge"
+      class="inline-flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-full
+             bg-emerald-50 border border-emerald-300 text-emerald-800 font-semibold opacity-50"
+      title="Estado de los datos sincronizados desde ObServer">
+    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    <span id="os-data-badge-text">cargando…</span>
+</span>
+<script>
+(async () => {
+    try {
+        const r = await fetch('/api/obras-sociales/data-status');
+        const d = await r.json();
+        if (!r.ok || d.error) {
+            const b = document.getElementById('os-data-badge');
+            b.classList.remove('bg-emerald-50', 'border-emerald-300', 'text-emerald-800');
+            b.classList.add('bg-rose-50', 'border-rose-300', 'text-rose-800');
+            document.getElementById('os-data-badge-text').textContent = '⚠ Sin datos';
+            return;
+        }
+        const f = d.ultima_fecha;
+        const fmtFecha = f ? `${f.split('-')[2]}/${f.split('-')[1]}` : '?';
+        const fmtMiles = (d.n_ventas || 0).toLocaleString('es-AR');
+        const sync = d.ultimo_sync;
+        const fmtSync = sync ? sync.slice(0, 16).replace('T', ' ') : '?';
+        const txt = `Datos reales · ${fmtMiles} dispensas · al ${fmtFecha} · sync ${fmtSync}`;
+        document.getElementById('os-data-badge-text').textContent = txt;
+        document.getElementById('os-data-badge').classList.remove('opacity-50');
+    } catch (e) {
+        const b = document.getElementById('os-data-badge');
+        if (b) {
+            b.classList.remove('bg-emerald-50', 'border-emerald-300', 'text-emerald-800');
+            b.classList.add('bg-rose-50', 'border-rose-300', 'text-rose-800');
+            document.getElementById('os-data-badge-text').textContent = '⚠ Sin conexión';
+        }
+    }
+})();
+</script>

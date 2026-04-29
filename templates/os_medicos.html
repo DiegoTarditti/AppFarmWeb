@@ -94,6 +94,7 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Quién te trae cada cartera. Detección de fugas. Heatmap de dependencias por OS.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
+        {% include '_os_data_badge.html' %}
         {% set pantalla_actual = 'Análisis de médicos' %}
         {% include '_os_breadcrumb.html' %}
     </div>
@@ -162,7 +163,9 @@
     <!-- Fugas detectadas -->
     <div id="fugas-wrap" class="hidden bg-white border border-rose-200 rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-rose-200 bg-rose-50 flex items-center justify-between">
-            <p class="font-semibold text-sm text-rose-800">🚨 Médicos con fuga (caída &gt;50% vs período anterior)</p>
+            <p class="font-semibold text-sm text-rose-800 flex items-center gap-2">🚨 Médicos con fuga (caída &gt;50% vs período anterior)
+                <span class="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-normal">📊 Click en fila → histórico</span>
+            </p>
             <span id="fugas-meta" class="text-xs text-rose-700"></span>
         </div>
         <div class="overflow-auto">
@@ -184,8 +187,21 @@
 
     <!-- Heatmap Médico × OS -->
     <div class="bg-white border border-surface-border rounded-xl p-4">
-        <div class="flex items-center justify-between mb-3">
+        <div class="flex items-start justify-between mb-3 gap-3 flex-wrap">
             <p class="font-semibold text-sm">🔥 Dependencias: Top 20 médicos × Top 10 OS</p>
+            <details class="text-[11px] text-[#6f6f6f] max-w-md">
+                <summary class="cursor-pointer hover:text-sky-700 select-none">¿Cómo se lee? 💡</summary>
+                <div class="mt-1.5 p-2 bg-indigo-50/60 border border-indigo-200 rounded leading-snug text-[11px]">
+                    <p>Cada celda muestra cuánto te factura un <strong>médico</strong> (filas) con
+                    una <strong>obra social</strong> (columnas). Mientras más oscuro el color, más volumen.</p>
+                    <p class="mt-1.5"><strong>Para qué sirve:</strong> detectar
+                    <em>dependencias riesgosas</em>. Si un médico te trae casi todo de una sola OS y esa OS
+                    cierra/cambia condiciones, ese médico se va. O si una OS depende de un solo médico:
+                    si renuncia, perdés esa cartera.</p>
+                    <p class="mt-1.5"><strong>Ideal:</strong> patrón disperso (varios médicos por OS,
+                    varias OS por médico). <strong>Riesgo:</strong> celdas muy oscuras y aisladas.</p>
+                </div>
+            </details>
             <span class="text-xs text-[#6f6f6f]">Color = importe que cada médico genera con cada OS</span>
         </div>
         <div class="overflow-auto">
@@ -196,7 +212,9 @@
     <!-- Tabla maestra -->
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
-            <p class="font-semibold text-sm">🏆 Ranking completo (top 200)</p>
+            <p class="font-semibold text-sm flex items-center gap-2">🏆 Ranking completo (top 200)
+                <span class="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-normal">📊 Click en fila → histórico</span>
+            </p>
             <span class="text-xs text-[#6f6f6f]" id="ranking-meta"></span>
         </div>
         <div class="overflow-auto">

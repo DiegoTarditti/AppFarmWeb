@@ -32,6 +32,7 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Margen real = Facturado − Costo estimado · ranking por ganancia, no volumen.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
+        {% include '_os_data_badge.html' %}
         {% set pantalla_actual = 'Rentabilidad por OS' %}
         {% include '_os_breadcrumb.html' %}
     </div>
@@ -106,7 +107,9 @@
     <!-- Ranking de OS -->
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
-            <p class="font-semibold text-sm">🏆 Ranking de OS por ganancia</p>
+            <p class="font-semibold text-sm flex items-center gap-2">🏆 Ranking de OS por ganancia
+                <span class="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-normal">📊 Click en fila → histórico</span>
+            </p>
             <span class="text-xs text-[#6f6f6f]" id="ranking-meta"></span>
         </div>
         <div class="overflow-auto">
@@ -266,6 +269,7 @@ function renderChart(serie) {
             interaction: {mode: 'nearest', intersect: false},
             plugins: {
                 legend: {position: 'bottom', labels: {font: {size: 11}}},
+                datalabels: {display: false},  // Línea diaria con muchos puntos satura
                 tooltip: {
                     callbacks: {
                         label: ctx => `${ctx.dataset.label}: ${fmtMoneyDec(ctx.parsed.y)}`,
@@ -293,8 +297,11 @@ function renderRanking(ranking) {
         else if (r.margen_pct < 0) { mClass = 'row-margen-negativo'; mEmoji = '🔴'; }
         else if (r.margen_pct < 15) { mClass = 'row-margen-bajo'; mEmoji = '🟡'; }
         const pctMargen = r.margen_pct === null ? '—' : `${mEmoji} ${r.margen_pct.toFixed(1)}%`;
+        const clickAttrs = r.os_id
+            ? `class="hover:bg-emerald-50 cursor-pointer" onclick='OSHistorico.abrir("os", ${r.os_id}, ${JSON.stringify(r.os_nombre)})' title="Click para ver histórico mensual + diario + top médicos + productos"`
+            : `class="hover:bg-[#fafafa]"`;
         return `
-            <tr class="hover:bg-emerald-50 cursor-pointer" onclick='r.os_id && OSHistorico.abrir("os", ${r.os_id || 0}, ${JSON.stringify(r.os_nombre)})' title="Click para ver histórico mensual + diario + top médicos + productos">
+            <tr ${clickAttrs}>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[300px]" title="${r.os_nombre}">${r.os_nombre}</td>
                 <td class="px-3 py-2 text-right font-mono">${fmtMoney(r.facturado)}</td>
                 <td class="px-3 py-2 text-right font-mono text-[#888]">${fmtMoney(r.costo_estimado)}</td>

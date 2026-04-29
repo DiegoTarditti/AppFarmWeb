@@ -32,6 +32,7 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Capital atrapado en stock que no se mueve. Decisión: dar de baja, ofertar o devolver al proveedor.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
+        {% include '_os_data_badge.html' %}
         {% set pantalla_actual = 'Productos sin venta' %}
         {% include '_os_breadcrumb.html' %}
     </div>
@@ -205,8 +206,11 @@ function renderRanking(ranking) {
         filtro ? `${filtrados.length} de ${ranking.length} productos` : `${ranking.length} productos`;
     const body = document.getElementById('ranking-body');
     body.innerHTML = filtrados.map((r, i) => {
+        const clickAttrs = r.prod_id
+            ? `class="hover:bg-amber-50 cursor-pointer" onclick='OSHistorico.abrir("producto", ${r.prod_id}, ${JSON.stringify(r.descripcion)})' title="Click para ver histórico mensual + diario + top OS + médicos"`
+            : `class="hover:bg-[#fafafa]"`;
         return `
-            <tr class="hover:bg-amber-50 cursor-pointer" onclick='OSHistorico.abrir("producto", ${r.prod_id || 0}, ${JSON.stringify(r.descripcion)})' title="Click para ver histórico mensual + diario + top OS + médicos">
+            <tr ${clickAttrs}>
                 <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[400px]" title="${r.descripcion}">${r.descripcion}</td>
                 <td class="px-3 py-2 text-xs text-[#666] truncate max-w-[180px]" title="${r.lab}">${r.lab || '—'}</td>

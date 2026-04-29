@@ -28,6 +28,7 @@
         <p class="text-xs text-[#6f6f6f] mt-0.5">Productos rankeados por ganancia neta. Filtrá por OS para ver qué te conviene de cada una.</p>
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
+        {% include '_os_data_badge.html' %}
         {% set pantalla_actual = 'Top productos por margen' %}
         {% include '_os_breadcrumb.html' %}
     </div>
@@ -263,8 +264,11 @@ function renderRanking(ranking) {
         else if (r.margen_pct < 0) { mClass = 'row-margen-negativo'; mEmoji = '🔴'; }
         else if (r.margen_pct < 15) { mClass = 'row-margen-bajo'; mEmoji = '🟡'; }
         const pctMargen = r.margen_pct === null ? '—' : `${mEmoji} ${r.margen_pct.toFixed(1)}%`;
+        const clickAttrs = r.prod_observer
+            ? `class="hover:bg-sky-50 cursor-pointer" onclick='OSHistorico.abrir("producto", ${r.prod_observer}, ${JSON.stringify(r.descripcion)})' title="Click para ver histórico mensual + diario + top OS + médicos"`
+            : `class="hover:bg-[#fafafa]"`;
         return `
-            <tr class="hover:bg-sky-50 cursor-pointer" onclick='OSHistorico.abrir("producto", ${r.prod_observer || 0}, ${JSON.stringify(r.descripcion)})' title="Click para ver histórico mensual + diario + top OS + médicos">
+            <tr ${clickAttrs}>
                 <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[400px]" title="${r.descripcion}">${r.descripcion}</td>
                 <td class="px-3 py-2 text-right text-[#666]">${Number(r.unidades).toLocaleString('es-AR')}</td>

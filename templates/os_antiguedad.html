@@ -39,8 +39,22 @@
     </div>
     <div class="ml-auto flex items-center gap-2 text-xs">
         <span id="header-fecha" class="text-[#888]"></span>
+        {% include '_os_data_badge.html' %}
         {% set pantalla_actual = 'Antigüedad de cobranza' %}
         {% include '_os_breadcrumb.html' %}
+    </div>
+</div>
+
+{# Banner explicativo: estimación pesimista #}
+<div class="bg-amber-50 border-b border-amber-300 px-4 sm:px-6 py-2.5">
+    <div class="max-w-7xl mx-auto flex items-start gap-2 text-[12px] text-amber-900">
+        <span class="text-base leading-none mt-0.5">⚠</span>
+        <div class="flex-1 leading-snug">
+            <strong>Estimación pesimista:</strong> asumimos que <em>ninguna</em> OS liquidó todavía
+            (ObServer aún no expone qué dispensa fue cobrada). El total y la antigüedad reflejan
+            <strong>todo lo dispensado a OS en los últimos 18 meses</strong>. Cuando una OS te liquida,
+            esos importes deberían descontarse manualmente del análisis. Trabajamos para automatizarlo.
+        </div>
     </div>
 </div>
 
@@ -95,7 +109,9 @@
     <!-- Ranking de OS con bucket bar -->
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
-            <p class="font-semibold text-sm">🏥 Por obra social</p>
+            <p class="font-semibold text-sm flex items-center gap-2">🏥 Por obra social
+                <span class="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-2 py-0.5 rounded font-normal">📊 Click en fila → histórico</span>
+            </p>
             <input type="text" id="filtro-buscar" title="Buscar OS (multi-token)"
                    placeholder="Buscar OS…" oninput="filtrarRanking()"
                    class="bg-white border border-surface-border rounded px-2 py-1 text-xs w-64">
@@ -255,8 +271,11 @@ function renderRanking(ranking) {
         let viejoClass = 'text-emerald-700';
         if (r.viejo_pct >= 30) viejoClass = 'text-orange-700 font-bold';
         if (r.viejo_pct >= 60) viejoClass = 'text-red-700 font-bold';
+        const clickAttrs = r.os_id
+            ? `class="hover:bg-emerald-50 cursor-pointer" onclick='OSHistorico.abrir("os", ${r.os_id}, ${JSON.stringify(r.os_nombre)})' title="Click para ver histórico mensual + diario + top médicos + productos"`
+            : `class="hover:bg-[#fafafa]"`;
         return `
-            <tr class="hover:bg-emerald-50 cursor-pointer" onclick='OSHistorico.abrir("os", ${r.os_id || 0}, ${JSON.stringify(r.os_nombre)})' title="Click para ver histórico mensual + diario + top médicos + productos">
+            <tr ${clickAttrs}>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[260px]" title="${r.os_nombre}">${r.os_nombre}</td>
                 <td class="px-3 py-2 text-right font-mono font-semibold text-emerald-700">${fmtMoney(r.total_pendiente)}</td>
                 <td class="px-3 py-2">${bucketBar(r)}</td>

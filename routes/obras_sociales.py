@@ -137,7 +137,8 @@ def _mock_dispensas():
 
 def _api_safe(fn):
     """Decorator: wrappea el endpoint en try/except y devuelve el error como
-    JSON con tipo + mensaje + últimas líneas del traceback. Evita 500 mudo.
+    JSON. En modo DEBUG incluye traceback resumido para diagnóstico; en
+    producción solo tipo + mensaje (no exponer internals al cliente).
     """
     import functools
     import traceback
@@ -153,11 +154,13 @@ def _api_safe(fn):
                 current_app.logger.exception(f'{fn.__name__} falló')
             except Exception:
                 pass
-            return jsonify({
+            payload = {
                 'error': str(exc),
                 'tipo': type(exc).__name__,
-                'traceback_resumen': traceback.format_exc().splitlines()[-6:],
-            }), 500
+            }
+            if current_app.config.get('DEBUG'):
+                payload['traceback_resumen'] = traceback.format_exc().splitlines()[-6:]
+            return jsonify(payload), 500
     return wrapper
 
 
@@ -703,6 +706,24 @@ def init_app(app):
                     GROUP BY ovd.cliente_observer
                     HAVING COUNT(DISTINCT ovd.id_operacion) >= 4
                        AND MAX(ovd.fecha_estadistica) < (:hoy - INTERVAL '60 days')
+                ),
+                os_principal AS (
+                    SELECT cli_id, os_nombre, recetas_os
+                    FROM (
+                        SELECT
+                            ovd.cliente_observer AS cli_id,
+                            COALESCE(oos.descripcion, 'Sin OS') AS os_nombre,
+                            COUNT(DISTINCT ovd.id_operacion) AS recetas_os,
+                            ROW_NUMBER() OVER (PARTITION BY ovd.cliente_observer
+                                               ORDER BY COUNT(DISTINCT ovd.id_operacion) DESC) AS rn
+                        FROM obs_ventas_detalle ovd
+                        LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                        WHERE ovd.fecha_estadistica BETWEEN (:hoy - INTERVAL '12 months') AND :hoy
+                          AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                          AND ovd.cliente_observer IS NOT NULL
+                        GROUP BY ovd.cliente_observer, oos.descripcion
+                    ) sub
+                    WHERE rn = 1
                 )
                 SELECT
                     b.cli_id,
@@ -711,9 +732,12 @@ def init_app(app):
                     oc.telefono,
                     b.recetas_hist,
                     b.importe_hist,
-                    b.ultima_visita
+                    b.ultima_visita,
+                    osp.os_nombre AS os_principal,
+                    osp.recetas_os
                 FROM base b
                 LEFT JOIN obs_clientes oc ON oc.observer_id = b.cli_id
+                LEFT JOIN os_principal osp ON osp.cli_id = b.cli_id
                 ORDER BY b.importe_hist DESC
                 LIMIT 50
             ''')
@@ -721,6 +745,7 @@ def init_app(app):
             inactivos = []
             for r in rows_inact:
                 dias = (hoy - r.ultima_visita).days if r.ultima_visita else None
+                pct_top_os = (r.recetas_os / r.recetas_hist * 100) if r.recetas_hist else 0
                 inactivos.append({
                     'cli_id': r.cli_id,
                     'nombre': r.nombre or f'Cliente #{r.cli_id}',
@@ -730,6 +755,8 @@ def init_app(app):
                     'importe_hist': round(float(r.importe_hist or 0), 2),
                     'ultima_visita': r.ultima_visita.isoformat() if r.ultima_visita else None,
                     'dias': dias,
+                    'os_principal': r.os_principal or '',
+                    'os_principal_pct': round(pct_top_os, 1),
                 })
 
             # OS list
@@ -905,6 +932,29 @@ def init_app(app):
             'serie_dia': serie_dia,
             'top_os': top_os,
             'top_productos': top_prod,
+        })
+
+    @app.route('/api/obras-sociales/data-status')
+    @_api_safe
+    def api_os_data_status():
+        """Estado de los datos del módulo OS — para mostrar chip 'datos reales · sync XX/YY/ZZ'.
+
+        Devuelve:
+          - n_ventas: total de filas en obs_ventas_detalle
+          - ultima_fecha: MAX(fecha_estadistica) (último día con dispensas)
+          - ultimo_sync: MAX(sync_en) (cuándo se trajo la última fila)
+        """
+        from sqlalchemy import text as _text
+        import database
+        with database.get_db() as session:
+            row = session.execute(_text(
+                'SELECT COUNT(*) AS n, MAX(fecha_estadistica) AS ult_f, MAX(sync_en) AS ult_s '
+                'FROM obs_ventas_detalle'
+            )).first()
+        return jsonify({
+            'n_ventas': int(row.n or 0),
+            'ultima_fecha': row.ult_f.isoformat() if row.ult_f else None,
+            'ultimo_sync': row.ult_s.isoformat() if row.ult_s else None,
         })
 
     @app.route('/api/obras-sociales/historico/<tipo>/<int:id_obj>')
