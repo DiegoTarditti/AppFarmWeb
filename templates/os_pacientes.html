@@ -268,7 +268,7 @@ function renderPareto(ranking) {
             interaction: {mode: 'index', intersect: false},
             plugins: {
                 legend: {position: 'bottom', labels: {font: {size: 11}}},
-                annotation: {},
+                datalabels: {display: false},  // Pareto tiene 200+ puntos, los labels saturan
                 tooltip: {
                     callbacks: {
                         label: ctx => ctx.dataset.label === '% acumulado'
