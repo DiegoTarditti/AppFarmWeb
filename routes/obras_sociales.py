@@ -360,6 +360,231 @@ def init_app(app):
             'serie_temporal': serie,
         })
 
+    @app.route('/obras-sociales/pacientes')
+    def os_pacientes():
+        """Análisis por paciente prescripto: Pareto, inactivos, drogas frecuentes."""
+        from datetime import date as _date
+        from datetime import datetime as _dt
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+        return render_template('os_pacientes.html',
+                               desde=desde.isoformat(), hasta=hasta.isoformat())
+
+    @app.route('/api/obras-sociales/pacientes')
+    def api_os_pacientes():
+        """JSON: ranking + inactivos + drogas top."""
+        from datetime import date as _date
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+        try:
+            desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
+        except ValueError:
+            desde = hoy.replace(day=1)
+        try:
+            hasta = _date.fromisoformat(request.args.get('hasta', '')) or hoy
+        except ValueError:
+            hasta = hoy
+        try:
+            os_id = int(request.args.get('os_id', '')) or None
+        except ValueError:
+            os_id = None
+
+        os_filter_sql = ''
+        params = {'desde': desde, 'hasta': hasta, 'hoy': hoy}
+        if os_id:
+            os_filter_sql = 'AND ovd.obra_social_observer = :os_id'
+            params['os_id'] = os_id
+
+        with database.get_db() as session:
+            # Ranking principal
+            sql_ranking = _text(f'''
+                WITH actual AS (
+                    SELECT
+                        ovd.cliente_observer AS cli_id,
+                        SUM(ovd.importe) AS importe,
+                        SUM(COALESCE(ovd.importe_a_cargo_os, 0)) AS importe_os,
+                        COUNT(DISTINCT ovd.id_operacion) AS recetas,
+                        COUNT(DISTINCT ovd.medico_observer) AS medicos,
+                        COUNT(DISTINCT ovd.producto_observer) AS productos,
+                        COUNT(DISTINCT ovd.obra_social_observer) AS n_os,
+                        MAX(ovd.fecha_estadistica) AS ultima_visita,
+                        MIN(ovd.fecha_estadistica) AS primera_visita
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.cliente_observer IS NOT NULL
+                      {os_filter_sql}
+                    GROUP BY ovd.cliente_observer
+                ),
+                os_principal AS (
+                    SELECT cli_id, os_nombre, recetas_os
+                    FROM (
+                        SELECT
+                            ovd.cliente_observer AS cli_id,
+                            COALESCE(oos.descripcion, 'Sin OS') AS os_nombre,
+                            COUNT(DISTINCT ovd.id_operacion) AS recetas_os,
+                            ROW_NUMBER() OVER (PARTITION BY ovd.cliente_observer
+                                               ORDER BY COUNT(DISTINCT ovd.id_operacion) DESC) AS rn
+                        FROM obs_ventas_detalle ovd
+                        LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                        WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                          AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                          AND ovd.cliente_observer IS NOT NULL
+                        GROUP BY ovd.cliente_observer, oos.descripcion
+                    ) sub
+                    WHERE rn = 1
+                )
+                SELECT
+                    a.cli_id,
+                    oc.apellido_nombre AS nombre,
+                    oc.documento_numero AS dni,
+                    oc.localidad AS localidad,
+                    a.importe,
+                    a.importe_os,
+                    a.recetas,
+                    a.medicos,
+                    a.productos,
+                    a.n_os,
+                    a.ultima_visita,
+                    a.primera_visita,
+                    osp.os_nombre AS os_principal,
+                    osp.recetas_os
+                FROM actual a
+                LEFT JOIN obs_clientes oc ON oc.observer_id = a.cli_id
+                LEFT JOIN os_principal osp ON osp.cli_id = a.cli_id
+                ORDER BY a.importe DESC
+                LIMIT 200
+            ''')
+            rows = session.execute(sql_ranking, params).fetchall()
+            ranking = []
+            tot_imp = tot_imp_os = tot_recetas = 0
+            for r in rows:
+                imp = float(r.importe or 0)
+                imp_os = float(r.importe_os or 0)
+                pct_top_os = (r.recetas_os / r.recetas * 100) if r.recetas else 0
+                dias_desde_visita = (hoy - r.ultima_visita).days if r.ultima_visita else None
+                ranking.append({
+                    'cli_id': r.cli_id,
+                    'nombre': r.nombre or f'Cliente #{r.cli_id}',
+                    'dni': str(r.dni) if r.dni else '',
+                    'localidad': r.localidad or '',
+                    'importe': round(imp, 2),
+                    'importe_os': round(imp_os, 2),
+                    'pct_os_paga': round(imp_os / imp * 100, 1) if imp > 0 else 0,
+                    'recetas': int(r.recetas or 0),
+                    'medicos': int(r.medicos or 0),
+                    'productos': int(r.productos or 0),
+                    'n_os': int(r.n_os or 0),
+                    'ticket_prom': round(imp / r.recetas, 2) if r.recetas else 0,
+                    'os_principal': r.os_principal or '',
+                    'os_principal_pct': round(pct_top_os, 1),
+                    'dias_desde_visita': dias_desde_visita,
+                    'ultima_visita': r.ultima_visita.isoformat() if r.ultima_visita else None,
+                    'primera_visita': r.primera_visita.isoformat() if r.primera_visita else None,
+                })
+                tot_imp += imp
+                tot_imp_os += imp_os
+                tot_recetas += int(r.recetas or 0)
+
+            # Pareto top 5%
+            n_top5pct = max(1, len(ranking) // 20)
+            top5pct_imp = sum(r['importe'] for r in ranking[:n_top5pct])
+            top5pct_pct = (top5pct_imp / tot_imp * 100) if tot_imp > 0 else 0
+
+            # Pacientes inactivos (recurrentes históricos que no volvieron)
+            # Definición: tenían >=4 recetas en últimos 12m hasta hace 90d, y 0 recetas
+            # en los últimos 60d. Probables crónicos que dejaron de venir.
+            sql_inact = _text('''
+                WITH base AS (
+                    SELECT
+                        ovd.cliente_observer AS cli_id,
+                        COUNT(DISTINCT ovd.id_operacion) AS recetas_hist,
+                        SUM(ovd.importe) AS importe_hist,
+                        MAX(ovd.fecha_estadistica) AS ultima_visita
+                    FROM obs_ventas_detalle ovd
+                    WHERE ovd.fecha_estadistica BETWEEN (:hoy - INTERVAL '12 months') AND :hoy
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                      AND ovd.cliente_observer IS NOT NULL
+                    GROUP BY ovd.cliente_observer
+                    HAVING COUNT(DISTINCT ovd.id_operacion) >= 4
+                       AND MAX(ovd.fecha_estadistica) < (:hoy - INTERVAL '60 days')
+                )
+                SELECT
+                    b.cli_id,
+                    oc.apellido_nombre AS nombre,
+                    oc.documento_numero AS dni,
+                    oc.telefono,
+                    b.recetas_hist,
+                    b.importe_hist,
+                    b.ultima_visita
+                FROM base b
+                LEFT JOIN obs_clientes oc ON oc.observer_id = b.cli_id
+                ORDER BY b.importe_hist DESC
+                LIMIT 50
+            ''')
+            rows_inact = session.execute(sql_inact, {'hoy': hoy}).fetchall()
+            inactivos = []
+            for r in rows_inact:
+                dias = (hoy - r.ultima_visita).days if r.ultima_visita else None
+                inactivos.append({
+                    'cli_id': r.cli_id,
+                    'nombre': r.nombre or f'Cliente #{r.cli_id}',
+                    'dni': str(r.dni) if r.dni else '',
+                    'telefono': r.telefono or '',
+                    'recetas_hist': int(r.recetas_hist or 0),
+                    'importe_hist': round(float(r.importe_hist or 0), 2),
+                    'ultima_visita': r.ultima_visita.isoformat() if r.ultima_visita else None,
+                    'dias': dias,
+                })
+
+            # OS list
+            sql_os_list = _text('''
+                SELECT DISTINCT oos.observer_id, oos.descripcion
+                FROM obs_ventas_detalle ovd
+                JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer
+                WHERE ovd.fecha_estadistica BETWEEN :desde AND :hasta
+                  AND oos.fecha_baja IS NULL
+                ORDER BY oos.descripcion
+            ''')
+            obras_sociales = [{'os_id': r[0], 'nombre': r[1]}
+                              for r in session.execute(sql_os_list, {'desde': desde, 'hasta': hasta}).fetchall()]
+
+        return jsonify({
+            'desde': desde.isoformat(),
+            'hasta': hasta.isoformat(),
+            'os_id': os_id,
+            'kpis': {
+                'n_pacientes': len(ranking),
+                'recetas': tot_recetas,
+                'importe': round(tot_imp, 2),
+                'importe_os': round(tot_imp_os, 2),
+                'pct_os_paga': round(tot_imp_os / tot_imp * 100, 1) if tot_imp > 0 else 0,
+                'top5pct_n': n_top5pct,
+                'top5pct_imp': round(top5pct_imp, 2),
+                'top5pct_pct': round(top5pct_pct, 1),
+                'n_inactivos': len(inactivos),
+                'importe_inactivos': round(sum(i['importe_hist'] for i in inactivos), 2),
+                'ticket_promedio': round(tot_imp / tot_recetas, 2) if tot_recetas else 0,
+            },
+            'ranking': ranking,
+            'inactivos': inactivos,
+            'obras_sociales': obras_sociales,
+        })
+
     @app.route('/obras-sociales/medicos')
     def os_medicos():
         """Análisis por médico prescriptor: ranking, fugas, heatmap OS."""

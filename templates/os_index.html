@@ -201,23 +201,25 @@
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Detección automática + recurrencia esperada de compra. Alertar si dejan de venir.</p>
                 </div>
 
-                <div class="block bg-pink-50/40 border border-dashed border-pink-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_pacientes') }}"
+                   class="block bg-pink-50/60 border border-pink-200 rounded-xl p-4 hover:bg-pink-100/60 hover:border-pink-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-yellow-100 text-yellow-700 flex items-center justify-center text-lg flex-shrink-0">🏆</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⭐ NUEVO</span>
                     </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Top clientes</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Por monto / por OS / por antigüedad. Quién te aporta el 80% del valor.</p>
-                </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Análisis de pacientes</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Pareto (top 5% que aporta el 80%) + ranking + inactivos crónicos + médicos × OS por paciente.</p>
+                </a>
 
-                <div class="block bg-pink-50/40 border border-dashed border-pink-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_pacientes') }}"
+                   class="block bg-pink-50/60 border border-pink-200 rounded-xl p-4 hover:bg-pink-100/60 hover:border-pink-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-stone-100 text-stone-700 flex items-center justify-center text-lg flex-shrink-0">😴</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Listo</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Pacientes inactivos</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Clientes que no vienen hace N días — oportunidad de reactivación.</p>
-                </div>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Crónicos que dejaron de venir (≥4 recetas históricas, &gt;60d sin venir). Lista con teléfono. Reactivación directa.</p>
+                </a>
             </div>
         </div>
 
