@@ -360,6 +360,158 @@ def init_app(app):
             'serie_temporal': serie,
         })
 
+    @app.route('/obras-sociales/productos-sin-venta')
+    def os_productos_sin_venta():
+        """Catálogo que no se está moviendo — capital atrapado en stock."""
+        return render_template('os_productos_sin_venta.html')
+
+    @app.route('/api/obras-sociales/productos-sin-venta')
+    def api_os_productos_sin_venta():
+        """JSON: productos del catálogo sin ventas en últimos N días.
+
+        Buckets: 30d / 60d / 180d / 365d / nunca-vendido.
+        Cruza obs_productos vs obs_ventas_detalle (última fecha de venta).
+        Suma stock actual y costo aproximado para mostrar "capital atrapado".
+        """
+        from datetime import datetime as _dt
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        hoy = _dt.now().date()
+        try:
+            limit = max(50, min(int(request.args.get('limit', '300')), 1000))
+        except ValueError:
+            limit = 300
+        try:
+            lab_id = int(request.args.get('lab_id', '')) or None
+        except ValueError:
+            lab_id = None
+
+        params = {'hoy': hoy, 'limit': limit}
+        lab_filter_sql = ''
+        if lab_id:
+            lab_filter_sql = 'AND op.laboratorio_observer = :lab_id'
+            params['lab_id'] = lab_id
+
+        with database.get_db() as session:
+            sql = _text(f'''
+                WITH ultima_compra AS (
+                    SELECT codigo_barra, precio_unitario,
+                           ROW_NUMBER() OVER (PARTITION BY codigo_barra ORDER BY id DESC) AS rn
+                    FROM factura_items
+                    WHERE precio_unitario IS NOT NULL AND precio_unitario > 0
+                      AND codigo_barra IS NOT NULL
+                ),
+                costo_por_observer AS (
+                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                    FROM ultima_compra uc
+                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                    JOIN productos p ON p.id = pcb.producto_id
+                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                    GROUP BY p.observer_id
+                ),
+                ult_venta AS (
+                    SELECT producto_observer, MAX(fecha_estadistica) AS ultima
+                    FROM obs_ventas_detalle
+                    GROUP BY producto_observer
+                )
+                SELECT
+                    op.observer_id AS prod_id,
+                    op.descripcion AS prod_nombre,
+                    op.cantidad_envase,
+                    ol.descripcion AS lab_nombre,
+                    op.fecha_baja,
+                    uv.ultima AS ultima_venta,
+                    COALESCE(SUM(os_stock.stock_actual), 0) AS stock_total,
+                    cpo.costo_unitario,
+                    (cpo.costo_unitario * COALESCE(SUM(os_stock.stock_actual), 0)) AS capital_atrapado
+                FROM obs_productos op
+                LEFT JOIN obs_laboratorios ol ON ol.observer_id = op.laboratorio_observer
+                LEFT JOIN ult_venta uv ON uv.producto_observer = op.observer_id
+                LEFT JOIN costo_por_observer cpo ON cpo.observer_id = op.observer_id
+                LEFT JOIN obs_stock os_stock ON os_stock.producto_observer = op.observer_id
+                WHERE op.fecha_baja IS NULL
+                  AND (uv.ultima IS NULL OR uv.ultima < (:hoy - INTERVAL '30 days'))
+                  {lab_filter_sql}
+                GROUP BY op.observer_id, op.descripcion, op.cantidad_envase, ol.descripcion,
+                         op.fecha_baja, uv.ultima, cpo.costo_unitario
+                HAVING COALESCE(SUM(os_stock.stock_actual), 0) > 0
+                ORDER BY (cpo.costo_unitario * COALESCE(SUM(os_stock.stock_actual), 0)) DESC NULLS LAST,
+                         uv.ultima ASC NULLS FIRST
+                LIMIT :limit
+            ''')
+            rows = session.execute(sql, params).fetchall()
+
+            ranking = []
+            tot = {'b30': 0, 'b60': 0, 'b180': 0, 'b365': 0, 'nunca': 0,
+                   'capital_total': 0.0, 'stock_unidades': 0}
+            for r in rows:
+                ult = r.ultima_venta
+                dias = (hoy - ult).days if ult else None
+                bucket = 'nunca' if ult is None else (
+                    'b30'  if dias <= 60  else
+                    'b60'  if dias <= 90  else
+                    'b180' if dias <= 180 else
+                    'b365' if dias <= 365 else
+                    'mas365'
+                )
+                stock = int(r.stock_total or 0)
+                costo = float(r.costo_unitario) if r.costo_unitario else None
+                capital = float(r.capital_atrapado) if r.capital_atrapado else 0
+                ranking.append({
+                    'prod_id': r.prod_id,
+                    'descripcion': r.prod_nombre,
+                    'lab': r.lab_nombre or '',
+                    'cantidad_envase': float(r.cantidad_envase) if r.cantidad_envase else None,
+                    'ultima_venta': ult.isoformat() if ult else None,
+                    'dias_sin_venta': dias,
+                    'bucket': bucket,
+                    'stock_unidades': stock,
+                    'costo_unitario': costo,
+                    'capital_atrapado': round(capital, 2),
+                })
+                if bucket == 'nunca':
+                    tot['nunca'] += 1
+                elif dias > 365:
+                    tot['b365'] += 1
+                elif dias > 180:
+                    tot['b180'] += 1
+                elif dias > 60:
+                    tot['b60'] += 1
+                else:
+                    tot['b30'] += 1
+                tot['capital_total'] += capital
+                tot['stock_unidades'] += stock
+
+            # Lista de laboratorios para el dropdown filtro
+            sql_labs = _text('''
+                SELECT DISTINCT ol.observer_id, ol.descripcion
+                FROM obs_laboratorios ol
+                JOIN obs_productos op ON op.laboratorio_observer = ol.observer_id
+                WHERE ol.fecha_baja IS NULL AND op.fecha_baja IS NULL
+                ORDER BY ol.descripcion
+            ''')
+            labs = [{'lab_id': r[0], 'nombre': r[1]}
+                    for r in session.execute(sql_labs).fetchall()]
+
+        return jsonify({
+            'hoy': hoy.isoformat(),
+            'kpis': {
+                'productos_total': len(ranking),
+                'b30': tot['b30'],
+                'b60': tot['b60'],
+                'b180': tot['b180'],
+                'b365': tot['b365'],
+                'nunca': tot['nunca'],
+                'capital_atrapado': round(tot['capital_total'], 2),
+                'stock_unidades': tot['stock_unidades'],
+            },
+            'ranking': ranking,
+            'laboratorios': labs,
+        })
+
     @app.route('/obras-sociales/pacientes')
     def os_pacientes():
         """Análisis por paciente prescripto: Pareto, inactivos, drogas frecuentes."""

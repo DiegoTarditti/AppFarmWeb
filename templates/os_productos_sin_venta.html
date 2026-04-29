@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% set nav_active = "obras_sociales" %}
+{% block title %}Productos sin venta{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .kpi-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; }
+    .kpi-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; }
+    .kpi-value { font-size: 22px; font-weight: bold; color: #1e1e1e; margin-top: 4px; }
+    .kpi-sub { font-size: 11px; color: #6f6f6f; margin-top: 2px; }
+    .bucket-badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 6px;
+                    border-radius: 4px; text-transform: uppercase; }
+    .b-30   { background: #fef3c7; color: #92400e; }
+    .b-60   { background: #fed7aa; color: #9a3412; }
+    .b-180  { background: #fecaca; color: #991b1b; }
+    .b-365  { background: #fca5a5; color: #7f1d1d; }
+    .b-nunca { background: #1f2937; color: white; }
+</style>
+{% endblock %}
+
+{% block main %}
+
+{% include '_os_loader.html' %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">🕒 Productos sin venta</h1>
+        <p class="text-xs text-[#6f6f6f] mt-0.5">Capital atrapado en stock que no se mueve. Decisión: dar de baja, ofertar o devolver al proveedor.</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2 text-xs">
+        {% set pantalla_actual = 'Productos sin venta' %}
+        {% include '_os_breadcrumb.html' %}
+    </div>
+</div>
+
+<div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
+    <label for="filtro-lab" class="text-xs text-[#3f6650] font-semibold">Laboratorio:</label>
+    <select id="filtro-lab" title="Filtrar por laboratorio"
+            class="bg-white border border-mint rounded px-2 py-1 text-xs">
+        <option value="">Todos los labs</option>
+    </select>
+    <label for="filtro-limit" class="text-xs text-[#3f6650] font-semibold">Top:</label>
+    <select id="filtro-limit" title="Cantidad de productos a mostrar"
+            class="bg-white border border-mint rounded px-2 py-1 text-xs">
+        <option value="100">100</option>
+        <option value="300" selected>300</option>
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+    </select>
+    <button type="button" onclick="aplicarFiltros()"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1 rounded">
+        Aplicar
+    </button>
+    <input type="text" id="filtro-buscar" title="Buscar producto (multi-token)"
+           placeholder="Buscar producto…" oninput="filtrarRanking()"
+           class="bg-white border border-mint rounded px-2 py-1 text-xs ml-auto w-72">
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5 max-w-7xl mx-auto w-full">
+
+    <!-- KPIs por bucket -->
+    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
+        <div class="kpi-card border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-white">
+            <p class="kpi-label">💸 Capital atrapado</p>
+            <p class="kpi-value text-amber-700" id="kpi-capital">—</p>
+            <p class="kpi-sub" id="kpi-stock-sub">cargando…</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">📦 Productos totales</p>
+            <p class="kpi-value" id="kpi-productos">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🟡 31-60 días</p>
+            <p class="kpi-value text-amber-600" id="kpi-b30">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🟠 61-90 días</p>
+            <p class="kpi-value text-orange-600" id="kpi-b60">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">🔴 91-180 días</p>
+            <p class="kpi-value text-red-600" id="kpi-b180">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">⚫ +1 año sin venta</p>
+            <p class="kpi-value text-red-900" id="kpi-b365">—</p>
+        </div>
+        <div class="kpi-card">
+            <p class="kpi-label">⚰ Nunca vendidos</p>
+            <p class="kpi-value text-[#1f2937]" id="kpi-nunca">—</p>
+            <p class="kpi-sub">Con stock</p>
+        </div>
+    </div>
+
+    <!-- Tabla -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+            <p class="font-semibold text-sm">🏆 Productos con más capital atrapado</p>
+            <span class="text-xs text-[#6f6f6f]" id="ranking-meta"></span>
+        </div>
+        <div class="overflow-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-[#f5f5f5] text-[10px] uppercase text-[#666] tracking-wide">
+                    <tr>
+                        <th class="text-left px-3 py-2 w-8">#</th>
+                        <th class="text-left px-3 py-2">Producto</th>
+                        <th class="text-left px-3 py-2">Lab</th>
+                        <th class="text-right px-3 py-2">Stock</th>
+                        <th class="text-right px-3 py-2">Costo unit.</th>
+                        <th class="text-right px-3 py-2">💸 Capital</th>
+                        <th class="text-right px-3 py-2">Última venta</th>
+                        <th class="text-right px-3 py-2">Sin venta</th>
+                        <th class="text-center px-3 py-2">Bucket</th>
+                    </tr>
+                </thead>
+                <tbody id="ranking-body" class="divide-y divide-surface-border"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <p class="text-[11px] text-[#999] text-center pt-2">
+        Solo productos con stock &gt; 0 y sin venta hace +30 días. Costo de la última factura
+        de compra. El "capital atrapado" es estimado: <code class="font-mono text-[10px]">stock × costo_unitario</code>.
+    </p>
+
+</div>
+
+<script>
+let _data = null;
+
+function fmtMoney(v) { if (v === null || v === undefined) return '—'; return '$' + Number(v).toLocaleString('es-AR', {maximumFractionDigits: 0}); }
+function fmtFecha(s) { if (!s) return '—'; const [y,m,d] = s.split('-'); return `${d}/${m}/${y}`; }
+function multiTokenMatch(haystack, query) {
+    const tokens = query.toLowerCase().split(/\s+/).filter(t => t);
+    if (!tokens.length) return true;
+    const h = haystack.toLowerCase();
+    return tokens.every(t => h.includes(t));
+}
+
+async function cargar() {
+    const lab = document.getElementById('filtro-lab').value;
+    const limit = document.getElementById('filtro-limit').value;
+    const params = new URLSearchParams({limit});
+    if (lab) params.set('lab_id', lab);
+
+    OSLoader.show('Buscando stock muerto…',
+                  'Cruzando catálogo con últimas ventas y costos. Tarda unos segundos.');
+    try {
+        const r = await fetch(`/api/obras-sociales/productos-sin-venta?${params.toString()}`);
+        if (!r.ok) {
+            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+            return;
+        }
+        _data = await r.json();
+        renderKPIs(_data.kpis);
+        renderLabsDropdown(_data.laboratorios, lab);
+        renderRanking(_data.ranking);
+        OSLoader.hide();
+    } catch (e) {
+        OSLoader.error('Error de conexión', 'Revisá la conexión y volvé a intentar.');
+    }
+}
+
+function renderKPIs(k) {
+    document.getElementById('kpi-capital').textContent = fmtMoney(k.capital_atrapado);
+    document.getElementById('kpi-stock-sub').textContent = `${k.stock_unidades.toLocaleString('es-AR')} unidades en stock`;
+    document.getElementById('kpi-productos').textContent = k.productos_total.toLocaleString('es-AR');
+    document.getElementById('kpi-b30').textContent = k.b30.toLocaleString('es-AR');
+    document.getElementById('kpi-b60').textContent = k.b60.toLocaleString('es-AR');
+    document.getElementById('kpi-b180').textContent = k.b180.toLocaleString('es-AR');
+    document.getElementById('kpi-b365').textContent = k.b365.toLocaleString('es-AR');
+    document.getElementById('kpi-nunca').textContent = k.nunca.toLocaleString('es-AR');
+}
+
+function renderLabsDropdown(labs, selected) {
+    const sel = document.getElementById('filtro-lab');
+    if (sel.options.length > 1) return;
+    for (const l of labs) {
+        const opt = document.createElement('option');
+        opt.value = l.lab_id;
+        opt.textContent = l.nombre;
+        if (String(l.lab_id) === String(selected)) opt.selected = true;
+        sel.appendChild(opt);
+    }
+}
+
+function bucketLabel(bucket, dias) {
+    if (bucket === 'nunca') return '<span class="bucket-badge b-nunca">Nunca</span>';
+    if (bucket === 'mas365' || dias > 365) return '<span class="bucket-badge b-365">+1 año</span>';
+    if (dias > 180) return '<span class="bucket-badge b-180">+6 meses</span>';
+    if (dias > 90) return '<span class="bucket-badge b-60">+3 meses</span>';
+    return '<span class="bucket-badge b-30">+30 días</span>';
+}
+
+function renderRanking(ranking) {
+    const filtro = document.getElementById('filtro-buscar').value.trim();
+    const filtrados = filtro ? ranking.filter(r => multiTokenMatch(r.descripcion, filtro)) : ranking;
+    document.getElementById('ranking-meta').textContent =
+        filtro ? `${filtrados.length} de ${ranking.length} productos` : `${ranking.length} productos`;
+    const body = document.getElementById('ranking-body');
+    body.innerHTML = filtrados.map((r, i) => {
+        return `
+            <tr class="hover:bg-[#fafafa]">
+                <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
+                <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[400px]" title="${r.descripcion}">${r.descripcion}</td>
+                <td class="px-3 py-2 text-xs text-[#666] truncate max-w-[180px]" title="${r.lab}">${r.lab || '—'}</td>
+                <td class="px-3 py-2 text-right font-mono">${r.stock_unidades.toLocaleString('es-AR')}</td>
+                <td class="px-3 py-2 text-right font-mono text-xs text-[#888]">${r.costo_unitario ? fmtMoney(r.costo_unitario) : '<span class="text-amber-600">s/d</span>'}</td>
+                <td class="px-3 py-2 text-right font-mono font-semibold text-amber-700">${fmtMoney(r.capital_atrapado)}</td>
+                <td class="px-3 py-2 text-right text-xs">${fmtFecha(r.ultima_venta)}</td>
+                <td class="px-3 py-2 text-right text-xs">${r.dias_sin_venta !== null ? `${r.dias_sin_venta}d` : '—'}</td>
+                <td class="px-3 py-2 text-center">${bucketLabel(r.bucket, r.dias_sin_venta || 9999)}</td>
+            </tr>
+        `;
+    }).join('');
+    if (!filtrados.length) {
+        body.innerHTML = '<tr><td colspan="9" class="px-3 py-8 text-center text-[#999]">Sin resultados.</td></tr>';
+    }
+}
+
+function filtrarRanking() { if (_data) renderRanking(_data.ranking); }
+function aplicarFiltros() { cargar(); }
+
+cargar();
+</script>
+
+{% endblock %}

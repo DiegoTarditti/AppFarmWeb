@@ -164,14 +164,15 @@
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">% de cada categoría / forma farmacéutica / monodroga.</p>
                 </div>
 
-                <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
+                <a href="{{ url_for('os_productos_sin_venta') }}"
+                   class="block bg-sky-50/60 border border-sky-200 rounded-xl p-4 hover:bg-sky-100/60 hover:border-sky-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">🕒</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">⭐ NUEVO</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Productos sin venta</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Catálogo que tenés cargado pero no vende hace N días. Decisión: bajar de stock o desactivar.</p>
-                </div>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Capital atrapado en stock muerto. Buckets +30d/+90d/+6m/+1año/nunca-vendidos. Decisión: bajar, ofertar, devolver.</p>
+                </a>
             </div>
         </div>
 
