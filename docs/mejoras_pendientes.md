@@ -226,6 +226,13 @@ una tarea aparte.
 ### ~~Bot de Telegram~~ (descartado a favor del buzón Render)
 - Mantener nota: si por alguna razón se necesita un canal de comandos por *push* (que la PC reciba inmediatamente sin polling), Telegram long-polling sigue siendo la alternativa. Por ahora el polling outbound al buzón Render alcanza.
 
+### Setup Tailscale + VSCode Remote SSH (doc listo, falta ejecutar)
+- **Trigger**: cuando se quiera editar/operar la PC farmacia desde cualquier laptop como si fuese local.
+- **Esfuerzo**: 30 min de instalación.
+- **Doc completo**: ver [docs/tailscale_vscode_remoto.md](tailscale_vscode_remoto.md) — paso a paso para Windows farmacia + laptop.
+- **Decisión pendiente**: estructura de cuentas Tailscale (ver doc para opciones — una cuenta tuya con todas las PCs, vs cuenta de Lisandro en farmacia + cuenta propia + share).
+- **Por qué**: te queda terminal + editor remoto en cualquier lado, sin abrir puertos. Reemplaza muchos casos de uso del panel remoto (que sigue siendo útil para celular, multi-farmacia, audit trail).
+
 ---
 
 ## 🌟 Features pendientes
