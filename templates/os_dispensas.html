@@ -4,6 +4,9 @@
 {% block title %}Dispensas OS — Farmacia{% endblock %}
 
 {% block main %}
+
+{% include '_os_loader.html' %}
+
 <!-- Top bar -->
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">Dispensas Obras Sociales</h1>
@@ -215,4 +218,28 @@
     <div class="px-6 py-12 text-center text-sm text-[#6f6f6f]">No hay dispensas que coincidan con los filtros.</div>
     {% endif %}
 </div>
+
+<script>
+// Mostrar loader cuando navega/filtra (la pantalla es SSR, espera mientras
+// el server arma los datos — la query puede tardar en períodos largos).
+document.addEventListener('DOMContentLoaded', () => {
+    // Submit del form de filtros
+    document.querySelectorAll('form[method="get"]').forEach(form => {
+        form.addEventListener('submit', () => {
+            OSLoader.show('Cargando dispensas…',
+                          'Cruzando ventas con clientes, OS y planes. Tarda más en períodos largos.');
+        });
+    });
+    // Links de paginación / export / volver al dashboard
+    document.querySelectorAll('a[href]').forEach(a => {
+        const href = a.getAttribute('href') || '';
+        if (href.includes('/obras-sociales/dispensas') || href.includes('/obras-sociales/dispensas/export')) {
+            a.addEventListener('click', (e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey) return;  // permitir abrir en nueva pestaña
+                OSLoader.show('Cargando dispensas…');
+            });
+        }
+    });
+});
+</script>
 {% endblock %}

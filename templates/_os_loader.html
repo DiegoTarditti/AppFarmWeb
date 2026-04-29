@@ -14,6 +14,7 @@
     .osl-overlay {
         position: fixed; inset: 0; z-index: 200;
         background: rgba(15, 30, 25, 0.45);
+        -webkit-backdrop-filter: blur(3px);
         backdrop-filter: blur(3px);
         display: flex; align-items: center; justify-content: center;
         animation: oslFadeIn 0.18s ease-out;
@@ -114,7 +115,7 @@
         <div class="osl-progress" id="osl-progress">
             <div class="osl-progress-bar"></div>
         </div>
-        <button class="osl-btn-cerrar" onclick="OSLoader.hide()">Cerrar</button>
+        <button type="button" class="osl-btn-cerrar" onclick="OSLoader.hide()">Cerrar</button>
     </div>
 </div>
 
@@ -126,6 +127,9 @@ window.OSLoader = (function () {
     const titulo = () => document.getElementById('osl-titulo');
     const sub = () => document.getElementById('osl-sub');
 
+    let _shownAt = 0;
+    const MIN_VISIBLE_MS = 500;  // tiempo mínimo visible para que el ojo lo vea
+
     return {
         show(mensaje, subMensaje) {
             const c = card();
@@ -135,9 +139,16 @@ window.OSLoader = (function () {
             sub().textContent = subMensaje || '';
             sub().style.display = subMensaje ? 'block' : 'none';
             overlay().classList.remove('osl-hidden');
+            _shownAt = Date.now();
         },
         hide() {
-            overlay().classList.add('osl-hidden');
+            const elapsed = Date.now() - _shownAt;
+            if (elapsed < MIN_VISIBLE_MS) {
+                setTimeout(() => overlay().classList.add('osl-hidden'),
+                           MIN_VISIBLE_MS - elapsed);
+            } else {
+                overlay().classList.add('osl-hidden');
+            }
         },
         error(tituloMsg, mensajeMsg) {
             const c = card();
