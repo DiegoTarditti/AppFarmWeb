@@ -21,6 +21,8 @@
 
 {% block main %}
 
+{% include '_os_loader.html' %}
+
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <div>
         <h1 class="text-base font-bold text-[#1e1e1e]">💚 Rentabilidad por OS</h1>
@@ -33,19 +35,19 @@
 
 <!-- Filtros -->
 <div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
-    <label class="text-xs text-[#3f6650] font-semibold">Desde:</label>
-    <input type="date" id="filtro-desde" value="{{ desde }}"
+    <label for="filtro-desde" class="text-xs text-[#3f6650] font-semibold">Desde:</label>
+    <input type="date" id="filtro-desde" value="{{ desde }}" title="Fecha de inicio del período"
            class="bg-white border border-mint rounded px-2 py-1 text-xs">
-    <label class="text-xs text-[#3f6650] font-semibold">Hasta:</label>
-    <input type="date" id="filtro-hasta" value="{{ hasta }}"
+    <label for="filtro-hasta" class="text-xs text-[#3f6650] font-semibold">Hasta:</label>
+    <input type="date" id="filtro-hasta" value="{{ hasta }}" title="Fecha de fin del período"
            class="bg-white border border-mint rounded px-2 py-1 text-xs">
-    <button onclick="aplicarFiltros()"
+    <button type="button" onclick="aplicarFiltros()"
             class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1 rounded">
         Aplicar
     </button>
-    <button onclick="atajoFecha('mes')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">Mes</button>
-    <button onclick="atajoFecha('30d')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">30 días</button>
-    <button onclick="atajoFecha('12m')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">12 meses</button>
+    <button type="button" onclick="atajoFecha('mes')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">Mes</button>
+    <button type="button" onclick="atajoFecha('30d')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">30 días</button>
+    <button type="button" onclick="atajoFecha('12m')" class="text-[10px] px-2 py-1 rounded border border-mint text-[#3f6650] hover:bg-mint">12 meses</button>
     <input type="text" id="filtro-buscar-os" placeholder="Buscar OS (multi-token)…"
            oninput="filtrarRanking()"
            class="bg-white border border-mint rounded px-2 py-1 text-xs ml-auto w-64">
@@ -157,12 +159,25 @@ function multiTokenMatch(haystack, query) {
 async function cargar() {
     const desde = document.getElementById('filtro-desde').value;
     const hasta = document.getElementById('filtro-hasta').value;
-    const r = await fetch(`/api/obras-sociales/rentabilidad?desde=${desde}&hasta=${hasta}`);
-    _data = await r.json();
-    renderKPIs(_data.kpis);
-    renderAlertas(_data.alertas);
-    renderChart(_data.serie_temporal);
-    renderRanking(_data.ranking);
+    OSLoader.show('Calculando rentabilidad…',
+                  'Cruzando ventas con costos de compra. Esto tarda unos segundos en períodos grandes.');
+    try {
+        const r = await fetch(`/api/obras-sociales/rentabilidad?desde=${desde}&hasta=${hasta}`);
+        if (!r.ok) {
+            OSLoader.error('No pudimos cargar los datos',
+                           `Servidor respondió ${r.status}. Probá refrescar o achicar el rango.`);
+            return;
+        }
+        _data = await r.json();
+        renderKPIs(_data.kpis);
+        renderAlertas(_data.alertas);
+        renderChart(_data.serie_temporal);
+        renderRanking(_data.ranking);
+        OSLoader.hide();
+    } catch (e) {
+        OSLoader.error('Error de conexión',
+                       'No pudimos llegar al servidor. Revisá la conexión y volvé a intentar.');
+    }
 }
 
 function renderKPIs(k) {

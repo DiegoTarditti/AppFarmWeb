@@ -1,0 +1,153 @@
+{# Loader reutilizable del módulo OS — overlay semi-transparente + card central
+   con corazón emerald latiendo + mensaje + sub-mensaje opcional.
+
+   Uso desde cualquier template OS:
+     {% include '_os_loader.html' %}
+   Y en JS:
+     OSLoader.show('Calculando rentabilidad…', 'Cruzando ventas con costos.');
+     OSLoader.hide();
+
+   También expone OSLoader.error(titulo, mensaje) para mostrar estado de error.
+#}
+
+<style>
+    .osl-overlay {
+        position: fixed; inset: 0; z-index: 200;
+        background: rgba(15, 30, 25, 0.45);
+        backdrop-filter: blur(3px);
+        display: flex; align-items: center; justify-content: center;
+        animation: oslFadeIn 0.18s ease-out;
+    }
+    .osl-overlay.osl-hidden { display: none; }
+    @keyframes oslFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    .osl-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+        padding: 28px 32px;
+        text-align: center;
+        max-width: 420px;
+        animation: oslPopIn 0.22s ease-out;
+    }
+    @keyframes oslPopIn {
+        from { opacity: 0; transform: translateY(8px) scale(0.96); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .osl-icon-wrap {
+        width: 72px; height: 72px;
+        margin: 0 auto 14px;
+        position: relative;
+    }
+    .osl-heart {
+        font-size: 48px; line-height: 1;
+        animation: oslHeartBeat 1.2s ease-in-out infinite;
+        display: inline-block;
+    }
+    @keyframes oslHeartBeat {
+        0%, 100% { transform: scale(1); }
+        15% { transform: scale(1.18); }
+        30% { transform: scale(1); }
+        45% { transform: scale(1.12); }
+        60% { transform: scale(1); }
+    }
+    .osl-ring {
+        position: absolute; inset: 0;
+        border: 3px solid #10B981;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: oslSpin 1.6s linear infinite;
+    }
+    @keyframes oslSpin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+    .osl-titulo {
+        font-size: 16px; font-weight: 700; color: #1e1e1e;
+        margin-bottom: 6px;
+    }
+    .osl-sub {
+        font-size: 12px; color: #6f6f6f;
+        line-height: 1.4;
+    }
+    .osl-progress {
+        margin-top: 14px;
+        height: 4px; background: #f0f0f0; border-radius: 4px; overflow: hidden;
+    }
+    .osl-progress-bar {
+        height: 100%; background: linear-gradient(90deg, #10B981, #34D399);
+        border-radius: 4px;
+        animation: oslProgress 1.8s ease-in-out infinite;
+        width: 40%;
+    }
+    @keyframes oslProgress {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+    }
+    /* Estado de error */
+    .osl-card.osl-error .osl-ring { border-color: #DC2626; border-top-color: transparent; animation: none; opacity: 0; }
+    .osl-card.osl-error .osl-heart { animation: none; color: #DC2626; }
+    .osl-card.osl-error .osl-progress { display: none; }
+    .osl-card.osl-error .osl-btn-cerrar { display: inline-block; }
+    .osl-btn-cerrar {
+        display: none;
+        margin-top: 14px;
+        padding: 6px 14px;
+        background: #DC2626; color: white;
+        border: none; border-radius: 8px;
+        font-size: 12px; font-weight: 600;
+        cursor: pointer;
+    }
+    .osl-btn-cerrar:hover { background: #B91C1C; }
+</style>
+
+<div id="os-loader" class="osl-overlay osl-hidden">
+    <div class="osl-card" id="osl-card">
+        <div class="osl-icon-wrap">
+            <span class="osl-heart" id="osl-icon">💚</span>
+            <div class="osl-ring" id="osl-ring"></div>
+        </div>
+        <p class="osl-titulo" id="osl-titulo">Cargando…</p>
+        <p class="osl-sub" id="osl-sub"></p>
+        <div class="osl-progress" id="osl-progress">
+            <div class="osl-progress-bar"></div>
+        </div>
+        <button class="osl-btn-cerrar" onclick="OSLoader.hide()">Cerrar</button>
+    </div>
+</div>
+
+<script>
+window.OSLoader = (function () {
+    const overlay = () => document.getElementById('os-loader');
+    const card = () => document.getElementById('osl-card');
+    const icon = () => document.getElementById('osl-icon');
+    const titulo = () => document.getElementById('osl-titulo');
+    const sub = () => document.getElementById('osl-sub');
+
+    return {
+        show(mensaje, subMensaje) {
+            const c = card();
+            c.classList.remove('osl-error');
+            icon().textContent = '💚';
+            titulo().textContent = mensaje || 'Cargando…';
+            sub().textContent = subMensaje || '';
+            sub().style.display = subMensaje ? 'block' : 'none';
+            overlay().classList.remove('osl-hidden');
+        },
+        hide() {
+            overlay().classList.add('osl-hidden');
+        },
+        error(tituloMsg, mensajeMsg) {
+            const c = card();
+            c.classList.add('osl-error');
+            icon().textContent = '⚠';
+            titulo().textContent = tituloMsg || 'Error';
+            sub().textContent = mensajeMsg || 'Algo salió mal.';
+            sub().style.display = 'block';
+            overlay().classList.remove('osl-hidden');
+        },
+    };
+})();
+</script>
