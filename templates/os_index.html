@@ -3,6 +3,8 @@
 {% block title %}Obras Sociales{% endblock %}
 {% block main %}
 
+{% include '_os_loader.html' %}
+
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
     <h1 class="text-base font-bold text-[#1e1e1e]">🏥 Obras Sociales</h1>
     <p class="text-xs text-[#6f6f6f] mt-0.5">Análisis financiero, prescripción, catálogo y más — el módulo que diferencia a una farmacia profesional.</p>
@@ -338,5 +340,25 @@
 
     </div>
 </div>
+
+<script>
+// Mostrar el corazón latiendo cuando el usuario clickea una card del hub.
+// La página navega y el overlay del HTML viejo queda visible hasta que la
+// nueva pantalla termine de cargar (Render tarda 1-3s por request SSR).
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('a[href]').forEach(a => {
+        const href = a.getAttribute('href') || '';
+        // Solo cards que llevan a otra pantalla del módulo OS (mismo origen).
+        if (!href.startsWith('/obras-sociales') && !href.startsWith('/obs/')) return;
+        if (href === window.location.pathname) return;  // mismo destino, no mostrar
+        a.addEventListener('click', (e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+            // Texto contextual según destino
+            const titulo = a.querySelector('p.font-bold')?.textContent?.trim() || 'Cargando…';
+            OSLoader.show(`Abriendo ${titulo}…`, 'Estamos trayendo los datos para vos.');
+        });
+    });
+});
+</script>
 
 {% endblock %}
