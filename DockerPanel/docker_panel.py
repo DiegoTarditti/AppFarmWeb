@@ -1940,6 +1940,137 @@ def _start_helper_server(panel):
 # === END HELPER HTTP ===
 
 
+# ─── Auto-start de Docker Desktop ──────────────────────────────────────────
+
+def _docker_corriendo():
+    """Devuelve True si el daemon de Docker responde."""
+    try:
+        r = subprocess.run(
+            ['docker', 'info'],
+            capture_output=True,
+            timeout=5,
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+        return r.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return False
+
+
+def _docker_desktop_path():
+    """Busca el ejecutable de Docker Desktop en ubicaciones típicas de Windows."""
+    candidatos = [
+        os.path.expandvars(r'%ProgramFiles%\Docker\Docker\Docker Desktop.exe'),
+        os.path.expandvars(r'%ProgramW6432%\Docker\Docker\Docker Desktop.exe'),
+        os.path.expandvars(r'%LOCALAPPDATA%\Programs\Docker\Docker\Docker Desktop.exe'),
+    ]
+    for p in candidatos:
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
+def _arrancar_docker_desktop_con_splash(timeout_s=90):
+    """Si Docker no está corriendo, lo arranca y muestra splash hasta que esté listo.
+
+    Returns:
+        True si Docker quedó corriendo (ya estaba o se arrancó OK).
+        False si timeout / no se pudo arrancar.
+    """
+    if _docker_corriendo():
+        return True
+
+    exe = _docker_desktop_path()
+    if not exe:
+        # No instalado: avisar y dejar que el user decida
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            'Docker Desktop no encontrado',
+            'No encontré Docker Desktop instalado.\n\n'
+            'Buscá e instalá Docker Desktop desde:\n'
+            'https://www.docker.com/products/docker-desktop/\n\n'
+            'Después volvé a abrir DockerPanel.',
+        )
+        root.destroy()
+        return False
+
+    # Lanzar Docker Desktop desacoplado (no muere si DockerPanel se cierra).
+    try:
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen([exe], creationflags=flags, close_fds=True)
+    except Exception as e:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror('Error al arrancar Docker Desktop', f'No se pudo lanzar:\n{exe}\n\n{e}')
+        root.destroy()
+        return False
+
+    # Splash window con feedback
+    splash = tk.Tk()
+    splash.title('Docker Panel')
+    splash.configure(bg='#1c1c1e')
+    splash.resizable(False, False)
+    # Centrar
+    w, h = 360, 140
+    sw, sh = splash.winfo_screenwidth(), splash.winfo_screenheight()
+    splash.geometry(f'{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}')
+    splash.overrideredirect(True)  # sin barra de título
+
+    tk.Label(splash, text='🐳 Iniciando Docker Desktop',
+             bg='#1c1c1e', fg='#EAB308',
+             font=('Segoe UI', 12, 'bold')).pack(pady=(20, 8))
+    estado = tk.Label(splash, text='Arrancando…',
+                      bg='#1c1c1e', fg='#888',
+                      font=('Segoe UI', 9))
+    estado.pack(pady=(0, 6))
+    progreso = tk.Label(splash, text='',
+                        bg='#1c1c1e', fg='#666',
+                        font=('Consolas', 8))
+    progreso.pack()
+
+    splash.update()
+
+    listo = [False]
+
+    def _polear():
+        for i in range(timeout_s):
+            if _docker_corriendo():
+                listo[0] = True
+                splash.after(0, splash.destroy)
+                return
+            secs_total = i + 1
+            try:
+                splash.after(0, lambda s=secs_total: estado.config(
+                    text=f'Esperando daemon… {s}s'))
+                splash.after(0, lambda d='.' * ((i % 3) + 1): progreso.config(text=d))
+            except tk.TclError:
+                return  # ventana cerrada
+            time.sleep(1)
+        # Timeout
+        splash.after(0, splash.destroy)
+
+    threading.Thread(target=_polear, daemon=True).start()
+    splash.mainloop()
+
+    if not listo[0]:
+        # Timeout — preguntar si seguir igual
+        root = tk.Tk()
+        root.withdraw()
+        seguir = messagebox.askyesno(
+            'Docker no respondió',
+            f'Docker Desktop no levantó en {timeout_s}s.\n\n'
+            '¿Querés abrir DockerPanel igual?\n'
+            '(Algunas funciones no van a andar hasta que Docker esté listo)',
+        )
+        root.destroy()
+        return seguir
+    return True
+
+
 if __name__ == "__main__":
+    if not _arrancar_docker_desktop_con_splash():
+        # Usuario decidió no abrir, o error fatal.
+        import sys
+        sys.exit(1)
     app = DockerPanel()
     app.mainloop()
