@@ -541,8 +541,14 @@ def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt, fuente='manual
     """Agrega un código alternativo al producto ERP si no está ya registrado.
 
     Escribe en ambos lados durante la migración:
-      - Si hay slot libre en alt1/2/3: lo llena (compat con código que aún lee alts).
-      - SIEMPRE inserta en producto_codigos_barra (1-a-N, sin límite, con trazabilidad).
+      - Por default: llena slots libres en alt1/2/3 + persiste en
+        producto_codigos_barra (1-a-N).
+      - Si la env var `EAN_LEGACY_ALTS_DISABLED=1` está set: solo escribe
+        en producto_codigos_barra. Útil para validar Fase 4 antes de
+        dropear las columnas legacy.
+
+    Siempre inserta en producto_codigos_barra (1-a-N, sin límite, con
+    trazabilidad de fuente y factura).
     """
     if not codigo_barra_erp or not codigo_barra_alt:
         return
@@ -555,13 +561,18 @@ def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt, fuente='manual
         return
     existing = {prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3, prod.codigo_barra}
     if codigo_barra_alt not in existing:
-        if not prod.codigo_barra_alt1:
-            prod.codigo_barra_alt1 = codigo_barra_alt
-        elif not prod.codigo_barra_alt2:
-            prod.codigo_barra_alt2 = codigo_barra_alt
-        elif not prod.codigo_barra_alt3:
-            prod.codigo_barra_alt3 = codigo_barra_alt
-        # Si los 3 slots están ocupados, no rompe — la nueva tabla acepta sin límite.
+        # Feature flag Fase 4: si está activo, NO escribir en alt1/2/3.
+        # Solo cae a producto_codigos_barra abajo.
+        import os as _os
+        legacy_disabled = (_os.environ.get('EAN_LEGACY_ALTS_DISABLED', '').strip() == '1')
+        if not legacy_disabled:
+            if not prod.codigo_barra_alt1:
+                prod.codigo_barra_alt1 = codigo_barra_alt
+            elif not prod.codigo_barra_alt2:
+                prod.codigo_barra_alt2 = codigo_barra_alt
+            elif not prod.codigo_barra_alt3:
+                prod.codigo_barra_alt3 = codigo_barra_alt
+            # Si los 3 slots están ocupados, no rompe — la nueva tabla acepta sin límite.
     # Tabla 1-a-N: insert idempotente (UNIQUE constraint).
     try:
         from database import ProductoCodigoBarra
