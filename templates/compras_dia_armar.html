@@ -18,8 +18,15 @@
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
     /* El thead sticky tiene que quedar DEBAJO del panel del gráfico (también
        sticky top:0). Le damos un offset = altura aprox del panel. */
-    #panel-grafico { z-index: 30; }
+    #panel-grafico { z-index: 30; transition: max-height 0.18s ease-out; }
+    /* Colapsado: ocultar cuerpo del gráfico, dejar solo el header con botón */
+    #panel-grafico.colapsado #grafico-body { display: none; }
+    #panel-grafico.colapsado { padding-top: 6px; padding-bottom: 6px; }
     table.tabla-armar thead { position: sticky; top: var(--chart-h, 360px); z-index: 20; }
+    /* En pantallas chicas, gráficos más bajos por default */
+    @media (max-width: 1280px) {
+        .chart-canvas-wrap { height: 180px !important; }
+    }
 </style>
 {% endblock %}
 
@@ -82,16 +89,23 @@
 
 <!-- Panel gráfico sticky arriba (split: Año | Mes) -->
 <div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
-    <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate mb-2">
-        Seleccioná un producto de la lista para ver el gráfico
-    </p>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <div class="flex items-center justify-between mb-2 gap-2">
+        <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
+            Seleccioná un producto de la lista para ver el gráfico
+        </p>
+        <button type="button" id="btn-toggle-grafico" onclick="toggleGrafico()"
+                class="text-[11px] px-2 py-1 rounded border border-surface-border text-[#6f6f6f] hover:bg-[#f5f5f5] hover:text-[#1e1e1e] transition-colors flex-shrink-0"
+                title="Mostrar/ocultar gráficos para ganar espacio para la tabla">
+            <span id="btn-toggle-grafico-label">▾ Ocultar gráfico</span>
+        </button>
+    </div>
+    <div id="grafico-body" class="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <!-- Año -->
         <div>
             <div class="flex items-center justify-between mb-1">
                 <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Año (12m)</p>
             </div>
-            <div class="bg-white border border-surface-border rounded-lg relative" style="height:240px">
+            <div class="bg-white border border-surface-border rounded-lg relative chart-canvas-wrap" style="height:200px">
                 <canvas id="chart-canvas-anio"></canvas>
                 <p id="chart-empty-anio" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
             </div>
@@ -103,7 +117,7 @@
                 <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Mes (30 días)</p>
                 <p id="chart-stats-mes" class="text-[10px] text-[#6f6f6f] font-mono">&nbsp;</p>
             </div>
-            <div class="bg-white border border-surface-border rounded-lg relative" style="height:240px">
+            <div class="bg-white border border-surface-border rounded-lg relative chart-canvas-wrap" style="height:200px">
                 <canvas id="chart-canvas-mes"></canvas>
                 <p id="chart-empty-mes" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
             </div>
@@ -446,6 +460,43 @@ function _ajustarOffsetThead() {
 _ajustarOffsetThead();
 window.addEventListener('resize', _ajustarOffsetThead);
 new ResizeObserver(_ajustarOffsetThead).observe(document.getElementById('panel-grafico'));
+
+// ── Toggle gráfico colapsable (persiste en localStorage) ────────────────
+const _GRAFICO_LS_KEY = 'compras_dia_grafico_collapsed';
+
+function _aplicarEstadoGrafico(colapsado) {
+    const panel = document.getElementById('panel-grafico');
+    const lbl = document.getElementById('btn-toggle-grafico-label');
+    if (!panel || !lbl) return;
+    if (colapsado) {
+        panel.classList.add('colapsado');
+        lbl.textContent = '▸ Mostrar gráfico';
+    } else {
+        panel.classList.remove('colapsado');
+        lbl.textContent = '▾ Ocultar gráfico';
+    }
+    setTimeout(_ajustarOffsetThead, 200);  // tras la transición
+}
+
+function toggleGrafico() {
+    const panel = document.getElementById('panel-grafico');
+    const colapsadoNuevo = !panel.classList.contains('colapsado');
+    _aplicarEstadoGrafico(colapsadoNuevo);
+    try { localStorage.setItem(_GRAFICO_LS_KEY, colapsadoNuevo ? '1' : '0'); } catch (e) {}
+}
+
+(function _initEstadoGrafico() {
+    let colapsado = false;
+    try {
+        const v = localStorage.getItem(_GRAFICO_LS_KEY);
+        if (v === '1') colapsado = true;
+        else if (v === '0') colapsado = false;
+        else colapsado = window.innerWidth < 1024;  // 1ra vez: colapsado en pantallas chicas
+    } catch (e) {
+        colapsado = window.innerWidth < 1024;
+    }
+    _aplicarEstadoGrafico(colapsado);
+})();
 
 // ── Agregar producto último momento ─────────────────────────────────
 const _PROV_ID = {{ prov.id }};
