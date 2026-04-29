@@ -86,6 +86,28 @@
                 <p class="text-xs text-[#6b8778]">Elegí por dónde trabajar hoy</p>
             </div>
 
+            <!-- Card destacada: Pedidos del día -->
+            <a href="{{ url_for('compras_dia') }}"
+               class="block mb-5 bg-gradient-to-r from-amber-50 to-amber-100 hover:from-amber-100 hover:to-amber-200
+                      border-2 border-amber-300 hover:border-amber-500 rounded-xl px-5 py-4
+                      transition-all group">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-amber-500 group-hover:bg-amber-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm transition-colors">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h2 class="text-base font-bold text-amber-900">📦 Pedidos del día</h2>
+                        <p class="text-xs text-amber-800/80 mt-0.5">Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria</p>
+                    </div>
+                    <span class="text-amber-900 group-hover:text-amber-950 font-bold text-sm flex items-center gap-1 flex-shrink-0">
+                        Ir <span class="group-hover:translate-x-0.5 transition-transform">→</span>
+                    </span>
+                </div>
+            </a>
+
             <!-- 3 entity hero cards -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
 
