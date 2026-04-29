@@ -12,6 +12,9 @@ import random
 from datetime import date, datetime, timedelta
 
 from flask import jsonify, render_template, request
+from sqlalchemy import text as _text
+
+import database
 
 # ── Mock data ─────────────────────────────────────────────────────────
 
@@ -186,10 +189,6 @@ def init_app(app):
         from datetime import date as _date
         from datetime import datetime as _dt
 
-        from sqlalchemy import text as _text
-
-        import database
-
         hoy = _dt.now().date()
         desde_str = (request.args.get('desde') or '').strip()
         hasta_str = (request.args.get('hasta') or '').strip()
@@ -217,10 +216,6 @@ def init_app(app):
         from datetime import date as _date
         from datetime import datetime as _dt
 
-        from sqlalchemy import text as _text
-
-        import database
-
         hoy = _dt.now().date()
         try:
             desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
@@ -243,12 +238,27 @@ def init_app(app):
                       AND codigo_barra IS NOT NULL
                 ),
                 costo_por_observer AS (
-                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
-                    FROM ultima_compra uc
-                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
-                    JOIN productos p ON p.id = pcb.producto_id
-                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
-                    GROUP BY p.observer_id
+                    -- Dos paths para mapear EAN→producto_observer (necesitamos un solo
+                    -- row por observer_id en el outer LEFT JOIN, sino duplica SUMs).
+                    SELECT observer_id, MAX(costo_unitario) AS costo_unitario
+                    FROM (
+                        -- Path 1: tabla EAN→producto_observer del propio ObServer
+                        SELECT ocb.producto_observer AS observer_id,
+                               MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN obs_codigos_barras ocb ON ocb.codigo_barras = uc.codigo_barra
+                        WHERE uc.rn = 1 AND ocb.fecha_baja IS NULL
+                        GROUP BY ocb.producto_observer
+                        UNION ALL
+                        -- Path 2 (fallback): cadena local productos↔observer
+                        SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                        JOIN productos p ON p.id = pcb.producto_id
+                        WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                        GROUP BY p.observer_id
+                    ) merged
+                    GROUP BY observer_id
                 )
                 SELECT
                     ovd.obra_social_observer AS os_id,
@@ -341,12 +351,27 @@ def init_app(app):
                       AND codigo_barra IS NOT NULL
                 ),
                 costo_por_observer AS (
-                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
-                    FROM ultima_compra uc
-                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
-                    JOIN productos p ON p.id = pcb.producto_id
-                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
-                    GROUP BY p.observer_id
+                    -- Dos paths para mapear EAN→producto_observer (necesitamos un solo
+                    -- row por observer_id en el outer LEFT JOIN, sino duplica SUMs).
+                    SELECT observer_id, MAX(costo_unitario) AS costo_unitario
+                    FROM (
+                        -- Path 1: tabla EAN→producto_observer del propio ObServer
+                        SELECT ocb.producto_observer AS observer_id,
+                               MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN obs_codigos_barras ocb ON ocb.codigo_barras = uc.codigo_barra
+                        WHERE uc.rn = 1 AND ocb.fecha_baja IS NULL
+                        GROUP BY ocb.producto_observer
+                        UNION ALL
+                        -- Path 2 (fallback): cadena local productos↔observer
+                        SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                        JOIN productos p ON p.id = pcb.producto_id
+                        WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                        GROUP BY p.observer_id
+                    ) merged
+                    GROUP BY observer_id
                 )
                 SELECT
                     ovd.fecha_estadistica AS fecha,
@@ -406,10 +431,6 @@ def init_app(app):
         """
         from datetime import datetime as _dt
 
-        from sqlalchemy import text as _text
-
-        import database
-
         hoy = _dt.now().date()
         try:
             limit = max(50, min(int(request.args.get('limit', '300')), 1000))
@@ -436,12 +457,27 @@ def init_app(app):
                       AND codigo_barra IS NOT NULL
                 ),
                 costo_por_observer AS (
-                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
-                    FROM ultima_compra uc
-                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
-                    JOIN productos p ON p.id = pcb.producto_id
-                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
-                    GROUP BY p.observer_id
+                    -- Dos paths para mapear EAN→producto_observer (necesitamos un solo
+                    -- row por observer_id en el outer LEFT JOIN, sino duplica SUMs).
+                    SELECT observer_id, MAX(costo_unitario) AS costo_unitario
+                    FROM (
+                        -- Path 1: tabla EAN→producto_observer del propio ObServer
+                        SELECT ocb.producto_observer AS observer_id,
+                               MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN obs_codigos_barras ocb ON ocb.codigo_barras = uc.codigo_barra
+                        WHERE uc.rn = 1 AND ocb.fecha_baja IS NULL
+                        GROUP BY ocb.producto_observer
+                        UNION ALL
+                        -- Path 2 (fallback): cadena local productos↔observer
+                        SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                        JOIN productos p ON p.id = pcb.producto_id
+                        WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                        GROUP BY p.observer_id
+                    ) merged
+                    GROUP BY observer_id
                 ),
                 ult_venta AS (
                     SELECT producto_observer, MAX(fecha_estadistica) AS ultima
@@ -568,10 +604,6 @@ def init_app(app):
         from datetime import date as _date
         from datetime import datetime as _dt
         from datetime import timedelta as _td
-
-        from sqlalchemy import text as _text
-
-        import database
 
         hoy = _dt.now().date()
         try:
@@ -821,8 +853,6 @@ def init_app(app):
           - ultima_fecha: MAX(fecha_estadistica) (último día con dispensas)
           - ultimo_sync: MAX(sync_en) (cuándo se trajo la última fila)
         """
-        from sqlalchemy import text as _text
-        import database
         with database.get_db() as session:
             row = session.execute(_text(
                 'SELECT COUNT(*) AS n, MAX(fecha_estadistica) AS ult_f, MAX(sync_en) AS ult_s '
@@ -850,10 +880,6 @@ def init_app(app):
         """
         from datetime import datetime as _dt
         from datetime import timedelta as _td
-
-        from sqlalchemy import text as _text
-
-        import database
 
         if tipo not in ('medico', 'paciente', 'os', 'producto'):
             return jsonify({'error': 'Tipo inválido'}), 400
@@ -1047,10 +1073,6 @@ def init_app(app):
         from datetime import date as _date
         from datetime import datetime as _dt
         from datetime import timedelta as _td
-
-        from sqlalchemy import text as _text
-
-        import database
 
         hoy = _dt.now().date()
         try:
@@ -1341,10 +1363,6 @@ def init_app(app):
         from datetime import datetime as _dt
         from datetime import timedelta as _td
 
-        from sqlalchemy import text as _text
-
-        import database
-
         hoy = _dt.now().date()
         limite_antiguo = hoy - _td(days=540)  # 18 meses
 
@@ -1489,10 +1507,6 @@ def init_app(app):
         from datetime import date as _date
         from datetime import datetime as _dt
 
-        from sqlalchemy import text as _text
-
-        import database
-
         hoy = _dt.now().date()
         try:
             desde = _date.fromisoformat(request.args.get('desde', '')) or hoy.replace(day=1)
@@ -1527,12 +1541,27 @@ def init_app(app):
                       AND codigo_barra IS NOT NULL
                 ),
                 costo_por_observer AS (
-                    SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
-                    FROM ultima_compra uc
-                    JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
-                    JOIN productos p ON p.id = pcb.producto_id
-                    WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
-                    GROUP BY p.observer_id
+                    -- Dos paths para mapear EAN→producto_observer (necesitamos un solo
+                    -- row por observer_id en el outer LEFT JOIN, sino duplica SUMs).
+                    SELECT observer_id, MAX(costo_unitario) AS costo_unitario
+                    FROM (
+                        -- Path 1: tabla EAN→producto_observer del propio ObServer
+                        SELECT ocb.producto_observer AS observer_id,
+                               MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN obs_codigos_barras ocb ON ocb.codigo_barras = uc.codigo_barra
+                        WHERE uc.rn = 1 AND ocb.fecha_baja IS NULL
+                        GROUP BY ocb.producto_observer
+                        UNION ALL
+                        -- Path 2 (fallback): cadena local productos↔observer
+                        SELECT p.observer_id, MAX(uc.precio_unitario) AS costo_unitario
+                        FROM ultima_compra uc
+                        JOIN producto_codigos_barra pcb ON pcb.codigo_barra = uc.codigo_barra
+                        JOIN productos p ON p.id = pcb.producto_id
+                        WHERE uc.rn = 1 AND p.observer_id IS NOT NULL
+                        GROUP BY p.observer_id
+                    ) merged
+                    GROUP BY observer_id
                 )
                 SELECT
                     op.observer_id AS prod_observer,
@@ -1649,8 +1678,6 @@ def init_app(app):
         """
         from sqlalchemy import case, distinct
         from sqlalchemy import func as _f
-
-        import database
 
         hoy = datetime.now().date()
         # Rango configurable por querystring. Default: mes corriente.

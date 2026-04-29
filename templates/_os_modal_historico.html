@@ -93,15 +93,19 @@ window.OSHistorico = (function () {
 
     function renderChart(canvasId, datos, labelFn) {
         const ctx = document.getElementById(canvasId).getContext('2d');
+        // Asegurar que cada punto sea un número (Chart.js + datalabels rompe
+        // si encuentra undefined; null sí lo tolera y lo dibuja como "no point")
+        const importes = datos.map(s => Number.isFinite(+s.importe) ? +s.importe : 0);
+        const recetas = datos.map(s => Number.isFinite(+s.recetas) ? +s.recetas : 0);
         return new Chart(ctx, {
             type: 'bar',
             data: {
                 labels: datos.map(labelFn),
                 datasets: [
-                    {label: 'Importe', data: datos.map(s => s.importe),
+                    {label: 'Importe', data: importes,
                      backgroundColor: 'rgba(99,102,241,0.7)', borderColor: '#6366f1',
                      borderWidth: 1, yAxisID: 'y1'},
-                    {label: 'Recetas', data: datos.map(s => s.recetas),
+                    {label: 'Recetas', data: recetas,
                      backgroundColor: 'rgba(16,185,129,0.4)', borderColor: '#10b981',
                      borderWidth: 1.5, type: 'line', yAxisID: 'y2', tension: 0.2, pointRadius: 2},
                 ],
@@ -112,9 +116,12 @@ window.OSHistorico = (function () {
                     legend: {position: 'bottom', labels: {font: {size: 10}, padding: 6}},
                     tooltip: {
                         callbacks: {
-                            label: (ctx) => ctx.dataset.label === 'Importe'
-                                ? `Importe: $${Math.round(ctx.parsed.y).toLocaleString('es-AR')}`
-                                : `Recetas: ${ctx.parsed.y}`,
+                            label: (ctx) => {
+                                const y = ctx.parsed?.y ?? 0;
+                                return ctx.dataset.label === 'Importe'
+                                    ? `Importe: $${Math.round(y).toLocaleString('es-AR')}`
+                                    : `Recetas: ${y}`;
+                            },
                         },
                     },
                     datalabels: {
