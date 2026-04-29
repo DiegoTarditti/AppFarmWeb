@@ -273,3 +273,71 @@ Si algún día se quiere auto-extraer con más inteligencia, hay que buscar la r
 - **Triple-click** en línea del PDF → selección de línea entera (nativo del browser)
 - **Click en línea del Detalle** (panel dividido) → la usa como fila de ejemplo directamente
 - **Enter en input** → blur automático que re-formatea y re-valida
+
+## Match dimensional (atributos estructurados)
+
+Sistema independiente del conversor (vive en [catalogacion.py](catalogacion.py)) que permite encontrar productos del catálogo por **atributos extraídos de la descripción** en vez de por código de barra exacto. Útil cuando un EAN no matchea ninguna fuente pero la descripción del ítem coincide razonablemente con un producto existente.
+
+### Atributos usados para match
+
+Extraídos por [extraer_de_descripcion()](catalogacion.py#L125) (regex sobre texto libre) y/o por [enriquecer_desde_obs()](catalogacion.py#L201) (datos validados de DW.Productos):
+
+- **monodroga_norm** — nombre de droga normalizado (sin acentos, lower)
+- **concentracion_mg** — convertida a mg cuando es posible (G→×1000, MCG→÷1000); se preservan unidades textuales para compuestas tipo MG/ML
+- **forma_farma** — código corto (CPR, CAP, SUSP, GTS, AMP, etc.); ver `FORMA_PATTERNS` para la tabla completa
+- **cantidad_envase** — extraída por patterns "X 16", "POR 30", "30 COMP/CAP/UN"
+
+Las concentraciones priorizan unidades de dosis (MG/MCG/G/%/UI) sobre volumen (ML), y filtran ML cuando la forma ya es líquida (LACTULON JARABE X 200 ML → ML es volumen del envase, no concentración).
+
+### Scoring
+
+[match_dimensional_candidatos()](catalogacion.py#L315) suma puntos por dimensión coincidente:
+
+| Dimensión | Puntos |
+|---|---|
+| Misma droga (monodroga_norm) | +5 |
+| Misma concentración_mg | +3 |
+| Misma forma_farma | +2 |
+| Misma cantidad_envase | +2 |
+
+Umbrales:
+- **score ≥ 7** = casi seguro (verde emerald)
+- **score ≥ 5** = probable (amber)
+- **score < 5** = dudoso (orange)
+
+Devuelve top N candidatos ordenados desc. Si no hay ningún atributo conocido, devuelve `[]`.
+
+### Endpoint actual
+
+`GET /api/match-dimensional` en [routes/productos.py](routes/productos.py#L431) acepta:
+
+- `ean` — si llega y matchea directo, responde `matched_directly=true` sin candidatos
+- `desc` — descripción libre; extrae atributos con regex
+- `droga`, `conc_mg`, `conc_unit`, `forma`, `cantidad` — atributos directos (override del desc)
+
+Respuesta: `{matched_directly, ean, desc, candidatos: [{producto_id, codigo_barra, descripcion, monodroga, concentracion, forma_farma, cantidad_envase, score, fuente, confianza}]}`.
+
+### Integraciones existentes
+
+| Donde | Trigger | Acción al elegir candidato |
+|---|---|---|
+| `templates/order_detail.html` (panel cruce manual módulos) | Botón 🔍 al lado de cada ítem sin match | POST `/api/producto/<id>/codigos` agrega EAN del módulo como alt con `fuente='match_dimensional'` |
+| `templates/catalogacion.html` | Búsqueda manual por atributos | (consulta directa, sin acción de vinculación) |
+
+### Gap actual: el conversor no usa match dimensional
+
+**Confirmado a 2026-04-30:** ni `routes/converter.py` ni los templates `converter_pick.html` / `converter_verify.html` invocan `/api/match-dimensional`.
+
+El conversor parsea ítems del PDF en `Invoice` + `InvoiceItem`s pero no ofrece sugerencias del catálogo basadas en la descripción del ítem. Esto significa que un ítem con EAN no resoluble (ej. código interno tipo Pharmos `79-65`, o EAN no presente en `productos`) entra al sistema sin enlazarse a un producto del catálogo, aunque la droga + concentración + forma + cantidad coincidan con uno existente.
+
+#### Punto de integración propuesto
+
+En `/converter/<token>/verify`, por cada `InvoiceItem` cuyo `codigo_barra` no resuelva contra `productos` (vía `_find_producto`), agregar al render:
+
+1. Llamada batch a `match_dimensional_candidatos(session, descripcion=item.descripcion)` para todos los ítems sin match.
+2. Si `score ≥ 5` para algún candidato, mostrar columna nueva "Sugerencia catálogo" con el top-1 + score badge (color-coded igual que order_detail).
+3. Botón "✓ Vincular" → POST `/api/producto/<id>/codigos` con el EAN/código de la factura como alt + `fuente='converter_dimensional'`.
+
+Beneficio: cierra el loop "factura nueva con EAN desconocido" → "se autopuebla equivalencia en `productos`" sin trabajo manual extra. Reusa endpoints ya existentes (`/api/match-dimensional`, `/api/producto/<id>/codigos`).
+
+Riesgo: si el conversor tiene 100+ ítems, la query batch puede ser lenta — mitigar con `monodroga_norm IN (...)` index lookup en una sola query, o lazy-load por click.
