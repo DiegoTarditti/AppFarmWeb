@@ -140,6 +140,45 @@ def init_app(app):
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
+    @app.route('/api/cron/recalcular-os-clientes', methods=['POST'])
+    def api_cron_recalcular_os_clientes():
+        """Variante sin auth web del recálculo de OS principal por cliente,
+        protegida por header `X-Cron-Secret`. Pensada para ser llamada por
+        un cron externo (GitHub Actions, Render Cron, DockerPanel, etc.).
+
+        Configurar la env var `CRON_SECRET` en el server (Render dashboard
+        o docker-compose) y pasarla en el header de la request:
+
+            curl -X POST https://app.example.com/api/cron/recalcular-os-clientes \\
+                 -H "X-Cron-Secret: <secret>"
+
+        Si `CRON_SECRET` NO está set en el server, el endpoint devuelve 503
+        (deshabilitado por seguridad). No hay default — fail-safe.
+        """
+        import os as _os
+
+        import cron_log
+        from recalcular_os_por_cliente import recalcular
+
+        expected = _os.environ.get('CRON_SECRET', '').strip()
+        if not expected:
+            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
+        provided = (request.headers.get('X-Cron-Secret') or '').strip()
+        if not provided or provided != expected:
+            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+
+        try:
+            with cron_log.registrar('recalcular_os_clientes', origen='cron') as log:
+                res = recalcular()
+                log.metadata = {
+                    'procesados': res['procesados'],
+                    'con_os': res['con_os'],
+                    'sin_os': res['sin_os'],
+                }
+            return jsonify({'ok': True, **res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/admin/cleanup-inactivos', methods=['GET', 'POST'])
     @requiere_permiso('usuarios', 'admin')
     def admin_cleanup_inactivos():

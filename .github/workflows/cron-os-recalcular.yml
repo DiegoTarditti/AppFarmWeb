@@ -1,0 +1,62 @@
+name: Cron — Recalcular OS principal por cliente
+
+# Corre todas las noches a las 04:00 UTC = 01:00 hora Argentina.
+# Llama al endpoint protegido /api/cron/recalcular-os-clientes que ejecuta
+# scripts.recalcular_os_por_cliente.recalcular() y deja registro en cron_log.
+#
+# Configuración previa (una sola vez):
+#   1. En el server (Render dashboard o docker-compose), setear la env var
+#      CRON_SECRET con un string aleatorio fuerte. Ej: openssl rand -hex 32.
+#   2. En GitHub: Settings → Secrets and variables → Actions → New repository secret:
+#        - Name: CRON_SECRET (mismo valor que el server)
+#        - Name: APP_URL (URL pública del server, ej. https://appfarmweb.onrender.com)
+#
+# Si alguno de los dos falta, el workflow falla con error explícito.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # diario a las 04:00 UTC
+  workflow_dispatch:        # permite disparar manual desde la UI de Actions
+
+jobs:
+  recalcular-os:
+    name: POST /api/cron/recalcular-os-clientes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar secrets
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::error::Falta el secret APP_URL"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Falta el secret CRON_SECRET"
+            exit 1
+          fi
+
+      - name: Disparar recálculo
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -e
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            -H "X-Cron-Secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$APP_URL/api/cron/recalcular-os-clientes")
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            echo "::error::Respuesta no-200 del endpoint"
+            exit 1
+          fi
+          # Validar que el JSON tenga ok=true
+          if ! echo "$body" | grep -q '"ok": *true'; then
+            echo "::error::El endpoint devolvió ok=false"
+            exit 1
+          fi
