@@ -5,8 +5,23 @@
 
 {% block main %}
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Compra del día</h1>
+    <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Pedidos del día</h1>
     <p class="text-xs text-[#6f6f6f]">Horarios de cierre por droguería + countdown al próximo reparto.</p>
+    {% if sin_horarios %}
+    <div class="flex items-center gap-2">
+        <select id="select-prov-nuevo" title="Elegí una droguería para cargar sus horarios de cierre"
+                class="bg-white border border-surface-border rounded-lg px-2 py-1 text-xs">
+            <option value="">+ Cargar horarios de droguería…</option>
+            {% for d in sin_horarios %}
+            <option value="{{ d.id }}" data-nombre="{{ d.nombre }}">{{ d.nombre }}</option>
+            {% endfor %}
+        </select>
+        <button type="button" onclick="abrirEdicionDesdeSelect()"
+                class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1 rounded-lg">
+            Cargar
+        </button>
+    </div>
+    {% endif %}
     {% if current_user.rol != 'pedidos' %}
     <div class="ml-auto">
         <a href="{{ url_for('index') }}" class="text-xs text-sky-600 hover:underline">← Inicio</a>
@@ -126,17 +141,34 @@ async function abrirEdicionHorarios(provId, btn) {
     await refrescarGrilla();
     document.getElementById('modal-horarios').classList.remove('hidden');
 }
+
+async function abrirEdicionDesdeSelect() {
+    const sel = document.getElementById('select-prov-nuevo');
+    const provId = sel.value;
+    if (!provId) {
+        alert('Elegí una droguería del select primero.');
+        return;
+    }
+    const nombre = sel.options[sel.selectedIndex].dataset.nombre || sel.options[sel.selectedIndex].text;
+    _provActual = parseInt(provId);
+    document.getElementById('modal-prov-nombre').textContent = nombre;
+    await refrescarGrilla();
+    document.getElementById('modal-horarios').classList.remove('hidden');
+}
 function cerrarEdicion() {
     document.getElementById('modal-horarios').classList.add('hidden');
     location.reload();  // recarga la matriz al cerrar
 }
+// Cache de horarios por día (para usar al copiar)
+let _porDia = {};
+
 async function refrescarGrilla() {
-    const r = await fetch(`/api/compras/dia/horarios/${_provActual}`,
+    const r = await fetch(`/api/pedidos/dia/horarios/${_provActual}`,
                           {credentials: 'same-origin'});
     const data = await r.json();
     const horarios = data.horarios || [];
-    const porDia = {0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[]};
-    for (const h of horarios) porDia[h.dia_semana].push(h);
+    _porDia = {0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[]};
+    for (const h of horarios) _porDia[h.dia_semana].push(h);
 
     const grilla = document.getElementById('modal-grilla');
     grilla.innerHTML = '';
@@ -144,7 +176,7 @@ async function refrescarGrilla() {
         const col = document.createElement('div');
         col.className = 'border border-surface-border rounded-lg p-2 bg-[#fafafa]';
         col.innerHTML = `<p class="text-[10px] uppercase text-[#666] font-bold mb-2">${DIAS[d]}</p>`;
-        for (const h of porDia[d]) {
+        for (const h of _porDia[d]) {
             const row = document.createElement('div');
             row.className = 'flex items-center justify-between text-xs mb-1';
             row.innerHTML = `<span class="font-mono">${h.hora}</span>
@@ -152,14 +184,95 @@ async function refrescarGrilla() {
                                      class="text-[#bbb] hover:text-rose-500 ml-1">✕</button>`;
             col.appendChild(row);
         }
+        // Botón "Copiar a..." — solo si tiene horarios cargados
+        if (_porDia[d].length > 0) {
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'mt-2 w-full text-[10px] text-sky-700 hover:text-sky-900 hover:bg-sky-50 border border-sky-200 rounded px-1.5 py-1';
+            copyBtn.textContent = '📋 Copiar a…';
+            copyBtn.onclick = () => abrirCopiarA(d);
+            col.appendChild(copyBtn);
+        }
         grilla.appendChild(col);
     }
+}
+
+function abrirCopiarA(diaOrigen) {
+    const back = document.createElement('div');
+    back.className = 'fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4';
+    back.onclick = (e) => { if (e.target === back) back.remove(); };
+    const horasOrigen = _porDia[diaOrigen].map(h => h.hora).sort();
+
+    let checks = '';
+    for (let d = 0; d < 7; d++) {
+        if (d === diaOrigen) continue;
+        checks += `
+            <label class="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-[#f5f5f5] rounded px-2">
+                <input type="checkbox" class="cb-dia" data-dia="${d}" data-nombre="${DIAS[d]}">
+                <span>${DIAS[d]}</span>
+                <span class="text-[10px] text-[#999] ml-auto">${(_porDia[d] || []).length} horario(s)</span>
+            </label>`;
+    }
+
+    back.innerHTML = `
+        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3">
+            <h3 class="font-bold text-sm">📋 Copiar horarios de <span class="text-amber-700">${DIAS[diaOrigen]}</span> a otros días</h3>
+            <p class="text-xs text-[#6f6f6f]">Horarios a copiar: <span class="font-mono">${horasOrigen.join(' · ')}</span></p>
+            <div class="flex gap-2 flex-wrap text-[11px]">
+                <button type="button" onclick="copiarASeleccionar([1,2,3,4,5])" class="px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">Lun-Vie</button>
+                <button type="button" onclick="copiarASeleccionar([0,1,2,3,4,5,6])" class="px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">Toda la semana</button>
+                <button type="button" onclick="copiarASeleccionar([])" class="px-2 py-1 rounded bg-[#f0f0f0] hover:bg-[#e8e8e8] text-[#666]">Limpiar</button>
+            </div>
+            <div class="border-t border-surface-border pt-2">${checks}</div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button type="button" id="btn-copiar-cancelar" class="text-[#999] hover:text-[#1e1e1e] text-sm px-3 py-1.5">Cancelar</button>
+                <button type="button" id="btn-copiar-aplicar" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm">Copiar</button>
+            </div>
+        </div>`;
+    document.body.appendChild(back);
+    back.querySelector('#btn-copiar-cancelar').onclick = () => back.remove();
+    back.querySelector('#btn-copiar-aplicar').onclick = async () => {
+        const dias = [...back.querySelectorAll('.cb-dia:checked')].map(cb => parseInt(cb.dataset.dia));
+        if (!dias.length) { alert('Elegí al menos un día.'); return; }
+        await ejecutarCopia(diaOrigen, dias);
+        back.remove();
+    };
+}
+
+function copiarASeleccionar(dias) {
+    document.querySelectorAll('.cb-dia').forEach(cb => {
+        cb.checked = dias.includes(parseInt(cb.dataset.dia));
+    });
+}
+
+async function ejecutarCopia(diaOrigen, diasDestino) {
+    const horasOrigen = _porDia[diaOrigen].map(h => h.hora);
+    let creados = 0, ya = 0;
+    for (const dDest of diasDestino) {
+        const yaExisten = new Set((_porDia[dDest] || []).map(h => h.hora));
+        for (const hora of horasOrigen) {
+            if (yaExisten.has(hora)) { ya++; continue; }
+            const r = await fetch(`/api/pedidos/dia/horarios/${_provActual}`, {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({dia_semana: dDest, hora: hora}),
+            });
+            const data = await r.json();
+            if (data.ok) creados++;
+        }
+    }
+    if (ya > 0 && creados === 0) {
+        alert(`Todos los horarios ya estaban cargados en esos días. Sin cambios.`);
+    } else {
+        // refresca silencioso
+    }
+    await refrescarGrilla();
 }
 async function agregarHora() {
     const dia = parseInt(document.getElementById('add-dia').value);
     const hora = document.getElementById('add-hora').value.trim();
     if (!/^\d{2}:\d{2}$/.test(hora)) { alert('Hora debe ser HH:MM'); return; }
-    const r = await fetch(`/api/compras/dia/horarios/${_provActual}`, {
+    const r = await fetch(`/api/pedidos/dia/horarios/${_provActual}`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
         body: JSON.stringify({dia_semana: dia, hora: hora}),
@@ -171,7 +284,7 @@ async function agregarHora() {
 }
 async function borrarHora(id) {
     if (!confirm('Borrar este horario?')) return;
-    await fetch(`/api/compras/dia/horarios/${_provActual}`, {
+    await fetch(`/api/pedidos/dia/horarios/${_provActual}`, {
         method: 'DELETE', headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
         body: JSON.stringify({id: id}),
@@ -191,7 +304,7 @@ function _formatHHMMSS(secs) {
 }
 
 async function refrescarCountdowns() {
-    const r = await fetch('/api/compras/dia/countdown', {credentials: 'same-origin'});
+    const r = await fetch('/api/pedidos/dia/countdown', {credentials: 'same-origin'});
     const data = await r.json();
     if (!data.ok) return;
     const ahora = Date.now();

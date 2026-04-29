@@ -50,7 +50,7 @@ def _recalc_pedido(p):
 
 def init_app(app):
 
-    @app.route('/compras/dia')
+    @app.route('/pedidos/dia')
     @login_required
     def compras_dia():
         with get_db() as session:
@@ -72,11 +72,23 @@ def init_app(app):
                     'horarios_por_dia': matriz_ordenada,
                     'proximo_cierre': cierre,
                 })
+            # Drogerías activas que NO tienen horarios todavía — para el dropdown
+            # "agregar nueva al flujo".
+            drogerias_sin_horarios = (
+                session.query(Provider)
+                .filter(Provider.tipo == 'drogueria',
+                        Provider.activo.is_(True),
+                        ~Provider.id.in_(prov_ids if prov_ids else [-1]))
+                .order_by(Provider.razon_social).all()
+            )
+            sin_horarios = [{'id': p.id, 'nombre': p.razon_social}
+                            for p in drogerias_sin_horarios]
         return render_template('compras_dia.html',
                                proveedores=proveedores,
+                               sin_horarios=sin_horarios,
                                dias=DIAS_LABELS)
 
-    @app.route('/api/compras/dia/countdown')
+    @app.route('/api/pedidos/dia/countdown')
     @login_required
     def api_compras_dia_countdown():
         """Devuelve el próximo cierre + segundos faltantes para cada drog activa.
@@ -97,7 +109,7 @@ def init_app(app):
                     }
         return jsonify({'ok': True, 'now': ahora.isoformat(), 'cierres': out})
 
-    @app.route('/api/compras/dia/horarios/<int:proveedor_id>', methods=['GET', 'POST', 'DELETE'])
+    @app.route('/api/pedidos/dia/horarios/<int:proveedor_id>', methods=['GET', 'POST', 'DELETE'])
     @login_required
     def api_horarios_crud(proveedor_id):
         """CRUD básico para horarios de un proveedor.
@@ -156,7 +168,7 @@ def init_app(app):
                 session.commit()
             return jsonify({'ok': True})
 
-    @app.route('/compras/dia/armar')
+    @app.route('/pedidos/dia/armar')
     @login_required
     def compras_dia_armar():
         """Armado del pedido para una droguería específica.
@@ -392,7 +404,7 @@ def init_app(app):
                                    cierre=cierre,
                                    pendientes_anteriores=pendientes_anteriores)
 
-    @app.route('/api/compras/dia/buscar-producto')
+    @app.route('/api/pedidos/dia/buscar-producto')
     @login_required
     def api_compras_dia_buscar_producto():
         """Busca producto ObServer por descripción tokenizada (AND).
@@ -529,7 +541,7 @@ def init_app(app):
                 session.commit()
         return jsonify({'ok': True})
 
-    @app.route('/api/compras/dia/emitir', methods=['POST'])
+    @app.route('/api/pedidos/dia/emitir', methods=['POST'])
     @login_required
     def api_compras_dia_emitir():
         """Snapshot del armado a PedidoEmitido + PedidoEmitidoItem.

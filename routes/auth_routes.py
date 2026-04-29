@@ -30,7 +30,9 @@ def init_app(app):
     # Sólo puede navegar a /compras/* y a las APIs que use ese flujo.
     # Cualquier otro path lo redirige a /compras/dia.
     _PEDIDOS_PATHS_OK = (
-        '/compras/', '/api/compras/', '/api/producto/',
+        '/pedidos/', '/api/pedidos/',
+        '/compras/', '/api/compras/',  # legacy: rutas no-renombradas (labs-drogerias, rapido)
+        '/api/producto/',
         '/api/observer-product/', '/api/lab-drog/',
         '/pedidos-emitidos', '/api/pedido-emitido/',
         '/static/',

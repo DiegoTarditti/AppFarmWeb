@@ -519,7 +519,7 @@ document.addEventListener('click', e => {
 
 async function buscarParaAgregar(q) {
     try {
-        const r = await fetch(`/api/compras/dia/buscar-producto?q=${encodeURIComponent(q)}&prov=${_PROV_ID}`,
+        const r = await fetch(`/api/pedidos/dia/buscar-producto?q=${encodeURIComponent(q)}&prov=${_PROV_ID}`,
                               {credentials: 'same-origin'});
         const d = await r.json();
         if (!d.ok) { _agregarResults.classList.add('hidden'); return; }
@@ -635,7 +635,7 @@ async function emitirPedido() {
     if (!confirm(`Emitir pedido a ${ {{ prov.razon_social | tojson }} } con ${items.length} items (${items.reduce((a,b)=>a+b.cantidad,0)} u)?`)) return;
     btn.disabled = true; status.textContent = 'Emitiendo…';
     try {
-        const r = await fetch('/api/compras/dia/emitir', {
+        const r = await fetch('/api/pedidos/dia/emitir', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
             body: JSON.stringify({prov_id: _PROV_ID, items}),
