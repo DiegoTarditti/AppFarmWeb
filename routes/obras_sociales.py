@@ -907,6 +907,212 @@ def init_app(app):
             'top_productos': top_prod,
         })
 
+    @app.route('/api/obras-sociales/historico/<tipo>/<int:id_obj>')
+    @_api_safe
+    def api_os_historico(tipo, id_obj):
+        """Histórico genérico para médico / paciente / os / producto.
+
+        Devuelve estructura uniforme:
+            {
+              titulo, subtitulo, desde_mes, desde_dia, hasta,
+              serie_mes: [{mes, importe, recetas, pacientes?}],
+              serie_dia: [{fecha, importe, recetas}],
+              top_a: {label, items: [{nombre, importe, recetas, sub?}]},
+              top_b: {label, items: [...]}
+            }
+        """
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        from sqlalchemy import text as _text
+
+        import database
+
+        if tipo not in ('medico', 'paciente', 'os', 'producto'):
+            return jsonify({'error': 'Tipo inválido'}), 400
+
+        hoy = _dt.now().date()
+        desde_12m = (hoy - _td(days=370)).replace(day=1)
+        desde_30d = hoy - _td(days=30)
+        params = {'id': id_obj, 'desde_mes': desde_12m, 'desde_dia': desde_30d}
+
+        # WHERE específico por tipo
+        WHERE_BY_TIPO = {
+            'medico':   'ovd.medico_observer = :id',
+            'paciente': 'ovd.cliente_observer = :id',
+            'os':       'ovd.obra_social_observer = :id',
+            'producto': 'ovd.producto_observer = :id',
+        }
+        where_tipo = WHERE_BY_TIPO[tipo]
+
+        with database.get_db() as session:
+            # Título y subtitulo según tipo
+            titulo, subtitulo = '', ''
+            if tipo == 'medico':
+                row = session.execute(
+                    _text('SELECT om.nombre, '
+                          '(SELECT MIN(matricula) FROM obs_medicos_matriculas WHERE medico_observer = om.observer_id) AS mat '
+                          'FROM obs_medicos om WHERE om.observer_id = :id'),
+                    {'id': id_obj}
+                ).first()
+                if not row:
+                    return jsonify({'error': 'Médico no encontrado'}), 404
+                titulo = row.nombre
+                subtitulo = f'Matrícula: {row.mat or "—"}'
+            elif tipo == 'paciente':
+                row = session.execute(
+                    _text('SELECT apellido_nombre, documento_tipo, documento_numero, telefono, localidad '
+                          'FROM obs_clientes WHERE observer_id = :id'),
+                    {'id': id_obj}
+                ).first()
+                if not row:
+                    return jsonify({'error': 'Paciente no encontrado'}), 404
+                titulo = row.apellido_nombre or f'Cliente #{id_obj}'
+                doc = f'{row.documento_tipo or "DNI"} {row.documento_numero}' if row.documento_numero else 'sin DNI'
+                tel = f'· tel: {row.telefono}' if row.telefono else ''
+                subtitulo = f'{doc} {tel} {("· " + row.localidad) if row.localidad else ""}'
+            elif tipo == 'os':
+                row = session.execute(
+                    _text('SELECT descripcion FROM obs_obras_sociales WHERE observer_id = :id'),
+                    {'id': id_obj}
+                ).first()
+                if not row:
+                    return jsonify({'error': 'OS no encontrada'}), 404
+                titulo = row.descripcion
+                subtitulo = 'Obra Social'
+            elif tipo == 'producto':
+                row = session.execute(
+                    _text('SELECT op.descripcion, ol.descripcion AS lab '
+                          'FROM obs_productos op '
+                          'LEFT JOIN obs_laboratorios ol ON ol.observer_id = op.laboratorio_observer '
+                          'WHERE op.observer_id = :id'),
+                    {'id': id_obj}
+                ).first()
+                if not row:
+                    return jsonify({'error': 'Producto no encontrado'}), 404
+                titulo = row.descripcion
+                subtitulo = f'Lab: {row.lab or "—"}'
+
+            # Serie mes
+            sql_mes = _text(f'''
+                SELECT
+                    DATE_TRUNC('month', ovd.fecha_estadistica)::date AS mes,
+                    SUM(ovd.importe) AS importe,
+                    COUNT(DISTINCT ovd.id_operacion) AS recetas
+                FROM obs_ventas_detalle ovd
+                WHERE {where_tipo}
+                  AND ovd.fecha_estadistica >= :desde_mes
+                  AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                GROUP BY DATE_TRUNC('month', ovd.fecha_estadistica)
+                ORDER BY mes
+            ''')
+            serie_mes = [{
+                'mes': r.mes.isoformat(),
+                'importe': float(r.importe or 0),
+                'recetas': int(r.recetas or 0),
+            } for r in session.execute(sql_mes, params).fetchall()]
+
+            # Serie día
+            sql_dia = _text(f'''
+                SELECT
+                    ovd.fecha_estadistica AS fecha,
+                    SUM(ovd.importe) AS importe,
+                    COUNT(DISTINCT ovd.id_operacion) AS recetas
+                FROM obs_ventas_detalle ovd
+                WHERE {where_tipo}
+                  AND ovd.fecha_estadistica >= :desde_dia
+                  AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                GROUP BY ovd.fecha_estadistica
+                ORDER BY fecha
+            ''')
+            serie_dia = [{
+                'fecha': r.fecha.isoformat(),
+                'importe': float(r.importe or 0),
+                'recetas': int(r.recetas or 0),
+            } for r in session.execute(sql_dia, params).fetchall()]
+
+            # Tops según tipo
+            def fetch_top(group_sql, join_sql, label_col, extra_select=''):
+                sql = _text(f'''
+                    SELECT {label_col} AS nombre,
+                           SUM(ovd.importe) AS importe,
+                           COUNT(DISTINCT ovd.id_operacion) AS recetas
+                           {extra_select}
+                    FROM obs_ventas_detalle ovd
+                    {join_sql}
+                    WHERE {where_tipo}
+                      AND ovd.fecha_estadistica >= :desde_mes
+                      AND COALESCE(ovd.es_venta_particular, FALSE) = FALSE
+                    GROUP BY {group_sql}
+                    HAVING SUM(ovd.importe) > 0
+                    ORDER BY SUM(ovd.importe) DESC
+                    LIMIT 10
+                ''')
+                return [{
+                    'nombre': r.nombre or '—',
+                    'importe': float(r.importe or 0),
+                    'recetas': int(r.recetas or 0),
+                } for r in session.execute(sql, params).fetchall()]
+
+            if tipo == 'medico':
+                top_a = {'label': '🏥 Top OS',
+                         'items': fetch_top(
+                             "oos.descripcion",
+                             "LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer",
+                             "COALESCE(oos.descripcion, 'Sin OS')")}
+                top_b = {'label': '💊 Top productos',
+                         'items': fetch_top(
+                             "op.descripcion",
+                             "JOIN obs_productos op ON op.observer_id = ovd.producto_observer",
+                             "op.descripcion")}
+            elif tipo == 'paciente':
+                top_a = {'label': '🏥 Top OS',
+                         'items': fetch_top(
+                             "oos.descripcion",
+                             "LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer",
+                             "COALESCE(oos.descripcion, 'Sin OS')")}
+                top_b = {'label': '💊 Drogas / productos consumidos',
+                         'items': fetch_top(
+                             "op.descripcion",
+                             "JOIN obs_productos op ON op.observer_id = ovd.producto_observer",
+                             "op.descripcion")}
+            elif tipo == 'os':
+                top_a = {'label': '👨‍⚕️ Top médicos',
+                         'items': fetch_top(
+                             "om.nombre",
+                             "JOIN obs_medicos om ON om.observer_id = ovd.medico_observer",
+                             "om.nombre")}
+                top_b = {'label': '💊 Top productos',
+                         'items': fetch_top(
+                             "op.descripcion",
+                             "JOIN obs_productos op ON op.observer_id = ovd.producto_observer",
+                             "op.descripcion")}
+            else:  # producto
+                top_a = {'label': '🏥 Top OS',
+                         'items': fetch_top(
+                             "oos.descripcion",
+                             "LEFT JOIN obs_obras_sociales oos ON oos.observer_id = ovd.obra_social_observer",
+                             "COALESCE(oos.descripcion, 'Sin OS')")}
+                top_b = {'label': '👨‍⚕️ Top médicos prescriptores',
+                         'items': fetch_top(
+                             "om.nombre",
+                             "JOIN obs_medicos om ON om.observer_id = ovd.medico_observer",
+                             "om.nombre")}
+
+        return jsonify({
+            'tipo': tipo,
+            'id': id_obj,
+            'titulo': titulo,
+            'subtitulo': subtitulo,
+            'desde_mes': desde_12m.isoformat(),
+            'desde_dia': desde_30d.isoformat(),
+            'hasta': hoy.isoformat(),
+            'serie_mes': serie_mes,
+            'serie_dia': serie_dia,
+            'top_a': top_a,
+            'top_b': top_b,
+        })
+
     @app.route('/api/obras-sociales/medicos')
     @_api_safe
     def api_os_medicos():

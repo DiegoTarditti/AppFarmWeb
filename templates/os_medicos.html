@@ -32,8 +32,9 @@
 {% block main %}
 
 {% include '_os_loader.html' %}
+{% include '_os_modal_historico.html' %}
 
-<!-- Modal de detalle médico -->
+<!-- Modal de detalle médico (LEGACY — pisado por _os_modal_historico) -->
 <div id="modal-medico" class="hidden fixed inset-0 z-[150] bg-black/50 backdrop-blur-sm
                               flex items-center justify-center p-4"
      onclick="if(event.target===this) cerrarModalMedico()">
@@ -344,7 +345,7 @@ function renderFugas(fugas) {
     if (!fugas.length) { wrap.classList.add('hidden'); return; }
     wrap.classList.remove('hidden');
     body.innerHTML = fugas.map(f => `
-        <tr class="hover:bg-rose-100 cursor-pointer" onclick='abrirModalMedico(${f.med_id}, ${JSON.stringify(f.nombre)})' title="Click para ver histórico mensual + top OS + top productos">
+        <tr class="hover:bg-rose-100 cursor-pointer" onclick='OSHistorico.abrir("medico", ${f.med_id}, ${JSON.stringify(f.nombre)})' title="Click para ver histórico mensual + top OS + top productos">
             <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[300px]" title="${f.nombre}">${f.nombre}</td>
             <td class="px-3 py-2 text-right font-mono">${fmtMoney(f.importe_ant)}</td>
             <td class="px-3 py-2 text-right font-mono ${f.importe_act > 0 ? '' : 'text-rose-700 font-bold'}">${fmtMoney(f.importe_act)}</td>
@@ -428,7 +429,7 @@ function renderRanking(ranking) {
         }
         const pctTotal = totalImp > 0 ? (r.importe / totalImp * 100) : 0;
         return `
-            <tr class="hover:bg-indigo-50 cursor-pointer" onclick='abrirModalMedico(${r.med_id}, ${JSON.stringify(r.nombre)})' title="Click para ver histórico mensual + top OS + top productos">
+            <tr class="hover:bg-indigo-50 cursor-pointer" onclick='OSHistorico.abrir("medico", ${r.med_id}, ${JSON.stringify(r.nombre)})' title="Click para ver histórico mensual + top OS + top productos">
                 <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[260px]" title="${r.nombre}">${r.nombre}</td>
                 <td class="px-3 py-2 font-mono text-xs text-[#666]">${r.matricula || '—'}</td>

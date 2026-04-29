@@ -4,6 +4,8 @@
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<script>Chart.register(ChartDataLabels);</script>
 <style>
     .kpi-card { background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 16px; }
     .kpi-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: 0.5px; font-weight: 600; }
@@ -18,6 +20,7 @@
 {% block main %}
 
 {% include '_os_loader.html' %}
+{% include '_os_modal_historico.html' %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <div>
@@ -261,7 +264,7 @@ function renderRanking(ranking) {
         else if (r.margen_pct < 15) { mClass = 'row-margen-bajo'; mEmoji = '🟡'; }
         const pctMargen = r.margen_pct === null ? '—' : `${mEmoji} ${r.margen_pct.toFixed(1)}%`;
         return `
-            <tr class="hover:bg-[#fafafa]">
+            <tr class="hover:bg-sky-50 cursor-pointer" onclick='OSHistorico.abrir("producto", ${r.prod_observer || 0}, ${JSON.stringify(r.descripcion)})' title="Click para ver histórico mensual + diario + top OS + médicos">
                 <td class="px-3 py-2 text-[#999] font-mono text-xs">${i + 1}</td>
                 <td class="px-3 py-2 font-medium text-[#1e1e1e] truncate max-w-[400px]" title="${r.descripcion}">${r.descripcion}</td>
                 <td class="px-3 py-2 text-right text-[#666]">${Number(r.unidades).toLocaleString('es-AR')}</td>
