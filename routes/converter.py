@@ -316,9 +316,28 @@ def init_app(app):
             flash('El parser no devolvió ítems para verificar.')
             return redirect(url_for('converter_detectar', token=safe))
 
+        # Detectar items con codigo_barra que NO resuelven en el catálogo
+        # (ni columnas legacy, ni tabla 1-a-N, ni obs_codigos_barras). Para
+        # esos items la UI muestra un botón 🔍 que abre el match dimensional.
+        eans_no_match = []
+        try:
+            from helpers import _find_productos_bulk
+            items_full = prueba.get('items_full') or []
+            eans_a_chequear = list({(it.get('codigo_barra') or '').strip()
+                                    for it in items_full
+                                    if it.get('codigo_barra')})
+            if eans_a_chequear:
+                with database.get_db() as session:
+                    matched = _find_productos_bulk(session, eans_a_chequear)
+                    eans_no_match = [e for e in eans_a_chequear if e not in matched]
+        except Exception:
+            # Si falla el chequeo, no rompemos el verify — solo no mostramos el botón.
+            eans_no_match = []
+
         return render_template('converter_verify.html',
                                token=safe, filename=safe,
-                               proveedor=proveedor, prueba=prueba)
+                               proveedor=proveedor, prueba=prueba,
+                               eans_no_match=eans_no_match)
 
     @app.route('/converter/<token>/verify/import', methods=['POST'])
     def converter_verify_import(token):

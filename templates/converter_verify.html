@@ -141,6 +141,7 @@
 
 <script>
 const INITIAL_ROWS = {{ prueba.items_full | tojson }};
+const EANS_NO_MATCH = new Set({{ eans_no_match | tojson }});
 const HEADER = {
     numero_factura: {{ prueba.numero_factura | tojson }},
     fecha: {{ prueba.fecha | tojson }},
@@ -261,7 +262,15 @@ function render() {
         const rowId = v.status === 'err' ? ` id="verify-row-${i}"` : '';
         html += `<tr class="${bgRow} border-t border-slate-100 hover:bg-sky-50"${rowId}>
             <td class="px-2 py-1 text-center">${badge}</td>
-            <td class="px-2 py-1"><input type="text" data-i="${i}" data-f="codigo_barra" value="${r.codigo_barra ?? ''}" class="w-full px-1 py-0.5 text-xs font-mono bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded"></td>
+            <td class="px-2 py-1">
+                <div class="flex items-center gap-1">
+                    <input type="text" data-i="${i}" data-f="codigo_barra" value="${r.codigo_barra ?? ''}" class="flex-1 px-1 py-0.5 text-xs font-mono bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded">
+                    ${EANS_NO_MATCH.has((r.codigo_barra ?? '').trim()) ?
+                        `<button type="button" onclick="abrirMatchDimensional('${(r.codigo_barra ?? '').trim()}', '${(r.descripcion ?? '').replace(/'/g,'&#39;').replace(/"/g,'&quot;')}')"
+                                class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded bg-violet-100 hover:bg-violet-200 text-violet-700 text-[10px] font-semibold transition-colors"
+                                title="EAN no encontrado en catálogo — buscar match dimensional">🔍</button>` : ''}
+                </div>
+            </td>
             <td class="px-2 py-1"><input type="text" data-i="${i}" data-f="descripcion" value="${(r.descripcion ?? '').replace(/"/g,'&quot;')}" class="w-full px-1 py-0.5 text-xs bg-transparent hover:bg-white focus:bg-white focus:outline-none focus:ring-1 focus:ring-sky-400 rounded"></td>
             <td class="px-2 py-1 text-right">${_inp('cantidad', true, 40)}</td>
             <td class="px-2 py-1 text-right">${_inp('precio_publico', true, 70)}</td>
@@ -467,5 +476,138 @@ async function confirmarImport() {
         btn.disabled = false; btn.textContent = 'Confirmar e importar →';
     }
 }
+
+// ─── Match dimensional (mismo patrón que order_detail.html commit f577102) ────
+let _mdEanActivo = null;
+
+function _esc(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+async function abrirMatchDimensional(ean, descripcion) {
+    _mdEanActivo = ean;
+    document.getElementById('md-modal').classList.remove('hidden');
+    document.getElementById('md-item-desc').textContent = descripcion || '(sin descripción)';
+    document.getElementById('md-item-ean').textContent = ean || '—';
+    const body = document.getElementById('md-body');
+    body.innerHTML = '<p class="text-sm text-[#999] text-center py-6">Buscando candidatos…</p>';
+    try {
+        const params = new URLSearchParams({ean: ean || '', desc: descripcion || ''});
+        const r = await fetch('/api/match-dimensional?' + params.toString(), {credentials: 'same-origin'});
+        const data = await r.json();
+        if (!r.ok) {
+            body.innerHTML = `<p class="text-sm text-red-600 py-4">Error: ${data.error || r.status}</p>`;
+            return;
+        }
+        if (data.matched_directly) {
+            body.innerHTML = `<div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <p class="text-sm font-semibold text-emerald-800">✓ Ya está en el catálogo</p>
+                <p class="text-xs text-[#1e1e1e] mt-1">${_esc(data.producto.descripcion || '')}</p>
+                <p class="text-[10px] font-mono text-[#666] mt-1">${_esc(data.producto.codigo_barra)}</p>
+            </div>`;
+            return;
+        }
+        const cands = data.candidatos || [];
+        if (!cands.length) {
+            body.innerHTML = `<div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p class="text-sm font-semibold text-amber-800">Sin candidatos dimensionales</p>
+                <p class="text-xs text-[#666] mt-1">No hay productos en el catálogo que compartan droga / concentración / forma / cantidad. Probablemente sea un producto nuevo. La factura va a quedar con el EAN crudo (se puede vincular después manualmente desde la ficha del producto).</p>
+            </div>`;
+            return;
+        }
+        const top5 = cands.slice(0, 5);
+        body.innerHTML = top5.map(c => {
+            const score = c.score || 0;
+            let scoreCls = 'bg-orange-100 text-orange-800';
+            if (score >= 7) scoreCls = 'bg-emerald-100 text-emerald-800';
+            else if (score >= 5) scoreCls = 'bg-amber-100 text-amber-800';
+            const partes = [];
+            if (c.monodroga) partes.push(_esc(c.monodroga));
+            if (c.concentracion) partes.push(_esc(c.concentracion));
+            if (c.forma_farma) partes.push(_esc(c.forma_farma));
+            if (c.cantidad_envase) partes.push('x' + c.cantidad_envase);
+            return `<div class="border border-[#e0e0e0] rounded-lg p-3 mb-2 hover:bg-violet-50">
+                <div class="flex items-start gap-3">
+                    <span class="${scoreCls} text-[11px] font-bold px-2 py-1 rounded flex-shrink-0">${score}</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold text-[#1e1e1e]">${_esc(c.descripcion || '')}</p>
+                        <p class="text-[10px] font-mono text-[#888] mt-0.5">${_esc(c.codigo_barra || '')}</p>
+                        ${partes.length ? `<p class="text-[10px] text-violet-700 mt-1">${partes.join(' · ')}</p>` : ''}
+                    </div>
+                    <button type="button" onclick="vincularEanFactura(${c.producto_id}, '${_esc(c.descripcion || '')}')"
+                            class="bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-semibold px-3 py-1.5 rounded flex-shrink-0">
+                        ✓ Vincular EAN
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (err) {
+        body.innerHTML = `<p class="text-sm text-red-600 py-4">Error de red: ${_esc(err.message)}</p>`;
+    }
+}
+
+function cerrarMatchDimensional() {
+    document.getElementById('md-modal').classList.add('hidden');
+    _mdEanActivo = null;
+}
+
+async function vincularEanFactura(prodId, descTarget) {
+    if (!_mdEanActivo) return;
+    const ean = _mdEanActivo;
+    if (!confirm(`Vincular el EAN ${ean} al producto:\n\n${descTarget}\n\n¿Confirmás? Este EAN se va a agregar como código alternativo del producto. La próxima factura con este EAN va a resolver automáticamente.`)) return;
+    try {
+        const r = await fetch(`/api/producto/${prodId}/codigos`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({codigo_barra: ean, fuente: 'converter_dimensional'}),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            alert('Error vinculando: ' + (data.error || r.status));
+            return;
+        }
+        // Sacar el EAN del set de no-match para que el botón 🔍 desaparezca al re-render
+        EANS_NO_MATCH.delete(ean);
+        cerrarMatchDimensional();
+        // Re-render de la tabla para reflejar el nuevo estado
+        render();
+        alert('✓ EAN vinculado al producto. Ya quedó como alternativo en el catálogo.');
+    } catch (err) {
+        alert('Error de red: ' + err.message);
+    }
+}
 </script>
+
+<!-- ─── Modal Match Dimensional ─────────────────────────────────────────── -->
+<div id="md-modal" class="hidden fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarMatchDimensional()">
+    <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-4 py-3 bg-violet-50 border-b border-violet-200 flex items-center gap-2">
+            <span class="text-base">🔍</span>
+            <div class="flex-1 min-w-0">
+                <p class="text-[10px] uppercase font-semibold text-violet-700">Match dimensional</p>
+                <p class="text-sm font-bold text-[#1e1e1e] truncate" id="md-item-desc">—</p>
+                <p class="text-[10px] font-mono text-[#888]">EAN factura: <span id="md-item-ean">—</span></p>
+            </div>
+            <button type="button" onclick="cerrarMatchDimensional()"
+                    class="w-8 h-8 flex items-center justify-center rounded hover:bg-violet-100 text-[#666]">✕</button>
+        </div>
+        <div id="md-body" class="flex-1 overflow-y-auto px-4 py-3">
+            <p class="text-sm text-[#999]">Cargando candidatos…</p>
+        </div>
+        <div class="px-4 py-2 border-t border-[#ececec] bg-[#fafafa] text-[10px] text-[#666] flex items-center justify-between">
+            <span>
+                Score: <span class="text-emerald-700 font-semibold">7+</span> casi seguro ·
+                <span class="text-amber-700 font-semibold">5-6</span> probable ·
+                <span class="text-orange-700 font-semibold">&lt;5</span> dudoso
+            </span>
+            <button type="button" onclick="cerrarMatchDimensional()"
+                    class="text-[11px] bg-white hover:bg-[#f0f0f0] border border-[#d0d0d0] px-3 py-1 rounded">Cerrar</button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
