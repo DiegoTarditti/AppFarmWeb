@@ -2119,6 +2119,14 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pcb_producto ON producto_codigos_barra (producto_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pcb_codigo   ON producto_codigos_barra (codigo_barra)"))
+    # UNIQUE compuesto idempotente. La tabla original lo declara como `UNIQUE (...)`
+    # inline en el CREATE TABLE, pero si se creó antes de ese cambio, falta. Acá
+    # garantizamos que esté — el backfill `ON CONFLICT (producto_id, codigo_barra)`
+    # lo necesita o tira "no unique or exclusion constraint matching".
+    conn.execute(text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_pcb_producto_codigo "
+        "ON producto_codigos_barra (producto_id, codigo_barra)"
+    ))
     # Backfills movidos a thread background (ver _ejecutar_backfills_async al final
     # de init_db). En Render, correr estos INSERTs masivos en el path crítico de
     # boot hace que el HTTP port no abra a tiempo y el deploy falle con
