@@ -11,7 +11,7 @@ La UI no debería cambiar — solo cambia la fuente de datos.
 import random
 from datetime import date, datetime, timedelta
 
-from flask import render_template, request
+from flask import jsonify, render_template, request
 
 # ── Mock data ─────────────────────────────────────────────────────────
 
