@@ -21,20 +21,20 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 
                 <a href="{{ url_for('os_dashboard') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
+                   class="block bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 hover:bg-emerald-100/60 hover:border-emerald-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">📊</div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Listo</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Dashboard general</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">KPIs por categoría (PAMI/IAPOS/OTROS), top OS por importe, top productos, gráfico diario.</p>
                 </a>
 
                 <a href="{{ url_for('os_dispensas') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-sky-500 hover:shadow-md transition-all">
+                   class="block bg-emerald-50/60 border border-emerald-200 rounded-xl p-4 hover:bg-emerald-100/60 hover:border-emerald-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-lg flex-shrink-0">💊</div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">💊</div>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Listo</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Listado de dispensas</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tabla transaccional con filtros por rango, OS, particular vs convenio. Export Excel.</p>
@@ -50,28 +50,28 @@
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Margen real (PVP − costo − descuento OS). Ranking de OS por ganancia, no volumen. Alertas de margen negativo.</p>
                 </a>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-emerald-50/30 border border-dashed border-emerald-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📅</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Cash flow / cobranza</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Calendario de cobros estimados según condiciones de cada OS. "Esta semana vencen $1.8M".</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-emerald-50/30 border border-dashed border-emerald-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">📥</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Recetas vs cobradas</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Delta entre dispensado y cobrado por OS. Plata atrapada en cuenta corriente.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-emerald-50/30 border border-dashed border-emerald-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center text-lg flex-shrink-0">📈</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Benchmarks del sector</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tu farmacia vs el promedio. % OS, ticket promedio, mix por categoría.</p>
@@ -87,37 +87,37 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Quién prescribe qué. Detección de fugas, fidelización, especialidades.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center text-lg flex-shrink-0">🏆</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Top prescriptores por OS</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ranking de médicos por OS — quién te trae cada cartera.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">📉</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Médicos con fuga</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Médicos que prescribían y dejaron de hacerlo. Detección temprana de pérdida.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-orange-100 text-orange-700 flex items-center justify-center text-lg flex-shrink-0">🚫</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Rechazos por médico</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tasa de rechazo de recetas por médico. Detectar quién prescribe mal.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-indigo-50/40 border border-dashed border-indigo-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-cyan-100 text-cyan-700 flex items-center justify-center text-lg flex-shrink-0">🩺</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Análisis por especialidad</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Cardiología vs traumatología vs etc. Mix de productos por especialidad.</p>
@@ -133,37 +133,37 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Qué se vende, con qué margen, qué hay que stockear.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">💵</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Top productos por margen</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ranking de productos por ganancia neta y mix de OS asociado.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">📉</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Productos con peor rentabilidad</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos donde estás perdiendo plata por OS específicas.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📊</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Mix de productos</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">% de cada categoría / forma farmacéutica / monodroga.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-sky-50/40 border border-dashed border-sky-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">🕒</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Productos sin venta</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Catálogo que tenés cargado pero no vende hace N días. Decisión: bajar de stock o desactivar.</p>
@@ -179,37 +179,37 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Historia, adherencia, fidelización.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-pink-50/40 border border-dashed border-pink-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-lg flex-shrink-0">📋</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Vista del paciente</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Historia completa de drogas + adherencia (cumple con la frecuencia esperada?).</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-pink-50/40 border border-dashed border-pink-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-pink-100 text-pink-700 flex items-center justify-center text-lg flex-shrink-0">💖</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Pacientes crónicos</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Detección automática + recurrencia esperada de compra. Alertar si dejan de venir.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-pink-50/40 border border-dashed border-pink-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-yellow-100 text-yellow-700 flex items-center justify-center text-lg flex-shrink-0">🏆</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Top clientes</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Por monto / por OS / por antigüedad. Quién te aporta el 80% del valor.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-pink-50/40 border border-dashed border-pink-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-stone-100 text-stone-700 flex items-center justify-center text-lg flex-shrink-0">😴</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Pacientes inactivos</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Clientes que no vienen hace N días — oportunidad de reactivación.</p>
@@ -226,28 +226,28 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 <a href="{{ url_for('obras_sociales_catalogo') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
+                   class="block bg-violet-50/60 border border-violet-200 rounded-xl p-4 hover:bg-violet-100/60 hover:border-violet-500 hover:shadow-md transition-all">
                     <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">📂</div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                        <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📂</div>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">Listo</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Catálogo de OS</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">876 OS reales sincronizadas + sus convenios y planes.</p>
                 </a>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-violet-50/40 border border-dashed border-violet-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">⚖️</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Comparación entre planes</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Plan A vs Plan B de la misma OS — cobertura, ticket promedio, margen.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-violet-50/40 border border-dashed border-violet-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-lg flex-shrink-0">📖</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Vademécum aceptado</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos que cada OS efectivamente paga.</p>
@@ -263,28 +263,28 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Detección de errores, anomalías y problemas que cuestan plata o tiempo.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-rose-50/40 border border-dashed border-rose-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">🚫</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Detección de rechazos</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Recetas con error de afiliado, fuera de vademécum, autorización pendiente.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-rose-50/40 border border-dashed border-rose-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">⚠</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Auditoría inteligente</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Recetas duplicadas, dosis raras, importes anómalos. Alertas automáticas.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-rose-50/40 border border-dashed border-rose-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center text-lg flex-shrink-0">🧹</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Calidad de datos</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Clientes sin DNI, fechas inválidas, datos incompletos para liquidar.</p>
@@ -300,28 +300,28 @@
             <p class="text-[11px] text-[#6f6f6f] mb-3">Simuladores y herramientas para tomar decisiones de mediano/largo plazo.</p>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-purple-50/40 border border-dashed border-purple-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center text-lg flex-shrink-0">🎚️</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Simulador de pricing</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">"¿Qué pasa si bajo el precio del ítem X 3%?". Recálculo de margen agregado.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-purple-50/40 border border-dashed border-purple-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center text-lg flex-shrink-0">🔄</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">Marca vs genéricos</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Análisis por OS — cuál acepta marca, cuál fuerza genérico, dónde tenés margen para sustituir.</p>
                 </div>
 
-                <div class="block bg-[#f5f5f5] border border-dashed border-[#ccc] rounded-xl p-4 cursor-not-allowed opacity-70">
+                <div class="block bg-purple-50/40 border border-dashed border-purple-300 rounded-xl p-4 cursor-not-allowed opacity-80">
                     <div class="flex items-start gap-2 mb-2">
                         <div class="w-9 h-9 rounded-lg bg-red-100 text-red-700 flex items-center justify-center text-lg flex-shrink-0">❓</div>
-                        <span class="text-[10px] uppercase font-bold text-[#999] bg-[#eee] px-2 py-0.5 rounded">Pronto</span>
+                        <span class="text-[10px] uppercase font-bold text-[#999] bg-white px-2 py-0.5 rounded">Pronto</span>
                     </div>
                     <p class="font-bold text-sm text-[#1e1e1e]">¿Qué pasa si dejo OS X?</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Simulación de impacto: cuánto facturás con/sin esa OS. Decisión informada.</p>
