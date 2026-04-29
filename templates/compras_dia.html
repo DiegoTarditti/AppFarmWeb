@@ -119,8 +119,9 @@
             </div>
             <div>
                 <label class="text-[10px] uppercase text-[#6f6f6f] font-semibold">Hora (HH:MM)</label>
-                <input type="text" id="add-hora" placeholder="09:30"
-                       class="block bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm w-24 font-mono">
+                <input type="text" id="add-hora" placeholder="09:30 o 0930"
+                       title="Acepta 09:30, 0930, 930 o 9:30"
+                       class="block bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm w-32 font-mono">
             </div>
             <button type="button" onclick="agregarHora()"
                     class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm">
@@ -268,10 +269,39 @@ async function ejecutarCopia(diaOrigen, diasDestino) {
     }
     await refrescarGrilla();
 }
+function _normalizarHora(input) {
+    // Acepta: "09:30", "9:30", "0930", "930" → devuelve "09:30" o null si inválido
+    const s = String(input || '').trim();
+    if (!s) return null;
+    // Caso A: HH:MM o H:MM
+    const m1 = /^(\d{1,2}):(\d{2})$/.exec(s);
+    if (m1) {
+        const h = parseInt(m1[1], 10), mi = parseInt(m1[2], 10);
+        if (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) {
+            return `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+        }
+        return null;
+    }
+    // Caso B: solo dígitos (3 o 4 → HMM o HHMM)
+    const soloNum = s.replace(/\D/g, '');
+    if (soloNum.length === 3 || soloNum.length === 4) {
+        const padded = soloNum.padStart(4, '0');
+        const h = parseInt(padded.slice(0, 2), 10), mi = parseInt(padded.slice(2), 10);
+        if (h >= 0 && h <= 23 && mi >= 0 && mi <= 59) {
+            return `${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+        }
+    }
+    return null;
+}
+
 async function agregarHora() {
     const dia = parseInt(document.getElementById('add-dia').value);
-    const hora = document.getElementById('add-hora').value.trim();
-    if (!/^\d{2}:\d{2}$/.test(hora)) { alert('Hora debe ser HH:MM'); return; }
+    const horaRaw = document.getElementById('add-hora').value;
+    const hora = _normalizarHora(horaRaw);
+    if (!hora) {
+        alert('Hora inválida. Aceptamos: 09:30, 9:30, 0930 o 930.');
+        return;
+    }
     const r = await fetch(`/api/pedidos/dia/horarios/${_provActual}`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
