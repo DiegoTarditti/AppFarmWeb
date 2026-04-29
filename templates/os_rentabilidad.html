@@ -164,12 +164,13 @@ async function cargar() {
                   'Cruzando ventas con costos de compra. Esto tarda unos segundos en períodos grandes.');
     try {
         const r = await fetch(`/api/obras-sociales/rentabilidad?desde=${desde}&hasta=${hasta}`);
-        if (!r.ok) {
-            OSLoader.error('No pudimos cargar los datos',
-                           `Servidor respondió ${r.status}. Probá refrescar o achicar el rango.`);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+            OSLoader.error(data.tipo ? `Error: ${data.tipo}` : 'No pudimos cargar los datos',
+                           data.error || `HTTP ${r.status}. Probá refrescar o achicar el rango.`);
             return;
         }
-        _data = await r.json();
+        _data = data;
         renderKPIs(_data.kpis);
         renderAlertas(_data.alertas);
         renderChart(_data.serie_temporal);

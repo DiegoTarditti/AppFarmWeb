@@ -135,6 +135,32 @@ def _mock_dispensas():
 
 # ── Rutas ─────────────────────────────────────────────────────────────
 
+def _api_safe(fn):
+    """Decorator: wrappea el endpoint en try/except y devuelve el error como
+    JSON con tipo + mensaje + últimas líneas del traceback. Evita 500 mudo.
+    """
+    import functools
+    import traceback
+
+    from flask import current_app
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            try:
+                current_app.logger.exception(f'{fn.__name__} falló')
+            except Exception:
+                pass
+            return jsonify({
+                'error': str(exc),
+                'tipo': type(exc).__name__,
+                'traceback_resumen': traceback.format_exc().splitlines()[-6:],
+            }), 500
+    return wrapper
+
+
 def init_app(app):
 
     @app.route('/obras-sociales')
@@ -179,20 +205,8 @@ def init_app(app):
                                desde=desde.isoformat(), hasta=hasta.isoformat())
 
     @app.route('/api/obras-sociales/rentabilidad')
+    @_api_safe
     def api_os_rentabilidad():
-        """JSON con KPIs + ranking + alertas + serie temporal."""
-        try:
-            return _api_os_rentabilidad_inner()
-        except Exception as exc:
-            import traceback
-            app.logger.exception('api_os_rentabilidad falló')
-            return jsonify({
-                'error': str(exc),
-                'tipo': type(exc).__name__,
-                'traceback_resumen': traceback.format_exc().splitlines()[-5:],
-            }), 500
-
-    def _api_os_rentabilidad_inner():
         """JSON con KPIs + ranking + alertas + serie temporal.
 
         Query params: desde, hasta (YYYY-MM-DD).
@@ -379,6 +393,7 @@ def init_app(app):
         return render_template('os_productos_sin_venta.html')
 
     @app.route('/api/obras-sociales/productos-sin-venta')
+    @_api_safe
     def api_os_productos_sin_venta():
         """JSON: productos del catálogo sin ventas en últimos N días.
 
@@ -544,6 +559,7 @@ def init_app(app):
                                desde=desde.isoformat(), hasta=hasta.isoformat())
 
     @app.route('/api/obras-sociales/pacientes')
+    @_api_safe
     def api_os_pacientes():
         """JSON: ranking + inactivos + drogas top."""
         from datetime import date as _date
@@ -769,6 +785,7 @@ def init_app(app):
                                desde=desde.isoformat(), hasta=hasta.isoformat())
 
     @app.route('/api/obras-sociales/medicos')
+    @_api_safe
     def api_os_medicos():
         """JSON: ranking + fugas + heatmap por médico."""
         from datetime import date as _date
@@ -1059,12 +1076,10 @@ def init_app(app):
         return render_template('os_antiguedad.html')
 
     @app.route('/api/obras-sociales/antiguedad')
+    @_api_safe
     def api_os_antiguedad():
-        """JSON con aging por OS.
-
-        Buckets: 0-30, 31-60, 61-90, 91-180, >180 días.
-        Asume que importe_a_cargo_os representa deuda pendiente (no cobrada).
-        Si en el futuro se suma una tabla de cobros/liquidaciones, restamos.
+        """Aging por OS — buckets 0-30/31-60/61-90/91-180/>180.
+        Limitado a 18 meses hacia atrás para que la query no haga full scan.
         """
         from datetime import date as _date
         from datetime import datetime as _dt
@@ -1075,6 +1090,7 @@ def init_app(app):
         import database
 
         hoy = _dt.now().date()
+        limite_antiguo = hoy - _td(days=540)  # 18 meses
 
         with database.get_db() as session:
             # Aging por OS — un solo query con buckets
@@ -1105,11 +1121,12 @@ def init_app(app):
                 WHERE COALESCE(ovd.es_venta_particular, FALSE) = FALSE
                   AND ovd.obra_social_observer IS NOT NULL
                   AND COALESCE(ovd.importe_a_cargo_os, 0) > 0
+                  AND ovd.fecha_estadistica >= :limite_antiguo
                 GROUP BY ovd.obra_social_observer, oos.descripcion
                 HAVING SUM(COALESCE(ovd.importe_a_cargo_os, 0)) > 0
                 ORDER BY SUM(COALESCE(ovd.importe_a_cargo_os, 0)) DESC
             ''')
-            rows = session.execute(sql, {'hoy': hoy}).fetchall()
+            rows = session.execute(sql, {'hoy': hoy, 'limite_antiguo': limite_antiguo}).fetchall()
 
             ranking = []
             tot = {'pendiente': 0.0, 'b1_30': 0.0, 'b31_60': 0.0, 'b61_90': 0.0,
@@ -1207,6 +1224,7 @@ def init_app(app):
                                desde=desde.isoformat(), hasta=hasta.isoformat())
 
     @app.route('/api/obras-sociales/productos-rentabilidad')
+    @_api_safe
     def api_os_productos_rentabilidad():
         """JSON: ranking de productos por margen + KPIs.
 

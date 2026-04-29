@@ -145,11 +145,13 @@ async function cargar() {
                   'Cruzando ventas pendientes con su fecha. Esto tarda unos segundos.');
     try {
         const r = await fetch('/api/obras-sociales/antiguedad');
-        if (!r.ok) {
-            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+            OSLoader.error(data.tipo ? `Error: ${data.tipo}` : 'No pudimos cargar',
+                           data.error || `HTTP ${r.status}`);
             return;
         }
-        _data = await r.json();
+        _data = data;
         document.getElementById('header-fecha').textContent = `Hoy: ${formatearFecha(_data.hoy)}`;
         renderKPIs(_data.kpis);
         renderAlertas(_data.alertas);

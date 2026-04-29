@@ -191,11 +191,13 @@ async function cargar() {
                   'Calculando ranking, detectando fugas y armando heatmap por OS.');
     try {
         const r = await fetch(`/api/obras-sociales/medicos?${params.toString()}`);
-        if (!r.ok) {
-            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+            OSLoader.error(data.tipo ? `Error: ${data.tipo}` : 'No pudimos cargar',
+                           data.error || `HTTP ${r.status}`);
             return;
         }
-        _data = await r.json();
+        _data = data;
         renderKPIs(_data.kpis);
         renderOSDropdown(_data.obras_sociales, os);
         renderChart(_data.ranking.slice(0, 15));

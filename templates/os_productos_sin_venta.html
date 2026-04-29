@@ -148,11 +148,13 @@ async function cargar() {
                   'Cruzando catálogo con últimas ventas y costos. Tarda unos segundos.');
     try {
         const r = await fetch(`/api/obras-sociales/productos-sin-venta?${params.toString()}`);
-        if (!r.ok) {
-            OSLoader.error('No pudimos cargar', `Servidor respondió ${r.status}.`);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+            OSLoader.error(data.tipo ? `Error: ${data.tipo}` : 'No pudimos cargar',
+                           data.error || `HTTP ${r.status}`);
             return;
         }
-        _data = await r.json();
+        _data = data;
         renderKPIs(_data.kpis);
         renderLabsDropdown(_data.laboratorios, lab);
         renderRanking(_data.ranking);
