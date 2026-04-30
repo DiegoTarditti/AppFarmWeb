@@ -54,10 +54,17 @@ jobs:
             exit 1
           fi
 
-      - name: Instalar postgresql-client
+      - name: Instalar postgresql-client-18 (Render usa Postgres 18)
         run: |
+          # ubuntu-latest viene con pg_dump v16. Render usa Postgres 18, lo
+          # que provoca "server version mismatch". Agregamos el repo oficial
+          # PGDG y forzamos la versión major correcta.
+          sudo sh -c 'echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends postgresql-client
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          pg_dump --version
 
       - name: Generar dump
         env:
