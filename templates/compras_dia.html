@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% set nav_active = "compras" %}
 {% set hide_sidebar = True %}
-{% block title %}Compra del día — Farmacia{% endblock %}
+{% block title %}Pedido de reposición — Farmacia{% endblock %}
 
 {% block main %}
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Pedidos del día</h1>
+    <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Pedido de reposición</h1>
     <p class="text-xs text-[#6f6f6f]">Horarios de cierre por droguería + countdown al próximo reparto.</p>
     {% if sin_horarios %}
     <div class="flex items-center gap-2">
