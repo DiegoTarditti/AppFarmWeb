@@ -114,7 +114,13 @@ def check_sync_observer_parado(session) -> Optional[Alarma]:
 
 
 def check_recalculo_os_atrasado(session) -> Optional[Alarma]:
-    """Cron `recalcular_os_clientes` no corrió en los últimos 7 días."""
+    """Cron `recalcular_os_clientes` no corrió en los últimos 7 días.
+
+    Mismo patrón que check_sync_observer_parado:
+    - "Nunca corrió" → MEDIA (sistema sin estrenar / sync ObServer aún sin
+      datos para calcular). NO crítico.
+    - "Corrió antes pero hace >7 días" → ALTA (cron roto, hay baseline).
+    """
     try:
         from database import ClienteOsInferida
         ultimo = (session.query(ClienteOsInferida.calculado_en)
@@ -125,10 +131,11 @@ def check_recalculo_os_atrasado(session) -> Optional[Alarma]:
     if ultimo is None:
         return Alarma(
             nombre='cliente_os_inferida vacía',
-            severidad=SEV_ALTA,
+            severidad=SEV_MEDIA,
             valor_actual='nunca calculada',
-            threshold='≤7 días',
-            accion='Disparar manual desde /admin → "Recalcular OS clientes"',
+            threshold='al menos 1 cálculo',
+            accion='Si la sync ObServer todavía no aporta ventas, esperar. Si ya hay '
+                    'ventas en obs_ventas_detalle, disparar manual desde /admin → "Recalcular OS clientes".',
             link='/admin',
         )
     dias = (datetime.now() - ultimo[0]).total_seconds() / 86400

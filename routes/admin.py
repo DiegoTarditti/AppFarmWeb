@@ -176,11 +176,12 @@ def init_app(app):
         """Endpoint disparado por GitHub Actions cada 15 min.
         Auth: header X-Cron-Secret (mismo patrón que recalcular_os_clientes).
         """
+        import hmac as _hmac
         expected = os.environ.get('CRON_SECRET', '').strip()
         if not expected:
             return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado'}), 503
         provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or provided != expected:
+        if not provided or not _hmac.compare_digest(provided, expected):
             return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
 
         import cron_log
@@ -271,11 +272,12 @@ def init_app(app):
 
         import cron_log
 
+        import hmac as _hmac
         expected = _os.environ.get('CRON_SECRET', '').strip()
         if not expected:
             return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
         provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or provided != expected:
+        if not provided or not _hmac.compare_digest(provided, expected):
             return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
 
         try:
@@ -429,11 +431,14 @@ def init_app(app):
     def _check_panel_token():
         """Valida el header X-Panel-Token contra la env var PANEL_REMOTO_TOKEN.
         Si la env var no está set en el server, el endpoint queda deshabilitado (503)."""
+        import hmac
         expected = os.environ.get('PANEL_REMOTO_TOKEN', '').strip()
         if not expected:
             return False, ('PANEL_REMOTO_TOKEN no configurado en el server', 503)
         provided = (request.headers.get('X-Panel-Token') or '').strip()
-        if not provided or provided != expected:
+        # compare_digest evita timing attacks (la comparación con != de strings
+        # puede leakear el token byte a byte por el tiempo de respuesta).
+        if not provided or not hmac.compare_digest(provided, expected):
             return False, ('Token inválido', 401)
         return True, None
 

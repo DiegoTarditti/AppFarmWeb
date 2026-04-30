@@ -117,8 +117,17 @@ def evaluar_y_notificar(session, severidades=('critica', 'alta'), app_url: str =
     silenciadas = 0
     errores = []
 
-    # Snapshot de filas existentes en alarmas_notificadas
-    estados = {row.nombre: row for row in session.query(AlarmaNotificada).all()}
+    # Snapshot de filas existentes en alarmas_notificadas.
+    # Limit defensivo + filtrar las muy viejas resueltas para no cargar todo
+    # si la tabla crece (ej. bug que genera alarmas sin dedup).
+    corte_viejo = ahora - timedelta(days=30)
+    estados = {
+        row.nombre: row
+        for row in (session.query(AlarmaNotificada)
+                    .filter((AlarmaNotificada.estado_actual != 'resuelta')
+                            | (AlarmaNotificada.ultima_notif >= corte_viejo))
+                    .limit(500).all())
+    }
 
     # 1) Procesar alarmas que dispararon
     for nombre, alarma in activas_por_nombre.items():

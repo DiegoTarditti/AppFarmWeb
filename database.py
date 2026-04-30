@@ -938,9 +938,9 @@ class Pedido(Base):
     # el campo `laboratorio` como identificador).
     partner_id = Column(Integer, nullable=True, index=True)
     canal_elegido_en = Column(DateTime, nullable=True)
-    creado_en = Column(DateTime, default=now_ar)
+    creado_en = Column(DateTime, default=now_ar, index=True)
     analizado_en = Column(DateTime, nullable=True)
-    estado = Column(String(20), nullable=False, default='PENDIENTE')
+    estado = Column(String(20), nullable=False, default='PENDIENTE', index=True)
     analisis_json = Column(Text, nullable=True)
     analisis_guardado_en = Column(DateTime, nullable=True)
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
@@ -1324,6 +1324,18 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_panel_comandos_estado "
                     "ON panel_comandos(estado, solicitado_en)"
                 ))
+                # Estado de notificaciones de alarmas (dedup Telegram).
+                # Mismo motivo que panel_comandos: tabla crítica usada por
+                # endpoints + cron, no debe depender de _pg_add_columns.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS alarmas_notificadas (
+                        nombre VARCHAR(120) PRIMARY KEY,
+                        ultima_notif TIMESTAMP,
+                        ultima_severidad VARCHAR(20),
+                        count_total INTEGER NOT NULL DEFAULT 0,
+                        estado_actual VARCHAR(20)
+                    )
+                """))
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos
@@ -1331,41 +1343,55 @@ def init_db(database_url=None):
     #   - pg_type_typname_nsp_index   → pg_type zombie (composite type huérfano)
     #   - pg_class_relname_nsp_index  → pg_class zombie (sequence/index/table huérfano)
     # En ambos casos parseamos el nombre del culpable, lo dropeamos y reintentamos.
-    try:
-        Base.metadata.create_all(engine)
-    except Exception as exc:
-        if database_url.startswith('sqlite'):
-            raise
-        msg = str(exc)
-        import re as _re
-        zombie = None
-        # pg_type huérfano → DETAIL: Key (typname, typnamespace)=(NAME, ...)
-        if 'pg_type_typname_nsp_index' in msg:
-            m = _re.search(r'\(typname, typnamespace\)=\(([^,]+),', msg)
-            if m:
-                zombie = m.group(1)
-        # pg_class huérfano (sequence, index, vista) → Key (relname, relnamespace)=(NAME, ...)
-        elif 'pg_class_relname_nsp_index' in msg:
-            m = _re.search(r'\(relname, relnamespace\)=\(([^,]+),', msg)
-            if m:
-                zombie = m.group(1)
-                # Si el nombre termina en _id_seq, también dropeamos la tabla padre.
-                if zombie.endswith('_id_seq'):
-                    parent = zombie[:-len('_id_seq')]
-                    zombie = parent  # los DROP de abajo cubren tabla + sequence
-        if not zombie:
-            raise
-        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
-            for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
-                        f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
-                        f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE',
-                        f'DROP SEQUENCE IF EXISTS "{zombie}" CASCADE'):
-                try:
-                    conn.execute(text(ddl))
-                except Exception:
-                    pass
-        # Reintento limpio (sin try/except: si vuelve a fallar, queremos saber).
-        Base.metadata.create_all(engine)
+    # Retry loop: si hay 2+ zombies distintos en el mismo deploy fallido
+    # (ej. tabla foo Y sequence bar_id_seq), un solo intento no alcanza.
+    # Iteramos hasta 5 veces, dropeando un zombie por iteración.
+    import re as _re
+    _MAX_RETRIES = 5
+    for _intento in range(_MAX_RETRIES + 1):
+        try:
+            Base.metadata.create_all(engine)
+            break  # éxito
+        except Exception as exc:
+            if database_url.startswith('sqlite'):
+                raise
+            if _intento >= _MAX_RETRIES:
+                raise  # demasiados zombies, algo más grave pasa
+            msg = str(exc)
+            zombie = None
+            # pg_type huérfano → DETAIL: Key (typname, typnamespace)=(NAME, ...)
+            if 'pg_type_typname_nsp_index' in msg:
+                m = _re.search(r'\(typname, typnamespace\)=\(([^,]+),', msg)
+                if m:
+                    zombie = m.group(1)
+            # pg_class huérfano (sequence, index, vista) → Key (relname, relnamespace)=(NAME, ...)
+            elif 'pg_class_relname_nsp_index' in msg:
+                m = _re.search(r'\(relname, relnamespace\)=\(([^,]+),', msg)
+                if m:
+                    zombie = m.group(1)
+                    # Si el nombre termina en _id_seq, también dropeamos la tabla padre.
+                    if zombie.endswith('_id_seq'):
+                        parent = zombie[:-len('_id_seq')]
+                        zombie = parent  # los DROP de abajo cubren tabla + sequence
+            if not zombie:
+                raise  # error desconocido, no lo silenciamos
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                'init_db retry %s/%s: dropeando zombie "%s" (%s)',
+                _intento + 1, _MAX_RETRIES, zombie, msg.split('\n')[0][:200],
+            )
+            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+                for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
+                            f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
+                            f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE',
+                            f'DROP SEQUENCE IF EXISTS "{zombie}" CASCADE'):
+                    try:
+                        conn.execute(text(ddl))
+                    except Exception as drop_err:
+                        # Loguear silenciosos para detectar bloqueos reales
+                        _logging.getLogger(__name__).debug(
+                            'DROP zombie %s ignored: %s', ddl[:60], drop_err,
+                        )
     is_sqlite = database_url.startswith('sqlite')
     # Migraciones incrementales: agrega columnas nuevas si no existen
     with engine.connect() as conn:
@@ -1815,32 +1841,9 @@ def _pg_add_columns(conn):
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hcc_user ON home_card_clicks(usuario_id, clicked_at DESC)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_hcc_card ON home_card_clicks(card_id)"))
-    # Buzón de comandos remotos para DockerPanel
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS panel_comandos (
-            id SERIAL PRIMARY KEY,
-            comando VARCHAR(40) NOT NULL,
-            estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
-            solicitado_en TIMESTAMP NOT NULL DEFAULT NOW(),
-            solicitado_por VARCHAR(80),
-            tomado_en TIMESTAMP,
-            ejecutado_en TIMESTAMP,
-            duracion_ms INTEGER,
-            resultado TEXT,
-            origen VARCHAR(40)
-        )
-    """))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_panel_comandos_estado ON panel_comandos(estado, solicitado_en)"))
-    # Estado de notificaciones de alarmas (dedup Telegram)
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS alarmas_notificadas (
-            nombre VARCHAR(120) PRIMARY KEY,
-            ultima_notif TIMESTAMP,
-            ultima_severidad VARCHAR(20),
-            count_total INTEGER NOT NULL DEFAULT 0,
-            estado_actual VARCHAR(20)
-        )
-    """))
+    # NOTA: panel_comandos y alarmas_notificadas se crean en el bloque AUTOCOMMIT
+    # temprano (database.py ~1310) para que NO dependan de esta transacción.
+    # Si una migración acá aborta, esas tablas críticas ya quedaron persistidas.
     # Puente en productos
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))
@@ -2017,6 +2020,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS partner_id INTEGER"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal_elegido_en TIMESTAMP"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_partner_id ON pedidos(partner_id)"))
+    # Para el check `check_pedidos_pendientes_viejos` (filtra estado + creado_en).
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_estado_creado ON pedidos(estado, creado_en)"))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS modulo_packs (
             id SERIAL PRIMARY KEY,

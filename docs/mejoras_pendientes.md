@@ -87,6 +87,20 @@ una tarea aparte.
 
 ## 🛠 Calidad de código
 
+### Rutas Flask huérfanas (sin link desde sidebar/templates)
+- **Trigger**: cualquier momento, decisión simple.
+- **Esfuerzo**: 30 min cada una.
+- **Detectadas (route-orphan-finder 2026-04-30)**:
+  1. ✅ ~~`/clientes` (clientes_list)~~ — **2026-04-30**: linkeada en sidebar bajo "Obras Sociales" como "Clientes / Pacientes" (templates/base.html).
+  2. `/purchase/processed` (purchase_processed) — `routes/purchase.py:360`. No linkeada desde ningún flujo. Decidir: ¿linkear desde `purchase_suggest.html`, agregar al sidebar bajo "Compras", o eliminar?
+  3. `/observer/laboratorios` (observer_laboratorios) — `routes/observer.py:914`. Probablemente deprecada (era stepping stone del flujo viejo, ahora se entra directo por `purchase_suggest`). Decidir: eliminar o fusionar.
+
+### Cache de evaluación de alarmas
+- **Trigger**: si la página `/admin` se vuelve lenta.
+- **Esfuerzo**: 30 min.
+- **Síntoma**: cada navegación a `/admin` evalúa alarmas (7 queries). Si el user va `/admin → /admin/alarmas`, se evalúa 2 veces.
+- **Solución**: cachear el resultado por 30-60s en memoria de proceso (`functools.lru_cache` con TTL custom o `cachetools.TTLCache`).
+
 ### Linter (`ruff`)
 - **Trigger**: cualquier momento, gratis.
 - **Esfuerzo**: 5 min.
@@ -358,10 +372,10 @@ una tarea aparte.
 - **Solución**: limitar el scan a las líneas que tienen timestamp posterior al `Starting gunicorn` más reciente, o usar `docker logs --since=<timestamp>` con el momento del restart.
 - **Workaround actual**: ignorar el aviso si la app responde (curl /health → 200).
 
-### `init_db()` bloquea el boot del worker en Render
+### ~~`init_db()` bloquea el boot del worker en Render~~ ✅ MITIGADO 2026-04-28 (workaround `--preload`)
 - **Síntoma**: backfills inline en migración (ej. `producto_codigos_barra`, `producto_precios_hist`) corren en cada worker al import time. En Render con `--workers 2` sin `--preload`, dos workers ejecutan los backfills en paralelo sobre el Postgres remoto, hacen contención, el HTTP port no abre a tiempo y Render aborta el deploy con `No open HTTP ports detected`.
-- **Workaround actual** (2026-04-28): `--preload` en el CMD del Dockerfile → master corre `init_db` una sola vez antes de forkear workers.
-- **Solución definitiva**: mover backfills a un management script one-shot (o disparar con env-var) para que NO corran en el path crítico de boot.
+- **Workaround aplicado** (2026-04-28): `--preload` en el CMD del Dockerfile → master corre `init_db` una sola vez antes de forkear workers. Verificado en `Dockerfile:30`. Backfills movidos a thread async (ver `_ejecutar_backfills_async` en `database.py:1305`).
+- **Pendiente solución definitiva**: mover backfills a management script one-shot (o disparar con env-var) para que NO corran en el path crítico de boot. Hoy con el thread async ya no es problemático en producción.
 
 ---
 
