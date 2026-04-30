@@ -22,7 +22,49 @@ def init_app(app):
     @app.route('/admin')
     @requiere_permiso('usuarios', 'admin')
     def admin_index():
-        return render_template('admin_index.html')
+        # Conteo rápido de alarmas activas para mostrar badge en el header.
+        n_alarmas = 0
+        n_criticas = 0
+        try:
+            import alarmas as _alarmas
+            with database.get_db() as _s:
+                lista = _alarmas.evaluar_todas(_s)
+                n_alarmas = len(lista)
+                n_criticas = sum(1 for a in lista if a.severidad == 'critica')
+        except Exception:
+            pass
+        return render_template('admin_index.html',
+                                n_alarmas=n_alarmas,
+                                n_criticas=n_criticas)
+
+    @app.route('/admin/alarmas')
+    @requiere_permiso('usuarios', 'admin')
+    def admin_alarmas():
+        """Pantalla unificada de alarmas — chequeos automáticos del sistema.
+        Spec: c:/AppSeguimiento/mantenimiento-y-alarmas.md
+        """
+        import alarmas as _alarmas
+        with database.get_db() as session:
+            lista = _alarmas.evaluar_todas(session)
+            por_sev = _alarmas.contar_por_severidad(lista)
+        return render_template('admin_alarmas.html',
+                                alarmas=lista,
+                                por_severidad=por_sev,
+                                total=len(lista))
+
+    @app.route('/api/admin/alarmas')
+    @requiere_permiso('usuarios', 'admin')
+    def api_admin_alarmas():
+        """Versión JSON para polling / integración externa."""
+        import alarmas as _alarmas
+        with database.get_db() as session:
+            lista = _alarmas.evaluar_todas(session)
+            por_sev = _alarmas.contar_por_severidad(lista)
+        return jsonify({
+            'alarmas': [a.to_dict() for a in lista],
+            'por_severidad': por_sev,
+            'total': len(lista),
+        })
 
     @app.route('/admin/cron-log')
     @requiere_permiso('usuarios', 'admin')

@@ -2,9 +2,21 @@
 {% set nav_active = "admin" %}
 {% block title %}Administración{% endblock %}
 {% block main %}
-<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
-    <h1 class="text-base font-bold text-[#1e1e1e]">Administración</h1>
-    <p class="text-xs text-[#6f6f6f]">Utilidades de mantenimiento — solo usuarios con permiso admin.</p>
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">Administración</h1>
+        <p class="text-xs text-[#6f6f6f]">Utilidades de mantenimiento — solo usuarios con permiso admin.</p>
+    </div>
+    <a href="{{ url_for('admin_alarmas') }}"
+       class="ml-auto flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors
+              {% if n_criticas > 0 %}bg-red-100 text-red-800 hover:bg-red-200
+              {% elif n_alarmas > 0 %}bg-amber-100 text-amber-800 hover:bg-amber-200
+              {% else %}bg-emerald-100 text-emerald-800 hover:bg-emerald-200{% endif %}">
+        🔔
+        {% if n_criticas > 0 %}{{ n_criticas }} crítica{{ 's' if n_criticas != 1 }}{% if n_alarmas > n_criticas %} · {{ n_alarmas - n_criticas }} más{% endif %}
+        {% elif n_alarmas > 0 %}{{ n_alarmas }} alarma{{ 's' if n_alarmas != 1 }}
+        {% else %}Todo OK{% endif %}
+    </a>
 </div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6">

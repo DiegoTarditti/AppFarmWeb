@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Alarmas del sistema{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">🔔 Alarmas del sistema</h1>
+        <p class="text-xs text-[#6f6f6f]">Chequeos automáticos. Las alarmas son secundarias — la primera línea es el auto-mantenimiento. Spec en <code class="font-mono text-[10px]">mantenimiento-y-alarmas.md</code>.</p>
+    </div>
+    <a href="{{ url_for('admin_index') }}"
+       class="ml-auto text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver a admin</a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-4xl mx-auto space-y-4">
+
+    <!-- Resumen por severidad -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-white border-2 {% if por_severidad['critica'] > 0 %}border-red-300 bg-red-50{% else %}border-emerald-200 bg-emerald-50{% endif %} rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">🚨 Críticas</p>
+            <p class="text-3xl font-bold {% if por_severidad['critica'] > 0 %}text-red-700{% else %}text-emerald-700{% endif %}">{{ por_severidad['critica'] }}</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1">Acción inmediata</p>
+        </div>
+        <div class="bg-white border-2 {% if por_severidad['alta'] > 0 %}border-amber-300 bg-amber-50{% else %}border-emerald-200{% endif %} rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">⚠ Altas</p>
+            <p class="text-3xl font-bold {% if por_severidad['alta'] > 0 %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ por_severidad['alta'] }}</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1">Atender esta semana</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">🟡 Medias</p>
+            <p class="text-3xl font-bold text-[#1e1e1e]">{{ por_severidad['media'] }}</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1">Atender este mes</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">🟢 Informativas</p>
+            <p class="text-3xl font-bold text-[#1e1e1e]">{{ por_severidad['baja'] }}</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1">Sin urgencia</p>
+        </div>
+    </div>
+
+    <!-- Lista de alarmas activas -->
+    {% if total == 0 %}
+    <div class="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-8 text-center">
+        <p class="text-4xl mb-3">✅</p>
+        <p class="text-lg font-bold text-emerald-800">Todo OK</p>
+        <p class="text-sm text-emerald-700 mt-1">No hay alarmas activas. Los chequeos automáticos pasaron limpio.</p>
+        <p class="text-[11px] text-[#6f6f6f] mt-3">Los chequeos se evalúan al cargar esta página. Refrescá para reevaluar.</p>
+    </div>
+    {% else %}
+    <div class="space-y-3">
+        {% for a in alarmas %}
+        <div class="bg-white border-l-4 rounded-xl p-4
+                    {% if a.severidad == 'critica' %}border-red-500
+                    {% elif a.severidad == 'alta' %}border-amber-500
+                    {% elif a.severidad == 'media' %}border-yellow-400
+                    {% else %}border-sky-400{% endif %}
+                    border border-surface-border shadow-sm">
+            <div class="flex items-start gap-3">
+                <span class="text-xl flex-shrink-0">
+                    {% if a.severidad == 'critica' %}🚨
+                    {% elif a.severidad == 'alta' %}⚠
+                    {% elif a.severidad == 'media' %}🟡
+                    {% else %}🟢{% endif %}
+                </span>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <p class="font-semibold text-[#1e1e1e]">{{ a.nombre }}</p>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full uppercase font-semibold
+                                     {% if a.severidad == 'critica' %}bg-red-100 text-red-800
+                                     {% elif a.severidad == 'alta' %}bg-amber-100 text-amber-800
+                                     {% elif a.severidad == 'media' %}bg-yellow-100 text-yellow-800
+                                     {% else %}bg-sky-100 text-sky-800{% endif %}">{{ a.severidad }}</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 text-xs">
+                        <div>
+                            <span class="text-[#6f6f6f]">Valor actual:</span>
+                            <span class="font-mono text-[#1e1e1e]">{{ a.valor_actual }}</span>
+                        </div>
+                        <div>
+                            <span class="text-[#6f6f6f]">Threshold:</span>
+                            <span class="font-mono text-[#1e1e1e]">{{ a.threshold }}</span>
+                        </div>
+                    </div>
+                    <p class="text-xs text-[#1e1e1e] mt-2">
+                        <span class="font-semibold">Acción:</span> {{ a.accion }}
+                    </p>
+                </div>
+                {% if a.link %}
+                <a href="{{ a.link }}"
+                   class="text-xs bg-violet-100 hover:bg-violet-200 text-violet-800 font-semibold px-3 py-1.5 rounded-lg flex-shrink-0 transition-colors">
+                    Ver detalle →
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Footer info -->
+    <div class="bg-[#fafafa] border border-surface-border rounded-xl p-4 mt-6">
+        <p class="text-xs font-semibold text-[#1e1e1e] mb-2">Sobre las alarmas</p>
+        <ul class="text-[11px] text-[#6f6f6f] space-y-1">
+            <li>• Se evalúan al cargar esta página (cero polling, cero overhead constante).</li>
+            <li>• Chequeos definidos en <code class="font-mono">alarmas.py</code>. Para sumar uno: agregar función <code class="font-mono">check_X(session)</code> y registrarla en <code class="font-mono">CHECKS</code>.</li>
+            <li>• Las alarmas son <strong>secundarias</strong>: la primera línea de defensa son los crons de auto-mantenimiento. Si la auto-purga funciona, ninguna alarma debería disparar.</li>
+            <li>• Para integración con bots de Slack/Telegram: <code class="font-mono text-[10px]">GET /api/admin/alarmas</code> devuelve JSON.</li>
+        </ul>
+    </div>
+
+</div>
+</div>
+{% endblock %}
