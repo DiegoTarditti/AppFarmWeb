@@ -1698,6 +1698,17 @@ class DockerPanel(tk.Tk):
             'version':       [('git rev-parse --short HEAD', 'rev'),
                               ('git log -1 --format=%s%n%cI', 'last_commit')],
             'sync_now':      [('python sync_observer.py', 'sync')],
+            # Dedupe labs/proveedores. SIEMPRE dry-run primero; el apply solo
+            # después de revisar el resultado del dry-run.
+            'dedupe_labs_dry':   [('python -m scripts.dedupe_labs_drogs', 'dry-run')],
+            'dedupe_labs_apply': [('python -m scripts.dedupe_labs_drogs --apply', 'apply')],
+            # Purga manual de cron_log (se ejecuta vía API local de la app web).
+            'purgar_cron_log':   [('curl -sS -X POST "http://localhost:5000/api/cron-log/purgar?dias=7"', 'purgar')],
+            # Health check: containers + commit actual + tail de logs web/db.
+            'health':       [('docker-compose ps', 'ps'),
+                             ('git rev-parse --short HEAD', 'rev'),
+                             ('docker-compose logs --tail=20 web', 'web logs'),
+                             ('docker-compose logs --tail=20 db', 'db logs')],
         }
 
     def _load_panel_remoto_config(self):

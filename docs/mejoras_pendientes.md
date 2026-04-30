@@ -226,6 +226,19 @@ una tarea aparte.
 ### ~~Bot de Telegram~~ (descartado a favor del buzón Render)
 - Mantener nota: si por alguna razón se necesita un canal de comandos por *push* (que la PC reciba inmediatamente sin polling), Telegram long-polling sigue siendo la alternativa. Por ahora el polling outbound al buzón Render alcanza.
 
+### Notificaciones de alarmas críticas a Telegram
+- **Trigger**: cuando el módulo de alarmas (`/admin/alarmas`) detecta una crítica o alta, mandar push al celular del admin para no depender de que entres a la página.
+- **Esfuerzo**: 2 hs.
+- **Cómo**:
+  1. Crear bot con `@BotFather`, conseguir TOKEN. Mandar `/start` para conseguir `chat_id`.
+  2. Env vars en Render: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (1 token + 1 chat por farmacia, eventual N).
+  3. Endpoint `POST /api/admin/alarmas/notificar` que evalúa, deduplica con tabla `alarmas_notificadas(nombre, ultima_notif)` y manda al bot. Solo notifica si `ahora - ultima_notif > 4h` o si la alarma RESUCITA después de estar OK (= salió + entró de nuevo).
+  4. GH Actions cron cada 15 min llamando ese endpoint con `X-Cron-Secret`.
+  5. Mensaje formato: `🚨 Sync ObServer parado · 52h sin sync · /admin/alarmas`.
+  6. Severidades a notificar: `critica` siempre, `alta` opcional con flag, `media`/`baja` no.
+- **Por qué Telegram > WhatsApp**: setup 5min vs 30min+, 0 costo vs 0.005-0.05 USD/msg, API simple vs Cloud API/Twilio, no expone tu número.
+- **Multi-farmacia futuro**: 1 bot global + N chats (uno por farmacia). Cuando se venda a más, cada farmacia reporta a su grupo de Telegram.
+
 ### Setup Tailscale + VSCode Remote SSH (doc listo, falta ejecutar)
 - **Trigger**: cuando se quiera editar/operar la PC farmacia desde cualquier laptop como si fuese local.
 - **Esfuerzo**: 30 min de instalación.

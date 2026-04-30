@@ -76,7 +76,15 @@ def check_cron_errors_24h(session) -> Optional[Alarma]:
 
 
 def check_sync_observer_parado(session) -> Optional[Alarma]:
-    """Si el último sync de ObServer fue hace >48h, la sync está rota silenciosa."""
+    """Si el último sync de ObServer fue hace >48h, la sync está rota silenciosa.
+
+    Distingue dos casos:
+    - "Nunca corrió" → MEDIA (sistema sin estrenar / DockerPanel sin reportar
+      a `cron_log` aún). NO crítico — alguien tiene que apretar el botón una
+      primera vez para que esto se calibre.
+    - "Corrió antes pero hace >48h" → CRÍTICA (la sync está realmente rota,
+      tenemos un baseline de funcionamiento).
+    """
     from database import CronLog
     ultimo = (session.query(CronLog.inicio)
               .filter(CronLog.proceso.like('sync_%'))
@@ -84,11 +92,12 @@ def check_sync_observer_parado(session) -> Optional[Alarma]:
               .first())
     if ultimo is None:
         return Alarma(
-            nombre='Sync ObServer nunca corrió',
-            severidad=SEV_CRITICA,
+            nombre='Sync ObServer nunca registrado en Render',
+            severidad=SEV_MEDIA,
             valor_actual='nunca',
-            threshold='≤48h',
-            accion='Verificar DockerPanel en la farmacia + conectividad a 192.168.1.137',
+            threshold='al menos 1 sync en cron_log',
+            accion='Apretar "Sincronizar ahora" en DockerPanel para validar que reporta a Render. '
+                    'Si la PC está apagada, NO es problema — es estado normal hasta que prendan.',
             link='/admin/cron-log?proceso=sync_',
         )
     horas = (datetime.now() - ultimo[0]).total_seconds() / 3600

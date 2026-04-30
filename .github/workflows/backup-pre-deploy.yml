@@ -64,7 +64,13 @@ jobs:
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends postgresql-client-18
-          pg_dump --version
+          # En Ubuntu, /usr/bin/pg_dump es un symlink al cliente "default"
+          # (el v16 que viene preinstalado). El v18 queda en /usr/lib/postgresql/18/bin.
+          # Lo agregamos al PATH al PRINCIPIO para que tome precedencia, y exportamos
+          # PG_DUMP_BIN para que el siguiente step lo use explícitamente.
+          echo "/usr/lib/postgresql/18/bin" >> $GITHUB_PATH
+          echo "PG_DUMP_BIN=/usr/lib/postgresql/18/bin/pg_dump" >> $GITHUB_ENV
+          /usr/lib/postgresql/18/bin/pg_dump --version
 
       - name: Generar dump
         env:
@@ -76,7 +82,8 @@ jobs:
           echo "Dumping a $out…"
           # --no-owner / --no-acl para que el restore funcione en cualquier
           # DB destino. --clean dropea objetos antes de recrear (idempotente).
-          pg_dump "$DB_URL" \
+          # Usar el binario v18 explícito (PG_DUMP_BIN seteado en step previo).
+          "$PG_DUMP_BIN" "$DB_URL" \
             --no-owner --no-acl \
             --clean --if-exists \
             > "$out"
