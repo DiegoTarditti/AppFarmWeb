@@ -32,9 +32,19 @@ from decimal import Decimal
 
 import database
 from database import (
-    DescuentoBase, Laboratorio, ObsCodigoBarras, ObsLaboratorio,
-    ObsProducto, ObsStock, ObsVentaMensual, OfertaMinimo, Provider,
-    Producto, get_db, init_db, now_ar,
+    DescuentoBase,
+    Laboratorio,
+    ObsCodigoBarras,
+    ObsLaboratorio,
+    ObsProducto,
+    ObsStock,
+    ObsVentaMensual,
+    OfertaMinimo,
+    Producto,
+    Provider,
+    get_db,
+    init_db,
+    now_ar,
 )
 
 # El sistema usa OBSERVER_ID_FARMACIA (default 10525) en /compras/rapido y

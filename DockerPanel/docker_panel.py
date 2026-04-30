@@ -6,7 +6,6 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 import datetime
-import webbrowser
 
 # === BEGIN HELPER HTTP (copy to unified panel) ===
 # Mini servidor HTTP local para que el frontend hosteado (Render) pueda
@@ -23,6 +22,7 @@ import tkinter as tk
 import urllib.error
 import urllib.parse
 import urllib.request
+import webbrowser
 from tkinter import filedialog, messagebox, scrolledtext
 
 HELPER_PORT = 5055

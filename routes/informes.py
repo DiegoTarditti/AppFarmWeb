@@ -930,7 +930,9 @@ def init_app(app):
 
         Devuelve labels = ['DD/MM' x 30] y data = unidades vendidas ese día.
         """
-        from datetime import date as _date, timedelta
+        from datetime import date as _date
+        from datetime import timedelta
+
         from database import ObsVentaDetalle
         with database.get_db() as session:
             obs = session.get(ObsProducto, observer_id)
@@ -980,9 +982,10 @@ def init_app(app):
           NCR resta.
         - Pedidos: usa observer_id directo de pedido_emitido_item.
         """
-        from datetime import date as _date, timedelta
-        from database import (Invoice, InvoiceItem, ObsCodigoBarras, Producto,
-                              PedidoEmitido, PedidoEmitidoItem)
+        from datetime import date as _date
+        from datetime import timedelta
+
+        from database import Invoice, InvoiceItem, ObsCodigoBarras, PedidoEmitido, PedidoEmitidoItem, Producto
         with database.get_db() as session:
             obs = session.get(ObsProducto, observer_id)
             if not obs:

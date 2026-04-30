@@ -126,8 +126,9 @@ def init_app(app):
         """Dispara `scripts.recalcular_os_por_cliente.recalcular()` y registra
         el resultado en cron_log. Ideal para botón admin o cron diario.
         """
-        import cron_log
         from recalcular_os_por_cliente import recalcular
+
+        import cron_log
         try:
             with cron_log.registrar('recalcular_os_clientes', origen='web') as log:
                 res = recalcular()
@@ -157,8 +158,9 @@ def init_app(app):
         """
         import os as _os
 
-        import cron_log
         from recalcular_os_por_cliente import recalcular
+
+        import cron_log
 
         expected = _os.environ.get('CRON_SECRET', '').strip()
         if not expected:

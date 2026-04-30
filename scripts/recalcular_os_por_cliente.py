@@ -17,7 +17,12 @@ from sqlalchemy import func
 
 import database
 from database import (
-    ClienteOsInferida, ObsCliente, ObsVentaDetalle, get_db, init_db, now_ar,
+    ClienteOsInferida,
+    ObsCliente,
+    ObsVentaDetalle,
+    get_db,
+    init_db,
+    now_ar,
 )
 
 
@@ -66,7 +71,7 @@ def recalcular(min_ventas=1):
 
         # 3. Para cada cliente, quedarse con la OS de mayor n.
         # Usamos window function para ranking dentro del grupo.
-        from sqlalchemy import desc, and_
+        from sqlalchemy import and_, desc
         # Approach simpler sin window: traer todo y resolver en Python.
         rows = session.query(
             os_count_q.c.cli,
@@ -141,7 +146,7 @@ if __name__ == '__main__':
     print(f"\n✅ Procesados: {res['procesados']}")
     print(f"   Con OS principal: {res['con_os']}")
     print(f"   Sin OS frecuente: {res['sin_os']}")
-    print(f"\n   Top 10 OS por cantidad de clientes:")
+    print("\n   Top 10 OS por cantidad de clientes:")
     with get_db() as session:
         from database import ObsObraSocial
         for os_id, n in res['top_os']:

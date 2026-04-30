@@ -11,7 +11,7 @@ La UI no debería cambiar — solo cambia la fuente de datos.
 import random
 from datetime import date, datetime, timedelta
 
-from flask import jsonify, render_template, request
+from flask import flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import text as _text
 
 import database
@@ -1286,7 +1286,7 @@ def init_app(app):
             heatmap = []
             if top_med_ids and top_os_ids:
                 from sqlalchemy import bindparam
-                sql_heat = _text(f'''
+                sql_heat = _text('''
                     SELECT
                         ovd.medico_observer AS med_id,
                         ovd.obra_social_observer AS os_id,
@@ -2038,7 +2038,12 @@ def init_app(app):
         from sqlalchemy import case, func
 
         from database import (
-            ObsCliente, ObsConvenio, ObsObraSocial, ObsPlan, ObsProducto, ObsVentaDetalle,
+            ObsCliente,
+            ObsConvenio,
+            ObsObraSocial,
+            ObsPlan,
+            ObsProducto,
+            ObsVentaDetalle,
         )
 
         os_filter_id = filtros.get('os_filter_id')
@@ -2446,9 +2451,9 @@ def init_app(app):
         import io
         import os as _os
 
+        from flask import send_file
         from openpyxl import Workbook
         from openpyxl.styles import Alignment, Font, PatternFill
-        from flask import send_file
 
         from database import get_db
 
@@ -2527,11 +2532,17 @@ def init_app(app):
     @app.route('/medico/<int:medico_id>')
     def medico_detalle(medico_id):
         """Análisis de un médico: donut por laboratorio + detalle por producto."""
-        from sqlalchemy import distinct, func
         import os as _os
+
+        from sqlalchemy import distinct, func
+
         from database import (
-            ObsLaboratorio, ObsMedico, ObsObraSocial, ObsProducto,
-            ObsVentaDetalle, get_db,
+            ObsLaboratorio,
+            ObsMedico,
+            ObsObraSocial,
+            ObsProducto,
+            ObsVentaDetalle,
+            get_db,
         )
 
         id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))

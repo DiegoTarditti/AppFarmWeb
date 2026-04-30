@@ -24,19 +24,20 @@ Lo que migra antes de borrar el duplicado:
 Idempotente: corre 2 veces y la 2da no tiene nada que fusionar.
 """
 import argparse
+
+# Path hack — uso desde docker exec o como módulo.
+import os as _os
 import sys
 from collections import defaultdict
 
 from sqlalchemy import func
 
-# Path hack — uso desde docker exec o como módulo.
-import os as _os
 _BASE = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
 if _BASE not in sys.path:
     sys.path.insert(0, _BASE)
 
 import database
-from database import Laboratorio, Provider, Producto, Invoice, Claim, BarcodeMapping
+from database import BarcodeMapping, Claim, Invoice, Laboratorio, Producto, Provider
 from helpers import _normalizar_nombre_entidad
 
 

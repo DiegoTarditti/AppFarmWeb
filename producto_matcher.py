@@ -385,9 +385,7 @@ def match_producto(*,
         if not result.producto and ean and target == 'producto':
             ean_clean = str(ean).strip()
             try:
-                from database import (
-                    ObsCodigoBarras, ObsLaboratorio, ObsProducto, Producto, Laboratorio
-                )
+                from database import Laboratorio, ObsCodigoBarras, ObsLaboratorio, ObsProducto, Producto
                 obs_id_row = (session.query(ObsCodigoBarras.producto_observer)
                               .filter(ObsCodigoBarras.codigo_barras == ean_clean,
                                       ObsCodigoBarras.fecha_baja.is_(None))

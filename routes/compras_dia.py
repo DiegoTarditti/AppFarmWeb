@@ -10,13 +10,11 @@ from datetime import datetime
 
 from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-
 from sqlalchemy import text
 
 import database
-from database import Provider, ProveedorHorarioReparto, get_db
+from database import ProveedorHorarioReparto, Provider, get_db
 from services.horarios import horarios_por_dia, proximo_cierre
-
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
@@ -177,10 +175,17 @@ def init_app(app):
         Descuentos por lab/proveedor se evalúan en una fase posterior.
         """
         from sqlalchemy import func
+
         from database import (
-            Laboratorio, LaboratorioDrogueria,
-            ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Producto,
-            PedidoEmitido, PedidoEmitidoItem,
+            Laboratorio,
+            LaboratorioDrogueria,
+            ObsLaboratorio,
+            ObsProducto,
+            ObsStock,
+            ObsVentaMensual,
+            PedidoEmitido,
+            PedidoEmitidoItem,
+            Producto,
         )
 
         prov_id = request.args.get('prov', type=int)
@@ -311,9 +316,12 @@ def init_app(app):
                 lab_local_id = (local['lab_local_id'] if local else None) \
                                 or lab_obs_to_local.get(r.lab_obs_id)
                 cubre_lab = lab_local_id in labs_cubiertos
-                from purchase_engine import (analyze_product,
-                                              start_month_idx_from_period,
-                                              tipo_producto, AVG_DAYS_PER_MONTH)
+                from purchase_engine import (
+                    AVG_DAYS_PER_MONTH,
+                    analyze_product,
+                    start_month_idx_from_period,
+                    tipo_producto,
+                )
                 u12m_int = int(r.u12m or 0)
                 min_actual = int(r.minimo or 0)
                 stock_actual = int(r.stock or 0)
@@ -330,7 +338,7 @@ def init_app(app):
                 import math
                 min_sugerido = int(math.ceil(fcst7)) if fcst7 > 0 else 0
                 # Promedio mensual con prorrateo si aplica (igual que analyze_purchase).
-                from purchase_engine import _prorate_partial, FULL_MONTHS
+                from purchase_engine import FULL_MONTHS, _prorate_partial
                 _pp = _prorate_partial(ventas_arr, end_month)
                 if _pp is not None:
                     avg_m = (sum(ventas_arr[:FULL_MONTHS]) + _pp) / (FULL_MONTHS + 1)
@@ -411,10 +419,16 @@ def init_app(app):
         Devuelve datos listos para agregar como fila al armado: stock, mínimo,
         u12m, lab, cubre_lab según la droguería pasada por ?prov.
         """
-        from sqlalchemy import func, and_
+        from sqlalchemy import and_, func
+
         from database import (
-            Laboratorio, LaboratorioDrogueria,
-            ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, Producto,
+            Laboratorio,
+            LaboratorioDrogueria,
+            ObsLaboratorio,
+            ObsProducto,
+            ObsStock,
+            ObsVentaMensual,
+            Producto,
         )
         q = (request.args.get('q') or '').strip()
         prov_id = request.args.get('prov', type=int)
@@ -588,6 +602,7 @@ def init_app(app):
     @login_required
     def pedidos_emitidos_list():
         from datetime import timedelta
+
         from database import PedidoEmitido
         from helpers import now_ar
         es_pedidos = getattr(current_user, 'rol', None) == 'pedidos'

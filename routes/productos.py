@@ -515,6 +515,7 @@ def init_app(app):
     def api_catalogacion_stats():
         """Resumen de cobertura del catálogo estructurado."""
         from sqlalchemy import func
+
         from database import ProductoAtributo
         with database.get_db() as session:
             total_prods = session.query(func.count(Producto.id)).scalar()
@@ -545,8 +546,8 @@ def init_app(app):
     @app.route('/api/producto/<int:prod_id>/atributos', methods=['GET', 'POST'])
     def api_producto_atributos(prod_id):
         """GET devuelve los atributos. POST permite editar manualmente (fuente='manual')."""
-        from database import ProductoAtributo
         from catalogacion import _normalizar_droga
+        from database import ProductoAtributo
         with database.get_db() as session:
             prod = session.get(Producto, prod_id)
             if not prod:
