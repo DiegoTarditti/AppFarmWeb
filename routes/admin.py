@@ -195,10 +195,17 @@ def init_app(app):
         # App URL para construir links absolutos en los mensajes
         app_url = (os.environ.get('APP_URL') or '').rstrip('/')
 
+        # Severidades a notificar — configurable vía env var (separadas por coma).
+        # Default: critica + alta. Para incluir media: ALARMAS_SEVERIDADES=critica,alta,media.
+        sev_raw = os.environ.get('ALARMAS_SEVERIDADES', 'critica,alta')
+        severidades = tuple(s.strip() for s in sev_raw.split(',') if s.strip())
+
         try:
             with cron_log.registrar('notificar_alarmas', origen='cron') as log:
                 with database.get_db() as session:
-                    res = notificaciones.evaluar_y_notificar(session, app_url=app_url)
+                    res = notificaciones.evaluar_y_notificar(
+                        session, severidades=severidades, app_url=app_url,
+                    )
                 log.metadata = res
                 if res.get('errores'):
                     log.error = ' | '.join(res['errores'][:3])
