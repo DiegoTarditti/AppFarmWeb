@@ -1,0 +1,105 @@
+name: Backup pre-deploy de la DB de Render
+
+# Cada push a main que dispara un deploy en Render, antes corre acá un
+# pg_dump de la DB productiva y lo sube como artifact del workflow.
+# Si el deploy nuevo rompe algo (migración mala, drop de columna mal hecha,
+# etc.), bajás el artifact y restaurás con psql.
+#
+# Trigger: push a main (igual que el deploy de Render).
+# Si Render tarda 3-5 min en deployar, el dump tiene que estar antes para
+# que quede del estado VIEJO. Por eso usamos `on: push` directamente —
+# GitHub Actions arranca el workflow inmediatamente.
+#
+# Configuración previa (una sola vez):
+#   1. Render dashboard → tu DB → Connect → Copy "External Database URL".
+#      Es la del tipo postgres://user:pass@host:5432/dbname (con SSL).
+#   2. GitHub: Settings → Secrets and variables → Actions → New repository secret:
+#        - Name: RENDER_DATABASE_URL_EXTERNAL
+#        - Value: la URL externa del paso 1.
+#
+# Si el secret no está, el workflow falla con error explícito.
+#
+# Cómo restaurar en emergencia:
+#   1. GitHub → Actions → "Backup pre-deploy de la DB de Render"
+#   2. Buscar el run anterior al deploy que rompió (click)
+#   3. Scroll abajo → Artifacts → descargar el .sql.gz
+#   4. Descomprimir y restaurar:
+#        gunzip backup-render-*.sql.gz
+#        psql "$RENDER_DATABASE_URL_EXTERNAL" < backup-render-*.sql
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Concurrencia: evitar que 2 deploys seguidos disparen 2 backups en paralelo
+# (no rompe nada, pero gastamos minutos de Actions).
+concurrency:
+  group: backup-pre-deploy
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: pg_dump → artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validar secret
+        env:
+          DB_URL: ${{ secrets.RENDER_DATABASE_URL_EXTERNAL }}
+        run: |
+          if [ -z "$DB_URL" ]; then
+            echo "::error::Falta el secret RENDER_DATABASE_URL_EXTERNAL"
+            echo "Configurar en: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+      - name: Instalar postgresql-client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Generar dump
+        env:
+          DB_URL: ${{ secrets.RENDER_DATABASE_URL_EXTERNAL }}
+        run: |
+          set -e
+          ts=$(date -u +%Y%m%d-%H%M%S)
+          out="backup-render-${ts}.sql"
+          echo "Dumping a $out…"
+          # --no-owner / --no-acl para que el restore funcione en cualquier
+          # DB destino. --clean dropea objetos antes de recrear (idempotente).
+          pg_dump "$DB_URL" \
+            --no-owner --no-acl \
+            --clean --if-exists \
+            > "$out"
+          gzip -9 "$out"
+          ls -lh "${out}.gz"
+          echo "BACKUP_FILE=${out}.gz" >> $GITHUB_ENV
+          # Sanity check: el dump no puede ser <100KB (sería sospechoso)
+          size=$(stat -c%s "${out}.gz")
+          if [ "$size" -lt 100000 ]; then
+            echo "::error::Dump muy chico ($size bytes) — algo falló"
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          # Retention: 30 días alcanza para rollback de emergencia.
+          # Si necesitás historial más largo, configurar en GH Settings →
+          # Actions → General → Artifact retention period.
+          retention-days: 30
+
+      - name: Resumen
+        env:
+          BACKUP_FILE: ${{ env.BACKUP_FILE }}
+        run: |
+          echo "✓ Backup completado: $BACKUP_FILE"
+          echo ""
+          echo "Para restaurar (en emergencia):"
+          echo "  1. Descargar este artifact desde la pestaña 'Artifacts' arriba"
+          echo "  2. gunzip $BACKUP_FILE"
+          echo "  3. psql \"\$RENDER_DATABASE_URL_EXTERNAL\" < ${BACKUP_FILE%.gz}"
