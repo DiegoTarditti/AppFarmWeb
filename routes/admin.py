@@ -52,6 +52,15 @@ def init_app(app):
                                 por_severidad=por_sev,
                                 total=len(lista))
 
+    @app.route('/mock/pedidos-nuevo')
+    @requiere_permiso('usuarios', 'admin')
+    def mock_pedidos_nuevo():
+        """Mock estático del pedido de reposición grupal multi-farmacia.
+        Sirve para mostrar a Esteban el concepto antes de implementar.
+        Spec: c:/AppSeguimiento/sistema-pedidos-nuevo.md
+        """
+        return render_template('mock_pedidos_nuevo.html')
+
     @app.route('/api/admin/alarmas')
     @requiere_permiso('usuarios', 'admin')
     def api_admin_alarmas():

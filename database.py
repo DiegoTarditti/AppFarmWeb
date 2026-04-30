@@ -402,6 +402,48 @@ class PanelComando(Base):
     origen = Column(String(40), nullable=True)
 
 
+class Farmacia(Base):
+    """Una de las farmacias del grupo. Multi-tenant Fase 1.
+
+    Por compatibilidad: la primera farmacia (la actual) tiene id=1 y
+    `id_farmacia_observer` igual al env var OBSERVER_ID_FARMACIA.
+
+    Cuando se sumen farmacias nuevas (ej. Pieri):
+      - id=2, 3, ... etc.
+      - `id_farmacia_observer` = el id real en DW.Farmacias de Observer.
+      - `es_demo=True` mientras se prueba con datos sintéticos. False cuando
+        se conecte el Observer real.
+    """
+    __tablename__ = 'farmacias'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(150), nullable=False)
+    razon_social = Column(String(200), nullable=True)
+    cuit = Column(String(20), nullable=True, index=True)
+    direccion = Column(String(300), nullable=True)
+    id_farmacia_observer = Column(Integer, nullable=True, unique=True, index=True)
+    es_demo = Column(Boolean, nullable=False, default=False)   # True = datos sintéticos
+    activa = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
+class UsuarioFarmacia(Base):
+    """Tabla puente: qué farmacias puede ver/operar cada usuario y con qué rol.
+
+    Si un usuario tiene rol 'admin_grupal' en al menos una fila → puede ver
+    todas las farmacias y elegir 'Vista grupal' en el selector.
+    """
+    __tablename__ = 'usuario_farmacias'
+    usuario_id = Column(Integer, ForeignKey('usuarios.id', ondelete='CASCADE'),
+                         primary_key=True)
+    farmacia_id = Column(Integer, ForeignKey('farmacias.id', ondelete='CASCADE'),
+                         primary_key=True)
+    rol = Column(String(20), nullable=False, default='operador')
+        # 'admin_grupal' — ve todas las farmacias del grupo, puede consolidar
+        # 'admin'        — admin de UNA farmacia, ve solo la suya
+        # 'operador'     — operador, ve solo lectura/escritura limitada
+    creado_en = Column(DateTime, default=now_ar)
+
+
 class MvRefreshLog(Base):
     """Log de cada refresh de una vista materializada.
 
@@ -1193,7 +1235,7 @@ def init_db(database_url=None):
                         'laboratorio_drogueria',
                         'pedido_emitido', 'pedido_emitido_item',
                         'pack_equivalencias', 'cliente_os_inferida',
-                        'panel_comandos')
+                        'panel_comandos', 'farmacias', 'usuario_farmacias')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -1320,12 +1362,46 @@ def init_db(database_url=None):
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
 
+    # One-shot idempotente: bootstrap de la farmacia 1 (Multi-tenant Fase 1).
+    # Si la tabla `farmacias` quedó vacía después de crearla, crear la fila
+    # con id=1 representando la farmacia actual. Cualquier dato pre-existente
+    # se asocia implícitamente a esta farmacia 1.
+    _bootstrap_farmacia_inicial()
+
     # Backfills lentos en background (no bloquean el boot del worker).
     # En Render, correr estos INSERTs en el path crítico hace que el HTTP port
     # no abra a tiempo y el deploy falle con "No open HTTP ports detected".
     if not is_sqlite:
         import threading as _th
         _th.Thread(target=_ejecutar_backfills_async, daemon=True).start()
+
+
+def _bootstrap_farmacia_inicial():
+    """Si la tabla `farmacias` está vacía, crear la primera fila representando
+    la farmacia actual (id=1). Idempotente: solo inserta si está vacía.
+
+    Esta es la Fase 1 de la migración a multi-tenant. La farmacia 1 hereda
+    todos los datos pre-existentes implícitamente (no necesita backfill de
+    farmacia_id porque por ahora ninguna tabla transaccional lo tiene).
+    """
+    import os as _os
+    s = SessionLocal()
+    try:
+        existe = s.query(Farmacia).first()
+        if existe is None:
+            obs_id = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+            s.add(Farmacia(
+                id=1,
+                nombre='Farmacia 1',
+                id_farmacia_observer=obs_id,
+                es_demo=False,
+                activa=True,
+            ))
+            s.commit()
+    except Exception:
+        s.rollback()
+    finally:
+        s.close()
 
 
 def _ejecutar_backfills_async():

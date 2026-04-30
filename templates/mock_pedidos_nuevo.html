@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% block title %}MOCK · Pedido de reposición grupal{% endblock %}
+{% block main %}
+
+<style>
+    .badge-pulse { animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    .row-fade-in { animation: fadeIn 0.3s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .farm-pill { transition: all 0.2s; }
+    .farm-pill.active { box-shadow: 0 0 0 2px #EAB308; }
+</style>
+
+<!-- Banner mock -->
+<div class="bg-amber-100 border-b-2 border-amber-300 px-4 py-2 text-center text-xs font-semibold text-amber-900">
+    🎨 MOCK ESTÁTICO · Diseño preliminar de la pantalla de pedido de reposición grupal · Datos hardcoded
+</div>
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Pedido de reposición — Grupo</h1>
+    <div class="flex items-center gap-1.5 text-xs">
+        <span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono font-semibold">🟢 F1</span>
+        <span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-mono font-semibold">🟢 Pieri</span>
+        <span class="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono">📄 F3 + F4 + F5 (Drive)</span>
+    </div>
+    <span class="text-[11px] text-[#999] hidden md:inline">Sync hace 4 min</span>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('compras_dia') }}" class="text-xs text-[#999] hover:text-[#1e1e1e]">← Pedido clásico</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-7xl mx-auto space-y-4">
+
+    <!-- KPIs grandes arriba -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">Bajo mínimo total</p>
+            <p class="text-3xl font-bold text-rose-700 mt-1">47</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1">en las 5 farmacias del grupo</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">Compra estimada</p>
+            <p class="text-3xl font-bold text-[#1e1e1e] mt-1">$2.84M</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1">antes de optimización</p>
+        </div>
+        <div class="bg-white border-2 border-amber-300 bg-amber-50 rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-amber-800 flex items-center gap-1">💡 Oportunidades</p>
+            <p class="text-3xl font-bold text-amber-700 mt-1">8</p>
+            <p class="text-[11px] text-amber-800 mt-1">descuentos por volumen detectados</p>
+        </div>
+        <div class="bg-white border-2 border-emerald-300 bg-emerald-50 rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-emerald-800">💰 Ahorro proyectado</p>
+            <p class="text-3xl font-bold text-emerald-700 mt-1">$420K</p>
+            <p class="text-[11px] text-emerald-800 mt-1">aplicando todas las sugerencias</p>
+        </div>
+    </div>
+
+    <!-- Switcher de farmacia -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <p class="text-[10px] uppercase font-semibold text-[#6f6f6f] mb-2">Mostrar productos de…</p>
+        <div class="flex flex-wrap gap-2">
+            <button class="farm-pill bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                F1 Centro <span class="bg-emerald-700/20 px-1.5 rounded text-[11px]">47</span>
+            </button>
+            <button class="farm-pill bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                Pieri <span class="bg-emerald-700/20 px-1.5 rounded text-[11px]">31</span>
+            </button>
+            <button class="farm-pill bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5">
+                📄 F3 Norte <span class="bg-slate-300 px-1.5 rounded text-[11px]">18</span>
+            </button>
+            <button class="farm-pill bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5">
+                📄 F4 Sur <span class="bg-slate-300 px-1.5 rounded text-[11px]">12</span>
+            </button>
+            <button class="farm-pill bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1.5">
+                📄 F5 Este <span class="bg-slate-300 px-1.5 rounded text-[11px]">25</span>
+            </button>
+            <span class="border-l border-[#ccc] mx-1"></span>
+            <button class="farm-pill active bg-amber-100 text-amber-900 px-4 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1.5">
+                🌐 Todas (consolidado)
+            </button>
+        </div>
+    </div>
+
+    <!-- Banner detector -->
+    <div class="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
+        <span class="text-2xl">💡</span>
+        <div class="flex-1">
+            <p class="font-semibold text-amber-900 text-sm">8 oportunidades detectadas — ahorro de hasta $420.000</p>
+            <p class="text-xs text-amber-800 mt-1">
+                3 transferencias entre farmacias evitan compra · 5 productos llegan al mínimo de oferta si pedís unas más
+            </p>
+        </div>
+        <button class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-4 py-2 rounded-lg whitespace-nowrap">
+            ✨ Aplicar todas las sugerencias
+        </button>
+    </div>
+
+    <!-- Tabla consolidada -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-[10px] uppercase tracking-wide text-[#6f6f6f] border-b border-surface-border">
+                <tr>
+                    <th class="text-left px-3 py-2.5">Producto · Lab</th>
+                    <th class="text-right px-2 py-2.5 w-12">F1</th>
+                    <th class="text-right px-2 py-2.5 w-12">Pieri</th>
+                    <th class="text-right px-2 py-2.5 w-12">F3</th>
+                    <th class="text-right px-2 py-2.5 w-12">F4</th>
+                    <th class="text-right px-2 py-2.5 w-12">F5</th>
+                    <th class="text-right px-2 py-2.5 w-14 bg-amber-50">Total</th>
+                    <th class="text-right px-3 py-2.5 w-20">Mejor precio</th>
+                    <th class="text-left px-3 py-2.5 w-48">Sugerencia</th>
+                    <th class="text-center px-2 py-2.5 w-20">Acción</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#f0f0f0]">
+
+                <!-- Producto con TRANSFER sugerido -->
+                <tr class="row-fade-in hover:bg-amber-50/40 bg-amber-50/20">
+                    <td class="px-3 py-2.5">
+                        <p class="font-semibold text-[#1e1e1e]">AMOXIDAL 500 MG X 16</p>
+                        <p class="text-[11px] text-[#6f6f6f]">Roemmers · AMOXICILINA</p>
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">10</td>
+                    <td class="px-2 py-2.5 text-right text-emerald-700">+18</td>
+                    <td class="px-2 py-2.5 text-right text-[#999]">0</td>
+                    <td class="px-2 py-2.5 text-right text-[#999]">0</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">3</td>
+                    <td class="px-2 py-2.5 text-right text-amber-700 font-bold bg-amber-50">13</td>
+                    <td class="px-3 py-2.5 text-right">
+                        <p class="font-bold text-emerald-700">30%</p>
+                        <p class="text-[10px] text-[#6f6f6f]">Kellerhoff</p>
+                    </td>
+                    <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-1.5 text-[11px]">
+                            <span class="text-violet-700 font-bold">🔄</span>
+                            <span class="text-[#1e1e1e]"><strong>Transfer Pieri → F1 (10u)</strong> + comprar 3 a Kellerhoff</span>
+                        </div>
+                        <p class="text-[10px] text-[#6f6f6f] mt-0.5">Pieri rota lento · ahorrás <strong>$98K</strong></p>
+                    </td>
+                    <td class="px-2 py-2.5 text-center">
+                        <button class="bg-violet-100 hover:bg-violet-200 text-violet-800 text-[11px] font-semibold px-3 py-1 rounded">Aplicar</button>
+                    </td>
+                </tr>
+
+                <!-- Producto con OFERTA POR VOLUMEN -->
+                <tr class="row-fade-in hover:bg-blue-50/40 bg-blue-50/20">
+                    <td class="px-3 py-2.5">
+                        <p class="font-semibold text-[#1e1e1e]">IBUPIRAC 400 MG X 24</p>
+                        <p class="text-[11px] text-[#6f6f6f]">Pfizer · IBUPROFENO</p>
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">12</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">8</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">15</td>
+                    <td class="px-2 py-2.5 text-right text-[#999]">0</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">10</td>
+                    <td class="px-2 py-2.5 text-right text-amber-700 font-bold bg-amber-50">45</td>
+                    <td class="px-3 py-2.5 text-right">
+                        <p class="font-bold text-emerald-700">35%</p>
+                        <p class="text-[10px] text-[#6f6f6f]">Pharmos</p>
+                    </td>
+                    <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-1.5 text-[11px]">
+                            <span class="text-blue-700">🎯</span>
+                            <span class="text-[#1e1e1e]"><strong>Pedí 50 (5 más)</strong> y bajás del 25% → 35%</span>
+                        </div>
+                        <p class="text-[10px] text-[#6f6f6f] mt-0.5">Mínimo de oferta · ahorrás <strong>$72K</strong></p>
+                    </td>
+                    <td class="px-2 py-2.5 text-center">
+                        <button class="bg-blue-100 hover:bg-blue-200 text-blue-800 text-[11px] font-semibold px-3 py-1 rounded">Aplicar</button>
+                    </td>
+                </tr>
+
+                <!-- Producto NORMAL -->
+                <tr class="row-fade-in hover:bg-black/[0.02]">
+                    <td class="px-3 py-2.5">
+                        <p class="font-semibold text-[#1e1e1e]">ENALAPRIL 10 MG X 30</p>
+                        <p class="text-[11px] text-[#6f6f6f]">Bagó · ENALAPRIL</p>
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">8</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">12</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">5</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">3</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">2</td>
+                    <td class="px-2 py-2.5 text-right text-amber-700 font-bold bg-amber-50">30</td>
+                    <td class="px-3 py-2.5 text-right">
+                        <p class="font-bold text-emerald-700">28%</p>
+                        <p class="text-[10px] text-[#6f6f6f]">Kellerhoff</p>
+                    </td>
+                    <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-1.5 text-[11px]">
+                            <span class="text-emerald-700">✓</span>
+                            <span class="text-[#1e1e1e]">Comprar consolidado a Kellerhoff</span>
+                        </div>
+                    </td>
+                    <td class="px-2 py-2.5 text-center">
+                        <span class="text-[10px] text-emerald-700 font-semibold">OK</span>
+                    </td>
+                </tr>
+
+                <!-- Producto VENCIMIENTO -->
+                <tr class="row-fade-in hover:bg-orange-50/40 bg-orange-50/20">
+                    <td class="px-3 py-2.5">
+                        <p class="font-semibold text-[#1e1e1e]">PARACETAMOL 500 X 20</p>
+                        <p class="text-[11px] text-[#6f6f6f]">Bagó · PARACETAMOL</p>
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">6</td>
+                    <td class="px-2 py-2.5 text-right text-orange-700 font-semibold">+24<span class="text-[9px]">⏰</span></td>
+                    <td class="px-2 py-2.5 text-right text-[#999]">0</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">4</td>
+                    <td class="px-2 py-2.5 text-right text-[#999]">0</td>
+                    <td class="px-2 py-2.5 text-right text-amber-700 font-bold bg-amber-50">10</td>
+                    <td class="px-3 py-2.5 text-right text-[#bbb]">—</td>
+                    <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-1.5 text-[11px]">
+                            <span class="text-orange-600">⚠</span>
+                            <span class="text-[#1e1e1e]"><strong>Pieri vence en 60d</strong> · transferir 10 a F1+F4</span>
+                        </div>
+                        <p class="text-[10px] text-[#6f6f6f] mt-0.5">Evita pérdida de stock por vencimiento</p>
+                    </td>
+                    <td class="px-2 py-2.5 text-center">
+                        <button class="bg-orange-100 hover:bg-orange-200 text-orange-800 text-[11px] font-semibold px-3 py-1 rounded">Aplicar</button>
+                    </td>
+                </tr>
+
+                <!-- Producto SIN STOCK EN GRUPO -->
+                <tr class="row-fade-in hover:bg-black/[0.02]">
+                    <td class="px-3 py-2.5">
+                        <p class="font-semibold text-[#1e1e1e]">ASPIRINA PREVENT 100 X 28</p>
+                        <p class="text-[11px] text-[#6f6f6f]">Bayer · ÁCIDO ACETILSALICÍLICO</p>
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">15</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700 font-bold">10</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">6</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">8</td>
+                    <td class="px-2 py-2.5 text-right text-rose-700">12</td>
+                    <td class="px-2 py-2.5 text-right text-amber-700 font-bold bg-amber-50">51</td>
+                    <td class="px-3 py-2.5 text-right">
+                        <p class="font-bold text-emerald-700">22%</p>
+                        <p class="text-[10px] text-[#6f6f6f]">Vía Pharma</p>
+                    </td>
+                    <td class="px-3 py-2.5">
+                        <div class="flex items-center gap-1.5 text-[11px] text-[#6f6f6f]">
+                            <span>·</span>
+                            <span>Sin stock en grupo · comprar consolidado</span>
+                        </div>
+                    </td>
+                    <td class="px-2 py-2.5 text-center">
+                        <span class="text-[10px] text-emerald-700 font-semibold">OK</span>
+                    </td>
+                </tr>
+
+                <!-- Más productos resumidos -->
+                <tr class="text-center text-[#999] text-xs">
+                    <td colspan="10" class="px-3 py-3">
+                        ⋯ y 42 productos más (mock estático, en producción se verán todos con scroll virtual)
+                    </td>
+                </tr>
+
+            </tbody>
+            <tfoot class="bg-slate-50 border-t-2 border-[#1e1e1e] text-sm">
+                <tr>
+                    <td class="px-3 py-3 font-bold">Total grupo</td>
+                    <td class="px-2 py-3 text-right font-bold text-[#1e1e1e]">47</td>
+                    <td class="px-2 py-3 text-right font-bold text-[#1e1e1e]">31</td>
+                    <td class="px-2 py-3 text-right text-[#666]">18</td>
+                    <td class="px-2 py-3 text-right text-[#666]">12</td>
+                    <td class="px-2 py-3 text-right text-[#666]">25</td>
+                    <td class="px-2 py-3 text-right font-bold text-amber-700 bg-amber-50">133</td>
+                    <td class="px-3 py-3 text-right">
+                        <p class="font-bold text-rose-700">$2.84M</p>
+                        <p class="text-[10px] text-emerald-700">−$420K si optimizo</p>
+                    </td>
+                    <td class="px-3 py-3 text-[11px] text-[#6f6f6f]">3 transfers · 5 ofertas volumen</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <!-- Acción final -->
+    <div class="bg-emerald-50 border-2 border-emerald-300 rounded-xl p-5 flex items-center gap-4 flex-wrap">
+        <div class="flex-1 min-w-0">
+            <p class="text-base font-bold text-emerald-900">Listo para emitir</p>
+            <p class="text-xs text-emerald-800 mt-1">
+                Vas a crear: <strong>4 pedidos de droguería</strong> (Kellerhoff F1, Kellerhoff Pieri, Pharmos F1, Vía Pharma F1+Pieri+F4) ·
+                <strong>3 transfers internos</strong> · total $2.42M (vs $2.84M sin optimizar)
+            </p>
+        </div>
+        <button class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6 py-3 rounded-lg text-sm shadow-md flex items-center gap-2">
+            ✨ Confirmar y emitir todo
+        </button>
+    </div>
+
+    <!-- Footer info -->
+    <div class="bg-[#fafafa] border border-surface-border rounded-xl p-4">
+        <p class="text-xs font-semibold text-[#1e1e1e] mb-2">⚠ Esto es un mock estático</p>
+        <ul class="text-[11px] text-[#6f6f6f] space-y-0.5">
+            <li>• Datos fabricados — no representan stock real.</li>
+            <li>• En producción: lectura de obs_stock + obs_ventas_detalle de las 2 farmacias nativas (F1 + Pieri) + Google Sheet de F3/F4/F5.</li>
+            <li>• Los transfers entre farmacias se calculan con margen + rotación (ver `circulacion-stock-grupo.md`).</li>
+            <li>• Las ofertas por volumen vienen de `ofertas_minimo` con lógica de "cuántas más necesitás para llegar al mínimo".</li>
+            <li>• El detector automático "Aplicar todas" reordena la tabla con las sugerencias optimizadas y muestra el ahorro.</li>
+        </ul>
+    </div>
+
+</div>
+</div>
+{% endblock %}
