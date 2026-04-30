@@ -8,9 +8,45 @@
         <h1 class="text-base font-bold text-[#1e1e1e]">🔔 Alarmas del sistema</h1>
         <p class="text-xs text-[#6f6f6f]">Chequeos automáticos. Las alarmas son secundarias — la primera línea es el auto-mantenimiento. Spec en <code class="font-mono text-[10px]">mantenimiento-y-alarmas.md</code>.</p>
     </div>
-    <a href="{{ url_for('admin_index') }}"
-       class="ml-auto text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver a admin</a>
+    <div class="ml-auto flex items-center gap-2">
+        <button type="button" onclick="probarTelegram(this)"
+                class="text-xs bg-sky-100 hover:bg-sky-200 text-sky-800 font-semibold px-3 py-1.5 rounded-lg transition-colors">
+            🔔 Probar Telegram
+        </button>
+        <a href="{{ url_for('admin_index') }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver a admin</a>
+    </div>
 </div>
+<script>
+async function probarTelegram(btn) {
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = '⏳ Enviando...';
+    try {
+        const r = await fetch('{{ url_for("api_alarmas_probar_telegram") }}', { method: 'POST' });
+        const data = await r.json();
+        if (data.ok) {
+            btn.textContent = '✅ Enviado';
+            btn.classList.remove('bg-sky-100', 'text-sky-800');
+            btn.classList.add('bg-emerald-100', 'text-emerald-800');
+        } else {
+            btn.textContent = '❌ Falló';
+            btn.classList.remove('bg-sky-100', 'text-sky-800');
+            btn.classList.add('bg-rose-100', 'text-rose-800');
+            alert('Error: ' + (data.error || 'desconocido'));
+        }
+    } catch (e) {
+        btn.textContent = '❌ Error';
+        alert('Error de red: ' + e.message);
+    }
+    setTimeout(() => {
+        btn.textContent = original;
+        btn.classList.remove('bg-emerald-100', 'text-emerald-800', 'bg-rose-100', 'text-rose-800');
+        btn.classList.add('bg-sky-100', 'text-sky-800');
+        btn.disabled = false;
+    }, 3500);
+}
+</script>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6">
 <div class="max-w-4xl mx-auto space-y-4">

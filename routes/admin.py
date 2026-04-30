@@ -155,6 +155,57 @@ def init_app(app):
         n = cron_log.purgar_viejos(dias=dias)
         return jsonify({'ok': True, 'eliminadas': n, 'dias': dias})
 
+    # ── Notificaciones de alarmas a Telegram ──────────────────────────
+    @app.route('/api/admin/alarmas/probar-telegram', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_alarmas_probar_telegram():
+        """Manda un mensaje de prueba al bot configurado para verificar setup."""
+        from datetime import datetime as _dt
+
+        import notificaciones
+        msg = (
+            f'✅ <b>Test desde /admin/alarmas</b>\n'
+            f'Si ves esto, el bot está bien configurado.\n'
+            f'Hora server: {_dt.now().strftime("%Y-%m-%d %H:%M:%S")}'
+        )
+        ok, err = notificaciones.enviar_telegram(msg)
+        return jsonify({'ok': ok, 'error': err})
+
+    @app.route('/api/cron/notificar-alarmas', methods=['POST'])
+    def api_cron_notificar_alarmas():
+        """Endpoint disparado por GitHub Actions cada 15 min.
+        Auth: header X-Cron-Secret (mismo patrón que recalcular_os_clientes).
+        """
+        expected = os.environ.get('CRON_SECRET', '').strip()
+        if not expected:
+            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado'}), 503
+        provided = (request.headers.get('X-Cron-Secret') or '').strip()
+        if not provided or provided != expected:
+            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+
+        import cron_log
+        import notificaciones
+        # Si no hay TOKEN/CHAT_ID, salir 503 con explicación (no se loguea como error).
+        if not notificaciones._telegram_config():
+            return jsonify({
+                'ok': False,
+                'error': 'TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados en el server',
+            }), 503
+
+        # App URL para construir links absolutos en los mensajes
+        app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+
+        try:
+            with cron_log.registrar('notificar_alarmas', origen='cron') as log:
+                with database.get_db() as session:
+                    res = notificaciones.evaluar_y_notificar(session, app_url=app_url)
+                log.metadata = res
+                if res.get('errores'):
+                    log.error = ' | '.join(res['errores'][:3])
+            return jsonify({'ok': True, **res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/admin/seed-proveedores', methods=['GET', 'POST'])
     @requiere_permiso('usuarios', 'admin')
     def admin_seed_proveedores():

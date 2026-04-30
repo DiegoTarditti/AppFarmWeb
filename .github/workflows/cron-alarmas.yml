@@ -1,0 +1,72 @@
+name: Cron — Notificar alarmas críticas a Telegram
+
+# Corre cada 15 min. Llama al endpoint /api/cron/notificar-alarmas que evalúa
+# las alarmas del sistema, deduplica con la tabla `alarmas_notificadas`
+# (gap mínimo 4h entre notificaciones de la misma alarma) y manda Telegram.
+#
+# Configuración previa (una sola vez):
+#   - GitHub secrets: APP_URL, CRON_SECRET (los mismos que usa cron-os-recalcular).
+#   - Render env vars: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, CRON_SECRET, APP_URL.
+#
+# Si TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID NO están en Render, el endpoint
+# devuelve 503 con mensaje claro (fail-safe — no spamea cron_log con errores).
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # cada 15 minutos
+  workflow_dispatch:           # permite disparar manual
+
+# Concurrencia: si un run anterior está corriendo, NO encolar otro
+concurrency:
+  group: cron-alarmas
+  cancel-in-progress: false
+
+jobs:
+  notificar-alarmas:
+    name: POST /api/cron/notificar-alarmas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validar secrets
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::error::Falta el secret APP_URL"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Falta el secret CRON_SECRET"
+            exit 1
+          fi
+
+      - name: Disparar notificación
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -e
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            -H "X-Cron-Secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$APP_URL/api/cron/notificar-alarmas")
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          # 503 cuando faltan TELEGRAM_BOT_TOKEN / CHAT_ID en Render — no es un
+          # error real del job, es que el sistema no está activado todavía.
+          # Lo marcamos como "skipped" sin fallar.
+          if [ "$status" = "503" ]; then
+            echo "::warning::Sistema de notificaciones no configurado en el server (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID faltantes)"
+            exit 0
+          fi
+          if [ "$status" != "200" ]; then
+            echo "::error::Respuesta no-200 del endpoint"
+            exit 1
+          fi
+          if ! echo "$body" | grep -q '"ok": *true'; then
+            echo "::error::El endpoint devolvió ok=false"
+            exit 1
+          fi

@@ -382,6 +382,22 @@ class CronLog(Base):
     error = Column(Text, nullable=True)
 
 
+class AlarmaNotificada(Base):
+    """Estado de notificaciones de alarmas (dedup para no spamear Telegram).
+
+    Una fila por nombre de alarma. Cuando dispara, comparamos `ultima_notif`:
+    - Si pasó MIN_GAP_HORAS (4h) → renotificar.
+    - Si la alarma estaba 'resuelta' y volvió → renotificar (resucitó).
+    Cuando una alarma deja de disparar, marcamos estado_actual='resuelta'.
+    """
+    __tablename__ = 'alarmas_notificadas'
+    nombre = Column(String(120), primary_key=True)
+    ultima_notif = Column(DateTime, nullable=True)
+    ultima_severidad = Column(String(20), nullable=True)
+    count_total = Column(Integer, nullable=False, default=0)
+    estado_actual = Column(String(20), nullable=True)  # 'activa' / 'resuelta'
+
+
 class PanelComando(Base):
     """Buzón de comandos remotos: vos los encolás desde Render, la PC farmacia
     los ejecuta vía polling outbound (DockerPanel no necesita estar accesible).
@@ -1235,7 +1251,8 @@ def init_db(database_url=None):
                         'laboratorio_drogueria',
                         'pedido_emitido', 'pedido_emitido_item',
                         'pack_equivalencias', 'cliente_os_inferida',
-                        'panel_comandos', 'farmacias', 'usuario_farmacias')
+                        'panel_comandos', 'farmacias', 'usuario_farmacias',
+                        'alarmas_notificadas')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -1814,6 +1831,16 @@ def _pg_add_columns(conn):
         )
     """))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_panel_comandos_estado ON panel_comandos(estado, solicitado_en)"))
+    # Estado de notificaciones de alarmas (dedup Telegram)
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS alarmas_notificadas (
+            nombre VARCHAR(120) PRIMARY KEY,
+            ultima_notif TIMESTAMP,
+            ultima_severidad VARCHAR(20),
+            count_total INTEGER NOT NULL DEFAULT 0,
+            estado_actual VARCHAR(20)
+        )
+    """))
     # Puente en productos
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS observer_id INTEGER REFERENCES obs_productos(observer_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_productos_observer_id ON productos(observer_id)"))
