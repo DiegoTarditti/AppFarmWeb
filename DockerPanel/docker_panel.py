@@ -6,6 +6,7 @@
 # ──────────────────────────────────────────────────────────────────────────────
 
 import datetime
+import webbrowser
 
 # === BEGIN HELPER HTTP (copy to unified panel) ===
 # Mini servidor HTTP local para que el frontend hosteado (Render) pueda
@@ -463,6 +464,35 @@ class DockerPanel(tk.Tk):
         btn_panel_cfg.bind("<Enter>", lambda e: btn_panel_cfg.config(bg=BORDER))
         btn_panel_cfg.bind("<Leave>", lambda e: btn_panel_cfg.config(bg=SURFACE))
         # === END PANEL REMOTO ===
+
+        # === BEGIN EMERGENCIA (rollback rápido a production-stable) ===
+        tk.Label(left, text="🚨  EMERGENCIA", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg="#ff8b8b").pack(anchor="w", pady=(12, 4))
+
+        btn_rollback = tk.Button(
+            left, text="🔙  Rollback emergencia",
+            font=("Segoe UI", 9, "bold"),
+            bg="#3a1a1a", fg=RED,
+            activebackground="#5a2a2a", activeforeground=RED,
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=self._rollback_emergencia,
+        )
+        btn_rollback.pack(fill="x", pady=2)
+        btn_rollback.bind("<Enter>", lambda e: btn_rollback.config(bg="#5a2a2a"))
+        btn_rollback.bind("<Leave>", lambda e: btn_rollback.config(bg="#3a1a1a"))
+
+        btn_render_dash = tk.Button(
+            left, text="🌐  Abrir Render Dashboard",
+            font=("Segoe UI", 9),
+            bg=SURFACE, fg=FG,
+            activebackground=BORDER, activeforeground=FG,
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=lambda: webbrowser.open('https://dashboard.render.com'),
+        )
+        btn_render_dash.pack(fill="x", pady=2)
+        btn_render_dash.bind("<Enter>", lambda e: btn_render_dash.config(bg=BORDER))
+        btn_render_dash.bind("<Leave>", lambda e: btn_render_dash.config(bg=SURFACE))
+        # === END EMERGENCIA ===
 
         tk.Frame(left, bg=BORDER, height=1).pack(fill="x", pady=8)
 
@@ -2138,6 +2168,163 @@ class DockerPanel(tk.Tk):
         if cleared:
             self._append(f"  Cola vaciada ({cleared} comando{'s' if cleared > 1 else ''} cancelado{'s' if cleared > 1 else ''}).\n", "dim")
         self._update_queue_badge()
+
+    # === BEGIN ROLLBACK EMERGENCIA ===
+    def _rollback_emergencia(self):
+        """Rollback rápido a la última versión estable conocida.
+
+        Abre un diálogo con 2 opciones:
+          A) Render Dashboard (recomendado, sin force push)
+          B) git reset --hard production-stable + force push
+
+        La opción B es destructiva: reescribe el historial de main. Solo
+        usar si Render Dashboard no está accesible (caída de Render web,
+        problema de credenciales, etc).
+        """
+        proyecto = getattr(self, '_dir', '') or os.getcwd()
+
+        dlg = tk.Toplevel(self)
+        dlg.title("🚨 Rollback emergencia")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.transient(self)
+        dlg.grab_set()
+
+        # Centrar
+        dlg.update_idletasks()
+        w, h = 560, 380
+        x = (dlg.winfo_screenwidth() - w) // 2
+        y = (dlg.winfo_screenheight() - h) // 2
+        dlg.geometry(f"{w}x{h}+{x}+{y}")
+
+        tk.Label(dlg, text="🚨  Rollback emergencia",
+                 font=("Segoe UI", 13, "bold"),
+                 bg=BG, fg="#ff8b8b").pack(pady=(14, 6))
+        tk.Label(dlg,
+                 text="Elegí cómo volver a la última versión estable conocida.\n"
+                      "El tag `production-stable` apunta al último commit que pasó\n"
+                      "el health check post-deploy en GitHub Actions.",
+                 font=("Segoe UI", 9), bg=BG, fg=FG_DIM, justify="center"
+                 ).pack(padx=20, pady=(0, 14))
+
+        # Opción A — Render Dashboard
+        frame_a = tk.Frame(dlg, bg=SURFACE, padx=12, pady=10)
+        frame_a.pack(fill="x", padx=20, pady=4)
+        tk.Label(frame_a, text="A · Render Dashboard (recomendado)",
+                 font=("Segoe UI", 9, "bold"), bg=SURFACE, fg=GREEN).pack(anchor="w")
+        tk.Label(frame_a,
+                 text="Abre la pestaña Events del servicio. Click derecho en\n"
+                      "el deploy verde anterior → 'Rollback to this deploy'.\n"
+                      "Sin force push. ~2-3 min.",
+                 font=("Segoe UI", 8), bg=SURFACE, fg=FG_DIM, justify="left",
+                 ).pack(anchor="w", pady=(2, 6))
+        tk.Button(frame_a, text="Abrir Render Dashboard",
+                  font=("Segoe UI", 9, "bold"),
+                  bg="#1a3a1a", fg=GREEN,
+                  activebackground="#2a4a2a", activeforeground=GREEN,
+                  relief="flat", cursor="hand2", padx=10, pady=4,
+                  command=lambda: (
+                      webbrowser.open('https://dashboard.render.com'),
+                      dlg.destroy(),
+                  )).pack(anchor="w")
+
+        # Opción B — git rollback al tag (force push)
+        frame_b = tk.Frame(dlg, bg=SURFACE, padx=12, pady=10)
+        frame_b.pack(fill="x", padx=20, pady=4)
+        tk.Label(frame_b, text="B · git rollback al tag production-stable",
+                 font=("Segoe UI", 9, "bold"), bg=SURFACE, fg=YELLOW).pack(anchor="w")
+        tk.Label(frame_b,
+                 text="⚠ DESTRUCTIVO. Reescribe historial de main con force push.\n"
+                      "Solo si Render Dashboard NO está accesible.\n"
+                      "Render va a redeployar el tag automático en ~3 min.",
+                 font=("Segoe UI", 8), bg=SURFACE, fg=FG_DIM, justify="left",
+                 ).pack(anchor="w", pady=(2, 6))
+        tk.Button(frame_b, text="Hacer rollback con git",
+                  font=("Segoe UI", 9, "bold"),
+                  bg="#3a2a1a", fg=YELLOW,
+                  activebackground="#5a3a2a", activeforeground=YELLOW,
+                  relief="flat", cursor="hand2", padx=10, pady=4,
+                  command=lambda: self._rollback_emergencia_git(proyecto, dlg),
+                  ).pack(anchor="w")
+
+        # Cancelar
+        tk.Button(dlg, text="Cancelar", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=FG_DIM, relief="flat",
+                  cursor="hand2", padx=14, pady=4,
+                  command=dlg.destroy
+                  ).pack(pady=14)
+
+    def _rollback_emergencia_git(self, proyecto, dlg):
+        """Ejecuta el rollback git al tag production-stable.
+
+        ATENCIÓN: doble confirmación porque es destructivo (force push a main).
+        """
+        if not proyecto or not os.path.isdir(os.path.join(proyecto, '.git')):
+            messagebox.showerror("Error",
+                                  "No hay un repo git en el proyecto actual.\n\n"
+                                  f"Path: {proyecto}")
+            return
+
+        confirm = messagebox.askyesno(
+            "⚠ Confirmar rollback",
+            "Esto va a:\n\n"
+            "  1. git fetch origin\n"
+            "  2. git reset --hard production-stable\n"
+            "  3. git push origin main --force-with-lease\n\n"
+            "REESCRIBE EL HISTORIAL de main. Render va a redeployar\n"
+            "automáticamente la versión del tag (~3 min).\n\n"
+            "Si en el último deploy hubo cambios que no pasaron al tag\n"
+            "(ej. CRON_SECRET nuevo en Render), se PIERDEN del repo (no\n"
+            "de Render, que mantiene env vars).\n\n"
+            "¿Confirmás?",
+            icon='warning',
+        )
+        if not confirm:
+            return
+
+        dlg.destroy()
+        self._append("\n=== ROLLBACK EMERGENCIA ===\n", "err")
+
+        def _run_in_thread():
+            try:
+                cmds = [
+                    ['git', 'fetch', 'origin', '--tags'],
+                    ['git', 'reset', '--hard', 'production-stable'],
+                    ['git', 'push', 'origin', 'main', '--force-with-lease'],
+                ]
+                for cmd in cmds:
+                    self.after(0, self._append,
+                               f"  $ {' '.join(cmd)}\n", "cmd")
+                    proc = subprocess.run(
+                        cmd, cwd=proyecto, capture_output=True, text=True,
+                        encoding='utf-8', errors='replace',
+                    )
+                    if proc.stdout:
+                        self.after(0, self._append, proc.stdout, "dim")
+                    if proc.stderr:
+                        # git pone info no-error en stderr a veces
+                        self.after(0, self._append, proc.stderr, "dim")
+                    if proc.returncode != 0:
+                        self.after(0, self._append,
+                                   f"  ✗ Falló con código {proc.returncode}\n", "err")
+                        self.after(0, messagebox.showerror,
+                                   "Error",
+                                   f"Falló: {' '.join(cmd)}\n\n{proc.stderr[:500]}")
+                        return
+                self.after(0, self._append,
+                           "\n✓ Rollback OK. Render redeploya en ~3 min.\n",
+                           "ok")
+                self.after(0, self._append,
+                           "  Mirá https://dashboard.render.com → Events\n",
+                           "dim")
+            except Exception as e:
+                self.after(0, self._append,
+                           f"  ✗ Error: {e}\n", "err")
+                self.after(0, messagebox.showerror,
+                           "Error", f"Excepción durante rollback:\n{e}")
+
+        threading.Thread(target=_run_in_thread, daemon=True).start()
+    # === END ROLLBACK EMERGENCIA ===
 
 
 # === BEGIN HELPER HTTP (copy to unified panel) ===
