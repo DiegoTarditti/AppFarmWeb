@@ -382,3 +382,173 @@ def init_app(app):
             session.commit()
 
         return jsonify({'ok': True, 'pedidos': creados})
+
+    @app.route('/api/compras/conflictos', methods=['POST'])
+    @login_required
+    def api_compras_conflictos():
+        """Detecta si hay mejor descuento en otra droguería para los EANs dados.
+
+        Pensado como helper para pantallas que muestran un pedido a una droguería
+        específica y querés ver si convendría mover algún ítem a otra. Caso de
+        uso típico: el panel "Pedidos a droguerías" estilo ObServer (referencia
+        en docs/mejoras_pendientes.md → "Pantalla Pedidos a droguerías").
+
+        Body JSON:
+            {
+                "items": [
+                    {"ean": "7791234567890", "drogueria_actual_id": 5},
+                    ...
+                ]
+            }
+
+        Devuelve solo los items que TIENEN conflicto:
+            {
+                "ok": true,
+                "conflictos": [
+                    {
+                        "ean": "...",
+                        "drogueria_actual_id": 5,
+                        "drogueria_actual_nombre": "Kellerhoff",
+                        "dto_actual_pct": 31.0,
+                        "mejor_drogueria_id": 12,
+                        "mejor_drogueria_nombre": "Bernabó",
+                        "mejor_dto_pct": 41.5,
+                        "ahorro_pct": 10.5
+                    },
+                    ...
+                ],
+                "sin_conflicto": 14,    # cantidad de items que NO tienen mejor opción
+                "sin_resolver": 2       # cantidad de items que no se pudo mapear a obs/lab
+            }
+        """
+        from database import Producto
+
+        data = request.get_json(silent=True) or {}
+        items = data.get('items') or []
+        if not items:
+            return jsonify({'ok': False, 'error': 'items vacío'}), 400
+
+        conflictos = []
+        sin_conflicto = 0
+        sin_resolver = 0
+
+        with database.get_db() as session:
+            # 1. Resolver EAN → observer_id en bulk (1 query a productos +
+            # 1 query directo a obs_productos para EANs numéricos).
+            eans = [str(it.get('ean') or '').strip() for it in items]
+            eans_no_vacios = [e for e in eans if e]
+
+            ean_to_obs = {}
+            if eans_no_vacios:
+                # Path 1: EAN numérico que es observer_id directo (pedidos
+                # nacidos en ObServer guardan IdProducto como string en cb).
+                numericos = []
+                for e in eans_no_vacios:
+                    try:
+                        numericos.append((e, int(e)))
+                    except (ValueError, TypeError):
+                        pass
+                if numericos:
+                    ids_n = [n for (_, n) in numericos]
+                    existentes = {oid for (oid,) in session.query(ObsProducto.observer_id)
+                                  .filter(ObsProducto.observer_id.in_(ids_n)).all()}
+                    for ean, n in numericos:
+                        if n in existentes:
+                            ean_to_obs[ean] = n
+
+                # Path 2: tabla productos (codigo_barra principal o alts).
+                pendientes = [e for e in eans_no_vacios if e not in ean_to_obs]
+                if pendientes:
+                    from sqlalchemy import or_
+                    conds = [Producto.codigo_barra.in_(pendientes)]
+                    for col_name in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
+                        col = getattr(Producto, col_name, None)
+                        if col is not None:
+                            conds.append(col.in_(pendientes))
+                    for p in session.query(Producto).filter(or_(*conds)).all():
+                        if not p.observer_id:
+                            continue
+                        for cb in [p.codigo_barra, p.codigo_barra_alt1,
+                                   p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                            if cb and cb in pendientes:
+                                ean_to_obs[cb] = p.observer_id
+
+            # 2. Resolver observer_id → lab_id local (Laboratorio.observer_id).
+            obs_ids = list(set(ean_to_obs.values()))
+            obs_to_lab_local = {}
+            if obs_ids:
+                # observer_id de producto → laboratorio_observer (en obs_productos)
+                obs_prods = session.query(ObsProducto.observer_id,
+                                          ObsProducto.laboratorio_observer)\
+                    .filter(ObsProducto.observer_id.in_(obs_ids)).all()
+                lab_obs_ids = {lab_obs for (_, lab_obs) in obs_prods if lab_obs}
+                # laboratorio_observer → Laboratorio.id local
+                lab_obs_to_local = {}
+                if lab_obs_ids:
+                    lab_obs_to_local = dict(session.query(
+                        Laboratorio.observer_id, Laboratorio.id)
+                        .filter(Laboratorio.observer_id.in_(lab_obs_ids)).all())
+                for (oid, lab_obs) in obs_prods:
+                    local = lab_obs_to_local.get(lab_obs) if lab_obs else None
+                    if local:
+                        obs_to_lab_local[oid] = local
+
+            # 3. Pre-cargar nombres de droguería para no hacer 1 query por conflicto.
+            prov_nombres = dict(session.query(Provider.id, Provider.razon_social).all())
+
+            # 4. Recorrer items: resolver, llamar mejor_descuento, comparar.
+            for it in items:
+                ean = str(it.get('ean') or '').strip()
+                drog_actual_id = it.get('drogueria_actual_id')
+                if not ean or not drog_actual_id:
+                    sin_resolver += 1
+                    continue
+                obs_id = ean_to_obs.get(ean)
+                lab_local_id = obs_to_lab_local.get(obs_id) if obs_id else None
+                if not obs_id or not lab_local_id:
+                    sin_resolver += 1
+                    continue
+
+                opciones = mejor_descuento(session, obs_id, lab_local_id) or []
+                if not opciones:
+                    sin_resolver += 1
+                    continue
+
+                mejor = opciones[0]
+                # Buscar el descuento de la droguería actual en las opciones.
+                actual = next((o for o in opciones
+                               if o['drogueria_id'] == drog_actual_id), None)
+                dto_actual = float(actual['descuento_total_pct']) if actual else 0.0
+                dto_mejor = float(mejor['descuento_total_pct'])
+
+                if mejor['drogueria_id'] == drog_actual_id:
+                    sin_conflicto += 1
+                    continue
+
+                # Hay conflicto solo si la diferencia es relevante.
+                # Threshold 0.5pp para no flaggear ruido por redondeo.
+                ahorro = dto_mejor - dto_actual
+                if ahorro < 0.5:
+                    sin_conflicto += 1
+                    continue
+
+                conflictos.append({
+                    'ean': ean,
+                    'drogueria_actual_id': drog_actual_id,
+                    'drogueria_actual_nombre': prov_nombres.get(drog_actual_id) or '',
+                    'dto_actual_pct': round(dto_actual, 2),
+                    'mejor_drogueria_id': mejor['drogueria_id'],
+                    'mejor_drogueria_nombre': mejor['drogueria_nombre'],
+                    'mejor_dto_pct': round(dto_mejor, 2),
+                    'ahorro_pct': round(ahorro, 2),
+                })
+
+        # Ordenar conflictos por ahorro DESC (los más jugosos arriba).
+        conflictos.sort(key=lambda c: -c['ahorro_pct'])
+
+        return jsonify({
+            'ok': True,
+            'conflictos': conflictos,
+            'sin_conflicto': sin_conflicto,
+            'sin_resolver': sin_resolver,
+        })
