@@ -261,6 +261,7 @@
                     <th class="text-right px-3 py-2 w-20">Vtas 3m</th>
                     <th class="text-right px-3 py-2 w-24">Cantidad</th>
                     <th class="text-left px-3 py-2 w-52">Mejor descuento</th>
+                    <th class="text-left px-3 py-2 w-24" title="Marca si la droguería elegida no es la de mejor descuento">Conflicto</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-surface-border" id="tabla-body">
@@ -309,10 +310,13 @@
                         <span class="text-[11px] text-[#bbb]">Sin descuento configurado</span>
                         {% endif %}
                     </td>
+                    <td class="px-3 py-2 conflict-cell" data-obs-id="{{ p.observer_id }}">
+                        <span class="text-[#ccc]">·</span>
+                    </td>
                 </tr>
                 {% if p.opciones %}
                 <tr class="opciones-row" id="op-{{ p.observer_id }}">
-                    <td colspan="9" class="px-3 py-2 bg-violet-50/30">
+                    <td colspan="10" class="px-3 py-2 bg-violet-50/30">
                         <table class="w-full text-xs">
                             <thead class="text-[10px] uppercase text-violet-700">
                                 <tr>
@@ -356,7 +360,7 @@
                 {% endif %}
                 {% endfor %}
                 {% if not productos %}
-                <tr><td colspan="9" class="px-3 py-8 text-center text-[#999]">Sin productos bajo mínimo con los filtros actuales.</td></tr>
+                <tr><td colspan="10" class="px-3 py-8 text-center text-[#999]">Sin productos bajo mínimo con los filtros actuales.</td></tr>
                 {% endif %}
             </tbody>
         </table>
@@ -472,6 +476,44 @@ function elegirDrogueria(obsId, radio) {
     itemRow.dataset.drognombre = radio.dataset.drogNombre;
     itemRow.dataset.dto = radio.dataset.dto;
     recalcularResumen();
+    recalcularConflicto(obsId);
+}
+
+function _escConf(s) {
+    return String(s || '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+}
+
+// Conflicto: marca si la droguería elegida (radio checked) no es la de mayor
+// descuento en p.opciones. Threshold 0.5pp para evitar ruido por redondeo.
+function recalcularConflicto(obsId) {
+    const cell = document.querySelector(`.conflict-cell[data-obs-id="${obsId}"]`);
+    if (!cell) return;
+    const radios = document.querySelectorAll(`input[name="drog-${obsId}"]`);
+    if (!radios.length) {
+        cell.innerHTML = '<span class="text-[#ccc]">·</span>';
+        return;
+    }
+    let bestDto = -1, bestNombre = '';
+    let actualDto = 0, actualNombre = '';
+    radios.forEach(r => {
+        const d = parseFloat(r.dataset.dto) || 0;
+        if (d > bestDto) { bestDto = d; bestNombre = r.dataset.drogNombre || ''; }
+        if (r.checked) { actualDto = d; actualNombre = r.dataset.drogNombre || ''; }
+    });
+    const ahorro = bestDto - actualDto;
+    if (ahorro < 0.5) {
+        cell.innerHTML = '<span class="text-[#ccc]">·</span>';
+        return;
+    }
+    const tip = `Mejor: ${_escConf(bestNombre)} ${bestDto.toFixed(2)}% — actual: ${_escConf(actualNombre)} ${actualDto.toFixed(2)}% — ahorro ${ahorro.toFixed(2)}pp`;
+    cell.innerHTML = `<span class="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[10px] font-semibold px-1.5 py-0.5 rounded" title="${tip}">⚡ ${ahorro.toFixed(2)}pp</span>`;
+}
+
+function recalcularConflictosTodos() {
+    document.querySelectorAll('.conflict-cell').forEach(cell => {
+        const obsId = cell.dataset.obsId;
+        if (obsId) recalcularConflicto(obsId);
+    });
 }
 
 // drogs: id → {nombre, items_detalle: [{obsId, cb, nombre, cant, dto}], items: cant_total, dto_avg: [...]}
@@ -605,6 +647,7 @@ async function generarTodos() {
 }
 
 document.addEventListener('DOMContentLoaded', recalcularResumen);
+document.addEventListener('DOMContentLoaded', recalcularConflictosTodos);
 
 // === Navegación con teclado entre celdas de cantidad ===
 // ↓ / Enter           → siguiente fila
