@@ -1349,6 +1349,21 @@ def init_db(database_url=None):
                         estado_actual VARCHAR(20)
                     )
                 """))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
+                        id SERIAL PRIMARY KEY,
+                        proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+                        dia_semana INTEGER NOT NULL,
+                        hora VARCHAR(5) NOT NULL,
+                        activo BOOLEAN NOT NULL DEFAULT TRUE,
+                        creado_en TIMESTAMP DEFAULT NOW(),
+                        UNIQUE (proveedor_id, dia_semana, hora)
+                    )
+                """))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_horarios_prov "
+                    "ON proveedor_horarios_reparto (proveedor_id)"
+                ))
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos
@@ -1753,18 +1768,21 @@ def _pg_add_columns(conn):
             conn.execute(text(ddl))
         except Exception:
             pass
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
-            id SERIAL PRIMARY KEY,
-            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
-            dia_semana INTEGER NOT NULL,
-            hora VARCHAR(5) NOT NULL,
-            activo BOOLEAN NOT NULL DEFAULT TRUE,
-            creado_en TIMESTAMP DEFAULT NOW(),
-            UNIQUE (proveedor_id, dia_semana, hora)
-        )
-    """))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_horarios_prov ON proveedor_horarios_reparto (proveedor_id)"))
+    try:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
+                id SERIAL PRIMARY KEY,
+                proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+                dia_semana INTEGER NOT NULL,
+                hora VARCHAR(5) NOT NULL,
+                activo BOOLEAN NOT NULL DEFAULT TRUE,
+                creado_en TIMESTAMP DEFAULT NOW(),
+                UNIQUE (proveedor_id, dia_semana, hora)
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_horarios_prov ON proveedor_horarios_reparto (proveedor_id)"))
+    except Exception:
+        pass
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS pedido_borrador (
             id SERIAL PRIMARY KEY,
