@@ -45,6 +45,10 @@
             <option value="error" {% if estado_filter == 'error' %}selected{% endif %}>Error</option>
             <option value="corriendo" {% if estado_filter == 'corriendo' %}selected{% endif %}>Corriendo</option>
         </select>
+        <input type="text" name="q" value="{{ q_filter or '' }}"
+               placeholder="Buscar mensaje/error/proceso/origen…"
+               class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm w-64"
+               autocomplete="off">
         <select name="limit" class="bg-surface-input border border-surface-border rounded-lg px-3 py-1.5 text-sm">
             <option value="50" {% if limit == 50 %}selected{% endif %}>50 filas</option>
             <option value="100" {% if limit == 100 %}selected{% endif %}>100 filas</option>
@@ -52,7 +56,7 @@
             <option value="500" {% if limit == 500 %}selected{% endif %}>500 filas</option>
         </select>
         <button type="submit" class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg">Aplicar</button>
-        {% if proceso_filter or estado_filter %}
+        {% if proceso_filter or estado_filter or q_filter %}
         <a href="{{ url_for('admin_cron_log') }}" class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar</a>
         {% endif %}
 

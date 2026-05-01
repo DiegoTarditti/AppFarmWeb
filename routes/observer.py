@@ -911,19 +911,6 @@ def init_app(app):
             'usuario_habilitado': _user_tiene_observer(current_user),
         })
 
-    @app.route('/observer/laboratorios')
-    @login_required
-    def observer_laboratorios():
-        """Lista de laboratorios disponibles en ObServer."""
-        if not _user_tiene_observer(current_user):
-            flash('Tu usuario no tiene acceso a ObServer.', 'error')
-            return redirect(url_for('index'))
-        if not observer_source.observer_disponible():
-            flash('ObServer no está disponible.', 'error')
-            return redirect(url_for('index'))
-        labs = observer_source.get_laboratorios_disponibles()
-        return render_template('observer_labs.html', laboratorios=labs)
-
     @app.route('/observer/analizar', methods=['GET', 'POST'])
     @login_required
     def observer_analizar():

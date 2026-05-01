@@ -227,10 +227,13 @@ def init_app(app):
 
         from sqlalchemy import desc
         from sqlalchemy import func as _func
+        from sqlalchemy import or_ as _or
 
         from database import CronLog, get_db, now_ar
+
         proceso_filter = (request.args.get('proceso') or '').strip()
         estado_filter = (request.args.get('estado') or '').strip()
+        q_filter = (request.args.get('q') or '').strip()
         try:
             limit = min(500, int(request.args.get('limit', '100')))
         except ValueError:
@@ -242,6 +245,19 @@ def init_app(app):
                 base = base.filter(CronLog.proceso.ilike(f'%{proceso_filter}%'))
             if estado_filter:
                 base = base.filter(CronLog.estado == estado_filter)
+            if q_filter:
+                # Busca multi-token AND en mensaje + error + proceso + origen.
+                # Cada token se aplica con un OR sobre las 4 columnas y los
+                # tokens entre sí van en AND.
+                tokens = [t for t in q_filter.lower().split() if t]
+                for tok in tokens:
+                    pat = f'%{tok}%'
+                    base = base.filter(_or(
+                        CronLog.mensaje.ilike(pat),
+                        CronLog.error.ilike(pat),
+                        CronLog.proceso.ilike(pat),
+                        CronLog.origen.ilike(pat),
+                    ))
             entries = base.limit(limit).all()
             # Stats últimas 24h
             corte = now_ar() - timedelta(hours=24)
@@ -256,6 +272,7 @@ def init_app(app):
                                entries=entries, stats=stats,
                                proceso_filter=proceso_filter,
                                estado_filter=estado_filter,
+                               q_filter=q_filter,
                                procesos_distintos=procesos,
                                limit=limit)
 
