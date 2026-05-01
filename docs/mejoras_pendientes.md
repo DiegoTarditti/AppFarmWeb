@@ -101,11 +101,8 @@ una tarea aparte.
 - **Síntoma**: cada navegación a `/admin` evalúa alarmas (7 queries). Si el user va `/admin → /admin/alarmas`, se evalúa 2 veces.
 - **Solución**: cachear el resultado por 30-60s en memoria de proceso (`functools.lru_cache` con TTL custom o `cachetools.TTLCache`).
 
-### Linter (`ruff`)
-- **Trigger**: cualquier momento, gratis.
-- **Esfuerzo**: 5 min.
-- **Cómo**: agregar job `ruff check .` en `.github/workflows/ci.yml`. Crear `pyproject.toml` con reglas suaves al inicio.
-- **Por qué**: detecta imports no usados, variables sin asignar, líneas muy largas. Limpia el código sin esfuerzo.
+### ~~Linter (`ruff`)~~ ✅ HECHO 2026-05-01
+- Job `lint` en `.github/workflows/ci.yml:21-33` con `ruff check .`. `pyproject.toml` con select conservador, ignores y per-file-ignores.
 
 ### Más tests para flujos de oro
 - **Trigger**: cualquier momento; cuanto antes mejor.
@@ -159,18 +156,11 @@ una tarea aparte.
 - **Esfuerzo**: ~30 min — input de búsqueda + filtro por lab/estado/fecha.
 - **Por qué**: hoy hay que buscar manualmente con Ctrl+F.
 
-### Color de fondo del botón en home (no solo del ícono)
-- **Trigger**: cuando el home tenga 10+ botones y se necesite agrupación visual.
-- **Esfuerzo**: 30 min — agregar campo `bg_color` al modelo de cards (o reusar uno existente con sufijo `_btn`), exponerlo en el editor, aplicar via `style="background-color: ..."` en el render.
-- **Por qué**: hoy se puede personalizar el color del ÍCONO de cada botón, pero el fondo del botón es uniforme. Se necesita poder dar un color distinto al fondo del botón completo para agrupar visualmente (ej. todos los de Mis Informes en un mismo tono).
+### ~~Color de fondo del botón en home (no solo del ícono)~~ ✅ HECHO 2026-05-01
+- `templates/index.html:199` aplica `card.bg` al `<a>` completo. Selector de color en `personalizar_home.html:76` guarda el color por card. Commit `cda55f5`.
 
-### Botón "?" contextual del manual
-- **Trigger**: ya, cuando puedas (1-2 horas).
-- **Esfuerzo**: ~1-2 horas.
-- **Cómo**: ya hay esqueleto en `routes/help.py` + `docs/manual/`. Falta:
-  - Botón "?" flotante en `base.html`.
-  - Drawer con marked.js para renderizar el `.md`.
-  - Mapeo de URL → sección del manual.
+### ~~Botón "?" contextual del manual~~ ✅ HECHO 2026-05-01
+- Botón flotante `#help-fab` en `templates/base.html:582-629`. Drawer con marked.js, mapeo URL → sección, atajo `Shift+?`, `Esc` para cerrar.
 
 ### Llenar contenido del manual
 - **Trigger**: ir poblando con uso real.
@@ -240,17 +230,11 @@ una tarea aparte.
 ### ~~Bot de Telegram~~ (descartado a favor del buzón Render)
 - Mantener nota: si por alguna razón se necesita un canal de comandos por *push* (que la PC reciba inmediatamente sin polling), Telegram long-polling sigue siendo la alternativa. Por ahora el polling outbound al buzón Render alcanza.
 
-### Notificaciones de alarmas críticas a Telegram
-- **Trigger**: cuando el módulo de alarmas (`/admin/alarmas`) detecta una crítica o alta, mandar push al celular del admin para no depender de que entres a la página.
-- **Esfuerzo**: 2 hs.
-- **Cómo**:
-  1. Crear bot con `@BotFather`, conseguir TOKEN. Mandar `/start` para conseguir `chat_id`.
-  2. Env vars en Render: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` (1 token + 1 chat por farmacia, eventual N).
-  3. Endpoint `POST /api/admin/alarmas/notificar` que evalúa, deduplica con tabla `alarmas_notificadas(nombre, ultima_notif)` y manda al bot. Solo notifica si `ahora - ultima_notif > 4h` o si la alarma RESUCITA después de estar OK (= salió + entró de nuevo).
-  4. GH Actions cron cada 15 min llamando ese endpoint con `X-Cron-Secret`.
-  5. Mensaje formato: `🚨 Sync ObServer parado · 52h sin sync · /admin/alarmas`.
-  6. Severidades a notificar: `critica` siempre, `alta` opcional con flag, `media`/`baja` no.
-- **Por qué Telegram > WhatsApp**: setup 5min vs 30min+, 0 costo vs 0.005-0.05 USD/msg, API simple vs Cloud API/Twilio, no expone tu número.
+### ~~Notificaciones de alarmas críticas a Telegram~~ ✅ HECHO 2026-05-01
+- `notificaciones.py` con `enviar_telegram()`, `evaluar_y_notificar()`, dedup en tabla `alarmas_notificadas` con gap 4h y lógica de resurrección.
+- Endpoints en `routes/admin.py`: `/api/admin/alarmas/probar-telegram` + `/api/cron/notificar-alarmas`.
+- Env vars: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `ALARMAS_SEVERIDADES`.
+- Cron `cron-alarmas.yml` cada 15 min con `X-Cron-Secret`. Commit `008fcea`.
 - **Multi-farmacia futuro**: 1 bot global + N chats (uno por farmacia). Cuando se venda a más, cada farmacia reporta a su grupo de Telegram.
 
 ### Setup Tailscale + VSCode Remote SSH (doc listo, falta ejecutar)

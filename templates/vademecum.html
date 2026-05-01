@@ -336,7 +336,7 @@ function _mostrarDialogoBusqueda(qOriginal, sugerencia) {
     const overlay = document.createElement('div');
     overlay.className = 'fixed inset-0 bg-black/40 z-[110] flex items-center justify-center p-4';
     overlay.innerHTML = `
-        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl">
+        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl max-h-[92vh] overflow-y-auto">
             <p class="text-xs text-[#6f6f6f] mb-1">PR Vademécum no acepta queries muy específicos</p>
             <p class="text-sm text-[#1e1e1e] mb-3">Producto original: <span class="font-mono text-[12px] text-[#888]">${qOriginal.replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]))}</span></p>
             <label class="text-[11px] uppercase text-[#888] block mb-1">Buscar:</label>

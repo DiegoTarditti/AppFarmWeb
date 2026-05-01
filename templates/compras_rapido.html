@@ -194,19 +194,19 @@
     {% endif %}
 
     <!-- Tabla principal -->
-    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+    <div class="bg-white border border-surface-border rounded-xl overflow-x-auto">
         <table class="w-full text-sm">
             <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
                 <tr>
                     <th class="text-left px-3 py-2">Producto</th>
-                    <th class="text-left px-3 py-2 w-32">Laboratorio</th>
+                    <th class="text-left px-3 py-2 w-24">Laboratorio</th>
                     <th class="text-center px-3 py-2 w-12" title="Tipo venta">Vta</th>
                     <th class="text-right px-3 py-2 w-16">Stock</th>
                     <th class="text-right px-3 py-2 w-16">Mín</th>
                     <th class="text-right px-3 py-2 w-16">Faltan</th>
                     <th class="text-right px-3 py-2 w-20">Vtas 3m</th>
                     <th class="text-right px-3 py-2 w-24">Cantidad</th>
-                    <th class="text-left px-3 py-2 w-64">Mejor descuento</th>
+                    <th class="text-left px-3 py-2 w-52">Mejor descuento</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-surface-border" id="tabla-body">
@@ -224,7 +224,7 @@
                         {{ p.descripcion }}
                         {% if p.es_clavo %}<span class="text-[9px] uppercase font-semibold px-1 py-0.5 rounded bg-red-100 text-red-700 ml-1" title="Sin venta últimos 3 meses">clavo</span>{% endif %}
                     </td>
-                    <td class="px-3 py-2 text-xs text-[#555]">{{ p.lab_nombre }}</td>
+                    <td class="px-3 py-2 text-xs text-[#555] truncate max-w-[96px]" title="{{ p.lab_nombre }}">{{ p.lab_nombre }}</td>
                     <td class="px-3 py-2 text-center">
                         {% if p.tvc == 'L' %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-emerald-100 text-emerald-800">VL</span>
                         {% elif p.tvc in ('R','A') %}<span class="text-[9px] font-semibold px-1 py-0.5 rounded bg-amber-100 text-amber-800">{{ 'RA' if p.tvc == 'A' else 'R' }}</span>
@@ -236,10 +236,11 @@
                     <td class="px-3 py-2 text-right font-semibold {% if p.faltan > 0 %}text-rose-700{% else %}text-[#bbb]{% endif %}">{{ p.faltan }}</td>
                     <td class="px-3 py-2 text-right text-[#555]">{{ '%.0f'|format(p.u3m) }}</td>
                     <td class="px-3 py-2 text-right">
-                        <input type="number" min="0" max="9999" value="{{ p.sugerido }}"
+                        <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" value="{{ p.sugerido }}"
                                class="row-edit-cant bg-surface-input border border-surface-border rounded px-2 py-1 text-xs cant-input"
                                data-obs-id="{{ p.observer_id }}"
-                               oninput="recalcularResumen()">
+                               oninput="recalcularResumen()"
+                               onfocus="this.select()">
                     </td>
                     <td class="px-3 py-2">
                         {% if p.opciones %}
@@ -550,6 +551,62 @@ async function generarTodos() {
 }
 
 document.addEventListener('DOMContentLoaded', recalcularResumen);
+
+// === Navegación con teclado entre celdas de cantidad ===
+// ↓ / Enter           → siguiente fila
+// ↑ / Shift+Enter     → fila anterior
+// Espacio (en fila)   → toggle de opciones de la fila
+// Esc                 → cierra opciones abiertas
+function _focusCantInput(idx) {
+    const inputs = Array.from(document.querySelectorAll('tr.item-row .cant-input'));
+    if (inputs.length === 0) return;
+    const i = Math.max(0, Math.min(inputs.length - 1, idx));
+    const el = inputs[i];
+    el.focus();
+    el.scrollIntoView({block:'center', behavior:'smooth'});
+}
+document.addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (!el || !el.classList || !el.classList.contains('cant-input')) return;
+    const inputs = Array.from(document.querySelectorAll('tr.item-row .cant-input'));
+    const idx = inputs.indexOf(el);
+    if (idx < 0) return;
+    const obsId = parseInt(el.dataset.obsId, 10);
+
+    if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        _focusCantInput(idx + 1);
+    } else if (e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey)) {
+        e.preventDefault();
+        _focusCantInput(idx - 1);
+    } else if (e.key === ' ') {
+        e.preventDefault();
+        toggleOpciones(obsId);
+    } else if (e.key === 'Escape') {
+        document.querySelectorAll('.opciones-row.show').forEach(r => r.classList.remove('show'));
+    } else if (e.altKey && /^[1-9]$/.test(e.key)) {
+        // Alt+N → selecciona la N-ésima droguería de la fila actual.
+        e.preventDefault();
+        const row = document.getElementById('op-' + obsId);
+        if (!row) return;
+        if (!row.classList.contains('show')) row.classList.add('show');
+        const radios = row.querySelectorAll(`input[name="drog-${obsId}"]`);
+        const n = parseInt(e.key, 10) - 1;
+        if (n < radios.length) {
+            radios[n].checked = true;
+            elegirDrogueria(obsId, radios[n]);
+        }
+    }
+});
+
+// Foco inicial en el primer cant-input al cargar (si lo hay).
+document.addEventListener('DOMContentLoaded', () => {
+    const first = document.querySelector('tr.item-row .cant-input');
+    if (first) {
+        first.focus();
+        first.scrollIntoView({block:'center'});
+    }
+});
 </script>
 
 {% include '_alfabeta_link.html' %}
