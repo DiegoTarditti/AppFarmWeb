@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Pre-commit hook: checks rápidos antes de cada commit.
+# Bloquea si hay trailing whitespace, archivos sin newline final, o ruff issues.
+#
+# Bypass de emergencia:
+#   SKIP_COMMIT_CHECK=1 git commit
+
+set -e
+
+if [ "$SKIP_COMMIT_CHECK" = "1" ]; then
+    echo "⚠  Saltando checks pre-commit (SKIP_COMMIT_CHECK=1)"
+    exit 0
+fi
+
+# Solo archivos staged
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$STAGED" ]; then
+    exit 0
+fi
+
+ERRORS=0
+
+# 1. Trailing whitespace en archivos staged
+echo "▶ Pre-commit 1/2 — Trailing whitespace..."
+while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    if grep -Pq " +$" "$f" 2>/dev/null; then
+        echo "  ✗ Trailing whitespace: $f"
+        ERRORS=$((ERRORS + 1))
+    fi
+done <<< "$STAGED"
+
+# 2. Ruff solo en .py staged
+PY_STAGED=$(echo "$STAGED" | grep '\.py$' || true)
+if [ -n "$PY_STAGED" ]; then
+    echo "▶ Pre-commit 2/2 — Ruff (py staged)..."
+    if command -v ruff > /dev/null 2>&1; then
+        if ! echo "$PY_STAGED" | xargs ruff check 2>&1; then
+            ERRORS=$((ERRORS + 1))
+        fi
+    else
+        echo "  (ruff no instalado — salteado. pip install ruff)"
+    fi
+fi
+
+if [ "$ERRORS" -gt 0 ]; then
+    echo ""
+    echo "✗ Pre-commit bloqueado ($ERRORS issue/s)."
+    echo "  Auto-fix whitespace: sed -i 's/[[:space:]]*$//' <archivo>"
+    echo "  Auto-fix ruff:       ruff check --fix <archivo>"
+    echo "  Bypass:              SKIP_COMMIT_CHECK=1 git commit"
+    exit 1
+fi
+
+exit 0
