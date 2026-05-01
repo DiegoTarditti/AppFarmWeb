@@ -236,6 +236,8 @@ def init_app(app):
                     q = q.filter(database.Invoice.proveedor_razon == p.razon_social)
                 invoice_count = q.count()
                 claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
+                horario_count = (session.query(database.HorarioReparto)
+                                 .filter_by(proveedor_id=p.id).count())
                 provider_data.append({
                     'id': p.id,
                     'razon_social': p.razon_social,
@@ -248,6 +250,8 @@ def init_app(app):
                     'invoice_count': invoice_count,
                     'claim_count': claim_count,
                     'has_plantilla': p.id in plantilla_ids,
+                    'tiene_horarios': horario_count > 0,
+                    'horario_count': horario_count,
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 

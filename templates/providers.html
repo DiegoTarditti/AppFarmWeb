@@ -170,8 +170,19 @@
                         <span class="w-px h-4 bg-surface-border mx-2"></span>
 
                         {% if p.tipo == 'drogueria' %}
-                        <a href="{{ url_for('provider_horarios', provider_id=p.id) }}" class="action-link">
-                            🕐 Horarios
+                        <a href="{{ url_for('provider_horarios', provider_id=p.id) }}"
+                           class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border
+                                  {% if p.tiene_horarios %}
+                                  bg-emerald-50 text-emerald-700 border-emerald-200
+                                  {% else %}
+                                  bg-[#f5f5f5] text-[#999] border-[#e0e0e0]
+                                  {% endif %}">
+                            🕐
+                            {% if p.tiene_horarios %}
+                                {{ p.horario_count }} slot{{ 's' if p.horario_count != 1 else '' }}
+                            {% else %}
+                                Sin horario
+                            {% endif %}
                         </a>
                         {% endif %}
                         <a href="{{ url_for('provider_mappings', provider_id=p.id) }}" class="action-link">
