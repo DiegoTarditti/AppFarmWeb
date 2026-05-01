@@ -4,11 +4,22 @@ import time
 from urllib.error import URLError
 from urllib.request import urlopen
 
+import sentry_sdk
 from flask import Flask
 from flask_cors import CORS
+from sentry_sdk.integrations.flask import FlaskIntegration
 
 import database
 from database import init_db
+
+_sentry_dsn = os.environ.get('SENTRY_DSN', '').strip()
+if _sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_dsn,
+        integrations=[FlaskIntegration()],
+        traces_sample_rate=0.1,
+        environment=os.environ.get('SENTRY_ENV', 'production'),
+    )
 
 app = Flask(__name__)
 CORS(app)

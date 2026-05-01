@@ -67,21 +67,16 @@ una tarea aparte.
 - **Esfuerzo**: 1-2 horas.
 - **Cómo**: hoy hace varios queries pequeños. Refactorear a 2-3 queries con joins masivos.
 
-### Limpieza periódica de `home_card_clicks`
-- **Trigger**: la tabla pasa de 100k filas o se nota lentitud al cargar el home.
-- **Esfuerzo**: 15 min.
-- **Cómo**: cron en DockerPanel: `DELETE FROM home_card_clicks WHERE clicked_at < now() - interval '90 days'`.
-- **Por qué**: solo se usa para el ranking de cards en el home, datos viejos no aportan.
+### ~~Limpieza periódica de `home_card_clicks`~~ ✅ YA EXISTÍA
+- Endpoint `POST /api/cron/limpiar-home-card-clicks` en `routes/admin.py:572`. Workflow `.github/workflows/cron-limpiar-home-card-clicks.yml` corre domingos 03:30 UTC. Borra >90 días.
 
 ### Migrar PDFs a S3 / Cloudflare R2
 - **Trigger**: el bucket de PDFs (facturas + reclamos) pasa de 5-10 GB.
 - **Esfuerzo**: 1 día.
 - **Cómo**: subir a R2 (más barato que S3), guardar URL en `Invoice.pdf_filename`. Backfill scripted.
 
-### Optimizar `/api/droga/<id>/comparar-labs`
-- **Trigger**: comparar 5+ labs tarda > 2 seg.
-- **Esfuerzo**: 1 hora.
-- **Cómo**: consolidar las queries por lab en una sola con `GROUP BY lab_id`.
+### ~~Optimizar `/api/droga/<id>/comparar-labs`~~ ✅ YA EXISTÍA
+- `routes/observer.py:551` usa GROUP BY en todas las queries de ventas. Optimizado.
 
 ---
 
@@ -93,13 +88,10 @@ una tarea aparte.
 - **Detectadas (route-orphan-finder 2026-04-30)**:
   1. ✅ ~~`/clientes` (clientes_list)~~ — **2026-04-30**: linkeada en sidebar bajo "Obras Sociales" como "Clientes / Pacientes" (templates/base.html).
   2. ✅ ~~`/purchase/processed` (purchase_processed)~~ — **2026-05-01**: linkeada desde `purchase_suggest.html` como "Análisis guardados".
-  3. `/observer/laboratorios` (observer_laboratorios) — `routes/observer.py:914`. Probablemente deprecada (era stepping stone del flujo viejo, ahora se entra directo por `purchase_suggest`). Decidir: eliminar o fusionar.
+  3. ✅ ~~`/observer/laboratorios` (observer_laboratorios)~~ — eliminada en sesión anterior junto con `observer_labs.html`.
 
-### Cache de evaluación de alarmas
-- **Trigger**: si la página `/admin` se vuelve lenta.
-- **Esfuerzo**: 30 min.
-- **Síntoma**: cada navegación a `/admin` evalúa alarmas (7 queries). Si el user va `/admin → /admin/alarmas`, se evalúa 2 veces.
-- **Solución**: cachear el resultado por 30-60s en memoria de proceso (`functools.lru_cache` con TTL custom o `cachetools.TTLCache`).
+### ~~Cache de evaluación de alarmas~~ ✅ YA EXISTÍA
+- `alarmas.py:272-316`: `_CACHE_TTL_SEG=30s`, dict `_cache`, `invalidar_cache()`, `evaluar_todas(force=False)`.
 
 ### ~~Linter (`ruff`)~~ ✅ HECHO 2026-05-01
 - Job `lint` en `.github/workflows/ci.yml:21-33` con `ruff check .`. `pyproject.toml` con select conservador, ignores y per-file-ignores.
