@@ -232,7 +232,8 @@ function abrirCopiarA(diaOrigen) {
         </div>`;
     document.body.appendChild(back);
     back.querySelector('#btn-copiar-cancelar').onclick = () => back.remove();
-    back.querySelector('#btn-copiar-aplicar').onclick = async () => {
+    back.querySelector('#btn-copiar-aplicar').onclick = async (e) => {
+        e.stopPropagation();
         const dias = [...back.querySelectorAll('.cb-dia:checked')].map(cb => parseInt(cb.dataset.dia));
         if (!dias.length) { alert('Elegí al menos un día.'); return; }
         await ejecutarCopia(diaOrigen, dias);
@@ -297,6 +298,7 @@ function _normalizarHora(input) {
 async function agregarHora() {
     const dia = parseInt(document.getElementById('add-dia').value);
     const horaRaw = document.getElementById('add-hora').value;
+    if (!horaRaw.trim()) return;
     const hora = _normalizarHora(horaRaw);
     if (!hora) {
         alert('Hora inválida. Aceptamos: 09:30, 9:30, 0930 o 930.');
