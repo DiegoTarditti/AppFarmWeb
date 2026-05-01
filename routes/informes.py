@@ -842,6 +842,75 @@ def init_app(app):
             session.commit()
             pedido_id = pedido.id
 
+            # Si el user clickeó "Crear + exportar plantilla", generamos el XLSX
+            # acá mismo en lugar de redirigir a /order/<id>. Reusa la lógica del
+            # endpoint /order/<id>/export/plantilla pero sin requerir round-trip.
+            if request.form.get('exportar_plantilla') == '1':
+                from io import BytesIO
+                import json as _json
+
+                import openpyxl
+                from openpyxl.styles import Alignment, Font, PatternFill
+
+                from database import ExportTemplate, Laboratorio
+                from flask import send_file
+
+                local_lab_for_tpl = (session.query(Laboratorio)
+                                     .filter_by(nombre=lab_nombre).first())
+                tpl = (session.get(ExportTemplate, local_lab_for_tpl.id)
+                       if local_lab_for_tpl else None)
+                if tpl and tpl.columns_json:
+                    cols = [c for c in _json.loads(tpl.columns_json) if c.get('enabled')]
+                    if cols:
+                        # Construimos rows con los campos disponibles. El pedido auto
+                        # tiene ean/nombre/cantidad sí o sí; el resto queda vacío y
+                        # la plantilla pone celda en blanco.
+                        rows = [{
+                            'ean': it.codigo_barra,
+                            'codigo_barra': it.codigo_barra,
+                            'nombre': it.nombre,
+                            'descripcion': it.nombre,
+                            'cantidad': it.cantidad,
+                            'total': it.cantidad,
+                        } for it in items]
+
+                        wb = openpyxl.Workbook()
+                        ws = wb.active
+                        ws.title = 'Pedido'
+                        row_offset = 1
+                        if tpl.custom_header:
+                            ws.cell(row=1, column=1, value=tpl.custom_header).font = Font(bold=True, size=12)
+                            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cols))
+                            row_offset = 2
+                        hdr_fill = PatternFill('solid', fgColor='1e1e1e')
+                        for ci, col in enumerate(cols, 1):
+                            cell = ws.cell(row=row_offset, column=ci, value=col['label'])
+                            cell.font = Font(bold=True, color='FFFFFF', size=10)
+                            cell.fill = hdr_fill
+                            cell.alignment = Alignment(horizontal='center')
+                        for ri, row in enumerate(rows, row_offset + 1):
+                            for ci, col in enumerate(cols, 1):
+                                val = row.get(col['field'])
+                                if val == '':
+                                    val = None
+                                ws.cell(row=ri, column=ci, value=val)
+                        for ci, col in enumerate(cols, 1):
+                            field = col['field']
+                            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = (
+                                20 if field in ('nombre', 'descripcion') else 15 if field in ('ean', 'codigo_barra') else 12
+                            )
+                        buf = BytesIO()
+                        wb.save(buf)
+                        buf.seek(0)
+                        fname = f"Pedido_{lab_nombre}_AutoBajoMinimo.xlsx".replace(' ', '_')
+                        return send_file(
+                            buf, as_attachment=True, download_name=fname,
+                            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        )
+                # Si la plantilla no está bien configurada, fallback a redirect normal.
+                from flask import flash as _flash
+                _flash('La plantilla del laboratorio no está bien configurada. Pedido creado, exportá manualmente desde la pantalla del pedido.', 'warning')
+
         from flask import flash, redirect, url_for
         flash(f'Pedido creado: {len(items)} productos.', 'success')
         return redirect(url_for('order_detail', pedido_id=pedido_id))

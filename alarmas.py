@@ -11,10 +11,19 @@ Diseño:
 - Sin red: solo SQL contra DB local. Las alarmas externas (GitHub API,
   Render API) van en `alarmas_externas.py` (futuro) para no bloquear el
   endpoint si la red falla.
-- Cero state global: cada call a `evaluar_todas()` es independiente.
+- Cero state global EXCEPTO el TTL cache de `evaluar_todas()` (ver abajo).
+
+Cache:
+- `evaluar_todas()` cachea el resultado por `_CACHE_TTL_SEG` segundos en
+  memoria del worker. La pantalla `/admin` y `/admin/alarmas` se navegan
+  consecutivamente y antes evaluaban las 7 queries 2 veces — ahora la
+  segunda navegación devuelve el resultado cacheado.
+- El cron de notificaciones (`/api/cron/notificar-alarmas`) pasa
+  `force=True` para no actuar sobre datos viejos al deduplicar.
 
 Spec: ver `c:/AppSeguimiento/mantenimiento-y-alarmas.md`.
 """
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -260,9 +269,32 @@ CHECKS = [
 ]
 
 
-def evaluar_todas(session) -> list[Alarma]:
+# TTL cache de evaluar_todas. 30s alcanza para que la navegación
+# /admin → /admin/alarmas no re-corra los 7 checks. Por worker
+# (cada gunicorn worker tiene su propio cache; no hay shared state).
+_CACHE_TTL_SEG = 30.0
+_cache = {'ts': 0.0, 'alarmas': None}
+
+
+def invalidar_cache() -> None:
+    """Forza la próxima `evaluar_todas` a recalcular. Útil después de
+    una acción que pueda haber cambiado el estado (ej. limpieza de cron_log)."""
+    _cache['ts'] = 0.0
+    _cache['alarmas'] = None
+
+
+def evaluar_todas(session, force=False) -> list[Alarma]:
     """Corre todos los checks y devuelve solo los que dispararon, ordenados
-    por severidad (críticos primero)."""
+    por severidad (críticos primero).
+
+    Cachea el resultado por `_CACHE_TTL_SEG` segundos. Pasar `force=True`
+    para saltarse el cache (útil en el cron de notificaciones)."""
+    now = time.monotonic()
+    if (not force
+            and _cache['alarmas'] is not None
+            and (now - _cache['ts']) < _CACHE_TTL_SEG):
+        return _cache['alarmas']
+
     alarmas = []
     for check in CHECKS:
         try:
@@ -280,6 +312,8 @@ def evaluar_todas(session) -> list[Alarma]:
             except Exception:
                 pass
     alarmas.sort(key=lambda a: (SEV_ORDER.get(a.severidad, 99), a.nombre))
+    _cache['ts'] = now
+    _cache['alarmas'] = alarmas
     return alarmas
 
 

@@ -31,6 +31,23 @@
     {% endfor %}
     {% endwith %}
 
+    <a href="{{ url_for('admin_health') }}"
+       class="block bg-white border border-surface-border rounded-xl p-5 hover:border-brand hover:shadow-sm transition-all">
+        <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-semibold text-sm">Health check del sistema</p>
+                <p class="text-xs text-[#6f6f6f] mt-1">
+                    Pantalla de diagnóstico unificada: estado DB + version, conteos por tabla, sync de ObServer,
+                    últimos crons, versión deployada, hora server. Primer punto de chequeo cuando algo no anda.
+                </p>
+            </div>
+            <svg class="w-4 h-4 text-[#999] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+        </div>
+    </a>
+
     <a href="{{ url_for('observer_sync_panel') }}"
        class="block bg-white border border-surface-border rounded-xl p-5 hover:border-brand hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">

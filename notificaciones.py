@@ -110,7 +110,11 @@ def evaluar_y_notificar(session, severidades=('critica', 'alta'), app_url: str =
     ahora = datetime.now()
     gap = timedelta(hours=MIN_GAP_HORAS)
 
-    todas = _alarmas.evaluar_todas(session)
+    # force=True: el cron de notificaciones dispara cada 15 min y compara
+    # contra `alarmas_notificadas` para deduplicar. Si tomara el cache de 30s
+    # de evaluar_todas podría procesar datos desactualizados respecto al estado
+    # de la DB en ese instante exacto.
+    todas = _alarmas.evaluar_todas(session, force=True)
     activas_por_nombre = {a.nombre: a for a in todas}
 
     notificadas = 0

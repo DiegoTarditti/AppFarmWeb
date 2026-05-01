@@ -37,6 +37,142 @@ def init_app(app):
                                 n_alarmas=n_alarmas,
                                 n_criticas=n_criticas)
 
+    @app.route('/admin/health')
+    @requiere_permiso('usuarios', 'admin')
+    def admin_health():
+        """Diagnóstico rápido del sistema. Una sola pantalla con todo lo
+        que un dev necesita para chequear rápido si algo se rompió:
+        - DB: SELECT 1, version, conteos por tabla principal.
+        - Sync ObServer: estado por entidad (ventas/stock/productos/labs/clientes).
+        - Última actividad de crons (3 más recientes).
+        - Versión deployada (commit SHA si está disponible).
+        - Hora server (UTC + AR).
+        """
+        from datetime import datetime
+        from sqlalchemy import desc as _desc
+        from sqlalchemy import text as _text
+
+        from database import (
+            CronLog, Producto, ObsProducto, Invoice, Pedido, Claim,
+            ObsVentaDetalle, ObsStock, now_ar,
+        )
+
+        info = {}
+
+        # Versión deployada — Render expone RENDER_GIT_COMMIT, sino fallback
+        # a leer .git/HEAD localmente.
+        sha = (os.environ.get('RENDER_GIT_COMMIT')
+               or os.environ.get('BUILD_SHA')
+               or '')
+        if not sha:
+            try:
+                head_path = os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                    '.git', 'HEAD',
+                )
+                if os.path.exists(head_path):
+                    with open(head_path, encoding='utf-8') as f:
+                        ref = f.read().strip()
+                    if ref.startswith('ref: '):
+                        ref_path = os.path.join(
+                            os.path.dirname(head_path), ref[5:],
+                        )
+                        if os.path.exists(ref_path):
+                            with open(ref_path, encoding='utf-8') as f:
+                                sha = f.read().strip()
+                    else:
+                        sha = ref
+            except Exception:
+                pass
+        info['version_sha'] = sha[:12] if sha else '—'
+        info['version_full'] = sha or '—'
+
+        # Hora server
+        ahora_utc = datetime.utcnow()
+        info['hora_utc'] = ahora_utc.strftime('%Y-%m-%d %H:%M:%S UTC')
+        info['hora_ar'] = now_ar().strftime('%Y-%m-%d %H:%M:%S')
+
+        # DB
+        db_ok = False
+        db_error = None
+        db_version = None
+        try:
+            with database.get_db() as s:
+                s.execute(_text('SELECT 1'))
+                db_ok = True
+                try:
+                    row = s.execute(_text('SELECT version()')).fetchone()
+                    if row:
+                        # Acortamos: "PostgreSQL 18.x on x86_64..." → "PostgreSQL 18.x"
+                        full = str(row[0])
+                        info['db_version'] = full.split(' on ')[0] if ' on ' in full else full[:60]
+                        db_version = info['db_version']
+                except Exception:
+                    info['db_version'] = '—'
+        except Exception as e:
+            db_error = str(e)[:200]
+        info['db_ok'] = db_ok
+        info['db_error'] = db_error
+
+        # Conteos tablas principales
+        conteos = []
+        if db_ok:
+            with database.get_db() as s:
+                for nombre, modelo in [
+                    ('Productos (catálogo local)', Producto),
+                    ('ObServer Productos', ObsProducto),
+                    ('ObServer Ventas detalle', ObsVentaDetalle),
+                    ('ObServer Stock', ObsStock),
+                    ('Facturas', Invoice),
+                    ('Pedidos', Pedido),
+                    ('Reclamos', Claim),
+                ]:
+                    try:
+                        n = s.query(modelo).count()
+                        conteos.append({'nombre': nombre, 'cantidad': n})
+                    except Exception as e:
+                        conteos.append({'nombre': nombre, 'cantidad': None,
+                                        'error': str(e)[:80]})
+        info['conteos'] = conteos
+
+        # Total de tablas en metadata SQLAlchemy
+        info['n_tablas_metadata'] = len(database.Base.metadata.sorted_tables)
+
+        # Sync ObServer
+        sync_estados = {}
+        try:
+            import observer_source
+            with database.get_db() as s:
+                sync_estados = observer_source.estado_syncs(s)
+        except Exception as e:
+            info['sync_error'] = str(e)[:200]
+        info['sync_estados'] = sync_estados
+
+        # Últimos 5 runs de cron
+        cron_recientes = []
+        try:
+            with database.get_db() as s:
+                rows = (s.query(CronLog)
+                        .order_by(_desc(CronLog.inicio))
+                        .limit(5).all())
+                for r in rows:
+                    cron_recientes.append({
+                        'proceso': r.proceso,
+                        'estado': r.estado,
+                        'inicio': r.inicio.strftime('%Y-%m-%d %H:%M') if r.inicio else '—',
+                        'duracion_ms': r.duracion_ms,
+                        'origen': r.origen or '—',
+                    })
+        except Exception:
+            pass
+        info['cron_recientes'] = cron_recientes
+
+        # Python + worker
+        info['python_version'] = sys.version.split()[0]
+        info['worker_pid'] = os.getpid()
+
+        return render_template('admin_health.html', info=info)
+
     @app.route('/admin/alarmas')
     @requiere_permiso('usuarios', 'admin')
     def admin_alarmas():
@@ -289,6 +425,53 @@ def init_app(app):
                     'sin_os': res['sin_os'],
                 }
             return jsonify({'ok': True, **res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
+    @app.route('/api/cron/limpiar-home-card-clicks', methods=['POST'])
+    def api_cron_limpiar_home_card_clicks():
+        """Borra entries de `home_card_clicks` de más de 90 días.
+
+        La tabla solo se usa para rankear cards en el home (uso reciente). Datos
+        viejos no aportan y crecen sin parar. Sin esto la tabla pasa de 100k
+        filas con uso intensivo y empieza a notarse en el page load.
+
+        Auth: header `X-Cron-Secret` (mismo patrón que recalcular-os-clientes).
+        """
+        import hmac as _hmac
+        from datetime import timedelta
+
+        from sqlalchemy import text as _text
+
+        import cron_log
+        from database import now_ar
+
+        expected = os.environ.get('CRON_SECRET', '').strip()
+        if not expected:
+            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
+        provided = (request.headers.get('X-Cron-Secret') or '').strip()
+        if not provided or not _hmac.compare_digest(provided, expected):
+            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+
+        # Permitir override del horizonte vía query param `dias` (default 90).
+        try:
+            dias = max(7, int(request.args.get('dias', '90')))
+        except ValueError:
+            dias = 90
+
+        corte = now_ar() - timedelta(days=dias)
+
+        try:
+            with cron_log.registrar('limpiar_home_card_clicks', origen='cron') as log:
+                with database.get_db() as session:
+                    res = session.execute(
+                        _text('DELETE FROM home_card_clicks WHERE clicked_at < :corte'),
+                        {'corte': corte},
+                    )
+                    borrados = res.rowcount or 0
+                    session.commit()
+                log.metadata = {'borrados': borrados, 'dias': dias}
+            return jsonify({'ok': True, 'borrados': borrados, 'dias': dias})
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 

@@ -378,13 +378,20 @@
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-2 mt-4">
+                <div class="flex justify-end gap-2 mt-4 flex-wrap">
                     <a href="{{ url_for('informe_pedido_auto') }}"
                        class="px-3 py-2 text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Cancelar</a>
-                    <button type="submit"
-                            class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg text-sm">
+                    <button type="submit" name="exportar_plantilla" value=""
+                            class="bg-[#f5f5f5] hover:bg-[#ececec] text-[#1e1e1e] border border-surface-border font-semibold px-4 py-2 rounded-lg text-sm">
                         Crear pedido →
                     </button>
+                    {% if tiene_plantilla %}
+                    <button type="submit" name="exportar_plantilla" value="1"
+                            class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg text-sm"
+                            title="Crea el pedido y descarga el XLSX con la plantilla del laboratorio en un solo click">
+                        Crear + exportar plantilla 📥
+                    </button>
+                    {% endif %}
                 </div>
             </form>
             {% else %}

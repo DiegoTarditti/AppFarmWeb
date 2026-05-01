@@ -1,0 +1,56 @@
+# Pre-commit hooks para AppFarmWeb.
+#
+# Setup (una sola vez por dev):
+#   pip install pre-commit
+#   pre-commit install
+#
+# A partir de ahí, cada `git commit` corre los hooks sobre los archivos
+# staged. Si alguno falla (lint, trailing whitespace, etc.), el commit se
+# aborta. Arreglar lo que indica el hook (algunos auto-fixean) y volver
+# a `git add` + commit.
+#
+# Para correr manualmente sobre todo el repo:
+#   pre-commit run --all-files
+#
+# Skip excepcional (NO usar como costumbre):
+#   git commit --no-verify
+#
+# Las reglas de ruff comparten config con CI vía pyproject.toml — un solo
+# lugar para tunear y se aplica tanto local como en GitHub Actions.
+
+repos:
+  # ── Ruff: lint + format ─────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      # Lint con auto-fix donde se pueda.
+      - id: ruff
+        args: [--fix]
+        # Hacemos lint sólo de Python (default).
+      # Format: aplica formateo consistente. Equivale a black + isort.
+      # Comentado al inicio — queremos endurecer gradualmente. Cuando estemos
+      # listos para enforzar formato uniforme, descomentar.
+      # - id: ruff-format
+
+  # ── Higiene básica de archivos ──────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Excluir markdown porque a veces se usan 2 espacios al final
+        # como salto de línea.
+        exclude: \.md$
+      - id: end-of-file-fixer
+        # Excluir markdown por la misma razón.
+        exclude: \.md$
+      - id: check-yaml
+        # Algunos workflows GH Actions tienen sintaxis especial con
+        # custom tags — los excluimos si en el futuro se rompe.
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=2048]   # 2MB. Bloquea PDFs grandes y similares.
+      - id: check-merge-conflict
+        # Detecta marcadores <<<<<<< sin resolver.
+      - id: mixed-line-ending
+        args: [--fix=lf]       # Forzamos LF (consistente con .gitattributes implícito).
+        exclude: \.bat$        # Los .bat necesitan CRLF.

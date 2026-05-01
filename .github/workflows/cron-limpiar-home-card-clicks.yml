@@ -1,0 +1,54 @@
+name: Cron — Limpiar home_card_clicks (>90 días)
+
+# Corre semanal (domingos 03:30 UTC = 00:30 hora Argentina) y borra entries
+# de la tabla `home_card_clicks` de más de 90 días. La tabla solo se usa
+# para rankear cards en el home — datos viejos no aportan y crecen sin parar.
+#
+# Trigger semanal porque la tabla crece lento (un click por interacción de
+# user con una card). No tiene sentido correr diario.
+#
+# Configuración previa: requiere los mismos secrets que `cron-os-recalcular.yml`
+# (APP_URL + CRON_SECRET). Si ya configuraste eso, no hay que hacer nada más.
+
+on:
+  schedule:
+    - cron: '30 3 * * 0'   # domingo 03:30 UTC
+  workflow_dispatch:        # permite disparar manual desde la UI de Actions
+
+jobs:
+  limpiar:
+    name: POST /api/cron/limpiar-home-card-clicks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validar secrets
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::error::Falta el secret APP_URL"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Falta el secret CRON_SECRET"
+            exit 1
+          fi
+
+      - name: Disparar limpieza
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -e
+          response=$(curl -sS -w "\n%{http_code}" -X POST \
+            -H "X-Cron-Secret: $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            "$APP_URL/api/cron/limpiar-home-card-clicks")
+          status=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "HTTP $status"
+          echo "$body"
+          if [ "$status" != "200" ]; then
+            echo "::error::HTTP $status — la limpieza falló"
+            exit 1
+          fi

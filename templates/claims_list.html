@@ -51,8 +51,8 @@
 
 <main class="max-w-5xl mx-auto px-6 py-8">
 
-    <!-- Filtro por estado -->
-    <div class="flex items-center gap-2 mb-5">
+    <!-- Filtros -->
+    <div class="flex items-center gap-2 mb-5 flex-wrap">
         <button onclick="filterClaims('all')" id="btn-all"
             class="filter-btn text-xs px-3 py-1.5 rounded-full border border-surface-border bg-brand text-brand-dark font-semibold transition-colors">
             Todos
@@ -65,6 +65,31 @@
             class="filter-btn text-xs px-3 py-1.5 rounded-full border border-surface-border text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors">
             Completados
         </button>
+
+        <input id="filtro-busqueda" type="text" placeholder="Buscar proveedor o N° factura…"
+               oninput="applyFilters()" autocomplete="off"
+               class="bg-white border border-surface-border rounded-md px-2 py-1.5 text-xs w-64">
+
+        <label class="text-[10px] text-[#6f6f6f] flex items-center gap-1">
+            Desde
+            <input id="filtro-desde" type="date" onchange="applyFilters()"
+                   class="bg-white border border-surface-border rounded-md px-1.5 py-0.5 text-xs"
+                   title="Filtrar por fecha de creación (desde)">
+        </label>
+        <label class="text-[10px] text-[#6f6f6f] flex items-center gap-1">
+            Hasta
+            <input id="filtro-hasta" type="date" onchange="applyFilters()"
+                   class="bg-white border border-surface-border rounded-md px-1.5 py-0.5 text-xs"
+                   title="Filtrar por fecha de creación (hasta)">
+        </label>
+
+        <button type="button" id="btn-limpiar-filtros" onclick="limpiarFiltros()"
+                class="text-[11px] text-[#6f6f6f] hover:text-[#1e1e1e] underline ml-1"
+                title="Resetear todos los filtros" style="visibility: hidden;">
+            ↻ Limpiar
+        </button>
+
+        <span id="claims-visibles" class="text-xs text-[#6f6f6f] ml-auto"></span>
     </div>
 
     <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
@@ -88,7 +113,11 @@
                 </thead>
                 <tbody class="divide-y divide-surface-border" id="claims-tbody">
                     {% for claim in claims %}
-                    <tr class="hover:bg-black/[0.04] transition-colors claim-row" data-estado="{{ claim.estado }}">
+                    <tr class="hover:bg-black/[0.04] transition-colors claim-row"
+                        data-estado="{{ claim.estado }}"
+                        data-proveedor="{{ ((claim.provider.razon_social if claim.provider else '') or '') | lower }}"
+                        data-factura="{{ (claim.numero_factura or '') | lower }}"
+                        data-creado="{{ claim.creado_en.strftime('%Y-%m-%d') if claim.creado_en else '' }}">
                         <td class="px-5 py-3 text-[#999] font-mono text-xs">#{{ claim.id }}</td>
                         <td class="px-5 py-3 font-medium text-[#1e1e1e]">
                             {{ claim.provider.razon_social if claim.provider else '—' }}
@@ -135,7 +164,10 @@
 </main>
 
 <script>
+let estadoActual = 'all';
+
 function filterClaims(estado) {
+    estadoActual = estado;
     document.querySelectorAll('.filter-btn').forEach(btn => {
         btn.classList.remove('bg-brand', 'text-brand-dark', 'font-semibold');
         btn.classList.add('text-[#6f6f6f]');
@@ -143,15 +175,53 @@ function filterClaims(estado) {
     const active = document.getElementById('btn-' + estado);
     active.classList.add('bg-brand', 'text-brand-dark', 'font-semibold');
     active.classList.remove('text-[#6f6f6f]');
-
-    document.querySelectorAll('.claim-row').forEach(row => {
-        if (estado === 'all' || row.dataset.estado === estado) {
-            row.style.display = '';
-        } else {
-            row.style.display = 'none';
-        }
-    });
+    applyFilters();
 }
+
+function applyFilters() {
+    const q = (document.getElementById('filtro-busqueda')?.value || '').trim().toLowerCase();
+    const tokens = q.replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+    const desde = document.getElementById('filtro-desde')?.value || '';   // YYYY-MM-DD
+    const hasta = document.getElementById('filtro-hasta')?.value || '';
+
+    let visibles = 0;
+    document.querySelectorAll('.claim-row').forEach(row => {
+        const estado = row.dataset.estado;
+        const proveedor = row.dataset.proveedor || '';
+        const factura = row.dataset.factura || '';
+        const creado = row.dataset.creado || '';
+
+        let mostrar = (estadoActual === 'all' || estado === estadoActual);
+
+        if (mostrar && tokens.length) {
+            const blob = proveedor + ' ' + factura;
+            mostrar = tokens.every(t => blob.includes(t));
+        }
+
+        if (mostrar && desde && creado) mostrar = creado >= desde;
+        if (mostrar && hasta && creado) mostrar = creado <= hasta;
+        if (mostrar && (desde || hasta) && !creado) mostrar = false;
+
+        row.style.display = mostrar ? '' : 'none';
+        if (mostrar) visibles++;
+    });
+
+    const info = document.getElementById('claims-visibles');
+    if (info) info.textContent = visibles + ' visible' + (visibles !== 1 ? 's' : '');
+
+    const btn = document.getElementById('btn-limpiar-filtros');
+    if (btn) btn.style.visibility = (q || desde || hasta || estadoActual !== 'all') ? 'visible' : 'hidden';
+}
+
+function limpiarFiltros() {
+    document.getElementById('filtro-busqueda').value = '';
+    document.getElementById('filtro-desde').value = '';
+    document.getElementById('filtro-hasta').value = '';
+    filterClaims('all');
+}
+
+// Inicializar contador de visibles al cargar.
+document.addEventListener('DOMContentLoaded', applyFilters);
 </script>
 </body>
 </html>

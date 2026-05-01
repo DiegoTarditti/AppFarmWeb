@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% set nav_active = "admin" %}
+{% block title %}Health check del sistema{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">🩺 Health check</h1>
+        <p class="text-xs text-[#6f6f6f]">Diagnóstico rápido — DB, sync, crons, versión deployada.</p>
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('admin_alarmas') }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">🔔 Alarmas</a>
+        <a href="{{ url_for('admin_cron_log') }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">📋 Cron log</a>
+        <a href="{{ url_for('admin_index') }}"
+           class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e]">← Volver a admin</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-3xl mx-auto space-y-4">
+
+    {# ── Estado general ── #}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="bg-white border-2 {% if info.db_ok %}border-emerald-200{% else %}border-red-300{% endif %} rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">Base de datos</p>
+            <p class="text-lg font-bold {% if info.db_ok %}text-emerald-700{% else %}text-red-700{% endif %} mt-1">
+                {% if info.db_ok %}✓ OK{% else %}✗ Error{% endif %}
+            </p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1 font-mono">{{ info.db_version or '—' }}</p>
+            {% if info.db_error %}
+            <p class="text-[11px] text-red-700 mt-1">{{ info.db_error }}</p>
+            {% endif %}
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">Versión deployada</p>
+            <p class="text-base font-bold text-[#1e1e1e] mt-1 font-mono">{{ info.version_sha }}</p>
+            <p class="text-[11px] text-[#6f6f6f] mt-1 font-mono break-all" title="{{ info.version_full }}">{{ info.version_full[:32] }}{% if info.version_full|length > 32 %}…{% endif %}</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-4">
+            <p class="text-[10px] uppercase font-semibold text-[#6f6f6f]">Hora del server</p>
+            <p class="text-sm font-mono text-[#1e1e1e] mt-1">{{ info.hora_ar }} <span class="text-[10px] text-[#999]">AR</span></p>
+            <p class="text-[11px] font-mono text-[#999] mt-0.5">{{ info.hora_utc }}</p>
+            <p class="text-[10px] text-[#999] mt-1">PID worker: <code class="font-mono">{{ info.worker_pid }}</code> · Python {{ info.python_version }}</p>
+        </div>
+    </div>
+
+    {# ── Conteos ── #}
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <p class="font-semibold text-sm text-[#1e1e1e] mb-3">📊 Conteos por tabla</p>
+        <table class="w-full text-xs">
+            <tbody class="divide-y divide-[#f0f0f0]">
+                {% for c in info.conteos %}
+                <tr>
+                    <td class="py-1.5 text-[#1e1e1e]">{{ c.nombre }}</td>
+                    <td class="py-1.5 text-right font-mono font-semibold {% if c.cantidad is none %}text-red-700{% else %}text-[#1e1e1e]{% endif %}">
+                        {% if c.cantidad is none %}error{% else %}{{ '{:,}'.format(c.cantidad).replace(',', '.') }}{% endif %}
+                    </td>
+                    {% if c.error %}
+                    <td class="py-1.5 text-[10px] text-red-700 pl-3">{{ c.error }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="text-[10px] text-[#999] mt-2">{{ info.n_tablas_metadata }} tablas declaradas en SQLAlchemy metadata.</p>
+    </div>
+
+    {# ── Sync ObServer ── #}
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-sm text-[#1e1e1e]">🔄 Sync ObServer</p>
+            <a href="{{ url_for('observer_sync_panel') }}" class="text-[11px] text-violet-700 hover:underline">Ver panel completo →</a>
+        </div>
+        {% if info.sync_estados %}
+        <table class="w-full text-xs">
+            <thead class="text-[10px] uppercase text-[#888]">
+                <tr>
+                    <th class="text-left py-1">Entidad</th>
+                    <th class="text-left py-1">Estado</th>
+                    <th class="text-right py-1">Filas</th>
+                    <th class="text-right py-1">Hace</th>
+                    <th class="text-left py-1 pl-3">Mensaje</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#f0f0f0]">
+                {% for k, v in info.sync_estados.items() %}
+                <tr>
+                    <td class="py-1.5 text-[#1e1e1e]">{{ k }}</td>
+                    <td class="py-1.5">
+                        {% if v.estado == 'ok' %}
+                        <span class="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">OK</span>
+                        {% elif v.estado == 'warning' %}
+                        <span class="text-[10px] font-bold uppercase bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">WARN</span>
+                        {% elif v.estado == 'error' %}
+                        <span class="text-[10px] font-bold uppercase bg-red-100 text-red-800 px-1.5 py-0.5 rounded">ERROR</span>
+                        {% elif v.estado == 'nunca' %}
+                        <span class="text-[10px] font-bold uppercase bg-[#f0f0f0] text-[#888] px-1.5 py-0.5 rounded">NUNCA</span>
+                        {% else %}
+                        <span class="text-[10px] font-bold uppercase bg-sky-100 text-sky-800 px-1.5 py-0.5 rounded">{{ v.estado }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-1.5 text-right font-mono">{{ '{:,}'.format(v.filas).replace(',', '.') if v.filas is not none else '—' }}</td>
+                    <td class="py-1.5 text-right font-mono">{{ '%.0f'|format(v.horas) ~ 'h' if v.horas is not none else '—' }}</td>
+                    <td class="py-1.5 pl-3 text-[#666]">{{ v.mensaje or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% elif info.sync_error %}
+        <p class="text-xs text-red-700">Error: {{ info.sync_error }}</p>
+        {% else %}
+        <p class="text-xs text-[#999]">Sin datos.</p>
+        {% endif %}
+    </div>
+
+    {# ── Crons recientes ── #}
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-sm text-[#1e1e1e]">⏱ Últimos crons (5 más recientes)</p>
+            <a href="{{ url_for('admin_cron_log') }}" class="text-[11px] text-violet-700 hover:underline">Log completo →</a>
+        </div>
+        {% if info.cron_recientes %}
+        <table class="w-full text-xs">
+            <thead class="text-[10px] uppercase text-[#888]">
+                <tr>
+                    <th class="text-left py-1">Proceso</th>
+                    <th class="text-left py-1">Estado</th>
+                    <th class="text-left py-1">Inicio</th>
+                    <th class="text-right py-1">Duración</th>
+                    <th class="text-left py-1 pl-3">Origen</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#f0f0f0]">
+                {% for r in info.cron_recientes %}
+                <tr>
+                    <td class="py-1.5 text-[#1e1e1e] font-mono text-[11px]">{{ r.proceso }}</td>
+                    <td class="py-1.5">
+                        {% if r.estado == 'ok' %}
+                        <span class="text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">OK</span>
+                        {% elif r.estado == 'error' %}
+                        <span class="text-[10px] font-bold uppercase bg-red-100 text-red-800 px-1.5 py-0.5 rounded">ERROR</span>
+                        {% else %}
+                        <span class="text-[10px] font-bold uppercase bg-[#f0f0f0] text-[#666] px-1.5 py-0.5 rounded">{{ r.estado }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-1.5 font-mono text-[#666]">{{ r.inicio }}</td>
+                    <td class="py-1.5 text-right font-mono text-[#666]">
+                        {% if r.duracion_ms is not none %}
+                            {% if r.duracion_ms >= 1000 %}{{ '%.1fs'|format(r.duracion_ms / 1000) }}{% else %}{{ r.duracion_ms }}ms{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="py-1.5 pl-3 text-[#666]">{{ r.origen }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-xs text-[#999]">Sin runs registrados.</p>
+        {% endif %}
+    </div>
+
+    <div class="bg-[#fafafa] border border-surface-border rounded-xl p-4">
+        <p class="text-xs font-semibold text-[#1e1e1e] mb-1">Para qué sirve esta página</p>
+        <p class="text-[11px] text-[#6f6f6f] leading-snug">Diagnóstico rápido cuando algo no anda — primer punto de chequeo. Si algo está rojo acá, pasar a /admin/alarmas (chequeos automáticos) o /admin/cron-log (proceso periódico). Endpoint público para Render: <code class="font-mono">/health</code> (devuelve 200/503).</p>
+    </div>
+
+</div>
+</div>
+{% endblock %}

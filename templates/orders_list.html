@@ -50,6 +50,28 @@
             </optgroup>
         </select>
 
+        <!-- Búsqueda libre (laboratorio / farmacia / partner) -->
+        <input id="filtro-busqueda" type="text" placeholder="Buscar lab, farmacia, droguería…"
+               oninput="aplicarFiltroEstado()"
+               class="bg-white border border-surface-border rounded-md px-2 py-1 text-xs w-56" autocomplete="off">
+
+        <!-- Filtro fecha (rango, sobre creado_en) -->
+        <label class="text-[10px] text-[#6f6f6f] flex items-center gap-1">
+            Desde
+            <input id="filtro-desde" type="date" onchange="aplicarFiltroEstado()"
+                   class="bg-white border border-surface-border rounded-md px-1.5 py-0.5 text-xs" title="Filtrar por fecha de creación (desde)">
+        </label>
+        <label class="text-[10px] text-[#6f6f6f] flex items-center gap-1">
+            Hasta
+            <input id="filtro-hasta" type="date" onchange="aplicarFiltroEstado()"
+                   class="bg-white border border-surface-border rounded-md px-1.5 py-0.5 text-xs" title="Filtrar por fecha de creación (hasta)">
+        </label>
+
+        <button type="button" id="btn-limpiar-filtros" onclick="limpiarFiltros()"
+                class="text-[11px] text-[#6f6f6f] hover:text-[#1e1e1e] underline" title="Resetear todos los filtros">
+            ↻ Limpiar
+        </button>
+
         <div class="ml-auto hidden sm:block">
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
@@ -88,7 +110,10 @@
         <details class="bg-surface border border-surface-border rounded-xl overflow-hidden group pedido-card"
                  data-analizado="{{ 'si' if p.analizado_en else 'no' }}"
                  data-canal="{{ p.canal or '' }}"
-                 data-canal-partner="{{ p.canal_partner_nombre or '' }}">
+                 data-canal-partner="{{ p.canal_partner_nombre or '' }}"
+                 data-laboratorio="{{ (p.laboratorio or '') | lower }}"
+                 data-farmacia="{{ (p.farmacia or '') | lower }}"
+                 data-creado="{{ p.creado_en[6:10] ~ '-' ~ p.creado_en[3:5] ~ '-' ~ p.creado_en[0:2] if p.creado_en else '' }}">
             <summary class="px-4 py-3 cursor-pointer hover:bg-black/[0.02] select-none">
                 <!-- Fila 1: chevron + título + stats + acciones (desktop) -->
                 <div class="flex items-center gap-3 md:gap-4 flex-wrap xl:flex-nowrap">
@@ -720,11 +745,19 @@ function setEstado(estado) {
 
 function aplicarFiltroEstado() {
     const filtroCanal = document.getElementById('filtro-canal')?.value || '';
+    const qBusqueda = (document.getElementById('filtro-busqueda')?.value || '').trim().toLowerCase();
+    const tokens = qBusqueda.replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+    const desde = document.getElementById('filtro-desde')?.value || '';   // YYYY-MM-DD
+    const hasta = document.getElementById('filtro-hasta')?.value || '';   // YYYY-MM-DD
+
     let visibles = 0;
     document.querySelectorAll('.pedido-card').forEach(card => {
         const analizado = card.dataset.analizado; // 'si' o 'no'
         const canal = card.dataset.canal || '';
         const partner = card.dataset.canalPartner || '';
+        const laboratorio = card.dataset.laboratorio || '';
+        const farmacia = card.dataset.farmacia || '';
+        const creado = card.dataset.creado || '';   // YYYY-MM-DD
 
         // Filtro estado.
         let mostrar = true;
@@ -741,11 +774,36 @@ function aplicarFiltroEstado() {
             }
         }
 
+        // Búsqueda libre (multi-token AND sobre lab + farmacia + partner).
+        if (mostrar && tokens.length) {
+            const blob = laboratorio + ' ' + farmacia + ' ' + partner.toLowerCase();
+            mostrar = tokens.every(t => blob.includes(t));
+        }
+
+        // Filtro rango de fecha (sobre creado_en YYYY-MM-DD; comparación lexicográfica).
+        if (mostrar && desde && creado) mostrar = creado >= desde;
+        if (mostrar && hasta && creado) mostrar = creado <= hasta;
+        // Si no hay creado pero hay filtro de fecha → ocultar (no podemos saber si entra).
+        if (mostrar && (desde || hasta) && !creado) mostrar = false;
+
         card.style.display = mostrar ? '' : 'none';
         if (mostrar) visibles++;
     });
     const el = document.getElementById('pedidos-count');
     if (el) el.textContent = visibles + ' pedido' + (visibles !== 1 ? 's' : '');
+
+    // Mostrar el botón "Limpiar" solo si hay algún filtro activo.
+    const hayFiltro = filtroCanal || qBusqueda || desde || hasta || estadoActual !== 'pendiente';
+    const btn = document.getElementById('btn-limpiar-filtros');
+    if (btn) btn.style.visibility = hayFiltro ? 'visible' : 'hidden';
+}
+
+function limpiarFiltros() {
+    document.getElementById('filtro-canal').value = '';
+    document.getElementById('filtro-busqueda').value = '';
+    document.getElementById('filtro-desde').value = '';
+    document.getElementById('filtro-hasta').value = '';
+    setEstado('todos');
 }
 
 function poblarFiltroDroguerias() {
