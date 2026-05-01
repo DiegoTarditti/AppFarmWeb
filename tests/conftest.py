@@ -91,6 +91,15 @@ def flask_app(init_test_db, tmp_path_factory):
     _plant.init_app(app)
     _infer.init_app(app)
 
+    # Endpoint dummy 'index' — varias rutas hacen `redirect(url_for('index'))`
+    # ante errores (ej. claims.create_claim_route con invoice_id inválido).
+    # En producción 'index' está en routes/core.py; en tests, sin registrarlo,
+    # el redirect lanzaría BuildError. Acá lo declaramos para que los redirects
+    # funcionen y los tests puedan assertar el status code (302).
+    @app.route('/')
+    def index():
+        return '', 200
+
     return app
 
 
