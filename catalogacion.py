@@ -343,7 +343,7 @@ def match_dimensional_candidatos(session, descripcion=None, monodroga_norm=None,
       - Misma cantidad_envase:     +2
 
     Devuelve lista de candidatos con su score, ordenados desc.
-    Score >= 5 = match probable. Score >= 7 = match casi seguro.
+    Score 5-6 = probable (amber en UI). Score >= 7 = casi seguro (emerald).
     """
     # Si nos dan una descripción, extraer atributos primero
     if descripcion and not (concentracion_mg or forma_farma or cantidad_envase):
