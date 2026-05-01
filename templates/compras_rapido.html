@@ -149,6 +149,19 @@
     </div>
     {% endif %}
 
+    {# ─── Countdown cierres de droguerías ─── #}
+    {% if drogs_referenciadas %}
+    <div class="bg-white border border-surface-border rounded-xl px-4 py-2 flex flex-wrap items-center gap-3">
+        <span class="text-[10px] uppercase font-semibold text-[#888]">Próximo cierre</span>
+        {% for d in drogs_referenciadas %}
+        <div class="flex items-center gap-1.5 text-xs" id="cierre-wrap-{{ d.id }}">
+            <span class="text-[#555] truncate max-w-[100px]" title="{{ d.nombre }}">{{ d.nombre | truncate(12, True, '…') }}</span>
+            <span class="font-mono font-bold text-emerald-700" id="cierre-cd-{{ d.id }}">—</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {# ─── Auditoría descuentos aplicados ─── #}
     {% if descuentos_aplicados %}
     <details class="bg-white border border-surface-border rounded-xl group" {% if descuentos_excluidos_csv %}open{% endif %}>
@@ -647,7 +660,39 @@ document.addEventListener('DOMContentLoaded', () => {
         first.focus();
         first.scrollIntoView({block:'center'});
     }
+    iniciarCountdownsDroguerias();
 });
+
+// Countdown de cierres por droguería.
+const _DROG_IDS = {{ drogs_referenciadas | map(attribute='id') | list | tojson }};
+const _cdTargets = {};
+
+async function iniciarCountdownsDroguerias() {
+    for (const did of _DROG_IDS) {
+        try {
+            const r = await fetch(`/api/proveedor/${did}/proximo-cierre`);
+            const data = await r.json();
+            if (!data.ok || !data.proximo) continue;
+            _cdTargets[did] = new Date(data.proximo);
+        } catch (_) {}
+    }
+    if (Object.keys(_cdTargets).length) _tickCierres();
+}
+
+function _tickCierres() {
+    const ahora = new Date();
+    for (const [did, target] of Object.entries(_cdTargets)) {
+        const diff = Math.max(0, Math.floor((target - ahora) / 1000));
+        const hh = String(Math.floor(diff / 3600)).padStart(2, '0');
+        const mm = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+        const ss = String(diff % 60).padStart(2, '0');
+        const el = document.getElementById(`cierre-cd-${did}`);
+        if (!el) continue;
+        el.textContent = `${hh}:${mm}:${ss}`;
+        el.className = `font-mono font-bold ${diff < 1800 ? 'text-rose-600' : 'text-emerald-700'}`;
+    }
+    setTimeout(_tickCierres, 1000);
+}
 </script>
 
 {% include '_alfabeta_link.html' %}

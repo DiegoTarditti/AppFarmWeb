@@ -169,6 +169,11 @@
 
                         <span class="w-px h-4 bg-surface-border mx-2"></span>
 
+                        {% if p.tipo == 'drogueria' %}
+                        <a href="{{ url_for('provider_horarios', provider_id=p.id) }}" class="action-link">
+                            🕐 Horarios
+                        </a>
+                        {% endif %}
                         <a href="{{ url_for('provider_mappings', provider_id=p.id) }}" class="action-link">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>

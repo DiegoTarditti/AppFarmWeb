@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Horarios de reparto — {{ provider.razon_social }}{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">🕐 Horarios de reparto</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ provider.razon_social }}</span>
+    <a href="{{ url_for('providers_list') }}" class="ml-auto text-xs text-[#999] hover:text-[#1e1e1e]">← Proveedores</a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-3xl mx-auto space-y-4">
+
+    <!-- Grilla de horarios por día -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-surface-border">
+            <p class="text-sm font-semibold text-[#1e1e1e]">Slots configurados</p>
+            <p class="text-[11px] text-[#888]">Cada slot = un cierre de pedidos. Los countdowns en Compra Rápida se calculan desde estos horarios.</p>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#666]">
+                <tr>
+                    {% for dia in dias %}
+                    <th class="text-center px-2 py-2 border-r border-surface-border last:border-r-0">{{ dia }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="align-top">
+                    {% for d in range(7) %}
+                    <td class="px-2 py-2 border-r border-surface-border last:border-r-0 min-w-[80px]">
+                        <div class="space-y-1">
+                            {% for h in grilla[d] %}
+                            <form method="post" class="flex items-center gap-1">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="horario_id" value="{{ h.id }}">
+                                <span class="flex-1 font-mono text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.5 rounded text-center">{{ h.hora }}</span>
+                                <button type="submit" class="text-[#ccc] hover:text-rose-500 text-xs font-bold leading-none" title="Eliminar">×</button>
+                            </form>
+                            {% endfor %}
+                        </div>
+                    </td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Agregar slot -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <p class="text-sm font-semibold text-[#1e1e1e] mb-3">Agregar slot de cierre</p>
+        <form method="post" class="flex items-end gap-3 flex-wrap">
+            <input type="hidden" name="action" value="add">
+            <div>
+                <label class="block text-[10px] uppercase text-[#888] mb-1">Día</label>
+                <select name="dia_semana"
+                        class="bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm">
+                    {% for dia in dias %}
+                    <option value="{{ loop.index0 }}">{{ dia }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] uppercase text-[#888] mb-1">Hora (24h)</label>
+                <input type="time" name="hora" required
+                       class="bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm">
+            </div>
+            <button type="submit"
+                    class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-4 py-1.5 rounded-lg">
+                + Agregar
+            </button>
+        </form>
+    </div>
+
+    <!-- Próximo cierre preview -->
+    <div class="bg-[#fafafa] border border-surface-border rounded-xl p-4 text-[11px] text-[#6f6f6f]">
+        <p class="font-semibold text-[#1e1e1e] mb-1">Próximo cierre calculado</p>
+        <p id="proximo-label" class="text-sm text-[#1e1e1e]">calculando…</p>
+        <p id="countdown" class="font-mono text-2xl font-bold text-emerald-700 mt-1">—</p>
+    </div>
+
+</div>
+</div>
+
+<script>
+const PROVEEDOR_ID = {{ provider.id }};
+
+async function actualizarCountdown() {
+    try {
+        const r = await fetch(`/api/proveedor/${PROVEEDOR_ID}/proximo-cierre`);
+        const data = await r.json();
+        const label = document.getElementById('proximo-label');
+        const cd = document.getElementById('countdown');
+        if (!data.ok || !data.proximo) {
+            label.textContent = 'Sin horarios configurados.';
+            cd.textContent = '—';
+            return;
+        }
+        const target = new Date(data.proximo);
+        label.textContent = `Próximo cierre: ${data.label}`;
+        function tick() {
+            const diff = Math.max(0, Math.floor((target - new Date()) / 1000));
+            const hh = String(Math.floor(diff / 3600)).padStart(2, '0');
+            const mm = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+            const ss = String(diff % 60).padStart(2, '0');
+            cd.textContent = `${hh}:${mm}:${ss}`;
+            cd.className = `font-mono text-2xl font-bold mt-1 ${diff < 1800 ? 'text-rose-600' : 'text-emerald-700'}`;
+            if (diff > 0) setTimeout(tick, 1000);
+            else actualizarCountdown();
+        }
+        tick();
+    } catch (e) {
+        document.getElementById('proximo-label').textContent = 'Error al cargar.';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', actualizarCountdown);
+</script>
+
+{% endblock %}

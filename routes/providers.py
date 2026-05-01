@@ -3,6 +3,7 @@
 import os
 
 from flask import flash, jsonify, make_response, redirect, render_template, request, url_for
+from flask_login import login_required
 from werkzeug.utils import secure_filename
 
 import database
@@ -536,3 +537,101 @@ def init_app(app):
                                    plantilla=plantilla,
                                    campos_sistema=database.CAMPOS_SISTEMA,
                                    max_line_len=max_line_len)
+
+    # -----------------------------------------------------------------------
+    # Horarios de reparto
+    # -----------------------------------------------------------------------
+
+    DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+    def _proximo_cierre(session, proveedor_id):
+        """Devuelve el próximo datetime de cierre de la droguería, o None si no tiene horarios."""
+        from datetime import datetime, timedelta
+        from database import HorarioReparto
+        horarios = (session.query(HorarioReparto)
+                    .filter_by(proveedor_id=proveedor_id, activo=True)
+                    .order_by(HorarioReparto.dia_semana, HorarioReparto.hora).all())
+        if not horarios:
+            return None
+        ahora = datetime.now()
+        dia_hoy = ahora.weekday()  # 0=lun
+        # Probar los próximos 7 días desde hoy
+        for delta in range(8):
+            dia = (dia_hoy + delta) % 7
+            slots_dia = [h for h in horarios if h.dia_semana == dia]
+            for slot in sorted(slots_dia, key=lambda h: h.hora):
+                hh, mm = map(int, slot.hora.split(':'))
+                candidate = ahora.replace(hour=hh, minute=mm, second=0, microsecond=0)
+                if delta > 0:
+                    candidate += timedelta(days=delta)
+                elif delta == 0 and candidate <= ahora:
+                    continue  # ya pasó hoy
+                return candidate
+        return None
+
+    @app.route('/provider/<int:provider_id>/horarios', methods=['GET', 'POST'])
+    @login_required
+    def provider_horarios(provider_id):
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                flash('Proveedor no encontrado.')
+                return redirect(url_for('providers_list'))
+
+            if request.method == 'POST':
+                action = request.form.get('action')
+                if action == 'add':
+                    dia = int(request.form.get('dia_semana', 0))
+                    hora = request.form.get('hora', '').strip()
+                    if hora and 0 <= dia <= 6:
+                        try:
+                            existing = (session.query(database.HorarioReparto)
+                                        .filter_by(proveedor_id=provider_id, dia_semana=dia, hora=hora)
+                                        .first())
+                            if not existing:
+                                session.add(database.HorarioReparto(
+                                    proveedor_id=provider_id, dia_semana=dia, hora=hora))
+                                session.commit()
+                        except Exception:
+                            session.rollback()
+                elif action == 'delete':
+                    horario_id = int(request.form.get('horario_id', 0))
+                    h = session.get(database.HorarioReparto, horario_id)
+                    if h and h.proveedor_id == provider_id:
+                        session.delete(h)
+                        session.commit()
+                return redirect(url_for('provider_horarios', provider_id=provider_id))
+
+            horarios = (session.query(database.HorarioReparto)
+                        .filter_by(proveedor_id=provider_id)
+                        .order_by(database.HorarioReparto.dia_semana,
+                                  database.HorarioReparto.hora).all())
+            # Grilla dia x hora para el template
+            grilla = {d: [] for d in range(7)}
+            for h in horarios:
+                grilla[h.dia_semana].append(h)
+
+            return render_template('provider_horarios.html',
+                                   provider=provider,
+                                   horarios=horarios,
+                                   grilla=grilla,
+                                   dias=DIAS)
+
+    @app.route('/api/proveedor/<int:provider_id>/proximo-cierre')
+    @login_required
+    def api_proximo_cierre(provider_id):
+        with database.get_db() as session:
+            provider = session.get(database.Provider, provider_id)
+            if not provider:
+                return jsonify({'ok': False, 'error': 'no encontrado'}), 404
+            proximo = _proximo_cierre(session, provider_id)
+            if not proximo:
+                return jsonify({'ok': True, 'proximo': None, 'segundos': None})
+            from datetime import datetime
+            segundos = int((proximo - datetime.now()).total_seconds())
+            return jsonify({
+                'ok': True,
+                'proximo': proximo.isoformat(),
+                'segundos': max(0, segundos),
+                'label': proximo.strftime('%a %H:%M'),
+            })
