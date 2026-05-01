@@ -846,14 +846,14 @@ def init_app(app):
             # acá mismo en lugar de redirigir a /order/<id>. Reusa la lógica del
             # endpoint /order/<id>/export/plantilla pero sin requerir round-trip.
             if request.form.get('exportar_plantilla') == '1':
-                from io import BytesIO
                 import json as _json
+                from io import BytesIO
 
                 import openpyxl
+                from flask import send_file
                 from openpyxl.styles import Alignment, Font, PatternFill
 
                 from database import ExportTemplate, Laboratorio
-                from flask import send_file
 
                 local_lab_for_tpl = (session.query(Laboratorio)
                                      .filter_by(nombre=lab_nombre).first())

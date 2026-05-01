@@ -49,12 +49,20 @@ def init_app(app):
         - Hora server (UTC + AR).
         """
         from datetime import datetime
+
         from sqlalchemy import desc as _desc
         from sqlalchemy import text as _text
 
         from database import (
-            CronLog, Producto, ObsProducto, Invoice, Pedido, Claim,
-            ObsVentaDetalle, ObsStock, now_ar,
+            Claim,
+            CronLog,
+            Invoice,
+            ObsProducto,
+            ObsStock,
+            ObsVentaDetalle,
+            Pedido,
+            Producto,
+            now_ar,
         )
 
         info = {}
@@ -402,13 +410,12 @@ def init_app(app):
         Si `CRON_SECRET` NO está set en el server, el endpoint devuelve 503
         (deshabilitado por seguridad). No hay default — fail-safe.
         """
+        import hmac as _hmac
         import os as _os
 
         from recalcular_os_por_cliente import recalcular
 
         import cron_log
-
-        import hmac as _hmac
         expected = _os.environ.get('CRON_SECRET', '').strip()
         if not expected:
             return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
