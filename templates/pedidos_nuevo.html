@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% block title %}Pedido de reposición grupal{% endblock %}
+{% block main %}
+
+<style>
+    .farm-pill { transition: all 0.2s; }
+    .farm-pill.active { box-shadow: 0 0 0 2px #EAB308; background: #fef3c7; color: #78350f; }
+    .badge-demo { font-size: 9px; background: #fde68a; color: #78350f; padding: 1px 5px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+</style>
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Pedido de reposición — Grupo</h1>
+    <span id="meta-info" class="text-xs text-[#6f6f6f]">cargando…</span>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('mock_pedidos_nuevo') }}" class="text-[11px] text-[#999] hover:text-[#1e1e1e]" title="Mock estático con datos hardcoded para presentaciones">🎨 Ver mock</a>
+        <a href="{{ url_for('compras_dia') }}" class="text-xs text-[#999] hover:text-[#1e1e1e]">← Pedido clásico</a>
+    </div>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+<div class="max-w-7xl mx-auto space-y-4">
+
+    <!-- Switcher de farmacia -->
+    <div class="bg-white border border-surface-border rounded-xl p-4">
+        <p class="text-[10px] uppercase font-semibold text-[#6f6f6f] mb-2">Farmacias incluidas en el scope</p>
+        <div class="flex flex-wrap gap-2" id="switcher">
+            {% for f in farmacias %}
+            <button type="button" data-farmacia-id="{{ f.id }}" data-nombre="{{ f.nombre }}"
+                    class="farm-pill bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 active"
+                    onclick="toggleFarmacia(this)">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+                {{ f.nombre }}
+                {% if f.es_demo %}<span class="badge-demo">DEMO</span>{% endif %}
+                <span class="bg-emerald-700/20 px-1.5 rounded text-[11px]" id="count-{{ f.id }}">—</span>
+            </button>
+            {% endfor %}
+            <span class="border-l border-[#ccc] mx-1"></span>
+            <button type="button" id="btn-todas"
+                    class="farm-pill bg-[#f5f5f5] hover:bg-[#ececec] text-[#1e1e1e] px-4 py-1.5 rounded-lg text-sm font-bold"
+                    onclick="seleccionarTodas()">
+                🌐 Todas
+            </button>
+            <button type="button" id="btn-ninguna"
+                    class="farm-pill bg-[#f5f5f5] hover:bg-[#ececec] text-[#1e1e1e] px-4 py-1.5 rounded-lg text-sm font-bold"
+                    onclick="seleccionarNinguna()">
+                ✕ Limpiar
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabla consolidada -->
+    <div class="bg-white border border-surface-border rounded-xl overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#666] border-b border-surface-border">
+                <tr id="tabla-thead">
+                    <th class="text-left px-3 py-2.5">Producto · Lab</th>
+                    <!-- columnas dinámicas por farmacia -->
+                    <th class="text-right px-2 py-2.5 w-14 bg-amber-50">Total</th>
+                    <th class="text-right px-2 py-2.5 w-16">Pedidos</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#f0f0f0]" id="tabla-body">
+                <tr><td colspan="3" class="px-3 py-8 text-center text-[#999]">Cargando…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="bg-[#fafafa] border border-surface-border rounded-xl p-4 text-[11px] text-[#6f6f6f] leading-snug">
+        <p class="font-semibold text-[#1e1e1e] mb-1">Sobre esta pantalla</p>
+        <p>Consolida ítems de pedidos <strong>PENDIENTES</strong> de las farmacias seleccionadas. Cada fila es un producto único (por código de barras); cada columna por farmacia muestra cuántas unidades pidió esa farmacia. Total = suma; Pedidos = en cuántos pedidos distintos aparece.</p>
+        <p class="mt-1">El detector de oportunidades de volumen (sugerencias de ahorro) y la columna "Mejor precio" todavía no están — quedan para próximas iteraciones. Por ahora ves la consolidación cruda.</p>
+    </div>
+
+</div>
+</div>
+
+<script>
+// Farmacias inicializadas desde el server, ordenadas por id.
+const _FARMACIAS = {{ farmacias | tojson }};
+
+function _seleccionadas() {
+    return Array.from(document.querySelectorAll('#switcher .farm-pill[data-farmacia-id].active'))
+        .map(b => parseInt(b.dataset.farmaciaId, 10));
+}
+
+function toggleFarmacia(btn) {
+    btn.classList.toggle('active');
+    cargarScope();
+}
+
+function seleccionarTodas() {
+    document.querySelectorAll('#switcher .farm-pill[data-farmacia-id]').forEach(b => b.classList.add('active'));
+    cargarScope();
+}
+
+function seleccionarNinguna() {
+    document.querySelectorAll('#switcher .farm-pill[data-farmacia-id]').forEach(b => b.classList.remove('active'));
+    cargarScope();
+}
+
+async function cargarScope() {
+    const ids = _seleccionadas();
+    const meta = document.getElementById('meta-info');
+    const tbody = document.getElementById('tabla-body');
+    const thead = document.getElementById('tabla-thead');
+
+    if (!ids.length) {
+        tbody.innerHTML = '<tr><td colspan="3" class="px-3 py-8 text-center text-[#999]">Seleccioná al menos una farmacia.</td></tr>';
+        meta.textContent = 'sin farmacias seleccionadas';
+        return;
+    }
+
+    meta.textContent = 'cargando…';
+    tbody.innerHTML = '<tr><td colspan="3" class="px-3 py-8 text-center text-[#999]">Cargando…</td></tr>';
+
+    try {
+        const r = await fetch('/api/pedidos-nuevo/scope?farmacias=' + ids.join(','));
+        const data = await r.json();
+        if (!data.ok) {
+            tbody.innerHTML = `<tr><td colspan="3" class="px-3 py-4 text-center text-rose-700">Error: ${data.error || 'desconocido'}</td></tr>`;
+            return;
+        }
+
+        // Header dinámico
+        const farmaciaCols = data.farmacias.map(f =>
+            `<th class="text-right px-2 py-2.5 w-14" title="${f.nombre}">${f.nombre.slice(0, 8)}</th>`
+        ).join('');
+        thead.innerHTML = `<tr>
+            <th class="text-left px-3 py-2.5">Producto · Lab</th>
+            ${farmaciaCols}
+            <th class="text-right px-2 py-2.5 w-14 bg-amber-50">Total</th>
+            <th class="text-right px-2 py-2.5 w-16">Pedidos</th>
+        </tr>`;
+
+        // Cuerpo
+        if (!data.items.length) {
+            const colspan = 3 + data.farmacias.length;
+            tbody.innerHTML = `<tr><td colspan="${colspan}" class="px-3 py-8 text-center text-[#999]">No hay pedidos pendientes en las farmacias seleccionadas.</td></tr>`;
+        } else {
+            tbody.innerHTML = data.items.map(it => {
+                const cells = data.farmacias.map(f => {
+                    const cant = it.por_farmacia[String(f.id)] || 0;
+                    const cls = cant > 0 ? 'text-[#1e1e1e] font-mono' : 'text-[#ccc] font-mono';
+                    return `<td class="px-2 py-1.5 text-right ${cls}">${cant || '·'}</td>`;
+                }).join('');
+                return `<tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5">
+                        <p class="font-medium text-[#1e1e1e]">${_esc(it.nombre)}</p>
+                        <p class="text-[10px] text-[#888] font-mono">${_esc(it.codigo_barra)} · ${_esc(it.laboratorio || '—')}</p>
+                    </td>
+                    ${cells}
+                    <td class="px-2 py-1.5 text-right font-mono font-bold bg-amber-50/40">${it.total}</td>
+                    <td class="px-2 py-1.5 text-right text-[#666]">${it.n_pedidos}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        // Counts por farmacia (para el chip — cuántos productos tiene cada una en este scope)
+        for (const f of data.farmacias) {
+            const totalProds = data.items.filter(it => (it.por_farmacia[String(f.id)] || 0) > 0).length;
+            const elem = document.getElementById('count-' + f.id);
+            if (elem) elem.textContent = totalProds;
+        }
+
+        meta.textContent = `${data.n_items} productos · ${data.n_pedidos_total} pedidos pendientes en ${data.farmacias.length} farmacia${data.farmacias.length !== 1 ? 's' : ''}`;
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="3" class="px-3 py-4 text-center text-rose-700">Error de red: ${err.message}</td></tr>`;
+        meta.textContent = 'error';
+    }
+}
+
+function _esc(s) {
+    return String(s == null ? '' : s).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+}
+
+document.addEventListener('DOMContentLoaded', cargarScope);
+</script>
+
+{% endblock %}

@@ -205,6 +205,123 @@ def init_app(app):
         """
         return render_template('mock_pedidos_nuevo.html')
 
+    @app.route('/pedidos-nuevo')
+    @requiere_permiso('usuarios', 'admin')
+    def pedidos_nuevo():
+        """Pantalla real (no mock) del pedido de reposición grupal multi-tenant.
+        Lista las farmacias activas; el JS pide /api/pedidos-nuevo/scope con la
+        selección y renderiza la tabla consolidada.
+        Spec: c:/AppSeguimiento/plan-pieri-multitenant.md (Fase 2).
+        """
+        from database import Farmacia
+        with database.get_db() as session:
+            farmacias = (session.query(Farmacia)
+                         .filter(Farmacia.activa.is_(True))
+                         .order_by(Farmacia.id).all())
+            farmacias_data = [{
+                'id': f.id, 'nombre': f.nombre, 'es_demo': bool(f.es_demo),
+            } for f in farmacias]
+        return render_template('pedidos_nuevo.html', farmacias=farmacias_data)
+
+    @app.route('/api/pedidos-nuevo/scope')
+    @requiere_permiso('usuarios', 'admin')
+    def api_pedidos_nuevo_scope():
+        """Devuelve la consolidación de pedidos PENDIENTES de las farmacias dadas.
+
+        Query: ?farmacias=1,2  (CSV de farmacia_id; default = todas activas).
+
+        Respuesta:
+            {
+              "ok": true,
+              "farmacias": [{"id": 1, "nombre": "Farmacia"}, {"id": 2, "nombre": "Pieri"}],
+              "items": [
+                {
+                  "codigo_barra": "...",
+                  "nombre": "...",
+                  "laboratorio": "...",
+                  "por_farmacia": {"1": 5, "2": 2},
+                  "total": 7,
+                  "n_pedidos": 2          # cuántos pedidos distintos lo incluyen
+                },
+                ...
+              ],
+              "n_items": 47,
+              "n_pedidos_total": 12
+            }
+
+        Items consolidados por (codigo_barra, nombre, laboratorio). Si un mismo
+        producto aparece con distinta capitalización del laboratorio o del nombre,
+        se agrupa por codigo_barra para no fragmentar.
+        """
+        from database import Farmacia, Pedido, PedidoItem
+
+        farmacias_csv = (request.args.get('farmacias') or '').strip()
+        try:
+            farmacia_ids = [int(x) for x in farmacias_csv.split(',') if x.strip()]
+        except ValueError:
+            return jsonify({'ok': False, 'error': 'farmacias inválidas (esperado CSV de int)'}), 400
+
+        with database.get_db() as session:
+            # Default: todas las farmacias activas si no especifica.
+            if not farmacia_ids:
+                farmacia_ids = [f.id for f in session.query(Farmacia)
+                                .filter(Farmacia.activa.is_(True)).all()]
+
+            farmacias_meta = (session.query(Farmacia.id, Farmacia.nombre)
+                              .filter(Farmacia.id.in_(farmacia_ids)).all())
+            farmacias_meta = [{'id': fid, 'nombre': nom} for (fid, nom) in farmacias_meta]
+
+            # Pedidos PENDIENTES de las farmacias del scope, sus items.
+            pedidos = (session.query(Pedido)
+                       .filter(Pedido.farmacia_id.in_(farmacia_ids),
+                               Pedido.estado == 'PENDIENTE').all())
+            pedido_a_lab = {p.id: p.laboratorio for p in pedidos}
+            pedido_a_farm = {p.id: p.farmacia_id for p in pedidos}
+
+            items = (session.query(PedidoItem)
+                     .filter(PedidoItem.pedido_id.in_([p.id for p in pedidos])).all()
+                     if pedidos else [])
+
+            # Consolidación por codigo_barra. Para cada uno juntamos:
+            # nombre (el primero), laboratorio (el primero), cantidades por farmacia.
+            consolidado = {}
+            pedidos_por_cb = {}    # cb -> set(pedido_id) para contar n_pedidos
+            for it in items:
+                cb = (it.codigo_barra or '').strip()
+                if not cb:
+                    continue
+                if cb not in consolidado:
+                    consolidado[cb] = {
+                        'codigo_barra': cb,
+                        'nombre': it.nombre or '',
+                        'laboratorio': pedido_a_lab.get(it.pedido_id, ''),
+                        'por_farmacia': {str(fid): 0 for fid in farmacia_ids},
+                        'total': 0,
+                        'n_pedidos': 0,
+                    }
+                farm_id = pedido_a_farm.get(it.pedido_id)
+                if farm_id is not None:
+                    key = str(farm_id)
+                    if key in consolidado[cb]['por_farmacia']:
+                        consolidado[cb]['por_farmacia'][key] += int(it.cantidad or 0)
+                consolidado[cb]['total'] += int(it.cantidad or 0)
+                pedidos_por_cb.setdefault(cb, set()).add(it.pedido_id)
+
+            for cb, info in consolidado.items():
+                info['n_pedidos'] = len(pedidos_por_cb.get(cb, set()))
+
+            # Ordenar por total desc.
+            items_lista = sorted(consolidado.values(),
+                                 key=lambda x: -x['total'])
+
+        return jsonify({
+            'ok': True,
+            'farmacias': farmacias_meta,
+            'items': items_lista,
+            'n_items': len(items_lista),
+            'n_pedidos_total': len(pedidos),
+        })
+
     @app.route('/api/admin/alarmas')
     @requiere_permiso('usuarios', 'admin')
     def api_admin_alarmas():

@@ -925,6 +925,11 @@ class ModuloPack(Base):
 class Pedido(Base):
     __tablename__ = 'pedidos'
     id = Column(Integer, primary_key=True)
+    # Multi-tenant: a qué farmacia del grupo pertenece este pedido. Default=1
+    # (la farmacia original / actual). Cuando se sumen Pieri, etc., los pedidos
+    # de cada una llevan su farmacia_id.
+    farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
+                          nullable=False, default=1, index=True)
     laboratorio = Column(String(150), nullable=False)
     farmacia = Column(String(200))
     periodo = Column(String(100))
@@ -951,6 +956,11 @@ class PedidoItem(Base):
     __tablename__ = 'pedido_items'
     id = Column(Integer, primary_key=True)
     pedido_id = Column(Integer, ForeignKey('pedidos.id'), nullable=False)
+    # Multi-tenant: denormalizado desde Pedido para evitar joins en queries de
+    # agregación cross-farmacia (ej. "qué se pidió este mes en F1+Pieri por
+    # producto"). Siempre debe coincidir con pedido.farmacia_id.
+    farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
+                          nullable=False, default=1, index=True)
     codigo_barra = Column(String(20))
     nombre = Column(String(200))
     cantidad = Column(Integer, nullable=False, default=0)
@@ -965,6 +975,9 @@ class ProcesoCompra(Base):
     """Ciclo de compra: análisis → pedido → factura → cruce → (reclamo) → cierre."""
     __tablename__ = 'procesos_compra'
     id = Column(Integer, primary_key=True)
+    # Multi-tenant: a qué farmacia pertenece este proceso de compra. Default=1.
+    farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
+                          nullable=False, default=1, index=True)
     tipo = Column(String(20), nullable=False)             # 'laboratorio' | 'drogueria'
     partner_id = Column(Integer, nullable=True)
     partner_nombre = Column(String(200), nullable=False)
@@ -1680,6 +1693,55 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_prod_no_pedir ON productos (no_pedir) WHERE no_pedir = TRUE"
     ))
+    # Multi-tenant Fase 2: farmacia_id en tablas transaccionales (pedidos,
+    # pedido_items, procesos_compra). Default=1 hace el backfill automático
+    # sobre filas existentes — todo el histórico cae en la farmacia original.
+    #
+    # Orden importante:
+    # 1. Asegurar Farmacia id=1 existe (necesaria para que la FK no falle).
+    # 2. Agregar las columnas farmacia_id con DEFAULT 1.
+    # 3. Crear índices.
+    # 4. Crear las FK (al final, cuando ya hay datos válidos).
+    # Cada paso es idempotente (IF NOT EXISTS / ON CONFLICT / try-except).
+
+    # Paso 1: bootstrap idempotente de Farmacia id=1 para que la FK no rompa.
+    # _bootstrap_farmacia_inicial() corre más abajo, pero acá necesitamos
+    # garantizarlo ANTES de las FK constraints.
+    try:
+        conn.execute(text("""
+            INSERT INTO farmacias (id, nombre, es_demo, activa)
+            VALUES (1, 'Farmacia', FALSE, TRUE)
+            ON CONFLICT (id) DO NOTHING
+        """))
+    except Exception:
+        pass
+
+    # Paso 2 + 3: columnas + índices.
+    for ddl in (
+        "ALTER TABLE pedidos          ADD COLUMN IF NOT EXISTS farmacia_id INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE pedido_items     ADD COLUMN IF NOT EXISTS farmacia_id INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE procesos_compra  ADD COLUMN IF NOT EXISTS farmacia_id INTEGER NOT NULL DEFAULT 1",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_farmacia        ON pedidos (farmacia_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pedido_items_farmacia   ON pedido_items (farmacia_id)",
+        "CREATE INDEX IF NOT EXISTS idx_procesos_compra_farmacia ON procesos_compra (farmacia_id)",
+    ):
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            pass
+
+    # Paso 4: FK constraints. Ya hay Farmacia id=1 y los datos preexistentes
+    # apuntan a 1, así que la validación pasa. Si el constraint ya existe,
+    # PostgreSQL tira error y lo silenciamos.
+    for ddl in (
+        "ALTER TABLE pedidos          ADD CONSTRAINT fk_pedidos_farmacia        FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)",
+        "ALTER TABLE pedido_items     ADD CONSTRAINT fk_pedido_items_farmacia   FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)",
+        "ALTER TABLE procesos_compra  ADD CONSTRAINT fk_procesos_compra_farmacia FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)",
+    ):
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            pass
     # Recepción de pedidos: 4 columnas nuevas para 2 vías (operador + Observer).
     for ddl in (
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS cantidad_revisada_op INTEGER",
