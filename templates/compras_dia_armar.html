@@ -75,6 +75,10 @@
         <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
         Solo con sugerencia (subir/bajar)
     </label>
+    <label class="flex items-center gap-1.5 text-xs text-amber-700 cursor-pointer">
+        <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5">
+        Mostrar ⚠ otra drog
+    </label>
     <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
 
     <div class="relative ml-auto">
@@ -145,6 +149,7 @@
                     data-pid="{{ it.pid }}" data-prod-id="{{ it.producto_id_local or '' }}"
                     data-nombre="{{ it.desc | e }}"
                     data-lab="{{ (it.lab_nombre or '') | e }}"
+                    data-cubre="{{ 'y' if it.cubre_lab else 'n' }}"
                     data-tvc="{{ it.tvc or '' }}"
                     data-sug="{{ it.min_sugerencia or '' }}"
                     onclick="seleccionarProducto(this)">
@@ -424,32 +429,35 @@ const _filtroLab  = document.getElementById('filtro-lab');
 const _filtroCount = document.getElementById('filtro-count');
 const _totalRows = document.querySelectorAll('.producto-row').length;
 
-const _filtroLibre = document.getElementById('filtro-libre');
-const _filtroSug = document.getElementById('filtro-sug');
+const _filtroLibre    = document.getElementById('filtro-libre');
+const _filtroSug      = document.getElementById('filtro-sug');
+const _filtroOtraDrog = document.getElementById('filtro-otra-drog');
 
 function aplicarFiltros() {
-    const fnProd = window.MultiTokenFilter.build(_filtroProd.value);
-    const fnLab  = window.MultiTokenFilter.build(_filtroLab.value);
-    const soloLibre = _filtroLibre.checked;
-    const soloSug = _filtroSug.checked;
+    const fnProd      = window.MultiTokenFilter.build(_filtroProd.value);
+    const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
+    const soloLibre   = _filtroLibre.checked;
+    const soloSug     = _filtroSug.checked;
+    const mostraOtra  = _filtroOtraDrog.checked;
     let visibles = 0;
     document.querySelectorAll('.producto-row').forEach(row => {
         const sug = row.dataset.sug || '';
         const ok = fnProd(row.dataset.nombre)
             && fnLab(row.dataset.lab || '')
             && (!soloLibre || row.dataset.tvc === 'L')
-            && (!soloSug || sug === 'up' || sug === 'down');
+            && (!soloSug || sug === 'up' || sug === 'down')
+            && (mostraOtra || row.dataset.cubre !== 'n');
         row.style.display = ok ? '' : 'none';
         if (ok) visibles++;
     });
-    _filtroCount.textContent = (_filtroProd.value || _filtroLab.value || soloLibre || soloSug)
-        ? `${visibles} / ${_totalRows} visibles`
-        : '';
+    _filtroCount.textContent = `${visibles} / ${_totalRows} visibles`;
 }
 _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
+_filtroOtraDrog.addEventListener('change', aplicarFiltros);
+aplicarFiltros();
 
 // Mide el alto real del panel del gráfico y lo usa de offset del thead sticky.
 function _ajustarOffsetThead() {
@@ -563,6 +571,7 @@ function agregarFila(it) {
                    'hover:bg-emerald-50/50 cursor-pointer producto-row ring-2 ring-blue-400 ring-inset';
     tr.dataset.pid = it.pid;
     tr.dataset.prodId = it.producto_id_local || '';
+    tr.dataset.cubre = it.cubre_lab ? 'y' : 'n';
     tr.dataset.nombre = it.desc;
     tr.dataset.lab = it.lab_nombre;
     tr.onclick = () => seleccionarProducto(tr);
