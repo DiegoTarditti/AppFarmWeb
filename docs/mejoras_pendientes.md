@@ -180,10 +180,8 @@ una tarea aparte.
 - **Cómo**: cron en DockerPanel: `pg_dump` + subir a Drive/Dropbox/R2. Mensual o semanal.
 - **Por qué**: hoy el único backup es Render (que también puede fallar). Tener una copia más es seguridad.
 
-### Sentry o similar para errores en prod
-- **Trigger**: cuando lleguen 2+ farmacias a usarlo.
-- **Esfuerzo**: 2 horas.
-- **Cómo**: `sentry-sdk[flask]` con DSN en env var. Captura excepciones automáticamente.
+### ~~Sentry o similar para errores en prod~~ ✅ HECHO 2026-05-01
+- `sentry-sdk[flask]>=2.0` en requirements. Init opt-in via `SENTRY_DSN` env var. `SENTRY_ENV` configurable. `traces_sample_rate=0.1`.
 
 ### Logs centralizados
 - **Trigger**: si Render se vuelve insuficiente (logs limitados a últimas N horas).
@@ -328,10 +326,8 @@ una tarea aparte.
 - **Síntoma**: cada cambio de schema requiere agregar `ALTER TABLE IF NOT EXISTS`. Frágil para cambios complejos (renombre, drop, mover datos).
 - **Plan**: migrar a Alembic cuando aparezca un cambio que no se pueda hacer así.
 
-### Auto-sync del DockerPanel hace hammer-loop al fallar
-- **Síntoma**: si el sync falla por timeout, `last_run` solo se persiste en éxito → cada 60 s el loop ve `delta_min >= arranque_min(180)` → vuelve a disparar → gunicorn worker timeout → repeat. Llena los logs de `WORKER TIMEOUT` y `Limpiando Render…`.
-- **Workaround actual**: apagar `autosync_enabled` en `agente_config.txt`.
-- **Solución definitiva**: persistir `last_attempt` en cada intento (no solo `last_run` en éxito) y aplicar backoff exponencial cuando hay N fallas seguidas. Ver `DockerPanel/docker_panel.py:1462`.
+### ~~Auto-sync del DockerPanel hace hammer-loop al fallar~~ ✅ HECHO 2026-05-01
+- `last_attempt` se persiste en `agente_config.txt` al inicio de cada intento. `_debe_correr_ahora` aplica backoff exponencial (30→60→120→240 min) cuando `_auto_sync_fallos > 0`. Solo se libera cuando el sync tiene éxito y resetea `fallos=0`.
 
 ### Post-check del DockerPanel da falsos positivos por logs históricos
 - **Síntoma**: después de un restart exitoso, el aviso `⚠ Post-check: la app parece haber crasheado al arrancar — Detecté: traceback, importerror` aparece igual porque scanea el log entero, incluyendo trazas anteriores al restart.
