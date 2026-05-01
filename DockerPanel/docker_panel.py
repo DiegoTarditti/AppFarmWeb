@@ -2097,17 +2097,25 @@ class DockerPanel(tk.Tk):
         cwd = self.dir_var.get()
         try:
             r = subprocess.run(
-                "docker-compose logs --tail=40 web",
+                "docker-compose logs --tail=60 web",
                 shell=True, cwd=cwd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", timeout=15,
             )
-            logs = (r.stdout or '').lower()
+            all_lines = (r.stdout or '').splitlines()
         except Exception as e:
             self.after(0, self._append,
                        f"  ⚠  No pude verificar logs post-restart: {e}\n", "dim")
             self._running = False
             return
+
+        # Solo escanear desde el último "Starting gunicorn" — evita falsos
+        # positivos por tracebacks de arranques anteriores que siguen en el log.
+        start_idx = 0
+        for i, line in enumerate(all_lines):
+            if 'starting gunicorn' in line.lower():
+                start_idx = i
+        logs = '\n'.join(all_lines[start_idx:]).lower()
 
         hits = [p for p in self._POST_CHECK_ERROR_PATTERNS if p in logs]
         if hits:
