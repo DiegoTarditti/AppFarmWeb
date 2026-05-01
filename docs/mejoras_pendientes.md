@@ -92,7 +92,7 @@ una tarea aparte.
 - **Esfuerzo**: 30 min cada una.
 - **Detectadas (route-orphan-finder 2026-04-30)**:
   1. ✅ ~~`/clientes` (clientes_list)~~ — **2026-04-30**: linkeada en sidebar bajo "Obras Sociales" como "Clientes / Pacientes" (templates/base.html).
-  2. `/purchase/processed` (purchase_processed) — `routes/purchase.py:360`. No linkeada desde ningún flujo. Decidir: ¿linkear desde `purchase_suggest.html`, agregar al sidebar bajo "Compras", o eliminar?
+  2. ✅ ~~`/purchase/processed` (purchase_processed)~~ — **2026-05-01**: linkeada desde `purchase_suggest.html` como "Análisis guardados".
   3. `/observer/laboratorios` (observer_laboratorios) — `routes/observer.py:914`. Probablemente deprecada (era stepping stone del flujo viejo, ahora se entra directo por `purchase_suggest`). Decidir: eliminar o fusionar.
 
 ### Cache de evaluación de alarmas
@@ -120,11 +120,8 @@ una tarea aparte.
 - **Esfuerzo**: progresivo (varios días).
 - **Cómo**: agregar tipos a funciones nuevas y de a poco a las existentes. `mypy --strict-optional` en CI.
 
-### Branch protection en `main`
-- **Trigger**: ya, cuando puedas (5 min).
-- **Esfuerzo**: 5 min.
-- **Cómo**: GitHub repo → Settings → Branches → Add rule para `main` → "Require status checks" → marcar `syntax` y `tests`.
-- **Por qué**: evita pushear código que rompe CI a producción.
+### ~~Branch protection en `main`~~ ✅ HECHO 2026-05-01
+- Repo hecho público + ruleset via API (id=15842390): require `Syntax check` + `Pytest`, no force-push, no delete. Rama `dev` para trabajo diario, `main` solo para bloques listos.
 
 ### Migrar a Alembic
 - **Trigger**: pasamos las ~30 tablas en `database.py` o aparece una migración compleja (renombre, mover datos).
@@ -136,20 +133,15 @@ una tarea aparte.
 - **Esfuerzo**: progresivo.
 - **Cómo**: convención de Google/NumPy style. Incluir args, returns, raises.
 
-### Pre-commit hooks
-- **Trigger**: cuando el equipo crezca o querés más fricción contra commits sucios.
-- **Esfuerzo**: 30 min.
-- **Cómo**: `pre-commit` con ruff, trailing-whitespace, end-of-file-fixer.
+### ~~Pre-commit hooks~~ ✅ HECHO 2026-05-01
+- `git-hooks/pre-commit`: trailing whitespace + ruff en .py staged. `git-hooks/pre-push`: syntax + ruff completo. Bypass: `SKIP_COMMIT_CHECK=1` / `SKIP_PUSH_CHECK=1`.
 
 ---
 
 ## 🎨 UX — pulir el sistema
 
-### Botón "Crear y exportar con plantilla" en pedido auto
-- **Trigger**: cuando se use seguido pedido auto y quieras saltarte el paso de ir a `/order/<id>` para exportar.
-- **Esfuerzo**: ~1 hora — agregar segundo botón "Crear pedido + exportar plantilla" en `informes_pedido_auto.html` que: (1) crea el Pedido como hoy, (2) en el handler, en lugar de redirigir a `/order/<id>`, arma el JSON `data` con las columnas que la plantilla del lab espera, (3) llama internamente a la lógica de `order_export_plantilla` (extraída a una función reusable) y devuelve el XLSX.
-- **Hoy**: hay un cartel verde que avisa que el lab tiene plantilla y que la verás al ir al pedido. Es 2 clicks en lugar de 1.
-- **Detalle clave**: el endpoint `/order/<int:pedido_id>/export/plantilla` espera `request.form['data']` con el formato exacto de columnas; hay que construir ese array desde los items del pedido respetando los `field` que la plantilla declare.
+### ~~Botón "Crear y exportar con plantilla" en pedido auto~~ ✅ HECHO 2026-05-01
+- Botón "Crear + exportar plantilla 📥" en `templates/informes_pedido_auto.html:389`. Backend en `routes/informes.py:848` — genera XLSX inline sin round-trip a `/order/<id>`. Solo visible cuando `tiene_plantilla=True`.
 
 ### Filtro arriba en Pedidos guardados
 - **Trigger**: cuando puedas — la pantalla `/orders` no tiene filtro y con varios pedidos hay que scrollear.
