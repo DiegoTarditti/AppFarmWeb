@@ -695,17 +695,21 @@ def init_app(app):
 
                 # Precio promedio por unidad de contenido: suma(monto)/suma(unidades*cantidad_envase)
                 # Solo contamos productos con cantidad_envase > 0 para evitar sesgo.
+                # Pre-2026-05: este bloque hacía 1 query por producto (loop sobre prod_ids)
+                # → con 5 labs × 20 productos = 100 queries solo acá. Optimizado a 1 query
+                # group by que devuelve sum(unidades), sum(monto) por producto, y la
+                # ponderación con cantidad_envase se hace en Python.
                 u_contenido_total = 0.0
                 m_contenido_total = 0.0
-                for pid, (u_p, m_p) in [
-                    (pid, session.query(
-                        _f.coalesce(_f.sum(database.ObsVentaMensual.unidades), 0),
-                        _f.coalesce(_f.sum(database.ObsVentaMensual.monto), 0))
-                     .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
-                             database.ObsVentaMensual.producto_observer == pid,
-                             ym_expr.between(desde_12m, hasta)).first())
-                    for pid in prod_ids
-                ]:
+                tot_rows = (session.query(
+                                database.ObsVentaMensual.producto_observer,
+                                _f.coalesce(_f.sum(database.ObsVentaMensual.unidades), 0),
+                                _f.coalesce(_f.sum(database.ObsVentaMensual.monto), 0))
+                            .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
+                                    database.ObsVentaMensual.producto_observer.in_(prod_ids),
+                                    ym_expr.between(desde_12m, hasta))
+                            .group_by(database.ObsVentaMensual.producto_observer).all())
+                for (pid, u_p, m_p) in tot_rows:
                     ce = cant_envase_map.get(pid)
                     if ce and ce > 0 and u_p:
                         u_contenido_total += float(u_p) * ce

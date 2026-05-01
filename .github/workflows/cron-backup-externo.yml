@@ -1,0 +1,160 @@
+name: Cron — Backup semanal a almacenamiento externo (Cloudflare R2)
+
+# Backup semanal de la DB de Render que se sube a Cloudflare R2 (S3-compatible).
+# Complementa el `backup-pre-deploy.yml` que sube el dump como artifact de
+# Actions con retención de 30 días — este cron es para guardar copias
+# historizadas más allá de ese horizonte (2 años por default).
+#
+# Diego: si Render se cae catastróficamente, querés tener un dump físico
+# fuera de Render. Esto es ese segundo nivel de protección.
+#
+# ─────────────────────────────────────────────────────────────────────────
+# Setup (una sola vez):
+#
+# 1. Crear cuenta Cloudflare R2 (10 GB gratis): dashboard.cloudflare.com → R2.
+# 2. Crear bucket privado, ej. `appfarmweb-backups`.
+# 3. R2 → Manage R2 API Tokens → Create API token con permiso "Object Read & Write"
+#    para el bucket. Anotar:
+#      - Access Key ID
+#      - Secret Access Key
+#      - Account ID (URL: https://<ACCOUNT_ID>.r2.cloudflarestorage.com)
+# 4. GitHub: Settings → Secrets and variables → Actions → agregar:
+#      - R2_ACCOUNT_ID:        <account_id>
+#      - R2_ACCESS_KEY_ID:     <access_key>
+#      - R2_SECRET_ACCESS_KEY: <secret>
+#      - R2_BUCKET:            appfarmweb-backups
+#      (RENDER_DATABASE_URL_EXTERNAL ya está configurado del workflow de pre-deploy.)
+#
+# Si algún secret falta, el workflow falla con error explícito y NO sube nada.
+#
+# ─────────────────────────────────────────────────────────────────────────
+# Cómo restaurar en emergencia:
+#   1. Bajar el dump del bucket R2 (vía rclone, AWS CLI o el dashboard).
+#   2. gunzip backup-render-*.sql.gz
+#   3. psql "$RENDER_DATABASE_URL_EXTERNAL" < backup-render-*.sql
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'   # lunes 04:00 UTC = 01:00 hora Argentina
+  workflow_dispatch:
+
+# No ejecutar 2 backups en paralelo aunque haya 2 triggers seguidos.
+concurrency:
+  group: backup-externo
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: pg_dump → Cloudflare R2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validar secrets
+        env:
+          DB_URL:   ${{ secrets.RENDER_DATABASE_URL_EXTERNAL }}
+          R2_ACC:   ${{ secrets.R2_ACCOUNT_ID }}
+          R2_KEY:   ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SEC:   ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BKT:   ${{ secrets.R2_BUCKET }}
+        run: |
+          missing=""
+          [ -z "$DB_URL" ] && missing="$missing RENDER_DATABASE_URL_EXTERNAL"
+          [ -z "$R2_ACC" ] && missing="$missing R2_ACCOUNT_ID"
+          [ -z "$R2_KEY" ] && missing="$missing R2_ACCESS_KEY_ID"
+          [ -z "$R2_SEC" ] && missing="$missing R2_SECRET_ACCESS_KEY"
+          [ -z "$R2_BKT" ] && missing="$missing R2_BUCKET"
+          if [ -n "$missing" ]; then
+            echo "::error::Faltan secrets:$missing"
+            echo "Ver comentario al inicio del workflow para setup."
+            exit 1
+          fi
+
+      - name: Instalar postgresql-client-18 (Render usa Postgres 18)
+        run: |
+          sudo sh -c 'echo "deb [signed-by=/etc/apt/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          sudo install -d /etc/apt/keyrings
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/keyrings/postgresql.gpg
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client-18
+          echo "PG_DUMP_BIN=/usr/lib/postgresql/18/bin/pg_dump" >> $GITHUB_ENV
+
+      - name: Generar dump
+        env:
+          DB_URL: ${{ secrets.RENDER_DATABASE_URL_EXTERNAL }}
+        run: |
+          set -e
+          ts=$(date -u +%Y%m%d-%H%M%S)
+          out="backup-render-weekly-${ts}.sql"
+          echo "Dumping a $out…"
+          "$PG_DUMP_BIN" "$DB_URL" \
+            --no-owner --no-acl \
+            --clean --if-exists \
+            > "$out"
+          gzip -9 "$out"
+          ls -lh "${out}.gz"
+          echo "BACKUP_FILE=${out}.gz" >> $GITHUB_ENV
+          # Sanity check.
+          size=$(stat -c%s "${out}.gz")
+          if [ "$size" -lt 100000 ]; then
+            echo "::error::Dump muy chico ($size bytes) — algo falló"
+            exit 1
+          fi
+
+      - name: Configurar AWS CLI para R2
+        env:
+          R2_KEY: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SEC: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        run: |
+          mkdir -p ~/.aws
+          cat > ~/.aws/credentials <<EOF
+          [default]
+          aws_access_key_id = $R2_KEY
+          aws_secret_access_key = $R2_SEC
+          EOF
+          chmod 600 ~/.aws/credentials
+
+      - name: Upload a R2
+        env:
+          R2_ACC:    ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BKT:    ${{ secrets.R2_BUCKET }}
+        run: |
+          set -e
+          # R2 expone un endpoint S3-compatible: https://<ACCOUNT>.r2.cloudflarestorage.com
+          aws s3 cp "$BACKUP_FILE" "s3://$R2_BKT/$BACKUP_FILE" \
+            --endpoint-url "https://$R2_ACC.r2.cloudflarestorage.com" \
+            --no-progress
+          echo "✓ Subido: s3://$R2_BKT/$BACKUP_FILE"
+
+      - name: Limpieza de backups viejos en R2 (>2 años)
+        env:
+          R2_ACC: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BKT: ${{ secrets.R2_BUCKET }}
+        run: |
+          # Lista todos los archivos del bucket y borra los que son más viejos
+          # que 730 días. Si el bucket está limpio o sin viejos, no hace nada.
+          set -e
+          endpoint="https://$R2_ACC.r2.cloudflarestorage.com"
+          fecha_corte=$(date -u -d '730 days ago' +%Y-%m-%d)
+          aws s3api list-objects-v2 \
+            --bucket "$R2_BKT" \
+            --endpoint-url "$endpoint" \
+            --query "Contents[?LastModified<='$fecha_corte'].[Key]" \
+            --output text 2>/dev/null | while read -r key; do
+              [ -z "$key" ] && continue
+              echo "Borrando viejo: $key"
+              aws s3 rm "s3://$R2_BKT/$key" --endpoint-url "$endpoint" || true
+          done
+
+      - name: Resumen
+        env:
+          BACKUP_FILE: ${{ env.BACKUP_FILE }}
+          R2_BKT:      ${{ secrets.R2_BUCKET }}
+        run: |
+          echo "✓ Backup semanal completado"
+          echo "  Archivo: $BACKUP_FILE"
+          echo "  Destino: s3://$R2_BKT/$BACKUP_FILE"
+          echo ""
+          echo "Para restaurar:"
+          echo "  aws s3 cp s3://$R2_BKT/$BACKUP_FILE . --endpoint-url <endpoint>"
+          echo "  gunzip $BACKUP_FILE"
+          echo "  psql \"\$RENDER_DATABASE_URL_EXTERNAL\" < ${BACKUP_FILE%.gz}"

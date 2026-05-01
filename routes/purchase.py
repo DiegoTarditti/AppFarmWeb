@@ -1082,7 +1082,7 @@ def init_app(app):
             stock_map = {}
             ventas_3m = {}
             ventas_12m = {}
-            serie_mensual = {}  # producto_observer → {(y,m): u}
+            serie_mensual = {}  # {(anio, mes): total_unidades} — agregado de TODOS los items.
             labs_map = {}
             drogas_map = {}
 
@@ -1122,16 +1122,20 @@ def init_app(app):
                 ventas_3m = {pid: float(u3 or 0) for (pid, u3, _) in rows_ventas}
                 ventas_12m = {pid: float(u12 or 0) for (pid, _, u12) in rows_ventas}
 
-                # Serie mensual por producto (para estacionalidad agregada)
-                for (pid, anio, mes, u) in session.query(
-                        database.ObsVentaMensual.producto_observer,
+                # Estacionalidad agregada: solo necesitamos total por (anio, mes) sumando
+                # TODOS los productos. Pre-2026-05 esto traía 1 row por (producto, mes)
+                # y se sumaba en Python — con N items × 12m = N×12 rows. Ahora SUMA en
+                # SQL devolviendo 12 rows fijas.
+                for (anio, mes, u_total) in session.query(
                         database.ObsVentaMensual.anio,
                         database.ObsVentaMensual.mes,
-                        database.ObsVentaMensual.unidades)\
+                        _f.sum(database.ObsVentaMensual.unidades))\
                     .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
                             database.ObsVentaMensual.producto_observer.in_(obs_ids),
-                            ym_expr.between(desde_12m, hasta)).all():
-                    serie_mensual.setdefault(pid, {})[(anio, mes)] = float(u or 0)
+                            ym_expr.between(desde_12m, hasta))\
+                    .group_by(database.ObsVentaMensual.anio,
+                              database.ObsVentaMensual.mes).all():
+                    serie_mensual[(anio, mes)] = float(u_total or 0)
 
                 lab_ids = {p.laboratorio_observer for p in obs_prods if p.laboratorio_observer}
                 droga_ids = {p.nombre_droga_observer for p in obs_prods if p.nombre_droga_observer}
@@ -1234,15 +1238,11 @@ def init_app(app):
             mix_lab_list = sorted([{'label': k, 'count': v} for k, v in mix_lab.items()],
                                   key=lambda x: -x['count'])
 
-            # Estacionalidad: total mensual sumando uni de todos los items
-            est = {(y, m): 0.0 for (y, m) in meses}
-            for pid, serie in serie_mensual.items():
-                for (y, m), u in serie.items():
-                    if (y, m) in est:
-                        est[(y, m)] += u
+            # Estacionalidad: total mensual ya viene agregado desde SQL en serie_mensual
+            # como {(anio, mes): total_unidades}.
             estacionalidad = {
                 'labels': [f'{m:02d}/{y}' for (y, m) in meses],
-                'unidades': [est[(y, m)] for (y, m) in meses],
+                'unidades': [float(serie_mensual.get((y, m), 0) or 0) for (y, m) in meses],
             }
 
             # Resumen general
