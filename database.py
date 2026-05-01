@@ -1421,14 +1421,18 @@ def init_db(database_url=None):
                             'DROP zombie %s ignored: %s', ddl[:60], drop_err,
                         )
     is_sqlite = database_url.startswith('sqlite')
-    # Migraciones incrementales: agrega columnas nuevas si no existen
-    with engine.connect() as conn:
-        if is_sqlite:
+    # Migraciones incrementales: agrega columnas nuevas si no existen.
+    # PostgreSQL usa AUTOCOMMIT para que un try-except silenciado no deje la
+    # conexión en estado abortado (InFailedSqlTransaction). Cada DDL es su
+    # propia transacción implícita — idempotente por IF NOT EXISTS.
+    if is_sqlite:
+        with engine.connect() as conn:
             _sqlite_add_columns(conn)
-        else:
+            conn.commit()
+    else:
+        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             _pg_add_columns(conn)
             _crear_matviews(conn)
-        conn.commit()
 
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
