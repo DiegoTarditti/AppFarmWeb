@@ -143,10 +143,8 @@ una tarea aparte.
 ### ~~Botón "Crear y exportar con plantilla" en pedido auto~~ ✅ HECHO 2026-05-01
 - Botón "Crear + exportar plantilla 📥" en `templates/informes_pedido_auto.html:389`. Backend en `routes/informes.py:848` — genera XLSX inline sin round-trip a `/order/<id>`. Solo visible cuando `tiene_plantilla=True`.
 
-### Filtro arriba en Pedidos guardados
-- **Trigger**: cuando puedas — la pantalla `/orders` no tiene filtro y con varios pedidos hay que scrollear.
-- **Esfuerzo**: ~30 min — input de búsqueda + filtro por lab/estado/fecha.
-- **Por qué**: hoy hay que buscar manualmente con Ctrl+F.
+### ~~Filtro arriba en Pedidos guardados~~ ✅ YA EXISTÍA
+- `templates/orders_list.html`: filtro estado (Pendientes/Procesados/Todos) + canal/droguería + búsqueda libre + rango de fechas. Completo.
 
 ### ~~Color de fondo del botón en home (no solo del ícono)~~ ✅ HECHO 2026-05-01
 - `templates/index.html:199` aplica `card.bg` al `<a>` completo. Selector de color en `personalizar_home.html:76` guarda el color por card. Commit `cda55f5`.

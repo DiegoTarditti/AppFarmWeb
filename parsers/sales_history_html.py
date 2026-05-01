@@ -11,7 +11,6 @@ El período se lee del encabezado: "Período del MM/YYYY al MM/YYYY"
 """
 import re
 
-from bs4 import BeautifulSoup
 
 # Índices de td que contienen ventas mensuales (12 meses en orden)
 _MONTH_TD_INDICES = [6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18]
@@ -48,6 +47,7 @@ def parse_sales_history_html(path):
     with open(path, encoding='utf-8') as f:
         html = f.read()
 
+    from bs4 import BeautifulSoup
     soup = BeautifulSoup(html, 'html.parser')
 
     # --- Farmacia ---

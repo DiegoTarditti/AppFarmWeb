@@ -4,8 +4,6 @@ Extrae: farmacia, laboratorio, período, y lista de productos con ventas mensual
 """
 import re
 
-import pdfplumber
-
 MONTH_LABELS = [
     'Apr/25', 'May/25', 'Jun/25', 'Jul/25', 'Aug/25', 'Sep/25',
     'Oct/25', 'Nov/25', 'Dec/25', 'Jan/26', 'Feb/26', 'Mar/26'
@@ -109,6 +107,7 @@ def parse_sales_history_pdf(path):
     products = []
     col_positions = {}
 
+    import pdfplumber
     with pdfplumber.open(path) as pdf:
         for page_idx, page in enumerate(pdf.pages):
             words = page.extract_words(x_tolerance=2, y_tolerance=3)
