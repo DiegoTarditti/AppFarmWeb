@@ -6,10 +6,9 @@
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-    /* Zebra: alterna en filas cubiertas (no amber). */
-    tbody tr.producto-row:not(.bg-amber-50):nth-of-type(even) {
-        background-color: #F1F8F4;
-    }
+    /* Zebra por JS — aplicarZebra() la recalcula tras cada filtro. */
+    tbody tr.producto-row.zebra-even { background-color: #EEF6F1; }
+    tbody tr.producto-row.zebra-even.bg-amber-50 { background-color: #FEF3C0; }
     /* Forzar la cadena html→body→main column a altura fija para que el
        .scroll-wrapper sea el único scroll y el sticky del gráfico se ancle
        a su tope (sino el body scrollea y sticky deja de funcionar). */
@@ -41,9 +40,9 @@
     <span class="text-xs text-[#6f6f6f] ml-auto">
         {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
     </span>
-    <a href="{{ url_for('pedidos_emitidos_list') }}" class="text-xs text-sky-600 hover:underline">📋 Pedidos emitidos</a>
-    <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs text-sky-600 hover:underline">Editar matriz lab × drog</a>
-    <a href="{{ url_for('compras_dia') }}" class="text-xs text-sky-600 hover:underline">← Volver</a>
+    <a href="{{ url_for('pedidos_emitidos_list') }}" class="text-xs bg-sky-50 border border-sky-300 text-sky-700 hover:bg-sky-100 px-2.5 py-1 rounded font-medium">📋 Pedidos emitidos</a>
+    <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs bg-sky-50 border border-sky-300 text-sky-700 hover:bg-sky-100 px-2.5 py-1 rounded font-medium">⚙ Matriz lab × drog</a>
+    <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
 </div>
 
 {% if pendientes_anteriores %}
@@ -76,7 +75,7 @@
         Solo con sugerencia (subir/bajar)
     </label>
     <label class="flex items-center gap-1.5 text-xs text-amber-700 cursor-pointer">
-        <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5">
+        <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5" {% if cubre == 0 %}checked{% endif %}>
         Mostrar ⚠ otra drog
     </label>
     <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
@@ -138,7 +137,8 @@
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Stock</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Mín</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">u12m</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Ayer</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Semana</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">A pedir</th>
                     <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">Acciones</th>
                 </tr>
@@ -179,7 +179,8 @@
                               title="Cobertura {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d — en rango">OK</span>
                         {% endif %}
                     </td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.u12m }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.u24h or '—' }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.u7d or '—' }}</td>
                     <td class="px-3 py-1.5 text-right" onclick="event.stopPropagation()">
                         <input type="number" min="0" value="{{ it.a_pedir }}"
                                {% if not it.cubre_lab %}disabled{% endif %}
@@ -225,7 +226,7 @@ async function excluir(prodId, modo, btn) {
     const txt = modo === 'permanente'
         ? '¿Marcar este producto como NO PEDIR? (hay que reactivar manualmente)'
         : '¿Sacar de este pedido? (vuelve cuando el stock baje al mínimo otra vez)';
-    if (!confirm(txt)) return;
+    if (!await _confirmar(txt, modo === 'permanente' ? '⛔ No pedir' : '✗ Sacar', modo === 'permanente' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700')) return;
     btn.disabled = true;
     const r = await fetch(`/api/producto/${prodId}/excluir`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -451,6 +452,16 @@ function aplicarFiltros() {
         if (ok) visibles++;
     });
     _filtroCount.textContent = `${visibles} / ${_totalRows} visibles`;
+    aplicarZebra();
+}
+
+function aplicarZebra() {
+    let idx = 0;
+    document.querySelectorAll('.producto-row').forEach(row => {
+        if (row.style.display === 'none') return;
+        row.classList.toggle('zebra-even', idx % 2 === 1);
+        idx++;
+    });
 }
 _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
@@ -506,6 +517,81 @@ function toggleGrafico() {
     _aplicarEstadoGrafico(colapsado);
 })();
 
+// ── Scroll manual que descuenta panel sticky + thead sticky ─────────
+function _scrollToVisible(row) {
+    const wrapper = document.querySelector('.scroll-wrapper');
+    if (!wrapper) return;
+    const panel  = document.getElementById('panel-grafico');
+    const thead  = document.querySelector('table.tabla-armar thead');
+    const stickyH = (panel ? panel.offsetHeight : 0) + (thead ? thead.offsetHeight : 0);
+    const wRect  = wrapper.getBoundingClientRect();
+    const rRect  = row.getBoundingClientRect();
+    const rTop   = rRect.top - wRect.top + wrapper.scrollTop;
+    const rBot   = rTop + rRect.height;
+    const visTop = wrapper.scrollTop + stickyH;
+    const visBot = wrapper.scrollTop + wrapper.clientHeight;
+    if (rTop < visTop) {
+        wrapper.scrollTo({top: rTop - stickyH - 2, behavior: 'smooth'});
+    } else if (rBot > visBot) {
+        wrapper.scrollTo({top: rBot - wrapper.clientHeight + 2, behavior: 'smooth'});
+    }
+}
+
+// ── Navegación con teclado: ↓↑ cambian foco, Enter edita cantidad ───
+(function _initKeyNav() {
+    function _visibleRows() {
+        return Array.from(document.querySelectorAll('.producto-row'))
+                    .filter(r => r.style.display !== 'none');
+    }
+    function _currentIdx(rows) {
+        return rows.findIndex(r => r.dataset.pid === _selectedPid);
+    }
+    document.addEventListener('keydown', e => {
+        // Si el foco está en un input: solo Enter lo saca (blur)
+        const tag = document.activeElement.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+            if (e.key === 'Enter') { e.preventDefault(); document.activeElement.blur(); }
+            return;
+        }
+
+        const rows = _visibleRows();
+        if (!rows.length) return;
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const idx = _currentIdx(rows);
+            let next;
+            if (idx === -1) {
+                next = rows[0];
+            } else {
+                next = e.key === 'ArrowDown'
+                    ? rows[Math.min(idx + 1, rows.length - 1)]
+                    : rows[Math.max(idx - 1, 0)];
+            }
+            seleccionarProducto(next);
+            _scrollToVisible(next);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const idx = _currentIdx(rows);
+            if (idx === -1) return;
+            const input = rows[idx].querySelector('input[type=number]');
+            if (input && !input.disabled) { input.focus(); input.select(); }
+        } else if (e.key === 'g' || e.key === 'G') {
+            e.preventDefault();
+            toggleGrafico();
+        } else if (e.key === '+' || e.key === '-') {
+            const idx = _currentIdx(rows);
+            if (idx === -1) return;
+            const input = rows[idx].querySelector('input[type=number]');
+            if (!input || input.disabled) return;
+            e.preventDefault();
+            const delta = e.key === '+' ? 1 : -1;
+            input.value = Math.max(0, (parseInt(input.value) || 0) + delta);
+            input.dispatchEvent(new Event('change', {bubbles: true}));
+        }
+    });
+})();
+
 // ── Agregar producto último momento ─────────────────────────────────
 const _PROV_ID = {{ prov.id }};
 const _agregarInput = document.getElementById('agregar-q');
@@ -542,7 +628,7 @@ async function buscarParaAgregar(q) {
                         <span class="text-[10px] text-[#888]">${it.lab_nombre}</span>
                     </div>
                     <div class="text-[10px] text-[#888] mt-0.5">
-                        stock ${it.stock} · mín ${it.minimo} · u12m ${it.u12m}
+                        stock ${it.stock} · mín ${it.minimo} · ayer ${it.u24h} · sem ${it.u7d}
                         ${it.cubre_lab ? '<span class="text-emerald-700 font-bold">✓ cubre</span>' : '<span class="text-amber-700">⚠ otra drog</span>'}
                     </div>
                 </div>`).join('');
@@ -586,7 +672,8 @@ function agregarFila(it) {
         </td>
         <td class="px-3 py-1.5 text-right font-mono">${it.stock}</td>
         <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.minimo}</td>
-        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.u12m}</td>
+        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.u24h || '—'}</td>
+        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.u7d || '—'}</td>
         <td class="px-3 py-1.5 text-right" onclick="event.stopPropagation()">
             <input type="number" min="0" value="${it.a_pedir}"
                    ${it.cubre_lab ? '' : 'disabled'}
@@ -601,6 +688,7 @@ function agregarFila(it) {
     tbody.insertBefore(tr, tbody.firstChild);
     seleccionarProducto(tr);
     cerrarAgregar();
+    aplicarZebra();
 }
 
 function cerrarAgregar() {
@@ -616,7 +704,7 @@ function reagregarPendiente(it) {
         producto_id_local: it.producto_id_local,
         desc: it.desc,
         lab_nombre: it.lab_nombre,
-        stock: 0, minimo: 0, u12m: 0,
+        stock: 0, minimo: 0, u24h: 0, u7d: 0,
         a_pedir: it.pendiente,
         cubre_lab: true,
     });
@@ -641,21 +729,188 @@ async function emitirPedido() {
         });
     });
     if (!items.length) { status.textContent = 'No hay items con cantidad > 0.'; return; }
-    if (!confirm(`Emitir pedido a ${ {{ prov.razon_social | tojson }} } con ${items.length} items (${items.reduce((a,b)=>a+b.cantidad,0)} u)?`)) return;
+    const operador = await _pedirOperador('¿Quién emite el pedido?');
+    if (!operador) return;
+    if (!await _confirmar(`Emitir pedido a {{ prov.razon_social }} con ${items.length} items (${items.reduce((a,b)=>a+b.cantidad,0)} u)?`, 'Emitir pedido')) return;
     btn.disabled = true; status.textContent = 'Emitiendo…';
     try {
         const r = await fetch('/api/pedidos/dia/emitir', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
-            body: JSON.stringify({prov_id: _PROV_ID, items}),
+            body: JSON.stringify({prov_id: _PROV_ID, items, emitido_por: operador}),
         });
         const d = await r.json();
         if (!d.ok) { status.textContent = 'Error: ' + (d.error || ''); btn.disabled = false; return; }
         status.textContent = '✓ Pedido #' + d.pedido_id + ' emitido';
-        setTimeout(() => { location.href = '/pedidos-emitidos/' + d.pedido_id; }, 700);
+        // Descargar plantilla automáticamente si existe
+        try {
+            const rp = await fetch(`/api/pedido-emitido/${d.pedido_id}/export-plantilla`, {credentials: 'same-origin'});
+            if (rp.ok) {
+                const blob = await rp.blob();
+                const cd = rp.headers.get('Content-Disposition') || '';
+                const m = cd.match(/filename="([^"]+)"/);
+                const fname = m ? m[1] : `Pedido_${d.pedido_id}.txt`;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = fname; a.click();
+                URL.revokeObjectURL(url);
+                status.textContent += ' — descargando plantilla…';
+            }
+        } catch(e) {}
+        setTimeout(() => { location.href = '/pedidos-emitidos/' + d.pedido_id; }, 1200);
     } catch (e) {
         status.textContent = 'Error de red'; btn.disabled = false;
     }
 }
+
+// ── Modal de confirmación (reemplaza window.confirm) ─────────────────
+let _modalResolve = null;
+
+function _confirmar(msg, okLabel = 'Confirmar', okClass = 'bg-emerald-600 hover:bg-emerald-700') {
+    const el  = document.getElementById('modal-confirm');
+    const msg_el = document.getElementById('modal-confirm-msg');
+    const ok  = document.getElementById('modal-confirm-ok');
+    msg_el.textContent = msg;
+    ok.textContent     = okLabel;
+    ok.className       = `px-4 py-1.5 rounded text-white text-sm font-semibold ${okClass}`;
+    el.classList.remove('hidden');
+    el.querySelector('[role=dialog]').focus();
+    return new Promise(res => { _modalResolve = res; });
+}
+
+// ── Modal selector de operador ────────────────────────────────────────
+let _opResolve = null;
+
+async function _renderOpLista() {
+    const lista = document.getElementById('modal-op-lista');
+    try {
+        const r = await fetch('/api/usuarios-pedidos', {credentials: 'same-origin'});
+        const d = await r.json();
+        lista.innerHTML = '';
+        if (!(d.users || []).length) {
+            lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Sin operadores — agregá uno abajo.</p>';
+            return;
+        }
+        d.users.forEach(u => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between gap-2 py-1 border-b border-surface-border last:border-0';
+            row.innerHTML = `
+                <button type="button"
+                        class="flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 py-0.5"
+                        onclick="_seleccionarOp(${JSON.stringify(u.nombre)})">
+                    ${u.nombre}
+                </button>
+                <button type="button"
+                        class="text-[10px] text-rose-500 hover:text-rose-700 px-1"
+                        onclick="_borrarOp(${u.id}, this)">✕</button>`;
+            lista.appendChild(row);
+        });
+    } catch(e) {}
+}
+
+function _seleccionarOp(nombre) {
+    document.getElementById('modal-operador').classList.add('hidden');
+    _opResolve && _opResolve(nombre);
+}
+
+async function _borrarOp(id, btn) {
+    btn.disabled = true;
+    await fetch(`/api/usuarios-pedidos/${id}`, {method: 'DELETE', credentials: 'same-origin'});
+    await _renderOpLista();
+}
+
+async function _pedirOperador(titulo = '¿Quién realiza esta operación?') {
+    document.getElementById('modal-op-titulo').textContent = titulo;
+    document.getElementById('modal-op-inp').value = '';
+    await _renderOpLista();
+    document.getElementById('modal-operador').classList.remove('hidden');
+    return new Promise(res => { _opResolve = res; });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('modal-operador');
+    document.getElementById('modal-op-agregar').addEventListener('click', async () => {
+        const inp = document.getElementById('modal-op-inp');
+        const nombre = inp.value.trim();
+        if (!nombre) return;
+        const r = await fetch('/api/usuarios-pedidos', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', body: JSON.stringify({nombre}),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) {
+            document.getElementById('modal-op-err').textContent = d.error || 'Error al guardar';
+            return;
+        }
+        document.getElementById('modal-op-err').textContent = '';
+        inp.value = '';
+        await _renderOpLista();
+    });
+    document.getElementById('modal-op-inp').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('modal-op-agregar').click();
+    });
+    document.getElementById('modal-op-cancel').addEventListener('click', () => {
+        el.classList.add('hidden'); _opResolve && _opResolve(null);
+    });
+    el.addEventListener('click', e => {
+        if (e.target === el) { el.classList.add('hidden'); _opResolve && _opResolve(null); }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('modal-confirm');
+    const ok = document.getElementById('modal-confirm-ok');
+    const cx = document.getElementById('modal-confirm-cancel');
+    ok.addEventListener('click', () => { el.classList.add('hidden'); _modalResolve && _modalResolve(true); });
+    cx.addEventListener('click', () => { el.classList.add('hidden'); _modalResolve && _modalResolve(false); });
+    el.addEventListener('click', e => { if (e.target === el) { el.classList.add('hidden'); _modalResolve && _modalResolve(false); } });
+});
+
+document.addEventListener('keydown', e => {
+    const el = document.getElementById('modal-confirm');
+    if (el && !el.classList.contains('hidden')) {
+        if (e.key === 'Enter')  { e.preventDefault(); document.getElementById('modal-confirm-ok').click(); }
+        if (e.key === 'Escape') { e.preventDefault(); document.getElementById('modal-confirm-cancel').click(); }
+    }
+});
 </script>
+
+<!-- Modal operador -->
+<div id="modal-operador" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-white rounded-xl shadow-xl px-6 py-5 w-full max-w-xs mx-4">
+        <p id="modal-op-titulo" class="text-sm font-semibold text-[#1e1e1e] mb-3"></p>
+        <div id="modal-op-lista" class="mb-3 max-h-48 overflow-y-auto"></div>
+        <div class="flex gap-2 border-t border-surface-border pt-3">
+            <input id="modal-op-inp" type="text" placeholder="Agregar operador…"
+                   class="flex-1 border border-surface-border rounded px-2 py-1.5 text-sm">
+            <button id="modal-op-agregar"
+                    class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">+</button>
+        </div>
+        <p id="modal-op-err" class="text-[11px] text-rose-600 mt-1 min-h-[1rem]"></p>
+        <div class="flex justify-end mt-2">
+            <button id="modal-op-cancel"
+                    class="px-4 py-1.5 rounded border border-surface-border text-sm text-[#555] hover:bg-gray-100">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal confirmación -->
+<div id="modal-confirm" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div role="dialog" tabindex="-1"
+         class="bg-white rounded-xl shadow-xl px-6 py-5 w-full max-w-sm mx-4 outline-none">
+        <p id="modal-confirm-msg" class="text-sm text-[#1e1e1e] mb-5 leading-relaxed"></p>
+        <div class="flex justify-end gap-2">
+            <button id="modal-confirm-cancel"
+                    class="px-4 py-1.5 rounded border border-surface-border text-sm text-[#555] hover:bg-gray-100">
+                Cancelar
+            </button>
+            <button id="modal-confirm-ok"
+                    class="px-4 py-1.5 rounded text-white text-sm font-semibold bg-emerald-600 hover:bg-emerald-700">
+                Confirmar
+            </button>
+        </div>
+    </div>
+</div>
 {% endblock %}

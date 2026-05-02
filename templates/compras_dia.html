@@ -23,7 +23,8 @@
     </div>
     {% endif %}
     {% if current_user.rol != 'pedidos' %}
-    <div class="ml-auto">
+    <div class="ml-auto flex items-center gap-3">
+        <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs text-[#6f6f6f] hover:underline">🔗 Matriz lab × drog</a>
         <a href="{{ url_for('index') }}" class="text-xs text-sky-600 hover:underline">← Inicio</a>
     </div>
     {% endif %}

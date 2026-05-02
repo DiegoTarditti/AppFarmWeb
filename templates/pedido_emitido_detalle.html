@@ -19,8 +19,9 @@
 
 <div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
     <p class="text-[11px] text-[#3f6650]">
-        <b>Primera revisión</b>: el operador marca SOLO lo que no entró (default = pedida).
-        <b>Confirmación Observer</b>: se llena al ingresar la mercadería (export desde Observer).
+        📥 <b>Recepción</b>: el operador marca lo que no entró (default = pedido).
+        🖥 <b>Carga</b>: se completa al ingresar en Observer.
+        🧾 <b>Factura</b>: se cruza automáticamente cuando llega la factura de la drog.
     </p>
     {% if solo_lectura %}
     <span class="text-[11px] bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold">🔒 Pedido cerrado — solo lectura</span>
@@ -35,6 +36,11 @@
     </button>
     <span id="save-status" class="text-[11px] text-[#3f6650]"></span>
     {% endif %}
+    <label class="ml-auto flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
+        <input type="checkbox" id="filtro-entro" class="w-3.5 h-3.5" checked onchange="filtrarFilas()">
+        Solo los que entraron
+    </label>
+    <span id="filtro-count" class="text-[11px] text-[#6f6f6f]"></span>
 </div>
 
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
@@ -44,10 +50,11 @@
                 <tr>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Pedida</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f] bg-amber-50/50">Revisión op</th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f] bg-amber-50/50">Acción</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f] bg-blue-50/50">Confirmada Observer</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">📦 Pedido</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-amber-700 bg-amber-50/50">📥 Recepción</th>
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-amber-700 bg-amber-50/50">Acción</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-blue-700 bg-blue-50/50">🖥 Carga</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-emerald-700 bg-emerald-50/50">🧾 Factura</th>
                     <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">Δ</th>
                 </tr>
             </thead>
@@ -79,7 +86,14 @@
                     </td>
                     <td class="px-3 py-1.5 text-right font-mono bg-blue-50/30">
                         {% if it.confirmada is not none %}
-                            {{ it.confirmada }}
+                            <span class="text-blue-700 font-semibold">{{ it.confirmada }}</span>
+                        {% else %}
+                            <span class="text-[#bbb]">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-right font-mono bg-emerald-50/30">
+                        {% if it.factura is not none %}
+                            <span class="text-emerald-700 font-semibold">{{ it.factura }}</span>
                         {% else %}
                             <span class="text-[#bbb]">—</span>
                         {% endif %}
@@ -106,6 +120,29 @@
 <script>
 const PEDIDO_ID = {{ pedido.id }};
 
+function filtrarFilas() {
+    const soloEntro = document.getElementById('filtro-entro').checked;
+    let vis = 0, tot = 0;
+    document.querySelectorAll('.recep-row').forEach(row => {
+        tot++;
+        const revisada = parseInt(row.querySelector('.recep-revisada').value || 0);
+        const pedida   = parseInt(row.dataset.pedida);
+        const entro    = revisada >= pedida;
+        const ocultar  = soloEntro && !entro;
+        row.style.display = ocultar ? 'none' : '';
+        if (!ocultar) vis++;
+    });
+    const el = document.getElementById('filtro-count');
+    if (el) el.textContent = `${vis} / ${tot}`;
+}
+
+// Ejecutar al cargar y al cambiar cualquier input de revisada
+document.addEventListener('DOMContentLoaded', () => {
+    filtrarFilas();
+    document.querySelectorAll('.recep-revisada').forEach(inp =>
+        inp.addEventListener('change', filtrarFilas));
+});
+
 function todoEntro() {
     document.querySelectorAll('.recep-row').forEach(row => {
         row.querySelector('.recep-revisada').value = parseInt(row.dataset.pedida);
@@ -121,7 +158,88 @@ function setEntroTodo(btn) {
     row.querySelector('.recep-revisada').value = parseInt(row.dataset.pedida);
 }
 
+let _opResolveDet = null;
+
+async function _renderOpListaDet() {
+    const lista = document.getElementById('modal-op-det-lista');
+    try {
+        const r = await fetch('/api/usuarios-pedidos', {credentials: 'same-origin'});
+        const d = await r.json();
+        lista.innerHTML = '';
+        if (!(d.users || []).length) {
+            lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Sin operadores — agregá uno abajo.</p>';
+            return;
+        }
+        d.users.forEach(u => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between gap-2 py-1 border-b border-surface-border last:border-0';
+            row.innerHTML = `
+                <button type="button"
+                        class="flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 py-0.5"
+                        onclick="_seleccionarOpDet(${JSON.stringify(u.nombre)})">
+                    ${u.nombre}
+                </button>
+                <button type="button"
+                        class="text-[10px] text-rose-500 hover:text-rose-700 px-1"
+                        onclick="_borrarOpDet(${u.id}, this)">✕</button>`;
+            lista.appendChild(row);
+        });
+    } catch(e) {}
+}
+
+function _seleccionarOpDet(nombre) {
+    document.getElementById('modal-operador-det').classList.add('hidden');
+    _opResolveDet && _opResolveDet(nombre);
+}
+
+async function _borrarOpDet(id, btn) {
+    btn.disabled = true;
+    await fetch(`/api/usuarios-pedidos/${id}`, {method: 'DELETE', credentials: 'same-origin'});
+    await _renderOpListaDet();
+}
+
+async function _pedirOperadorDet(titulo) {
+    document.getElementById('modal-op-det-titulo').textContent = titulo;
+    document.getElementById('modal-op-det-inp').value = '';
+    await _renderOpListaDet();
+    document.getElementById('modal-operador-det').classList.remove('hidden');
+    return new Promise(res => { _opResolveDet = res; });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const el = document.getElementById('modal-operador-det');
+    if (!el) return;
+    document.getElementById('modal-op-det-agregar').addEventListener('click', async () => {
+        const inp = document.getElementById('modal-op-det-inp');
+        const nombre = inp.value.trim();
+        if (!nombre) return;
+        const r = await fetch('/api/usuarios-pedidos', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', body: JSON.stringify({nombre}),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.ok) {
+            document.getElementById('modal-op-det-err').textContent = d.error || 'Error al guardar';
+            return;
+        }
+        document.getElementById('modal-op-det-err').textContent = '';
+        inp.value = '';
+        await _renderOpListaDet();
+    });
+    document.getElementById('modal-op-det-inp').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('modal-op-det-agregar').click();
+    });
+    document.getElementById('modal-op-det-cancel').addEventListener('click', () => {
+        el.classList.add('hidden'); _opResolveDet && _opResolveDet(null);
+    });
+    el.addEventListener('click', e => {
+        if (e.target === el) { el.classList.add('hidden'); _opResolveDet && _opResolveDet(null); }
+    });
+});
+
 async function guardarRevision() {
+    const operador = await _pedirOperadorDet('¿Quién recibe la mercadería?');
+    if (!operador) return;
     const status = document.getElementById('save-status');
     status.textContent = 'Guardando…';
     const items = [...document.querySelectorAll('.recep-row')].map(row => ({
@@ -132,7 +250,7 @@ async function guardarRevision() {
         const r = await fetch(`/api/pedido-emitido/${PEDIDO_ID}/recepcion`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
-            body: JSON.stringify({items}),
+            body: JSON.stringify({items, recibido_por: operador}),
         });
         const d = await r.json();
         if (!d.ok) { status.textContent = 'Error: ' + (d.error || ''); return; }
@@ -143,4 +261,25 @@ async function guardarRevision() {
     }
 }
 </script>
+
+<!-- Modal operador recepción -->
+<div id="modal-operador-det" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-white rounded-xl shadow-xl px-6 py-5 w-full max-w-xs mx-4">
+        <p id="modal-op-det-titulo" class="text-sm font-semibold text-[#1e1e1e] mb-3"></p>
+        <div id="modal-op-det-lista" class="mb-3 max-h-48 overflow-y-auto"></div>
+        <div class="flex gap-2 border-t border-surface-border pt-3">
+            <input id="modal-op-det-inp" type="text" placeholder="Agregar operador…"
+                   class="flex-1 border border-surface-border rounded px-2 py-1.5 text-sm">
+            <button id="modal-op-det-agregar"
+                    class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">+</button>
+        </div>
+        <p id="modal-op-det-err" class="text-[11px] text-rose-600 mt-1 min-h-[1rem]"></p>
+        <div class="flex justify-end mt-2">
+            <button id="modal-op-det-cancel"
+                    class="px-4 py-1.5 rounded border border-surface-border text-sm text-[#555] hover:bg-gray-100">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
 {% endblock %}

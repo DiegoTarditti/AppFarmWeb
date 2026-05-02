@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set nav_active = "proveedores" %}
+{% set nav_active = "droguerias" if tipo_filter == "drogueria" else "proveedores" %}
 
 {% block title %}
     {% if tipo_filter == 'drogueria' %}Droguerías
@@ -88,6 +88,12 @@
         proveedor<span id="prov-plural">{{ 'es' if providers|length != 1 }}</span>
     </span>
     <div class="ml-auto flex items-center gap-2">
+        {% if tipo_filter == 'drogueria' %}
+        <a href="{{ url_for('labs_drogerias_matriz') }}"
+           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
+            🔗 Matriz lab × drog
+        </a>
+        {% endif %}
         <a href="{{ url_for('providers_activos') }}"
            class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
             Activar / desactivar
@@ -122,6 +128,12 @@
             <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorios</option>
             <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otros</option>
         </select>
+        {% if tipo_filter == 'drogueria' %}
+        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none">
+            <input type="checkbox" id="filtro-matriz-drog" class="w-3.5 h-3.5" onchange="filterProviders()">
+            Solo en matriz pedidos
+        </label>
+        {% endif %}
     </div>
 
     <!-- Lista -->
@@ -132,7 +144,8 @@
              data-nombre="{{ p.razon_social | lower }}"
              data-cuit="{{ p.cuit or '' }}"
              data-parser="{{ (p.parser_file or '') | lower }}"
-             data-tipo="{{ p.tipo or 'drogueria' }}">
+             data-tipo="{{ p.tipo or 'drogueria' }}"
+             data-matriz="{{ 'y' if p.matriz_visible else 'n' }}">
 
             <div id="view-{{ p.id }}">
                 <div class="band">
@@ -184,6 +197,13 @@
                                 Sin horario
                             {% endif %}
                         </a>
+                        <label class="inline-flex items-center gap-1.5 text-[11px] cursor-pointer select-none text-[#555]">
+                            <input type="checkbox"
+                                   class="w-3.5 h-3.5"
+                                   {% if p.matriz_visible %}checked{% endif %}
+                                   onchange="toggleMatrizVisible({{ p.id }}, this)">
+                            En matriz pedidos
+                        </label>
                         {% endif %}
                         <a href="{{ url_for('provider_mappings', provider_id=p.id) }}" class="action-link">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -504,17 +524,35 @@ function filterProviders() {
     const q = document.getElementById('prov-search').value || '';
     const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.buildAnyOf(q) : (() => true);
     const tipo = document.getElementById('prov-tipo').value;
+    const chkMatriz = document.getElementById('filtro-matriz-drog');
+    const soloMatriz = chkMatriz && chkMatriz.checked;
     let visible = 0;
     document.querySelectorAll('.prov-row').forEach(row => {
         const matchTexto = matchFn([row.dataset.nombre, row.dataset.cuit, row.dataset.parser]);
         const rowTipo = row.dataset.tipo || '';
         const matchTipo = !tipo || rowTipo === tipo;
-        const show = matchTexto && matchTipo;
+        const matchMatriz = !soloMatriz || row.dataset.matriz === 'y';
+        const show = matchTexto && matchTipo && matchMatriz;
         row.classList.toggle('hidden', !show);
         if (show) visible++;
     });
     document.getElementById('prov-count').textContent = visible;
     document.getElementById('prov-plural').textContent = visible !== 1 ? 'es' : '';
+}
+
+async function toggleMatrizVisible(drogId, cb) {
+    cb.disabled = true;
+    try {
+        const r = await fetch('/api/matriz/drog-visible', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({drog_id: drogId, visible: cb.checked}),
+        });
+        const data = await r.json();
+        if (!data.ok) throw new Error();
+        cb.closest('.prov-row').dataset.matriz = cb.checked ? 'y' : 'n';
+    } catch { alert('Error al guardar'); cb.checked = !cb.checked; }
+    finally { cb.disabled = false; }
 }
 </script>
 {% endblock %}
