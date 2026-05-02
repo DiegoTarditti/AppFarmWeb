@@ -67,21 +67,16 @@ una tarea aparte.
 - **Esfuerzo**: 1-2 horas.
 - **Cómo**: hoy hace varios queries pequeños. Refactorear a 2-3 queries con joins masivos.
 
-### Limpieza periódica de `home_card_clicks`
-- **Trigger**: la tabla pasa de 100k filas o se nota lentitud al cargar el home.
-- **Esfuerzo**: 15 min.
-- **Cómo**: cron en DockerPanel: `DELETE FROM home_card_clicks WHERE clicked_at < now() - interval '90 days'`.
-- **Por qué**: solo se usa para el ranking de cards en el home, datos viejos no aportan.
+### ~~Limpieza periódica de `home_card_clicks`~~ ✅ YA EXISTÍA
+- Endpoint `POST /api/cron/limpiar-home-card-clicks` en `routes/admin.py:572`. Workflow `.github/workflows/cron-limpiar-home-card-clicks.yml` corre domingos 03:30 UTC. Borra >90 días.
 
 ### Migrar PDFs a S3 / Cloudflare R2
 - **Trigger**: el bucket de PDFs (facturas + reclamos) pasa de 5-10 GB.
 - **Esfuerzo**: 1 día.
 - **Cómo**: subir a R2 (más barato que S3), guardar URL en `Invoice.pdf_filename`. Backfill scripted.
 
-### Optimizar `/api/droga/<id>/comparar-labs`
-- **Trigger**: comparar 5+ labs tarda > 2 seg.
-- **Esfuerzo**: 1 hora.
-- **Cómo**: consolidar las queries por lab en una sola con `GROUP BY lab_id`.
+### ~~Optimizar `/api/droga/<id>/comparar-labs`~~ ✅ YA EXISTÍA
+- `routes/observer.py:551` usa GROUP BY en todas las queries de ventas. Optimizado.
 
 ---
 
@@ -93,13 +88,10 @@ una tarea aparte.
 - **Detectadas (route-orphan-finder 2026-04-30)**:
   1. ✅ ~~`/clientes` (clientes_list)~~ — **2026-04-30**: linkeada en sidebar bajo "Obras Sociales" como "Clientes / Pacientes" (templates/base.html).
   2. ✅ ~~`/purchase/processed` (purchase_processed)~~ — **2026-05-01**: linkeada desde `purchase_suggest.html` como "Análisis guardados".
-  3. `/observer/laboratorios` (observer_laboratorios) — `routes/observer.py:914`. Probablemente deprecada (era stepping stone del flujo viejo, ahora se entra directo por `purchase_suggest`). Decidir: eliminar o fusionar.
+  3. ✅ ~~`/observer/laboratorios` (observer_laboratorios)~~ — eliminada en sesión anterior junto con `observer_labs.html`.
 
-### Cache de evaluación de alarmas
-- **Trigger**: si la página `/admin` se vuelve lenta.
-- **Esfuerzo**: 30 min.
-- **Síntoma**: cada navegación a `/admin` evalúa alarmas (7 queries). Si el user va `/admin → /admin/alarmas`, se evalúa 2 veces.
-- **Solución**: cachear el resultado por 30-60s en memoria de proceso (`functools.lru_cache` con TTL custom o `cachetools.TTLCache`).
+### ~~Cache de evaluación de alarmas~~ ✅ YA EXISTÍA
+- `alarmas.py:272-316`: `_CACHE_TTL_SEG=30s`, dict `_cache`, `invalidar_cache()`, `evaluar_todas(force=False)`.
 
 ### ~~Linter (`ruff`)~~ ✅ HECHO 2026-05-01
 - Job `lint` en `.github/workflows/ci.yml:21-33` con `ruff check .`. `pyproject.toml` con select conservador, ignores y per-file-ignores.
@@ -188,10 +180,8 @@ una tarea aparte.
 - **Cómo**: cron en DockerPanel: `pg_dump` + subir a Drive/Dropbox/R2. Mensual o semanal.
 - **Por qué**: hoy el único backup es Render (que también puede fallar). Tener una copia más es seguridad.
 
-### Sentry o similar para errores en prod
-- **Trigger**: cuando lleguen 2+ farmacias a usarlo.
-- **Esfuerzo**: 2 horas.
-- **Cómo**: `sentry-sdk[flask]` con DSN en env var. Captura excepciones automáticamente.
+### ~~Sentry o similar para errores en prod~~ ✅ HECHO 2026-05-01
+- `sentry-sdk[flask]>=2.0` en requirements. Init opt-in via `SENTRY_DSN` env var. `SENTRY_ENV` configurable. `traces_sample_rate=0.1`.
 
 ### Logs centralizados
 - **Trigger**: si Render se vuelve insuficiente (logs limitados a últimas N horas).
@@ -336,10 +326,8 @@ una tarea aparte.
 - **Síntoma**: cada cambio de schema requiere agregar `ALTER TABLE IF NOT EXISTS`. Frágil para cambios complejos (renombre, drop, mover datos).
 - **Plan**: migrar a Alembic cuando aparezca un cambio que no se pueda hacer así.
 
-### Auto-sync del DockerPanel hace hammer-loop al fallar
-- **Síntoma**: si el sync falla por timeout, `last_run` solo se persiste en éxito → cada 60 s el loop ve `delta_min >= arranque_min(180)` → vuelve a disparar → gunicorn worker timeout → repeat. Llena los logs de `WORKER TIMEOUT` y `Limpiando Render…`.
-- **Workaround actual**: apagar `autosync_enabled` en `agente_config.txt`.
-- **Solución definitiva**: persistir `last_attempt` en cada intento (no solo `last_run` en éxito) y aplicar backoff exponencial cuando hay N fallas seguidas. Ver `DockerPanel/docker_panel.py:1462`.
+### ~~Auto-sync del DockerPanel hace hammer-loop al fallar~~ ✅ HECHO 2026-05-01
+- `last_attempt` se persiste en `agente_config.txt` al inicio de cada intento. `_debe_correr_ahora` aplica backoff exponencial (30→60→120→240 min) cuando `_auto_sync_fallos > 0`. Solo se libera cuando el sync tiene éxito y resetea `fallos=0`.
 
 ### Post-check del DockerPanel da falsos positivos por logs históricos
 - **Síntoma**: después de un restart exitoso, el aviso `⚠ Post-check: la app parece haber crasheado al arrancar — Detecté: traceback, importerror` aparece igual porque scanea el log entero, incluyendo trazas anteriores al restart.

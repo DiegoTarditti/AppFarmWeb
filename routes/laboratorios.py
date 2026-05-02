@@ -55,11 +55,16 @@ def init_app(app):
                 .group_by(database.ProductAnalytics.laboratorio).all()
             ) if lab_names else {}
 
+            from database import LaboratorioDrogueria
+            labs_en_matriz = set(
+                r[0] for r in session.query(LaboratorioDrogueria.laboratorio_id).distinct().all()
+            )
             data = [{
                 'id': l.id, 'nombre': l.nombre,
                 'prod_count':      prod_map.get(l.id, 0),
                 'ped_count':       ped_map.get(l.nombre, 0),
                 'analytics_count': analytics_map.get(l.nombre, 0),
+                'en_matriz':       l.id in labs_en_matriz,
             } for l in labs]
         import observer_source
         return render_template('laboratorios.html', laboratorios=data,

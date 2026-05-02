@@ -531,6 +531,8 @@ class Provider(Base):
     activo = Column(Boolean, nullable=False, default=True)
     # Mínimo de compra para que la droguería acepte el pedido. NULL = sin mínimo.
     compra_minima_pesos = Column(DECIMAL(14, 2), nullable=True)
+    matriz_visible = Column(Boolean, nullable=False, default=True)
+    matriz_orden   = Column(Integer, nullable=True)
     claims = relationship('Claim', back_populates='provider')
 
 
@@ -564,6 +566,14 @@ class DescuentoBase(Base):
     descuento_pct_sin_transfer = Column(DECIMAL(5, 2), nullable=True)
 
 
+class UsuarioPedido(Base):
+    """Operadores que intervienen en el flujo de pedidos (sin login completo)."""
+    __tablename__ = 'usuarios_pedidos'
+    id     = Column(Integer, primary_key=True)
+    nombre = Column(String(50), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
+
+
 class PedidoEmitido(Base):
     """Pedido enviado a una droguería desde Compra del Día.
 
@@ -585,6 +595,9 @@ class PedidoEmitido(Base):
     total_unidades  = Column(Integer, nullable=False, default=0)
     estado          = Column(String(20), nullable=False, default='ABIERTO')
     observacion     = Column(Text, nullable=True)
+    emitido_por     = Column(String(50), nullable=True)
+    recibido_por    = Column(String(50), nullable=True)
+    cargado_por     = Column(String(50), nullable=True)
     drogueria       = relationship('Provider')
     items           = relationship('PedidoEmitidoItem', back_populates='pedido',
                                    cascade='all, delete-orphan')
@@ -1349,6 +1362,21 @@ def init_db(database_url=None):
                         estado_actual VARCHAR(20)
                     )
                 """))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
+                        id SERIAL PRIMARY KEY,
+                        proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+                        dia_semana INTEGER NOT NULL,
+                        hora VARCHAR(5) NOT NULL,
+                        activo BOOLEAN NOT NULL DEFAULT TRUE,
+                        creado_en TIMESTAMP DEFAULT NOW(),
+                        UNIQUE (proveedor_id, dia_semana, hora)
+                    )
+                """))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_horarios_prov "
+                    "ON proveedor_horarios_reparto (proveedor_id)"
+                ))
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos
@@ -1406,14 +1434,18 @@ def init_db(database_url=None):
                             'DROP zombie %s ignored: %s', ddl[:60], drop_err,
                         )
     is_sqlite = database_url.startswith('sqlite')
-    # Migraciones incrementales: agrega columnas nuevas si no existen
-    with engine.connect() as conn:
-        if is_sqlite:
+    # Migraciones incrementales: agrega columnas nuevas si no existen.
+    # PostgreSQL usa AUTOCOMMIT para que un try-except silenciado no deje la
+    # conexión en estado abortado (InFailedSqlTransaction). Cada DDL es su
+    # propia transacción implícita — idempotente por IF NOT EXISTS.
+    if is_sqlite:
+        with engine.connect() as conn:
             _sqlite_add_columns(conn)
-        else:
+            conn.commit()
+    else:
+        with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             _pg_add_columns(conn)
             _crear_matviews(conn)
-        conn.commit()
 
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
@@ -1742,6 +1774,21 @@ def _pg_add_columns(conn):
             conn.execute(text(ddl))
         except Exception:
             pass
+    # Operadores de pedidos y tracking de quién hizo cada etapa.
+    for ddl in (
+        """CREATE TABLE IF NOT EXISTS usuarios_pedidos (
+            id SERIAL PRIMARY KEY,
+            nombre VARCHAR(50) NOT NULL UNIQUE,
+            activo BOOLEAN NOT NULL DEFAULT TRUE
+        )""",
+        "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS emitido_por VARCHAR(50)",
+        "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS recibido_por VARCHAR(50)",
+        "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS cargado_por VARCHAR(50)",
+    ):
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            pass
     # Recepción de pedidos: 4 columnas nuevas para 2 vías (operador + Observer).
     for ddl in (
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS cantidad_revisada_op INTEGER",
@@ -1753,18 +1800,21 @@ def _pg_add_columns(conn):
             conn.execute(text(ddl))
         except Exception:
             pass
-    conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
-            id SERIAL PRIMARY KEY,
-            proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
-            dia_semana INTEGER NOT NULL,
-            hora VARCHAR(5) NOT NULL,
-            activo BOOLEAN NOT NULL DEFAULT TRUE,
-            creado_en TIMESTAMP DEFAULT NOW(),
-            UNIQUE (proveedor_id, dia_semana, hora)
-        )
-    """))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_horarios_prov ON proveedor_horarios_reparto (proveedor_id)"))
+    try:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS proveedor_horarios_reparto (
+                id SERIAL PRIMARY KEY,
+                proveedor_id INTEGER NOT NULL REFERENCES proveedores(id) ON DELETE CASCADE,
+                dia_semana INTEGER NOT NULL,
+                hora VARCHAR(5) NOT NULL,
+                activo BOOLEAN NOT NULL DEFAULT TRUE,
+                creado_en TIMESTAMP DEFAULT NOW(),
+                UNIQUE (proveedor_id, dia_semana, hora)
+            )
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_horarios_prov ON proveedor_horarios_reparto (proveedor_id)"))
+    except Exception:
+        pass
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS pedido_borrador (
             id SERIAL PRIMARY KEY,
@@ -1988,6 +2038,12 @@ def _pg_add_columns(conn):
     ))
     conn.execute(text(
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS ruta_facturas VARCHAR(500)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS matriz_visible BOOLEAN NOT NULL DEFAULT TRUE"
+    ))
+    conn.execute(text(
+        "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS matriz_orden INTEGER"
     ))
     conn.execute(text(
         "ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS parser_file VARCHAR(100)"

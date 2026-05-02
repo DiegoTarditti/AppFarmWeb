@@ -20,3 +20,4 @@ lxml>=5.0
 pytest>=8.0
 pymssql>=2.3
 ruff>=0.6
+sentry-sdk[flask]>=2.0

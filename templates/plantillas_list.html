@@ -100,7 +100,12 @@
                 {% else %}<span class="badge-fmt badge-csv">CSV</span>
                 {% endif %}
               </td>
-              <td class="px-3 py-3"><span class="badge-doc">{{ p.tipo_doc }}</span></td>
+              <td class="px-3 py-3">
+                <span class="badge-doc">{{ p.tipo_doc }}</span>
+                {% if p.tipo_doc == 'pedido' %}
+                <div class="text-[10px] text-emerald-700 font-semibold mt-0.5">📦 Pedido de reposición</div>
+                {% endif %}
+              </td>
               <td class="px-3 py-3 text-[#5f6c64]">{{ p.actualizada }}</td>
               <td class="px-3 py-3 text-right whitespace-nowrap">
                 {% if p.origen == 'legacy' %}

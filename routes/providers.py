@@ -236,6 +236,8 @@ def init_app(app):
                     q = q.filter(database.Invoice.proveedor_razon == p.razon_social)
                 invoice_count = q.count()
                 claim_count = session.query(database.Claim).filter_by(proveedor_id=p.id).count()
+                horario_count = (session.query(database.ProveedorHorarioReparto)
+                                 .filter_by(proveedor_id=p.id).count())
                 provider_data.append({
                     'id': p.id,
                     'razon_social': p.razon_social,
@@ -248,6 +250,9 @@ def init_app(app):
                     'invoice_count': invoice_count,
                     'claim_count': claim_count,
                     'has_plantilla': p.id in plantilla_ids,
+                    'tiene_horarios': horario_count > 0,
+                    'horario_count': horario_count,
+                    'matriz_visible': p.matriz_visible if p.tipo == 'drogueria' else None,
                 })
         return render_template('providers.html', providers=provider_data, tipo_filter=tipo_filter)
 
@@ -547,10 +552,11 @@ def init_app(app):
     def _proximo_cierre(session, proveedor_id):
         """Devuelve el próximo datetime de cierre de la droguería, o None si no tiene horarios."""
         from datetime import datetime, timedelta
-        from database import HorarioReparto
-        horarios = (session.query(HorarioReparto)
+
+        from database import ProveedorHorarioReparto
+        horarios = (session.query(ProveedorHorarioReparto)
                     .filter_by(proveedor_id=proveedor_id, activo=True)
-                    .order_by(HorarioReparto.dia_semana, HorarioReparto.hora).all())
+                    .order_by(ProveedorHorarioReparto.dia_semana, ProveedorHorarioReparto.hora).all())
         if not horarios:
             return None
         ahora = datetime.now()
@@ -585,27 +591,27 @@ def init_app(app):
                     hora = request.form.get('hora', '').strip()
                     if hora and 0 <= dia <= 6:
                         try:
-                            existing = (session.query(database.HorarioReparto)
+                            existing = (session.query(database.ProveedorHorarioReparto)
                                         .filter_by(proveedor_id=provider_id, dia_semana=dia, hora=hora)
                                         .first())
                             if not existing:
-                                session.add(database.HorarioReparto(
+                                session.add(database.ProveedorHorarioReparto(
                                     proveedor_id=provider_id, dia_semana=dia, hora=hora))
                                 session.commit()
                         except Exception:
                             session.rollback()
                 elif action == 'delete':
                     horario_id = int(request.form.get('horario_id', 0))
-                    h = session.get(database.HorarioReparto, horario_id)
+                    h = session.get(database.ProveedorHorarioReparto, horario_id)
                     if h and h.proveedor_id == provider_id:
                         session.delete(h)
                         session.commit()
                 return redirect(url_for('provider_horarios', provider_id=provider_id))
 
-            horarios = (session.query(database.HorarioReparto)
+            horarios = (session.query(database.ProveedorHorarioReparto)
                         .filter_by(proveedor_id=provider_id)
-                        .order_by(database.HorarioReparto.dia_semana,
-                                  database.HorarioReparto.hora).all())
+                        .order_by(database.ProveedorHorarioReparto.dia_semana,
+                                  database.ProveedorHorarioReparto.hora).all())
             # Grilla dia x hora para el template
             grilla = {d: [] for d in range(7)}
             for h in horarios:

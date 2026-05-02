@@ -9,18 +9,24 @@
     <div class="ml-auto flex items-center gap-3">
         <input type="text" id="filtro" placeholder="Filtrar laboratorio…"
                class="bg-white border border-surface-border rounded px-2 py-1 text-sm w-56">
+        <button onclick="abrirConfig()"
+                class="text-xs border border-surface-border px-2 py-1 rounded hover:bg-black/[0.04]">
+            ⚙ Columnas
+        </button>
         <a href="{{ url_for('compras_dia') }}" class="text-xs text-sky-600 hover:underline">← Pedido de reposición</a>
+        <a href="{{ url_for('laboratorios_list') }}" class="text-xs text-[#6f6f6f] hover:underline">ABM laboratorios →</a>
+        <a href="{{ url_for('providers_list') }}" class="text-xs text-[#6f6f6f] hover:underline">ABM droguerías →</a>
     </div>
 </div>
 
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
-    {% if not drogs %}
+    {% if not drogs and not todas_drogs %}
     <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
-        No hay drogerías cargadas (tipo 'drogueria' activo). Cargá primero en Proveedores.
+        No hay drogerías activas (tipo 'drogueria'). Cargá primero en ABM droguerías.
     </div>
     {% elif not labs %}
     <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
-        No hay laboratorios activos.
+        No hay laboratorios activos. Cargá primero en ABM laboratorios.
     </div>
     {% else %}
     <div class="bg-surface rounded-xl border border-surface-border overflow-auto">
@@ -59,7 +65,31 @@
     {% endif %}
 </div>
 
+<!-- Modal configuración de columnas -->
+<div id="config-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+        <div class="flex items-center justify-between">
+            <h2 class="font-bold text-[#1e1e1e]">Columnas de droguería</h2>
+            <button onclick="cerrarConfig()" class="text-[#999] hover:text-[#1e1e1e]">✕</button>
+        </div>
+        <p class="text-xs text-[#6f6f6f]">Mostrá/ocultá columnas y reordenás. Para activar/desactivar droguerías usá ABM droguerías.</p>
+        <ul id="config-list" class="space-y-1.5 max-h-72 overflow-y-auto"></ul>
+        <div class="flex gap-2 pt-1">
+            <button onclick="guardarConfig()"
+                    class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold py-2 rounded-xl">
+                Guardar
+            </button>
+            <button onclick="cerrarConfig()"
+                    class="px-4 text-sm text-[#555] border border-surface-border rounded-xl hover:bg-[#f5f5f5]">
+                Cancelar
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
+const _todasDrogs = {{ todas_drogs | tojson }};
+
 async function toggleMatch(cb) {
     cb.disabled = true;
     try {
@@ -74,19 +104,12 @@ async function toggleMatch(cb) {
             }),
         });
         const data = await r.json();
-        if (!data.ok) {
-            alert('Error: ' + (data.error || 'desconocido'));
-            cb.checked = !cb.checked;
-        }
-    } catch (e) {
-        alert('Error de red');
-        cb.checked = !cb.checked;
-    } finally {
-        cb.disabled = false;
-    }
+        if (!data.ok) { alert('Error: ' + (data.error || 'desconocido')); cb.checked = !cb.checked; }
+    } catch (e) { alert('Error de red'); cb.checked = !cb.checked; }
+    finally { cb.disabled = false; }
 }
 
-// Filtro client-side multi-token AND.
+// Filtro client-side
 const filtro = document.getElementById('filtro');
 filtro.addEventListener('input', () => {
     const fn = window.MultiTokenFilter.build(filtro.value);
@@ -94,5 +117,77 @@ filtro.addEventListener('input', () => {
         row.style.display = fn(row.dataset.nombre) ? '' : 'none';
     });
 });
+
+// ── Config de columnas — solo controla matriz_visible y orden ─────────────────
+let _configItems = [];
+
+function abrirConfig() {
+    _configItems = _todasDrogs.map((d, i) => ({...d, _orden: d.orden ?? i}));
+    _configItems.sort((a, b) => a._orden - b._orden);
+    renderConfigList();
+    document.getElementById('config-modal').classList.remove('hidden');
+}
+
+function cerrarConfig() {
+    document.getElementById('config-modal').classList.add('hidden');
+}
+
+function renderConfigList() {
+    const ul = document.getElementById('config-list');
+    ul.innerHTML = '';
+    _configItems.forEach((d, i) => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center gap-2 bg-[#f9f9f9] border border-surface-border rounded-lg px-3 py-2';
+        li.dataset.idx = i;
+        li.draggable = true;
+        li.innerHTML = `
+            <span class="cursor-grab text-[#bbb] select-none">⠿</span>
+            <input type="checkbox" class="w-4 h-4" ${d.visible ? 'checked' : ''}
+                   onchange="_configItems[${i}].visible = this.checked">
+            <span class="flex-1 text-sm ${d.visible ? 'text-[#1e1e1e]' : 'text-[#aaa] line-through'}">${d.nombre}</span>
+            <span class="flex gap-1">
+                <button onclick="moverArriba(${i})" class="text-[#999] hover:text-[#1e1e1e] px-1" ${i===0?'disabled':''}>▲</button>
+                <button onclick="moverAbajo(${i})" class="text-[#999] hover:text-[#1e1e1e] px-1" ${i===_configItems.length-1?'disabled':''}>▼</button>
+            </span>`;
+        li.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', i); li.style.opacity = '0.4'; });
+        li.addEventListener('dragend',   () => { li.style.opacity = '1'; });
+        li.addEventListener('dragover',  e => { e.preventDefault(); li.style.background = '#e8f3ed'; });
+        li.addEventListener('dragleave', () => { li.style.background = ''; });
+        li.addEventListener('drop', e => {
+            e.preventDefault(); li.style.background = '';
+            const from = parseInt(e.dataTransfer.getData('text/plain'));
+            const to   = parseInt(li.dataset.idx);
+            if (from === to) return;
+            const [item] = _configItems.splice(from, 1);
+            _configItems.splice(to, 0, item);
+            renderConfigList();
+        });
+        ul.appendChild(li);
+    });
+}
+
+function moverArriba(i) {
+    if (i === 0) return;
+    [_configItems[i-1], _configItems[i]] = [_configItems[i], _configItems[i-1]];
+    renderConfigList();
+}
+function moverAbajo(i) {
+    if (i >= _configItems.length - 1) return;
+    [_configItems[i], _configItems[i+1]] = [_configItems[i+1], _configItems[i]];
+    renderConfigList();
+}
+
+async function guardarConfig() {
+    const payload = _configItems.map((d, i) => ({id: d.id, visible: d.visible, orden: i}));
+    try {
+        const r = await fetch('/api/matriz/drog-config', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin', body: JSON.stringify(payload),
+        });
+        const data = await r.json();
+        if (data.ok) location.reload();
+        else alert('Error al guardar');
+    } catch (e) { alert('Error de red'); }
+}
 </script>
 {% endblock %}

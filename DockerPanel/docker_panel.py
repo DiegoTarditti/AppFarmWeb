@@ -1007,6 +1007,8 @@ class DockerPanel(tk.Tk):
             f.write(f"autosync_token={auto_sync_cfg['token']}\n")
             if auto_sync_cfg.get('last_run'):
                 f.write(f"autosync_last_run={auto_sync_cfg['last_run']}\n")
+            if auto_sync_cfg.get('last_attempt'):
+                f.write(f"autosync_last_attempt={auto_sync_cfg['last_attempt']}\n")
             # === END AUTO-SYNC ===
 
     # === BEGIN AUTO-SYNC ===
@@ -1020,6 +1022,7 @@ class DockerPanel(tk.Tk):
             'url': 'http://localhost:5000',         # base URL de la app local
             'token': '',                            # X-Auto-Sync-Token opcional
             'last_run': None,                       # ISO datetime del último sync exitoso
+            'last_attempt': None,                   # ISO datetime del último intento (éxito o fallo)
         }
         if os.path.isfile(cfg_path):
             with open(cfg_path, "r", encoding="utf-8") as f:
@@ -1038,6 +1041,8 @@ class DockerPanel(tk.Tk):
                         cfg['token'] = line.split("=", 1)[1]
                     elif line.startswith("autosync_last_run="):
                         cfg['last_run'] = line.split("=", 1)[1]
+                    elif line.startswith("autosync_last_attempt="):
+                        cfg['last_attempt'] = line.split("=", 1)[1]
         return cfg
 
     def _save_auto_sync_config(self, **changes):
@@ -1063,6 +1068,8 @@ class DockerPanel(tk.Tk):
             f.write(f"autosync_token={current['token']}\n")
             if current.get('last_run'):
                 f.write(f"autosync_last_run={current['last_run']}\n")
+            if current.get('last_attempt'):
+                f.write(f"autosync_last_attempt={current['last_attempt']}\n")
     # === END AUTO-SYNC ===
 
     def _config_agente(self):
@@ -1338,6 +1345,22 @@ class DockerPanel(tk.Tk):
             except ValueError:
                 last_run = None
 
+        # Backoff por fallos: si hubo intentos recientes fallidos, esperar antes de reintentar.
+        # 1 fallo→30min, 2→60min, 3→120min, 4+→240min. Evita hammer-loop si sync falla.
+        fallos = getattr(self, '_auto_sync_fallos', 0)
+        if fallos > 0:
+            last_attempt_str = cfg.get('last_attempt')
+            if last_attempt_str:
+                try:
+                    last_attempt = _dt.datetime.fromisoformat(last_attempt_str)
+                    backoff_min = min(240, 30 * (2 ** (fallos - 1)))
+                    mins_desde_intento = (ahora - last_attempt).total_seconds() / 60
+                    if mins_desde_intento < backoff_min:
+                        restantes = int(backoff_min - mins_desde_intento)
+                        return False, f'backoff por {fallos} fallo(s) — esperando {restantes} min'
+                except ValueError:
+                    pass
+
         # Al arranque: si nunca corrió o pasaron muchos minutos
         arr_min = int(cfg.get('arranque_min', 180))
         if not last_run:
@@ -1511,6 +1534,8 @@ class DockerPanel(tk.Tk):
             token = (cfg.get('token') or '').strip()
             ts_inicio = _dt.datetime.now()
             self._auto_sync_last_run = ts_inicio
+            # Persistir intento antes de ejecutar — evita hammer-loop si falla
+            self._save_auto_sync_config(last_attempt=ts_inicio.isoformat())
             self.after(0, self._append,
                        f"  🔄 {ts_inicio.strftime('%H:%M')} auto-sync → {endpoint}\n", "dim")
             try:
@@ -2072,17 +2097,25 @@ class DockerPanel(tk.Tk):
         cwd = self.dir_var.get()
         try:
             r = subprocess.run(
-                "docker-compose logs --tail=40 web",
+                "docker-compose logs --tail=60 web",
                 shell=True, cwd=cwd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, encoding="utf-8", errors="replace", timeout=15,
             )
-            logs = (r.stdout or '').lower()
+            all_lines = (r.stdout or '').splitlines()
         except Exception as e:
             self.after(0, self._append,
                        f"  ⚠  No pude verificar logs post-restart: {e}\n", "dim")
             self._running = False
             return
+
+        # Solo escanear desde el último "Starting gunicorn" — evita falsos
+        # positivos por tracebacks de arranques anteriores que siguen en el log.
+        start_idx = 0
+        for i, line in enumerate(all_lines):
+            if 'starting gunicorn' in line.lower():
+                start_idx = i
+        logs = '\n'.join(all_lines[start_idx:]).lower()
 
         hits = [p for p in self._POST_CHECK_ERROR_PATTERNS if p in logs]
         if hits:
