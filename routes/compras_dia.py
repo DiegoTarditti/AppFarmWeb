@@ -824,7 +824,9 @@ def init_app(app):
         Cruza por EAN → descripción normalizada. Llena cantidad_confirmada_obs
         en cada ítem matcheado. Guarda cargado_por desde el form.
         """
-        import os, tempfile
+        import os
+        import tempfile
+
         from data_extract import parse_erp_excel
         from database import PedidoEmitido
         from helpers import now_ar
