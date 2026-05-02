@@ -552,6 +552,7 @@ def init_app(app):
     def _proximo_cierre(session, proveedor_id):
         """Devuelve el próximo datetime de cierre de la droguería, o None si no tiene horarios."""
         from datetime import datetime, timedelta
+
         from database import ProveedorHorarioReparto
         horarios = (session.query(ProveedorHorarioReparto)
                     .filter_by(proveedor_id=proveedor_id, activo=True)

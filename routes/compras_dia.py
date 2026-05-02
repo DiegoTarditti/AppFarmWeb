@@ -217,7 +217,8 @@ def init_app(app):
             ).group_by(ObsVentaMensual.producto_observer).subquery())
 
             # Ventas ayer y última semana por producto.
-            from datetime import date as _date, timedelta as _td
+            from datetime import date as _date
+            from datetime import timedelta as _td
             hoy_d = _date.today()
             _ayer = hoy_d - _td(days=1)
             _semana = hoy_d - _td(days=7)
@@ -326,8 +327,8 @@ def init_app(app):
             )
             # Fallback por nombre normalizado: obs_lab_id → local lab id.
             # Permite usar la matriz aunque los labs no tengan observer_id.
-            from helpers import _normalizar_nombre_entidad as _norm_lab
             from database import ObsLaboratorio
+            from helpers import _normalizar_nombre_entidad as _norm_lab
             obs_lab_norm = {
                 r[0]: _norm_lab(r[1])
                 for r in session.query(ObsLaboratorio.observer_id,
@@ -502,7 +503,8 @@ def init_app(app):
             ).filter(ObsStock.producto_observer.in_(obs_ids),
                      ObsStock.minimo.isnot(None))
              .group_by(ObsStock.producto_observer).all())
-            from datetime import date as _date2, timedelta as _td2
+            from datetime import date as _date2
+            from datetime import timedelta as _td2
             hoy2   = _date2.today()
             _ayer2 = hoy2 - _td2(days=1)
             _sem2  = hoy2 - _td2(days=7)
@@ -848,7 +850,9 @@ def init_app(app):
         """Genera archivo con la plantilla default (tipo_doc=pedido) de la droguería."""
         import json as _json
         from io import BytesIO, StringIO
+
         from flask import Response, send_file
+
         from database import PedidoEmitido, Plantilla
 
         with get_db() as session:
