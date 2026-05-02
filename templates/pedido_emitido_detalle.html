@@ -14,28 +14,68 @@
     {% else %}
     <span class="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">CERRADO</span>
     {% endif %}
-    <a href="{{ url_for('pedidos_emitidos_list') }}" class="ml-auto text-xs text-sky-600 hover:underline">← Lista</a>
+    {% if current_user.rol in ('admin', 'dev') %}
+    <button type="button" onclick="habilitarAjuste()"
+            class="ml-auto text-[11px] border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 px-2.5 py-1 rounded font-semibold"
+            title="Solo administradores">
+        ⚙ Ajuste
+    </button>
+    {% else %}
+    <span class="ml-auto"></span>
+    {% endif %}
+    <a href="{{ url_for('pedidos_emitidos_list') }}" class="text-xs text-sky-600 hover:underline">← Lista</a>
 </div>
 
-<div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
-    <p class="text-[11px] text-[#3f6650]">
-        📥 <b>Recepción</b>: el operador marca lo que no entró (default = pedido).
-        🖥 <b>Carga</b>: se completa al ingresar en Observer.
-        🧾 <b>Factura</b>: se cruza automáticamente cuando llega la factura de la drog.
-    </p>
-    {% if solo_lectura %}
+{# ── Barra de pasos: un solo paso activo a la vez ── #}
+<div class="border-b border-surface-border px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap
+            {% if not pedido.etapa_recep %}bg-amber-50{% elif not pedido.etapa_carga %}bg-blue-50{% else %}bg-emerald-50{% endif %}">
+
+    {# Paso 1 — Recepción #}
+    {% if not pedido.etapa_recep and not solo_lectura %}
+    <span class="text-xs font-bold text-amber-800">📥 Paso 1 de 3 — Recepción</span>
+    <span class="text-[11px] text-amber-700">Marcá lo que llegó y lo que no entró.</span>
+    <button type="button" id="btn-recibir" onclick="habilitarRecepcion()"
+            class="ml-auto bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-1.5 rounded-lg">
+        📥 Recibir
+    </button>
+    <div id="acciones-recepcion" class="hidden flex items-center gap-2">
+        <button type="button" onclick="todoEntro()"
+                class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
+            ✓ Entró todo
+        </button>
+        <button type="button" onclick="guardarRevision()"
+                class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-bold px-4 py-1.5 rounded">
+            ✓ Confirmar recepción
+        </button>
+        <span id="save-status" class="text-[11px] text-[#3f6650]"></span>
+    </div>
+
+    {% elif pedido.etapa_recep and not pedido.etapa_carga %}
+    {# Paso 2 — Carga XLS #}
+    <span class="text-xs font-bold text-blue-800">🖥 Paso 2 de 3 — Carga Observer</span>
+    <span class="text-[11px] text-blue-600">Recibido por <b>{{ pedido.recibido_por }}</b>. Cuando carguen en Observer, importá el XLS de ingreso.</span>
+    <input type="file" id="xls-carga-input" accept=".xlsx,.xls" class="hidden" onchange="importarXLS(this)">
+    <button type="button" onclick="document.getElementById('xls-carga-input').click()"
+            class="ml-auto bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm px-4 py-1.5 rounded-lg">
+        🖥 Importar XLS ingreso
+    </button>
+    <span id="xls-status" class="text-[11px] text-blue-700"></span>
+
+    {% elif pedido.etapa_carga and not pedido.etapa_factura %}
+    {# Paso 3 — Factura #}
+    <span class="text-xs font-bold text-emerald-800">🧾 Paso 3 de 3 — Factura</span>
+    <span class="text-[11px] text-emerald-700">Carga confirmada por <b>{{ pedido.cargado_por }}</b>. Subí la factura de la droguería para cruzarla.</span>
+    <a href="{{ url_for('index') }}"
+       class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm px-4 py-1.5 rounded-lg">
+        🧾 Subir factura →
+    </a>
+
+    {% elif solo_lectura %}
     <span class="text-[11px] bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold">🔒 Pedido cerrado — solo lectura</span>
     {% else %}
-    <button type="button" onclick="todoEntro()"
-            class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
-        ✓ Entró todo
-    </button>
-    <button type="button" onclick="guardarRevision()"
-            class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-bold px-4 py-1.5 rounded">
-        Guardar revisión
-    </button>
-    <span id="save-status" class="text-[11px] text-[#3f6650]"></span>
+    <span class="text-xs text-emerald-700 font-bold">✅ Todos los pasos completados</span>
     {% endif %}
+
     <label class="ml-auto flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
         <input type="checkbox" id="filtro-entro" class="w-3.5 h-3.5" checked onchange="filtrarFilas()">
         Solo los que entraron
@@ -67,12 +107,12 @@
                     <td class="px-3 py-1.5 text-right font-mono font-semibold">{{ it.pedida }}</td>
                     <td class="px-3 py-1.5 text-right bg-amber-50/30">
                         <input type="number" min="0" value="{{ rev }}"
-                               {% if solo_lectura %}disabled{% endif %}
-                               class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono recep-revisada {% if solo_lectura %}opacity-60{% endif %}">
+                               {% if solo_lectura or not pedido.etapa_recep %}disabled{% endif %}
+                               class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono recep-revisada {% if solo_lectura or not pedido.etapa_recep %}opacity-60{% endif %}">
                     </td>
                     <td class="px-3 py-1.5 text-center bg-amber-50/30 whitespace-nowrap">
-                        {% if solo_lectura %}
-                        <span class="text-[10px] text-[#bbb]">—</span>
+                        {% if solo_lectura or not pedido.etapa_recep %}
+                        <span class="recep-badge text-sm font-bold"></span>
                         {% else %}
                         <button type="button" onclick="setNoEntro(this)"
                                 class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100">
@@ -82,6 +122,7 @@
                                 class="text-[10px] px-2 py-0.5 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 ml-1">
                             ✓ OK
                         </button>
+                        <span class="recep-badge ml-1 text-sm font-bold"></span>
                         {% endif %}
                     </td>
                     <td class="px-3 py-1.5 text-right font-mono bg-blue-50/30">
@@ -139,8 +180,11 @@ function filtrarFilas() {
 // Ejecutar al cargar y al cambiar cualquier input de revisada
 document.addEventListener('DOMContentLoaded', () => {
     filtrarFilas();
-    document.querySelectorAll('.recep-revisada').forEach(inp =>
-        inp.addEventListener('change', filtrarFilas));
+    document.querySelectorAll('.recep-row').forEach(row => {
+        _actualizarBadge(row);
+        const inp = row.querySelector('.recep-revisada');
+        if (inp) inp.addEventListener('input', () => { _actualizarBadge(row); });
+    });
 });
 
 function todoEntro() {
@@ -149,13 +193,37 @@ function todoEntro() {
     });
 }
 
+function _actualizarBadge(row) {
+    const badge = row.querySelector('.recep-badge');
+    if (!badge) return;
+    const revisada = parseInt(row.querySelector('.recep-revisada').value || 0);
+    const pedida   = parseInt(row.dataset.pedida);
+    const diff     = revisada - pedida;
+    if (revisada <= 0) {
+        badge.textContent = '✗';
+        badge.className = 'recep-badge ml-1 text-sm font-bold text-rose-600';
+    } else if (diff === 0) {
+        badge.textContent = '✓';
+        badge.className = 'recep-badge ml-1 text-sm font-bold text-emerald-600';
+    } else if (diff > 0) {
+        badge.textContent = '+' + diff;
+        badge.className = 'recep-badge ml-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-1 rounded';
+    } else {
+        badge.textContent = diff;
+        badge.className = 'recep-badge ml-1 text-xs font-bold text-amber-700 bg-amber-100 px-1 rounded';
+    }
+}
+
 function setNoEntro(btn) {
-    btn.closest('tr').querySelector('.recep-revisada').value = 0;
+    const row = btn.closest('tr');
+    row.querySelector('.recep-revisada').value = 0;
+    _actualizarBadge(row);
 }
 
 function setEntroTodo(btn) {
     const row = btn.closest('tr');
     row.querySelector('.recep-revisada').value = parseInt(row.dataset.pedida);
+    _actualizarBadge(row);
 }
 
 let _opResolveDet = null;
@@ -173,15 +241,21 @@ async function _renderOpListaDet() {
         d.users.forEach(u => {
             const row = document.createElement('div');
             row.className = 'flex items-center justify-between gap-2 py-1 border-b border-surface-border last:border-0';
-            row.innerHTML = `
-                <button type="button"
-                        class="flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 py-0.5"
-                        onclick="_seleccionarOpDet(${JSON.stringify(u.nombre)})">
-                    ${u.nombre}
-                </button>
-                <button type="button"
-                        class="text-[10px] text-rose-500 hover:text-rose-700 px-1"
-                        onclick="_borrarOpDet(${u.id}, this)">✕</button>`;
+
+            const btnSel = document.createElement('button');
+            btnSel.type = 'button';
+            btnSel.className = 'flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 py-0.5';
+            btnSel.textContent = u.nombre;
+            btnSel.addEventListener('click', () => _seleccionarOpDet(u.nombre));
+
+            const btnDel = document.createElement('button');
+            btnDel.type = 'button';
+            btnDel.className = 'text-[10px] text-rose-500 hover:text-rose-700 px-1';
+            btnDel.textContent = '✕';
+            btnDel.addEventListener('click', () => _borrarOpDet(u.id, btnDel));
+
+            row.appendChild(btnSel);
+            row.appendChild(btnDel);
             lista.appendChild(row);
         });
     } catch(e) {}
@@ -237,10 +311,108 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-async function guardarRevision() {
-    const operador = await _pedirOperadorDet('¿Quién recibe la mercadería?');
+function habilitarRecepcion() {
+    document.getElementById('btn-recibir').classList.add('hidden');
+    document.getElementById('acciones-recepcion').classList.remove('hidden');
+    document.getElementById('acciones-recepcion').classList.add('flex');
+    document.querySelectorAll('.recep-revisada').forEach(inp => {
+        inp.disabled = false;
+        inp.classList.remove('opacity-60');
+    });
+    // Mostrar botones de fila
+    document.querySelectorAll('.recep-row').forEach(row => {
+        const celda = row.cells[4];  // columna Acción
+        if (!celda) return;
+        if (celda.querySelector('button')) return;  // ya tiene botones
+        const pedida = parseInt(row.dataset.pedida);
+        celda.innerHTML = `
+            <button type="button" onclick="setNoEntro(this)"
+                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100">
+                ✗ No entró
+            </button>
+            <button type="button" onclick="setEntroTodo(this)"
+                    class="text-[10px] px-2 py-0.5 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 ml-1">
+                ✓ OK
+            </button>
+            <span class="recep-badge ml-1 text-sm font-bold"></span>`;
+        _actualizarBadge(row);
+    });
+}
+
+async function importarXLS(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const status = document.getElementById('xls-status');
+    status.textContent = 'Procesando…';
+    const operador = await _pedirOperadorDet('¿Quién cargó en Observer?');
+    if (!operador) { status.textContent = ''; input.value = ''; return; }
+    const fd = new FormData();
+    fd.append('xls', file);
+    fd.append('cargado_por', operador);
+    try {
+        const r = await fetch(`/api/pedido-emitido/${PEDIDO_ID}/importar-xls`, {
+            method: 'POST', credentials: 'same-origin', body: fd,
+        });
+        const d = await r.json();
+        if (!d.ok) { status.textContent = 'Error: ' + (d.error || ''); return; }
+        status.textContent = `✓ ${d.matched} de ${d.total} ítems matcheados`;
+        setTimeout(() => location.reload(), 1000);
+    } catch (e) {
+        status.textContent = 'Error de red';
+    }
+    input.value = '';
+}
+
+function habilitarAjuste() {
+    if (!confirm('¿Activar modo ajuste? Podrás editar la recepción aunque ya esté confirmada.')) return;
+
+    // Banner de advertencia
+    let banner = document.getElementById('ajuste-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'ajuste-banner';
+        banner.className = 'bg-orange-50 border-b border-orange-300 px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap';
+        banner.innerHTML = `
+            <span class="text-xs font-bold text-orange-800">⚙ Modo ajuste activo — editá las cantidades y guardá</span>
+            <button type="button" onclick="guardarRevision('ajuste')"
+                    class="ml-auto text-xs bg-orange-500 hover:bg-orange-600 text-white font-bold px-4 py-1.5 rounded-lg">
+                Guardar ajuste
+            </button>
+            <span id="ajuste-status" class="text-[11px] text-orange-700"></span>`;
+        // Insertar después de la barra de pasos
+        const barraSteps = document.querySelector('.border-b.border-surface-border.px-4.sm\\:px-6.py-2');
+        barraSteps ? barraSteps.after(banner) : document.body.prepend(banner);
+    }
+
+    // Habilitar todos los inputs de recepción
+    document.querySelectorAll('.recep-revisada').forEach(inp => {
+        inp.disabled = false;
+        inp.classList.remove('opacity-60');
+    });
+
+    // Inyectar botones de fila en las que no los tienen
+    document.querySelectorAll('.recep-row').forEach(row => {
+        const celda = row.cells[4];
+        if (!celda || celda.querySelector('button')) return;
+        celda.innerHTML = `
+            <button type="button" onclick="setNoEntro(this)"
+                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100">
+                ✗ No entró
+            </button>
+            <button type="button" onclick="setEntroTodo(this)"
+                    class="text-[10px] px-2 py-0.5 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 ml-1">
+                ✓ OK
+            </button>
+            <span class="recep-badge ml-1 text-sm font-bold"></span>`;
+        _actualizarBadge(row);
+    });
+}
+
+async function guardarRevision(modo) {
+    const titulo = modo === 'ajuste' ? '¿Quién hace el ajuste?' : '¿Quién recibe la mercadería?';
+    const operador = await _pedirOperadorDet(titulo);
     if (!operador) return;
-    const status = document.getElementById('save-status');
+    const status = document.getElementById(modo === 'ajuste' ? 'ajuste-status' : 'save-status');
     status.textContent = 'Guardando…';
     const items = [...document.querySelectorAll('.recep-row')].map(row => ({
         id: parseInt(row.dataset.id),

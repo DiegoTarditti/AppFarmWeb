@@ -19,10 +19,10 @@
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Fecha</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Droguería</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Items · Uds</th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f] w-8">📦<br><span class="text-[9px] normal-case font-normal">Pedido</span></th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-amber-700 w-8">📥<br><span class="text-[9px] normal-case font-normal">Recepción</span></th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-blue-700 w-8">🖥<br><span class="text-[9px] normal-case font-normal">Carga</span></th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-emerald-700 w-8">🧾<br><span class="text-[9px] normal-case font-normal">Factura</span></th>
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">Pedido</th>
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-amber-700">Recepción</th>
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-blue-700">Carga</th>
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-emerald-700">Factura</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Usuario</th>
                 </tr>
             </thead>
@@ -41,70 +41,73 @@
 
                     {# ── Pedido ── #}
                     <td class="px-3 py-2 text-center">
-                        <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
-                           class="inline-flex flex-col items-center gap-0.5 group">
-                            <span class="text-lg leading-none">✅</span>
-                            <span class="text-[9px] text-sky-600 group-hover:underline">Ver</span>
-                        </a>
+                        <div class="inline-flex flex-col items-center gap-0.5">
+                            <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
+                               class="inline-block text-[11px] font-semibold px-3 py-1 rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
+                                Ver
+                            </a>
+                            <span class="text-[10px] text-[#999]">{{ p.emitido_por }}</span>
+                        </div>
                     </td>
 
                     {# ── Recepción ── #}
                     <td class="px-3 py-2 text-center">
-                        <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
-                           class="inline-flex flex-col items-center gap-0.5 group">
-                            {% if p.etapa_recep %}
-                            <span class="text-lg leading-none">✅</span>
-                            {% elif abierto %}
-                            <span class="text-lg leading-none">⏳</span>
-                            {% else %}
-                            <span class="text-lg leading-none text-[#ccc]">○</span>
-                            {% endif %}
-                            <span class="text-[9px] text-sky-600 group-hover:underline">
-                                {{ 'Revisar' if not p.etapa_recep else 'Ver' }}
-                            </span>
-                        </a>
+                        <div class="inline-flex flex-col items-center gap-0.5">
+                        {% if p.etapa_recep %}
+                            <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
+                               class="inline-block text-[11px] font-semibold px-3 py-1 rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
+                                Ver
+                            </a>
+                            <span class="text-[10px] text-amber-700">{{ p.recibido_por }}</span>
+                        {% elif abierto %}
+                            <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
+                               class="inline-block text-[11px] font-semibold px-3 py-1 rounded-md bg-amber-100 text-amber-800 hover:bg-amber-200">
+                                Recibir
+                            </a>
+                        {% else %}
+                            <span class="text-[#ccc] text-xs">—</span>
+                        {% endif %}
+                        </div>
                     </td>
 
                     {# ── Carga Observer ── #}
                     <td class="px-3 py-2 text-center">
+                        <div class="inline-flex flex-col items-center gap-0.5">
                         {% if p.etapa_carga %}
-                        <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
-                           class="inline-flex flex-col items-center gap-0.5 group">
-                            <span class="text-lg leading-none">✅</span>
-                            <span class="text-[9px] text-sky-600 group-hover:underline">Ver</span>
-                        </a>
+                            <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
+                               class="inline-block text-[11px] font-semibold px-3 py-1 rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
+                                Ver
+                            </a>
+                            <span class="text-[10px] text-blue-700">{{ p.cargado_por }}</span>
                         {% elif p.etapa_recep %}
-                        <span class="inline-flex flex-col items-center gap-0.5">
-                            <span class="text-lg leading-none">⏳</span>
-                            <span class="text-[9px] text-[#aaa]">Pendiente</span>
-                        </span>
+                            <span class="inline-block text-[11px] px-3 py-1 rounded-md bg-blue-50 text-blue-400 border border-blue-200">
+                                Pendiente
+                            </span>
                         {% else %}
-                        <span class="text-[#ddd] text-lg">○</span>
+                            <span class="text-[#ccc] text-xs">—</span>
                         {% endif %}
+                        </div>
                     </td>
 
                     {# ── Factura ── #}
                     <td class="px-3 py-2 text-center">
+                        <div class="inline-flex flex-col items-center gap-0.5">
                         {% if p.etapa_factura %}
-                        <span class="inline-flex flex-col items-center gap-0.5">
-                            <span class="text-lg leading-none">✅</span>
-                            <span class="text-[9px] text-sky-600">Ver</span>
-                        </span>
+                            <a href="{{ url_for('pedido_emitido_detalle', pedido_id=p.id) }}"
+                               class="inline-block text-[11px] font-semibold px-3 py-1 rounded-md bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
+                                Ver
+                            </a>
                         {% elif p.etapa_carga %}
-                        <span class="inline-flex flex-col items-center gap-0.5">
-                            <span class="text-lg leading-none">⏳</span>
-                            <span class="text-[9px] text-[#aaa]">Pendiente</span>
-                        </span>
+                            <span class="inline-block text-[11px] px-3 py-1 rounded-md bg-emerald-50 text-emerald-400 border border-emerald-200">
+                                Pendiente
+                            </span>
                         {% else %}
-                        <span class="text-[#ddd] text-lg">○</span>
+                            <span class="text-[#ccc] text-xs">—</span>
                         {% endif %}
+                        </div>
                     </td>
 
-                    <td class="px-3 py-2 text-[11px] text-[#888]">
-                        <div>📦 {{ p.emitido_por }}</div>
-                        {% if p.recibido_por %}<div class="text-amber-700">📥 {{ p.recibido_por }}</div>{% endif %}
-                        {% if p.cargado_por %}<div class="text-blue-700">🖥 {{ p.cargado_por }}</div>{% endif %}
-                    </td>
+                    <td class="px-3 py-2 text-[11px] text-[#888]">{{ p.usuario }}</td>
                 </tr>
                 {% else %}
                 <tr><td colspan="8" class="text-center text-sm text-[#999] py-8">Aún no hay pedidos emitidos.</td></tr>

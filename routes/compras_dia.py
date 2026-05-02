@@ -715,10 +715,10 @@ def init_app(app):
                 pendientes  = sum(1 for i in items if i.estado == 'PENDIENTE')
                 no_vino     = sum(1 for i in items if i.estado == 'NO_VINO')
                 recibidos   = sum(1 for i in items if i.estado == 'RECIBIDO')
-                # Etapa Recepción: al menos un ítem tiene revisada_op cargada
-                etapa_recep  = any(i.cantidad_revisada_op is not None for i in items)
-                # Etapa Carga: al menos un ítem tiene confirmada_obs cargada
-                etapa_carga  = any(i.cantidad_confirmada_obs is not None for i in items)
+                # Etapa Recepción: un operador firmó la recepción
+                etapa_recep  = bool(p.recibido_por)
+                # Etapa Carga: un operador firmó la carga del XLS Observer
+                etapa_carga  = bool(p.cargado_por)
                 # Etapa Factura: TODO — por ahora siempre False
                 etapa_factura = False
                 data.append({
@@ -756,6 +756,11 @@ def init_app(app):
                 'drog': p.drogueria.razon_social if p.drogueria else '—',
                 'usuario': p.usuario or '—', 'observacion': p.observacion or '',
                 'total_items': p.total_items, 'total_unidades': p.total_unidades,
+                'recibido_por': p.recibido_por,
+                'cargado_por': p.cargado_por,
+                'etapa_recep': bool(p.recibido_por),
+                'etapa_carga': bool(p.cargado_por),
+                'etapa_factura': False,  # TODO: vincular con Invoice
                 'items': [{
                     'id': i.id, 'observer_id': i.observer_id,
                     'descripcion': i.descripcion, 'lab': i.lab_nombre or '—',
@@ -811,37 +816,70 @@ def init_app(app):
             session.commit()
         return jsonify({'ok': True})
 
-    @app.route('/api/pedido-emitido/<int:pedido_id>/confirmacion-observer', methods=['POST'])
+    @app.route('/api/pedido-emitido/<int:pedido_id>/importar-xls', methods=['POST'])
     @login_required
-    def api_pedido_confirmacion_observer(pedido_id):
-        """Carga ingresos confirmados desde Observer (export manual por ahora).
+    def api_pedido_importar_xls(pedido_id):
+        """Importa XLS de ingreso Observer (mismo formato que ERP upload).
 
-        Body: {items: [{id, confirmada}]}. Pisa cantidad_confirmada_obs y
-        actualiza el canónico (que pasa a tener prioridad sobre revisada_op).
+        Cruza por EAN → descripción normalizada. Llena cantidad_confirmada_obs
+        en cada ítem matcheado. Guarda cargado_por desde el form.
         """
-        from database import PedidoEmitido, PedidoEmitidoItem
+        import os, tempfile
+        from data_extract import parse_erp_excel
+        from database import PedidoEmitido
         from helpers import now_ar
-        data = request.get_json(silent=True) or {}
-        items_in = {int(it['id']): it for it in (data.get('items') or []) if it.get('id')}
+
+        f = request.files.get('xls')
+        cargado_por = (request.form.get('cargado_por') or '').strip() or None
+        if not f:
+            return jsonify({'ok': False, 'error': 'Falta el archivo XLS'}), 400
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+
+        try:
+            erp_items = parse_erp_excel(tmp_path)
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'No se pudo leer el XLS: {e}'}), 400
+        finally:
+            os.unlink(tmp_path)
+
+        # Índice por EAN y por descripción normalizada
+        def _norm(s):
+            return ' '.join((s or '').lower().split())
+
+        erp_by_ean  = {}
+        erp_by_desc = {}
+        for row in erp_items:
+            ean = str(row.get('codigo_barra') or '').strip()
+            if ean and ean != 'nan':
+                erp_by_ean[ean] = row
+            desc = _norm(row.get('descripcion', ''))
+            if desc:
+                erp_by_desc[desc] = row
+
         with get_db() as session:
             p = session.get(PedidoEmitido, pedido_id)
             if not p:
                 return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
             ahora = now_ar()
+            matched = 0
             for it in p.items:
-                if it.id not in items_in:
+                ean = str(it.observer_id or '')
+                row = erp_by_ean.get(ean) or erp_by_desc.get(_norm(it.descripcion))
+                if row is None:
                     continue
-                payload = items_in[it.id]
-                try:
-                    conf = int(payload.get('confirmada') or 0)
-                except (TypeError, ValueError):
-                    conf = 0
-                it.cantidad_confirmada_obs = max(0, conf)
+                it.cantidad_confirmada_obs = max(0, int(row.get('cantidad') or 0))
                 it.confirmada_en = ahora
                 _recalc_item_canonico(it)
+                matched += 1
+            if cargado_por and not p.cargado_por:
+                p.cargado_por = cargado_por
             _recalc_pedido(p)
             session.commit()
-        return jsonify({'ok': True})
+
+        return jsonify({'ok': True, 'matched': matched, 'total': len(erp_items)})
 
     # ── Export plantilla desde PedidoEmitido ──────────────────────────────
     @app.route('/api/pedido-emitido/<int:pedido_id>/export-plantilla')
@@ -944,6 +982,13 @@ def init_app(app):
             if not nombre:
                 return jsonify({'ok': False, 'error': 'Nombre requerido'}), 400
             with get_db() as session:
+                existente = session.query(UsuarioPedido).filter_by(nombre=nombre).first()
+                if existente:
+                    if existente.activo:
+                        return jsonify({'ok': False, 'error': 'Ya existe ese nombre'}), 400
+                    existente.activo = True
+                    session.commit()
+                    return jsonify({'ok': True, 'id': existente.id, 'nombre': existente.nombre})
                 u = UsuarioPedido(nombre=nombre)
                 session.add(u)
                 try:
