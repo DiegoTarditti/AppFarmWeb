@@ -38,7 +38,13 @@
             class="ml-auto bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-1.5 rounded-lg">
         📥 Recibir
     </button>
-    <div id="acciones-recepcion" class="hidden flex items-center gap-2">
+    <div id="acciones-recepcion" class="hidden flex items-center gap-2 flex-wrap">
+        <div class="flex items-center gap-1.5 bg-white border-2 border-amber-400 rounded-lg px-2 py-1" title="Escaneá el código de barras del producto">
+            <span class="text-amber-600 text-sm">⬛</span>
+            <input type="text" id="scan-input" placeholder="Escanear…"
+                   class="text-sm font-mono outline-none w-36 bg-transparent" autocomplete="off">
+        </div>
+        <span id="scan-msg" class="text-[11px] font-semibold min-w-[12rem]"></span>
         <button type="button" onclick="todoEntro()"
                 class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
             ✓ Entró todo
@@ -101,7 +107,7 @@
             <tbody class="divide-y divide-surface-border">
                 {% for it in pedido['items'] %}
                 {% set rev = it.revisada if it.revisada is not none else it.pedida %}
-                <tr class="recep-row" data-id="{{ it.id }}" data-pedida="{{ it.pedida }}">
+                <tr class="recep-row" data-id="{{ it.id }}" data-pedida="{{ it.pedida }}" data-ean="{{ it.ean }}">
                     <td class="px-3 py-1.5">{{ it.descripcion }}</td>
                     <td class="px-3 py-1.5 text-[#666]">{{ it.lab }}</td>
                     <td class="px-3 py-1.5 text-right font-mono font-semibold">{{ it.pedida }}</td>
@@ -311,10 +317,45 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+function _procesarScan(ean) {
+    const msg = document.getElementById('scan-msg');
+    if (!ean) return;
+    const row = document.querySelector(`.recep-row[data-ean="${CSS.escape(ean)}"]`);
+    if (!row) {
+        msg.textContent = `❌ EAN ${ean} no está en el pedido`;
+        msg.className = 'text-[11px] font-semibold min-w-[12rem] text-rose-600';
+        setTimeout(() => { msg.textContent = ''; }, 2500);
+        return;
+    }
+    const inp = row.querySelector('.recep-revisada');
+    inp.value = Math.max(0, parseInt(inp.value || 0) + 1);
+    _actualizarBadge(row);
+    // Flash verde en la fila
+    row.classList.add('bg-emerald-100');
+    setTimeout(() => row.classList.remove('bg-emerald-100'), 600);
+    // Scroll a la fila si está fuera de vista
+    row.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    const desc = row.cells[0].textContent.trim().substring(0, 40);
+    msg.textContent = `✓ ${desc} → ${inp.value}`;
+    msg.className = 'text-[11px] font-semibold min-w-[12rem] text-emerald-700';
+    setTimeout(() => { msg.textContent = ''; }, 2000);
+}
+
 function habilitarRecepcion() {
     document.getElementById('btn-recibir').classList.add('hidden');
     document.getElementById('acciones-recepcion').classList.remove('hidden');
     document.getElementById('acciones-recepcion').classList.add('flex');
+    // Activar scanner
+    const scanInp = document.getElementById('scan-input');
+    scanInp.focus();
+    scanInp.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const ean = scanInp.value.trim();
+        scanInp.value = '';
+        _procesarScan(ean);
+        scanInp.focus();
+    });
     document.querySelectorAll('.recep-revisada').forEach(inp => {
         inp.disabled = false;
         inp.classList.remove('opacity-60');

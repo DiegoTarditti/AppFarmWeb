@@ -1456,12 +1456,12 @@ def init_db(database_url=None):
     # se asocia implícitamente a esta farmacia 1.
     _bootstrap_farmacia_inicial()
 
-    # Backfills lentos en background (no bloquean el boot del worker).
-    # En Render, correr estos INSERTs en el path crítico hace que el HTTP port
-    # no abra a tiempo y el deploy falle con "No open HTTP ports detected".
-    if not is_sqlite:
-        import threading as _th
-        _th.Thread(target=_ejecutar_backfills_async, daemon=True).start()
+    # Backfills opcionales — solo corren si RUN_BACKFILLS=1 está seteado.
+    # En deploys normales no se tocan; correr manualmente con:
+    #   RUN_BACKFILLS=1 python -c "from database import init_db; init_db()"
+    # o via scripts/run_backfills.py
+    if not is_sqlite and os.environ.get('RUN_BACKFILLS') == '1':
+        _ejecutar_backfills_async()
 
 
 def _bootstrap_farmacia_inicial():

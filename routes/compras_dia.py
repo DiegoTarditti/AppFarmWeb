@@ -751,6 +751,15 @@ def init_app(app):
             if not p:
                 return redirect(url_for('pedidos_emitidos_list'))
             items = sorted(p.items, key=lambda i: (i.descripcion or '').lower())
+            from database import Producto
+            prod_ids = [i.producto_id_local for i in items if i.producto_id_local]
+            eans_map = {}
+            if prod_ids:
+                eans_map = {
+                    r.id: r.codigo_barra
+                    for r in session.query(Producto.id, Producto.codigo_barra)
+                                    .filter(Producto.id.in_(prod_ids)).all()
+                }
             ped_data = {
                 'id': p.id, 'fecha': p.fecha, 'estado': p.estado,
                 'drog': p.drogueria.razon_social if p.drogueria else '—',
@@ -763,6 +772,7 @@ def init_app(app):
                 'etapa_factura': False,  # TODO: vincular con Invoice
                 'items': [{
                     'id': i.id, 'observer_id': i.observer_id,
+                    'ean': eans_map.get(i.producto_id_local) or '',
                     'descripcion': i.descripcion, 'lab': i.lab_nombre or '—',
                     'pedida': i.cantidad_pedida,
                     'revisada': i.cantidad_revisada_op,
