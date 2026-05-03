@@ -766,15 +766,23 @@ def init_app(app):
             if not p:
                 return redirect(url_for('pedidos_emitidos_list'))
             items = sorted(p.items, key=lambda i: (i.descripcion or '').lower())
-            from database import Producto
+            from database import Producto, ProductoCodigoBarra
             prod_ids = [i.producto_id_local for i in items if i.producto_id_local]
+            # EAN principal por producto (para mostrar en columna)
             eans_map = {}
+            # Todos los EANs por producto (para scanner — incluye alts)
+            todos_eans_map = {}  # producto_id → [ean, ean, ...]
             if prod_ids:
-                eans_map = {
-                    r.id: r.codigo_barra
-                    for r in session.query(Producto.id, Producto.codigo_barra)
-                                    .filter(Producto.id.in_(prod_ids)).all()
-                }
+                for r in session.query(Producto.id, Producto.codigo_barra)\
+                                .filter(Producto.id.in_(prod_ids)).all():
+                    if r.codigo_barra:
+                        eans_map[r.id] = r.codigo_barra
+                        todos_eans_map.setdefault(r.id, []).append(r.codigo_barra)
+                for r in session.query(ProductoCodigoBarra.producto_id,
+                                       ProductoCodigoBarra.codigo_barra)\
+                                .filter(ProductoCodigoBarra.producto_id.in_(prod_ids)).all():
+                    if r.codigo_barra and r.codigo_barra not in todos_eans_map.get(r.producto_id, []):
+                        todos_eans_map.setdefault(r.producto_id, []).append(r.codigo_barra)
             ped_data = {
                 'id': p.id, 'fecha': p.fecha, 'estado': p.estado,
                 'drog': p.drogueria.razon_social if p.drogueria else '—',
@@ -787,7 +795,9 @@ def init_app(app):
                 'etapa_factura': False,  # TODO: vincular con Invoice
                 'items': [{
                     'id': i.id, 'observer_id': i.observer_id,
+                    'producto_id_local': i.producto_id_local,
                     'ean': eans_map.get(i.producto_id_local) or '',
+                    'eans': todos_eans_map.get(i.producto_id_local) or [],
                     'descripcion': i.descripcion, 'lab': i.lab_nombre or '—',
                     'pedida': i.cantidad_pedida,
                     'revisada': i.cantidad_revisada_op,
@@ -840,6 +850,40 @@ def init_app(app):
                 p.recibido_por = recibido_por
             session.commit()
         return jsonify({'ok': True})
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>/mapear-ean', methods=['POST'])
+    @login_required
+    def api_pedido_mapear_ean(pedido_id):
+        """Guarda la equivalencia EAN escaneado → producto_id_local.
+
+        Body: {ean: "...", producto_id_local: N}
+        Inserta en producto_codigos_barra con fuente='scanner_recep'.
+        Idempotente: ON CONFLICT DO NOTHING.
+        """
+        from database import Producto, ProductoCodigoBarra
+        data = request.get_json(silent=True) or {}
+        ean = (data.get('ean') or '').strip()
+        try:
+            prod_id = int(data.get('producto_id_local') or 0)
+        except (TypeError, ValueError):
+            prod_id = 0
+        if not ean or not prod_id:
+            return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+        with get_db() as session:
+            prod = session.get(Producto, prod_id)
+            if not prod:
+                return jsonify({'ok': False, 'error': 'Producto no encontrado'}), 404
+            existe = session.query(ProductoCodigoBarra)\
+                            .filter_by(producto_id=prod_id, codigo_barra=ean).first()
+            if not existe:
+                session.add(ProductoCodigoBarra(
+                    producto_id=prod_id,
+                    codigo_barra=ean,
+                    es_principal=False,
+                    fuente='scanner_recep',
+                ))
+                session.commit()
+        return jsonify({'ok': True, 'ean': ean, 'producto_id_local': prod_id})
 
     @app.route('/api/pedido-emitido/<int:pedido_id>/importar-xls', methods=['POST'])
     @login_required

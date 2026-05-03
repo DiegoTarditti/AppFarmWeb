@@ -96,6 +96,7 @@
                 <tr>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
+                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">EAN</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">📦 Pedido</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-amber-700 bg-amber-50/50">📥 Recepción</th>
                     <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-amber-700 bg-amber-50/50">Acción</th>
@@ -107,9 +108,18 @@
             <tbody class="divide-y divide-surface-border">
                 {% for it in pedido['items'] %}
                 {% set rev = it.revisada if it.revisada is not none else it.pedida %}
-                <tr class="recep-row" data-id="{{ it.id }}" data-pedida="{{ it.pedida }}" data-ean="{{ it.ean }}">
+                <tr class="recep-row" data-id="{{ it.id }}" data-pedida="{{ it.pedida }}"
+                    data-ean="{{ it.ean }}" data-eans="{{ it.eans | tojson }}"
+                    data-descripcion="{{ it.descripcion }}"
+                    data-producto-local="{{ it.producto_id_local or '' }}">
                     <td class="px-3 py-1.5">{{ it.descripcion }}</td>
                     <td class="px-3 py-1.5 text-[#666]">{{ it.lab }}</td>
+                    <td class="px-3 py-1.5 font-mono text-[11px] text-[#999]">
+                        {{ it.ean or '—' }}
+                        {% if it.eans | length > 1 %}
+                        <span class="text-[10px] text-sky-500" title="{{ it.eans | join(', ') }}">+{{ (it.eans | length) - 1 }}</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-1.5 text-right font-mono font-semibold">{{ it.pedida }}</td>
                     <td class="px-3 py-1.5 text-right bg-amber-50/30">
                         <input type="number" min="0" value="{{ rev }}"
@@ -185,11 +195,19 @@ function filtrarFilas() {
 
 // Ejecutar al cargar y al cambiar cualquier input de revisada
 document.addEventListener('DOMContentLoaded', () => {
+    _buildEanMap();
     filtrarFilas();
     document.querySelectorAll('.recep-row').forEach(row => {
         _actualizarBadge(row);
         const inp = row.querySelector('.recep-revisada');
         if (inp) inp.addEventListener('input', () => { _actualizarBadge(row); });
+    });
+    // Modal equivalencia — búsqueda en tiempo real
+    const busq = document.getElementById('eq-busqueda');
+    if (busq) busq.addEventListener('input', () => _renderListaEquiv(busq.value));
+    const btnCerrarEq = document.getElementById('eq-cerrar');
+    if (btnCerrarEq) btnCerrarEq.addEventListener('click', () => {
+        document.getElementById('modal-equivalencia').classList.add('hidden');
     });
 });
 
@@ -317,23 +335,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// Mapa EAN → fila, construido al cargar y actualizado tras equivalencias
+let _eanMap = {};
+
+function _buildEanMap() {
+    _eanMap = {};
+    document.querySelectorAll('.recep-row').forEach(row => {
+        let eans = [];
+        try { eans = JSON.parse(row.dataset.eans || '[]'); } catch(e) {}
+        if (row.dataset.ean) eans = [...new Set([row.dataset.ean, ...eans])];
+        eans.forEach(e => { if (e) _eanMap[e] = row; });
+    });
+}
+
 function _procesarScan(ean) {
     const msg = document.getElementById('scan-msg');
     if (!ean) return;
-    const row = document.querySelector(`.recep-row[data-ean="${CSS.escape(ean)}"]`);
+    const row = _eanMap[ean];
     if (!row) {
-        msg.textContent = `❌ EAN ${ean} no está en el pedido`;
-        msg.className = 'text-[11px] font-semibold min-w-[12rem] text-rose-600';
-        setTimeout(() => { msg.textContent = ''; }, 2500);
+        msg.textContent = `⚠ EAN ${ean} sin match`;
+        msg.className = 'text-[11px] font-semibold min-w-[12rem] text-amber-700';
+        _mostrarModalEquivalencia(ean);
         return;
     }
     const inp = row.querySelector('.recep-revisada');
     inp.value = Math.max(0, parseInt(inp.value || 0) + 1);
     _actualizarBadge(row);
-    // Flash verde en la fila
     row.classList.add('bg-emerald-100');
     setTimeout(() => row.classList.remove('bg-emerald-100'), 600);
-    // Scroll a la fila si está fuera de vista
     row.scrollIntoView({block: 'nearest', behavior: 'smooth'});
     const desc = row.cells[0].textContent.trim().substring(0, 40);
     msg.textContent = `✓ ${desc} → ${inp.value}`;
@@ -341,10 +370,68 @@ function _procesarScan(ean) {
     setTimeout(() => { msg.textContent = ''; }, 2000);
 }
 
+function _mostrarModalEquivalencia(ean) {
+    document.getElementById('eq-ean-label').textContent = ean;
+    document.getElementById('eq-busqueda').value = '';
+    _renderListaEquiv('');
+    document.getElementById('modal-equivalencia').classList.remove('hidden');
+    document.getElementById('eq-busqueda').focus();
+    // Guardar EAN pendiente
+    document.getElementById('modal-equivalencia').dataset.eanPendiente = ean;
+}
+
+function _renderListaEquiv(filtro) {
+    const lista = document.getElementById('eq-lista');
+    lista.innerHTML = '';
+    const f = filtro.toLowerCase();
+    document.querySelectorAll('.recep-row').forEach(row => {
+        const desc = row.cells[0].textContent.trim();
+        const lab  = row.cells[1].textContent.trim();
+        if (f && !desc.toLowerCase().includes(f) && !lab.toLowerCase().includes(f)) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'w-full text-left px-3 py-2 hover:bg-amber-50 border-b border-surface-border text-sm';
+        btn.innerHTML = `<span class="font-medium">${desc}</span> <span class="text-[11px] text-[#888]">${lab}</span>`;
+        btn.addEventListener('click', () => _guardarEquivalencia(row));
+        lista.appendChild(btn);
+    });
+    if (!lista.children.length) {
+        lista.innerHTML = '<p class="text-xs text-[#aaa] px-3 py-2">Sin resultados</p>';
+    }
+}
+
+async function _guardarEquivalencia(row) {
+    const modal = document.getElementById('modal-equivalencia');
+    const ean = modal.dataset.eanPendiente;
+    const prodIdLocal = row.dataset.productoLocal;
+    modal.classList.add('hidden');
+    if (!prodIdLocal) {
+        alert('Este producto no tiene ID local — no se puede guardar la equivalencia.');
+        return;
+    }
+    const r = await fetch(`/api/pedido-emitido/${PEDIDO_ID}/mapear-ean`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        credentials: 'same-origin',
+        body: JSON.stringify({ean, producto_id_local: parseInt(prodIdLocal)}),
+    });
+    const d = await r.json();
+    if (!d.ok) { alert('Error al guardar equivalencia: ' + (d.error || '')); return; }
+    // Actualizar data-eans de la fila y reconstruir mapa
+    let eans = [];
+    try { eans = JSON.parse(row.dataset.eans || '[]'); } catch(e) {}
+    if (!eans.includes(ean)) { eans.push(ean); row.dataset.eans = JSON.stringify(eans); }
+    _buildEanMap();
+    // Re-procesar el scan ahora que tenemos la equivalencia
+    _procesarScan(ean);
+    const msg = document.getElementById('scan-msg');
+    msg && (msg.textContent = '');
+}
+
 function habilitarRecepcion() {
     document.getElementById('btn-recibir').classList.add('hidden');
     document.getElementById('acciones-recepcion').classList.remove('hidden');
     document.getElementById('acciones-recepcion').classList.add('flex');
+    _buildEanMap();
     // Activar scanner
     const scanInp = document.getElementById('scan-input');
     scanInp.focus();
@@ -492,6 +579,27 @@ async function guardarRevision(modo) {
                     class="px-4 py-1.5 rounded border border-surface-border text-sm text-[#555] hover:bg-gray-100">
                 Cancelar
             </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal equivalencia EAN -->
+<div id="modal-equivalencia" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 overflow-hidden">
+        <div class="bg-amber-50 border-b border-amber-200 px-4 py-3 flex items-center justify-between">
+            <div>
+                <p class="text-sm font-bold text-amber-900">EAN sin match — ¿a qué producto corresponde?</p>
+                <p class="text-xs text-amber-700 font-mono font-bold" id="eq-ean-label"></p>
+            </div>
+            <button id="eq-cerrar" class="text-[#aaa] hover:text-[#555] text-lg font-bold leading-none">✕</button>
+        </div>
+        <div class="px-4 py-3 border-b border-surface-border">
+            <input id="eq-busqueda" type="text" placeholder="Buscar producto…"
+                   class="w-full border border-surface-border rounded px-2 py-1.5 text-sm outline-none">
+        </div>
+        <div id="eq-lista" class="max-h-72 overflow-y-auto"></div>
+        <div class="px-4 py-2 text-[11px] text-[#aaa]">
+            Seleccioná el producto — se guarda como equivalencia permanente y la próxima vez se reconoce automáticamente.
         </div>
     </div>
 </div>
