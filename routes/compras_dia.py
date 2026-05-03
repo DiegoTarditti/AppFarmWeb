@@ -656,7 +656,7 @@ def init_app(app):
         Body: {prov_id, items: [{observer_id, producto_id_local, descripcion,
                                   lab_nombre, cantidad}], observacion?}
         """
-        from database import PedidoEmitido, PedidoEmitidoItem
+        from database import PedidoEmitido, PedidoEmitidoItem, Producto
         data = request.get_json(silent=True) or {}
         try:
             prov_id = int(data.get('prov_id') or 0)
@@ -666,6 +666,17 @@ def init_app(app):
         if not prov_id or not items:
             return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
         with get_db() as session:
+            # Pre-cargar observer_ids de los productos locales para auto-bridging
+            prod_ids = [int(it['producto_id_local']) for it in items
+                        if it.get('producto_id_local') and not it.get('observer_id')]
+            obs_by_prod = {}
+            if prod_ids:
+                obs_by_prod = {
+                    r.id: r.observer_id
+                    for r in session.query(Producto.id, Producto.observer_id)
+                                    .filter(Producto.id.in_(prod_ids),
+                                            Producto.observer_id.isnot(None)).all()
+                }
             ped = PedidoEmitido(
                 drogueria_id=prov_id,
                 usuario=getattr(current_user, 'username', None),
@@ -680,10 +691,14 @@ def init_app(app):
                 cant = int(it.get('cantidad') or 0)
                 if cant <= 0:
                     continue
+                prod_id_local = it.get('producto_id_local') or None
+                observer_id = (it.get('observer_id')
+                               or obs_by_prod.get(int(prod_id_local) if prod_id_local else 0)
+                               or None)
                 session.add(PedidoEmitidoItem(
                     pedido_id=ped.id,
-                    observer_id=it.get('observer_id') or None,
-                    producto_id_local=it.get('producto_id_local') or None,
+                    observer_id=observer_id,
+                    producto_id_local=prod_id_local,
                     descripcion=it.get('descripcion') or '',
                     lab_nombre=it.get('lab_nombre') or None,
                     cantidad_pedida=cant,
