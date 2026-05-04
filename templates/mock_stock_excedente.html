@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% set nav_active = "" %}
+{% block title %}Stock excedente entre farmacias{% endblock %}
+
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">↔ Stock excedente entre farmacias</h1>
+    <p class="text-xs text-[#6f6f6f]">Productos donde una farmacia tiene stock sobrante que otra necesita.</p>
+    <div class="ml-auto flex items-center gap-3">
+        <select class="text-xs border border-surface-border rounded px-2 py-1 bg-white">
+            <option>Todos los laboratorios</option>
+            <option>BALIARDA</option>
+            <option>ROEMMERS</option>
+        </select>
+        <input type="text" placeholder="Filtrar producto…"
+               class="bg-white border border-surface-border rounded px-2 py-1 text-sm w-48">
+        <button class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded-lg">
+            Exportar XLSX
+        </button>
+    </div>
+</div>
+
+<!-- Resumen pills -->
+<div class="px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap border-b border-surface-border bg-[#fafafa]">
+    <div class="text-xs text-[#6f6f6f]">Oportunidades de transferencia:</div>
+    <span class="text-xs bg-violet-100 text-violet-800 border border-violet-200 font-semibold px-2.5 py-1 rounded-full">
+        Central → Pieristei &nbsp;·&nbsp; 8 productos
+    </span>
+    <span class="text-xs bg-violet-100 text-violet-800 border border-violet-200 font-semibold px-2.5 py-1 rounded-full">
+        Pieristei → San Martín &nbsp;·&nbsp; 3 productos
+    </span>
+    <span class="text-xs bg-violet-100 text-violet-800 border border-violet-200 font-semibold px-2.5 py-1 rounded-full">
+        Central → San Martín &nbsp;·&nbsp; 5 productos
+    </span>
+</div>
+
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
+
+    <!-- Leyenda -->
+    <div class="flex items-center gap-4 mb-3 text-[11px] text-[#6f6f6f]">
+        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-emerald-100 border border-emerald-300"></span> Sobra (excedente)</span>
+        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-red-100 border border-red-300"></span> Falta (déficit)</span>
+        <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded bg-[#f0f0f0] border border-[#ddd]"></span> OK / sin mínimo</span>
+    </div>
+
+    <div class="bg-white border border-surface-border rounded-xl overflow-auto">
+        <table class="w-full text-xs">
+            <thead class="bg-[#f0f0f0] sticky top-0 z-10">
+                <tr>
+                    <th class="text-left px-3 py-2 text-[11px] uppercase font-semibold text-[#6f6f6f] min-w-[220px] sticky left-0 bg-[#f0f0f0] z-20">Producto</th>
+                    <th class="text-left px-3 py-2 text-[11px] uppercase font-semibold text-[#6f6f6f] w-32">Lab</th>
+
+                    <!-- Farmacia Central -->
+                    <th colspan="3" class="text-center px-3 py-2 text-[11px] font-bold text-sky-700 border-l border-sky-200 bg-sky-50">
+                        🏪 Central
+                    </th>
+                    <!-- Pieristei -->
+                    <th colspan="3" class="text-center px-3 py-2 text-[11px] font-bold text-violet-700 border-l border-violet-200 bg-violet-50">
+                        🏪 Pieristei
+                    </th>
+                    <!-- San Martín -->
+                    <th colspan="3" class="text-center px-3 py-2 text-[11px] font-bold text-amber-700 border-l border-amber-200 bg-amber-50">
+                        🏪 San Martín
+                    </th>
+
+                    <th class="text-center px-3 py-2 text-[11px] uppercase font-semibold text-[#6f6f6f] border-l border-surface-border w-28">Transferir</th>
+                </tr>
+                <tr class="border-t border-[#ddd]">
+                    <th class="sticky left-0 bg-[#f0f0f0]"></th>
+                    <th></th>
+                    <!-- Central -->
+                    <th class="text-center px-2 py-1 text-[10px] text-sky-600 font-semibold border-l border-sky-200 bg-sky-50/60">Stk</th>
+                    <th class="text-center px-2 py-1 text-[10px] text-sky-600 font-semibold bg-sky-50/60">Mín</th>
+                    <th class="text-center px-2 py-1 text-[10px] text-sky-600 font-semibold bg-sky-50/60">Exc</th>
+                    <!-- Pieristei -->
+                    <th class="text-center px-2 py-1 text-[10px] text-violet-600 font-semibold border-l border-violet-200 bg-violet-50/60">Stk</th>
+                    <th class="text-center px-2 py-1 text-[10px] text-violet-600 font-semibold bg-violet-50/60">Mín</th>
+                    <th class="text-center px-2 py-1 text-[10px] text-violet-600 font-semibold bg-violet-50/60">Exc</th>
+                    <!-- San Martín -->
+                    <th class="text-center px-2 py-1 text-[10px] text-amber-600 font-semibold border-l border-amber-200 bg-amber-50/60">Stk</th>
+                    <th class="text-center px-2 py-1 text-[10px] text-amber-600 font-semibold bg-amber-50/60">Mín</th>
+                    <th class="text-center px-2 py-1 text-[10px] text-amber-600 font-semibold bg-amber-50/60">Exc</th>
+                    <th class="border-l border-surface-border"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+
+                <!-- Fila 1: Central sobra, Pieristei falta -->
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">OMEPRAZOL 20mg x 28 cáps</td>
+                    <td class="px-3 py-1.5 text-[#888]">ROEMMERS</td>
+                    <!-- Central: sobra 12 -->
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-sky-100">24</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">12</td>
+                    <td class="px-2 py-1.5 text-center bg-emerald-50 text-emerald-700 font-bold rounded">+12</td>
+                    <!-- Pieristei: falta 4 -->
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-violet-100">2</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">6</td>
+                    <td class="px-2 py-1.5 text-center bg-red-50 text-red-600 font-bold rounded">-4</td>
+                    <!-- San Martín: ok -->
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-amber-100">8</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">6</td>
+                    <td class="px-2 py-1.5 text-center text-[#bbb]">+2</td>
+                    <td class="px-2 py-1.5 text-center border-l border-surface-border">
+                        <button class="text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 border border-violet-300 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
+                            Central→Pieri 4u
+                        </button>
+                    </td>
+                </tr>
+
+                <!-- Fila 2: Central sobra mucho, las otras 2 faltan -->
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">ATORVASTATINA 20mg x 30</td>
+                    <td class="px-3 py-1.5 text-[#888]">BALIARDA</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-sky-100">30</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">10</td>
+                    <td class="px-2 py-1.5 text-center bg-emerald-50 text-emerald-700 font-bold rounded">+20</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-violet-100">1</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">8</td>
+                    <td class="px-2 py-1.5 text-center bg-red-50 text-red-600 font-bold rounded">-7</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-amber-100">0</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">5</td>
+                    <td class="px-2 py-1.5 text-center bg-red-50 text-red-600 font-bold rounded">-5</td>
+                    <td class="px-2 py-1.5 text-center border-l border-surface-border">
+                        <div class="flex flex-col gap-0.5 items-center">
+                            <button class="text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 border border-violet-300 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
+                                →Pieri 7u
+                            </button>
+                            <button class="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
+                                →S.Martín 5u
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+
+                <!-- Fila 3: Pieristei sobra, San Martín falta -->
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">IBUPROFENO 400mg x 20 comp</td>
+                    <td class="px-3 py-1.5 text-[#888]">RICHMOND</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-sky-100">15</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">10</td>
+                    <td class="px-2 py-1.5 text-center text-[#bbb]">+5</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-violet-100">22</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">8</td>
+                    <td class="px-2 py-1.5 text-center bg-emerald-50 text-emerald-700 font-bold rounded">+14</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-amber-100">3</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">10</td>
+                    <td class="px-2 py-1.5 text-center bg-red-50 text-red-600 font-bold rounded">-7</td>
+                    <td class="px-2 py-1.5 text-center border-l border-surface-border">
+                        <button class="text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
+                            Pieri→S.M. 7u
+                        </button>
+                    </td>
+                </tr>
+
+                <!-- Fila 4: todos bien -->
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">AMLODIPINA 5mg x 30</td>
+                    <td class="px-3 py-1.5 text-[#888]">PFIZER</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-sky-100">12</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">8</td>
+                    <td class="px-2 py-1.5 text-center text-[#bbb]">+4</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-violet-100">9</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">6</td>
+                    <td class="px-2 py-1.5 text-center text-[#bbb]">+3</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-amber-100">7</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">4</td>
+                    <td class="px-2 py-1.5 text-center text-[#bbb]">+3</td>
+                    <td class="px-2 py-1.5 text-center border-l border-surface-border text-[#ddd] text-[10px]">—</td>
+                </tr>
+
+                <!-- Fila 5: San Martín sobra, Central falta -->
+                <tr class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">METFORMINA 850mg x 60</td>
+                    <td class="px-3 py-1.5 text-[#888]">MONTPELLIER</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-sky-100">2</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">10</td>
+                    <td class="px-2 py-1.5 text-center bg-red-50 text-red-600 font-bold rounded">-8</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-violet-100">6</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">6</td>
+                    <td class="px-2 py-1.5 text-center text-[#bbb]">0</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-amber-100">25</td>
+                    <td class="px-2 py-1.5 text-center text-[#888]">8</td>
+                    <td class="px-2 py-1.5 text-center bg-emerald-50 text-emerald-700 font-bold rounded">+17</td>
+                    <td class="px-2 py-1.5 text-center border-l border-surface-border">
+                        <button class="text-[10px] bg-sky-100 hover:bg-sky-200 text-sky-800 border border-sky-300 px-2 py-0.5 rounded-full font-semibold whitespace-nowrap">
+                            S.M.→Central 8u
+                        </button>
+                    </td>
+                </tr>
+
+                <!-- Fila 6: sin mínimo cargado -->
+                <tr class="hover:bg-black/[0.02] opacity-60">
+                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">LORATADINA 10mg x 20</td>
+                    <td class="px-3 py-1.5 text-[#888]">BALIARDA</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-sky-100">5</td>
+                    <td class="px-2 py-1.5 text-center text-[#ddd]">—</td>
+                    <td class="px-2 py-1.5 text-center text-[#ddd]">—</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-violet-100">3</td>
+                    <td class="px-2 py-1.5 text-center text-[#ddd]">—</td>
+                    <td class="px-2 py-1.5 text-center text-[#ddd]">—</td>
+                    <td class="px-2 py-1.5 text-center text-[#1e1e1e] border-l border-amber-100">0</td>
+                    <td class="px-2 py-1.5 text-center text-[#ddd]">—</td>
+                    <td class="px-2 py-1.5 text-center text-[#ddd]">—</td>
+                    <td class="px-2 py-1.5 text-center border-l border-surface-border text-[#ddd] text-[10px]">sin mín</td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+
+    <p class="text-[11px] text-[#aaa] mt-3">
+        Solo se muestran productos donde al menos una farmacia tiene excedente <strong>y</strong> al menos otra tiene déficit.
+        Productos con stock OK en todas las farmacias no aparecen.
+    </p>
+</div>
+{% endblock %}

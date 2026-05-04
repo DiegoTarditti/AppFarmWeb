@@ -219,6 +219,12 @@ def init_app(app):
         """
         return render_template('mock_pedidos_nuevo.html')
 
+    @app.route('/mock/stock-excedente')
+    @requiere_permiso('usuarios', 'admin')
+    def mock_stock_excedente():
+        """Mock estático de stock excedente inter-farmacias."""
+        return render_template('mock_stock_excedente.html')
+
     @app.route('/pedidos-nuevo')
     @requiere_permiso('usuarios', 'admin')
     def pedidos_nuevo():
