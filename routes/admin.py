@@ -524,6 +524,28 @@ def init_app(app):
         return render_template('admin_seed_proveedores.html',
                                resultado=resultado, ejecutado=ejecutar)
 
+    @app.route('/api/admin/migrar/backfill-codigos-barra', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_migrar_backfill_codigos_barra():
+        """Backfill alt1/2/3 → producto_codigos_barra (Fase 1.2 EANs).
+
+        Idempotente. Aceptamos `dry=1` en query string para preview.
+        Loguea el run en cron_log con stats en metadata.
+        """
+        import cron_log
+        from backfill_codigos_barra import ejecutar
+        dry = (request.args.get('dry', '').strip() == '1')
+        try:
+            with cron_log.registrar('migrar_backfill_codigos_barra',
+                                     origen='web') as log:
+                stats = ejecutar(dry_run=dry)
+                log.metadata = stats
+                if stats.get('errores'):
+                    log.error = ' | '.join(stats['errores'][:3])
+            return jsonify({'ok': True, 'dry_run': dry, **stats})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/api/obs/recalcular-os-clientes', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
     def api_recalcular_os_clientes():

@@ -163,6 +163,69 @@
     }
     </script>
 
+    <button type="button" onclick="backfillCodigosBarra(this, false)"
+       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-violet-400 hover:shadow-sm transition-all">
+        <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-semibold text-sm">🧬 Migración EANs · Backfill alt1/2/3 → tabla 1-a-N</p>
+                <p class="text-xs text-[#6f6f6f] mt-1">
+                    Copia el `codigo_barra` principal + cada `codigo_barra_alt1/2/3` de cada producto
+                    a la tabla nueva <code class="font-mono text-[10px]">producto_codigos_barra</code>
+                    (Fase 1.2 de migración EAN). Idempotente — saltea filas que ya existen.
+                    <br>Probar primero con <strong>Dry-run</strong>; después ejecutar.
+                </p>
+                <div class="flex gap-2 mt-3">
+                    <button type="button" onclick="event.stopPropagation(); backfillCodigosBarra(this, true)"
+                            class="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-3 py-1 rounded-lg">
+                        🔍 Dry-run (preview)
+                    </button>
+                    <button type="button" onclick="event.stopPropagation(); backfillCodigosBarra(this, false)"
+                            class="text-xs bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-3 py-1 rounded-lg">
+                        ▶ Ejecutar
+                    </button>
+                </div>
+                <p id="backfill-cb-result" class="text-xs mt-2 hidden font-mono"></p>
+            </div>
+        </div>
+    </button>
+    <script>
+    async function backfillCodigosBarra(btn, dry) {
+        const resultEl = document.getElementById('backfill-cb-result');
+        if (!dry && !confirm('Esto inserta filas reales en producto_codigos_barra. ¿Continuar?')) return;
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳ Procesando...';
+        resultEl.classList.remove('hidden', 'text-rose-700', 'text-emerald-700', 'text-amber-700');
+        resultEl.classList.add('text-[#6f6f6f]');
+        resultEl.textContent = 'Procesando...';
+        try {
+            const url = "{{ url_for('api_migrar_backfill_codigos_barra') }}" + (dry ? '?dry=1' : '');
+            const r = await fetch(url, { method: 'POST' });
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || 'Falló el backfill');
+            resultEl.classList.remove('text-[#6f6f6f]');
+            resultEl.classList.add(dry ? 'text-amber-700' : 'text-emerald-700');
+            resultEl.innerHTML =
+                `${dry ? '🔍 DRY-RUN' : '✅ APLICADO'} · ` +
+                `${data.productos_total} productos · ` +
+                `principales ${dry ? 'a insertar' : 'insertados'}: <b>${data.principales_insertados}</b> · ` +
+                `alts ${dry ? 'a insertar' : 'insertados'}: <b>${data.alts_insertados}</b> · ` +
+                `existentes (skip): ${data.saltados_existentes} · ` +
+                `sin alts: ${data.productos_sin_alts}`;
+        } catch (e) {
+            resultEl.classList.remove('text-[#6f6f6f]');
+            resultEl.classList.add('text-rose-700');
+            resultEl.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    }
+    </script>
+
     <a href="{{ url_for('admin_panel') }}"
        class="block bg-white border border-surface-border rounded-xl p-5 hover:border-emerald-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">
