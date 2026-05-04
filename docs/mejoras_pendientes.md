@@ -82,6 +82,25 @@ una tarea aparte.
 
 ## 🛠 Calidad de código
 
+### Migración EANs alt1/2/3 → producto_codigos_barra (1-a-N) — multi-fase
+- **Trigger**: ya en curso. Cerrar 2026-05-XX según validación.
+- **Plan documentado en `/admin`** (cards de "Migración EANs"):
+  1. **Fase 1.2 — Backfill alt1/2/3 → 1-a-N** ✅ HECHO 2026-05-04 (commit `e678d31`).
+     Script idempotente + endpoint `/api/admin/migrar/backfill-codigos-barra` + UI dry-run/ejecutar.
+  2. **Fase 2 — Bridge masivo `productos.observer_id`** ✅ HECHO 2026-05-04 (commit `805d1be`).
+     Vincula por EAN o codigo_alfabeta cuando match único. Endpoint `/api/admin/migrar/bridge-productos-observer` + UI.
+  3. **Fase 3 — Backfill `producto_atributos`** desde Observer vía bridge. Infra ya existe (`/catalogacion`).
+     Solo falta correr una vez Fases 1.2 + 2 ejecutadas y data fresca de Observer.
+  4. **Fase 1.1 — Activar `EAN_LEGACY_ALTS_DISABLED=1`** en Render. Cuando Fases 1.2+2+3 OK
+     y validamos 1-2 semanas que la doble escritura no escribe nada nuevo en alt1/2/3.
+  5. **Fase 1.3 — DROP COLUMN alt1/2/3**. Cambio de schema. Eliminar refs a esas columnas en
+     `helpers.py` (`_add_alt_barcode`, `_bulk_upsert_productos`), `data_extract.py`, todos los
+     sitios donde se lean. Una migración inline al final.
+- **Por qué importa**: `productos.codigo_barra` (UNIQUE) + 3 slots fijos `alt1/2/3` no escala
+  para productos con 4+ EANs. La 1-a-N tiene trazabilidad por fuente (`manual` / `factura` /
+  `observer` / `cruce` / `legacy_alt` / `legacy_principal`) + factura_id, que las columnas
+  legacy nunca tuvieron.
+
 ### Simplificar `tipo_descuento` en `OfertaMinimo`
 - **Trigger**: cualquier refactor del flujo de ofertas/transfers.
 - **Esfuerzo**: 2-3 horas.
