@@ -541,8 +541,9 @@ def init_app(app):
         Idempotente. Aceptamos `dry=1` en query string para preview.
         Loguea el run en cron_log con stats en metadata.
         """
-        import cron_log
         from backfill_codigos_barra import ejecutar
+
+        import cron_log
         dry = (request.args.get('dry', '').strip() == '1')
         try:
             with cron_log.registrar('migrar_backfill_codigos_barra',
@@ -563,8 +564,9 @@ def init_app(app):
         Vincula `productos.observer_id` por EAN o codigo_alfabeta.
         Idempotente — salta los ya vinculados.
         """
-        import cron_log
         from bridge_productos_observer import ejecutar
+
+        import cron_log
         dry = (request.args.get('dry', '').strip() == '1')
         try:
             with cron_log.registrar('migrar_bridge_productos_observer',

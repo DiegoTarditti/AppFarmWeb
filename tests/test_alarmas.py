@@ -117,7 +117,7 @@ def test_check_recalculo_reciente_no_dispara(session):
 
 def test_check_recalculo_atrasado_es_alta(session):
     session.add(ClienteOsInferida(
-        cliente_observer=1, os_observer=42, n_dispensas=5,
+        cliente_observer=1, obra_social_observer=42, n_dispensas=5,
         calculado_en=datetime.now() - timedelta(days=10)))
     session.commit()
     a = alarmas.check_recalculo_os_atrasado(session)
