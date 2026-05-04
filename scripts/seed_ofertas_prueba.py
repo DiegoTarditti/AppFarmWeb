@@ -23,7 +23,6 @@ from database import (
 )
 from helpers import _normalizar_nombre_entidad as _norm
 
-
 N_OFERTAS = 15
 
 

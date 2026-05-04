@@ -56,6 +56,7 @@ def init_app(app):
             prov_ids = [r[0] for r in session.query(ProveedorHorarioReparto.proveedor_id)
                         .distinct().all()]
             from sqlalchemy import case as _case
+
             from database import PedidoEmitido
             provs = (session.query(Provider)
                      .filter(Provider.id.in_(prov_ids), Provider.activo.is_(True))
@@ -73,6 +74,7 @@ def init_app(app):
             )
             # Pre-fetch plantillas de pedido por droguería (default primero, sino la primera)
             import json as _json
+
             from database import Plantilla as _Plantilla
             _plant_rows = (session.query(_Plantilla)
                            .filter(_Plantilla.entidad_tipo == 'drogueria',
@@ -570,6 +572,7 @@ def init_app(app):
         from database import (
             Laboratorio,
             LaboratorioDrogueria,
+            ObsCodigoBarras,
             ObsLaboratorio,
             ObsProducto,
             ObsStock,
@@ -704,8 +707,9 @@ def init_app(app):
         """Matriz lab × droguería: marca por qué drogerías va cada laboratorio.
         Persiste en LaboratorioDrogueria (tabla simple sin descuento).
         """
-        from database import Laboratorio, LaboratorioDrogueria, OfertaMinimo
         from sqlalchemy import func
+
+        from database import Laboratorio, LaboratorioDrogueria, OfertaMinimo
         with get_db() as session:
             labs_q = (session.query(Laboratorio)
                       .filter(Laboratorio.activo.is_(True))
