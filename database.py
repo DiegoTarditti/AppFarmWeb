@@ -398,6 +398,25 @@ class AlarmaNotificada(Base):
     estado_actual = Column(String(20), nullable=True)  # 'activa' / 'resuelta'
 
 
+class SyncLock(Base):
+    """Singleton (id=1) que protege el sync ObServer entre workers de gunicorn.
+
+    Reemplaza al `threading.Lock` en memoria, que con `--preload --workers 2`
+    no sirve: cada worker forkea su propio lock y dos workers pueden disparar
+    el sync en paralelo. Acá el `acquire` es un UPDATE atómico contra la fila.
+
+    Si `iniciado_en` quedó viejo (>60 min) sin liberar, el lock se considera
+    abandonado (worker se mató mid-sync) y se puede tomar igual.
+    """
+    __tablename__ = 'sync_lock'
+    id = Column(Integer, primary_key=True)
+    en_curso = Column(Boolean, nullable=False, default=False)
+    iniciado_en = Column(DateTime, nullable=True)
+    finalizado_en = Column(DateTime, nullable=True)
+    paso_actual = Column(String(80), nullable=True)
+    ultimo_resultado = Column(Text, nullable=True)  # JSON serializado
+
+
 class PanelComando(Base):
     """Buzón de comandos remotos: vos los encolás desde Render, la PC farmacia
     los ejecuta vía polling outbound (DockerPanel no necesita estar accesible).
@@ -530,7 +549,10 @@ class Provider(Base):
     tipo = Column(String(20), nullable=False, default='drogueria')
     activo = Column(Boolean, nullable=False, default=True)
     # Mínimo de compra para que la droguería acepte el pedido. NULL = sin mínimo.
-    compra_minima_pesos = Column(DECIMAL(14, 2), nullable=True)
+    compra_minima_pesos     = Column(DECIMAL(14, 2), nullable=True)
+    # Descuento base de la droguería (independiente del lab). NULL = sin acuerdo cargado.
+    descuento_con_transfer  = Column(DECIMAL(5, 2), nullable=True)
+    descuento_sin_transfer  = Column(DECIMAL(5, 2), nullable=True)
     matriz_visible = Column(Boolean, nullable=False, default=True)
     matriz_orden   = Column(Integer, nullable=True)
     claims = relationship('Claim', back_populates='provider')
@@ -628,6 +650,9 @@ class PedidoEmitidoItem(Base):
     # como cache para queries simples — se actualiza al guardar revisión/confirmación.
     cantidad_recibida   = Column(Integer, nullable=False, default=0)
     estado              = Column(String(20), nullable=False, default='PENDIENTE')  # PENDIENTE/RECIBIDO/NO_VINO
+    # Foto del TRF al momento de emitir — persiste aunque el transfer se borre después.
+    oferta_dto          = Column(DECIMAL(6, 2), nullable=True)   # % descuento esperado
+    oferta_min          = Column(Integer, nullable=True)          # unidades mínimas para activarlo
     pedido              = relationship('PedidoEmitido', back_populates='items')
 
 
@@ -1278,7 +1303,7 @@ def init_db(database_url=None):
                         'pedido_emitido', 'pedido_emitido_item',
                         'pack_equivalencias', 'cliente_os_inferida',
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
-                        'alarmas_notificadas')
+                        'alarmas_notificadas', 'sync_lock')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -1377,6 +1402,17 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_horarios_prov "
                     "ON proveedor_horarios_reparto (proveedor_id)"
                 ))
+                # Lock singleton para coordinar el sync ObServer entre workers.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS sync_lock (
+                        id INTEGER PRIMARY KEY,
+                        en_curso BOOLEAN NOT NULL DEFAULT FALSE,
+                        iniciado_en TIMESTAMP,
+                        finalizado_en TIMESTAMP,
+                        paso_actual VARCHAR(80),
+                        ultimo_resultado TEXT
+                    )
+                """))
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos
@@ -1456,12 +1492,12 @@ def init_db(database_url=None):
     # se asocia implícitamente a esta farmacia 1.
     _bootstrap_farmacia_inicial()
 
-    # Backfills lentos en background (no bloquean el boot del worker).
-    # En Render, correr estos INSERTs en el path crítico hace que el HTTP port
-    # no abra a tiempo y el deploy falle con "No open HTTP ports detected".
-    if not is_sqlite:
-        import threading as _th
-        _th.Thread(target=_ejecutar_backfills_async, daemon=True).start()
+    # Backfills opcionales — solo corren si RUN_BACKFILLS=1 está seteado.
+    # En deploys normales no se tocan; correr manualmente con:
+    #   RUN_BACKFILLS=1 python -c "from database import init_db; init_db()"
+    # o via scripts/run_backfills.py
+    if not is_sqlite and os.environ.get('RUN_BACKFILLS') == '1':
+        _ejecutar_backfills_async()
 
 
 def _bootstrap_farmacia_inicial():
@@ -1667,6 +1703,14 @@ def _migrate_legacy_plantillas():
             ).first()
             if exists:
                 continue
+            # Si ya hay plantilla NO-legacy para esta entidad, no migrar el legacy
+            has_real = session.query(Plantilla).filter(
+                Plantilla.entidad_tipo == tipo_ent,
+                Plantilla.entidad_id == pe.proveedor_id,
+                ~Plantilla.nombre.like('[legacy]%'),
+            ).first()
+            if has_real:
+                continue
             campos = [{
                 'campo': c.campo_sistema,
                 'col_inicio': c.col_inicio,
@@ -1795,6 +1839,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS revisada_en TIMESTAMP",
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS cantidad_confirmada_obs INTEGER",
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS confirmada_en TIMESTAMP",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS oferta_dto DECIMAL(6,2)",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS oferta_min INTEGER",
     ):
         try:
             conn.execute(text(ddl))
@@ -1885,6 +1931,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS descripcion_custom VARCHAR(200)"))
     # Provider: mínimo de compra (puede no estar en deploys viejos)
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_con_transfer DECIMAL(5, 2)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_sin_transfer DECIMAL(5, 2)"))
     # OfertaMinimo: campos nuevos Fase 2 compra rápida
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id)"))
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS vigencia_desde DATE"))
@@ -2595,6 +2643,10 @@ def _sqlite_add_columns(conn):
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN parser_file VARCHAR(100)"))
     if 'match_strategy' not in existing:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN match_strategy VARCHAR(20) NOT NULL DEFAULT 'barcode'"))
+    if 'descuento_con_transfer' not in existing:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN descuento_con_transfer DECIMAL(5, 2)"))
+    if 'descuento_sin_transfer' not in existing:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN descuento_sin_transfer DECIMAL(5, 2)"))
 
     existing = {row[1] for row in conn.execute(text("PRAGMA table_info(facturas)"))}
     existing_fi = {row[1] for row in conn.execute(text("PRAGMA table_info(factura_items)"))}

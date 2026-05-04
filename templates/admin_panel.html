@@ -99,6 +99,16 @@ function fmtFecha(iso) {
 
 let _resultadosCache = {};
 
+function _esc(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 async function refrescar() {
     try {
         const r = await fetch('{{ url_for("admin_panel_recientes") }}?limit=30');
@@ -113,19 +123,20 @@ async function refrescar() {
                 _resultadosCache[r.id] = r;
                 const [bg, fg, label] = ESTADO_BADGE[r.estado] || ['bg-slate-100', 'text-slate-700', r.estado];
                 const isClickable = r.resultado || r.estado === 'error';
+                const idNum = Number(r.id);
                 return `
                     <tr class="${isClickable ? 'hover:bg-[#f5f5f5] cursor-pointer' : ''}"
-                        ${isClickable ? `onclick="verResultado(${r.id})"` : ''}>
-                        <td class="px-3 py-1.5 font-mono text-[11px] text-[#888]">${r.id}</td>
-                        <td class="px-3 py-1.5 font-mono text-[11px] text-[#1e1e1e]">${r.comando}</td>
+                        ${isClickable && Number.isFinite(idNum) ? `onclick="verResultado(${idNum})"` : ''}>
+                        <td class="px-3 py-1.5 font-mono text-[11px] text-[#888]">${_esc(r.id)}</td>
+                        <td class="px-3 py-1.5 font-mono text-[11px] text-[#1e1e1e]">${_esc(r.comando)}</td>
                         <td class="px-3 py-1.5">
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${bg} ${fg}">${label}</span>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${bg} ${fg}">${_esc(label)}</span>
                         </td>
-                        <td class="px-3 py-1.5 text-[#666]">${fmtFecha(r.solicitado_en)}</td>
-                        <td class="px-3 py-1.5 text-[#666]">${r.solicitado_por || '—'}</td>
-                        <td class="px-3 py-1.5 text-[#666]">${fmtFecha(r.tomado_en)}</td>
-                        <td class="px-3 py-1.5 text-[#666]">${fmtFecha(r.ejecutado_en)}</td>
-                        <td class="px-3 py-1.5 text-right font-mono text-[#888]">${r.duracion_ms ?? '—'}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${_esc(fmtFecha(r.solicitado_en))}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${_esc(r.solicitado_por || '—')}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${_esc(fmtFecha(r.tomado_en))}</td>
+                        <td class="px-3 py-1.5 text-[#666]">${_esc(fmtFecha(r.ejecutado_en))}</td>
+                        <td class="px-3 py-1.5 text-right font-mono text-[#888]">${_esc(r.duracion_ms ?? '—')}</td>
                     </tr>
                 `;
             }).join('');

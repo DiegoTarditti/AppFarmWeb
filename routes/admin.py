@@ -17,6 +17,20 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 
+def _check_cron_secret():
+    """Valida el header X-Cron-Secret contra la env var CRON_SECRET.
+    Si la env var no está set en el server, el endpoint queda deshabilitado (503).
+    Devuelve (ok: bool, err: tuple|None) — err es (mensaje, status_code)."""
+    import hmac
+    expected = os.environ.get('CRON_SECRET', '').strip()
+    if not expected:
+        return False, ('CRON_SECRET no configurado en el server', 503)
+    provided = (request.headers.get('X-Cron-Secret') or '').strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        return False, ('Secret inválido', 401)
+    return True, None
+
+
 def init_app(app):
 
     @app.route('/admin')
@@ -204,6 +218,12 @@ def init_app(app):
         Spec: c:/AppSeguimiento/sistema-pedidos-nuevo.md
         """
         return render_template('mock_pedidos_nuevo.html')
+
+    @app.route('/mock/stock-excedente')
+    @requiere_permiso('usuarios', 'admin')
+    def mock_stock_excedente():
+        """Mock estático de stock excedente inter-farmacias."""
+        return render_template('mock_stock_excedente.html')
 
     @app.route('/pedidos-nuevo')
     @requiere_permiso('usuarios', 'admin')
@@ -454,13 +474,9 @@ def init_app(app):
         """Endpoint disparado por GitHub Actions cada 15 min.
         Auth: header X-Cron-Secret (mismo patrón que recalcular_os_clientes).
         """
-        import hmac as _hmac
-        expected = os.environ.get('CRON_SECRET', '').strip()
-        if not expected:
-            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado'}), 503
-        provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or not _hmac.compare_digest(provided, expected):
-            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
 
         import cron_log
         import notificaciones
@@ -544,18 +560,12 @@ def init_app(app):
         Si `CRON_SECRET` NO está set en el server, el endpoint devuelve 503
         (deshabilitado por seguridad). No hay default — fail-safe.
         """
-        import hmac as _hmac
-        import os as _os
-
         from recalcular_os_por_cliente import recalcular
 
         import cron_log
-        expected = _os.environ.get('CRON_SECRET', '').strip()
-        if not expected:
-            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
-        provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or not _hmac.compare_digest(provided, expected):
-            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
 
         try:
             with cron_log.registrar('recalcular_os_clientes', origen='cron') as log:
@@ -579,7 +589,6 @@ def init_app(app):
 
         Auth: header `X-Cron-Secret` (mismo patrón que recalcular-os-clientes).
         """
-        import hmac as _hmac
         from datetime import timedelta
 
         from sqlalchemy import text as _text
@@ -587,12 +596,9 @@ def init_app(app):
         import cron_log
         from database import now_ar
 
-        expected = os.environ.get('CRON_SECRET', '').strip()
-        if not expected:
-            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
-        provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or not _hmac.compare_digest(provided, expected):
-            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
 
         # Permitir override del horizonte vía query param `dias` (default 90).
         try:
@@ -770,7 +776,13 @@ def init_app(app):
     def api_panel_proximo():
         """DockerPanel polea acá. Devuelve el próximo comando pendiente y lo
         marca como en_proceso atómicamente. Si no hay nada, devuelve null.
+
+        Antes de buscar pendiente, sweep de zombies: comandos en_proceso con
+        tomado_en > 10 min sin reportar resultado se marcan 'error' (DockerPanel
+        se cerró abruptamente). Sin esto quedan trabados indefinidamente.
         """
+        from datetime import timedelta
+
         from sqlalchemy import text as _text
 
         from database import now_ar
@@ -779,6 +791,14 @@ def init_app(app):
             return jsonify({'ok': False, 'error': err[0]}), err[1]
         origen = (request.args.get('origen') or 'dockerpanel').strip()[:40]
         with database.get_db() as session:
+            # Zombie sweep — sin esto, un en_proceso sin reportar nunca se libera.
+            umbral_zombie = now_ar() - timedelta(minutes=10)
+            session.execute(_text(
+                "UPDATE panel_comandos SET estado = 'error', "
+                "resultado = COALESCE(resultado, '') || '[auto: timeout >10min sin reporte]', "
+                "ejecutado_en = :now "
+                "WHERE estado = 'en_proceso' AND tomado_en IS NOT NULL AND tomado_en < :umbral"
+            ), {'now': now_ar(), 'umbral': umbral_zombie})
             # SELECT FOR UPDATE SKIP LOCKED para que múltiples workers no agarren el mismo
             row = session.execute(_text(
                 "SELECT id FROM panel_comandos WHERE estado = 'pendiente' "

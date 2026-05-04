@@ -425,8 +425,13 @@ def init_app(app):
 
         data = request.get_json(silent=True) or {}
         items = data.get('items') or []
+        if not isinstance(items, list):
+            return jsonify({'ok': False, 'error': 'items debe ser una lista'}), 400
         if not items:
             return jsonify({'ok': False, 'error': 'items vacío'}), 400
+        # Cota anti-DoS: payloads gigantes que harían N queries en loop.
+        if len(items) > 5000:
+            return jsonify({'ok': False, 'error': 'items > 5000 (límite anti-DoS)'}), 413
 
         conflictos = []
         sin_conflicto = 0

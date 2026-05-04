@@ -902,6 +902,16 @@ function _paintNotifBadge(data) {
         badge.classList.add('hidden');
     }
 }
+function _esc(s) {
+    // Escape HTML para evitar XSS al inyectar datos no controlados en innerHTML.
+    if (s === null || s === undefined) return '';
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 function _renderNotifList(data) {
     const list = document.getElementById('notif-list');
     if (!list) return;
@@ -911,10 +921,10 @@ function _renderNotifList(data) {
         return;
     }
     list.innerHTML = ultimos.map(d => `
-        <a href="/docs-pendientes/${d.id}/procesar"
+        <a href="/docs-pendientes/${encodeURIComponent(d.id)}/procesar"
            class="block px-3 py-2 hover:bg-[#f5f5f5] border-b border-[#eee] last:border-0">
-            <div class="text-[11px] text-[#1e1e1e] truncate" title="${d.filename}">${d.filename}</div>
-            <div class="text-[9px] text-[#888]">${d.fecha || ''}</div>
+            <div class="text-[11px] text-[#1e1e1e] truncate" title="${_esc(d.filename)}">${_esc(d.filename)}</div>
+            <div class="text-[9px] text-[#888]">${_esc(d.fecha || '')}</div>
         </a>`).join('');
 }
 async function _pollNotifs() {

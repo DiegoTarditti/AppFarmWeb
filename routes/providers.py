@@ -318,6 +318,12 @@ def init_app(app):
             tipo = (request.form.get('tipo') or '').strip().lower()
             if tipo in ('drogueria', 'laboratorio', 'otro'):
                 provider.tipo = tipo
+            for field in ('descuento_con_transfer', 'descuento_sin_transfer'):
+                raw = (request.form.get(field) or '').replace(',', '.').strip()
+                try:
+                    setattr(provider, field, float(raw) if raw else None)
+                except ValueError:
+                    pass
             session.commit()
         return redirect(url_for('providers_list', tipo=request.form.get('tipo_filter') or None))
 

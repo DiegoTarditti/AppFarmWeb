@@ -1,19 +1,79 @@
 """Rutas admin para sincronizar el espejo local con ObServer."""
+import json
 import os
-import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
+from sqlalchemy import text as _text
+from sqlalchemy.orm import joinedload
 
 import cron_log
 import database
 import observer_matcher
 import observer_source
 
-# Lock para evitar que 2 syncs corran en paralelo (auto + manual que se pisan)
-_SYNC_LOCK = threading.Lock()
-_SYNC_ESTADO = {'en_curso': False, 'ultimo_inicio': None, 'ultimo_fin': None,
-                'ultimo_resultado': None}
+# El sync se coordina vía la tabla `sync_lock` (singleton id=1) — un
+# `threading.Lock` en memoria no funciona con `gunicorn --preload --workers 2`
+# porque cada worker forkea su copia y dos workers pueden disparar en paralelo.
+_SYNC_TIMEOUT_MIN = 60  # si pasaron > 60 min sin liberar → lock abandonado
+
+
+def _sync_lock_acquire():
+    """Atomic acquire del lock de sync. True si se tomó; False si ya está
+    tomado por otro worker dentro del timeout."""
+    with database.get_db() as session:
+        # Asegurar que la fila singleton exista.
+        if session.query(database.SyncLock).filter_by(id=1).first() is None:
+            session.add(database.SyncLock(id=1, en_curso=False))
+            session.commit()
+        umbral = datetime.now() - timedelta(minutes=_SYNC_TIMEOUT_MIN)
+        # UPDATE atómico: solo lo toma si está libre o si quedó zombie hace rato.
+        # rowcount=1 = lo agarramos; rowcount=0 = otro lo tiene.
+        result = session.execute(_text(
+            "UPDATE sync_lock SET en_curso = :on, iniciado_en = :now, "
+            "finalizado_en = NULL, paso_actual = NULL, ultimo_resultado = NULL "
+            "WHERE id = 1 AND (en_curso = :off OR iniciado_en IS NULL OR iniciado_en < :umbral)"
+        ), {'on': True, 'off': False, 'now': datetime.now(), 'umbral': umbral})
+        session.commit()
+        return result.rowcount == 1
+
+
+def _sync_lock_release(resultado=None):
+    with database.get_db() as session:
+        session.execute(_text(
+            "UPDATE sync_lock SET en_curso = :off, finalizado_en = :now, "
+            "paso_actual = NULL, ultimo_resultado = :res WHERE id = 1"
+        ), {'off': False, 'now': datetime.now(),
+            'res': json.dumps(resultado, default=str) if resultado else None})
+        session.commit()
+
+
+def _sync_lock_set_paso(paso):
+    with database.get_db() as session:
+        session.execute(_text(
+            "UPDATE sync_lock SET paso_actual = :paso WHERE id = 1"
+        ), {'paso': paso})
+        session.commit()
+
+
+def _sync_lock_estado():
+    with database.get_db() as session:
+        row = session.query(database.SyncLock).filter_by(id=1).first()
+        if row is None:
+            return {'en_curso': False, 'paso_actual': None,
+                    'ultimo_inicio': None, 'ultimo_fin': None,
+                    'ultimo_resultado': None}
+        try:
+            ult = json.loads(row.ultimo_resultado) if row.ultimo_resultado else None
+        except (ValueError, TypeError):
+            ult = None
+        return {
+            'en_curso': bool(row.en_curso),
+            'paso_actual': row.paso_actual,
+            'ultimo_inicio': row.iniciado_en.isoformat() if row.iniciado_en else None,
+            'ultimo_fin': row.finalizado_en.isoformat() if row.finalizado_en else None,
+            'ultimo_resultado': ult,
+        }
 
 
 def init_app(app):
@@ -134,7 +194,10 @@ def init_app(app):
     def productos_sin_vincular():
         """Pantalla para vincular manualmente productos locales con obs_productos."""
         with database.get_db() as session:
+            # joinedload evita N+1 sobre p.laboratorio (200 productos × 1 SELECT
+            # cada uno al renderizar la tabla).
             productos = (session.query(database.Producto)
+                         .options(joinedload(database.Producto.laboratorio))
                          .filter(database.Producto.observer_id.is_(None))
                          .order_by(database.Producto.descripcion)
                          .limit(200).all())
@@ -245,22 +308,22 @@ def init_app(app):
             if sent != expected:
                 return jsonify({'ok': False, 'error': 'token inválido'}), 401
 
-        # Lock: si hay otro sync corriendo, rechazar
-        if not _SYNC_LOCK.acquire(blocking=False):
+        # Lock atómico en DB — coordina entre workers de gunicorn.
+        if not _sync_lock_acquire():
+            estado = _sync_lock_estado()
             return jsonify({
                 'ok': False, 'error': 'sync en curso',
-                'ultimo_inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()
-                                  if _SYNC_ESTADO['ultimo_inicio'] else None,
+                'ultimo_inicio': estado.get('ultimo_inicio'),
             }), 409
 
+        resultado = {'pasos': []}
         try:
-            _SYNC_ESTADO['en_curso'] = True
-            _SYNC_ESTADO['ultimo_inicio'] = datetime.now()
+            inicio = datetime.now()
 
             skip_push  = request.args.get('skip_push') == '1'
             skip_match = request.args.get('skip_match') == '1'
 
-            resultado = {'pasos': [], 'inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()}
+            resultado['inicio'] = inicio.isoformat()
 
             # Paso 1: verificar que ObServer esté disponible
             if not observer_source.observer_disponible():
@@ -296,7 +359,7 @@ def init_app(app):
                 'ventas_detalle':       observer_source.sync_ventas_detalle,
             }
             for ent in orden:
-                _SYNC_ESTADO['paso_actual'] = ent
+                _sync_lock_set_paso(ent)
                 try:
                     with cron_log.registrar(f'sync_{ent}', origen='dockerpanel') as clog:
                         with database.get_db() as session:
@@ -315,7 +378,7 @@ def init_app(app):
 
             # Paso 3: auto-match productos (opcional)
             if not skip_match:
-                _SYNC_ESTADO['paso_actual'] = 'match_productos'
+                _sync_lock_set_paso('match_productos')
                 try:
                     with cron_log.registrar('match_productos', origen='dockerpanel') as clog:
                         with database.get_db() as session:
@@ -340,7 +403,7 @@ def init_app(app):
 
             # Paso 4: push a Render (opcional)
             if not skip_push:
-                _SYNC_ESTADO['paso_actual'] = 'push_render'
+                _sync_lock_set_paso('push_render')
                 render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
                 if not render_url:
                     resultado['pasos'].append({
@@ -366,24 +429,12 @@ def init_app(app):
 
             resultado['ok'] = True
             resultado['fin'] = datetime.now().isoformat()
-            _SYNC_ESTADO['ultimo_fin'] = datetime.now()
-            _SYNC_ESTADO['ultimo_resultado'] = resultado
             return jsonify(resultado)
 
         finally:
-            _SYNC_ESTADO['en_curso'] = False
-            _SYNC_ESTADO['paso_actual'] = None
-            _SYNC_LOCK.release()
+            _sync_lock_release(resultado=resultado)
 
     @app.route('/api/auto-sync/status')
     def api_auto_sync_status():
         """Devuelve el estado del lock y última corrida (sin ejecutar nada)."""
-        return jsonify({
-            'en_curso': _SYNC_ESTADO['en_curso'],
-            'paso_actual': _SYNC_ESTADO.get('paso_actual'),
-            'ultimo_inicio': _SYNC_ESTADO['ultimo_inicio'].isoformat()
-                              if _SYNC_ESTADO['ultimo_inicio'] else None,
-            'ultimo_fin': _SYNC_ESTADO['ultimo_fin'].isoformat()
-                           if _SYNC_ESTADO['ultimo_fin'] else None,
-            'ultimo_resultado': _SYNC_ESTADO.get('ultimo_resultado'),
-        })
+        return jsonify(_sync_lock_estado())

@@ -46,7 +46,18 @@
             <tbody class="divide-y divide-surface-border">
                 {% for lab in labs %}
                 <tr class="hover:bg-black/[0.02] lab-row" data-nombre="{{ lab.nombre | lower }}">
-                    <td class="px-3 py-1.5 font-medium text-[#1e1e1e] sticky left-0 bg-white">{{ lab.nombre }}</td>
+                    <td class="px-3 py-1.5 font-medium sticky left-0 bg-white">
+                        {% set of = ofertas_lab.get(lab.id) %}
+                        <a href="{{ url_for('lab_ofertas_minimo', lab_id=lab.id) }}"
+                           class="text-[#1e1e1e] hover:text-violet-700 hover:underline">{{ lab.nombre }}</a>
+                        {% if of %}
+                        <a href="{{ url_for('lab_ofertas_minimo', lab_id=lab.id) }}"
+                           class="ml-1.5 text-[10px] bg-emerald-100 text-emerald-700 border border-emerald-200 px-1 py-0.5 rounded hover:bg-emerald-200"
+                           title="{{ of.count }} oferta{{ 's' if of.count != 1 else '' }} · actualizado {{ of.fecha }}">
+                            📋 {{ of.fecha }}
+                        </a>
+                        {% endif %}
+                    </td>
                     {% for d in drogs %}
                     {% set checked = lab.id in matriz and d.id in matriz[lab.id] %}
                     <td class="px-3 py-1.5 text-center">

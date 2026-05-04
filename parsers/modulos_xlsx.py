@@ -131,7 +131,6 @@ def parse_modulos_xlsx(path):
 
         # ── FORMATO B ────────────────────────────────────────────────
         if fmt == 'B':
-            print(f"[DEBUG B] row={row}")
             cod      = row[0] if len(row) > 0 else None
             nombre   = str(row[1]).strip() if len(row) > 1 and row[1] else None
             ean_raw  = row[2] if len(row) > 2 else None

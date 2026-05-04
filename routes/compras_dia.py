@@ -56,12 +56,50 @@ def init_app(app):
             prov_ids = [r[0] for r in session.query(ProveedorHorarioReparto.proveedor_id)
                         .distinct().all()]
             from sqlalchemy import case as _case
+
+            from database import PedidoEmitido
             provs = (session.query(Provider)
                      .filter(Provider.id.in_(prov_ids), Provider.activo.is_(True))
                      .order_by(
                          _case((Provider.matriz_orden.isnot(None), Provider.matriz_orden), else_=9999),
                          Provider.razon_social)
                      .all())
+            # Conteo de pedidos activos (no CERRADO) por droguería para el badge
+            from sqlalchemy import func
+            pedidos_activos = dict(
+                session.query(PedidoEmitido.drogueria_id, func.count(PedidoEmitido.id))
+                .filter(PedidoEmitido.estado != 'CERRADO')
+                .group_by(PedidoEmitido.drogueria_id)
+                .all()
+            )
+            # Pre-fetch plantillas de pedido por droguería (default primero, sino la primera)
+            import json as _json
+
+            from database import Plantilla as _Plantilla
+            _plant_rows = (session.query(_Plantilla)
+                           .filter(_Plantilla.entidad_tipo == 'drogueria',
+                                   _Plantilla.tipo_doc == 'pedido')
+                           .order_by(_Plantilla.entidad_id,
+                                     _Plantilla.es_default.desc(),
+                                     _Plantilla.id)
+                           .all())
+            _plant_map = {}  # drogueria_id → {nombre, formato, n_campos}
+            for _pl in _plant_rows:
+                if _pl.entidad_id in _plant_map:
+                    continue
+                try:
+                    _cfg = _json.loads(_pl.config_json or '{}')
+                    _cols = _cfg.get('columnas') or _cfg.get('campos') or []
+                    _n = len(_cols)
+                except Exception:
+                    _n = 0
+                _plant_map[_pl.entidad_id] = {
+                    'nombre': _pl.nombre,
+                    'formato': _pl.formato.upper(),
+                    'n_campos': _n,
+                    'es_default': bool(_pl.es_default),
+                }
+
             proveedores = []
             for p in provs:
                 matriz = horarios_por_dia(session, p.id)  # {0: ['07:10', ...], ...}
@@ -73,6 +111,8 @@ def init_app(app):
                     'nombre': p.razon_social,
                     'horarios_por_dia': matriz_ordenada,
                     'proximo_cierre': cierre,
+                    'pedidos_activos': pedidos_activos.get(p.id, 0),
+                    'plantilla': _plant_map.get(p.id),
                 })
             # Drogerías activas que NO tienen horarios todavía — para el dropdown
             # "agregar nueva al flujo".
@@ -89,6 +129,42 @@ def init_app(app):
                                proveedores=proveedores,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS)
+
+    @app.route('/api/drogueria/<int:prov_id>/pedidos-emitidos')
+    @login_required
+    def api_drogueria_pedidos_emitidos(prov_id):
+        from database import PedidoEmitido
+        with get_db() as session:
+            pedidos = (session.query(PedidoEmitido)
+                       .filter_by(drogueria_id=prov_id)
+                       .order_by(PedidoEmitido.fecha.desc())
+                       .all())
+            data = []
+            for p in pedidos:
+                data.append({
+                    'id': p.id,
+                    'fecha': p.fecha.strftime('%d/%m/%Y %H:%M') if p.fecha else '—',
+                    'estado': p.estado,
+                    'total_items': p.total_items,
+                    'recibido_por': p.recibido_por,
+                    'cargado_por': p.cargado_por,
+                    'tiene_factura': False,
+                })
+        return jsonify({'ok': True, 'pedidos': data})
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>', methods=['DELETE'])
+    @login_required
+    def api_pedido_emitido_borrar(pedido_id):
+        if getattr(current_user, 'rol', None) not in ('dev', 'admin'):
+            return jsonify({'ok': False, 'error': 'Sin permisos'}), 403
+        from database import PedidoEmitido
+        with get_db() as session:
+            p = session.get(PedidoEmitido, pedido_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'No encontrado'}), 404
+            session.delete(p)
+            session.commit()
+        return jsonify({'ok': True})
 
     @app.route('/api/pedidos/dia/countdown')
     @login_required
@@ -339,6 +415,33 @@ def init_app(app):
                 for l in session.query(Laboratorio).all()
             }
 
+            # EANs desde obs_codigos_barras (orden 1 = principal)
+            from database import ObsCodigoBarras, OfertaMinimo
+            all_pids = [r.pid for r in base]
+            eans_armar = {}  # observer_id → ean principal
+            if all_pids:
+                for ecb in (session.query(ObsCodigoBarras.producto_observer,
+                                          ObsCodigoBarras.codigo_barras)
+                            .filter(ObsCodigoBarras.producto_observer.in_(all_pids),
+                                    ObsCodigoBarras.fecha_baja.is_(None),
+                                    ObsCodigoBarras.orden == 1)
+                            .all()):
+                    eans_armar[ecb.producto_observer] = ecb.codigo_barras
+
+            # Ofertas activas por EAN (TRF): mayor descuento si hay varias.
+            all_eans_set = {v for v in eans_armar.values() if v}
+            ofertas_por_ean = {}
+            if all_eans_set:
+                for of in (session.query(OfertaMinimo)
+                           .filter(OfertaMinimo.ean.in_(all_eans_set),
+                                   OfertaMinimo.activo.is_(True))
+                           .all()):
+                    um  = int(of.unidades_minima or 1)
+                    dto = float(of.descuento_psl or 0)
+                    prev = ofertas_por_ean.get(of.ean)
+                    if not prev or dto > prev['oferta_dto']:
+                        ofertas_por_ean[of.ean] = {'oferta_dto': dto, 'oferta_min': um}
+
             items = []
             for r in base:
                 # Filtro rubro Medicamentos
@@ -411,7 +514,10 @@ def init_app(app):
                     'u24h': u24h_val,
                     'u7d': u7d_val,
                     'a_pedir': max(0, min_actual - stock_actual),
+                    'avg_diario': round(avg_diario, 3),
                     'cubre_lab': cubre_lab,
+                    'ean': eans_armar.get(r.pid, ''),
+                    **(ofertas_por_ean.get(eans_armar.get(r.pid, ''), {'oferta_dto': None, 'oferta_min': None})),
                 })
             items.sort(key=lambda x: (not x['cubre_lab'], x['desc'].lower()))
 
@@ -432,6 +538,8 @@ def init_app(app):
                 pendiente = max(0, (it.cantidad_pedida or 0) - (it.cantidad_recibida or 0))
                 if pendiente <= 0:
                     continue
+                lab_id_pend = (lab_obs_to_local.get(it.observer_id)
+                               or local_lab_por_norm.get(_norm_lab(it.lab_nombre or '')))
                 pendientes_anteriores.append({
                     'item_id': it.id,
                     'pedido_id': ped.id,
@@ -441,6 +549,7 @@ def init_app(app):
                     'desc': it.descripcion,
                     'lab_nombre': it.lab_nombre or '—',
                     'pendiente': pendiente,
+                    'cubre_lab': lab_id_pend in labs_cubiertos if lab_id_pend else False,
                 })
 
             return render_template('compras_dia_armar.html',
@@ -463,6 +572,7 @@ def init_app(app):
         from database import (
             Laboratorio,
             LaboratorioDrogueria,
+            ObsCodigoBarras,
             ObsLaboratorio,
             ObsProducto,
             ObsStock,
@@ -529,16 +639,52 @@ def init_app(app):
             lab_obs_to_local = dict(session.query(
                 Laboratorio.observer_id, Laboratorio.id
             ).filter(Laboratorio.observer_id.isnot(None)).all())
+            from helpers import _normalizar_nombre_entidad as _norm_lab
+            local_lab_por_norm = {
+                _norm_lab(l.nombre): l.id
+                for l in session.query(Laboratorio).all()
+            }
+            obs_lab_norm = {
+                r[0]: _norm_lab(r[1])
+                for r in session.query(ObsLaboratorio.observer_id,
+                                       ObsLaboratorio.descripcion).all()
+            }
             labs_cubiertos = set(r[0] for r in session.query(
                 LaboratorioDrogueria.laboratorio_id
             ).filter(LaboratorioDrogueria.drogueria_id == prov_id).all())
 
+            eans_buscar = {}
+            if obs_ids:
+                for ecb in (session.query(ObsCodigoBarras.producto_observer,
+                                          ObsCodigoBarras.codigo_barras)
+                            .filter(ObsCodigoBarras.producto_observer.in_(obs_ids),
+                                    ObsCodigoBarras.fecha_baja.is_(None),
+                                    ObsCodigoBarras.orden == 1)
+                            .all()):
+                    eans_buscar[ecb.producto_observer] = ecb.codigo_barras
+
+            from database import OfertaMinimo as _OM
+            eans_buscar_set = {v for v in eans_buscar.values() if v}
+            ofertas_buscar = {}
+            if eans_buscar_set:
+                for of in (session.query(_OM)
+                           .filter(_OM.ean.in_(eans_buscar_set), _OM.activo.is_(True))
+                           .all()):
+                    um  = int(of.unidades_minima or 1)
+                    dto = float(of.descuento_psl or 0)
+                    prev = ofertas_buscar.get(of.ean)
+                    if not prev or dto > prev['oferta_dto']:
+                        ofertas_buscar[of.ean] = {'oferta_dto': dto, 'oferta_min': um}
+
             items = []
             for r in base:
                 local = local_rows.get(r.observer_id)
-                lab_local_id = (local[2] if local else None) or lab_obs_to_local.get(r.lab_obs_id)
+                lab_local_id = ((local[2] if local else None)
+                                or lab_obs_to_local.get(r.lab_obs_id)
+                                or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, '')))
                 stock = int(stock_rows.get(r.observer_id, 0) or 0)
                 minimo = int(min_rows.get(r.observer_id, 0) or 0)
+                ean_b = eans_buscar.get(r.observer_id, '')
                 items.append({
                     'pid': r.observer_id,
                     'producto_id_local': local[1] if local else None,
@@ -550,6 +696,8 @@ def init_app(app):
                     'u7d':  int(v7d_rows2.get(r.observer_id, 0) or 0),
                     'a_pedir': max(0, minimo - stock) if minimo else 1,
                     'cubre_lab': lab_local_id in labs_cubiertos,
+                    'ean': ean_b,
+                    **(ofertas_buscar.get(ean_b, {'oferta_dto': None, 'oferta_min': None})),
                 })
             return jsonify({'ok': True, 'items': items})
 
@@ -559,7 +707,9 @@ def init_app(app):
         """Matriz lab × droguería: marca por qué drogerías va cada laboratorio.
         Persiste en LaboratorioDrogueria (tabla simple sin descuento).
         """
-        from database import Laboratorio, LaboratorioDrogueria
+        from sqlalchemy import func
+
+        from database import Laboratorio, LaboratorioDrogueria, OfertaMinimo
         with get_db() as session:
             labs_q = (session.query(Laboratorio)
                       .filter(Laboratorio.activo.is_(True))
@@ -577,6 +727,20 @@ def init_app(app):
                 (r.laboratorio_id, r.drogueria_id)
                 for r in session.query(LaboratorioDrogueria).all()
             )
+            # Ofertas importadas por lab: última fecha de actualización
+            ofertas_lab = {}
+            for r in (session.query(
+                    OfertaMinimo.laboratorio_id,
+                    func.count(OfertaMinimo.id).label('cnt'),
+                    func.max(OfertaMinimo.actualizado_en).label('ultima'))
+                    .filter(OfertaMinimo.activo.is_(True))
+                    .group_by(OfertaMinimo.laboratorio_id)
+                    .all()):
+                fecha = r.ultima.date() if r.ultima else None
+                ofertas_lab[r.laboratorio_id] = {
+                    'count': r.cnt,
+                    'fecha': fecha.strftime('%d/%m/%y') if fecha else '',
+                }
             labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
             drogs_data = [{'id': d.id, 'nombre': d.razon_social} for d in drogs]
             todas_drogs_data = [{'id': d.id, 'nombre': d.razon_social,
@@ -588,7 +752,8 @@ def init_app(app):
         return render_template('labs_drogerias.html',
                                labs=labs_data, drogs=drogs_data,
                                todas_drogs=todas_drogs_data,
-                               matriz={k: list(v) for k, v in matriz.items()})
+                               matriz={k: list(v) for k, v in matriz.items()},
+                               ofertas_lab=ofertas_lab)
 
     @app.route('/api/matriz/drog-visible', methods=['POST'])
     @login_required
@@ -656,7 +821,7 @@ def init_app(app):
         Body: {prov_id, items: [{observer_id, producto_id_local, descripcion,
                                   lab_nombre, cantidad}], observacion?}
         """
-        from database import PedidoEmitido, PedidoEmitidoItem
+        from database import PedidoEmitido, PedidoEmitidoItem, Producto
         data = request.get_json(silent=True) or {}
         try:
             prov_id = int(data.get('prov_id') or 0)
@@ -666,6 +831,17 @@ def init_app(app):
         if not prov_id or not items:
             return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
         with get_db() as session:
+            # Pre-cargar observer_ids de los productos locales para auto-bridging
+            prod_ids = [int(it['producto_id_local']) for it in items
+                        if it.get('producto_id_local') and not it.get('observer_id')]
+            obs_by_prod = {}
+            if prod_ids:
+                obs_by_prod = {
+                    r.id: r.observer_id
+                    for r in session.query(Producto.id, Producto.observer_id)
+                                    .filter(Producto.id.in_(prod_ids),
+                                            Producto.observer_id.isnot(None)).all()
+                }
             ped = PedidoEmitido(
                 drogueria_id=prov_id,
                 usuario=getattr(current_user, 'username', None),
@@ -680,15 +856,23 @@ def init_app(app):
                 cant = int(it.get('cantidad') or 0)
                 if cant <= 0:
                     continue
+                prod_id_local = it.get('producto_id_local') or None
+                observer_id = (it.get('observer_id')
+                               or obs_by_prod.get(int(prod_id_local) if prod_id_local else 0)
+                               or None)
+                _dto = it.get('oferta_dto')
+                _min = it.get('oferta_min')
                 session.add(PedidoEmitidoItem(
                     pedido_id=ped.id,
-                    observer_id=it.get('observer_id') or None,
-                    producto_id_local=it.get('producto_id_local') or None,
+                    observer_id=observer_id,
+                    producto_id_local=prod_id_local,
                     descripcion=it.get('descripcion') or '',
                     lab_nombre=it.get('lab_nombre') or None,
                     cantidad_pedida=cant,
                     cantidad_recibida=0,
                     estado='PENDIENTE',
+                    oferta_dto=float(_dto) if _dto is not None else None,
+                    oferta_min=int(_min) if _min is not None else None,
                 ))
             session.commit()
             return jsonify({'ok': True, 'pedido_id': ped.id})
@@ -751,6 +935,33 @@ def init_app(app):
             if not p:
                 return redirect(url_for('pedidos_emitidos_list'))
             items = sorted(p.items, key=lambda i: (i.descripcion or '').lower())
+            from database import ObsCodigoBarras, Producto, ProductoCodigoBarra
+            # EANs desde ObServer (fuente principal — obs_codigos_barras)
+            obs_ids = [i.observer_id for i in items if i.observer_id]
+            obs_eans_map = {}  # observer_id → [ean1, ean2, ...] ordered by orden
+            if obs_ids:
+                for r in (session.query(ObsCodigoBarras.producto_observer,
+                                        ObsCodigoBarras.codigo_barras,
+                                        ObsCodigoBarras.orden)
+                          .filter(ObsCodigoBarras.producto_observer.in_(obs_ids),
+                                  ObsCodigoBarras.fecha_baja.is_(None))
+                          .order_by(ObsCodigoBarras.producto_observer,
+                                    ObsCodigoBarras.orden)
+                          .all()):
+                    obs_eans_map.setdefault(r.producto_observer, []).append(r.codigo_barras)
+            # EANs desde productos locales (fallback / EANs extra mapeados por scanner)
+            prod_ids = [i.producto_id_local for i in items if i.producto_id_local]
+            local_eans_map = {}   # producto_id_local → [ean, ...]
+            if prod_ids:
+                for r in session.query(Producto.id, Producto.codigo_barra)\
+                                .filter(Producto.id.in_(prod_ids)).all():
+                    if r.codigo_barra:
+                        local_eans_map.setdefault(r.id, []).append(r.codigo_barra)
+                for r in session.query(ProductoCodigoBarra.producto_id,
+                                       ProductoCodigoBarra.codigo_barra)\
+                                .filter(ProductoCodigoBarra.producto_id.in_(prod_ids)).all():
+                    if r.codigo_barra and r.codigo_barra not in local_eans_map.get(r.producto_id, []):
+                        local_eans_map.setdefault(r.producto_id, []).append(r.codigo_barra)
             ped_data = {
                 'id': p.id, 'fecha': p.fecha, 'estado': p.estado,
                 'drog': p.drogueria.razon_social if p.drogueria else '—',
@@ -763,6 +974,9 @@ def init_app(app):
                 'etapa_factura': False,  # TODO: vincular con Invoice
                 'items': [{
                     'id': i.id, 'observer_id': i.observer_id,
+                    'producto_id_local': i.producto_id_local,
+                    'ean': (obs_eans_map.get(i.observer_id) or local_eans_map.get(i.producto_id_local) or [''])[0],
+                    'eans': obs_eans_map.get(i.observer_id) or local_eans_map.get(i.producto_id_local) or [],
                     'descripcion': i.descripcion, 'lab': i.lab_nombre or '—',
                     'pedida': i.cantidad_pedida,
                     'revisada': i.cantidad_revisada_op,
@@ -815,6 +1029,75 @@ def init_app(app):
                 p.recibido_por = recibido_por
             session.commit()
         return jsonify({'ok': True})
+
+    @app.route('/api/pedido-emitido/<int:pedido_id>/mapear-ean', methods=['POST'])
+    @login_required
+    def api_pedido_mapear_ean(pedido_id):
+        """Guarda la equivalencia EAN escaneado → producto local.
+
+        Body: {ean, producto_id_local?N, observer_id?N}
+        Si solo viene observer_id, busca/crea el Producto local correspondiente.
+        Inserta en producto_codigos_barra con fuente='scanner_recep'.
+        También actualiza pedido_emitido_item.producto_id_local para todas las
+        filas de este pedido con el mismo observer_id.
+        """
+        from database import ObsCodigoBarras, ObsProducto, PedidoEmitidoItem, Producto, ProductoCodigoBarra
+        data = request.get_json(silent=True) or {}
+        ean = (data.get('ean') or '').strip()
+        try:
+            prod_id = int(data.get('producto_id_local') or 0)
+        except (TypeError, ValueError):
+            prod_id = 0
+        try:
+            obs_id = int(data.get('observer_id') or 0)
+        except (TypeError, ValueError):
+            obs_id = 0
+        if not ean:
+            return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+        with get_db() as session:
+            if not prod_id and obs_id:
+                # Buscar o crear Producto local vinculado a este observer_id
+                prod = session.query(Producto).filter_by(observer_id=obs_id).first()
+                if not prod:
+                    obs = session.get(ObsProducto, obs_id)
+                    if not obs:
+                        return jsonify({'ok': False, 'error': 'Producto observer no encontrado'}), 404
+                    # EAN principal desde obs_codigos_barras (orden 1)
+                    ean_principal_row = (session.query(ObsCodigoBarras.codigo_barras)
+                                         .filter_by(producto_observer=obs_id)
+                                         .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                                         .order_by(ObsCodigoBarras.orden)
+                                         .first())
+                    ean_principal = ean_principal_row[0] if ean_principal_row else ean
+                    prod = Producto(
+                        codigo_barra=ean_principal,
+                        descripcion=obs.descripcion,
+                        observer_id=obs_id,
+                    )
+                    session.add(prod)
+                    session.flush()
+                prod_id = prod.id
+                # Vincular todas las filas del pedido con este observer_id
+                (session.query(PedidoEmitidoItem)
+                 .filter_by(pedido_id=pedido_id, observer_id=obs_id)
+                 .update({'producto_id_local': prod_id}))
+            elif not prod_id:
+                return jsonify({'ok': False, 'error': 'Faltan datos'}), 400
+            else:
+                prod = session.get(Producto, prod_id)
+                if not prod:
+                    return jsonify({'ok': False, 'error': 'Producto no encontrado'}), 404
+            existe = session.query(ProductoCodigoBarra)\
+                            .filter_by(producto_id=prod_id, codigo_barra=ean).first()
+            if not existe:
+                session.add(ProductoCodigoBarra(
+                    producto_id=prod_id,
+                    codigo_barra=ean,
+                    es_principal=False,
+                    fuente='scanner_recep',
+                ))
+            session.commit()
+        return jsonify({'ok': True, 'ean': ean, 'producto_id_local': prod_id})
 
     @app.route('/api/pedido-emitido/<int:pedido_id>/importar-xls', methods=['POST'])
     @login_required
@@ -902,18 +1185,36 @@ def init_app(app):
             plant = (session.query(Plantilla)
                      .filter_by(entidad_tipo='drogueria', entidad_id=ped.drogueria_id,
                                 tipo_doc='pedido', es_default=True)
+                     .order_by(Plantilla.formato.desc())   # xlsx (x) antes que txt_fijo (t)
                      .first()
                      or session.query(Plantilla)
                      .filter_by(entidad_tipo='drogueria', entidad_id=ped.drogueria_id,
                                 tipo_doc='pedido')
+                     .order_by(Plantilla.formato.desc())
                      .first())
             if not plant:
                 return jsonify({'ok': False, 'error': 'Sin plantilla de pedido configurada para esta droguería'}), 404
 
+            # Resolver EANs reales desde obs_codigos_barras
+            obs_ids = [it.observer_id for it in ped.items if it.observer_id]
+            ean_map = {}
+            if obs_ids:
+                from database import ObsCodigoBarras
+                for oid, cb in (session.query(ObsCodigoBarras.producto_observer,
+                                              ObsCodigoBarras.codigo_barras)
+                                .filter(ObsCodigoBarras.producto_observer.in_(obs_ids),
+                                        ObsCodigoBarras.fecha_baja.is_(None))
+                                .order_by(ObsCodigoBarras.orden.asc()).all()):
+                    if oid not in ean_map and cb:
+                        ean_map[oid] = cb
+
             rows = [{
-                'ean': it.observer_id or '',
+                'ean': ean_map.get(it.observer_id, it.observer_id or ''),
+                'codigo_barra': ean_map.get(it.observer_id, it.observer_id or ''),
                 'nombre': it.descripcion,
+                'descripcion': it.descripcion,
                 'cantidad': it.cantidad_pedida,
+                'total': it.cantidad_pedida,
                 'lab': it.lab_nombre or '',
             } for it in ped.items]
 
@@ -922,9 +1223,22 @@ def init_app(app):
             except Exception:
                 cfg = {}
 
-            drog = ped.drogueria.razon_social.replace(' ', '_') if ped.drogueria else 'drog'
+            import unicodedata as _ud
+            _drog_raw = ped.drogueria.razon_social if ped.drogueria else 'drog'
+            drog = _ud.normalize('NFKD', _drog_raw).encode('ascii', 'ignore').decode().replace(' ', '_').strip('_') or 'drog'
             from helpers import now_ar as _now
             fecha_str = _now().strftime('%Y%m%d')
+
+            # Alias: los nombres de campo del editor de plantillas → keys del dict de fila
+            _FIELD_ALIAS = {
+                'codigo_barra': 'ean', 'ean': 'ean',
+                'descripcion': 'nombre', 'nombre': 'nombre',
+                'cantidad': 'cantidad', 'total': 'cantidad',
+                'laboratorio': 'lab', 'lab': 'lab',
+            }
+
+            from database import CAMPOS_SISTEMA as _CAMPOS
+            _CAMPO_LABEL = dict(_CAMPOS)
 
             if plant.formato == 'xlsx':
                 import openpyxl
@@ -932,10 +1246,11 @@ def init_app(app):
                 ws = wb.active
                 cols = [c if isinstance(c, str) else c.get('field', '') for c in cfg.get('columnas', [])]
                 if not cols:
-                    cols = ['ean', 'nombre', 'cantidad']
-                ws.append(cols)
+                    cols = ['codigo_barra', 'descripcion', 'cantidad']
+                headers = [_CAMPO_LABEL.get(c, c) for c in cols]
+                ws.append(headers)
                 for row in rows:
-                    ws.append([row.get(c, '') for c in cols])
+                    ws.append([row.get(_FIELD_ALIAS.get(c, c), '') for c in cols])
                 buf = BytesIO()
                 wb.save(buf)
                 buf.seek(0)

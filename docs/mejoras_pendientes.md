@@ -82,6 +82,13 @@ una tarea aparte.
 
 ## 🛠 Calidad de código
 
+### Simplificar `tipo_descuento` en `OfertaMinimo`
+- **Trigger**: cualquier refactor del flujo de ofertas/transfers.
+- **Esfuerzo**: 2-3 horas.
+- **Por qué**: `tipo_descuento='simple'` vs `'con_minimo'` es redundante — la distinción real ya está en `unidades_minima` (si es NULL o ≤1 → aplica desde 1 unidad; si es >1 → requiere mínimo). Todo descuento es "con mínimo", la diferencia es si el mínimo es 1 o N.
+- **Qué borrar**: campo `tipo_descuento`, índice `idx_ofertas_minimo_lab_tipo`, endpoint separado `/api/ofertas/preview-con-minimo`, hidden input `con_minimo` en `laboratorios.html`, lógica que bifurca los dos endpoints. Unificar todo en el wizard `/ofertas/import`.
+- **Qué conservar**: columna en DB (dejarla como obsoleta hasta que no haya dependencias externas), `OfertaMinimo.unidades_minima` como única fuente de verdad.
+
 ### Rutas Flask huérfanas (sin link desde sidebar/templates)
 - **Trigger**: cualquier momento, decisión simple.
 - **Esfuerzo**: 30 min cada una.
@@ -174,11 +181,8 @@ una tarea aparte.
 
 ## ⚙️ Operación / Mantenimiento
 
-### Backup explícito a almacenamiento externo
-- **Trigger**: ya, cuando puedas.
-- **Esfuerzo**: 1 hora.
-- **Cómo**: cron en DockerPanel: `pg_dump` + subir a Drive/Dropbox/R2. Mensual o semanal.
-- **Por qué**: hoy el único backup es Render (que también puede fallar). Tener una copia más es seguridad.
+### ~~Backup explícito a almacenamiento externo~~ ✅ HECHO 2026-05-01
+- Cron GitHub Actions semanal (lunes 04:00 UTC): `pg_dump` + upload a Cloudflare R2 vía AWS CLI. `.github/workflows/cron-backup-externo.yml`.
 
 ### ~~Sentry o similar para errores en prod~~ ✅ HECHO 2026-05-01
 - `sentry-sdk[flask]>=2.0` en requirements. Init opt-in via `SENTRY_DSN` env var. `SENTRY_ENV` configurable. `traces_sample_rate=0.1`.
@@ -188,10 +192,8 @@ una tarea aparte.
 - **Esfuerzo**: 4 horas.
 - **Cómo**: integrar con Logflare, Better Stack, o BetterStack Logs.
 
-### Health check page interno
-- **Trigger**: ya, opcional.
-- **Esfuerzo**: 30 min.
-- **Cómo**: `/admin/health` con: estado de DB, conteo de tablas, último sync, espacio disponible, versión deployada. Útil para diagnóstico rápido.
+### ~~Health check page interno~~ ✅ HECHO 2026-05-01
+- `/admin/health` con DB ✓/✗, conteos por tabla, sync ObServer, últimos 5 crons, SHA versión, hora server, Python + PID worker.
 
 ### ~~Render como "buzón de comandos remotos" para DockerPanel~~ ✅ HECHO 2026-04-29
 **Implementado**:
@@ -264,16 +266,8 @@ una tarea aparte.
 - **Esfuerzo**: 1 día.
 - **Cómo**: ya existe `pagos_ajustes_cc`. Agregar campo de vencimiento + alerta cuando se acerque.
 
-### Horarios de reparto por droguería + countdown al próximo cierre
-- **Trigger**: cuando empieces a usar Compra Rápida en serio — saber a qué hora cierra cada droguería ayuda a priorizar emisión.
-- **Esfuerzo**: 4-6 horas.
-- **Referencia**: el widget que tienen las droguerías en su web (matriz por día de la semana × franjas horarias 07:10/10:20/15:00/19:00, contador "Faltan 03:29:24 hs al cierre del próximo reparto", fecha del próximo reparto).
-- **Cómo**:
-  - Tabla `proveedor_horarios_reparto(proveedor_id, dia_semana 0-6, hora TIME)` — cada fila un slot.
-  - UI editor en `/provider/<id>/horarios` (matriz tipo grilla, igual que la captura).
-  - Helper en server: `proximo_cierre(proveedor_id) → datetime` calcula el próximo slot futuro respetando día actual.
-  - Widget en compras_rapido (panel transfers o sticky header): chips por droguería con countdown live (`HH:MM:SS`) hasta el próximo cierre. Si quedan menos de N min → chip rojo "Cerrá ahora si querés que entre hoy".
-- **Por qué**: el principal driver de ansiedad al armar un pedido grande es perderse el cierre. Tener el contador a la vista decide cuándo emitir.
+### ~~Horarios de reparto por droguería + countdown al próximo cierre~~ ✅ HECHO 2026-05-01
+- Tabla `proveedor_horarios_reparto`, editor UI, `proximo_cierre()` en `services/horarios.py`, countdown live en compra rápida, badge en lista de proveedores.
 
 ### Compras Kellerhoff con mínimo (TRF + IVA + indicador stock)
 - **Trigger**: Diego va a explicar el detalle.
@@ -329,15 +323,13 @@ una tarea aparte.
 ### ~~Auto-sync del DockerPanel hace hammer-loop al fallar~~ ✅ HECHO 2026-05-01
 - `last_attempt` se persiste en `agente_config.txt` al inicio de cada intento. `_debe_correr_ahora` aplica backoff exponencial (30→60→120→240 min) cuando `_auto_sync_fallos > 0`. Solo se libera cuando el sync tiene éxito y resetea `fallos=0`.
 
-### Post-check del DockerPanel da falsos positivos por logs históricos
-- **Síntoma**: después de un restart exitoso, el aviso `⚠ Post-check: la app parece haber crasheado al arrancar — Detecté: traceback, importerror` aparece igual porque scanea el log entero, incluyendo trazas anteriores al restart.
-- **Solución**: limitar el scan a las líneas que tienen timestamp posterior al `Starting gunicorn` más reciente, o usar `docker logs --since=<timestamp>` con el momento del restart.
-- **Workaround actual**: ignorar el aviso si la app responde (curl /health → 200).
+### ~~Post-check del DockerPanel da falsos positivos por logs históricos~~ ✅ HECHO 2026-05-01
+- `_post_check_web` busca el último "Starting gunicorn" y solo escanea desde ahí.
 
-### ~~`init_db()` bloquea el boot del worker en Render~~ ✅ MITIGADO 2026-04-28 (workaround `--preload`)
-- **Síntoma**: backfills inline en migración (ej. `producto_codigos_barra`, `producto_precios_hist`) corren en cada worker al import time. En Render con `--workers 2` sin `--preload`, dos workers ejecutan los backfills en paralelo sobre el Postgres remoto, hacen contención, el HTTP port no abre a tiempo y Render aborta el deploy con `No open HTTP ports detected`.
-- **Workaround aplicado** (2026-04-28): `--preload` en el CMD del Dockerfile → master corre `init_db` una sola vez antes de forkear workers. Verificado en `Dockerfile:30`. Backfills movidos a thread async (ver `_ejecutar_backfills_async` en `database.py:1305`).
-- **Pendiente solución definitiva**: mover backfills a management script one-shot (o disparar con env-var) para que NO corran en el path crítico de boot. Hoy con el thread async ya no es problemático en producción.
+### ~~`init_db()` backfills en boot~~ ✅ RESUELTO 2026-05-02
+- Backfills (`producto_codigos_barra`, `producto_precios_hist`) removidos del thread de boot.
+- Ahora solo corren si `RUN_BACKFILLS=1` está seteado, o manualmente con `python scripts/run_backfills.py`.
+- Boot de Render ya no toca la DB para backfills en ningún deploy normal.
 
 ---
 
