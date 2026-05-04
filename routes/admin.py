@@ -17,6 +17,20 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 
+def _check_cron_secret():
+    """Valida el header X-Cron-Secret contra la env var CRON_SECRET.
+    Si la env var no está set en el server, el endpoint queda deshabilitado (503).
+    Devuelve (ok: bool, err: tuple|None) — err es (mensaje, status_code)."""
+    import hmac
+    expected = os.environ.get('CRON_SECRET', '').strip()
+    if not expected:
+        return False, ('CRON_SECRET no configurado en el server', 503)
+    provided = (request.headers.get('X-Cron-Secret') or '').strip()
+    if not provided or not hmac.compare_digest(provided, expected):
+        return False, ('Secret inválido', 401)
+    return True, None
+
+
 def init_app(app):
 
     @app.route('/admin')
@@ -454,13 +468,9 @@ def init_app(app):
         """Endpoint disparado por GitHub Actions cada 15 min.
         Auth: header X-Cron-Secret (mismo patrón que recalcular_os_clientes).
         """
-        import hmac as _hmac
-        expected = os.environ.get('CRON_SECRET', '').strip()
-        if not expected:
-            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado'}), 503
-        provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or not _hmac.compare_digest(provided, expected):
-            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
 
         import cron_log
         import notificaciones
@@ -544,18 +554,12 @@ def init_app(app):
         Si `CRON_SECRET` NO está set en el server, el endpoint devuelve 503
         (deshabilitado por seguridad). No hay default — fail-safe.
         """
-        import hmac as _hmac
-        import os as _os
-
         from recalcular_os_por_cliente import recalcular
 
         import cron_log
-        expected = _os.environ.get('CRON_SECRET', '').strip()
-        if not expected:
-            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
-        provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or not _hmac.compare_digest(provided, expected):
-            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
 
         try:
             with cron_log.registrar('recalcular_os_clientes', origen='cron') as log:
@@ -579,7 +583,6 @@ def init_app(app):
 
         Auth: header `X-Cron-Secret` (mismo patrón que recalcular-os-clientes).
         """
-        import hmac as _hmac
         from datetime import timedelta
 
         from sqlalchemy import text as _text
@@ -587,12 +590,9 @@ def init_app(app):
         import cron_log
         from database import now_ar
 
-        expected = os.environ.get('CRON_SECRET', '').strip()
-        if not expected:
-            return jsonify({'ok': False, 'error': 'CRON_SECRET no configurado en el server'}), 503
-        provided = (request.headers.get('X-Cron-Secret') or '').strip()
-        if not provided or not _hmac.compare_digest(provided, expected):
-            return jsonify({'ok': False, 'error': 'Secret inválido'}), 401
+        ok, err = _check_cron_secret()
+        if not ok:
+            return jsonify({'ok': False, 'error': err[0]}), err[1]
 
         # Permitir override del horizonte vía query param `dias` (default 90).
         try:

@@ -133,10 +133,5 @@ def _keep_alive_loop():
 threading.Thread(target=_keep_alive_loop, daemon=True).start()
 
 
-@app.route('/debug-sentry')
-def trigger_error():
-    raise ZeroDivisionError("Sentry test")
-
-
 if __name__ == '__main__':
     app.run(debug=True)
