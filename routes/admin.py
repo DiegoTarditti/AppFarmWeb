@@ -17,18 +17,27 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 
-def _check_cron_secret():
-    """Valida el header X-Cron-Secret contra la env var CRON_SECRET.
-    Si la env var no está set en el server, el endpoint queda deshabilitado (503).
-    Devuelve (ok: bool, err: tuple|None) — err es (mensaje, status_code)."""
+def _check_token_header(env_var: str, header: str):
+    """Valida `request.headers[header]` contra la env var `env_var` con
+    comparación timing-safe (hmac.compare_digest). Si la env var no está set,
+    el endpoint queda deshabilitado (503). Patrón centralizado usado por:
+      - X-Cron-Secret + CRON_SECRET (cron jobs externos: GH Actions)
+      - X-Panel-Token + PANEL_REMOTO_TOKEN (DockerPanel polea)
+    Devuelve (ok: bool, err: tuple|None) — err es (mensaje, status_code).
+    """
     import hmac
-    expected = os.environ.get('CRON_SECRET', '').strip()
+    expected = os.environ.get(env_var, '').strip()
     if not expected:
-        return False, ('CRON_SECRET no configurado en el server', 503)
-    provided = (request.headers.get('X-Cron-Secret') or '').strip()
+        return False, (f'{env_var} no configurado en el server', 503)
+    provided = (request.headers.get(header) or '').strip()
     if not provided or not hmac.compare_digest(provided, expected):
         return False, ('Secret inválido', 401)
     return True, None
+
+
+def _check_cron_secret():
+    """Wrapper compatible — header X-Cron-Secret + env var CRON_SECRET."""
+    return _check_token_header('CRON_SECRET', 'X-Cron-Secret')
 
 
 def init_app(app):
@@ -805,18 +814,8 @@ def init_app(app):
         return jsonify({'ok': True, 'comandos': recientes})
 
     def _check_panel_token():
-        """Valida el header X-Panel-Token contra la env var PANEL_REMOTO_TOKEN.
-        Si la env var no está set en el server, el endpoint queda deshabilitado (503)."""
-        import hmac
-        expected = os.environ.get('PANEL_REMOTO_TOKEN', '').strip()
-        if not expected:
-            return False, ('PANEL_REMOTO_TOKEN no configurado en el server', 503)
-        provided = (request.headers.get('X-Panel-Token') or '').strip()
-        # compare_digest evita timing attacks (la comparación con != de strings
-        # puede leakear el token byte a byte por el tiempo de respuesta).
-        if not provided or not hmac.compare_digest(provided, expected):
-            return False, ('Token inválido', 401)
-        return True, None
+        """Wrapper sobre _check_token_header para X-Panel-Token + PANEL_REMOTO_TOKEN."""
+        return _check_token_header('PANEL_REMOTO_TOKEN', 'X-Panel-Token')
 
     @app.route('/api/panel/comandos/proximo', methods=['GET'])
     def api_panel_proximo():
