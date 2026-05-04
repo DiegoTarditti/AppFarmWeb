@@ -55,6 +55,11 @@ COMMANDS = [
     ("📊  Estado contenedores",   "docker-compose ps",                       "#0891B2"),
     ("🧹  Limpiar imágenes",      "docker image prune -f",                   "#6B7280"),
     ("🧹  Limpiar todo (prune)",  "docker system prune -f",                  "#6B7280"),
+    # Prune agresivo: incluye TODAS las imágenes no usadas (no solo dangling)
+    # + volúmenes huérfanos (sin container que los referencie). Libera mucho
+    # disco pero PUEDE BORRAR DATA si tenés data en volumes huérfanos
+    # legítimos. Usar con cuidado, después de revisar `docker volume ls`.
+    ("⚠️  Prune AGRESIVO (volumes!)", "docker system prune -af --volumes",   "#DC2626"),
 ]
 
 BG       = "#1c1c1e"
