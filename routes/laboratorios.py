@@ -1,5 +1,6 @@
 """Laboratorio CRUD routes."""
 
+import datetime
 import json
 import os
 import tempfile
@@ -311,6 +312,42 @@ def init_app(app):
                 session.commit()
                 flash('Oferta eliminada.', 'success')
         return redirect(url_for('lab_ofertas_minimo', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/<int:oferta_id>/editar', methods=['PATCH'])
+    def lab_oferta_minima_editar(lab_id, oferta_id):
+        """Edita campos EAN, unidades_minima, descuento_psl de una oferta."""
+        data = request.get_json(silent=True) or {}
+        with database.get_db() as session:
+            o = session.get(OfertaMinimo, oferta_id)
+            if not o or o.laboratorio_id != lab_id:
+                return jsonify({'ok': False, 'error': 'No encontrada'}), 404
+            changed = False
+            if 'ean' in data:
+                ean = (data['ean'] or '').strip() or None
+                o.ean = ean
+                changed = True
+            if 'unidades_minima' in data:
+                try:
+                    o.unidades_minima = int(data['unidades_minima']) if data['unidades_minima'] not in (None, '') else None
+                except (ValueError, TypeError):
+                    return jsonify({'ok': False, 'error': 'Mín. inválido'}), 400
+                changed = True
+            if 'descuento_psl' in data:
+                try:
+                    o.descuento_psl = float(data['descuento_psl']) if data['descuento_psl'] not in (None, '') else None
+                except (ValueError, TypeError):
+                    return jsonify({'ok': False, 'error': 'Descuento inválido'}), 400
+                changed = True
+            if changed:
+                o.actualizado_en = datetime.datetime.now()
+                session.commit()
+            return jsonify({
+                'ok': True,
+                'ean': o.ean,
+                'unidades_minima': o.unidades_minima,
+                'descuento_psl': float(o.descuento_psl) if o.descuento_psl is not None else None,
+                'actualizado_en': o.actualizado_en.strftime('%d/%m/%Y %H:%M') if o.actualizado_en else '',
+            })
 
     @app.route('/api/laboratorio/<int:lab_id>/ofertas-minimo', methods=['GET'])
     def api_ofertas_minimo_get(lab_id):

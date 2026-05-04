@@ -1627,10 +1627,18 @@ def init_app(app):
             elif pedido.canal == 'laboratorio' and lab_obj:
                 _filters.append(('laboratorio', lab_obj.id))
             else:
-                # Sin canal decidido: mostrar todas las opciones
+                # Sin canal decidido: mostrar todas las opciones.
+                # Incluye lab + droguerías configuradas en la matriz LaboratorioDrogueria.
                 if lab_obj:
                     _filters.append(('laboratorio', lab_obj.id))
-                if _prov:
+                    drogs_lab = (session.query(database.Provider)
+                                 .join(database.LaboratorioDrogueria,
+                                       database.LaboratorioDrogueria.drogueria_id == database.Provider.id)
+                                 .filter(database.LaboratorioDrogueria.laboratorio_id == lab_obj.id)
+                                 .all())
+                    for _d in drogs_lab:
+                        _filters.append((_d.tipo or 'drogueria', _d.id))
+                elif _prov:
                     _filters.append((_prov.tipo or 'proveedor', _prov.id))
             for _tipo, _eid in _filters:
                 rows = (session.query(database.Plantilla)

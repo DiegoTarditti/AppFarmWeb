@@ -40,19 +40,17 @@
     <span class="text-xs text-[#6f6f6f] ml-auto">
         {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
     </span>
-    <a href="{{ url_for('pedidos_emitidos_list') }}" class="text-xs bg-sky-50 border border-sky-300 text-sky-700 hover:bg-sky-100 px-2.5 py-1 rounded font-medium">📋 Pedidos emitidos</a>
-    <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs bg-sky-50 border border-sky-300 text-sky-700 hover:bg-sky-100 px-2.5 py-1 rounded font-medium">⚙ Matriz lab × drog</a>
     <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
 </div>
 
 {% if pendientes_anteriores %}
 <div class="bg-rose-50 border-b border-rose-200 px-4 sm:px-6 py-2">
-    <p class="text-xs font-bold text-rose-800 mb-1">🔁 {{ pendientes_anteriores | length }} pendientes de pedidos anteriores (NO_VINO)</p>
+    <p class="text-sm font-bold text-rose-800 mb-2">🔁 {{ pendientes_anteriores | length }} pendientes de pedidos anteriores (NO_VINO)</p>
     <div class="flex flex-wrap gap-2">
         {% for it in pendientes_anteriores %}
         <button type="button"
                 onclick='reagregarPendiente({{ it | tojson }})'
-                class="text-[11px] bg-white border border-rose-300 text-rose-800 hover:bg-rose-100 px-2 py-0.5 rounded"
+                class="text-sm bg-white border border-rose-300 text-rose-800 hover:bg-rose-100 px-3 py-1 rounded"
                 title="Pedido #{{ it.pedido_id }} — {{ it.pedido_fecha.strftime('%d/%m') }}">
             <b>{{ it.pendiente }}u</b> · {{ it.desc | truncate(40) }} <span class="text-[#999]">({{ it.lab_nombre }})</span>
         </button>
@@ -112,7 +110,7 @@
                 <canvas id="chart-canvas-anio"></canvas>
                 <p id="chart-empty-anio" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
             </div>
-            <div class="grid grid-cols-4 gap-1.5 mt-1.5" id="chart-stats-grid"></div>
+            <div class="flex flex-wrap gap-1 mt-1.5" id="chart-stats-grid"></div>
         </div>
         <!-- Mes -->
         <div>
@@ -135,6 +133,8 @@
                 <tr>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
+                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">EAN</th>
+                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-emerald-700">Oferta</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Stock</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Mín</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Ayer</th>
@@ -152,21 +152,49 @@
                     data-cubre="{{ 'y' if it.cubre_lab else 'n' }}"
                     data-tvc="{{ it.tvc or '' }}"
                     data-sug="{{ it.min_sugerencia or '' }}"
+                    data-oferta-dto="{{ it.oferta_dto or '' }}"
+                    data-oferta-min="{{ it.oferta_min or '' }}"
                     onclick="seleccionarProducto(this)">
-                    <td class="px-3 py-1.5">
+                    <td class="px-3 py-1">
                         {% if it.tipo == 'C' %}
                         <span class="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded mr-1 font-bold" title="Va por promedio de ventas (consumo estable)">Prom Vtas</span>
                         {% endif %}
                         {{ it.desc }}
                     </td>
-                    <td class="px-3 py-1.5 text-[#666]">
+                    <td class="px-3 py-1 text-[#666]">
                         {{ it.lab_nombre }}
                         {% if not it.cubre_lab %}
                         <span class="text-[10px] text-amber-700 font-bold ml-1" title="Esta drog no cubre el lab — pasa a la cola del próximo prov">⚠ otra drog</span>
                         {% endif %}
                     </td>
-                    <td class="px-3 py-1.5 text-right font-mono">{{ it.stock }}</td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[#666] whitespace-nowrap">
+                    <td class="px-3 py-1 font-mono text-xs text-[#888]">{{ it.ean or '—' }}</td>
+                    <td class="px-3 py-1 whitespace-nowrap" onclick="event.stopPropagation()">
+                        {% if it.oferta_dto %}
+                        <span class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
+                            {{ it.oferta_dto | int }}%{% if it.oferta_min and it.oferta_min > 1 %} · mín {{ it.oferta_min }}{% endif %}
+                        </span>
+                        {% if it.oferta_min and it.oferta_min > 1 and it.a_pedir < it.oferta_min %}
+                        {% set extra = it.oferta_min - it.a_pedir %}
+                        {% if it.avg_diario and it.avg_diario > 0 %}
+                            {% set dias = (extra / it.avg_diario) | round | int %}
+                            {% if dias <= 7 %}{% set btn_color = 'bg-emerald-600 hover:bg-emerald-700' %}
+                            {% elif dias <= 20 %}{% set btn_color = 'bg-amber-500 hover:bg-amber-600' %}
+                            {% else %}{% set btn_color = 'bg-rose-500 hover:bg-rose-600' %}{% endif %}
+                            {% set btn_title = 'Pedir ' ~ it.oferta_min ~ ' para TRF · absorbés ' ~ extra ~ ' u extra en ~' ~ dias ~ ' días' %}
+                        {% else %}
+                            {% set btn_color = 'bg-gray-400 hover:bg-gray-500' %}
+                            {% set btn_title = 'Pedir ' ~ it.oferta_min ~ ' para activar el TRF (sin datos de rotación)' %}
+                        {% endif %}
+                        <button onclick="subirAMinOferta(this, {{ it.oferta_min }})"
+                                title="{{ btn_title }}"
+                                class="ml-1 text-sm {{ btn_color }} text-white px-2 py-0.5 rounded font-bold">
+                            → {{ it.oferta_min }}
+                        </button>
+                        {% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td class="px-3 py-1 text-right font-mono">{{ it.stock }}</td>
+                    <td class="px-3 py-1 text-right font-mono text-[#666] whitespace-nowrap">
                         {{ it.minimo }}
                         {% if it.min_sugerencia == 'up' %}
                         <span class="text-[10px] bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded ml-1"
@@ -179,14 +207,14 @@
                               title="Cobertura {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d — en rango">OK</span>
                         {% endif %}
                     </td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.u24h or '—' }}</td>
-                    <td class="px-3 py-1.5 text-right font-mono text-[#666]">{{ it.u7d or '—' }}</td>
-                    <td class="px-3 py-1.5 text-right" onclick="event.stopPropagation()">
+                    <td class="px-3 py-1 text-right font-mono text-[#666]">{{ it.u24h or '—' }}</td>
+                    <td class="px-3 py-1 text-right font-mono text-[#666]">{{ it.u7d or '—' }}</td>
+                    <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
                         <input type="number" min="0" value="{{ it.a_pedir }}"
                                {% if not it.cubre_lab %}disabled{% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
                     </td>
-                    <td class="px-3 py-1.5 text-center" onclick="event.stopPropagation()">
+                    <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
                         {% if it.producto_id_local %}
                         <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
                                 title="Sacar hasta que vuelva a llegar al mínimo"
@@ -308,7 +336,7 @@ function renderAnio(p) {
         ];
         if (minimo > 0) statsSinHist.push({l:'Mín.',v:minimo,c:'#7c3aed'});
         statsSinHist.push({l:'Cobertura',v:sd,c:'#888'});
-        grid.innerHTML = statsSinHist.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1.5 text-center"><p class="text-[9px] text-[#888] uppercase tracking-wide">${s.l}</p><p class="text-xs font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+        grid.innerHTML = statsSinHist.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1 text-center"><p class="text-[8px] text-[#aaa] uppercase tracking-wide leading-none mb-0.5">${s.l}</p><p class="text-[11px] font-bold leading-none" style="color:${s.c}">${s.v}</p></div>`).join('');
         if (_chartAnio) { _chartAnio.destroy(); _chartAnio = null; }
         const empty = document.getElementById('chart-empty-anio');
         empty.textContent = 'Sin historial mensual.';
@@ -357,8 +385,8 @@ function renderAnio(p) {
     _chartAnio = new Chart(ctx, {
         type:'bar', plugins:[blp],
         data:{labels, datasets:[
-            {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(56,189,248,0.45)',borderColor:'rgba(56,189,248,0.75)',borderWidth:1,borderRadius:3,order:3},
-            {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(34,197,94,0.35)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(34,197,94,0.5)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
+            {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(99,102,241,0.25)',borderColor:'rgba(99,102,241,0.7)',borderWidth:1,borderRadius:3,borderDash:[4,2],order:3},
             {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
             {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
             ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
@@ -378,7 +406,7 @@ function renderAnio(p) {
     if (minimo > 0) stats.push({l:'Mín.',v:minimo,c:'#7c3aed'});
     stats.push({l:'Cobertura',v:sd,c:'#888'});
     if (ps>0) stats.push({l:`Mes (${de}/${dim}d)`,v:`${ps}/~${pf}`,c:'#b45309'});
-    grid.innerHTML = stats.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1.5 text-center"><p class="text-[9px] text-[#888] uppercase tracking-wide">${s.l}</p><p class="text-xs font-bold" style="color:${s.c}">${s.v}</p></div>`).join('');
+    grid.innerHTML = stats.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1 text-center"><p class="text-[8px] text-[#aaa] uppercase tracking-wide leading-none mb-0.5">${s.l}</p><p class="text-[11px] font-bold leading-none" style="color:${s.c}">${s.v}</p></div>`).join('');
 }
 
 function renderMes(d, ing) {
@@ -392,30 +420,54 @@ function renderMes(d, ing) {
     if (_chartMes) _chartMes.destroy();
     const ctx = document.getElementById('chart-canvas-mes').getContext('2d');
     const datasets = [{
-        type: 'bar', label: 'Salidas', data: d.data,
-        backgroundColor: 'rgba(34,197,94,0.45)', borderColor: '#22c55e',
+        type: 'bar', label: 'Salidas (ventas)', data: d.data,
+        backgroundColor: 'rgba(34,197,94,0.5)', borderColor: '#16a34a',
         borderWidth: 1, borderRadius: 2, order: 3,
     }];
     if (hayPed) {
         datasets.push({
             type: 'bar', label: 'Pedido', data: ing.pedido_data,
-            backgroundColor: 'rgba(245,158,11,0.45)', borderColor: '#f59e0b',
+            backgroundColor: 'rgba(59,130,246,0.35)', borderColor: '#3b82f6',
             borderWidth: 1, borderRadius: 2, order: 2,
         });
     }
     if (hayIng) {
         datasets.push({
-            type: 'bar', label: 'Entradas', data: ing.data,
-            backgroundColor: 'rgba(59,130,246,0.45)', borderColor: '#3b82f6',
+            type: 'bar', label: 'Entradas (ingreso)', data: ing.data,
+            backgroundColor: 'rgba(251,146,60,0.5)', borderColor: '#ea580c',
             borderWidth: 1, borderRadius: 2, order: 1,
         });
     }
+    // Promedio diario (línea horizontal punteada)
+    const salidas = d.data.map(v => v || 0);
+    const n = salidas.length;
+    const avg30 = n ? salidas.reduce((a, b) => a + b, 0) / n : 0;
+    datasets.push({
+        type: 'line', label: `Prom. ${avg30.toFixed(1)}/día`,
+        data: Array(n).fill(avg30),
+        borderColor: '#EAB308', borderWidth: 1.5, borderDash: [6, 3],
+        pointRadius: 0, tension: 0, fill: false, order: 0,
+    });
+    // Tendencia 7 días (media móvil centrada en ventana de 7)
+    const W = 7;
+    const ma7 = salidas.map((_, i) => {
+        const desde = Math.max(0, i - Math.floor(W / 2));
+        const hasta = Math.min(n, desde + W);
+        const slice = salidas.slice(desde, hasta);
+        return slice.reduce((a, b) => a + b, 0) / slice.length;
+    });
+    datasets.push({
+        type: 'line', label: 'Tend. 7d',
+        data: ma7,
+        borderColor: '#f97316', borderWidth: 2,
+        pointRadius: 0, tension: 0.35, fill: false, order: 0,
+    });
     _chartMes = new Chart(ctx, {
         data: {labels: d.labels, datasets},
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: {mode: 'index', intersect: false},
-            plugins: {legend: {display: hayIng || hayPed,
+            plugins: {legend: {display: true,
                                 labels: {color: '#888', font: {size: 9}, boxWidth: 12, padding: 6}},
                       tooltip: {backgroundColor: '#fff', titleColor: '#1e1e1e', bodyColor: '#555', borderColor: '#e0e0e0', borderWidth: 1}},
             scales: {x: {grid: {display: false}, ticks: {color: '#999', font: {size: 9}}},
@@ -660,26 +712,49 @@ function agregarFila(it) {
     tr.dataset.cubre = it.cubre_lab ? 'y' : 'n';
     tr.dataset.nombre = it.desc;
     tr.dataset.lab = it.lab_nombre;
+    tr.dataset.ofertaDto = it.oferta_dto || '';
+    tr.dataset.ofertaMin = it.oferta_min || '';
     tr.onclick = () => seleccionarProducto(tr);
     tr.innerHTML = `
-        <td class="px-3 py-1.5">
+        <td class="px-3 py-1">
             <span class="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded mr-1 font-bold">+ NUEVO</span>
             ${it.desc}
         </td>
-        <td class="px-3 py-1.5 text-[#666]">
+        <td class="px-3 py-1 text-[#666]">
             ${it.lab_nombre}
             ${it.cubre_lab ? '' : '<span class="text-[10px] text-amber-700 font-bold ml-1">⚠ otra drog</span>'}
         </td>
-        <td class="px-3 py-1.5 text-right font-mono">${it.stock}</td>
-        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.minimo}</td>
-        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.u24h || '—'}</td>
-        <td class="px-3 py-1.5 text-right font-mono text-[#666]">${it.u7d || '—'}</td>
-        <td class="px-3 py-1.5 text-right" onclick="event.stopPropagation()">
+        <td class="px-3 py-1 font-mono text-xs text-[#888]">${it.ean || '—'}</td>
+        <td class="px-3 py-1 whitespace-nowrap" onclick="event.stopPropagation()">
+            ${it.oferta_dto ? (() => {
+                const badge = `<span class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">${Math.round(it.oferta_dto)}%${(it.oferta_min > 1) ? ' · mín ' + it.oferta_min : ''}</span>`;
+                let btn = '';
+                if (it.oferta_min > 1 && it.a_pedir < it.oferta_min) {
+                    const extra = it.oferta_min - it.a_pedir;
+                    let color = 'bg-gray-400 hover:bg-gray-500';
+                    let tip = `Pedir ${it.oferta_min} para TRF`;
+                    if (it.avg_diario > 0) {
+                        const dias = Math.round(extra / it.avg_diario);
+                        tip = `Pedir ${it.oferta_min} para TRF · absorbés ${extra} u extra en ~${dias} días`;
+                        color = dias <= 7 ? 'bg-emerald-600 hover:bg-emerald-700'
+                              : dias <= 20 ? 'bg-amber-500 hover:bg-amber-600'
+                              : 'bg-rose-500 hover:bg-rose-600';
+                    }
+                    btn = `<button onclick="subirAMinOferta(this,${it.oferta_min})" title="${tip}" class="ml-1 text-sm ${color} text-white px-2 py-0.5 rounded font-bold">→ ${it.oferta_min}</button>`;
+                }
+                return badge + btn;
+            })() : '—'}
+        </td>
+        <td class="px-3 py-1 text-right font-mono">${it.stock}</td>
+        <td class="px-3 py-1 text-right font-mono text-[#666]">${it.minimo}</td>
+        <td class="px-3 py-1 text-right font-mono text-[#666]">${it.u24h || '—'}</td>
+        <td class="px-3 py-1 text-right font-mono text-[#666]">${it.u7d || '—'}</td>
+        <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
             <input type="number" min="0" value="${it.a_pedir}"
                    ${it.cubre_lab ? '' : 'disabled'}
                    class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
         </td>
-        <td class="px-3 py-1.5 text-center" onclick="event.stopPropagation()">
+        <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
             <button onclick="this.closest('tr').remove()"
                     class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100">
                 ✕ Quitar
@@ -694,6 +769,14 @@ function agregarFila(it) {
 function cerrarAgregar() {
     _agregarInput.value = '';
     _agregarResults.classList.add('hidden');
+}
+
+function subirAMinOferta(btn, minimo) {
+    const input = btn.closest('tr').querySelector('input[type=number]');
+    if (input) {
+        input.value = minimo;
+        btn.remove();
+    }
 }
 
 // ── Reagregar pendiente de pedido anterior ──────────────────────────
@@ -720,12 +803,16 @@ async function emitirPedido() {
         if (!input || input.disabled) return;
         const cantidad = parseInt(input.value || 0);
         if (cantidad <= 0) return;
+        const dto = parseFloat(row.dataset.ofertaDto);
+        const min = parseInt(row.dataset.ofertaMin);
         items.push({
             observer_id: parseInt(row.dataset.pid) || null,
             producto_id_local: parseInt(row.dataset.prodId) || null,
             descripcion: row.dataset.nombre,
             lab_nombre: row.dataset.lab,
             cantidad,
+            oferta_dto: isNaN(dto) ? null : dto,
+            oferta_min: isNaN(min) ? null : min,
         });
     });
     if (!items.length) { status.textContent = 'No hay items con cantidad > 0.'; return; }
@@ -746,10 +833,18 @@ async function emitirPedido() {
         try {
             const rp = await fetch(`/api/pedido-emitido/${d.pedido_id}/export-plantilla`, {credentials: 'same-origin'});
             if (rp.ok) {
+                const ct  = rp.headers.get('Content-Type') || '';
                 const blob = await rp.blob();
-                const cd = rp.headers.get('Content-Disposition') || '';
-                const m = cd.match(/filename="([^"]+)"/);
-                const fname = m ? m[1] : `Pedido_${d.pedido_id}.txt`;
+                const cd  = rp.headers.get('Content-Disposition') || '';
+                const m   = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+                let fname;
+                if (m) {
+                    fname = m[1].replace(/['"]/g, '').trim();
+                } else {
+                    const ext = ct.includes('spreadsheet') || ct.includes('excel') ? 'xlsx'
+                              : ct.includes('csv') ? 'csv' : 'txt';
+                    fname = `Pedido_${d.pedido_id}.${ext}`;
+                }
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url; a.download = fname; a.click();
@@ -783,29 +878,43 @@ let _opResolve = null;
 
 async function _renderOpLista() {
     const lista = document.getElementById('modal-op-lista');
+    lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Cargando…</p>';
+    let d;
     try {
         const r = await fetch('/api/usuarios-pedidos', {credentials: 'same-origin'});
-        const d = await r.json();
-        lista.innerHTML = '';
-        if (!(d.users || []).length) {
-            lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Sin operadores — agregá uno abajo.</p>';
-            return;
-        }
-        d.users.forEach(u => {
-            const row = document.createElement('div');
-            row.className = 'flex items-center justify-between gap-2 py-1 border-b border-surface-border last:border-0';
-            row.innerHTML = `
-                <button type="button"
-                        class="flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 py-0.5"
-                        onclick="_seleccionarOp(${JSON.stringify(u.nombre)})">
-                    ${u.nombre}
-                </button>
-                <button type="button"
-                        class="text-[10px] text-rose-500 hover:text-rose-700 px-1"
-                        onclick="_borrarOp(${u.id}, this)">✕</button>`;
-            lista.appendChild(row);
-        });
-    } catch(e) {}
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        d = await r.json();
+    } catch(e) {
+        lista.innerHTML = `<p class="text-[11px] text-rose-600 py-1">⚠ Error al cargar (${e.message}). Escribí un nombre abajo.</p>`;
+        setTimeout(() => document.getElementById('modal-op-inp').focus(), 50);
+        return;
+    }
+    lista.innerHTML = '';
+    if (!(d.users || []).length) {
+        lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Sin operadores — escribí un nombre abajo y presioná +.</p>';
+        setTimeout(() => document.getElementById('modal-op-inp').focus(), 50);
+        return;
+    }
+    d.users.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2 py-1.5 border-b border-surface-border last:border-0';
+
+        const btnSel = document.createElement('button');
+        btnSel.type = 'button';
+        btnSel.className = 'flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 px-1 py-0.5 rounded hover:bg-emerald-50';
+        btnSel.textContent = u.nombre;
+        btnSel.addEventListener('click', () => _seleccionarOp(u.nombre));
+
+        const btnDel = document.createElement('button');
+        btnDel.type = 'button';
+        btnDel.className = 'text-[10px] text-[#ccc] hover:text-rose-500 px-1.5 py-0.5';
+        btnDel.textContent = '✕';
+        btnDel.addEventListener('click', () => _borrarOp(u.id, btnDel));
+
+        row.appendChild(btnSel);
+        row.appendChild(btnDel);
+        lista.appendChild(row);
+    });
 }
 
 function _seleccionarOp(nombre) {
@@ -884,7 +993,7 @@ document.addEventListener('keydown', e => {
             <input id="modal-op-inp" type="text" placeholder="Agregar operador…"
                    class="flex-1 border border-surface-border rounded px-2 py-1.5 text-sm">
             <button id="modal-op-agregar"
-                    class="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">+</button>
+                    class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">+</button>
         </div>
         <p id="modal-op-err" class="text-[11px] text-rose-600 mt-1 min-h-[1rem]"></p>
         <div class="flex justify-end mt-2">

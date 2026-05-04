@@ -549,7 +549,10 @@ class Provider(Base):
     tipo = Column(String(20), nullable=False, default='drogueria')
     activo = Column(Boolean, nullable=False, default=True)
     # Mínimo de compra para que la droguería acepte el pedido. NULL = sin mínimo.
-    compra_minima_pesos = Column(DECIMAL(14, 2), nullable=True)
+    compra_minima_pesos     = Column(DECIMAL(14, 2), nullable=True)
+    # Descuento base de la droguería (independiente del lab). NULL = sin acuerdo cargado.
+    descuento_con_transfer  = Column(DECIMAL(5, 2), nullable=True)
+    descuento_sin_transfer  = Column(DECIMAL(5, 2), nullable=True)
     matriz_visible = Column(Boolean, nullable=False, default=True)
     matriz_orden   = Column(Integer, nullable=True)
     claims = relationship('Claim', back_populates='provider')
@@ -647,6 +650,9 @@ class PedidoEmitidoItem(Base):
     # como cache para queries simples — se actualiza al guardar revisión/confirmación.
     cantidad_recibida   = Column(Integer, nullable=False, default=0)
     estado              = Column(String(20), nullable=False, default='PENDIENTE')  # PENDIENTE/RECIBIDO/NO_VINO
+    # Foto del TRF al momento de emitir — persiste aunque el transfer se borre después.
+    oferta_dto          = Column(DECIMAL(6, 2), nullable=True)   # % descuento esperado
+    oferta_min          = Column(Integer, nullable=True)          # unidades mínimas para activarlo
     pedido              = relationship('PedidoEmitido', back_populates='items')
 
 
@@ -1697,6 +1703,14 @@ def _migrate_legacy_plantillas():
             ).first()
             if exists:
                 continue
+            # Si ya hay plantilla NO-legacy para esta entidad, no migrar el legacy
+            has_real = session.query(Plantilla).filter(
+                Plantilla.entidad_tipo == tipo_ent,
+                Plantilla.entidad_id == pe.proveedor_id,
+                ~Plantilla.nombre.like('[legacy]%'),
+            ).first()
+            if has_real:
+                continue
             campos = [{
                 'campo': c.campo_sistema,
                 'col_inicio': c.col_inicio,
@@ -1825,6 +1839,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS revisada_en TIMESTAMP",
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS cantidad_confirmada_obs INTEGER",
         "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS confirmada_en TIMESTAMP",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS oferta_dto DECIMAL(6,2)",
+        "ALTER TABLE pedido_emitido_item ADD COLUMN IF NOT EXISTS oferta_min INTEGER",
     ):
         try:
             conn.execute(text(ddl))
@@ -1915,6 +1931,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS descripcion_custom VARCHAR(200)"))
     # Provider: mínimo de compra (puede no estar en deploys viejos)
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_con_transfer DECIMAL(5, 2)"))
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_sin_transfer DECIMAL(5, 2)"))
     # OfertaMinimo: campos nuevos Fase 2 compra rápida
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id)"))
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS vigencia_desde DATE"))
@@ -2625,6 +2643,10 @@ def _sqlite_add_columns(conn):
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN parser_file VARCHAR(100)"))
     if 'match_strategy' not in existing:
         conn.execute(text("ALTER TABLE proveedores ADD COLUMN match_strategy VARCHAR(20) NOT NULL DEFAULT 'barcode'"))
+    if 'descuento_con_transfer' not in existing:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN descuento_con_transfer DECIMAL(5, 2)"))
+    if 'descuento_sin_transfer' not in existing:
+        conn.execute(text("ALTER TABLE proveedores ADD COLUMN descuento_sin_transfer DECIMAL(5, 2)"))
 
     existing = {row[1] for row in conn.execute(text("PRAGMA table_info(facturas)"))}
     existing_fi = {row[1] for row in conn.execute(text("PRAGMA table_info(factura_items)"))}

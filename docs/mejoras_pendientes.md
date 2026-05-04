@@ -82,6 +82,13 @@ una tarea aparte.
 
 ## 🛠 Calidad de código
 
+### Simplificar `tipo_descuento` en `OfertaMinimo`
+- **Trigger**: cualquier refactor del flujo de ofertas/transfers.
+- **Esfuerzo**: 2-3 horas.
+- **Por qué**: `tipo_descuento='simple'` vs `'con_minimo'` es redundante — la distinción real ya está en `unidades_minima` (si es NULL o ≤1 → aplica desde 1 unidad; si es >1 → requiere mínimo). Todo descuento es "con mínimo", la diferencia es si el mínimo es 1 o N.
+- **Qué borrar**: campo `tipo_descuento`, índice `idx_ofertas_minimo_lab_tipo`, endpoint separado `/api/ofertas/preview-con-minimo`, hidden input `con_minimo` en `laboratorios.html`, lógica que bifurca los dos endpoints. Unificar todo en el wizard `/ofertas/import`.
+- **Qué conservar**: columna en DB (dejarla como obsoleta hasta que no haya dependencias externas), `OfertaMinimo.unidades_minima` como única fuente de verdad.
+
 ### Rutas Flask huérfanas (sin link desde sidebar/templates)
 - **Trigger**: cualquier momento, decisión simple.
 - **Esfuerzo**: 30 min cada una.

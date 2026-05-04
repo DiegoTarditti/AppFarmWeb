@@ -197,6 +197,10 @@
                                 Sin horario
                             {% endif %}
                         </a>
+                        <a href="{{ url_for('descuentos_base_lista') }}"
+                           class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100">
+                            💸 Descuentos base
+                        </a>
                         <label class="inline-flex items-center gap-1.5 text-[11px] cursor-pointer select-none text-[#555]">
                             <input type="checkbox"
                                    class="w-3.5 h-3.5"
@@ -290,6 +294,24 @@
                         </select>
                     </div>
                 </div>
+                {% if p.tipo == 'drogueria' %}
+                <div class="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs text-[#6f6f6f] mb-1">Descuento con transfer (%)</label>
+                        <input type="number" name="descuento_con_transfer" step="0.01" min="0" max="100"
+                               value="{{ p.descuento_con_transfer or '' }}"
+                               placeholder="ej: 31.03"
+                               class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-[#6f6f6f] mb-1">Descuento sin transfer (%)</label>
+                        <input type="number" name="descuento_sin_transfer" step="0.01" min="0" max="100"
+                               value="{{ p.descuento_sin_transfer or '' }}"
+                               placeholder="ej: 28.50"
+                               class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                    </div>
+                </div>
+                {% endif %}
                 <input type="hidden" name="tipo_filter" value="{{ tipo_filter }}">
                 <div class="mt-3 flex items-center gap-2">
                     <input type="hidden" name="grabar_productos" value="0">

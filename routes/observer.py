@@ -85,6 +85,7 @@ def init_app(app):
                 from helpers import multi_token_filter
                 clausula = multi_token_filter(q,
                     database.ObsProducto.descripcion,
+                    database.ObsProducto.descripcion_custom,
                     database.ObsProducto.codigo_alfabeta)
                 if clausula is not None:
                     base = base.filter(clausula)

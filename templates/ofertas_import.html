@@ -98,17 +98,6 @@
                     Snapshot del archivo (primeras 5 filas) — destildá las columnas que no querés procesar:
                 </p>
                 <div class="flex items-center gap-2 text-[11px]">
-                    <button type="button" id="btn-plantilla-completa"
-                            class="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded font-semibold"
-                            title="Selecciona código + descripción + descuento + cantidad mínima">
-                        ⚡ Plantilla descuento+mín
-                    </button>
-                    <button type="button" id="btn-plantilla-simple"
-                            class="text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded font-semibold"
-                            title="Selecciona código + descripción + descuento">
-                        ⚡ Plantilla solo descuento
-                    </button>
-                    <span class="text-[#ccc]">·</span>
                     <button type="button" id="btn-cols-all" class="text-violet-700 hover:text-violet-900 underline">Todas</button>
                     <span class="text-[#ccc]">·</span>
                     <button type="button" id="btn-cols-none" class="text-[#888] hover:text-[#1e1e1e] underline">Ninguna</button>
@@ -127,7 +116,7 @@
         <!-- Wrapper de mapeo: solo visible en sub-paso 2b -->
         <div id="mapping-wrapper" class="hidden">
             <h3 class="text-xs font-semibold text-[#1e1e1e] mb-2 mt-2">Mapeá las columnas seleccionadas a los campos del sistema:</h3>
-            <div id="mapping-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"></div>
+            <div id="mapping-grid" class="mb-4 border border-surface-border rounded-lg divide-y divide-surface-border overflow-hidden"></div>
             <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-[11px] text-amber-800 mb-4">
                 <strong>💡 Tip:</strong> si Excel guardó el descuento como <code>0.2</code> en vez de <code>20</code>, no te preocupes: el sistema lo convierte automáticamente a 20% al guardar (cualquier valor entre 0 y 1 se trata como fracción).
             </div>
@@ -280,6 +269,19 @@
             </div>
         </div>
 
+        <!-- Panel equivalencias código proveedor → EAN -->
+        <div id="equiv-panel" class="hidden mb-2 bg-emerald-50 border border-emerald-200 rounded px-3 py-2 flex items-center gap-3 flex-wrap text-[11px]">
+            <span class="text-base">🔗</span>
+            <span class="text-emerald-900">
+                <strong><span id="equiv-count">0</span> productos</strong> tienen código de proveedor resuelto a EAN.
+            </span>
+            <label class="flex items-center gap-1.5 cursor-pointer ml-auto">
+                <input type="checkbox" id="guardar-equiv" checked class="w-3.5 h-3.5 accent-emerald-600">
+                <span class="font-semibold text-emerald-900">Guardar equivalencia código→EAN</span>
+                <span class="text-emerald-700">(el próximo import los va a resolver sin fuzzy)</span>
+            </label>
+        </div>
+
         <div class="bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
             <span class="font-semibold text-amber-900">Incluir:</span>
             <label class="flex items-center gap-1 cursor-pointer">
@@ -410,14 +412,14 @@
 
 <script>
 const CAMPOS = [
+    { key: 'codigo',           label: 'Cód. int. prov.',  hint: 'código interno del proveedor (no EAN)' },
     { key: 'ean',              label: 'EAN',              hint: 'código de barras 13 dígitos' },
-    { key: 'codigo',           label: 'Código',           hint: 'código interno del proveedor' },
     { key: 'descripcion',      label: 'Descripción',      hint: 'nombre del producto' },
-    { key: 'unidades_minima',  label: 'Mín. unidades',    hint: 'cantidad mínima para descuento' },
-    { key: 'precio',           label: 'Precio',           hint: 'precio unitario en $' },
     { key: 'descuento_psl',    label: 'Descuento %',      hint: 'porcentaje de descuento' },
-    { key: 'rentabilidad',     label: 'Rentabilidad %',   hint: 'porcentaje de rentabilidad' },
-    { key: 'plazo_pago',       label: 'Plazo de pago',    hint: 'ej. 30 días' },
+    { key: 'rentabilidad',     label: 'Rentabilidad %',   hint: 'porcentaje de rentabilidad (% PVP)' },
+    { key: 'unidades_minima',  label: 'Mín. unidades',    hint: 'cantidad mínima para el descuento' },
+    { key: 'observacion',      label: 'Observación',      hint: 'etiqueta libre por ítem (ej. TR Lanzamiento)' },
+    { key: 'precio',           label: 'Precio',           hint: 'precio unitario en $' },
     { key: 'grupo_id',         label: 'Grupo',            hint: 'agrupación para mínimos compartidos' },
 ];
 
@@ -474,95 +476,6 @@ document.getElementById('btn-cols-none').addEventListener('click', () => {
     renderSnapshot(); renderMapping(); recalcularItems();
 });
 
-async function aplicarPlantilla(camposPlantilla) {
-    // Pide al backend que infiera el mapeo SOLO contra los campos de la
-    // plantilla, y aplica el resultado: marca esas columnas como activas
-    // y descarta el resto.
-    if (!_headers.length) return;
-    try {
-        const r = await fetch('/api/inferir-columnas', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                headers: _headers,
-                rows: _rows.slice(0, 10),
-                candidatos: camposPlantilla,
-            }),
-        });
-        if (!r.ok) throw new Error('Error en inferencia');
-        const data = await r.json();
-        const mapping = data.mapping || {};
-        // Aplicar lo que la inferencia detectó del set de campos de la plantilla,
-        // pero NO deactivar las otras columnas: el usuario las puede mapear a mano.
-        // Si en una corrida previa había mapeos para campos fuera de la plantilla,
-        // esos sí los limpiamos para que solo quede el mapping de la plantilla.
-        _mapping = {};
-        for (const campo of camposPlantilla) {
-            if (mapping[campo] != null) {
-                _mapping[campo] = mapping[campo];
-            }
-        }
-        // Heurística adicional para EAN: si la plantilla pide EAN pero la
-        // inferencia no lo detectó, buscar en las filas una columna que tenga
-        // en mayoría valores numéricos de 12-14 dígitos.
-        if (camposPlantilla.includes('ean') && _mapping.ean == null) {
-            for (let i = 0; i < (_headers.length || 0); i++) {
-                if (Object.values(_mapping).includes(i)) continue;
-                let hits = 0, total = 0;
-                for (const row of _rows.slice(0, 10)) {
-                    const v = String(row[i] ?? '').replace(/\s/g, '');
-                    if (v) {
-                        total++;
-                        if (/^\d{12,14}$/.test(v)) hits++;
-                    }
-                }
-                if (total >= 3 && hits / total >= 0.7) { _mapping.ean = i; break; }
-            }
-        }
-        // Heurística para descuento_psl: una columna con números 1-99
-        // (porcentaje) que NO sea ya el EAN ni cantidad mínima detectada.
-        if (camposPlantilla.includes('descuento_psl') && _mapping.descuento_psl == null) {
-            for (let i = 0; i < (_headers.length || 0); i++) {
-                if (Object.values(_mapping).includes(i)) continue;
-                let hits = 0, total = 0;
-                for (const row of _rows.slice(0, 10)) {
-                    const v = String(row[i] ?? '').trim().replace('%', '').replace(',', '.');
-                    if (v && !isNaN(parseFloat(v))) {
-                        total++;
-                        const n = parseFloat(v);
-                        if (n > 0 && n < 100) hits++;
-                    }
-                }
-                if (total >= 3 && hits / total >= 0.7) { _mapping.descuento_psl = i; break; }
-            }
-        }
-        // Mantener todas las columnas activas — el user destilda las que no quiere.
-        _columnasActivas = new Set(_headers.map((_, i) => i));
-        _camposVisibles = new Set(Object.keys(_mapping));
-        // Reportar al user qué quedó
-        const resumen = camposPlantilla.map(c => mapping[c] != null
-            ? `✓ ${c} (col ${mapping[c]+1})`
-            : `✗ ${c} no detectado`).join(' · ');
-        renderSnapshot();
-        renderMapping();
-        recalcularItems();
-        actualizarBotonContinuar();
-        // Mensaje breve de feedback
-        const msg = document.createElement('div');
-        msg.className = 'fixed top-3 right-3 z-[120] bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg max-w-md';
-        msg.textContent = resumen;
-        document.body.appendChild(msg);
-        setTimeout(() => msg.remove(), 4000);
-    } catch (err) {
-        alert('Error aplicando plantilla: ' + err.message);
-    }
-}
-
-document.getElementById('btn-plantilla-completa').addEventListener('click', () =>
-    aplicarPlantilla(['ean', 'codigo', 'descripcion', 'descuento_psl', 'unidades_minima']));
-document.getElementById('btn-plantilla-simple').addEventListener('click', () =>
-    aplicarPlantilla(['ean', 'codigo', 'descripcion', 'descuento_psl']));
 
 // Sincronizar selectores de lab entre paso 1 y paso 4: cualquiera que cambie
 // pisa al otro. Así la primera validación arranca con el lab elegido.
@@ -802,24 +715,32 @@ function renderMapping() {
         ).join('');
     };
 
-    let html = camposVisibles.map(c => `
-        <div>
-            <label class="text-[11px] font-semibold text-[#555] block">${c.label}</label>
-            <p class="text-[10px] text-[#999] mb-1">${c.hint}</p>
-            <select class="map-sel w-full bg-surface-input border border-surface-border rounded px-2 py-1 text-xs"
+    let html = camposVisibles.map(c => {
+        const sinEanBadge = (c.key === 'ean' && _mapping.ean == null)
+            ? '<span class="ml-2 text-[10px] bg-amber-50 border border-amber-300 text-amber-700 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">Sin EAN</span>'
+            : '';
+        return `
+        <div class="flex items-center gap-3 px-3 py-2 bg-white hover:bg-[#fafafa]">
+            <div class="w-36 flex-shrink-0">
+                <span class="text-xs font-semibold text-[#1e1e1e]">${c.label}</span>
+                <span class="text-[10px] text-[#bbb] block leading-tight">${c.hint}</span>
+            </div>
+            <select class="map-sel flex-1 bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs"
                     data-campo="${c.key}">
                 ${opcionesPorCampo(c.key)}
             </select>
-        </div>`).join('');
+            ${sinEanBadge}
+        </div>`;
+    }).join('');
 
-    // Tarjeta para agregar otro campo del sistema (los que faltan).
+    // Fila para agregar otro campo del sistema (los que faltan).
     if (camposNoMapeados.length > 0) {
         const opts = camposNoMapeados.map(c =>
             `<option value="${c.key}">${c.label}</option>`).join('');
         html += `
-            <div class="border border-dashed border-surface-border rounded p-2 flex flex-col justify-center">
-                <label class="text-[11px] font-semibold text-[#888] block mb-1">+ Agregar otro campo</label>
-                <select id="add-campo-sel" class="bg-white border border-surface-border rounded px-2 py-1 text-xs">
+            <div class="flex items-center gap-3 px-3 py-2 bg-[#fafafa]">
+                <div class="w-36 flex-shrink-0 text-xs font-semibold text-[#aaa]">+ Agregar campo</div>
+                <select id="add-campo-sel" class="flex-1 bg-white border border-surface-border rounded px-2 py-1.5 text-xs text-[#555]">
                     <option value="">— elegí un campo —</option>
                     ${opts}
                 </select>
@@ -1130,6 +1051,15 @@ function renderValidacion(stats) {
             </div>
         </div>
     `;
+
+    // Panel equivalencias: mostrar si hay items con EAN resuelto desde código interno
+    const nEquiv = _items.filter(it => it._ean_resuelto && it.codigo).length;
+    const equivPanel = document.getElementById('equiv-panel');
+    const equivCount = document.getElementById('equiv-count');
+    if (equivPanel && equivCount) {
+        equivCount.textContent = nEquiv;
+        equivPanel.classList.toggle('hidden', nEquiv === 0);
+    }
 
     // Renderizar detalle de items con problemas. Filtra según los checkboxes
     // "Incluir:" (warning / not_found / fuzzy). Por default mostramos
@@ -1676,6 +1606,7 @@ async function _confirmarEImportar() {
                 observacion: observacion || null,
                 accion_conflicto: accionConflicto || null,
                 reemplazar: reemplazar,
+                guardar_equivalencias: document.getElementById('guardar-equiv')?.checked ?? true,
                 items: _items,
             }),
         });

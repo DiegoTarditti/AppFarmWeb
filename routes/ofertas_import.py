@@ -538,6 +538,31 @@ def init_app(app):
         with database.get_db() as session:
             results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
 
+            # Pre-fetch EANs reales (obs_codigos_barras) para productos que
+            # sólo tienen pseudo-EAN OBS:N. Se usa para propagar el EAN al item
+            # y persistir la equivalencia código-proveedor → EAN.
+            obs_ids = [
+                res.producto.observer_id
+                for res in results
+                if res.producto is not None
+                and getattr(res.producto, 'observer_id', None)
+            ]
+            obs_ean_map = {}
+            if obs_ids:
+                for oid, cb in (
+                    session.query(
+                        database.ObsCodigoBarras.producto_observer,
+                        database.ObsCodigoBarras.codigo_barras,
+                    )
+                    .filter(
+                        database.ObsCodigoBarras.producto_observer.in_(obs_ids),
+                        database.ObsCodigoBarras.fecha_baja.is_(None),
+                    )
+                    .order_by(database.ObsCodigoBarras.orden.asc()).all()
+                ):
+                    if oid not in obs_ean_map and cb:
+                        obs_ean_map[oid] = cb
+
         # Mapa idx → descripción limpia (para anotar en cada entry)
         norm_by_idx = {n['idx']: n for n in normalizaciones}
         validados = []
@@ -575,6 +600,22 @@ def init_app(app):
                 if 'match_observer' in res.warnings:
                     if not entry.get('codigo') and getattr(p, 'codigo_alfabeta', None):
                         entry['codigo'] = p.codigo_alfabeta
+
+                # Si el item no tenía EAN (solo código de proveedor) pero el producto
+                # matcheado sí tiene EAN → propagarlo. Así import-guardar guarda la
+                # oferta con EAN real y puede persistir la equivalencia cod→EAN.
+                if not entry.get('ean'):
+                    prod_ean = getattr(p, 'codigo_barra', None)
+                    if prod_ean and not str(prod_ean).startswith('OBS:'):
+                        entry['ean'] = str(prod_ean)
+                        entry['_ean_resuelto'] = True
+                    else:
+                        # Fallback: ObsProducto (no tiene codigo_barra) o Producto
+                        # con pseudo-EAN OBS:N → buscar en obs_codigos_barras.
+                        obs_id = getattr(p, 'observer_id', None)
+                        if obs_id and obs_id in obs_ean_map:
+                            entry['ean'] = obs_ean_map[obs_id]
+                            entry['_ean_resuelto'] = True
 
                 if 'precio_variacion_alta' in res.warnings:
                     entry['_status'] = 'warning'
@@ -661,6 +702,7 @@ def init_app(app):
             except ValueError:
                 pass
         observacion = (data.get('observacion') or '').strip()[:200] or None
+        guardar_equiv = bool(data.get('guardar_equivalencias', True))
         # Acción ante conflicto: 'reemplazar' | 'sumar' | None (chequear)
         accion_conflicto = (data.get('accion_conflicto') or '').strip().lower()
 
@@ -772,15 +814,19 @@ def init_app(app):
                     existing.drogueria_id = drog_id
                     existing.vigencia_hasta = vigencia_hasta
                     existing.vigencia_desde = hoy if vigencia_hasta else None
-                    if observacion:
-                        existing.observacion = observacion
+                    obs_item = (str(it.get('observacion') or '').strip()[:200]
+                                or observacion or None)
+                    if obs_item:
+                        existing.observacion = obs_item
                     existing.activo = True  # re-activar si estaba inactivo
                     existing.actualizado_en = now_ar()
                     actualizados += 1
-                    # Persistir equivalencia codigo_interno → Producto local
-                    _persistir_equivalencia(session, lab_id, codigo, ean,
-                                             it.get('descripcion'))
+                    if guardar_equiv:
+                        _persistir_equivalencia(session, lab_id, codigo, ean,
+                                                 it.get('descripcion'))
                 else:
+                    obs_item = (str(it.get('observacion') or '').strip()[:200]
+                                or observacion or None)
                     session.add(OfertaMinimo(
                         laboratorio_id=lab_id,
                         ean=(ean or '')[:20],
@@ -796,12 +842,13 @@ def init_app(app):
                         drogueria_id=drog_id,
                         vigencia_desde=hoy if vigencia_hasta else None,
                         vigencia_hasta=vigencia_hasta,
-                        observacion=observacion,
+                        observacion=obs_item,
                         activo=True,
                     ))
                     insertados += 1
-                    _persistir_equivalencia(session, lab_id, codigo, ean,
-                                             it.get('descripcion'))
+                    if guardar_equiv:
+                        _persistir_equivalencia(session, lab_id, codigo, ean,
+                                                 it.get('descripcion'))
 
             session.commit()
 

@@ -34,17 +34,21 @@
     {% if not pedido.etapa_recep and not solo_lectura %}
     <span class="text-xs font-bold text-amber-800">📥 Paso 1 de 3 — Recepción</span>
     <span class="text-[11px] text-amber-700">Marcá lo que llegó y lo que no entró.</span>
+    <div class="flex items-center gap-1.5 bg-white border-2 border-amber-400 rounded-lg px-2 py-1" title="Escaneá o ingresá el EAN del producto">
+        <span class="text-amber-600 text-sm">⬛</span>
+        <input type="text" id="scan-input" placeholder="Escanear EAN…"
+               class="text-sm font-mono outline-none w-36 bg-transparent" autocomplete="off">
+    </div>
+    <button type="button" onclick="abrirPanelTest()"
+            class="text-[11px] px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-100" title="Panel de prueba de EANs">
+        🧪
+    </button>
+    <span id="scan-msg" class="text-[11px] font-semibold min-w-[12rem]"></span>
     <button type="button" id="btn-recibir" onclick="habilitarRecepcion()"
             class="ml-auto bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm px-4 py-1.5 rounded-lg">
         📥 Recibir
     </button>
-    <div id="acciones-recepcion" class="hidden flex items-center gap-2 flex-wrap">
-        <div class="flex items-center gap-1.5 bg-white border-2 border-amber-400 rounded-lg px-2 py-1" title="Escaneá el código de barras del producto">
-            <span class="text-amber-600 text-sm">⬛</span>
-            <input type="text" id="scan-input" placeholder="Escanear…"
-                   class="text-sm font-mono outline-none w-36 bg-transparent" autocomplete="off">
-        </div>
-        <span id="scan-msg" class="text-[11px] font-semibold min-w-[12rem]"></span>
+    <div id="acciones-recepcion" class="hidden items-center gap-2 flex-wrap">
         <button type="button" onclick="todoEntro()"
                 class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
             ✓ Entró todo
@@ -89,6 +93,18 @@
     <span id="filtro-count" class="text-[11px] text-[#6f6f6f]"></span>
 </div>
 
+<!-- Panel de testing EAN -->
+<div id="panel-test-ean" class="hidden border-b border-amber-200 bg-amber-50/70 px-4 sm:px-6 py-2">
+    <div class="flex items-center gap-3 mb-1.5">
+        <span class="text-xs font-bold text-amber-800">🧪 Panel de prueba — EANs del pedido</span>
+        <span id="test-ean-stats" class="text-[11px] text-amber-700"></span>
+        <button type="button" onclick="document.getElementById('panel-test-ean').classList.add('hidden')"
+                class="ml-auto text-[11px] text-[#999] hover:text-[#555]">✕ cerrar</button>
+    </div>
+    <div id="test-ean-lista" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto"></div>
+    <p class="text-[10px] text-amber-600 mt-1">Hacé click en un EAN para simular el scan. Los grises no tienen EAN cargado.</p>
+</div>
+
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
     <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
         <table class="w-full text-sm">
@@ -111,10 +127,11 @@
                 <tr class="recep-row" data-id="{{ it.id }}" data-pedida="{{ it.pedida }}"
                     data-ean="{{ it.ean }}" data-eans="{{ it.eans | tojson }}"
                     data-descripcion="{{ it.descripcion }}"
-                    data-producto-local="{{ it.producto_id_local or '' }}">
+                    data-producto-local="{{ it.producto_id_local or '' }}"
+                    data-observer-id="{{ it.observer_id or '' }}">
                     <td class="px-3 py-1.5">{{ it.descripcion }}</td>
                     <td class="px-3 py-1.5 text-[#666]">{{ it.lab }}</td>
-                    <td class="px-3 py-1.5 font-mono text-[11px] text-[#999]">
+                    <td class="px-3 py-1.5 font-mono text-xs text-[#777]">
                         {{ it.ean or '—' }}
                         {% if it.eans | length > 1 %}
                         <span class="text-[10px] text-sky-500" title="{{ it.eans | join(', ') }}">+{{ (it.eans | length) - 1 }}</span>
@@ -202,12 +219,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const inp = row.querySelector('.recep-revisada');
         if (inp) inp.addEventListener('input', () => { _actualizarBadge(row); });
     });
+    // Scanner siempre activo (Enter dispara el scan)
+    const scanInp = document.getElementById('scan-input');
+    if (scanInp) {
+        scanInp.addEventListener('keydown', e => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const ean = scanInp.value.trim();
+            scanInp.value = '';
+            _procesarScan(ean);
+            scanInp.focus();
+        });
+    }
     // Modal equivalencia — búsqueda en tiempo real
     const busq = document.getElementById('eq-busqueda');
     if (busq) busq.addEventListener('input', () => _renderListaEquiv(busq.value));
     const btnCerrarEq = document.getElementById('eq-cerrar');
     if (btnCerrarEq) btnCerrarEq.addEventListener('click', () => {
         document.getElementById('modal-equivalencia').classList.add('hidden');
+    });
+    const btnIgnorar = document.getElementById('eq-ignorar');
+    if (btnIgnorar) btnIgnorar.addEventListener('click', () => {
+        document.getElementById('modal-equivalencia').classList.add('hidden');
+        const msg = document.getElementById('scan-msg');
+        if (msg) { msg.textContent = '⊘ EAN ignorado'; msg.className = 'text-[11px] font-semibold min-w-[12rem] text-[#888]'; setTimeout(() => { msg.textContent = ''; }, 1500); }
     });
 });
 
@@ -254,35 +289,44 @@ let _opResolveDet = null;
 
 async function _renderOpListaDet() {
     const lista = document.getElementById('modal-op-det-lista');
+    lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Cargando…</p>';
+    let d;
     try {
         const r = await fetch('/api/usuarios-pedidos', {credentials: 'same-origin'});
-        const d = await r.json();
-        lista.innerHTML = '';
-        if (!(d.users || []).length) {
-            lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Sin operadores — agregá uno abajo.</p>';
-            return;
-        }
-        d.users.forEach(u => {
-            const row = document.createElement('div');
-            row.className = 'flex items-center justify-between gap-2 py-1 border-b border-surface-border last:border-0';
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        d = await r.json();
+    } catch(e) {
+        lista.innerHTML = `<p class="text-[11px] text-rose-600 py-1">⚠ Error al cargar operadores (${e.message}). Podés igualmente escribir un nombre abajo.</p>`;
+        setTimeout(() => document.getElementById('modal-op-det-inp').focus(), 50);
+        return;
+    }
+    lista.innerHTML = '';
+    if (!(d.users || []).length) {
+        lista.innerHTML = '<p class="text-[11px] text-[#aaa] py-1">Sin operadores — escribí un nombre abajo y presioná +.</p>';
+        setTimeout(() => document.getElementById('modal-op-det-inp').focus(), 50);
+        return;
+    }
+    d.users.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between gap-2 py-1.5 border-b border-surface-border last:border-0';
 
-            const btnSel = document.createElement('button');
-            btnSel.type = 'button';
-            btnSel.className = 'flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 py-0.5';
-            btnSel.textContent = u.nombre;
-            btnSel.addEventListener('click', () => _seleccionarOpDet(u.nombre));
+        const btnSel = document.createElement('button');
+        btnSel.type = 'button';
+        btnSel.className = 'flex-1 text-left text-sm font-medium text-[#1e1e1e] hover:text-emerald-700 px-1 py-0.5 rounded hover:bg-emerald-50';
+        btnSel.textContent = u.nombre;
+        btnSel.addEventListener('click', () => _seleccionarOpDet(u.nombre));
 
-            const btnDel = document.createElement('button');
-            btnDel.type = 'button';
-            btnDel.className = 'text-[10px] text-rose-500 hover:text-rose-700 px-1';
-            btnDel.textContent = '✕';
-            btnDel.addEventListener('click', () => _borrarOpDet(u.id, btnDel));
+        const btnDel = document.createElement('button');
+        btnDel.type = 'button';
+        btnDel.className = 'text-[10px] text-[#ccc] hover:text-rose-500 px-1.5 py-0.5';
+        btnDel.textContent = '✕';
+        btnDel.title = 'Eliminar';
+        btnDel.addEventListener('click', () => _borrarOpDet(u.id, btnDel));
 
-            row.appendChild(btnSel);
-            row.appendChild(btnDel);
-            lista.appendChild(row);
-        });
-    } catch(e) {}
+        row.appendChild(btnSel);
+        row.appendChild(btnDel);
+        lista.appendChild(row);
+    });
 }
 
 function _seleccionarOpDet(nombre) {
@@ -348,6 +392,44 @@ function _buildEanMap() {
     });
 }
 
+function abrirPanelTest() {
+    const panel = document.getElementById('panel-test-ean');
+    panel.classList.remove('hidden');
+    const lista = document.getElementById('test-ean-lista');
+    lista.innerHTML = '';
+    let conEan = 0, sinEan = 0;
+    document.querySelectorAll('.recep-row').forEach(row => {
+        const desc = row.cells[0].textContent.trim();
+        let eans = [];
+        try { eans = JSON.parse(row.dataset.eans || '[]'); } catch(e) {}
+        if (row.dataset.ean && !eans.includes(row.dataset.ean)) eans.unshift(row.dataset.ean);
+        if (eans.length) {
+            conEan++;
+            eans.forEach((ean, idx) => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.title = desc;
+                btn.textContent = ean + (idx > 0 ? ' (alt)' : '');
+                btn.className = 'text-[11px] font-mono px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-200';
+                btn.addEventListener('click', () => {
+                    document.getElementById('scan-input').value = ean;
+                    _procesarScan(ean);
+                    document.getElementById('scan-input').value = '';
+                });
+                lista.appendChild(btn);
+            });
+        } else {
+            sinEan++;
+            const sp = document.createElement('span');
+            sp.className = 'text-[11px] px-2 py-0.5 rounded border border-surface-border bg-[#f5f5f5] text-[#bbb] line-through';
+            sp.title = 'Sin EAN';
+            sp.textContent = desc.substring(0, 25);
+            lista.appendChild(sp);
+        }
+    });
+    document.getElementById('test-ean-stats').textContent = `${conEan} con EAN / ${sinEan} sin EAN`;
+}
+
 function _procesarScan(ean) {
     const msg = document.getElementById('scan-msg');
     if (!ean) return;
@@ -404,15 +486,19 @@ async function _guardarEquivalencia(row) {
     const modal = document.getElementById('modal-equivalencia');
     const ean = modal.dataset.eanPendiente;
     const prodIdLocal = row.dataset.productoLocal;
+    const observerId = row.dataset.observerId;
     modal.classList.add('hidden');
-    if (!prodIdLocal) {
-        alert('Este producto no tiene ID local — no se puede guardar la equivalencia.');
+    if (!prodIdLocal && !observerId) {
+        alert('Este producto no tiene ID local ni ID observer — no se puede guardar la equivalencia.');
         return;
     }
+    const payload = {ean};
+    if (prodIdLocal) payload.producto_id_local = parseInt(prodIdLocal);
+    else payload.observer_id = parseInt(observerId);
     const r = await fetch(`/api/pedido-emitido/${PEDIDO_ID}/mapear-ean`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         credentials: 'same-origin',
-        body: JSON.stringify({ean, producto_id_local: parseInt(prodIdLocal)}),
+        body: JSON.stringify(payload),
     });
     const d = await r.json();
     if (!d.ok) { alert('Error al guardar equivalencia: ' + (d.error || '')); return; }
@@ -431,18 +517,7 @@ function habilitarRecepcion() {
     document.getElementById('btn-recibir').classList.add('hidden');
     document.getElementById('acciones-recepcion').classList.remove('hidden');
     document.getElementById('acciones-recepcion').classList.add('flex');
-    _buildEanMap();
-    // Activar scanner
-    const scanInp = document.getElementById('scan-input');
-    scanInp.focus();
-    scanInp.addEventListener('keydown', e => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        const ean = scanInp.value.trim();
-        scanInp.value = '';
-        _procesarScan(ean);
-        scanInp.focus();
-    });
+    document.getElementById('scan-input').focus();
     document.querySelectorAll('.recep-revisada').forEach(inp => {
         inp.disabled = false;
         inp.classList.remove('opacity-60');
@@ -597,9 +672,13 @@ async function guardarRevision(modo) {
             <input id="eq-busqueda" type="text" placeholder="Buscar producto…"
                    class="w-full border border-surface-border rounded px-2 py-1.5 text-sm outline-none">
         </div>
-        <div id="eq-lista" class="max-h-72 overflow-y-auto"></div>
-        <div class="px-4 py-2 text-[11px] text-[#aaa]">
-            Seleccioná el producto — se guarda como equivalencia permanente y la próxima vez se reconoce automáticamente.
+        <div id="eq-lista" class="max-h-64 overflow-y-auto"></div>
+        <div class="px-4 py-3 border-t border-surface-border flex items-center justify-between gap-2">
+            <span class="text-[10px] text-[#aaa] flex-1">Seleccioná el producto — se guarda como equivalencia permanente.</span>
+            <button type="button" id="eq-ignorar"
+                    class="text-xs px-3 py-1.5 rounded border border-surface-border text-[#888] hover:bg-red-50 hover:text-red-700 hover:border-red-300 whitespace-nowrap">
+                ✗ No es de este pedido
+            </button>
         </div>
     </div>
 </div>
