@@ -17,18 +17,27 @@ if _SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, _SCRIPTS_DIR)
 
 
-def _check_cron_secret():
-    """Valida el header X-Cron-Secret contra la env var CRON_SECRET.
-    Si la env var no está set en el server, el endpoint queda deshabilitado (503).
-    Devuelve (ok: bool, err: tuple|None) — err es (mensaje, status_code)."""
+def _check_token_header(env_var: str, header: str):
+    """Valida `request.headers[header]` contra la env var `env_var` con
+    comparación timing-safe (hmac.compare_digest). Si la env var no está set,
+    el endpoint queda deshabilitado (503). Patrón centralizado usado por:
+      - X-Cron-Secret + CRON_SECRET (cron jobs externos: GH Actions)
+      - X-Panel-Token + PANEL_REMOTO_TOKEN (DockerPanel polea)
+    Devuelve (ok: bool, err: tuple|None) — err es (mensaje, status_code).
+    """
     import hmac
-    expected = os.environ.get('CRON_SECRET', '').strip()
+    expected = os.environ.get(env_var, '').strip()
     if not expected:
-        return False, ('CRON_SECRET no configurado en el server', 503)
-    provided = (request.headers.get('X-Cron-Secret') or '').strip()
+        return False, (f'{env_var} no configurado en el server', 503)
+    provided = (request.headers.get(header) or '').strip()
     if not provided or not hmac.compare_digest(provided, expected):
         return False, ('Secret inválido', 401)
     return True, None
+
+
+def _check_cron_secret():
+    """Wrapper compatible — header X-Cron-Secret + env var CRON_SECRET."""
+    return _check_token_header('CRON_SECRET', 'X-Cron-Secret')
 
 
 def init_app(app):
@@ -524,6 +533,54 @@ def init_app(app):
         return render_template('admin_seed_proveedores.html',
                                resultado=resultado, ejecutado=ejecutar)
 
+    @app.route('/api/admin/migrar/backfill-codigos-barra', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_migrar_backfill_codigos_barra():
+        """Backfill alt1/2/3 → producto_codigos_barra (Fase 1.2 EANs).
+
+        Idempotente. Aceptamos `dry=1` en query string para preview.
+        Loguea el run en cron_log con stats en metadata.
+        """
+        from backfill_codigos_barra import ejecutar
+
+        import cron_log
+        dry = (request.args.get('dry', '').strip() == '1')
+        try:
+            with cron_log.registrar('migrar_backfill_codigos_barra',
+                                     origen='web') as log:
+                stats = ejecutar(dry_run=dry)
+                log.metadata = stats
+                if stats.get('errores'):
+                    log.error = ' | '.join(stats['errores'][:3])
+            return jsonify({'ok': True, 'dry_run': dry, **stats})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
+    @app.route('/api/admin/migrar/bridge-productos-observer', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_migrar_bridge_productos_observer():
+        """Bridge masivo productos ↔ obs_productos (Fase 2 EANs).
+
+        Vincula `productos.observer_id` por EAN o codigo_alfabeta.
+        Idempotente — salta los ya vinculados.
+        """
+        from bridge_productos_observer import ejecutar
+
+        import cron_log
+        dry = (request.args.get('dry', '').strip() == '1')
+        try:
+            with cron_log.registrar('migrar_bridge_productos_observer',
+                                     origen='web') as log:
+                stats = ejecutar(dry_run=dry)
+                # Sacar ejemplos del log (texto, ocupan espacio)
+                log.metadata = {k: v for k, v in stats.items()
+                                if k != 'ejemplos_dudosos'}
+                if stats.get('errores'):
+                    log.error = ' | '.join(stats['errores'][:3])
+            return jsonify({'ok': True, 'dry_run': dry, **stats})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/api/obs/recalcular-os-clientes', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
     def api_recalcular_os_clientes():
@@ -759,18 +816,8 @@ def init_app(app):
         return jsonify({'ok': True, 'comandos': recientes})
 
     def _check_panel_token():
-        """Valida el header X-Panel-Token contra la env var PANEL_REMOTO_TOKEN.
-        Si la env var no está set en el server, el endpoint queda deshabilitado (503)."""
-        import hmac
-        expected = os.environ.get('PANEL_REMOTO_TOKEN', '').strip()
-        if not expected:
-            return False, ('PANEL_REMOTO_TOKEN no configurado en el server', 503)
-        provided = (request.headers.get('X-Panel-Token') or '').strip()
-        # compare_digest evita timing attacks (la comparación con != de strings
-        # puede leakear el token byte a byte por el tiempo de respuesta).
-        if not provided or not hmac.compare_digest(provided, expected):
-            return False, ('Token inválido', 401)
-        return True, None
+        """Wrapper sobre _check_token_header para X-Panel-Token + PANEL_REMOTO_TOKEN."""
+        return _check_token_header('PANEL_REMOTO_TOKEN', 'X-Panel-Token')
 
     @app.route('/api/panel/comandos/proximo', methods=['GET'])
     def api_panel_proximo():
