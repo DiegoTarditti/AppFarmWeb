@@ -498,6 +498,13 @@ def init_app(app):
                 else:
                     min_sugerencia = 'ok'
 
+                # Sin ventas 12m o sin mov 60d → no sugerir pedir aunque
+                # esté bajo mínimo (no tiene sentido reponer lo que no rota).
+                if u12m_int == 0 or sin_mov:
+                    a_pedir = 0
+                else:
+                    a_pedir = max(0, min_actual - stock_actual)
+
                 items.append({
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
@@ -513,7 +520,9 @@ def init_app(app):
                     'cobertura_d': cobertura_d,
                     'u24h': u24h_val,
                     'u7d': u7d_val,
-                    'a_pedir': max(0, min_actual - stock_actual),
+                    'u12m': u12m_int,
+                    'sin_mov_60d': bool(sin_mov),
+                    'a_pedir': a_pedir,
                     'avg_diario': round(avg_diario, 3),
                     'cubre_lab': cubre_lab,
                     'ean': eans_armar.get(r.pid, ''),
