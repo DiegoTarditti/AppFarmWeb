@@ -226,6 +226,71 @@
     }
     </script>
 
+    <button type="button"
+       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-indigo-400 hover:shadow-sm transition-all">
+        <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-semibold text-sm">🔗 Migración EANs · Bridge productos ↔ obs_productos</p>
+                <p class="text-xs text-[#6f6f6f] mt-1">
+                    Vincula <code class="font-mono text-[10px]">productos.observer_id</code> matcheando
+                    cada producto local contra <code class="font-mono text-[10px]">obs_productos</code>
+                    por <strong>EAN</strong> (cualquiera de N) o por <strong>codigo_alfabeta</strong>.
+                    Solo cuando el match es único. Idempotente — salta productos ya vinculados.
+                    <br><strong>Pre-requisito</strong>: backfill alt1/2/3 → 1-a-N corrido (botón de arriba).
+                </p>
+                <div class="flex gap-2 mt-3">
+                    <button type="button" onclick="event.stopPropagation(); bridgeObserver(this, true)"
+                            class="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-3 py-1 rounded-lg">
+                        🔍 Dry-run
+                    </button>
+                    <button type="button" onclick="event.stopPropagation(); bridgeObserver(this, false)"
+                            class="text-xs bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-800 font-semibold px-3 py-1 rounded-lg">
+                        ▶ Ejecutar
+                    </button>
+                </div>
+                <p id="bridge-result" class="text-xs mt-2 hidden font-mono"></p>
+            </div>
+        </div>
+    </button>
+    <script>
+    async function bridgeObserver(btn, dry) {
+        const resultEl = document.getElementById('bridge-result');
+        if (!dry && !confirm('Esto setea productos.observer_id en filas reales. ¿Continuar?')) return;
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = '⏳ Procesando...';
+        resultEl.classList.remove('hidden', 'text-rose-700', 'text-emerald-700', 'text-amber-700');
+        resultEl.classList.add('text-[#6f6f6f]');
+        resultEl.textContent = 'Procesando...';
+        try {
+            const url = "{{ url_for('api_migrar_bridge_productos_observer') }}" + (dry ? '?dry=1' : '');
+            const r = await fetch(url, { method: 'POST' });
+            const data = await r.json();
+            if (!data.ok) throw new Error(data.error || 'Falló el bridge');
+            resultEl.classList.remove('text-[#6f6f6f]');
+            resultEl.classList.add(dry ? 'text-amber-700' : 'text-emerald-700');
+            resultEl.innerHTML =
+                `${dry ? '🔍 DRY-RUN' : '✅ APLICADO'} · ` +
+                `Total: ${data.productos_total} · ` +
+                `ya vinculados: ${data.ya_vinculados} · ` +
+                `por EAN: <b>${data.vinculados_ean}</b> · ` +
+                `por alfabeta: <b>${data.vinculados_alfabeta}</b> · ` +
+                `dudosos: <b class="text-amber-700">${data.dudosos}</b> · ` +
+                `sin match: ${data.sin_match}`;
+        } catch (e) {
+            resultEl.classList.remove('text-[#6f6f6f]');
+            resultEl.classList.add('text-rose-700');
+            resultEl.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    }
+    </script>
+
     <a href="{{ url_for('admin_panel') }}"
        class="block bg-white border border-surface-border rounded-xl p-5 hover:border-emerald-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">

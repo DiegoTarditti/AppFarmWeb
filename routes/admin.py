@@ -546,6 +546,30 @@ def init_app(app):
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
+    @app.route('/api/admin/migrar/bridge-productos-observer', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_migrar_bridge_productos_observer():
+        """Bridge masivo productos ↔ obs_productos (Fase 2 EANs).
+
+        Vincula `productos.observer_id` por EAN o codigo_alfabeta.
+        Idempotente — salta los ya vinculados.
+        """
+        import cron_log
+        from bridge_productos_observer import ejecutar
+        dry = (request.args.get('dry', '').strip() == '1')
+        try:
+            with cron_log.registrar('migrar_bridge_productos_observer',
+                                     origen='web') as log:
+                stats = ejecutar(dry_run=dry)
+                # Sacar ejemplos del log (texto, ocupan espacio)
+                log.metadata = {k: v for k, v in stats.items()
+                                if k != 'ejemplos_dudosos'}
+                if stats.get('errores'):
+                    log.error = ' | '.join(stats['errores'][:3])
+            return jsonify({'ok': True, 'dry_run': dry, **stats})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/api/obs/recalcular-os-clientes', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
     def api_recalcular_os_clientes():
