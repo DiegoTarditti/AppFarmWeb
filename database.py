@@ -398,6 +398,25 @@ class AlarmaNotificada(Base):
     estado_actual = Column(String(20), nullable=True)  # 'activa' / 'resuelta'
 
 
+class SyncLock(Base):
+    """Singleton (id=1) que protege el sync ObServer entre workers de gunicorn.
+
+    Reemplaza al `threading.Lock` en memoria, que con `--preload --workers 2`
+    no sirve: cada worker forkea su propio lock y dos workers pueden disparar
+    el sync en paralelo. Acá el `acquire` es un UPDATE atómico contra la fila.
+
+    Si `iniciado_en` quedó viejo (>60 min) sin liberar, el lock se considera
+    abandonado (worker se mató mid-sync) y se puede tomar igual.
+    """
+    __tablename__ = 'sync_lock'
+    id = Column(Integer, primary_key=True)
+    en_curso = Column(Boolean, nullable=False, default=False)
+    iniciado_en = Column(DateTime, nullable=True)
+    finalizado_en = Column(DateTime, nullable=True)
+    paso_actual = Column(String(80), nullable=True)
+    ultimo_resultado = Column(Text, nullable=True)  # JSON serializado
+
+
 class PanelComando(Base):
     """Buzón de comandos remotos: vos los encolás desde Render, la PC farmacia
     los ejecuta vía polling outbound (DockerPanel no necesita estar accesible).
@@ -1278,7 +1297,7 @@ def init_db(database_url=None):
                         'pedido_emitido', 'pedido_emitido_item',
                         'pack_equivalencias', 'cliente_os_inferida',
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
-                        'alarmas_notificadas')
+                        'alarmas_notificadas', 'sync_lock')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -1377,6 +1396,17 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_horarios_prov "
                     "ON proveedor_horarios_reparto (proveedor_id)"
                 ))
+                # Lock singleton para coordinar el sync ObServer entre workers.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS sync_lock (
+                        id INTEGER PRIMARY KEY,
+                        en_curso BOOLEAN NOT NULL DEFAULT FALSE,
+                        iniciado_en TIMESTAMP,
+                        finalizado_en TIMESTAMP,
+                        paso_actual VARCHAR(80),
+                        ultimo_resultado TEXT
+                    )
+                """))
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos

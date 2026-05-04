@@ -770,7 +770,13 @@ def init_app(app):
     def api_panel_proximo():
         """DockerPanel polea acá. Devuelve el próximo comando pendiente y lo
         marca como en_proceso atómicamente. Si no hay nada, devuelve null.
+
+        Antes de buscar pendiente, sweep de zombies: comandos en_proceso con
+        tomado_en > 10 min sin reportar resultado se marcan 'error' (DockerPanel
+        se cerró abruptamente). Sin esto quedan trabados indefinidamente.
         """
+        from datetime import timedelta
+
         from sqlalchemy import text as _text
 
         from database import now_ar
@@ -779,6 +785,14 @@ def init_app(app):
             return jsonify({'ok': False, 'error': err[0]}), err[1]
         origen = (request.args.get('origen') or 'dockerpanel').strip()[:40]
         with database.get_db() as session:
+            # Zombie sweep — sin esto, un en_proceso sin reportar nunca se libera.
+            umbral_zombie = now_ar() - timedelta(minutes=10)
+            session.execute(_text(
+                "UPDATE panel_comandos SET estado = 'error', "
+                "resultado = COALESCE(resultado, '') || '[auto: timeout >10min sin reporte]', "
+                "ejecutado_en = :now "
+                "WHERE estado = 'en_proceso' AND tomado_en IS NOT NULL AND tomado_en < :umbral"
+            ), {'now': now_ar(), 'umbral': umbral_zombie})
             # SELECT FOR UPDATE SKIP LOCKED para que múltiples workers no agarren el mismo
             row = session.execute(_text(
                 "SELECT id FROM panel_comandos WHERE estado = 'pendiente' "
