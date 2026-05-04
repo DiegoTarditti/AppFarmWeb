@@ -1727,11 +1727,17 @@ class DockerPanel(tk.Tk):
             'status':        [('docker-compose ps', 'ps')],
             'version':       [('git rev-parse --short HEAD', 'rev'),
                               ('git log -1 --format=%s%n%cI', 'last_commit')],
-            'sync_now':      [('python sync_observer.py', 'sync')],
-            # Dedupe labs/proveedores. SIEMPRE dry-run primero; el apply solo
-            # después de revisar el resultado del dry-run.
-            'dedupe_labs_dry':   [('python -m scripts.dedupe_labs_drogs', 'dry-run')],
-            'dedupe_labs_apply': [('python -m scripts.dedupe_labs_drogs --apply', 'apply')],
+            # Sync ObServer completo via endpoint local de la app web. El
+            # endpoint /api/auto-sync ya orquesta sync ObServer→local + push
+            # a Render con lock atómico. --max-time 290 para no chocar con
+            # el timeout=300 del subprocess.
+            'sync_now':      [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync"', 'auto-sync')],
+            # Dedupe labs/proveedores. Corre DENTRO del container web (vía
+            # docker-compose exec) para usar Python + DB del entorno deployado.
+            # SIEMPRE dry-run primero; el apply solo después de revisar el
+            # resultado del dry-run.
+            'dedupe_labs_dry':   [('docker-compose exec -T web python -m scripts.dedupe_labs_drogs', 'dry-run')],
+            'dedupe_labs_apply': [('docker-compose exec -T web python -m scripts.dedupe_labs_drogs --apply', 'apply')],
             # Purga manual de cron_log (se ejecuta vía API local de la app web).
             'purgar_cron_log':   [('curl -sS -X POST "http://localhost:5000/api/cron-log/purgar?dias=7"', 'purgar')],
             # Health check: containers + commit actual + tail de logs web/db.
