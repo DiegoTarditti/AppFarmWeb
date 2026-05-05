@@ -370,10 +370,19 @@ def inferir_campo_por_header(header, candidatos=None) -> Optional[str]:
             if textual in candidatos:
                 candidatos.remove(textual)
 
-    # Heurística: si el header contiene 'producto', 'descripcion', 'nombre',
-    # 'articulo' o 'detalle', NO es código ni EAN — esos son textos
-    # descriptivos. Lo descartamos para que no se proponga como código.
-    if any(kw in n for kw in ('producto', 'descripcion', 'nombre', 'articulo', 'detalle')):
+    # Heurística: si el header sugiere texto descriptivo (producto, descripcion,
+    # nombre, articulo, detalle) Y NO menciona explícitamente "código/EAN/etc.",
+    # descartar candidatos de identificador. Esto evita que "PRODUCTO" se mapee
+    # a `codigo` por contenido, sin afectar headers como "Cód. Producto" o
+    # "Código del Producto" donde la intención es claramente código.
+    _kws_textuales = ('producto', 'descripcion', 'nombre', 'articulo', 'detalle')
+    _kws_id = {'cod', 'codigo', 'cb', 'ean', 'gtin', 'sku', 'ref', 'art'}
+    tiene_textual = any(kw in n for kw in _kws_textuales)
+    # Split por '_' (separador que produce _norm_header) — chequear si alguna
+    # parte coincide exacta con una keyword de identificador.
+    partes = set(n.split('_'))
+    tiene_id = bool(partes & _kws_id)
+    if tiene_textual and not tiene_id:
         for ident_field in ('ean', 'codigo', 'codigo_alfabeta'):
             if ident_field in candidatos:
                 candidatos.remove(ident_field)
