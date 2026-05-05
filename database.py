@@ -252,6 +252,7 @@ class ObsVentaDetalle(Base):
     # Otros
     id_farmacia                    = Column(Integer, nullable=False, index=True)
     canal_venta_observer           = Column(Integer, nullable=True)
+    tipo_operacion                 = Column(String(2), nullable=True, index=True)  # 'V'=venta, 'D'=devol., 'NC'=nota crédito
     sync_en                        = Column(DateTime, default=now_ar)
 
 
@@ -1014,6 +1015,10 @@ class Pedido(Base):
     estado = Column(String(20), nullable=False, default='PENDIENTE', index=True)
     analisis_json = Column(Text, nullable=True)
     analisis_guardado_en = Column(DateTime, nullable=True)
+    # Hasta cuándo mostrar este pedido como candidato en "Pedido Reposición"
+    # (compras_dia armado). NULL = no inyectar. Si fecha >= hoy, los productos
+    # del pedido aparecen como sugerencia en el armado.
+    mostrar_hasta = Column(Date, nullable=True, index=True)
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
     analisis_sesion = relationship('AnalisisSesion')
 
@@ -2210,6 +2215,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal VARCHAR(12)"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS partner_id INTEGER"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal_elegido_en TIMESTAMP"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS mostrar_hasta DATE"))
+    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_mostrar_hasta ON pedidos(mostrar_hasta)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_partner_id ON pedidos(partner_id)"))
     # Para el check `check_pedidos_pendientes_viejos` (filtra estado + creado_en).
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_estado_creado ON pedidos(estado, creado_en)"))
@@ -2487,6 +2494,18 @@ def _pg_add_columns(conn):
             creado_en TIMESTAMP DEFAULT NOW()
         )
     """))
+    # tipo_operacion en obs_ventas_detalle: distingue 'V' (venta) de devoluciones/NC.
+    # El sync anterior no la traía; las filas existentes (NULL) se marcan como 'V'
+    # de forma aproximada — un re-sync completo las correría con el valor real.
+    conn.execute(text(
+        "ALTER TABLE obs_ventas_detalle ADD COLUMN IF NOT EXISTS tipo_operacion VARCHAR(2)"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_ovd_tipo ON obs_ventas_detalle(tipo_operacion)"
+    ))
+    conn.execute(text(
+        "UPDATE obs_ventas_detalle SET tipo_operacion = 'V' WHERE tipo_operacion IS NULL"
+    ))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",

@@ -523,7 +523,7 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                        Importe, ImporteACargoOS, ACargoPlanPrincipal,
                        ImporteEfectivo, ImporteTarjeta, ImporteCheque, ImporteCuentaCorriente,
                        FechaDeOperacion, FechaEstadistica, [Año] AS Anio, Mes, Dia,
-                       IdFarmacia, IdCanalDeVenta
+                       IdFarmacia, IdCanalDeVenta, IdTipoOperacion
                 FROM DW.ProductosVendidos
                 WHERE FechaEstadistica >= %s AND IdFarmacia = %s
             """, (desde_fecha, id_farmacia))
@@ -575,6 +575,7 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                     dia=int(r['Dia']) if r['Dia'] is not None else None,
                     id_farmacia=int(r['IdFarmacia']),
                     canal_venta_observer=int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
+                    tipo_operacion=r.get('IdTipoOperacion'),
                     sync_en=now_ar(),
                 )
                 n += 1
