@@ -240,28 +240,18 @@
         </div>
         {% endif %}
 
-        <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
-            <p class="font-semibold text-sm mb-2">Fila de ejemplo</p>
-            <div id="example-box" class="p-3 bg-[#f5f5f5] rounded font-mono text-xs min-h-[40px] whitespace-pre-wrap break-all">
-                <span class="text-[#9ca3af]">Seleccioná una fila…</span>
-            </div>
-            <textarea id="example-edit" rows="3" class="mt-2 w-full p-2 text-xs font-mono border border-[#e0e0e0] rounded hidden"></textarea>
-            <div class="mt-2 flex gap-2">
-                <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
-                <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
-                <button onclick="autodetectarCamposServer()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta automáticamente cantidad, precio, importe, descripción, dto, etc. por relaciones matemáticas. Tolerante a números OCR-rotos.">🧮 Auto-detectar</button>
-                <button onclick="autodetectarCampos()" class="px-2 py-1.5 text-[10px] rounded bg-slate-200 hover:bg-slate-300 text-slate-700" title="Versión anterior (lógica JS local, regex estricto). Solo usar como fallback.">v1</button>
-                <span class="flex-1"></span>
-                <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
-                <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
-            </div>
-        </div>
-
+        <!-- Chips arriba: visualmente más claro qué campos se van a asignar
+             ANTES de seleccionar la fila. Después la fila ejemplo aparece
+             y el user clickea palabra → chip. -->
         <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
             <div class="flex items-center justify-between mb-2">
-                <p class="font-semibold text-sm">2. Asigná campos</p>
+                <p class="font-semibold text-sm">1. Campos del detalle a asignar</p>
                 <button onclick="toggleCustomFields()" class="text-xs text-sky-600 hover:text-sky-800">Personalizar campos ▾</button>
             </div>
+            <p class="text-[11px] text-[#6f6f6f] mb-2">
+                Estos son los campos que vas a mapear sobre la <strong>Fila de ejemplo</strong>
+                (abajo). Seleccioná texto en esa fila y clickeá un chip para asignarlo.
+            </p>
             <div id="custom-fields-panel" class="hidden mb-3 p-3 bg-[#f5f5f5] rounded border border-[#e0e0e0]">
                 <p class="text-xs text-[#6f6f6f] mb-1">Pegá la línea de títulos de columna del PDF.</p>
                 <textarea id="titles-line" rows="2" class="w-full text-xs font-mono p-2 border border-[#e0e0e0] rounded"></textarea>
@@ -280,6 +270,23 @@
                 Asigná <strong>cantidad</strong>, <strong>precio unitario</strong> e <strong>importe</strong> para verificar antes de inferir.
             </div>
             <button onclick="resetSelections()" class="mt-2 text-xs text-[#6f6f6f] hover:text-red-600">Limpiar selecciones</button>
+        </div>
+
+        <div class="bg-white rounded-xl border border-[#e0e0e0] p-5">
+            <p class="font-semibold text-sm mb-2">2. Fila de ejemplo (texto del detalle)</p>
+            <div id="example-box" class="p-3 bg-[#f5f5f5] rounded font-mono text-xs min-h-[40px] whitespace-pre-wrap break-all">
+                <span class="text-[#9ca3af]">Seleccioná una fila…</span>
+            </div>
+            <textarea id="example-edit" rows="3" class="mt-2 w-full p-2 text-xs font-mono border border-[#e0e0e0] rounded hidden"></textarea>
+            <div class="mt-2 flex gap-2">
+                <button onclick="useSelectionAsExample()" class="px-3 py-1.5 text-xs rounded bg-sky-600 hover:bg-sky-700 text-white font-semibold">Usar selección como fila</button>
+                <button onclick="toggleEditExample()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold">Editar fila</button>
+                <button onclick="autodetectarCamposServer()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Detecta automáticamente cantidad, precio, importe, descripción, dto, etc. por relaciones matemáticas. Tolerante a números OCR-rotos.">🧮 Auto-detectar</button>
+                <button onclick="autodetectarCampos()" class="px-2 py-1.5 text-[10px] rounded bg-slate-200 hover:bg-slate-300 text-slate-700" title="Versión anterior (lógica JS local, regex estricto). Solo usar como fallback.">v1</button>
+                <span class="flex-1"></span>
+                <button onclick="unirMarcados()" class="px-3 py-1.5 text-xs rounded bg-amber-500 hover:bg-amber-600 text-white font-semibold" title="Une los bloques marcados (deben ser contiguos)">⤏ Unir marcados</button>
+                <button onclick="resetAgrupamientos()" class="px-3 py-1.5 text-xs rounded bg-slate-200 hover:bg-slate-300 font-semibold" title="Vuelve a separar todo en palabras individuales">↺ Separar</button>
+            </div>
         </div>
 
     </div>
