@@ -1,7 +1,61 @@
 # App Seguimiento — cómo sigo en casa
 
-Estado al 2026-04-28 al cerrar la sesión en la oficina. Esta nota es para
+Estado al **2026-05-04** al cerrar la sesión en la oficina. Esta nota es para
 arrancar la sesión siguiente sin volver a leer todo el chat.
+
+## Lo más reciente (sesión 2026-05-04)
+
+**Etapa 1 del plan de simplificación de catálogo (en curso):**
+Cortar duplicación de EANs en `productos`. Hoy un EAN puede vivir en 4 lugares
+(`codigo_barra`, `alt1`, `alt2`, `alt3`) + en la 1-a-N `producto_codigos_barra`.
+Objetivo: dejar UN solo lugar.
+
+Hecho hoy:
+1. ✅ Render con plan Starter activado (shell + más memoria).
+2. ✅ Pre-poblamos `productos` en Render desde `obs_productos` (60157 filas).
+   Script: `scripts/popular_productos_desde_obs.py`. Card en `/admin`.
+3. ✅ Sincronizamos `laboratorios` desde `obs_laboratorios` (1989 creados +
+   10 vinculados). Lookup robusto a variantes (case/acentos/espacios).
+4. ✅ Update retroactivo de `productos.laboratorio_id` (55867 actualizados).
+5. ✅ Backfill `producto_codigos_barra` de los EANs principales (60157).
+6. ✅ Refactor: quitar lecturas de `alt1/2/3` en `helpers.py` y matcher.
+   PR #6 mergeado el 2026-05-04.
+
+Pendiente para retomar en casa:
+1. **Validar 1-2 días** que todo siga andando OK con el código nuevo.
+2. **Setear env** `EAN_LEGACY_ALTS_DISABLED=1` en Render (defensivo, ya las
+   lecturas no las leen pero por si quedó alguna).
+3. **DROP COLUMN** `alt1/2/3`: agregar migración inline `ALTER TABLE productos
+   DROP COLUMN IF EXISTS codigo_barra_alt1/2/3` + remover del modelo en
+   `database.py`. PR aparte.
+
+Después → empezar **Etapa 2** (unificar `barcode_mappings` + `equivalencias_proveedor`
+en una sola tabla `mapeo_proveedor`).
+
+## Otras cosas hechas hoy
+- **`EquivalenciaProveedor`**: tabla nueva para guardar match manual texto→producto
+  del wizard de ofertas (antes el match manual se perdía). Estrategia 0 del
+  matcher consulta esta tabla antes del fuzzy.
+- **Matcher fuzzy más rápido**: pre-filtro ILIKE por al menos un token >=3 chars
+  (universo de 60k → ~cientos). Antes tardaba 18s para "Buscar similar"; ahora 1-2s.
+- **Tokenización mejorada**: separa "300MG"→"300 mg" y "x30"→"x 30", re-mergea
+  vitaminas (b12). Captura más matches por descripción.
+- **Inferencia de columnas**: header con "producto/descripcion/nombre" excluye
+  ean/codigo. Por contenido: si los valores tienen espacios o >20 chars, no se
+  proponen como código. Caso testeado: "Cód. Producto" sigue mapeando a `codigo`.
+- **Compra del día**:
+  - `stock <= mín` (antes `<` estricto) + `a_pedir mín 1` cuando stock=mín.
+  - Cobertura objetivo configurable en URL `?target=N` (default 7d).
+  - Universo: bajo mín OR `stock cubre <N días`.
+  - Badge "No urgente" para los que entran solo por cobertura.
+  - Filtros nuevos: "Solo urgentes (≤ mín)".
+  - `a_pedir = 0` si `u12m=0` o `sin_mov_60d`.
+  - No-pedir aparecen ahora con badge + botón Reactivar (antes ocultos).
+  - Sugerencia de mín usa `purchase_engine` (estacionalidad + crónicos).
+  - Buscador "+ Agregar producto" en línea de arriba.
+  - Panel gráfico arranca colapsado.
+
+## Estado anterior (sesión 2026-04-28)
 
 ## Cómo arrancar la app en casa
 
