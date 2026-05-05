@@ -100,12 +100,12 @@ def ejecutar(dry_run: bool = False) -> dict:
                 stats['ya_vinculados'] += 1
                 continue
 
-            # Reunir todos los EANs candidatos del producto local
+            # Reunir todos los EANs candidatos del producto local: principal +
+            # alts en producto_codigos_barra (1-a-N). Las columnas legacy
+            # alt1/2/3 ya no se consultan.
             eans = set()
-            for col in (p.codigo_barra, p.codigo_barra_alt1,
-                        p.codigo_barra_alt2, p.codigo_barra_alt3):
-                if col:
-                    eans.add(str(col).strip())
+            if p.codigo_barra:
+                eans.add(str(p.codigo_barra).strip())
             eans |= pcb_por_prod.get(p.id, set())
             eans = {e for e in eans if e}
 

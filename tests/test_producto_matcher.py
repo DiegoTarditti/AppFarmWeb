@@ -271,20 +271,23 @@ class TestMatchObsProducto:
 class TestEdgeCasesReales:
     """Casos que vimos en datos reales de proveedores el 2026-04-26."""
 
-    # ── Match por EAN alternativo ──────────────────────────────────────────
-    def test_match_por_ean_alt_via_1aN(self, db_session, lab):
-        """Productos pueden tener N EANs alternativos en producto_codigos_barra.
-        El matcher debe encontrarlos por cualquiera de los alternativos."""
+    # ── Match por EAN alternativo (vía producto_codigos_barra 1-a-N) ────────
+    def test_match_por_codigo_barra_alt1(self, db_session, lab):
+        """Productos pueden tener N EANs alternativos en `producto_codigos_barra`.
+        El matcher debe encontrarlos por cualquiera. Antes los alts vivían en
+        las columnas legacy alt1/2/3 (ya migradas y dropped)."""
         from database import ProductoCodigoBarra
         prod = Producto(
             codigo_barra='7793450100000', descripcion='OPTAMOX X 8',
             laboratorio_id=lab.id,
         )
         db_session.add(prod)
-        db_session.flush()
+        db_session.flush()  # obtener prod.id
         db_session.add_all([
-            ProductoCodigoBarra(producto_id=prod.id, codigo_barra='7793450199999'),
-            ProductoCodigoBarra(producto_id=prod.id, codigo_barra='7793450188888'),
+            ProductoCodigoBarra(producto_id=prod.id, codigo_barra='7793450199999',
+                                 es_principal=False, fuente='legacy_alt'),
+            ProductoCodigoBarra(producto_id=prod.id, codigo_barra='7793450188888',
+                                 es_principal=False, fuente='legacy_alt'),
         ])
         db_session.commit()
 
@@ -292,14 +295,18 @@ class TestEdgeCasesReales:
         assert res.producto is not None
         assert res.producto.codigo_barra == '7793450100000'
 
-    def test_match_por_ean_alt_via_1aN_otro(self, db_session, lab):
+    def test_match_por_codigo_barra_alt3(self, db_session, lab):
+        """EAN alternativo directo en producto_codigos_barra."""
         from database import ProductoCodigoBarra
         prod = Producto(
             codigo_barra='7793450100000', descripcion='X', laboratorio_id=lab.id,
         )
         db_session.add(prod)
         db_session.flush()
-        db_session.add(ProductoCodigoBarra(producto_id=prod.id, codigo_barra='ALT3-EAN'))
+        db_session.add(ProductoCodigoBarra(
+            producto_id=prod.id, codigo_barra='ALT3-EAN',
+            es_principal=False, fuente='legacy_alt',
+        ))
         db_session.commit()
 
         res = pm.match_producto(ean='ALT3-EAN', session=db_session)

@@ -461,22 +461,34 @@ def init_app(app):
                         if n in existentes:
                             ean_to_obs[ean] = n
 
-                # Path 2: tabla productos (codigo_barra principal o alts).
+                # Path 2: tabla productos.codigo_barra (principal) +
+                # producto_codigos_barra (1-a-N para alternativos). Las
+                # columnas legacy alt1/2/3 ya no se consultan.
                 pendientes = [e for e in eans_no_vacios if e not in ean_to_obs]
                 if pendientes:
-                    from sqlalchemy import or_
-                    conds = [Producto.codigo_barra.in_(pendientes)]
-                    for col_name in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
-                        col = getattr(Producto, col_name, None)
-                        if col is not None:
-                            conds.append(col.in_(pendientes))
-                    for p in session.query(Producto).filter(or_(*conds)).all():
-                        if not p.observer_id:
-                            continue
-                        for cb in [p.codigo_barra, p.codigo_barra_alt1,
-                                   p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                            if cb and cb in pendientes:
-                                ean_to_obs[cb] = p.observer_id
+                    # 2a. Match al principal
+                    for p in (session.query(Producto)
+                              .filter(Producto.codigo_barra.in_(pendientes)).all()):
+                        if p.observer_id and p.codigo_barra in pendientes:
+                            ean_to_obs[p.codigo_barra] = p.observer_id
+                    # 2b. Match en producto_codigos_barra (alts/extras)
+                    pendientes2 = [e for e in pendientes if e not in ean_to_obs]
+                    if pendientes2:
+                        from database import ProductoCodigoBarra
+                        rows = (session.query(ProductoCodigoBarra.codigo_barra,
+                                              ProductoCodigoBarra.producto_id)
+                                .filter(ProductoCodigoBarra.codigo_barra.in_(pendientes2))
+                                .all())
+                        if rows:
+                            ids = {pid for _, pid in rows}
+                            obs_by_pid = {p.id: p.observer_id for p in
+                                          session.query(Producto)
+                                          .filter(Producto.id.in_(ids))
+                                          .filter(Producto.observer_id.isnot(None))
+                                          .all()}
+                            for ean, pid in rows:
+                                if pid in obs_by_pid and ean not in ean_to_obs:
+                                    ean_to_obs[ean] = obs_by_pid[pid]
 
             # 2. Resolver observer_id → lab_id local (Laboratorio.observer_id).
             obs_ids = list(set(ean_to_obs.values()))

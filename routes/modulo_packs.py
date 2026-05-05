@@ -95,8 +95,22 @@ def init_app(app):
                             session.query(ModuloPack).filter(ModuloPack.modulo_id.is_(None))
                             .order_by(ModuloPack.ean_pack).all()]
 
+            # Primer EAN alternativo (de producto_codigos_barra) por producto.
+            # Antes era `alt1 or alt2 or alt3`; ahora la 1-a-N es la fuente.
+            from database import ProductoCodigoBarra
+            prod_ids_visibles = [p.id for p in all_prods]
+            primer_alt = {}
+            if prod_ids_visibles:
+                for pid, ean in (session.query(ProductoCodigoBarra.producto_id,
+                                                ProductoCodigoBarra.codigo_barra)
+                                  .filter(ProductoCodigoBarra.producto_id.in_(prod_ids_visibles))
+                                  .filter(ProductoCodigoBarra.es_principal.is_(False))
+                                  .all()):
+                    if pid not in primer_alt and ean:
+                        primer_alt[pid] = ean
+
             def _first_alt(p):
-                return p.codigo_barra_alt1 or p.codigo_barra_alt2 or p.codigo_barra_alt3 or ''
+                return primer_alt.get(p.id, '')
             prods_pack = [{'ean': p.codigo_barra, 'desc': p.descripcion or '',
                            'alt': _first_alt(p), 'is_pack': bool(p.es_pack)}
                           for p in all_prods if p.es_pack]

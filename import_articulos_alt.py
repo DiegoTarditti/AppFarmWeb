@@ -65,6 +65,7 @@ print(f"  Barcodes totales:   {sum(len(v) for v in grupos.values())}")
 
 # ── 2. Cruzar contra productos vía SQLAlchemy + helpers ─────────────────────
 import database
+from database import ProductoCodigoBarra
 from helpers import _add_alt_barcode, _find_producto
 
 # Init connection (mismo que app)
@@ -89,13 +90,24 @@ try:
     print(f"\nProductos en DB: {len(productos)}")
     print("Procesando…")
 
+    # Pre-cargar barcodes ya asociados a cada producto desde la 1-a-N (única
+    # fuente de verdad para alts; las columnas legacy alt1/2/3 ya no se usan).
+    from collections import defaultdict
+    barcodes_por_prod = defaultdict(set)
+    for prod_id, ean in session.query(ProductoCodigoBarra.producto_id,
+                                       ProductoCodigoBarra.codigo_barra).all():
+        if ean:
+            barcodes_por_prod[prod_id].add(ean)
+
     for prod in productos:
-        # Buscar en qué grupo cae este producto chequeando cualquiera de sus
-        # barcodes existentes (legacy alt1/2/3) contra el dump.
+        # Buscar en qué grupo cae este producto: principal + barcodes ya
+        # registrados en producto_codigos_barra contra el dump.
         id_prod = None
-        for bc_check in (prod.codigo_barra, prod.codigo_barra_alt1,
-                         prod.codigo_barra_alt2, prod.codigo_barra_alt3):
-            if bc_check and bc_check in bc_to_grupo:
+        candidatos = {prod.codigo_barra} | barcodes_por_prod.get(prod.id, set())
+        candidatos.discard(None)
+        candidatos.discard('')
+        for bc_check in candidatos:
+            if bc_check in bc_to_grupo:
                 id_prod = bc_to_grupo[bc_check]
                 break
 
@@ -104,16 +116,14 @@ try:
             continue
 
         # Barcodes del grupo que aún NO están en el producto.
-        existentes = {b for b in (prod.codigo_barra, prod.codigo_barra_alt1,
-                                  prod.codigo_barra_alt2, prod.codigo_barra_alt3) if b}
+        existentes = candidatos
         nuevos = [b for b in grupos[id_prod] if b not in existentes]
 
         if not nuevos:
             skipped += 1
             continue
 
-        # `_add_alt_barcode` escribe en AMBOS lados (legacy alt1/2/3 + 1-a-N).
-        # Si no hay slot legacy libre, igual queda persistido en producto_codigos_barra.
+        # `_add_alt_barcode` escribe en producto_codigos_barra (1-a-N).
         for bc_nuevo in nuevos:
             _add_alt_barcode(session, prod.codigo_barra, bc_nuevo,
                              fuente='import_articulos_alt')
@@ -128,5 +138,4 @@ print(f"\n✔  Productos actualizados: {updated}")
 print(f"   Equivalencias agregadas: {agregados_total}")
 print(f"   Sin match:               {skipped}")
 print()
-print("Las nuevas equivalencias quedan en producto_codigos_barra (1-a-N)")
-print("y, mientras la migración no termine, también en codigo_barra_alt1/2/3.")
+print("Las equivalencias quedan en producto_codigos_barra (1-a-N).")

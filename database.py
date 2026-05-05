@@ -1568,7 +1568,11 @@ def _ejecutar_backfills_async():
         return
     try:
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as bf_conn:
-            # producto_codigos_barra ← productos.codigo_barra/alt1/2/3
+            # producto_codigos_barra ← productos.codigo_barra (solo principales).
+            # Los alts (alt1/2/3) NO se backfilean acá porque ya están vacíos
+            # en producción y las columnas van a DROP COLUMN. El script manual
+            # `scripts/backfill_codigos_barra.py` cubre el escenario de devs
+            # locales con data legacy en alt1/2/3.
             try:
                 hay = bf_conn.execute(text(
                     "SELECT 1 FROM producto_codigos_barra LIMIT 1"
@@ -1581,14 +1585,6 @@ def _ejecutar_backfills_async():
                         WHERE codigo_barra IS NOT NULL AND codigo_barra <> ''
                         ON CONFLICT (producto_id, codigo_barra) DO NOTHING
                     """))
-                    for col in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
-                        bf_conn.execute(text(f"""
-                            INSERT INTO producto_codigos_barra (producto_id, codigo_barra, es_principal, fuente)
-                            SELECT id, {col}, FALSE, 'legacy_alt'
-                            FROM productos
-                            WHERE {col} IS NOT NULL AND {col} <> ''
-                            ON CONFLICT (producto_id, codigo_barra) DO NOTHING
-                        """))
             except Exception:
                 pass
             # producto_precios_hist ← factura_items × facturas

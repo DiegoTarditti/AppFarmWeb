@@ -40,11 +40,6 @@
     <span class="text-xs text-[#6f6f6f] ml-auto">
         {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
     </span>
-    <div class="relative">
-        <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
-               class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-60">
-        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-40 w-[420px] max-h-80 overflow-auto"></div>
-    </div>
     <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
 </div>
 
@@ -77,44 +72,38 @@
         <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
         Solo con sugerencia (subir/bajar)
     </label>
-    <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
-        <input type="checkbox" id="filtro-urgentes" class="w-3.5 h-3.5">
-        Solo urgentes (≤ mín)
-    </label>
-    <form method="get" class="flex items-center gap-1.5 text-xs text-[#3f6650]">
-        <input type="hidden" name="prov" value="{{ prov.id }}">
-        <label>Cobertura objetivo</label>
-        <input type="number" name="target" min="1" max="90" value="{{ target_dias | default(7) }}"
-               class="bg-white border border-mint rounded px-1.5 py-0.5 text-xs w-14"
-               onchange="this.form.submit()">
-        <span>días</span>
-    </form>
     <label class="flex items-center gap-1.5 text-xs text-amber-700 cursor-pointer">
         <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5" {% if cubre == 0 %}checked{% endif %}>
         Mostrar ⚠ otra drog
     </label>
-    <span id="filtro-count" class="text-[11px] text-[#3f6650] ml-auto"></span>
+    <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
+    <span id="contador-sug" class="text-[11px] font-semibold"></span>
+    <button type="button" id="btn-orden-sug" onclick="toggleOrdenSug()"
+            title="Mover los productos con sugerencia 'subir mín.' arriba"
+            class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold">
+        ▲ Urgentes arriba
+    </button>
+
+    <div class="relative ml-auto">
+        <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
+               class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-72">
+        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-40 w-[420px] max-h-80 overflow-auto"></div>
+    </div>
 </div>
 
 <!-- Wrapper scrolleable con altura fija: sticky se ancla al tope. -->
 <div class="scroll-wrapper">
 
 <!-- Panel gráfico sticky arriba (split: Año | Mes) -->
-<div id="panel-grafico" class="colapsado bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
+<div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
     <div class="flex items-center justify-between mb-2 gap-2">
-        <div class="flex-1 min-w-0">
-            <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate">
-                Seleccioná un producto de la lista para ver el gráfico
-            </p>
-            <p class="text-[10px] text-[#888] leading-tight">
-                <b class="text-amber-700">✗ Sacar</b>: lo excluye de este pedido (vuelve cuando el stock toque el mínimo otra vez).
-                <b class="text-rose-700 ml-1">⛔ No pedir</b>: nunca más sugerirlo (hasta reactivarlo manualmente).
-            </p>
-        </div>
+        <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
+            Seleccioná un producto de la lista para ver el gráfico
+        </p>
         <button type="button" id="btn-toggle-grafico" onclick="toggleGrafico()"
                 class="text-[11px] px-2 py-1 rounded border border-surface-border text-[#6f6f6f] hover:bg-[#f5f5f5] hover:text-[#1e1e1e] transition-colors flex-shrink-0"
                 title="Mostrar/ocultar gráficos para ganar espacio para la tabla">
-            <span id="btn-toggle-grafico-label">▸ Mostrar gráfico</span>
+            <span id="btn-toggle-grafico-label">▾ Ocultar gráfico</span>
         </button>
     </div>
     <div id="grafico-body" class="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -169,16 +158,12 @@
                     data-cubre="{{ 'y' if it.cubre_lab else 'n' }}"
                     data-tvc="{{ it.tvc or '' }}"
                     data-sug="{{ it.min_sugerencia or '' }}"
-                    data-urgente="{{ 'y' if it.urgente else 'n' }}"
                     data-oferta-dto="{{ it.oferta_dto or '' }}"
                     data-oferta-min="{{ it.oferta_min or '' }}"
                     onclick="seleccionarProducto(this)">
                     <td class="px-3 py-1">
                         {% if it.tipo == 'C' %}
                         <span class="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded mr-1 font-bold" title="Va por promedio de ventas (consumo estable)">Prom Vtas</span>
-                        {% endif %}
-                        {% if not it.urgente %}
-                        <span class="text-[9px] bg-slate-200 text-slate-700 px-1 py-0.5 rounded mr-1 font-bold" title="Stock arriba del mínimo pero rota rápido (entró por cobertura objetivo)">No urgente</span>
                         {% endif %}
                         {{ it.desc }}
                     </td>
@@ -237,25 +222,16 @@
                     </td>
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
                         {% if it.producto_id_local %}
-                            {% if it.no_pedir %}
-                            <span class="text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-bold mr-1" title="Marcado 'No pedir más' — entra al listado pero default a_pedir=0">⛔ No pedir</span>
-                            <button onclick="reactivar({{ it.producto_id_local }}, this)"
-                                    title="Quitar el flag 'No pedir' y volver al flujo normal"
-                                    class="text-[10px] px-2 py-0.5 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100">
-                                ↺ Reactivar
-                            </button>
-                            {% else %}
-                            <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
-                                    title="Sacar hasta que vuelva a llegar al mínimo"
-                                    class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">
-                                ✗ Sacar
-                            </button>
-                            <button onclick="excluir({{ it.producto_id_local }}, 'permanente', this)"
-                                    title="No pedir más (hay que reactivar manualmente)"
-                                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">
-                                ⛔ No pedir
-                            </button>
-                            {% endif %}
+                        <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
+                                title="Sacar hasta que vuelva a llegar al mínimo"
+                                class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">
+                            ✗ Sacar
+                        </button>
+                        <button onclick="excluir({{ it.producto_id_local }}, 'permanente', this)"
+                                title="No pedir más (hay que reactivar manualmente)"
+                                class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">
+                            ⛔ No pedir
+                        </button>
                         {% else %}
                         <span class="text-[10px] text-[#bbb]">Sin Producto local</span>
                         {% endif %}
@@ -280,21 +256,6 @@
 </div>{# /flex-1 overflow-auto wrapper #}
 
 <script>
-async function reactivar(prodId, btn) {
-    if (!confirm('¿Reactivar este producto? Vuelve al flujo normal del armado.')) return;
-    btn.disabled = true;
-    try {
-        const r = await fetch(`/api/producto/${prodId}/reactivar`, {
-            method: 'POST', headers: {'Content-Type': 'application/json'},
-            credentials: 'same-origin',
-        });
-        const d = await r.json();
-        if (!d.ok) { alert('Error: ' + (d.error || '')); btn.disabled = false; return; }
-        // Recargar para refrescar filas con la nueva clasificación.
-        location.reload();
-    } catch (e) { alert('Error de red'); btn.disabled = false; }
-}
-
 async function excluir(prodId, modo, btn) {
     const txt = modo === 'permanente'
         ? '¿Marcar este producto como NO PEDIR? (hay que reactivar manualmente)'
@@ -469,18 +430,28 @@ function renderMes(d, ing) {
         backgroundColor: 'rgba(34,197,94,0.5)', borderColor: '#16a34a',
         borderWidth: 1, borderRadius: 2, order: 3,
     }];
+    // Pedido y Entradas: puntos/markers en lugar de barras. Con 30 días,
+    // 3 barras agrupadas se comprimen mucho. Estos son eventos discretos
+    // (pocos días al mes), se ven mejor como marcadores sobre las barras
+    // de Salidas. Salidas sigue ocupando el ancho como protagonista.
     if (hayPed) {
         datasets.push({
-            type: 'bar', label: 'Pedido', data: ing.pedido_data,
-            backgroundColor: 'rgba(59,130,246,0.35)', borderColor: '#3b82f6',
-            borderWidth: 1, borderRadius: 2, order: 2,
+            type: 'line', label: 'Pedido', data: ing.pedido_data,
+            backgroundColor: '#3b82f6', borderColor: '#3b82f6',
+            showLine: false,
+            pointRadius: 7, pointHoverRadius: 10,
+            pointStyle: 'triangle',
+            order: 2,
         });
     }
     if (hayIng) {
         datasets.push({
-            type: 'bar', label: 'Entradas (ingreso)', data: ing.data,
-            backgroundColor: 'rgba(251,146,60,0.5)', borderColor: '#ea580c',
-            borderWidth: 1, borderRadius: 2, order: 1,
+            type: 'line', label: 'Entradas (ingreso)', data: ing.data,
+            backgroundColor: '#ea580c', borderColor: '#ea580c',
+            showLine: false,
+            pointRadius: 7, pointHoverRadius: 10,
+            pointStyle: 'rectRot',
+            order: 1,
         });
     }
     // Promedio diario (línea horizontal punteada)
@@ -529,29 +500,41 @@ const _totalRows = document.querySelectorAll('.producto-row').length;
 
 const _filtroLibre    = document.getElementById('filtro-libre');
 const _filtroSug      = document.getElementById('filtro-sug');
-const _filtroUrgentes = document.getElementById('filtro-urgentes');
 const _filtroOtraDrog = document.getElementById('filtro-otra-drog');
 
+const _contadorSug = document.getElementById('contador-sug');
 function aplicarFiltros() {
     const fnProd      = window.MultiTokenFilter.build(_filtroProd.value);
     const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
     const soloLibre   = _filtroLibre.checked;
     const soloSug     = _filtroSug.checked;
-    const soloUrg     = _filtroUrgentes.checked;
     const mostraOtra  = _filtroOtraDrog.checked;
     let visibles = 0;
+    let nUp = 0, nDown = 0;
     document.querySelectorAll('.producto-row').forEach(row => {
         const sug = row.dataset.sug || '';
         const ok = fnProd(row.dataset.nombre)
             && fnLab(row.dataset.lab || '')
             && (!soloLibre || row.dataset.tvc === 'L')
             && (!soloSug || sug === 'up' || sug === 'down')
-            && (!soloUrg || row.dataset.urgente === 'y')
             && (mostraOtra || row.dataset.cubre !== 'n');
         row.style.display = ok ? '' : 'none';
-        if (ok) visibles++;
+        if (ok) {
+            visibles++;
+            if (sug === 'up') nUp++;
+            else if (sug === 'down') nDown++;
+        }
     });
     _filtroCount.textContent = `${visibles} / ${_totalRows} visibles`;
+    // Contador de sugerencias visibles (refleja filtros aplicados)
+    if (nUp || nDown) {
+        const partes = [];
+        if (nUp)   partes.push(`<span class="text-rose-700">▲ ${nUp} subir</span>`);
+        if (nDown) partes.push(`<span class="text-emerald-700">▼ ${nDown} bajar</span>`);
+        _contadorSug.innerHTML = '· ' + partes.join(' · ');
+    } else {
+        _contadorSug.innerHTML = '';
+    }
     aplicarZebra();
 }
 
@@ -567,8 +550,44 @@ _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
-_filtroUrgentes.addEventListener('change', aplicarFiltros);
 _filtroOtraDrog.addEventListener('change', aplicarFiltros);
+
+// Orden urgentes arriba: reordena DOM moviendo los `data-sug=up` al inicio del tbody.
+let _ordenSugActivo = false;
+function toggleOrdenSug() {
+    _ordenSugActivo = !_ordenSugActivo;
+    const btn = document.getElementById('btn-orden-sug');
+    const filas = Array.from(document.querySelectorAll('.producto-row'));
+    if (!filas.length) return;
+    const tbody = filas[0].parentElement;
+    if (_ordenSugActivo) {
+        // Sort: up primero, después down, después resto. Estable.
+        const orden = (sug) => sug === 'up' ? 0 : (sug === 'down' ? 1 : 2);
+        const sorted = filas.slice().sort((a, b) => {
+            const oa = orden(a.dataset.sug || '');
+            const ob = orden(b.dataset.sug || '');
+            return oa - ob;
+        });
+        sorted.forEach(r => tbody.appendChild(r));
+        btn.classList.remove('border-rose-300', 'text-rose-700');
+        btn.classList.add('bg-rose-600', 'text-white', 'border-rose-600');
+        btn.textContent = '▲ Orden urgentes';
+    } else {
+        // Restaurar al orden original guardado en data-orden-orig
+        const sorted = filas.slice().sort((a, b) =>
+            parseInt(a.dataset.ordenOrig || 0) - parseInt(b.dataset.ordenOrig || 0));
+        sorted.forEach(r => tbody.appendChild(r));
+        btn.classList.add('border-rose-300', 'text-rose-700');
+        btn.classList.remove('bg-rose-600', 'text-white', 'border-rose-600');
+        btn.textContent = '▲ Urgentes arriba';
+    }
+    aplicarZebra();
+}
+// Guardar orden original al cargar (para poder restaurar)
+document.querySelectorAll('.producto-row').forEach((row, i) => {
+    row.dataset.ordenOrig = i;
+});
+
 aplicarFiltros();
 
 // Mide el alto real del panel del gráfico y lo usa de offset del thead sticky.
@@ -606,11 +625,15 @@ function toggleGrafico() {
 }
 
 (function _initEstadoGrafico() {
-    let colapsado = true;  // default: oculto. Se persiste en localStorage si lo desplegás.
+    let colapsado = false;
     try {
         const v = localStorage.getItem(_GRAFICO_LS_KEY);
-        if (v === '0') colapsado = false;
-    } catch (e) {}
+        if (v === '1') colapsado = true;
+        else if (v === '0') colapsado = false;
+        else colapsado = window.innerWidth < 1024;  // 1ra vez: colapsado en pantallas chicas
+    } catch (e) {
+        colapsado = window.innerWidth < 1024;
+    }
     _aplicarEstadoGrafico(colapsado);
 })();
 

@@ -101,12 +101,7 @@ def normalizar_texto(s) -> str:
     s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
     s = s.lower()
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
-    # Separar dígito-letra ("300mg" → "300 mg") y letra-dígito ("x30" → "x 30")
-    # para que el matcher pueda comparar token-a-token con la BD.
-    s = re.sub(r'(\d)([a-z])', r'\1 \2', s)
-    s = re.sub(r'([a-z])(\d)', r'\1 \2', s)
-    # Re-mergear letra-vitamina + número adyacentes ("b 12" → "b12") después
-    # de las separaciones de arriba (recupera nomenclatura b12, c30, etc.).
+    # Merge letra-vitamina + número adyacentes ("b 12" → "b12").
     s = re.sub(r'\b([bcdek])\s+(\d+)\b', r'\1\2', s)
     s = re.sub(r'\s+', ' ', s).strip()
     return s
@@ -261,7 +256,10 @@ _TARGETS = {
     'producto': _TargetSpec(
         model_attr='Producto',
         lab_field='laboratorio_id',
-        ean_fields=('codigo_barra',),  # alt1/2/3 deprecadas — usar producto_codigos_barra (cascada)
+        # Solo principal — los alternativos viven en producto_codigos_barra
+        # (1-a-N). Las columnas legacy alt1/2/3 fueron migradas y van a
+        # DROP COLUMN.
+        ean_fields=('codigo_barra',),
         alfabeta_field='codigo_alfabeta',
     ),
     'obs_producto': _TargetSpec(
@@ -342,30 +340,8 @@ def match_producto(*,
     try:
         result = MatchResult()
 
-        # Estrategia 0: lookup directo en EquivalenciaProveedor.
-        # Si el operador ya hizo un match manual antes para ese
-        # (laboratorio, descripcion), lo reusamos sin pasar por fuzzy.
-        if (target == 'producto' and laboratorio_id and descripcion):
-            try:
-                from database import EquivalenciaProveedor
-                desc_norm = normalizar_texto(str(descripcion).strip())[:200]
-                if desc_norm:
-                    eq = (session.query(EquivalenciaProveedor)
-                          .filter_by(laboratorio_id=laboratorio_id,
-                                     descripcion_proveedor_norm=desc_norm)
-                          .first())
-                    if eq and eq.producto_id:
-                        prod = session.get(P, eq.producto_id)
-                        if prod is not None:
-                            result.producto = prod
-                            result.score = 1.0
-                            result.estrategia = 'equivalencia_proveedor'
-                            result.confianza = CONFIANZA_ALTA
-            except Exception:
-                pass
-
         # Estrategia 1: EAN exacto (solo si el target tiene columnas de EAN)
-        if not result.producto and ean and spec.ean_fields:
+        if ean and spec.ean_fields:
             ean_clean = str(ean).strip()
             if ean_clean:
                 conds = []
@@ -517,20 +493,13 @@ def match_producto(*,
             if pool is not None:
                 candidatos = pool
             else:
-                from sqlalchemy import or_ as _or_
                 if laboratorio_id and lab_col is not None:
                     cand_query = session.query(P).filter(lab_col == laboratorio_id)
                 else:
+                    # Sin lab: solo buscamos en productos que tengan al menos un
+                    # token en común con el input para no escanear todo el catálogo.
+                    # Simplificado: traemos todos. Mejorable con índice trgm.
                     cand_query = session.query(P)
-                # Pre-filtro por al menos un token significativo (≥3 chars)
-                # del input. Reduce el universo de 60k+ a unos cientos antes
-                # del fuzzy en Python. Con índice GIN trigram en PG, las ILIKE
-                # se aceleran mucho.
-                pref_toks = [t for t in toks_input if len(t) >= 3][:6]
-                if pref_toks:
-                    cand_query = cand_query.filter(
-                        _or_(*[P.descripcion.ilike(f'%{t}%') for t in pref_toks])
-                    )
                 candidatos = cand_query.all()
 
             # Estrategia 3: descripción exacta normalizada (+ lab si dado)
@@ -732,7 +701,6 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
     try:
         # 1. Búsqueda con scope al lab local (si se pidió). Boost al score
         #    para que los del lab queden primero ante empates.
-        salteo_global = False
         if laboratorio_id:
             res_lab = match_producto(
                 descripcion=descripcion,
@@ -746,24 +714,16 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
                 c['score'] = round(min(1.0, c['score'] + 0.05), 3)
                 c['_origen'] = 'lab'
             cands.extend(res_lab.candidatos_top)
-            # Si el lab ya devolvió top con score alto, saltamos el pool global
-            # (ahorra una pasada fuzzy completa). El pool ObServer sí se mantiene
-            # porque cubre productos que faltan en el catálogo local.
-            if res_lab.candidatos_top and res_lab.candidatos_top[0].get('score', 0) >= 0.85:
-                salteo_global = True
 
-        # 2. Búsqueda global en el target principal (si no la salteamos).
-        if not salteo_global:
-            res_global = match_producto(
-                descripcion=descripcion,
-                laboratorio_id=None,
-                target=target,
-                incluir_candidatos=True,
-                top_candidatos=top * 2,
-                session=session,
-            )
-        else:
-            res_global = None
+        # 2. Búsqueda global en el target principal.
+        res_global = match_producto(
+            descripcion=descripcion,
+            laboratorio_id=None,
+            target=target,
+            incluir_candidatos=True,
+            top_candidatos=top * 2,
+            session=session,
+        )
         for c in res_global.candidatos_top:
             c.setdefault('_origen', 'global')
             cands.append(c)
@@ -791,54 +751,15 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
                 c['_origen'] = 'observer'
             cands.extend(res_obs.candidatos_top)
 
-        # Dedup por id (sin importar origen). Si el mismo producto aparece en
-        # los pools 'lab' y 'global', nos quedamos con el de mejor score
-        # (en general 'lab' porque tiene boost +0.05). Solo el pool 'observer'
-        # apunta a obs_productos (otro tipo de id), así que no choca.
-        # Mejorar el "tipo" del id: 'producto' vs 'observer' para no mezclar
-        # IDs de tablas distintas.
+        # Dedup por (origen, id) y ordenar por score desc.
         mejor_por_id = {}
         for c in cands:
             origen = c.get('_origen', 'global')
-            tipo_id = 'observer' if origen == 'observer' else 'producto'
-            key = (tipo_id, c.get('producto_id') or c.get('observer_id'))
+            key = (origen, c.get('producto_id') or c.get('observer_id'))
             if key[1] is None:
                 continue
             if key not in mejor_por_id or c['score'] > mejor_por_id[key]['score']:
                 mejor_por_id[key] = c
-
-        # Dedup adicional: si un Producto local está vinculado a un ObsProducto
-        # (tiene `observer_id`) o comparten `codigo_alfabeta`, son el mismo
-        # producto. Descartamos el candidato 'observer' duplicado.
-        if target == 'producto':
-            try:
-                import database
-                obs_ids_locales = set()
-                alfabetas_locales = set()
-                for c in mejor_por_id.values():
-                    pid = c.get('producto_id')
-                    if pid:
-                        prod = session.get(database.Producto, pid)
-                        if prod:
-                            if getattr(prod, 'observer_id', None):
-                                obs_ids_locales.add(prod.observer_id)
-                            alfa = (getattr(prod, 'codigo_alfabeta', None) or '').strip()
-                            if alfa:
-                                alfabetas_locales.add(alfa)
-                for k in list(mejor_por_id.keys()):
-                    tipo, _id = k
-                    if tipo != 'observer':
-                        continue
-                    cand_obs = mejor_por_id[k]
-                    if _id in obs_ids_locales:
-                        del mejor_por_id[k]
-                        continue
-                    alfa_obs = (cand_obs.get('codigo_alfabeta') or '').strip()
-                    if alfa_obs and alfa_obs in alfabetas_locales:
-                        del mejor_por_id[k]
-            except Exception:
-                pass
-
         out = sorted(mejor_por_id.values(), key=lambda x: -x['score'])
         # Threshold adaptativo: cortar candidatos muy lejos del mejor.
         # Si el top es 1.00 → exigir ≥ 0.85.
