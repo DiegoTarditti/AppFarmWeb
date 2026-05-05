@@ -1066,13 +1066,18 @@ def init_app(app):
                       .filter(ObsCodigoBarras.producto_observer == observer_id,
                               ObsCodigoBarras.fecha_baja.is_(None)).all()):
                 if r[0]: codigos.add(r[0])
-            # Vía Producto local (codigo_barra + alts)
+            # Vía Producto local: codigo_barra principal + 1-a-N
+            # (alt1/2/3 legacy ya no se consultan)
             prod = (session.query(Producto)
                     .filter(Producto.observer_id == observer_id).first())
             if prod:
-                for c in (prod.codigo_barra, prod.codigo_barra_alt1,
-                          prod.codigo_barra_alt2, prod.codigo_barra_alt3):
-                    if c: codigos.add(c)
+                if prod.codigo_barra:
+                    codigos.add(prod.codigo_barra)
+                from database import ProductoCodigoBarra
+                for cb, in (session.query(ProductoCodigoBarra.codigo_barra)
+                            .filter_by(producto_id=prod.id).all()):
+                    if cb:
+                        codigos.add(cb)
 
             hoy = _date.today()
             desde = hoy - timedelta(days=29)

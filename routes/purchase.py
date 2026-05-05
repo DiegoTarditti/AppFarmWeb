@@ -1057,25 +1057,34 @@ def init_app(app):
                     if n in obs_existentes:
                         cb_to_obs[cb] = n
 
-            # Paso 2: bridge vía tabla productos para los que no resolvimos en el paso 1
+            # Paso 2: bridge vía tabla productos. Match al principal +
+            # producto_codigos_barra (1-a-N) para alts. Las columnas legacy
+            # alt1/2/3 ya no se consultan.
             codigos_pendientes = [c for c in codigos if c not in cb_to_obs]
             if codigos_pendientes:
-                from sqlalchemy import or_
                 Producto = database.Producto
-                conds = [Producto.codigo_barra.in_(codigos_pendientes)]
-                for col_name in ('codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'):
-                    col = getattr(Producto, col_name, None)
-                    if col is not None:
-                        conds.append(col.in_(codigos_pendientes))
-                prods_locales = session.query(Producto).filter(or_(*conds)).all()
-                for p in prods_locales:
-                    if p.observer_id:
-                        for cb in [p.codigo_barra,
-                                   getattr(p, 'codigo_barra_alt1', None),
-                                   getattr(p, 'codigo_barra_alt2', None),
-                                   getattr(p, 'codigo_barra_alt3', None)]:
-                            if cb and cb in codigos_pendientes:
-                                cb_to_obs[cb] = p.observer_id
+                # 2a. Match al principal
+                for p in (session.query(Producto)
+                          .filter(Producto.codigo_barra.in_(codigos_pendientes)).all()):
+                    if p.observer_id and p.codigo_barra in codigos_pendientes:
+                        cb_to_obs[p.codigo_barra] = p.observer_id
+                # 2b. Match en producto_codigos_barra
+                pendientes2 = [c for c in codigos_pendientes if c not in cb_to_obs]
+                if pendientes2:
+                    rows = (session.query(database.ProductoCodigoBarra.codigo_barra,
+                                          database.ProductoCodigoBarra.producto_id)
+                            .filter(database.ProductoCodigoBarra.codigo_barra.in_(pendientes2))
+                            .all())
+                    if rows:
+                        ids = {pid for _, pid in rows}
+                        obs_by_pid = {p.id: p.observer_id for p in
+                                      session.query(Producto)
+                                      .filter(Producto.id.in_(ids))
+                                      .filter(Producto.observer_id.isnot(None))
+                                      .all()}
+                        for ean, pid in rows:
+                            if pid in obs_by_pid and ean not in cb_to_obs:
+                                cb_to_obs[ean] = obs_by_pid[pid]
 
             obs_ids = list(set(cb_to_obs.values()))
             obs_data = {}
@@ -1500,12 +1509,21 @@ def init_app(app):
                 for row in session.query(ErpStock).all()
             }
             all_prods = session.query(Producto).all()
+            # Pre-cargar todos los EANs alternativos desde producto_codigos_barra
+            # en un solo query — los alts ya no viven en alt1/2/3.
+            alts_por_pid = {}
+            for pid, ean in (session.query(database.ProductoCodigoBarra.producto_id,
+                                            database.ProductoCodigoBarra.codigo_barra)
+                              .filter(database.ProductoCodigoBarra.es_principal.is_(False))
+                              .all()):
+                alts_por_pid.setdefault(pid, []).append(ean)
+            def _all_eans(p):
+                return [p.codigo_barra] + alts_por_pid.get(p.id, [])
             monodroga_by_bc = {}
             for p in all_prods:
                 if not p.monodroga:
                     continue
-                for bc in [p.codigo_barra, p.codigo_barra_alt1,
-                           p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                for bc in _all_eans(p):
                     if bc:
                         monodroga_by_bc[bc] = p.monodroga
 
@@ -1525,12 +1543,11 @@ def init_app(app):
                     except (ValueError, TypeError): pass
                 if obs_id is not None:
                     obs_ids_directos[cb] = obs_id
-            # Vía Producto local (alts incluidos)
+            # Vía Producto local (principal + alts en 1-a-N)
             for p in all_prods:
                 if not p.observer_id:
                     continue
-                for bc in [p.codigo_barra, p.codigo_barra_alt1,
-                           p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                for bc in _all_eans(p):
                     if bc and bc not in obs_ids_directos:
                         obs_ids_directos[bc] = p.observer_id
             todos_obs_ids = list({oid for oid in obs_ids_directos.values()})
@@ -1565,18 +1582,14 @@ def init_app(app):
                 for it in pedido.items
             ]
             equiv = [
-                {'barcodes': [b for b in [
-                    p.codigo_barra, p.codigo_barra_alt1,
-                    p.codigo_barra_alt2, p.codigo_barra_alt3,
-                ] if b]}
+                {'barcodes': [b for b in _all_eans(p) if b]}
                 for p in all_prods
             ]
             product_prices = {}
             for p in all_prods:
                 if p.precio_pvp is not None:
                     price = float(p.precio_pvp)
-                    for bc in [p.codigo_barra, p.codigo_barra_alt1,
-                               p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                    for bc in _all_eans(p):
                         if bc:
                             product_prices[bc] = price
 
@@ -1726,11 +1739,15 @@ def init_app(app):
                     _add_alt_barcode(session, pedido_bc, module_ean)
                     saved += 1
                 session.commit()
+                # equiv usa el helper _all_eans para combinar principal + 1-a-N
+                alts_por_pid = {}
+                for pid, ean in (session.query(database.ProductoCodigoBarra.producto_id,
+                                                database.ProductoCodigoBarra.codigo_barra)
+                                  .filter(database.ProductoCodigoBarra.es_principal.is_(False))
+                                  .all()):
+                    alts_por_pid.setdefault(pid, []).append(ean)
                 equiv = [
-                    {'barcodes': [b for b in [
-                        p.codigo_barra, p.codigo_barra_alt1,
-                        p.codigo_barra_alt2, p.codigo_barra_alt3,
-                    ] if b]}
+                    {'barcodes': [b for b in [p.codigo_barra] + alts_por_pid.get(p.id, []) if b]}
                     for p in session.query(Producto).all()
                 ]
                 return jsonify({'ok': True, 'saved': saved, 'equiv': equiv})

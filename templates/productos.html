@@ -235,24 +235,26 @@ function atributosCell(p) {
 }
 
 function buildRow(p) {
-    const hasAlt = p.alt1 || p.alt2 || p.alt3;
+    // p.alts es ahora una lista de strings (1-a-N producto_codigos_barra).
+    // alt1/2/3 legacy ya no existen.
+    const altsList = Array.isArray(p.alts) ? p.alts.filter(Boolean) : [];
+    const hasAlt = altsList.length > 0;
     const labSel = LAB_OPTIONS.replace(`value="${p.laboratorio_id}"`, `value="${p.laboratorio_id}" selected`);
+    const altsHtml = altsList.length
+        ? altsList.map(a => `<div class="font-mono text-[11px] text-[#555]">${escHtml(a)}</div>`).join('')
+        : '<span class="text-[#bbb] text-[11px] italic">—</span>';
     return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors"
         data-desc="${escHtml(p.descripcion.toLowerCase())}"
         data-cb="${escHtml(p.codigo_barra)}"
-        data-alt1="${escHtml(p.alt1)}"
-        data-alt2="${escHtml(p.alt2)}"
-        data-alt3="${escHtml(p.alt3)}"
+        data-alts="${escHtml(altsList.join(' '))}"
         data-labid="${escHtml(String(p.laboratorio_id))}"
         data-hasalt="${hasAlt ? 'true' : 'false'}"
         data-ispack="${p.es_pack ? 'true' : 'false'}">
         <td class="px-3 py-2 font-medium text-[#1e1e1e] editable-cell" data-id="${p.id}" data-field="descripcion">${escHtml(p.descripcion)}</td>
         <td class="px-3 py-2 font-mono text-[#555] text-[11px] editable-cell" data-id="${p.id}" data-field="codigo_barra">${escHtml(p.codigo_barra)}</td>
         <td class="px-3 py-2 align-top">
-            <div class="flex flex-col gap-1">
-                <div class="editable-cell" data-id="${p.id}" data-field="codigo_barra_alt1">${altCell(p.alt1)}</div>
-                <div class="editable-cell" data-id="${p.id}" data-field="codigo_barra_alt2">${altCell(p.alt2)}</div>
-                <div class="editable-cell" data-id="${p.id}" data-field="codigo_barra_alt3">${altCell(p.alt3)}</div>
+            <div class="flex flex-col gap-1" title="Para editar EANs alternativos: click en la fila → ver detalle del producto">
+                ${altsHtml}
             </div>
         </td>
         <td class="px-3 py-2">
@@ -414,10 +416,7 @@ document.addEventListener('click', function(e) {
             const tr = td.closest('tr');
             if (td.dataset.field === 'descripcion') tr.dataset.desc = newVal.toLowerCase();
             if (td.dataset.field === 'codigo_barra') tr.dataset.cb = newVal;
-            if (td.dataset.field === 'codigo_barra_alt1') tr.dataset.alt1 = newVal;
-            if (td.dataset.field === 'codigo_barra_alt2') tr.dataset.alt2 = newVal;
-            if (td.dataset.field === 'codigo_barra_alt3') tr.dataset.alt3 = newVal;
-            tr.dataset.hasalt = (tr.dataset.alt1||tr.dataset.alt2||tr.dataset.alt3) ? 'true':'false';
+            // alt1/2/3 ya no son editables inline — viven en producto_codigos_barra.
         } else {
             const err = await resp.json().catch(()=>({}));
             alert(err.error || 'Error al guardar');

@@ -42,12 +42,19 @@ def init_app(app):
                 from helpers import multi_token_filter
                 clausula = multi_token_filter(q,
                     Producto.descripcion,
-                    Producto.codigo_barra,
-                    Producto.codigo_barra_alt1,
-                    Producto.codigo_barra_alt2,
-                    Producto.codigo_barra_alt3)
+                    Producto.codigo_barra)
                 if clausula is not None:
-                    base = base.filter(clausula)
+                    # También buscar en producto_codigos_barra (1-a-N) por
+                    # el primer token. Para simplicidad usamos un EXISTS subquery.
+                    from database import ProductoCodigoBarra
+                    primer_token = q.split()[0] if q.split() else ''
+                    if primer_token:
+                        sub = (session.query(ProductoCodigoBarra.producto_id)
+                               .filter(ProductoCodigoBarra.codigo_barra.ilike(f'%{primer_token}%'))
+                               .subquery())
+                        base = base.filter(or_(clausula, Producto.id.in_(sub)))
+                    else:
+                        base = base.filter(clausula)
             if lab == '__none__':
                 base = base.filter(Producto.laboratorio_id.is_(None))
             elif lab:
@@ -56,11 +63,13 @@ def init_app(app):
                 except ValueError:
                     pass
             if only_alt:
-                base = base.filter(or_(
-                    Producto.codigo_barra_alt1.isnot(None),
-                    Producto.codigo_barra_alt2.isnot(None),
-                    Producto.codigo_barra_alt3.isnot(None),
-                ))
+                # Productos con al menos un EAN alternativo en la 1-a-N
+                # (además del principal). Antes era OR sobre alt1/2/3.
+                from database import ProductoCodigoBarra
+                sub = (session.query(ProductoCodigoBarra.producto_id)
+                       .filter(ProductoCodigoBarra.es_principal.is_(False))
+                       .subquery())
+                base = base.filter(Producto.id.in_(sub))
             if only_pack:
                 base = base.filter(Producto.es_pack == 1)
             # Filtro por tipo de venta y control (vía obs_productos.id_tipo_venta_control)
@@ -139,14 +148,22 @@ def init_app(app):
                     return f'Ctrl·{t}'
                 return t
 
+            # EANs alternativos vía 1-a-N en batch (alt1/2/3 ya no se exponen)
+            from database import ProductoCodigoBarra
+            alts_por_prod = {}
+            if prod_ids:
+                for pid, ean in (session.query(ProductoCodigoBarra.producto_id,
+                                                ProductoCodigoBarra.codigo_barra)
+                                  .filter(ProductoCodigoBarra.producto_id.in_(prod_ids))
+                                  .filter(ProductoCodigoBarra.es_principal.is_(False))
+                                  .all()):
+                    alts_por_prod.setdefault(pid, []).append(ean)
             data = [
                 {
                     'id': p.id,
                     'codigo_barra': p.codigo_barra,
                     'descripcion': p.descripcion or '',
-                    'alt1': p.codigo_barra_alt1 or '',
-                    'alt2': p.codigo_barra_alt2 or '',
-                    'alt3': p.codigo_barra_alt3 or '',
+                    'alts': alts_por_prod.get(p.id, []),  # lista — antes alt1/2/3
                     'precio_pvp': float(p.precio_pvp) if p.precio_pvp else None,
                     'laboratorio_id': p.laboratorio_id or '',
                     'laboratorio_nombre': p.laboratorio.nombre if p.laboratorio else '',
@@ -179,7 +196,9 @@ def init_app(app):
         data = request.get_json(silent=True) or {}
         field = data.get('field')
         value = (data.get('value') or '').strip()
-        allowed = {'descripcion', 'codigo_barra', 'codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3', 'precio_pvp', 'es_pack'}
+        # alt1/2/3 quitados — los alternativos ahora se editan vía
+        # /producto/<id>/codigos (POST a producto_codigos_barra)
+        allowed = {'descripcion', 'codigo_barra', 'precio_pvp', 'es_pack'}
         if field not in allowed:
             return {'error': 'Campo no permitido'}, 400
         with database.get_db() as session:
@@ -292,11 +311,18 @@ def init_app(app):
                         'baja': op.fecha_baja,
                         'monodroga': obs_droga.descripcion if obs_droga else None,
                     }
+            # EANs alts desde producto_codigos_barra (1-a-N)
+            from database import ProductoCodigoBarra
+            alts_lista = [
+                cb for cb, in (session.query(ProductoCodigoBarra.codigo_barra)
+                                .filter_by(producto_id=prod.id, es_principal=False)
+                                .all()) if cb
+            ]
             producto = {
                 'id': prod.id,
                 'codigo_barra': prod.codigo_barra,
                 'descripcion': prod.descripcion or '',
-                'alts': [a for a in (prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3) if a],
+                'alts': alts_lista,
                 'precio_pvp': float(prod.precio_pvp) if prod.precio_pvp else None,
                 'es_pack': bool(prod.es_pack),
                 'laboratorio': prod.laboratorio.nombre if prod.laboratorio else None,
@@ -684,12 +710,17 @@ def init_app(app):
             return jsonify({'ok': False, 'error': 'EAN vacío'}), 400
 
         with database.get_db() as session:
-            # Colectar todos los EANs equivalentes (principal + alts) del producto.
+            # Colectar todos los EANs equivalentes (principal + 1-a-N) del producto.
             eans = {ean}
             prod = _find_producto(session, ean)
             if prod:
-                for alt in (prod.codigo_barra, prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3):
-                    if alt: eans.add(alt)
+                if prod.codigo_barra:
+                    eans.add(prod.codigo_barra)
+                from database import ProductoCodigoBarra
+                for cb, in (session.query(ProductoCodigoBarra.codigo_barra)
+                            .filter_by(producto_id=prod.id).all()):
+                    if cb:
+                        eans.add(cb)
 
             rows = (session.query(ProductoPrecioHist)
                     .filter(ProductoPrecioHist.codigo_barra.in_(list(eans)))

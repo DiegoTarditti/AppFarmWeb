@@ -256,7 +256,10 @@ _TARGETS = {
     'producto': _TargetSpec(
         model_attr='Producto',
         lab_field='laboratorio_id',
-        ean_fields=('codigo_barra', 'codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'),
+        # Solo principal — los alternativos viven en producto_codigos_barra
+        # (1-a-N). Las columnas legacy alt1/2/3 fueron migradas y van a
+        # DROP COLUMN.
+        ean_fields=('codigo_barra',),
         alfabeta_field='codigo_alfabeta',
     ),
     'obs_producto': _TargetSpec(

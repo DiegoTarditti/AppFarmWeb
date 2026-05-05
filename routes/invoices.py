@@ -777,23 +777,35 @@ def init_app(app):
                      .order_by(database.InvoiceItem.descripcion)
                      .all())
 
-            # Build barcode → {monodroga, presentacion} map from Producto (incl. EANs alt)
+            # Build barcode → {monodroga, presentacion} map from Producto.
+            # Match al principal + EANs en producto_codigos_barra (1-a-N).
+            # Las columnas legacy alt1/2/3 ya no se consultan.
             barcodes = [it.codigo_barra for it in items if it.codigo_barra]
             prod_info = {}
             if barcodes:
-                from sqlalchemy import or_
-                prods = session.query(database.Producto).filter(or_(
-                    database.Producto.codigo_barra.in_(barcodes),
-                    database.Producto.codigo_barra_alt1.in_(barcodes),
-                    database.Producto.codigo_barra_alt2.in_(barcodes),
-                    database.Producto.codigo_barra_alt3.in_(barcodes),
-                )).all()
-                for p in prods:
+                # Match al principal
+                prods_p = (session.query(database.Producto)
+                           .filter(database.Producto.codigo_barra.in_(barcodes))
+                           .all())
+                # Match en 1-a-N → producto_id → cargar Producto
+                rows = (session.query(database.ProductoCodigoBarra.codigo_barra,
+                                      database.ProductoCodigoBarra.producto_id)
+                        .filter(database.ProductoCodigoBarra.codigo_barra.in_(barcodes))
+                        .all())
+                pcb_map = {pid: ean for ean, pid in rows}
+                if pcb_map:
+                    for p in (session.query(database.Producto)
+                              .filter(database.Producto.id.in_(list(pcb_map.keys()))).all()):
+                        prods_p.append(p)
+                # Llenar prod_info con todos los EANs (principal + 1-a-N)
+                for p in prods_p:
                     info = {'monodroga': p.monodroga or '', 'presentacion': p.presentacion or ''}
-                    for bc in [p.codigo_barra, p.codigo_barra_alt1,
-                               p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                        if bc:
-                            prod_info[bc] = info
+                    if p.codigo_barra:
+                        prod_info[p.codigo_barra] = info
+                    for cb, in (session.query(database.ProductoCodigoBarra.codigo_barra)
+                                .filter_by(producto_id=p.id).all()):
+                        if cb:
+                            prod_info[cb] = info
             return render_template('invoice_items.html', invoice=invoice,
                                    items=items, prod_info=prod_info)
 
