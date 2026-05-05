@@ -33,8 +33,8 @@ def main():
     if args.dry_run:
         print('(DRY-RUN: no commitea)')
 
-    from catalogacion import backfill_todos
     import database as _db
+    from catalogacion import backfill_todos
 
     if args.dry_run:
         # Abrir sesión propia y rollback al final.
