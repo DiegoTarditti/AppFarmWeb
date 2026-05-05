@@ -179,18 +179,20 @@
             </div>
             <div id="pdf-full" class="p-4 overflow-y-auto max-h-[75vh]"><pre id="pdf-text" class="whitespace-pre-wrap">{{ pdf_text }}</pre></div>
             <div id="pdf-split" class="hidden p-3 space-y-3 overflow-y-auto max-h-[75vh]">
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1">📄 Encabezado</p>
-                    <pre id="pdf-header" class="p-3 bg-amber-50 border border-amber-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[25vh] overflow-y-auto"></pre>
-                </div>
+                {# Orden: DETALLE primero (queda pegado a la "Fila de ejemplo"
+                   de arriba). Encabezado y totales abajo, colapsables. #}
                 <div>
                     <p class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1">📋 Detalle (ítems)</p>
-                    <pre id="pdf-detail" class="p-3 bg-sky-50 border border-sky-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[35vh] overflow-y-auto"></pre>
+                    <pre id="pdf-detail" class="p-3 bg-sky-50 border border-sky-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[55vh] overflow-y-auto"></pre>
                 </div>
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1">🧾 Totales (pie)</p>
-                    <pre id="pdf-footer" class="p-3 bg-emerald-50 border border-emerald-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[20vh] overflow-y-auto"></pre>
-                </div>
+                <details>
+                    <summary class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1 cursor-pointer hover:text-[#1e1e1e]">📄 Encabezado <span class="text-[#999] font-normal normal-case">(click para mostrar)</span></summary>
+                    <pre id="pdf-header" class="mt-1 p-3 bg-amber-50 border border-amber-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[25vh] overflow-y-auto"></pre>
+                </details>
+                <details>
+                    <summary class="text-[10px] uppercase tracking-wider text-[#6f6f6f] font-bold mb-1 cursor-pointer hover:text-[#1e1e1e]">🧾 Totales (pie) <span class="text-[#999] font-normal normal-case">(click para mostrar)</span></summary>
+                    <pre id="pdf-footer" class="mt-1 p-3 bg-emerald-50 border border-emerald-200 rounded font-mono text-[11px] leading-relaxed whitespace-pre-wrap max-h-[20vh] overflow-y-auto"></pre>
+                </details>
             </div>
         </div>
     </div>
