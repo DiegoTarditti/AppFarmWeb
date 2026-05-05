@@ -74,9 +74,10 @@ def init_app(app):
     @app.route('/laboratorio/create', methods=['POST'])
     def laboratorio_create():
         nombre = request.form.get('nombre', '').strip()
+        next_url = request.form.get('next') or request.referrer or url_for('laboratorios_list')
         if not nombre:
             flash('El nombre es obligatorio.')
-            return redirect(url_for('laboratorios_list'))
+            return redirect(next_url)
         with database.get_db() as session:
             from helpers import _normalizar_nombre_entidad, get_or_create_laboratorio
             # Detectar duplicado por nombre normalizado (no solo case-insensitive)
@@ -84,10 +85,10 @@ def init_app(app):
             for c in session.query(Laboratorio).all():
                 if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
                     flash(f'Ya existe un laboratorio: "{c.nombre}". No se creó duplicado.')
-                    return redirect(url_for('laboratorios_list'))
+                    return redirect(next_url)
             get_or_create_laboratorio(session, nombre)
             session.commit()
-        return redirect(url_for('laboratorios_list'))
+        return redirect(next_url)
 
     @app.route('/laboratorio/<int:lab_id>/edit', methods=['POST'])
     def laboratorio_edit(lab_id):
@@ -112,13 +113,31 @@ def init_app(app):
 
     @app.route('/laboratorio/<int:lab_id>/delete', methods=['POST'])
     def laboratorio_delete(lab_id):
-        with database.get_db() as session:
-            lab = session.get(Laboratorio, lab_id)
-            if lab:
-                session.query(Producto).filter_by(laboratorio_id=lab_id).update({'laboratorio_id': None})
+        next_url = request.form.get('next') or request.referrer or url_for('laboratorios_list')
+        from database import (OfertaMinimo, DescuentoBase, ExportTemplate,
+                              LaboratorioDrogueria, EquivalenciaProveedor,
+                              PedidoBorrador, Modulo, AnalisisSesion)
+        try:
+            with database.get_db() as session:
+                lab = session.get(Laboratorio, lab_id)
+                if not lab:
+                    return redirect(next_url)
+                # Borrar dependencias HARD (lab_id NOT NULL en estas).
+                session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).delete(synchronize_session=False)
+                session.query(DescuentoBase).filter_by(laboratorio_id=lab_id).delete(synchronize_session=False)
+                session.query(ExportTemplate).filter_by(laboratorio_id=lab_id).delete(synchronize_session=False)
+                session.query(LaboratorioDrogueria).filter_by(laboratorio_id=lab_id).delete(synchronize_session=False)
+                session.query(EquivalenciaProveedor).filter_by(laboratorio_id=lab_id).delete(synchronize_session=False)
+                # SET NULL en dependencias soft (lab_id nullable).
+                session.query(Producto).filter_by(laboratorio_id=lab_id).update({'laboratorio_id': None}, synchronize_session=False)
+                session.query(PedidoBorrador).filter_by(laboratorio_id=lab_id).update({'laboratorio_id': None}, synchronize_session=False)
+                session.query(Modulo).filter_by(laboratorio_id=lab_id).update({'laboratorio_id': None}, synchronize_session=False)
+                session.query(AnalisisSesion).filter_by(laboratorio_id=lab_id).update({'laboratorio_id': None}, synchronize_session=False)
                 session.delete(lab)
                 session.commit()
-        return redirect(url_for('laboratorios_list'))
+        except Exception as e:
+            flash(f'No se pudo borrar el laboratorio: {e}')
+        return redirect(next_url)
 
     @app.route('/laboratorios/sync-observer', methods=['POST'])
     def laboratorios_sync_observer():
