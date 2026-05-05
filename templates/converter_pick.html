@@ -1992,6 +1992,8 @@ function useSelectionAsExample() {
     state.tokens = tokenize(state.exampleLine);
     state.groups = tokensToGroups(state.tokens);
     renderExample(); renderSelections(); validatePick();
+    // Disparar auto-detect en server (silencioso) para proponer asignaciones
+    try { autodetectarCamposServer(); } catch(_) {}
 }
 
 function _availableExampleChips() {
@@ -2008,29 +2010,80 @@ function renderExample() {
     const opts = _availableExampleChips();
     const optsHtml = '<option value="">asignar a…</option>' +
         opts.map(o => `<option value="${escapeHtml(o.field)}">${escapeHtml(o.label)}</option>`).join('');
-    let html = '<div class="flex flex-col gap-1">';
+
+    // Render horizontal estilo Excel: cada grupo es un segmento en línea con
+    // label arriba (campo asignado / hint) y selector abajo. Entre grupos hay
+    // un divisor │ clickeable que une, y dentro de un grupo multi-token hay
+    // separadores ┊ ghost que parten en ese punto.
+    let html = '<div class="ex-flex flex flex-wrap items-stretch gap-y-2">';
     groups.forEach((g, idx) => {
         const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
-        let cls = 'group-row flex items-center gap-2 px-2 py-1.5 border rounded transition-colors';
-        if (assigned)       cls += ' bg-emerald-100 border-emerald-400 text-emerald-900';
-        else if (g.checked) cls += ' bg-sky-100 border-sky-500';
-        else                cls += ' bg-white border-slate-300 hover:bg-slate-50 cursor-pointer';
         const hint = assigned ? null : detectHint(g.text);
-        const hintHtml = hint ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded border ${hint.cls}">${escapeHtml(hint.label)}</span>` : '';
-        const title = assigned ? `Asignado a ${assigned.field}` : '';
-        const rowSelect = assigned ? '' :
-            `<select class="ex-row-sel text-[10px] border border-slate-300 bg-white rounded px-1 py-0.5" data-idx="${idx}">${optsHtml}</select>`;
-        const editBtn = assigned ? '' : `<button type="button" class="ex-row-edit text-[#999] hover:text-sky-600" data-idx="${idx}" title="Editar texto (útil si el OCR leyó mal)">✏️</button>`;
-        html += `<label class="${cls}" data-idx="${idx}" title="${escapeHtml(title)}">
-            <input type="checkbox" ${g.checked?'checked':''} ${assigned?'disabled':''} class="gchk">
-            <span class="font-mono flex-1">${escapeHtml(g.text)}</span>
-            ${hintHtml}
-            ${editBtn}
-            ${assigned ? `<span class="text-[10px] font-bold uppercase tracking-wide">${escapeHtml(assigned.field)}</span>` : rowSelect}
-        </label>`;
+        const innerTokens = state.tokens.filter(t => t.start >= g.start && t.end <= g.end);
+
+        // Top label: campo asignado (verde) o hint del auto-detect
+        let topLabel;
+        if (assigned) {
+            topLabel = `<span class="text-[9px] font-bold uppercase tracking-wide text-emerald-700 leading-none truncate max-w-full">${escapeHtml(assigned.field)}</span>`;
+        } else if (hint) {
+            topLabel = `<span class="text-[9px] font-bold leading-none px-1 rounded ${hint.cls}">${escapeHtml(hint.label)}</span>`;
+        } else {
+            topLabel = '<span class="text-[9px] leading-none">&nbsp;</span>';
+        }
+
+        // Body
+        let bodyCls = 'px-1.5 py-1 border font-mono text-xs whitespace-nowrap select-none cursor-pointer';
+        if (assigned)       bodyCls += ' bg-emerald-100 border-emerald-400 text-emerald-900';
+        else if (g.checked) bodyCls += ' bg-sky-100 border-sky-500';
+        else                bodyCls += ' bg-white border-slate-300 hover:bg-slate-50';
+
+        let bodyHtml;
+        if (assigned || innerTokens.length <= 1) {
+            bodyHtml = escapeHtml(g.text);
+        } else {
+            const parts = [];
+            innerTokens.forEach((t, ti) => {
+                if (ti > 0) {
+                    const cutAt = innerTokens[ti-1].end;
+                    parts.push(`<button type="button" class="ex-split text-slate-300 hover:text-rose-500 hover:bg-rose-50 px-0.5 mx-0.5 rounded text-[11px] font-bold leading-none align-middle" data-gidx="${idx}" data-cut="${cutAt}" title="Separar acá">┊</button>`);
+                }
+                parts.push(`<span>${escapeHtml(t.text)}</span>`);
+            });
+            bodyHtml = parts.join('');
+        }
+
+        // Bottom: si está asignado mostrar chip-like con × para desasignar; si no, dropdown
+        let bottomLabel;
+        if (assigned) {
+            bottomLabel = `<button type="button" class="ex-unassign text-[10px] text-rose-500 hover:text-rose-700 hover:bg-rose-50 px-1 rounded leading-none" data-field="${escapeHtml(assigned.field)}" title="Desasignar">✕ quitar</button>`;
+        } else {
+            bottomLabel = `<select class="ex-row-sel text-[10px] border border-slate-300 bg-white rounded px-0.5 py-0 leading-none" data-idx="${idx}" style="max-width:90px">${optsHtml}</select>`;
+        }
+
+        const editBtn = assigned ? '' : `<button type="button" class="ex-row-edit text-[10px] text-slate-400 hover:text-sky-600 leading-none" data-idx="${idx}" title="Editar texto">✏️</button>`;
+
+        html += `<div class="ex-seg flex flex-col items-center gap-0.5 px-0.5" data-idx="${idx}">
+            <div class="h-3 flex items-center justify-center min-w-[24px]">${topLabel}</div>
+            <div class="${bodyCls}" data-role="body">${bodyHtml}</div>
+            <div class="h-4 flex items-center justify-center gap-1">${bottomLabel}${editBtn}</div>
+        </div>`;
+
+        // Divisor entre este grupo y el siguiente
+        if (idx < groups.length - 1) {
+            const nextG = groups[idx + 1];
+            const nextAssigned = state.selections.find(s => s.start <= nextG.start && s.end >= nextG.end);
+            const canMerge = !assigned && !nextAssigned;
+            const mergeCls = canMerge ? 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 cursor-pointer' : 'text-slate-200 cursor-not-allowed';
+            html += `<div class="flex flex-col items-center justify-center">
+                <div class="h-3"></div>
+                <button type="button" class="ex-merge ${mergeCls} px-0.5 font-bold text-base leading-none" data-idx="${idx}" ${canMerge?'':'disabled'} title="${canMerge?'Unir con siguiente':'No se puede unir (hay un asignado)'}">│</button>
+                <div class="h-4"></div>
+            </div>`;
+        }
     });
     html += '</div>';
     box.innerHTML = html;
+
     box.querySelectorAll('.ex-row-sel').forEach(sel => {
         sel.addEventListener('click', e => e.stopPropagation());
         sel.addEventListener('change', (e) => {
@@ -2048,38 +2101,85 @@ function renderExample() {
             editExampleTokenText(idx);
         });
     });
-    box.querySelectorAll('.group-row').forEach(row => {
-        const idx = parseInt(row.dataset.idx, 10);
-        row.addEventListener('click', (e) => {
-            // Ctrl/Cmd+click → seleccionar rango desde lastExIdx hasta idx
+    box.querySelectorAll('.ex-unassign').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const field = btn.dataset.field;
+            const i = state.selections.findIndex(s => s.field === field);
+            if (i >= 0) { state.selections.splice(i, 1); renderExample(); renderSelections(); validatePick(); }
+        });
+    });
+    box.querySelectorAll('.ex-merge').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (btn.disabled) return;
+            mergeAdjacent(parseInt(btn.dataset.idx, 10));
+        });
+    });
+    box.querySelectorAll('.ex-split').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            splitGroupAt(parseInt(btn.dataset.gidx, 10), parseInt(btn.dataset.cut, 10));
+        });
+    });
+    // Click sobre el cuerpo del segmento → toggle checked (selección)
+    box.querySelectorAll('.ex-seg').forEach(seg => {
+        seg.addEventListener('click', (e) => {
+            if (e.target.closest('.ex-row-sel,.ex-split,.ex-unassign,.ex-merge,.ex-row-edit')) return;
+            const idx = parseInt(seg.dataset.idx, 10);
+            const g = state.groups[idx];
+            const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
+            if (assigned) return;
             if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
                 const last = state.lastExIdx;
-                if (last == null) { state.groups[idx].checked = true; }
+                if (last == null) g.checked = true;
                 else {
                     const lo = Math.min(last, idx), hi = Math.max(last, idx);
                     for (let i = lo; i <= hi; i++) {
-                        const g = state.groups[i];
-                        const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
-                        if (!assigned) g.checked = true;
+                        const gi = state.groups[i];
+                        const ai = state.selections.find(s => s.start <= gi.start && s.end >= gi.end);
+                        if (!ai) gi.checked = true;
                     }
                 }
-                state.lastExIdx = idx;
-                renderExample();
-                return;
+            } else {
+                g.checked = !g.checked;
             }
-            // Click simple en el checkbox → el navegador toggle-a, interceptamos en change
-            if (e.target.tagName !== 'INPUT') return;
-        });
-    });
-    box.querySelectorAll('.group-row .gchk').forEach(cb => {
-        cb.addEventListener('change', (e) => {
-            const row = e.target.closest('.group-row');
-            const idx = parseInt(row.dataset.idx, 10);
             state.lastExIdx = idx;
-            toggleGroupCheck(idx);
+            renderExample();
         });
     });
+}
+
+function mergeAdjacent(idx) {
+    const a = state.groups[idx], b = state.groups[idx+1];
+    if (!a || !b) return;
+    const aAssigned = state.selections.find(s => s.start <= a.start && s.end >= a.end);
+    const bAssigned = state.selections.find(s => s.start <= b.start && s.end >= b.end);
+    if (aAssigned || bAssigned) return;
+    state.groups.splice(idx, 2, {
+        start: a.start, end: b.end,
+        text: state.exampleLine.slice(a.start, b.end), checked: false
+    });
+    renderExample();
+}
+
+function splitGroupAt(gidx, charPos) {
+    const g = state.groups[gidx];
+    if (!g) return;
+    const assigned = state.selections.find(s => s.start <= g.start && s.end >= g.end);
+    if (assigned) return;
+    if (charPos <= g.start || charPos >= g.end) return;
+    const innerTokens = state.tokens.filter(t => t.start >= g.start && t.end <= g.end);
+    const left = innerTokens.filter(t => t.end <= charPos);
+    const right = innerTokens.filter(t => t.start >= charPos);
+    if (!left.length || !right.length) return;
+    const lStart = left[0].start, lEnd = left[left.length-1].end;
+    const rStart = right[0].start, rEnd = right[right.length-1].end;
+    state.groups.splice(gidx, 1,
+        {start: lStart, end: lEnd, text: state.exampleLine.slice(lStart, lEnd), checked: false},
+        {start: rStart, end: rEnd, text: state.exampleLine.slice(rStart, rEnd), checked: false}
+    );
+    renderExample();
 }
 
 function renderSelections() {
