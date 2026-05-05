@@ -23,8 +23,13 @@ os.environ.setdefault('SECRET_KEY', 'popular-productos-desde-obs')
 
 
 def ejecutar(dry_run: bool = False, limit: int = None) -> dict:
-    from database import (Laboratorio, ObsCodigoBarras, ObsProducto, Producto,
-                          get_db)
+    from database import (
+        Laboratorio,
+        ObsCodigoBarras,
+        ObsProducto,
+        Producto,
+        get_db,
+    )
 
     stats = {'evaluados': 0, 'ya_existen': 0, 'creados': 0, 'sin_ean': 0,
              'sin_lab': 0, 'errores': []}
