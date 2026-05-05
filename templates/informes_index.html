@@ -91,6 +91,17 @@
                 <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Para una droga, qué presentaciones (x10/x20/x30) se venden más. Para decidir qué stockear.</p>
             </a>
 
+            {# ── Informe #4: Ventas multi-dimensional ── #}
+            <a href="{{ url_for('informe_ventas_multi') }}"
+               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-fuchsia-500 hover:shadow-md transition-all relative">
+                <div class="flex items-start gap-2 mb-2">
+                    <div class="w-9 h-9 rounded-lg bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center text-lg flex-shrink-0">🔬</div>
+                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                </div>
+                <p class="font-bold text-sm text-[#1e1e1e]">Ventas por droga / producto / médico / fecha</p>
+                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tabla pivot configurable: cruzá ventas por monodroga, producto, médico prescriptor y/o rango de fechas. Top prescriptores, evolución temporal, ranking por OS.</p>
+            </a>
+
         </div>
 
     </div>

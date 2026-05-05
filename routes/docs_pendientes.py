@@ -215,12 +215,20 @@ def init_app(app):
                 if prod and prod.observer_id:
                     obs_id = prod.observer_id
 
-            if obs_id is None:
-                return jsonify({'ok': False, 'error': 'Producto no encontrado. Procesá un análisis de ventas primero.'}), 404
-
-            obs_p = session.get(database.ObsProducto, obs_id)
+            # Si no resolvimos obs_id o no hay ObsProducto, igual respondemos
+            # OK con sin_historial=True usando el Producto local (si existe).
+            obs_p = session.get(database.ObsProducto, obs_id) if obs_id else None
             if not obs_p:
-                return jsonify({'ok': False, 'error': 'Producto no encontrado en catálogo ObServer.'}), 404
+                from helpers import _find_producto
+                prod_local = _find_producto(session, barcode)
+                nombre = (prod_local.descripcion if prod_local else '') or barcode
+                return jsonify({
+                    'ok': True, 'nombre': nombre, 'codigo_barra': barcode,
+                    'ventas': [], 'avg_monthly': 0, 'slope': 0,
+                    'stock': 0, 'minimo': 0, 'rotacion': '', 'tipo': 'N',
+                    'start_month': 4, 'n_days': 35, 'sin_historial': True,
+                    'fuente': 'sin_datos',
+                })
 
             id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
             hoy = datetime.now()

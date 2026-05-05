@@ -1,0 +1,449 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Ventas multi-dimensional — Informes{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">🔬 Ventas por droga / producto / médico / fecha</h1>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('informe_ventas_multi_export', desde=desde.isoformat(), hasta=hasta.isoformat(), droga_id=droga_id or '', producto_id=producto_id or '', medico_id=medico_id or '', group_by=group_by) }}"
+           class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
+            📊 Exportar XLSX
+        </a>
+        <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline ml-1">← Mis Informes</a>
+    </div>
+</div>
+
+{# KPIs banner — compacto en una sola fila #}
+<div class="bg-fuchsia-50/40 border-b border-fuchsia-200 px-4 sm:px-6 py-1.5 flex items-center gap-4 flex-wrap text-xs">
+    <span><span class="text-[#888]">Días</span> <b>{{ kpis.dias }}</b></span>
+    <span class="text-[#ddd]">·</span>
+    <span><span class="text-[#888]">Ops</span> <b>{{ kpis.ops_total }}</b></span>
+    <span class="text-[#ddd]">·</span>
+    <span><span class="text-[#888]">Ops/día</span> <b>{{ kpis.ops_por_dia }}</b></span>
+    <span class="text-[#ddd]">·</span>
+    <span><span class="text-[#888]">Ticket prom</span> <b>${{ '%.0f' | format(kpis.ticket_promedio) }}</b></span>
+    <span class="text-[#ddd]">·</span>
+    <span class="truncate"><span class="text-[#888]">Top médico</span> <b>{{ kpis.top_medico or '—' }}</b></span>
+    <span class="text-[#ddd]">·</span>
+    <span class="truncate"><span class="text-[#888]">Top OS</span> <b>{{ kpis.top_os or '—' }}</b></span>
+</div>
+
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
+    <form method="get" id="filtros-form" class="bg-white border border-surface-border rounded-xl px-4 py-3 mb-4">
+        {# Fila 1: fechas + group_by + aplicar + excluir + rangos #}
+        <div class="flex items-end gap-3 flex-wrap mb-3">
+            <div>
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Desde</label>
+                <input type="date" name="desde" value="{{ desde.isoformat() }}"
+                       class="bg-white border border-surface-border rounded px-2 py-1 text-sm w-36">
+            </div>
+            <div>
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Hasta</label>
+                <input type="date" name="hasta" value="{{ hasta.isoformat() }}"
+                       class="bg-white border border-surface-border rounded px-2 py-1 text-sm w-36">
+            </div>
+            <div>
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Agrupar por</label>
+                <select name="group_by" class="bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                    <option value="producto" {% if group_by == 'producto' %}selected{% endif %}>Producto</option>
+                    <option value="droga" {% if group_by == 'droga' %}selected{% endif %}>Droga</option>
+                    <option value="medico" {% if group_by == 'medico' %}selected{% endif %}>Médico</option>
+                    <option value="mes" {% if group_by == 'mes' %}selected{% endif %}>Mes</option>
+                    <option value="os" {% if group_by == 'os' %}selected{% endif %}>Obra Social</option>
+                    <option value="dia" {% if group_by == 'dia' %}selected{% endif %}>Día</option>
+                </select>
+            </div>
+            <button type="submit" class="bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-semibold text-sm px-4 py-1 rounded">Aplicar</button>
+            <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer pb-1">
+                <input type="checkbox" name="excluir_sin_droga" value="1" class="w-3.5 h-3.5"
+                       {% if excluir_sin_droga %}checked{% endif %}>
+                Excluir sin droga
+            </label>
+            <div class="flex items-center gap-1 ml-auto">
+                <button type="button" onclick="setRango(7)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">7d</button>
+                <button type="button" onclick="setRango(30)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">30d</button>
+                <button type="button" onclick="setRango(90)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">90d</button>
+                <button type="button" onclick="setRango(180)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">6m</button>
+                <button type="button" onclick="setRango(365)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">1a</button>
+            </div>
+        </div>
+
+        {# Fila 2: rubro + droga + producto + médico + OS — todos en línea si entran #}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div>
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Rubro</label>
+                <select name="rubro_id" class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                    <option value="0" {% if not rubro_id %}selected{% endif %}>— Todos —</option>
+                    {% for r in rubros %}
+                    <option value="{{ r.id }}" {% if rubro_id == r.id %}selected{% endif %}>{{ r.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="relative">
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Droga (monodroga)</label>
+                <input type="hidden" name="droga_id" id="droga_id" value="{{ droga_id or '' }}">
+                <input type="text" id="droga_input" autocomplete="off"
+                       value="{{ droga_nombre or '' }}"
+                       placeholder="Buscar droga…"
+                       class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                <div id="droga_results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-30 max-h-64 overflow-auto"></div>
+            </div>
+            <div class="relative">
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Producto</label>
+                <input type="hidden" name="producto_id" id="producto_id" value="{{ producto_id or '' }}">
+                <input type="text" id="producto_input" autocomplete="off"
+                       value="{{ producto_desc or '' }}"
+                       placeholder="Buscar producto…"
+                       class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                <div id="producto_results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-30 max-h-64 overflow-auto"></div>
+            </div>
+            <div class="relative">
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Médico</label>
+                <input type="hidden" name="medico_id" id="medico_id" value="{{ medico_id or '' }}">
+                <input type="text" id="medico_input" autocomplete="off"
+                       value="{{ medico_nombre or '' }}"
+                       placeholder="Buscar médico…"
+                       class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                <div id="medico_results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-30 max-h-64 overflow-auto"></div>
+            </div>
+            <div class="relative">
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Obra Social</label>
+                <input type="hidden" name="os_id" id="os_id" value="{{ os_id or '' }}">
+                <input type="text" id="os_input" autocomplete="off"
+                       value="{{ os_nombre or '' }}"
+                       placeholder="Buscar OS…"
+                       class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                <div id="os_results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-30 max-h-64 overflow-auto"></div>
+            </div>
+        </div>
+    </form>
+
+    {# Charts: timeline + donut top 10 + histórico (si hay droga) #}
+    <div class="grid grid-cols-1 {% if droga_id %}lg:grid-cols-3{% else %}lg:grid-cols-2{% endif %} gap-3 mb-4">
+        <div class="bg-white border border-surface-border rounded-xl p-3{% if not droga_id %} lg:col-span-1{% endif %}">
+            <p class="text-xs font-semibold text-[#1e1e1e] mb-1">📈 Evolución mensual</p>
+            <div class="relative" style="height:200px"><canvas id="tl-chart"></canvas></div>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-3">
+            <p class="text-xs font-semibold text-[#1e1e1e] mb-1">🍩 Top 10 — {{ {'producto':'productos','droga':'drogas','medico':'médicos','os':'obras sociales','mes':'meses','dia':'días'}[group_by] }}</p>
+            <div class="relative" style="height:200px"><canvas id="donut-chart"></canvas></div>
+        </div>
+        {% if droga_id %}
+        <div class="bg-white border border-surface-border rounded-xl p-3">
+            <p class="text-xs font-semibold text-[#1e1e1e] mb-1">📈 Top 5 médicos prescriptores</p>
+            <div class="relative" style="height:200px">
+                <canvas id="hist-chart"></canvas>
+                <p id="hist-empty" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">Cargando…</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-2.5 flex items-center justify-between bg-fuchsia-50/40 border-b border-surface-border gap-3 flex-wrap">
+            <p class="text-sm font-semibold text-[#1e1e1e]">
+                {{ rows | length }} {% if group_by == 'producto' %}productos{% elif group_by == 'droga' %}drogas{% elif group_by == 'medico' %}médicos{% elif group_by == 'os' %}obras sociales{% elif group_by == 'mes' %}meses{% else %}días{% endif %}
+            </p>
+            <p class="text-xs text-[#6f6f6f] font-mono">
+                Total: <b class="text-[#1e1e1e]">{{ '%.0f' | format(total_cantidad) }} u</b> ·
+                <b class="text-[#1e1e1e]">${{ '%.2f' | format(total_importe) }}</b>
+            </p>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="bg-[#f0f0f0] sticky top-0">
+                <tr>
+                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">
+                        {% if group_by == 'producto' %}Producto
+                        {% elif group_by == 'droga' %}Droga
+                        {% elif group_by == 'medico' %}Médico
+                        {% elif group_by == 'os' %}Obra Social
+                        {% elif group_by == 'mes' %}Mes
+                        {% else %}Día{% endif %}
+                    </th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Operaciones</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Cantidad</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Importe</th>
+                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">% del total</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for r in rows %}
+                {# Solo permito drill cuando agrupás por algo distinto a 'producto' #}
+                {% set drillable = group_by != 'producto' %}
+                <tr class="grupo-row hover:bg-fuchsia-50/30 {% if drillable %}cursor-pointer{% endif %}"
+                    data-key="{{ r.key_id if r.key_id is not none else '' }}"
+                    {% if drillable %}onclick="toggleDrill(this)"{% endif %}>
+                    <td class="px-3 py-1.5">
+                        {% if drillable %}<span class="drill-arrow text-[#bbb] mr-1 inline-block w-3">▸</span>{% endif %}
+                        {{ r.key_label }}
+                    </td>
+                    <td class="px-3 py-1.5 text-right font-mono text-[12px] text-[#666]">{{ r.operaciones }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono">{{ '%.0f' | format(r.cantidad) }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono">${{ '%.2f' | format(r.importe) }}</td>
+                    <td class="px-3 py-1.5 text-right font-mono text-[12px] text-[#666]">
+                        {% if total_cantidad > 0 %}{{ '%.1f' | format(100 * r.cantidad / total_cantidad) }}%{% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-sm text-[#999] py-8">Sin resultados con los filtros aplicados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    function setupAutocomplete(inputId, hiddenId, resultsId, urlBase) {
+        const input = document.getElementById(inputId);
+        const hidden = document.getElementById(hiddenId);
+        const results = document.getElementById(resultsId);
+        let timer;
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) { results.classList.add('hidden'); hidden.value = ''; return; }
+            timer = setTimeout(async () => {
+                try {
+                    const r = await fetch(urlBase + '?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+                    const d = await r.json();
+                    if (!d.items || !d.items.length) {
+                        results.innerHTML = '<div class="px-3 py-2 text-xs text-[#999]">Sin resultados</div>';
+                        results.classList.remove('hidden');
+                        return;
+                    }
+                    results.innerHTML = d.items.map(it => {
+                        const label = it.nombre || it.descripcion || '';
+                        const labelEsc = label.replace(/"/g, '&quot;');
+                        return `<div class="px-3 py-1.5 text-sm hover:bg-fuchsia-50 cursor-pointer border-b border-surface-border last:border-0"
+                                     data-id="${it.id}" data-nombre="${labelEsc}">
+                                    ${label}${it.cuit ? ' <span class="text-[10px] text-[#999]">CUIT ' + it.cuit + '</span>' : ''}
+                                </div>`;
+                    }).join('');
+                    results.querySelectorAll('[data-id]').forEach(el => {
+                        el.addEventListener('click', () => {
+                            input.value = el.dataset.nombre;
+                            hidden.value = el.dataset.id;
+                            results.classList.add('hidden');
+                        });
+                    });
+                    results.classList.remove('hidden');
+                } catch (e) { /* silent */ }
+            }, 300);
+        });
+        document.addEventListener('click', e => {
+            if (!e.target.closest(`#${inputId}`) && !e.target.closest(`#${resultsId}`)) {
+                results.classList.add('hidden');
+            }
+        });
+        input.addEventListener('input', () => { hidden.value = ''; });  // limpia al escribir
+    }
+    setupAutocomplete('droga_input', 'droga_id', 'droga_results', '/api/informes/buscar-droga');
+    setupAutocomplete('producto_input', 'producto_id', 'producto_results', '/api/informes/buscar-producto-obs');
+    setupAutocomplete('medico_input', 'medico_id', 'medico_results', '/api/informes/buscar-medico');
+    setupAutocomplete('os_input', 'os_id', 'os_results', '/api/informes/buscar-os');
+})();
+
+// ── Botones rápidos de rango (7d / 30d / etc.) ─────────────────────────
+function setRango(dias) {
+    const hoy = new Date();
+    const desde = new Date(hoy); desde.setDate(hoy.getDate() - dias + 1);
+    const fmt = d => d.toISOString().slice(0, 10);
+    document.querySelector('input[name="desde"]').value = fmt(desde);
+    document.querySelector('input[name="hasta"]').value = fmt(hoy);
+    document.getElementById('filtros-form').submit();
+}
+
+// ── Chart: evolución mensual (cantidad + importe) ──────────────────────
+(function() {
+    const tl = {{ timeline | tojson }};
+    if (!tl.labels.length) return;
+    const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const labels = tl.labels.map(lb => {
+        const [a, m] = lb.split('-');
+        return `${_MES[parseInt(m)-1]} ${a.slice(2)}`;
+    });
+    new Chart(document.getElementById('tl-chart').getContext('2d'), {
+        data: {labels, datasets: [
+            {type: 'bar', label: 'Cantidad', data: tl.cantidad,
+             backgroundColor: 'rgba(168,85,247,0.45)', borderColor: '#a855f7', borderWidth: 1, yAxisID: 'y'},
+            {type: 'line', label: 'Importe ($)', data: tl.importe,
+             borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.15)', borderWidth: 2,
+             tension: 0.25, pointRadius: 3, fill: true, yAxisID: 'y2'},
+        ]},
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: {mode: 'index', intersect: false},
+            plugins: {legend: {labels: {color: '#555', font: {size: 10}}}},
+            scales: {
+                x: {grid: {display: false}, ticks: {color: '#888', font: {size: 9}}},
+                y: {position: 'left', grid: {color: '#eee'}, ticks: {color: '#a855f7', font: {size: 9}}, beginAtZero: true},
+                y2: {position: 'right', grid: {display: false}, ticks: {color: '#10b981', font: {size: 9}}, beginAtZero: true},
+            },
+        },
+    });
+})();
+
+// ── Chart: donut top 10 del grupo ──────────────────────────────────────
+(function() {
+    const data = {{ donut_data | tojson }};
+    if (!data.length) return;
+    const colores = ['#a855f7','#3b82f6','#10b981','#f59e0b','#ef4444',
+                     '#8b5cf6','#06b6d4','#84cc16','#f97316','#ec4899'];
+    new Chart(document.getElementById('donut-chart').getContext('2d'), {
+        type: 'doughnut',
+        data: {
+            labels: data.map(d => d.label.length > 28 ? d.label.slice(0, 26) + '…' : d.label),
+            datasets: [{data: data.map(d => d.value),
+                        backgroundColor: colores.slice(0, data.length),
+                        borderWidth: 1, borderColor: '#fff'}],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: '55%',
+            plugins: {
+                legend: {position: 'right', labels: {color: '#555', font: {size: 9}, boxWidth: 10, padding: 4}},
+                tooltip: {backgroundColor: '#fff', titleColor: '#1e1e1e', bodyColor: '#555', borderColor: '#e0e0e0', borderWidth: 1},
+            },
+        },
+    });
+})();
+
+// ── Histórico mensual de prescripción por médico (cuando hay droga) ───
+{% if droga_id %}
+(async function() {
+    const params = new URLSearchParams({
+        droga_id: {{ droga_id }},
+        desde: {{ desde.isoformat() | tojson }},
+        hasta: {{ hasta.isoformat() | tojson }},
+        top: 5,
+    });
+    try {
+        const r = await fetch('/api/informes/ventas-multi/historico-droga-medico?' + params,
+                              {credentials: 'same-origin'});
+        const d = await r.json();
+        const empty = document.getElementById('hist-empty');
+        if (!d.ok || !d.series.length) {
+            empty.textContent = 'Sin datos para este rango.';
+            return;
+        }
+        empty.classList.add('hidden');
+        const colores = ['#a855f7', '#3b82f6', '#10b981', '#f59e0b', '#ef4444',
+                         '#8b5cf6', '#06b6d4', '#84cc16', '#f97316', '#ec4899'];
+        const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        const labelsLegibles = d.labels.map(lb => {
+            const [a, m] = lb.split('-');
+            return `${_MES[parseInt(m)-1]} ${a.slice(2)}`;
+        });
+        new Chart(document.getElementById('hist-chart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: labelsLegibles,
+                datasets: d.series.map((s, i) => ({
+                    label: `${s.nombre} (${Math.round(s.total)})`,
+                    data: s.data,
+                    borderColor: colores[i % colores.length],
+                    backgroundColor: colores[i % colores.length] + '22',
+                    borderWidth: 2,
+                    tension: 0.25,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                })),
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {
+                    legend: {labels: {color: '#555', font: {size: 11}, boxWidth: 14, padding: 8}},
+                    tooltip: {backgroundColor: '#fff', titleColor: '#1e1e1e', bodyColor: '#555', borderColor: '#e0e0e0', borderWidth: 1},
+                },
+                scales: {
+                    x: {grid: {display: false}, ticks: {color: '#888', font: {size: 10}}},
+                    y: {grid: {color: '#eee'}, ticks: {color: '#888', font: {size: 10}}, beginAtZero: true},
+                },
+            },
+        });
+    } catch (e) {
+        document.getElementById('hist-empty').textContent = 'Error cargando histórico.';
+    }
+})();
+{% endif %}
+
+// ── Drill-down: click en una fila → desplegar productos del grupo ─────
+const _DRILL_DIM = {{ group_by | tojson }};
+const _PARAMS = {
+    desde: {{ desde.isoformat() | tojson }},
+    hasta: {{ hasta.isoformat() | tojson }},
+    droga_id: {{ droga_id or 0 }} || '',
+    producto_id: {{ producto_id or 0 }} || '',
+    medico_id: {{ medico_id or 0 }} || '',
+};
+
+async function toggleDrill(row) {
+    const arrow = row.querySelector('.drill-arrow');
+    const next = row.nextElementSibling;
+    // Si ya hay un sub-row abierto, lo cerramos.
+    if (next && next.classList.contains('drill-row')) {
+        next.remove();
+        if (arrow) arrow.textContent = '▸';
+        return;
+    }
+    if (arrow) arrow.textContent = '▾';
+    // Insertar fila de loading.
+    const drill = document.createElement('tr');
+    drill.className = 'drill-row bg-fuchsia-50/20';
+    drill.innerHTML = `<td colspan="5" class="px-8 py-3 text-xs text-[#888]">Cargando detalle…</td>`;
+    row.parentNode.insertBefore(drill, row.nextSibling);
+
+    const params = new URLSearchParams({
+        desde: _PARAMS.desde,
+        hasta: _PARAMS.hasta,
+        drill_dim: _DRILL_DIM,
+        drill_value: row.dataset.key || '',
+    });
+    if (_PARAMS.droga_id) params.set('droga_id', _PARAMS.droga_id);
+    if (_PARAMS.producto_id) params.set('producto_id', _PARAMS.producto_id);
+    if (_PARAMS.medico_id) params.set('medico_id', _PARAMS.medico_id);
+
+    try {
+        const r = await fetch('/api/informes/ventas-multi/detalle?' + params.toString(),
+                              {credentials: 'same-origin'});
+        const d = await r.json();
+        if (!d.ok || !d.items.length) {
+            drill.innerHTML = `<td colspan="5" class="px-8 py-3 text-xs text-[#999]">Sin detalle de productos.</td>`;
+            return;
+        }
+        const totalCant = d.items.reduce((a, i) => a + (i.cantidad || 0), 0);
+        const filas = d.items.map(it => `
+            <tr class="border-b border-fuchsia-100">
+                <td class="px-3 py-1 text-[12px]">${it.descripcion}</td>
+                <td class="px-3 py-1 text-right font-mono text-[11px] text-[#666]">${it.operaciones}</td>
+                <td class="px-3 py-1 text-right font-mono text-[12px]">${Math.round(it.cantidad)}</td>
+                <td class="px-3 py-1 text-right font-mono text-[12px]">$${it.importe.toFixed(2)}</td>
+                <td class="px-3 py-1 text-right font-mono text-[11px] text-[#666]">${totalCant > 0 ? (100 * it.cantidad / totalCant).toFixed(1) + '%' : '—'}</td>
+            </tr>
+        `).join('');
+        drill.innerHTML = `
+            <td colspan="5" class="bg-fuchsia-50/40 px-8 py-2">
+                <p class="text-[10px] uppercase font-bold text-fuchsia-700 mb-1">Detalle de productos · top ${d.items.length}</p>
+                <table class="w-full text-sm">
+                    <thead><tr class="text-[10px] uppercase text-fuchsia-700/70 border-b border-fuchsia-200">
+                        <th class="px-3 py-1 text-left">Producto</th>
+                        <th class="px-3 py-1 text-right">Ops</th>
+                        <th class="px-3 py-1 text-right">Cant</th>
+                        <th class="px-3 py-1 text-right">Importe</th>
+                        <th class="px-3 py-1 text-right">% del grupo</th>
+                    </tr></thead>
+                    <tbody>${filas}</tbody>
+                </table>
+            </td>`;
+    } catch (e) {
+        drill.innerHTML = `<td colspan="5" class="px-8 py-3 text-xs text-rose-700">Error de red</td>`;
+    }
+}
+</script>
+{% endblock %}
