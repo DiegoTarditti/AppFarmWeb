@@ -556,6 +556,26 @@ def init_app(app):
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
+    @app.route('/api/admin/popular-productos-desde-obs', methods=['POST'])
+    @requiere_permiso('usuarios', 'admin')
+    def api_admin_popular_productos_desde_obs():
+        """Crea Producto local por cada ObsProducto activo (idempotente).
+        Acepta `?dry=1` para preview. Loguea en cron_log."""
+        from popular_productos_desde_obs import ejecutar
+
+        import cron_log
+        dry = (request.args.get('dry', '').strip() == '1')
+        try:
+            with cron_log.registrar('popular_productos_desde_obs',
+                                     origen='web') as log:
+                stats = ejecutar(dry_run=dry)
+                log.metadata = stats
+                if stats.get('errores'):
+                    log.error = ' | '.join(stats['errores'][:3])
+            return jsonify({'ok': True, 'dry_run': dry, **stats})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/api/admin/migrar/bridge-productos-observer', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
     def api_migrar_bridge_productos_observer():

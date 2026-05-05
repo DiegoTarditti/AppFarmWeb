@@ -226,19 +226,64 @@
     }
     </script>
 
-    <div class="bg-violet-50 border border-violet-200 rounded-xl p-3 text-[12px] text-violet-900 leading-snug">
-        <p class="font-bold mb-1">🧬 Plan de migración productos ↔ Observer</p>
-        <p>Correr en este orden, idempotente cada paso:</p>
-        <ol class="list-decimal pl-5 mt-1 space-y-0.5">
-            <li><b>Fase 1.2</b>: Backfill alt1/2/3 → tabla 1-a-N (botón abajo).</li>
-            <li><b>Fase 2</b>: Bridge masivo productos→obs_productos por EAN/alfabeta.</li>
-            <li><b>Fase 3</b>: Backfill atributos (droga, cantidad) desde el bridge — pantalla
-                <a href="{{ url_for('catalogacion_panel') }}" class="underline font-semibold">/catalogacion</a>.</li>
-            <li><b>Fase 1.1</b>: setear env var <code class="bg-white px-1 rounded">EAN_LEGACY_ALTS_DISABLED=1</code>
-                en Render para parar la doble escritura. Esperar 1-2 semanas validando.</li>
-            <li><b>Fase 1.3</b>: DROP COLUMN alt1/2/3 (cambio de schema, requiere PR).</li>
-        </ol>
-    </div>
+    <button type="button"
+       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-emerald-400 hover:shadow-sm transition-all">
+        <div class="flex items-start gap-3">
+            <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            </div>
+            <div class="flex-1">
+                <p class="font-semibold text-sm">🌱 Pre-poblar productos desde Observer</p>
+                <p class="text-xs text-[#6f6f6f] mt-1">
+                    Por cada <code class="font-mono text-[10px]">obs_productos</code> activo crea un
+                    <code class="font-mono text-[10px]">Producto</code> local con su EAN principal,
+                    laboratorio y <code class="font-mono text-[10px]">observer_id</code> ya vinculado.
+                    Idempotente — salta los que ya tienen Producto local.
+                    <br><strong>Útil cuando</strong>: catálogo local arranca vacío (farmacia nueva o
+                    Render fresco) y querés que el matcher de ofertas/facturas funcione directo.
+                </p>
+                <div class="flex gap-2 mt-3">
+                    <button type="button" onclick="event.stopPropagation(); popularDesdeObs(this, true)"
+                            class="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-semibold px-3 py-1 rounded-lg">
+                        🔍 Dry-run
+                    </button>
+                    <button type="button" onclick="event.stopPropagation(); popularDesdeObs(this, false)"
+                            class="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-3 py-1 rounded-lg">
+                        ▶ Ejecutar
+                    </button>
+                </div>
+                <p id="popular-obs-result" class="text-xs mt-2 hidden font-mono"></p>
+            </div>
+        </div>
+    </button>
+    <script>
+    async function popularDesdeObs(btn, dry) {
+        const original = btn.textContent;
+        if (!dry && !confirm('Crea Productos locales por cada ObsProducto activo. ¿Continuar?')) return;
+        btn.disabled = true;
+        btn.textContent = dry ? 'Calculando…' : 'Ejecutando…';
+        const resultEl = document.getElementById('popular-obs-result');
+        resultEl.classList.remove('hidden');
+        resultEl.classList.remove('text-rose-700', 'text-emerald-700');
+        resultEl.textContent = '…';
+        try {
+            const url = "{{ url_for('api_admin_popular_productos_desde_obs') }}" + (dry ? '?dry=1' : '');
+            const r = await fetch(url, {method: 'POST', credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) throw new Error(d.error || 'falló');
+            resultEl.classList.add('text-emerald-700');
+            resultEl.textContent = (dry ? '✓ DRY: ' : '✓ ') +
+                `evaluados=${d.evaluados} · ya_existían=${d.ya_existen} · ` +
+                `creados=${d.creados} · sin_ean=${d.sin_ean} · sin_lab=${d.sin_lab}`;
+        } catch (e) {
+            resultEl.classList.add('text-rose-700');
+            resultEl.textContent = '✗ ' + e.message;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    }
+    </script>
 
     <button type="button"
        class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-indigo-400 hover:shadow-sm transition-all">

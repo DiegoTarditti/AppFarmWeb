@@ -370,6 +370,14 @@ def inferir_campo_por_header(header, candidatos=None) -> Optional[str]:
             if textual in candidatos:
                 candidatos.remove(textual)
 
+    # Heurística: si el header contiene 'producto', 'descripcion', 'nombre',
+    # 'articulo' o 'detalle', NO es código ni EAN — esos son textos
+    # descriptivos. Lo descartamos para que no se proponga como código.
+    if any(kw in n for kw in ('producto', 'descripcion', 'nombre', 'articulo', 'detalle')):
+        for ident_field in ('ean', 'codigo', 'codigo_alfabeta'):
+            if ident_field in candidatos:
+                candidatos.remove(ident_field)
+
     # Paso 1: exacto. El más específico (menos keywords) gana.
     exactos = []
     for nombre in candidatos:
@@ -407,13 +415,24 @@ def inferir_campo_por_header(header, candidatos=None) -> Optional[str]:
 
 # ── Inferencia mixta: header + contenido ────────────────────────────────────
 
-def _columna_es_consistente(sample_values, tipo_esperado) -> bool:
-    """¿Mayoría de los valores no-vacíos de la columna concuerdan con el tipo?"""
+def _columna_es_consistente(sample_values, tipo_esperado, campo=None) -> bool:
+    """¿Mayoría de los valores no-vacíos de la columna concuerdan con el tipo?
+
+    Si `campo` es 'ean' o 'codigo', además exige que los valores parezcan
+    identificadores cortos (sin espacios, ≤20 chars). Evita proponer una
+    columna de descripciones largas como código.
+    """
     if not sample_values:
         return False
     no_vacios = [v for v in sample_values if v is not None and v != '']
     if not no_vacios:
         return False
+    if campo in ('ean', 'codigo', 'codigo_alfabeta'):
+        # Si la mayoría de los valores tiene espacios o son largos, no es un id.
+        no_id = sum(1 for v in no_vacios
+                    if ' ' in str(v).strip() or len(str(v).strip()) > 20)
+        if no_id / len(no_vacios) > 0.3:
+            return False
     hits = sum(1 for v in no_vacios if inferir_tipo_valor(v) == tipo_esperado)
     return hits / len(no_vacios) >= 0.6
 
@@ -466,7 +485,7 @@ def inferir_columnas(headers, sample_rows=None, candidatos=None) -> dict:
             sample = [r[ci] if ci < len(r) else None for r in sample_rows]
             for campo in libres:
                 tipo = CAMPOS[campo]['tipo']
-                if _columna_es_consistente(sample, tipo):
+                if _columna_es_consistente(sample, tipo, campo=campo):
                     mapa[campo] = ci
                     usados.add(ci)
                     libres.remove(campo)
