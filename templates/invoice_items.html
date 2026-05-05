@@ -73,7 +73,28 @@
         <div class="flex flex-wrap gap-6 text-sm">
             <div>
                 <p class="text-xs text-[#6f6f6f] mb-0.5">Factura Nº</p>
-                <p class="font-semibold text-[#1e1e1e]">{{ invoice.numero_factura or '—' }}</p>
+                {% set _num_ok = invoice.numero_factura and (invoice.numero_factura | length) >= 4 and ('-' in invoice.numero_factura) %}
+                <p class="font-semibold text-[#1e1e1e]" id="num-fac-display">{{ invoice.numero_factura or '—' }}</p>
+                {% if not _num_ok %}
+                <button type="button" onclick="refreshNumeroFactura()" id="btn-refresh-num"
+                        class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold">
+                    🔄 Reextraer del PDF
+                </button>
+                <script>
+                async function refreshNumeroFactura() {
+                    const btn = document.getElementById('btn-refresh-num');
+                    btn.disabled = true; btn.textContent = '⏳';
+                    try {
+                        const r = await fetch('{{ url_for("invoice_refresh_numero", invoice_id=invoice.id) }}',
+                            {method: 'POST', headers: {'Content-Type':'application/json'}});
+                        const d = await r.json();
+                        if (!d.ok) { alert(d.error || 'Falló'); btn.disabled = false; btn.textContent = '🔄 Reextraer del PDF'; return; }
+                        document.getElementById('num-fac-display').textContent = d.numero;
+                        btn.style.display = 'none';
+                    } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = '🔄 Reextraer'; }
+                }
+                </script>
+                {% endif %}
             </div>
             <div>
                 <p class="text-xs text-[#6f6f6f] mb-0.5">Proveedor</p>
