@@ -836,6 +836,34 @@ class ClaimItem(Base):
 # Las tablas se dropean en init_db si todavía existen en el schema.
 
 
+class EquivalenciaProveedor(Base):
+    """Mapea texto descriptivo del archivo de un proveedor → Producto local.
+
+    Distinto de BarcodeMapping (que mapea códigos cortos de factura → EAN).
+    Acá guardamos la equivalencia que el operador hace MANUAL en el wizard
+    de ofertas cuando la descripción del archivo no se parece exacto a la BD
+    (ej. "AXEPIN 5 ×30" → AXEPIN 5 mg Rec COM x 60).
+
+    Lookup case-insensitive vía `descripcion_proveedor_norm` (lowercase + sin
+    acentos + sin puntuación).
+    """
+    __tablename__ = 'equivalencias_proveedor'
+    id = Column(Integer, primary_key=True)
+    laboratorio_id = Column(Integer, ForeignKey('laboratorios.id', ondelete='CASCADE'),
+                            nullable=False, index=True)
+    descripcion_proveedor = Column(String(200), nullable=False)
+    descripcion_proveedor_norm = Column(String(200), nullable=False, index=True)
+    producto_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'),
+                         nullable=True, index=True)
+    creado_en = Column(DateTime, default=now_ar)
+    laboratorio = relationship('Laboratorio')
+    producto = relationship('Producto')
+    __table_args__ = (
+        UniqueConstraint('laboratorio_id', 'descripcion_proveedor_norm',
+                         name='uq_equiv_lab_desc'),
+    )
+
+
 class BarcodeMapping(Base):
     __tablename__ = 'barcode_mappings'
     id = Column(Integer, primary_key=True)
@@ -1301,6 +1329,7 @@ def init_db(database_url=None):
                         'proveedor_horarios_reparto', 'pedido_borrador',
                         'laboratorio_drogueria',
                         'pedido_emitido', 'pedido_emitido_item',
+                        'equivalencias_proveedor',
                         'pack_equivalencias', 'cliente_os_inferida',
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
                         'alarmas_notificadas', 'sync_lock')

@@ -40,6 +40,11 @@
     <span class="text-xs text-[#6f6f6f] ml-auto">
         {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
     </span>
+    <div class="relative">
+        <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
+               class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-60">
+        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-40 w-[420px] max-h-80 overflow-auto"></div>
+    </div>
     <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
 </div>
 
@@ -72,32 +77,44 @@
         <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
         Solo con sugerencia (subir/bajar)
     </label>
+    <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
+        <input type="checkbox" id="filtro-urgentes" class="w-3.5 h-3.5">
+        Solo urgentes (≤ mín)
+    </label>
+    <form method="get" class="flex items-center gap-1.5 text-xs text-[#3f6650]">
+        <input type="hidden" name="prov" value="{{ prov.id }}">
+        <label>Cobertura objetivo</label>
+        <input type="number" name="target" min="1" max="90" value="{{ target_dias | default(7) }}"
+               class="bg-white border border-mint rounded px-1.5 py-0.5 text-xs w-14"
+               onchange="this.form.submit()">
+        <span>días</span>
+    </form>
     <label class="flex items-center gap-1.5 text-xs text-amber-700 cursor-pointer">
         <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5" {% if cubre == 0 %}checked{% endif %}>
         Mostrar ⚠ otra drog
     </label>
-    <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
-
-    <div class="relative ml-auto">
-        <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
-               class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-72">
-        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-40 w-[420px] max-h-80 overflow-auto"></div>
-    </div>
+    <span id="filtro-count" class="text-[11px] text-[#3f6650] ml-auto"></span>
 </div>
 
 <!-- Wrapper scrolleable con altura fija: sticky se ancla al tope. -->
 <div class="scroll-wrapper">
 
 <!-- Panel gráfico sticky arriba (split: Año | Mes) -->
-<div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
+<div id="panel-grafico" class="colapsado bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
     <div class="flex items-center justify-between mb-2 gap-2">
-        <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
-            Seleccioná un producto de la lista para ver el gráfico
-        </p>
+        <div class="flex-1 min-w-0">
+            <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate">
+                Seleccioná un producto de la lista para ver el gráfico
+            </p>
+            <p class="text-[10px] text-[#888] leading-tight">
+                <b class="text-amber-700">✗ Sacar</b>: lo excluye de este pedido (vuelve cuando el stock toque el mínimo otra vez).
+                <b class="text-rose-700 ml-1">⛔ No pedir</b>: nunca más sugerirlo (hasta reactivarlo manualmente).
+            </p>
+        </div>
         <button type="button" id="btn-toggle-grafico" onclick="toggleGrafico()"
                 class="text-[11px] px-2 py-1 rounded border border-surface-border text-[#6f6f6f] hover:bg-[#f5f5f5] hover:text-[#1e1e1e] transition-colors flex-shrink-0"
                 title="Mostrar/ocultar gráficos para ganar espacio para la tabla">
-            <span id="btn-toggle-grafico-label">▾ Ocultar gráfico</span>
+            <span id="btn-toggle-grafico-label">▸ Mostrar gráfico</span>
         </button>
     </div>
     <div id="grafico-body" class="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -152,12 +169,16 @@
                     data-cubre="{{ 'y' if it.cubre_lab else 'n' }}"
                     data-tvc="{{ it.tvc or '' }}"
                     data-sug="{{ it.min_sugerencia or '' }}"
+                    data-urgente="{{ 'y' if it.urgente else 'n' }}"
                     data-oferta-dto="{{ it.oferta_dto or '' }}"
                     data-oferta-min="{{ it.oferta_min or '' }}"
                     onclick="seleccionarProducto(this)">
                     <td class="px-3 py-1">
                         {% if it.tipo == 'C' %}
                         <span class="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded mr-1 font-bold" title="Va por promedio de ventas (consumo estable)">Prom Vtas</span>
+                        {% endif %}
+                        {% if not it.urgente %}
+                        <span class="text-[9px] bg-slate-200 text-slate-700 px-1 py-0.5 rounded mr-1 font-bold" title="Stock arriba del mínimo pero rota rápido (entró por cobertura objetivo)">No urgente</span>
                         {% endif %}
                         {{ it.desc }}
                     </td>
@@ -216,16 +237,25 @@
                     </td>
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
                         {% if it.producto_id_local %}
-                        <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
-                                title="Sacar hasta que vuelva a llegar al mínimo"
-                                class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">
-                            ✗ Sacar
-                        </button>
-                        <button onclick="excluir({{ it.producto_id_local }}, 'permanente', this)"
-                                title="No pedir más (hay que reactivar manualmente)"
-                                class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">
-                            ⛔ No pedir
-                        </button>
+                            {% if it.no_pedir %}
+                            <span class="text-[10px] bg-rose-100 text-rose-800 px-1.5 py-0.5 rounded font-bold mr-1" title="Marcado 'No pedir más' — entra al listado pero default a_pedir=0">⛔ No pedir</span>
+                            <button onclick="reactivar({{ it.producto_id_local }}, this)"
+                                    title="Quitar el flag 'No pedir' y volver al flujo normal"
+                                    class="text-[10px] px-2 py-0.5 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100">
+                                ↺ Reactivar
+                            </button>
+                            {% else %}
+                            <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
+                                    title="Sacar hasta que vuelva a llegar al mínimo"
+                                    class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">
+                                ✗ Sacar
+                            </button>
+                            <button onclick="excluir({{ it.producto_id_local }}, 'permanente', this)"
+                                    title="No pedir más (hay que reactivar manualmente)"
+                                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">
+                                ⛔ No pedir
+                            </button>
+                            {% endif %}
                         {% else %}
                         <span class="text-[10px] text-[#bbb]">Sin Producto local</span>
                         {% endif %}
@@ -250,6 +280,21 @@
 </div>{# /flex-1 overflow-auto wrapper #}
 
 <script>
+async function reactivar(prodId, btn) {
+    if (!confirm('¿Reactivar este producto? Vuelve al flujo normal del armado.')) return;
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/api/producto/${prodId}/reactivar`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) { alert('Error: ' + (d.error || '')); btn.disabled = false; return; }
+        // Recargar para refrescar filas con la nueva clasificación.
+        location.reload();
+    } catch (e) { alert('Error de red'); btn.disabled = false; }
+}
+
 async function excluir(prodId, modo, btn) {
     const txt = modo === 'permanente'
         ? '¿Marcar este producto como NO PEDIR? (hay que reactivar manualmente)'
@@ -484,6 +529,7 @@ const _totalRows = document.querySelectorAll('.producto-row').length;
 
 const _filtroLibre    = document.getElementById('filtro-libre');
 const _filtroSug      = document.getElementById('filtro-sug');
+const _filtroUrgentes = document.getElementById('filtro-urgentes');
 const _filtroOtraDrog = document.getElementById('filtro-otra-drog');
 
 function aplicarFiltros() {
@@ -491,6 +537,7 @@ function aplicarFiltros() {
     const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
     const soloLibre   = _filtroLibre.checked;
     const soloSug     = _filtroSug.checked;
+    const soloUrg     = _filtroUrgentes.checked;
     const mostraOtra  = _filtroOtraDrog.checked;
     let visibles = 0;
     document.querySelectorAll('.producto-row').forEach(row => {
@@ -499,6 +546,7 @@ function aplicarFiltros() {
             && fnLab(row.dataset.lab || '')
             && (!soloLibre || row.dataset.tvc === 'L')
             && (!soloSug || sug === 'up' || sug === 'down')
+            && (!soloUrg || row.dataset.urgente === 'y')
             && (mostraOtra || row.dataset.cubre !== 'n');
         row.style.display = ok ? '' : 'none';
         if (ok) visibles++;
@@ -519,6 +567,7 @@ _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
+_filtroUrgentes.addEventListener('change', aplicarFiltros);
 _filtroOtraDrog.addEventListener('change', aplicarFiltros);
 aplicarFiltros();
 
@@ -557,15 +606,11 @@ function toggleGrafico() {
 }
 
 (function _initEstadoGrafico() {
-    let colapsado = false;
+    let colapsado = true;  // default: oculto. Se persiste en localStorage si lo desplegás.
     try {
         const v = localStorage.getItem(_GRAFICO_LS_KEY);
-        if (v === '1') colapsado = true;
-        else if (v === '0') colapsado = false;
-        else colapsado = window.innerWidth < 1024;  // 1ra vez: colapsado en pantallas chicas
-    } catch (e) {
-        colapsado = window.innerWidth < 1024;
-    }
+        if (v === '0') colapsado = false;
+    } catch (e) {}
     _aplicarEstadoGrafico(colapsado);
 })();
 

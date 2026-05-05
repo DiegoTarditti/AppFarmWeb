@@ -95,38 +95,65 @@ def _normalizar_descripcion_proveedor(s):
 
 
 def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descripcion):
-    """Cuando un import resuelve `codigo_interno → ean_real`, persiste la
-    equivalencia en `Producto.codigo_barra_alt1/2/3` para que cualquier flujo
-    futuro (factura, transfer, búsqueda) reconozca el código interno como EAN
-    válido del producto.
+    """Persiste la equivalencia que resolvió un import.
 
-    Args:
-        session: SQLAlchemy session.
-        lab_id: int — laboratorio_id local.
-        codigo_interno: str — código del Excel (ej "0967" Baliarda).
-        ean_resuelto: str — EAN real o pseudo-EAN OBS:N.
-        descripcion: str — descripción del Excel (para crear Producto si no existe).
+    Dos casos:
+    1. Si `codigo_interno` es un código corto (≤20 chars sin espacios) → lo
+       guarda como EAN alternativo del producto (`Producto.codigo_barra_alt*`).
+    2. Si `descripcion` está y NO hay código interno usable → guarda la
+       equivalencia `descripcion → producto` en `EquivalenciaProveedor`
+       (tabla nueva, lookup directo en próximas importaciones).
     """
-    if not codigo_interno or not ean_resuelto:
+    if not ean_resuelto:
         return
-    cod = str(codigo_interno).strip()
     ean = str(ean_resuelto).strip()
-    if cod == ean:
-        return  # nada para mappear
-    # Sanity check: el "codigo interno" debe ser un código corto, no descripción.
-    # Si supera 20 chars o tiene espacios (típico de un texto descriptivo), skip.
-    if len(cod) > 20 or ' ' in cod:
-        return
-    # Asegurar que el Producto local existe con el EAN principal.
-    # Si no existe, lo creamos con la descripción del Excel + lab.
-    from database import Producto
+    cod = str(codigo_interno or '').strip()
+
+    from database import EquivalenciaProveedor, Producto
     from helpers import _add_alt_barcode, _upsert_producto
+
+    # Asegurar que el Producto local existe con el EAN principal.
     prod = session.query(Producto).filter_by(codigo_barra=ean).first()
     if not prod:
         _upsert_producto(session, ean, descripcion or '', laboratorio_id=lab_id)
         session.flush()
-    # Ahora agregar el código interno como alt (idempotente)
-    _add_alt_barcode(session, ean, cod)
+        prod = session.query(Producto).filter_by(codigo_barra=ean).first()
+
+    # Caso 1: código corto provedor → EAN.
+    if cod and cod != ean and len(cod) <= 20 and ' ' not in cod:
+        _add_alt_barcode(session, ean, cod)
+
+    # Caso 2: descripción del archivo → producto local. Solo si NO hay código
+    # corto usable (porque sino preferimos guardar el código que es más estable).
+    if not cod or len(cod) > 20 or ' ' in cod:
+        if prod and descripcion:
+            desc_orig = str(descripcion).strip()[:200]
+            if not desc_orig:
+                return
+            # Normalización igual que el matcher (lowercase + sin acentos + sin
+            # puntuación + colapsa espacios).
+            try:
+                from producto_matcher import normalizar_texto
+                desc_norm = normalizar_texto(desc_orig)[:200]
+            except Exception:
+                desc_norm = desc_orig.lower()
+            if not desc_norm:
+                return
+            existente = (session.query(EquivalenciaProveedor)
+                         .filter_by(laboratorio_id=lab_id,
+                                    descripcion_proveedor_norm=desc_norm)
+                         .first())
+            if existente:
+                # Actualiza si cambió el producto matcheado.
+                if existente.producto_id != prod.id:
+                    existente.producto_id = prod.id
+            else:
+                session.add(EquivalenciaProveedor(
+                    laboratorio_id=lab_id,
+                    descripcion_proveedor=desc_orig,
+                    descripcion_proveedor_norm=desc_norm,
+                    producto_id=prod.id,
+                ))
 
 
 def _previsualizar_pdf(path):

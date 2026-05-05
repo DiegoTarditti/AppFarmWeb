@@ -149,7 +149,9 @@
 </div>
 
 <script>
-// Auto-submit del buscador con debounce de 400ms al escribir.
+// Auto-submit del buscador con debounce de 700ms al escribir.
+// (Subimos de 400 → 700 para no submitear entre letra y letra cuando tipeás
+// rápido; cada submit recarga y desplaza el cursor.)
 (function() {
     const form  = document.getElementById('filtros-form');
     const input = document.getElementById('q-input');
@@ -157,12 +159,17 @@
     let timer;
     input.addEventListener('input', () => {
         clearTimeout(timer);
-        timer = setTimeout(() => form.submit(), 400);
+        timer = setTimeout(() => form.submit(), 700);
     });
     input.addEventListener('keydown', e => {
         if (e.key === 'Enter') { clearTimeout(timer); form.submit(); }
     });
-    if (input.value) input.focus();
+    // Restore foco + cursor al final del valor tras la recarga.
+    if (input.value) {
+        input.focus();
+        const n = input.value.length;
+        try { input.setSelectionRange(n, n); } catch (_) {}
+    }
 })();
 
 // Edición inline de descripción local (no toca Observer).
