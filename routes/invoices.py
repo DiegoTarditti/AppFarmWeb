@@ -806,8 +806,19 @@ def init_app(app):
                                 .filter_by(producto_id=p.id).all()):
                         if cb:
                             prod_info[cb] = info
+            # Si la factura vino del converter (pdf_filename apunta a un PDF
+            # que sigue existiendo en CONVERTER_DIR) ofrecer "Corregir parsing"
+            # que lleva al pick. Si la importacion fue limpia el usuario lo
+            # ignora; si vio algo mal, click y a entrenar.
+            converter_token = None
+            if invoice.pdf_filename:
+                from helpers import CONVERTER_DIR  # type: ignore
+                import os as _os
+                if _os.path.exists(_os.path.join(CONVERTER_DIR, invoice.pdf_filename)):
+                    converter_token = invoice.pdf_filename
             return render_template('invoice_items.html', invoice=invoice,
-                                   items=items, prod_info=prod_info)
+                                   items=items, prod_info=prod_info,
+                                   converter_token=converter_token)
 
     @app.route('/invoice/<int:invoice_id>/items/export')
     def invoice_items_export(invoice_id):

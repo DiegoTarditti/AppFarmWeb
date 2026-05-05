@@ -39,13 +39,23 @@
             <span class="font-bold text-sm text-[#1e1e1e]">Artículos de factura</span>
         </div>
         <div class="flex items-center gap-3">
+            {% if converter_token %}
+            <a href="{{ url_for('converter_pick', token=converter_token) }}"
+               title="Si algo se importó mal, abrí el modo aprendizaje para corregir el parser"
+               class="text-xs px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold flex items-center gap-1.5 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                ✎ Corregir parsing
+            </a>
+            {% endif %}
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
                 </svg>
             </a>
-            <a href="javascript:history.back()"
+            <a href="{{ url_for('converter_index') if converter_token else url_for('index') }}"
                class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
