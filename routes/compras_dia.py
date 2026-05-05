@@ -10,13 +10,18 @@ from datetime import datetime
 
 from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
-from sqlalchemy import text
+from sqlalchemy import or_, text
 
 import database
 from database import ProveedorHorarioReparto, Provider, get_db
 from services.horarios import horarios_por_dia, proximo_cierre
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+# Cobertura objetivo default para entrar al armado: si stock cubre menos de N
+# días de venta proyectada (basado en u12m), incluirlo aunque esté arriba del
+# mín. Se puede sobrescribir por query param `?target=N`.
+TARGET_DIAS_COBERTURA_DEFAULT = 7
 
 
 def _recalc_item_canonico(it):
@@ -272,6 +277,9 @@ def init_app(app):
         prov_id = request.args.get('prov', type=int)
         if not prov_id:
             return redirect(url_for('compras_dia'))
+        # Cobertura objetivo configurable por query param. Default 7 días.
+        target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
+        target_dias = max(1, min(target_dias, 90))  # clamp 1-90
 
         with get_db() as session:
             prov = session.get(Provider, prov_id)
@@ -283,6 +291,7 @@ def init_app(app):
                 ObsStock.producto_observer.label('pid'),
                 func.sum(ObsStock.stock_actual).label('stock'),
                 func.sum(ObsStock.minimo).label('minimo'),
+                func.sum(ObsStock.maximo).label('maximo'),
             ).filter(ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
               .group_by(ObsStock.producto_observer).subquery())
 
@@ -345,7 +354,14 @@ def init_app(app):
                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
             .outerjoin(v12_q, v12_q.c.pid == ObsProducto.observer_id)
             .filter(ObsProducto.fecha_baja.is_(None))
-            .filter(stock_q.c.stock < stock_q.c.minimo)
+            # Universo: bajo mínimo OR cobertura insuficiente.
+            # Cobertura insuficiente: stock × 365 < TARGET_DIAS × u12m
+            # (equivale a stock/avg_diario < TARGET_DIAS, sin división).
+            .filter(or_(
+                stock_q.c.stock <= stock_q.c.minimo,
+                stock_q.c.stock * 365 < target_dias *
+                    func.coalesce(v12_q.c.u12m, 0),
+            ))
             .filter(ObsProducto.subrubro_observer.isnot(None))  # filtro suave: que tenga subrubro
             ).all()
 
@@ -449,7 +465,10 @@ def init_app(app):
                 if subrubro_a_rubro.get(sub_id) != 12:
                     continue
                 local = local_por_obs.get(r.pid)
-                if local and (local['excluido'] or local['no_pedir']):
+                # 'excluido' (sacar temporal) → no entra al armado.
+                # 'no_pedir' (permanente) → SÍ entra, pero con badge + botón
+                # reactivar y a_pedir=0 por default.
+                if local and local['excluido']:
                     continue
                 lab_local_id = (local['lab_local_id'] if local else None) \
                                 or lab_obs_to_local.get(r.lab_obs_id) \
@@ -498,12 +517,34 @@ def init_app(app):
                 else:
                     min_sugerencia = 'ok'
 
+                # Sin ventas 12m o sin mov 60d → no sugerir pedir aunque
+                # esté bajo mínimo (no tiene sentido reponer lo que no rota).
+                if u12m_int == 0 or sin_mov:
+                    a_pedir = 0
+                else:
+                    # Sugerido = el mayor entre "llegar al mín" y "cubrir N días".
+                    # Si el producto entró por cobertura insuficiente (stock>mín),
+                    # min_actual - stock < 0 pero target_unid > stock → pide hasta target.
+                    target_unid = math.ceil(
+                        (u12m_int / 365.0) * target_dias)
+                    ideal = max(min_actual, target_unid)
+                    a_pedir = max(1, ideal - stock_actual)
+
+                # Urgente = bajo o igual al mínimo. No urgente = entró sólo por
+                # cobertura insuficiente (stock arriba del mín pero rota rápido).
+                urgente = stock_actual <= min_actual
+                no_pedir_flag = bool(local and local.get('no_pedir'))
+                if no_pedir_flag:
+                    # Marcado "no pedir" — entra al listado pero default 0.
+                    a_pedir = 0
                 items.append({
+                    'no_pedir': no_pedir_flag,
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
                     'desc': r.desc,
                     'lab_nombre': r.lab_nombre or '—',
                     'lab_local_id': lab_local_id,
+                    'urgente': urgente,
                     'tvc': r.tvc,
                     'tipo': tipo,  # 'C' crónico, 'N' normal
                     'stock': stock_actual,
@@ -513,7 +554,9 @@ def init_app(app):
                     'cobertura_d': cobertura_d,
                     'u24h': u24h_val,
                     'u7d': u7d_val,
-                    'a_pedir': max(0, min_actual - stock_actual),
+                    'u12m': u12m_int,
+                    'sin_mov_60d': bool(sin_mov),
+                    'a_pedir': a_pedir,
                     'avg_diario': round(avg_diario, 3),
                     'cubre_lab': cubre_lab,
                     'ean': eans_armar.get(r.pid, ''),
@@ -558,6 +601,7 @@ def init_app(app):
                                    cubre=sum(1 for i in items if i['cubre_lab']),
                                    pendientes=sum(1 for i in items if not i['cubre_lab']),
                                    cierre=cierre,
+                                   target_dias=target_dias,
                                    pendientes_anteriores=pendientes_anteriores)
 
     @app.route('/api/pedidos/dia/buscar-producto')
@@ -1348,5 +1392,19 @@ def init_app(app):
                 p.no_pedir = True
             else:
                 p.excluido_armado_actual = True
+            session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/api/producto/<int:prod_id>/reactivar', methods=['POST'])
+    @login_required
+    def api_producto_reactivar(prod_id):
+        """Saca el flag 'no_pedir' (y de paso 'excluido_armado_actual')."""
+        from database import Producto
+        with get_db() as session:
+            p = session.get(Producto, prod_id)
+            if not p:
+                return jsonify({'ok': False, 'error': 'Producto no encontrado'}), 404
+            p.no_pedir = False
+            p.excluido_armado_actual = False
             session.commit()
         return jsonify({'ok': True})
