@@ -299,8 +299,8 @@ def get_config():
 
 def _get_all_barcodes(session, producto):
     """Devuelve TODOS los EANs asociados a un producto, consultando:
-      1. Las columnas legacy (codigo_barra + codigo_barra_alt1/2/3).
-      2. La tabla 1-a-N `producto_codigos_barra`.
+      1. `producto.codigo_barra` (principal).
+      2. La tabla 1-a-N `producto_codigos_barra` (alternativos + principal).
       3. La tabla `obs_codigos_barras` si el producto tiene observer_id.
 
     Args:
@@ -314,12 +314,10 @@ def _get_all_barcodes(session, producto):
         return []
     out = []
     seen = set()
-    # 1. Legacy
-    for bc in (producto.codigo_barra, producto.codigo_barra_alt1,
-               producto.codigo_barra_alt2, producto.codigo_barra_alt3):
-        if bc and bc not in seen:
-            seen.add(bc)
-            out.append(bc)
+    # 1. EAN principal
+    if producto.codigo_barra:
+        seen.add(producto.codigo_barra)
+        out.append(producto.codigo_barra)
     # 2. Tabla 1-a-N local
     try:
         from database import ProductoCodigoBarra
@@ -349,9 +347,9 @@ def _find_productos_bulk(session, eans):
     """Versión bulk de `_find_producto`. Para una lista de EANs devuelve
     `{ean: Producto}` consultando la cascada completa:
 
-      1. `productos.codigo_barra` o `alt1/2/3` IN (eans)
-      2. `producto_codigos_barra` (1-a-N local) IN (eans)
-      3. `obs_codigos_barras` IN (eans) → resuelve vía observer_id
+      1. `productos.codigo_barra` IN (eans).
+      2. `producto_codigos_barra` (1-a-N local) IN (eans).
+      3. `obs_codigos_barras` IN (eans) → resuelve vía observer_id.
 
     Útil para flujos como `data_extract` que cruzan listas grandes de
     códigos de barra contra el catálogo. Evita N queries individuales.
@@ -363,25 +361,16 @@ def _find_productos_bulk(session, eans):
     Returns:
         dict {ean: Producto}. Solo incluye los EANs que matchearon.
     """
-    from sqlalchemy import or_
     eans_clean = list({str(e).strip() for e in eans if e and str(e).strip()})
     if not eans_clean:
         return {}
     out = {}
-    # 1. Match en productos (legacy: principal + alt1/2/3)
-    prods = session.query(Producto).filter(
-        or_(
-            Producto.codigo_barra.in_(eans_clean),
-            Producto.codigo_barra_alt1.in_(eans_clean),
-            Producto.codigo_barra_alt2.in_(eans_clean),
-            Producto.codigo_barra_alt3.in_(eans_clean),
-        )
-    ).all()
+    # 1. Match por codigo_barra principal.
+    prods = (session.query(Producto)
+             .filter(Producto.codigo_barra.in_(eans_clean)).all())
     for p in prods:
-        for bc in (p.codigo_barra, p.codigo_barra_alt1,
-                   p.codigo_barra_alt2, p.codigo_barra_alt3):
-            if bc and bc in eans_clean and bc not in out:
-                out[bc] = p
+        if p.codigo_barra and p.codigo_barra in eans_clean:
+            out[p.codigo_barra] = p
     pendientes = [e for e in eans_clean if e not in out]
     # 2. Match en producto_codigos_barra (1-a-N local)
     if pendientes:
@@ -425,27 +414,17 @@ def _find_productos_bulk(session, eans):
 
 def _find_producto(session, codigo_barra):
     """Busca un producto por EAN. Consulta en orden:
-      1. `productos.codigo_barra` o `alt1/2/3` (legacy local, rápido).
-      2. `producto_codigos_barra` (1-a-N local, reemplazo gradual de alts).
+      1. `productos.codigo_barra` (principal).
+      2. `producto_codigos_barra` (1-a-N local: principal + alternativos).
       3. `obs_codigos_barras` → resuelve vía `observer_id` (1-a-N de Observer).
 
-    Cada query solo corre si la anterior falla. La 1ra es la cobertura más
-    amplia hoy (los alts locales se llenaron con cruces históricos), así que
-    la mayoría de los matches no llegan a tocar las otras tablas.
+    Cada query solo corre si la anterior falla.
     """
-    from sqlalchemy import or_
     bc = str(codigo_barra).strip()
     if not bc:
         return None
-    # 1. Match en productos (legacy 4 slots)
-    prod = session.query(Producto).filter(
-        or_(
-            Producto.codigo_barra == bc,
-            Producto.codigo_barra_alt1 == bc,
-            Producto.codigo_barra_alt2 == bc,
-            Producto.codigo_barra_alt3 == bc,
-        )
-    ).first()
+    # 1. Match en productos por codigo_barra principal.
+    prod = session.query(Producto).filter(Producto.codigo_barra == bc).first()
     if prod is not None:
         return prod
     # 2. Match en producto_codigos_barra (1-a-N local)
@@ -538,17 +517,8 @@ def _upsert_pedido_items(session, items, observer_bridge=False):
 
 
 def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt, fuente='manual', factura_id=None):
-    """Agrega un código alternativo al producto ERP si no está ya registrado.
-
-    Escribe en ambos lados durante la migración:
-      - Por default: llena slots libres en alt1/2/3 + persiste en
-        producto_codigos_barra (1-a-N).
-      - Si la env var `EAN_LEGACY_ALTS_DISABLED=1` está set: solo escribe
-        en producto_codigos_barra. Útil para validar Fase 4 antes de
-        dropear las columnas legacy.
-
-    Siempre inserta en producto_codigos_barra (1-a-N, sin límite, con
-    trazabilidad de fuente y factura).
+    """Agrega un código alternativo al producto ERP en `producto_codigos_barra`
+    (1-a-N). Idempotente — UNIQUE(producto_id, codigo_barra) evita duplicados.
     """
     if not codigo_barra_erp or not codigo_barra_alt:
         return
@@ -559,20 +529,6 @@ def _add_alt_barcode(session, codigo_barra_erp, codigo_barra_alt, fuente='manual
     prod = session.query(Producto).filter_by(codigo_barra=codigo_barra_erp).first()
     if not prod:
         return
-    existing = {prod.codigo_barra_alt1, prod.codigo_barra_alt2, prod.codigo_barra_alt3, prod.codigo_barra}
-    if codigo_barra_alt not in existing:
-        # Feature flag Fase 4: si está activo, NO escribir en alt1/2/3.
-        # Solo cae a producto_codigos_barra abajo.
-        import os as _os
-        legacy_disabled = (_os.environ.get('EAN_LEGACY_ALTS_DISABLED', '').strip() == '1')
-        if not legacy_disabled:
-            if not prod.codigo_barra_alt1:
-                prod.codigo_barra_alt1 = codigo_barra_alt
-            elif not prod.codigo_barra_alt2:
-                prod.codigo_barra_alt2 = codigo_barra_alt
-            elif not prod.codigo_barra_alt3:
-                prod.codigo_barra_alt3 = codigo_barra_alt
-            # Si los 3 slots están ocupados, no rompe — la nueva tabla acepta sin límite.
     # Tabla 1-a-N: insert idempotente (UNIQUE constraint).
     try:
         from database import ProductoCodigoBarra

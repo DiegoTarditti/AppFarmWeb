@@ -261,7 +261,7 @@ _TARGETS = {
     'producto': _TargetSpec(
         model_attr='Producto',
         lab_field='laboratorio_id',
-        ean_fields=('codigo_barra', 'codigo_barra_alt1', 'codigo_barra_alt2', 'codigo_barra_alt3'),
+        ean_fields=('codigo_barra',),  # alt1/2/3 deprecadas — usar producto_codigos_barra (cascada)
         alfabeta_field='codigo_alfabeta',
     ),
     'obs_producto': _TargetSpec(
