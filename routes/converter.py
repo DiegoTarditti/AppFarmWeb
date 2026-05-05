@@ -94,8 +94,8 @@ def _probar_parser(parser_file, pdf_path):
         )
         if num_es_invalido:
             try:
-                from helpers import _normalize_quadrupled
                 from data_extract import extract_text_with_ocr_fallback
+                from helpers import _normalize_quadrupled
                 txt_pdf = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
                 m = re.search(r'\b(\d{4,5}-\d{6,10})\b', txt_pdf)
                 if m:

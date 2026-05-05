@@ -812,8 +812,9 @@ def init_app(app):
             # ignora; si vio algo mal, click y a entrenar.
             converter_token = None
             if invoice.pdf_filename:
-                from helpers import CONVERTER_DIR  # type: ignore
                 import os as _os
+
+                from helpers import CONVERTER_DIR  # type: ignore
                 if _os.path.exists(_os.path.join(CONVERTER_DIR, invoice.pdf_filename)):
                     converter_token = invoice.pdf_filename
             return render_template('invoice_items.html', invoice=invoice,
@@ -829,8 +830,8 @@ def init_app(app):
         import os as _os
         import re as _re
 
-        from helpers import CONVERTER_DIR, UPLOAD_FOLDER, _normalize_quadrupled  # type: ignore
         from data_extract import extract_text_with_ocr_fallback
+        from helpers import CONVERTER_DIR, _normalize_quadrupled  # type: ignore
         with database.get_db() as session:
             inv = session.get(database.Invoice, invoice_id)
             if not inv:
