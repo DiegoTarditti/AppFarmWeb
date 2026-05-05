@@ -77,6 +77,12 @@
         Mostrar ⚠ otra drog
     </label>
     <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
+    <span id="contador-sug" class="text-[11px] font-semibold"></span>
+    <button type="button" id="btn-orden-sug" onclick="toggleOrdenSug()"
+            title="Mover los productos con sugerencia 'subir mín.' arriba"
+            class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold">
+        ▲ Urgentes arriba
+    </button>
 
     <div class="relative ml-auto">
         <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
@@ -496,6 +502,7 @@ const _filtroLibre    = document.getElementById('filtro-libre');
 const _filtroSug      = document.getElementById('filtro-sug');
 const _filtroOtraDrog = document.getElementById('filtro-otra-drog');
 
+const _contadorSug = document.getElementById('contador-sug');
 function aplicarFiltros() {
     const fnProd      = window.MultiTokenFilter.build(_filtroProd.value);
     const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
@@ -503,6 +510,7 @@ function aplicarFiltros() {
     const soloSug     = _filtroSug.checked;
     const mostraOtra  = _filtroOtraDrog.checked;
     let visibles = 0;
+    let nUp = 0, nDown = 0;
     document.querySelectorAll('.producto-row').forEach(row => {
         const sug = row.dataset.sug || '';
         const ok = fnProd(row.dataset.nombre)
@@ -511,9 +519,22 @@ function aplicarFiltros() {
             && (!soloSug || sug === 'up' || sug === 'down')
             && (mostraOtra || row.dataset.cubre !== 'n');
         row.style.display = ok ? '' : 'none';
-        if (ok) visibles++;
+        if (ok) {
+            visibles++;
+            if (sug === 'up') nUp++;
+            else if (sug === 'down') nDown++;
+        }
     });
     _filtroCount.textContent = `${visibles} / ${_totalRows} visibles`;
+    // Contador de sugerencias visibles (refleja filtros aplicados)
+    if (nUp || nDown) {
+        const partes = [];
+        if (nUp)   partes.push(`<span class="text-rose-700">▲ ${nUp} subir</span>`);
+        if (nDown) partes.push(`<span class="text-emerald-700">▼ ${nDown} bajar</span>`);
+        _contadorSug.innerHTML = '· ' + partes.join(' · ');
+    } else {
+        _contadorSug.innerHTML = '';
+    }
     aplicarZebra();
 }
 
@@ -530,6 +551,43 @@ _filtroLab.addEventListener('input', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
 _filtroOtraDrog.addEventListener('change', aplicarFiltros);
+
+// Orden urgentes arriba: reordena DOM moviendo los `data-sug=up` al inicio del tbody.
+let _ordenSugActivo = false;
+function toggleOrdenSug() {
+    _ordenSugActivo = !_ordenSugActivo;
+    const btn = document.getElementById('btn-orden-sug');
+    const filas = Array.from(document.querySelectorAll('.producto-row'));
+    if (!filas.length) return;
+    const tbody = filas[0].parentElement;
+    if (_ordenSugActivo) {
+        // Sort: up primero, después down, después resto. Estable.
+        const orden = (sug) => sug === 'up' ? 0 : (sug === 'down' ? 1 : 2);
+        const sorted = filas.slice().sort((a, b) => {
+            const oa = orden(a.dataset.sug || '');
+            const ob = orden(b.dataset.sug || '');
+            return oa - ob;
+        });
+        sorted.forEach(r => tbody.appendChild(r));
+        btn.classList.remove('border-rose-300', 'text-rose-700');
+        btn.classList.add('bg-rose-600', 'text-white', 'border-rose-600');
+        btn.textContent = '▲ Orden urgentes';
+    } else {
+        // Restaurar al orden original guardado en data-orden-orig
+        const sorted = filas.slice().sort((a, b) =>
+            parseInt(a.dataset.ordenOrig || 0) - parseInt(b.dataset.ordenOrig || 0));
+        sorted.forEach(r => tbody.appendChild(r));
+        btn.classList.add('border-rose-300', 'text-rose-700');
+        btn.classList.remove('bg-rose-600', 'text-white', 'border-rose-600');
+        btn.textContent = '▲ Urgentes arriba';
+    }
+    aplicarZebra();
+}
+// Guardar orden original al cargar (para poder restaurar)
+document.querySelectorAll('.producto-row').forEach((row, i) => {
+    row.dataset.ordenOrig = i;
+});
+
 aplicarFiltros();
 
 // Mide el alto real del panel del gráfico y lo usa de offset del thead sticky.
