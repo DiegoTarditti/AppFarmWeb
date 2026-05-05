@@ -142,6 +142,8 @@ def _probar_parser(parser_file, pdf_path):
             'items_full': items_full,
             'numero_factura': data.get('numero_factura'),
             'fecha': str(data.get('fecha') or ''),
+            'proveedor_razon': data.get('proveedor_razon'),
+            'proveedor_cuit': data.get('proveedor_cuit'),
             'total': total_declarado,
             'monto_exento':  _f(data.get('monto_exento')),
             'monto_gravado': _f(data.get('monto_gravado')),
@@ -441,10 +443,17 @@ def init_app(app):
                 'error': 'Items no son 100% limpios — usá el verify para revisar',
             }), 400
 
-        # Construir header + rows como los espera _guardar_factura_desde_aprendizaje
+        # Construir header + rows como los espera _guardar_factura_desde_aprendizaje.
+        # OJO: el saver lee 'numero', 'razon_social', 'cuit' (no 'numero_factura'
+        # ni 'proveedor_*'). Mantener esos nombres o queda SIN_NUMERO.
+        num_raw = prueba.get('numero_factura') or ''
+        if num_raw == 'SIN_NUMERO':
+            num_raw = ''
         header = {
-            'numero_factura': prueba.get('numero_factura') or '',
+            'numero':         num_raw,
             'fecha':          prueba.get('fecha') or '',
+            'razon_social':   prueba.get('proveedor_razon') or '',
+            'cuit':           prueba.get('proveedor_cuit') or '',
             'total':          prueba.get('total'),
             'monto_exento':   prueba.get('monto_exento'),
             'monto_gravado':  prueba.get('monto_gravado'),
