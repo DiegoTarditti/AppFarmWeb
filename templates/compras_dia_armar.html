@@ -424,18 +424,28 @@ function renderMes(d, ing) {
         backgroundColor: 'rgba(34,197,94,0.5)', borderColor: '#16a34a',
         borderWidth: 1, borderRadius: 2, order: 3,
     }];
+    // Pedido y Entradas: puntos/markers en lugar de barras. Con 30 días,
+    // 3 barras agrupadas se comprimen mucho. Estos son eventos discretos
+    // (pocos días al mes), se ven mejor como marcadores sobre las barras
+    // de Salidas. Salidas sigue ocupando el ancho como protagonista.
     if (hayPed) {
         datasets.push({
-            type: 'bar', label: 'Pedido', data: ing.pedido_data,
-            backgroundColor: 'rgba(59,130,246,0.35)', borderColor: '#3b82f6',
-            borderWidth: 1, borderRadius: 2, order: 2,
+            type: 'line', label: 'Pedido', data: ing.pedido_data,
+            backgroundColor: '#3b82f6', borderColor: '#3b82f6',
+            showLine: false,
+            pointRadius: 7, pointHoverRadius: 10,
+            pointStyle: 'triangle',
+            order: 2,
         });
     }
     if (hayIng) {
         datasets.push({
-            type: 'bar', label: 'Entradas (ingreso)', data: ing.data,
-            backgroundColor: 'rgba(251,146,60,0.5)', borderColor: '#ea580c',
-            borderWidth: 1, borderRadius: 2, order: 1,
+            type: 'line', label: 'Entradas (ingreso)', data: ing.data,
+            backgroundColor: '#ea580c', borderColor: '#ea580c',
+            showLine: false,
+            pointRadius: 7, pointHoverRadius: 10,
+            pointStyle: 'rectRot',
+            order: 1,
         });
     }
     // Promedio diario (línea horizontal punteada)
