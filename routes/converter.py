@@ -80,6 +80,28 @@ def _probar_parser(parser_file, pdf_path):
     try:
         data = parse_invoice_pdf(pdf_path, parser_file)
         items = data.get('items') or []
+
+        # Fix tardio del numero de factura cuando el parser auto-generado lo
+        # captura roto (ej. "Nº:" en lugar de "0013-17985309"). Si lo que
+        # devolvio no tiene digitos o es muy corto, reescaneamos el PDF con
+        # un regex mas estricto (formato AR: PPPP-NNNNNNNN).
+        num_actual = (data.get('numero_factura') or '').strip()
+        num_es_invalido = (
+            not num_actual
+            or num_actual == 'SIN_NUMERO'
+            or not re.search(r'\d', num_actual)
+            or len(num_actual) < 4
+        )
+        if num_es_invalido:
+            try:
+                from helpers import _normalize_quadrupled
+                from data_extract import extract_text_with_ocr_fallback
+                txt_pdf = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
+                m = re.search(r'\b(\d{4,5}-\d{6,10})\b', txt_pdf)
+                if m:
+                    data['numero_factura'] = m.group(1)
+            except Exception:
+                pass
         def _f(v):
             if v is None: return None
             try: return float(v)

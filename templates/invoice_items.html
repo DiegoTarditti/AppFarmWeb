@@ -62,8 +62,8 @@
     <div class="bg-surface rounded-xl border border-surface-border px-6 py-4">
         <div class="flex flex-wrap gap-6 text-sm">
             <div>
-                <p class="text-xs text-[#6f6f6f] mb-0.5">Factura</p>
-                <p class="font-semibold text-[#1e1e1e]">{{ invoice.numero_factura }}</p>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">Factura Nº</p>
+                <p class="font-semibold text-[#1e1e1e]">{{ invoice.numero_factura or '—' }}</p>
             </div>
             <div>
                 <p class="text-xs text-[#6f6f6f] mb-0.5">Proveedor</p>
@@ -82,6 +82,28 @@
                 <p class="text-xs text-[#6f6f6f] mb-0.5">Total factura</p>
                 <p class="font-semibold text-[#1e1e1e]">${{ invoice.total | arg_currency }}</p>
             </div>
+            {% endif %}
+            {# Verificacion matematica: Σ importes ítems vs total declarado. #}
+            {% set _suma_items = items | sum(attribute='importe') %}
+            <div>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">Σ ítems</p>
+                <p class="font-semibold font-mono text-[#1e1e1e]">${{ _suma_items | arg_currency }}</p>
+            </div>
+            {% if invoice.total %}
+                {% set _diff = (_suma_items - invoice.total) | abs %}
+                {% if _diff < 1 %}
+                <div>
+                    <p class="text-xs text-[#6f6f6f] mb-0.5">Control</p>
+                    <p class="font-semibold text-emerald-700">✓ cuadra</p>
+                </div>
+                {% else %}
+                <div>
+                    <p class="text-xs text-[#6f6f6f] mb-0.5">Control</p>
+                    <p class="font-semibold text-rose-700" title="Σ ítems - total = {{ _diff | arg_currency }}">
+                        ⚠ difiere ${{ _diff | arg_currency }}
+                    </p>
+                </div>
+                {% endif %}
             {% endif %}
         </div>
 
