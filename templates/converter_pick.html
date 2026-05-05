@@ -386,10 +386,11 @@ const state = { exampleLine: '', selections: [], lastRows: [], lastFields: [],
 //   21.0       →  21,0
 // Los números ya en formato AR (1.234,56) no se tocan.
 function _normalizarNumerosEnAr(line) {
-    // Regex: match tokens inglés: (\d{1,3}(,\d{3})+|\d+)\.\d{1,3}
-    // Con word boundaries para no afectar parte de texto
+    // Solo convertir si la linea esta en formato US. Si ya hay decimales AR
+    // (\d+,\d{2}), no tocar — sino se rompen numeros como 16.474,80 →
+    // 16,474,80 (la regex matchea 16.474 como US int.dec dejando ,80 aislado).
+    if (/\b\d+,\d{2}\b/.test(line)) return line;
     return line.replace(/\b(\d{1,3}(?:,\d{3})+|\d+)\.(\d{1,3})\b/g, (match, intPart, decPart) => {
-        // Cambiar comas (miles US) por puntos (miles AR) en la parte entera
         const intAr = intPart.replace(/,/g, '.');
         return intAr + ',' + decPart;
     });
