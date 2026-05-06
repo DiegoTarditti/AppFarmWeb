@@ -196,6 +196,7 @@ def init_app(app):
         genera ~1 PedidoEmitido por droguería; este endpoint los muestra unificados.
         """
         from datetime import datetime, timedelta
+
         from database import PedidoEmitido
         try:
             dias = max(1, min(int(request.args.get('dias', 30)), 365))

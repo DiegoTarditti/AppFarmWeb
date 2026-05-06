@@ -406,8 +406,12 @@ def init_app(app):
         from datetime import timedelta
 
         from database import (
-            ObsCliente, ObsMedico, ObsObraSocial, ObsPlan,
-            ObsProducto, ObsVentaDetalle,
+            ObsCliente,
+            ObsMedico,
+            ObsObraSocial,
+            ObsPlan,
+            ObsProducto,
+            ObsVentaDetalle,
         )
 
         with database.get_db() as session:
