@@ -399,14 +399,21 @@ def init_app(app):
 
             ofertas = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).all()
 
-            # Carga todos los productos de una vez para no hacer N queries
+            # Carga todos los productos de una vez para no hacer N queries.
+            # EANs alternativos viven en producto_codigos_barra (1-a-N) desde
+            # el refactor del 2026-05-05.
+            from database import ProductoCodigoBarra as _PCB
             todos = session.query(Producto).all()
+            prod_by_id = {p.id: p for p in todos}
             ean_a_prod = {}
             for p in todos:
-                for ean in [p.codigo_barra, p.codigo_barra_alt1,
-                            p.codigo_barra_alt2, p.codigo_barra_alt3]:
-                    if ean:
-                        ean_a_prod.setdefault(ean.strip(), p)
+                if p.codigo_barra:
+                    ean_a_prod.setdefault(p.codigo_barra.strip(), p)
+            for ean, prod_id in session.query(_PCB.codigo_barra, _PCB.producto_id).all():
+                if ean and prod_id in prod_by_id:
+                    e = ean.strip()
+                    if e:
+                        ean_a_prod.setdefault(e, prod_by_id[prod_id])
 
             creadas = 0
             actualizadas = 0
