@@ -4,6 +4,24 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🆕 Pendiente — Chequeo recetas PAMI/OS para liquidación (2026-05-06)
+
+Cruce de 3 fuentes para la liquidación mensual de PAMI y otras OS:
+1. Listado oficial PAMI (PDF que baja del portal).
+2. Recetas físicas (escaneadas con pistola).
+3. Observer.Gestion.Recetas.
+
+**Estado:**
+- ✅ Cruce físicas ↔ Observer: implementado en `/recetas/scan` (escaneo + match
+  contra `Gestion.Recetas` por OPF/NumeroReceta/NumeroAutorizacionExterno).
+- ⏳ Cruce listado oficial PAMI ↔ Observer: pendiente.
+- ⏳ Vista unificada con las 3 fuentes (encuentra discrepancias).
+
+Detalle completo + ejemplo de PDF PAMI:
+[docs/feature_checkup_recetas_pami.md](feature_checkup_recetas_pami.md).
+
+---
+
 ## 📐 Reglas generales del sistema
 
 ### Imports siempre validan contra el catálogo existente
