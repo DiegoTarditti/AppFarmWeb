@@ -115,9 +115,16 @@ def init_app(app):
     @app.route('/laboratorio/<int:lab_id>/delete', methods=['POST'])
     def laboratorio_delete(lab_id):
         next_url = request.form.get('next') or request.referrer or url_for('laboratorios_list')
-        from database import (OfertaMinimo, DescuentoBase, ExportTemplate,
-                              LaboratorioDrogueria, EquivalenciaProveedor,
-                              PedidoBorrador, Modulo, AnalisisSesion)
+        from database import (
+            AnalisisSesion,
+            DescuentoBase,
+            EquivalenciaProveedor,
+            ExportTemplate,
+            LaboratorioDrogueria,
+            Modulo,
+            OfertaMinimo,
+            PedidoBorrador,
+        )
         try:
             with database.get_db() as session:
                 lab = session.get(Laboratorio, lab_id)

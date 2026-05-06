@@ -927,7 +927,9 @@ def init_app(app):
     @app.route('/orders')
     def orders_list():
         from collections import defaultdict
+
         from sqlalchemy.orm import joinedload
+
         from routes.compras_dia import _sigla_drog
         with database.get_db() as session:
             pedidos = (session.query(Pedido)

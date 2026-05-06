@@ -707,8 +707,9 @@ def init_app(app):
             # Pedidos guardados con mostrar_hasta vigente → mapa
             # observer_id → [{cantidad, fecha, pedido_id, pedido_lab, mostrar_hasta}].
             # Se attacha a cada item del armado para mostrar inline en la fila.
-            from datetime import date as _date
             from collections import defaultdict
+            from datetime import date as _date
+
             from database import Pedido
             ped_guardado_por_obs = defaultdict(list)
             hoy_d = _date.today()
