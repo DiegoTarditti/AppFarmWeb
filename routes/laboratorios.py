@@ -355,6 +355,74 @@ def init_app(app):
                 session.commit()
         return redirect(url_for('lab_equivalencias', lab_id=lab_id))
 
+    @app.route('/laboratorio/<int:lab_id>/equivalencias/semillar', methods=['POST'])
+    def lab_equivalencias_semillar(lab_id):
+        """Crea equivalencias retroactivas desde OfertaMinimo existentes.
+
+        Para cada oferta del lab busca el Producto por EAN (directo o alt) y,
+        si encuentra match, inserta la EquivalenciaProveedor usando la
+        descripción del archivo como clave.
+        """
+        from database import EquivalenciaProveedor
+        from producto_matcher import normalizar_texto
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+
+            ofertas = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).all()
+
+            # Carga todos los productos de una vez para no hacer N queries
+            todos = session.query(Producto).all()
+            ean_a_prod = {}
+            for p in todos:
+                for ean in [p.codigo_barra, p.codigo_barra_alt1,
+                            p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                    if ean:
+                        ean_a_prod.setdefault(ean.strip(), p)
+
+            creadas = 0
+            actualizadas = 0
+            sin_match = 0
+            for o in ofertas:
+                desc_orig = (o.descripcion or '').strip()
+                if not desc_orig:
+                    continue
+                prod = ean_a_prod.get((o.ean or '').strip())
+                if not prod:
+                    sin_match += 1
+                    continue
+                desc_norm = normalizar_texto(desc_orig)[:200]
+                if not desc_norm:
+                    continue
+                existente = (session.query(EquivalenciaProveedor)
+                             .filter_by(laboratorio_id=lab_id,
+                                        descripcion_proveedor_norm=desc_norm)
+                             .first())
+                if existente:
+                    if existente.producto_id != prod.id:
+                        existente.producto_id = prod.id
+                        actualizadas += 1
+                else:
+                    session.add(EquivalenciaProveedor(
+                        laboratorio_id=lab_id,
+                        descripcion_proveedor=desc_orig,
+                        descripcion_proveedor_norm=desc_norm,
+                        producto_id=prod.id,
+                    ))
+                    creadas += 1
+            session.commit()
+        partes = []
+        if creadas:
+            partes.append(f'{creadas} equivalencias creadas')
+        if actualizadas:
+            partes.append(f'{actualizadas} actualizadas')
+        if sin_match:
+            partes.append(f'{sin_match} ofertas sin match de EAN')
+        flash(', '.join(partes) or 'Sin cambios.', 'success' if creadas or actualizadas else 'info')
+        return redirect(url_for('lab_equivalencias', lab_id=lab_id))
+
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
     def lab_ofertas_minimo_borrar_todas(lab_id):
         with database.get_db() as session:
