@@ -900,6 +900,7 @@ class Producto(Base):
     accion_terapeutica = Column(String(200), nullable=True)
     actualizado_en = Column(DateTime, default=now_ar)
     ultima_compra = Column(Date, nullable=True)
+    fuente_creacion = Column(String(30), nullable=True)   # 'oferta_import' / 'manual' / NULL
     # Compra rápida v2: exclusiones manuales del armado de pedido.
     excluido_armado_actual = Column(Boolean, nullable=False, default=False)
     no_pedir               = Column(Boolean, nullable=False, default=False)
@@ -1793,6 +1794,9 @@ def _pg_add_columns(conn):
     # proveedor_horarios_reparto y pedido_borrador.
     conn.execute(text(
         "ALTER TABLE descuentos_base ADD COLUMN IF NOT EXISTS descuento_pct_sin_transfer DECIMAL(5,2)"
+    ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS fuente_creacion VARCHAR(30)"
     ))
     conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS excluido_armado_actual BOOLEAN NOT NULL DEFAULT FALSE"

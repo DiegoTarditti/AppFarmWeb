@@ -286,6 +286,7 @@ def init_app(app):
                 codigo_barra=ean,
                 descripcion=desc or None,
                 laboratorio_id=lab_id,
+                fuente_creacion='oferta_import',
             )
             session.add(prod)
             session.commit()
@@ -379,6 +380,7 @@ def init_app(app):
                 'monodroga_legacy': prod.monodroga,
                 'presentacion_legacy': prod.presentacion,
                 'accion_terapeutica_legacy': prod.accion_terapeutica,
+                'fuente_creacion': prod.fuente_creacion,
             }
             atributos = None
             if atr:
