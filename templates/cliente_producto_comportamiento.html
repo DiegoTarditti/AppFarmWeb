@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Comportamiento — {{ cliente.descripcion }} × {{ producto.descripcion }}{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">
+        🔮 Comportamiento ·
+        <a href="{{ url_for('cliente_detail', observer_id=cliente.observer_id) }}"
+           class="text-violet-700 hover:underline">{{ cliente.descripcion }}</a>
+        <span class="text-[#aaa] mx-1">×</span>
+        <span class="text-amber-700">{{ producto.descripcion }}</span>
+    </h1>
+    <span class="text-xs text-[#6f6f6f]">{{ stats.n_compras }} compras{% if anomalias %} · <span class="text-rose-700">{{ anomalias }} D/NC</span>{% endif %}</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-7xl mx-auto">
+
+        {% if stats.n_compras == 0 %}
+        <div class="bg-amber-50 border-l-4 border-amber-400 rounded-r p-4">
+            <p class="text-sm text-amber-900">Este cliente nunca compró este producto.</p>
+        </div>
+        {% else %}
+
+        <!-- Bloque resumen + predicción -->
+        <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div class="bg-[#fafafa] rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Compras</p>
+                    <p class="text-lg font-bold text-[#1e1e1e]">{{ stats.n_compras }}</p>
+                </div>
+                <div class="bg-[#fafafa] rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Cantidad típica</p>
+                    <p class="text-lg font-bold text-[#1e1e1e]">{{ cant_stats.tipica | int }}</p>
+                    <p class="text-[10px] text-[#999]">{{ cant_stats.min | int }}-{{ cant_stats.max | int }} u/op</p>
+                </div>
+                <div class="bg-[#fafafa] rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Cantidad total</p>
+                    <p class="text-lg font-bold text-[#1e1e1e]">{{ cant_stats.total | int }} u</p>
+                </div>
+                <div class="bg-[#fafafa] rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Frecuencia</p>
+                    {% if stats.dias_entre_promedio %}
+                    <p class="text-lg font-bold text-[#1e1e1e]">cada {{ stats.dias_entre_promedio | round(0, 'floor') | int }}d</p>
+                    <p class="text-[10px] text-[#999]">±{{ stats.dias_entre_std | round(0, 'floor') | int }}d</p>
+                    {% else %}
+                    <p class="text-sm text-[#aaa]">—</p>
+                    {% endif %}
+                </div>
+                <div class="bg-[#fafafa] rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-[10px] text-[#888] uppercase tracking-wide mb-1">Patrón</p>
+                    {% set _patcls = 'text-emerald-700' if 'regular' in stats.patron and 'cróni' in stats.patron
+                                    else 'text-amber-700' if 'semi' in stats.patron
+                                    else 'text-rose-700' if 'esporád' in stats.patron
+                                    else 'text-[#888]' %}
+                    <p class="text-sm font-bold {{ _patcls }}">{{ stats.patron }}</p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-center">
+                    <p class="text-[10px] text-amber-700 uppercase tracking-wide mb-1">Próxima compra</p>
+                    {% if stats.proxima_estimada %}
+                    <p class="text-lg font-bold text-amber-800">{{ stats.proxima_estimada.strftime('%d/%m/%y') }}</p>
+                    <p class="text-[10px] text-amber-700">
+                        {% if stats.dias_para_proxima > 0 %}en {{ stats.dias_para_proxima }}d
+                        {% elif stats.dias_para_proxima == 0 %}hoy
+                        {% else %}<span class="font-bold text-rose-700">{{ -stats.dias_para_proxima }}d atrasada</span>{% endif %}
+                    </p>
+                    {% else %}
+                    <p class="text-sm text-[#aaa]">—</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div>
+                    <p class="text-[#888]">Primera compra</p>
+                    <p class="font-mono text-[#1e1e1e]">{{ stats.primera.strftime('%d/%m/%y') if stats.primera else '—' }}</p>
+                </div>
+                <div>
+                    <p class="text-[#888]">Última compra</p>
+                    <p class="font-mono text-[#1e1e1e]">{{ stats.ultima.strftime('%d/%m/%y') if stats.ultima else '—' }}</p>
+                </div>
+                <div>
+                    <p class="text-[#888]">Gasto histórico</p>
+                    <p class="font-mono text-[#1e1e1e]">${{ '{:,.0f}'.format(gasto_total).replace(',', '.') }}</p>
+                </div>
+                <div>
+                    <p class="text-[#888]">Ahorro vía OS</p>
+                    <p class="font-mono text-emerald-700">${{ '{:,.0f}'.format(ahorro_os).replace(',', '.') }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart timeline -->
+        <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+            <p class="text-sm font-semibold text-[#1e1e1e] mb-2">Línea temporal de compras</p>
+            <div style="height:220px"><canvas id="timeline-chart"></canvas></div>
+        </div>
+
+        <!-- 2 columnas: Médicos + OS / Co-compras -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+
+            <div class="bg-white border border-surface-border rounded-xl p-4">
+                <p class="text-sm font-semibold text-[#1e1e1e] mb-2">👨‍⚕️ Médicos prescriptores</p>
+                {% if medicos_top %}
+                <table class="w-full text-xs">
+                    <thead><tr class="text-[#888] uppercase text-[10px]">
+                        <th class="text-left py-1">Médico</th>
+                        <th class="text-right py-1 w-20">Recetas</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for m in medicos_top %}
+                    <tr class="border-t border-[#f0f0f0]">
+                        <td class="py-1.5">{{ m.nombre }}</td>
+                        <td class="py-1.5 text-right font-mono font-bold">{{ m.n }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-xs text-[#999] italic">Sin recetas asociadas (compras particulares).</p>
+                {% endif %}
+            </div>
+
+            <div class="bg-white border border-surface-border rounded-xl p-4">
+                <p class="text-sm font-semibold text-[#1e1e1e] mb-2">🏥 Cobertura</p>
+                {% if os_top %}
+                <table class="w-full text-xs">
+                    <thead><tr class="text-[#888] uppercase text-[10px]">
+                        <th class="text-left py-1">Obra Social</th>
+                        <th class="text-right py-1 w-16">Veces</th>
+                        <th class="text-right py-1 w-16">%</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for o in os_top %}
+                    <tr class="border-t border-[#f0f0f0]">
+                        <td class="py-1.5">{{ o.nombre }}</td>
+                        <td class="py-1.5 text-right font-mono">{{ o.n }}</td>
+                        <td class="py-1.5 text-right font-mono text-emerald-700">{{ o.pct }}%</td>
+                    </tr>
+                    {% endfor %}
+                    {% if n_particulares %}
+                    <tr class="border-t border-[#f0f0f0]">
+                        <td class="py-1.5 text-[#888] italic">Particular (sin OS)</td>
+                        <td class="py-1.5 text-right font-mono">{{ n_particulares }}</td>
+                        <td class="py-1.5 text-right font-mono text-[#888]">{{ ((n_particulares / stats.n_compras) * 100) | round(1) }}%</td>
+                    </tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-xs text-[#999] italic">{% if n_particulares %}{{ n_particulares }} compras particulares (sin OS).{% else %}Sin datos.{% endif %}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Co-compras -->
+        {% if cocompra %}
+        <div class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+            <p class="text-sm font-semibold text-[#1e1e1e] mb-2">🛒 Co-compras (otros productos en las mismas operaciones)</p>
+            <table class="w-full text-xs">
+                <thead><tr class="text-[#888] uppercase text-[10px]">
+                    <th class="text-left py-1">Producto</th>
+                    <th class="text-right py-1 w-20">Veces</th>
+                    <th class="text-right py-1 w-20">% ops</th>
+                    <th class="text-right py-1 w-20">Total u.</th>
+                </tr></thead>
+                <tbody>
+                {% for c in cocompra %}
+                <tr class="border-t border-[#f0f0f0] hover:bg-[#fafafa]">
+                    <td class="py-1.5">
+                        <a href="{{ url_for('cliente_producto_comportamiento', cliente_id=cliente.observer_id, producto_id=c.id) }}"
+                           class="text-violet-700 hover:underline">{{ c.nombre }}</a>
+                    </td>
+                    <td class="py-1.5 text-right font-mono font-bold">{{ c.n }}</td>
+                    <td class="py-1.5 text-right font-mono text-emerald-700">{{ c.pct }}%</td>
+                    <td class="py-1.5 text-right font-mono text-[#666]">{{ c.cant_total | int }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <p class="text-[10px] text-[#aaa] mt-2 italic">Click en un producto para ver el comportamiento del cliente con ese ítem.</p>
+        </div>
+        {% endif %}
+
+        <!-- Mix de pago (resumen, sin importancia alta) -->
+        {% set total_pago = pago.efectivo + pago.tarjeta + pago.cta_cte + pago.cheque %}
+        {% if total_pago > 0 %}
+        <div class="bg-white border border-surface-border rounded-xl p-4 text-xs">
+            <p class="text-[#888] uppercase text-[10px] mb-2">Mix de pago histórico</p>
+            <div class="flex flex-wrap gap-3">
+                {% if pago.efectivo > 0 %}<span><b>{{ ((pago.efectivo / total_pago) * 100) | round(0) | int }}%</b> efectivo</span>{% endif %}
+                {% if pago.tarjeta > 0 %}<span><b>{{ ((pago.tarjeta / total_pago) * 100) | round(0) | int }}%</b> tarjeta</span>{% endif %}
+                {% if pago.cta_cte > 0 %}<span><b>{{ ((pago.cta_cte / total_pago) * 100) | round(0) | int }}%</b> cuenta cte</span>{% endif %}
+                {% if pago.cheque > 0 %}<span><b>{{ ((pago.cheque / total_pago) * 100) | round(0) | int }}%</b> cheque</span>{% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% endif %}{# /n_compras > 0 #}
+    </div>
+</div>
+
+<script>
+const TIMELINE = {{ timeline | tojson }};
+
+if (TIMELINE && TIMELINE.length) {
+    const ctx = document.getElementById('timeline-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: TIMELINE.map(t => t.fecha),
+            datasets: [{
+                label: 'Cantidad por compra',
+                data: TIMELINE.map(t => t.cantidad),
+                backgroundColor: 'rgba(234,179,8,0.55)',
+                borderColor: '#ca8a04',
+                borderWidth: 1,
+                borderRadius: 3,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {display: false},
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const t = TIMELINE[ctx.dataIndex];
+                            return [`${t.cantidad} u`, `$${t.importe.toFixed(0)}`];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {grid: {display: false}, ticks: {color: '#888', font: {size: 9}, maxRotation: 60}},
+                y: {grid: {color: '#eee'}, ticks: {color: '#888', font: {size: 9}}, beginAtZero: true},
+            }
+        }
+    });
+}
+</script>
+{% endblock %}
