@@ -352,6 +352,16 @@ def init_app(app):
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
+        # Rubros: CSV ej. ?rubros=12,5. Default: '12' (Medicamentos).
+        # Pasar ?rubros=all (o vacío) para no filtrar.
+        rubros_raw = (request.args.get('rubros') or '12').strip()
+        if rubros_raw.lower() == 'all' or not rubros_raw:
+            rubros_filtro = None  # None = mostrar todos
+        else:
+            try:
+                rubros_filtro = set(int(x) for x in rubros_raw.split(',') if x.strip())
+            except ValueError:
+                rubros_filtro = {12}  # fallback Medicamentos si vino mal
 
         with get_db() as session:
             prov = None
@@ -553,9 +563,10 @@ def init_app(app):
 
             items = []
             for r in base:
-                # Filtro rubro Medicamentos
+                # Filtro rubro: aplica el set elegido vía ?rubros=… (default 12 Medicamentos).
                 sub_id = sub_de_prod.get(r.pid)
-                if subrubro_a_rubro.get(sub_id) != 12:
+                rub_id = subrubro_a_rubro.get(sub_id)
+                if rubros_filtro is not None and rub_id not in rubros_filtro:
                     continue
                 local = local_por_obs.get(r.pid)
                 # 'excluido' (sacar temporal) → no entra al armado.
@@ -630,6 +641,12 @@ def init_app(app):
                 if no_pedir_flag:
                     # Marcado "no pedir" — entra al listado pero default 0.
                     a_pedir = 0
+                # Si la sugerencia es 0 (sin rotación / sin mov 60d) y NO
+                # está marcado no_pedir, lo escondemos para no llenar la
+                # lista de ruido. Los no_pedir SÍ entran (con badge + botón
+                # ↻ Reactivar) para que se puedan rehabilitar desde acá.
+                if a_pedir <= 0 and not no_pedir_flag:
+                    continue
                 # Multi-drog: lista de prov_ids que cubren este lab.
                 drogs_que_cubren = list(labs_a_drogs.get(lab_local_id, [])) if lab_local_id else []
                 drogs_siglas = [drog_label.get(d, '?') for d in drogs_que_cubren if d in drog_label]
@@ -771,6 +788,16 @@ def init_app(app):
             for it in items:
                 it['pedidos_guardados'] = ped_guardado_por_obs.get(it['pid'], [])
 
+            # Lista de rubros para el dropdown (orden por descripción).
+            from database import ObsRubro
+            rubros_disponibles = [
+                {'id': r.observer_id, 'nombre': r.descripcion}
+                for r in (session.query(ObsRubro)
+                          .order_by(ObsRubro.descripcion).all())
+            ]
+            rubros_seleccionados = (sorted(rubros_filtro)
+                                     if rubros_filtro is not None else None)
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
@@ -780,7 +807,9 @@ def init_app(app):
                                    target_dias=target_dias,
                                    drog_label=drog_label,
                                    drog_nombre_full=drog_nombre_full,
-                                   pendientes_anteriores=pendientes_anteriores)
+                                   pendientes_anteriores=pendientes_anteriores,
+                                   rubros_disponibles=rubros_disponibles,
+                                   rubros_seleccionados=rubros_seleccionados)
 
     @app.route('/api/pedidos/dia/buscar-producto')
     @login_required
