@@ -3,6 +3,7 @@
 import datetime
 import json
 import os
+import statistics
 import tempfile
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
@@ -280,6 +281,31 @@ def init_app(app):
                     .order_by(OfertaMinimo.grupo_id.nullslast(),
                               OfertaMinimo.descripcion.nullslast(),
                               OfertaMinimo.ean).all())
+
+            # Cabecera: resumen del lote más reciente
+            dtos = [float(r.descuento_psl) for r in rows if r.descuento_psl is not None]
+            rents = [float(r.rentabilidad) for r in rows if r.rentabilidad is not None]
+            con_minimo = sum(1 for r in rows if r.unidades_minima and r.unidades_minima > 1)
+            # Droguería y vigencia: tomamos del registro más reciente
+            ultimo = max(rows, key=lambda r: r.actualizado_en or datetime.datetime.min) if rows else None
+            drog = None
+            if ultimo and ultimo.drogueria_id:
+                from database import Provider
+                drog_obj = session.get(Provider, ultimo.drogueria_id)
+                drog = drog_obj.razon_social if drog_obj else None
+            cabecera = {
+                'drogueria': drog,
+                'vigencia_desde': ultimo.vigencia_desde.strftime('%d/%m/%Y') if ultimo and ultimo.vigencia_desde else None,
+                'vigencia_hasta': ultimo.vigencia_hasta.strftime('%d/%m/%Y') if ultimo and ultimo.vigencia_hasta else None,
+                'observacion': ultimo.observacion if ultimo else None,
+                'dto_promedio': round(statistics.mean(dtos), 1) if dtos else None,
+                'dto_min': round(min(dtos), 1) if dtos else None,
+                'dto_max': round(max(dtos), 1) if dtos else None,
+                'rent_promedio': round(statistics.mean(rents), 1) if rents else None,
+                'con_minimo': con_minimo,
+                'actualizado_en': ultimo.actualizado_en.strftime('%d/%m/%Y %H:%M') if ultimo and ultimo.actualizado_en else None,
+            }
+
             ofertas = [{
                 'id': r.id,
                 'ean': r.ean,
@@ -293,7 +319,8 @@ def init_app(app):
                 'actualizado_en': r.actualizado_en.strftime('%d/%m/%Y %H:%M') if r.actualizado_en else '',
             } for r in rows]
         return render_template('lab_ofertas_minimo.html',
-                               lab=lab, ofertas=ofertas, total=len(ofertas))
+                               lab=lab, ofertas=ofertas, total=len(ofertas),
+                               cabecera=cabecera)
 
     @app.route('/laboratorio/<int:lab_id>/equivalencias', methods=['GET'])
     def lab_equivalencias(lab_id):
