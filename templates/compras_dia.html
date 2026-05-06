@@ -22,12 +22,16 @@
         </button>
     </div>
     {% endif %}
-    {% if current_user.rol != 'pedidos' %}
     <div class="ml-auto flex items-center gap-3">
+        <a href="{{ url_for('compras_dia_armar') }}"
+           class="text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-3 py-1.5 rounded-lg font-bold">
+            📦 Armar pedido (todas las drogs) →
+        </a>
+        {% if current_user.rol != 'pedidos' %}
         <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs bg-violet-50 border border-violet-300 text-violet-700 hover:bg-violet-100 px-3 py-1.5 rounded-lg font-medium">🔗 Matriz lab × drog</a>
         <a href="{{ url_for('index') }}" class="text-xs text-sky-600 hover:underline">← Inicio</a>
+        {% endif %}
     </div>
-    {% endif %}
 </div>
 
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-5">
@@ -391,26 +395,36 @@ setInterval(refrescarCountdowns, 60000);  // cada 60s repulla
 const ES_ADMIN = {{ ('true' if current_user.rol in ('dev','admin') else 'false') }};
 
 async function abrirModalPedidos(provId, provNombre) {
-    document.getElementById('modal-pedidos-titulo').textContent = provNombre;
-    document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-[#aaa]">Cargando…</td></tr>';
+    // Mostramos TODOS los pedidos emitidos (sin filtrar por drog). Cada armado
+    // multi-drog genera ~1 PedidoEmitido por droguería — así se ve el cuadro
+    // completo. provId/provNombre se ignoran (se conservan por compat).
+    document.getElementById('modal-pedidos-titulo').textContent = 'Todas las droguerías';
+    document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-[#aaa]">Cargando…</td></tr>';
     document.getElementById('modal-pedidos').classList.remove('hidden');
     try {
-        const r = await fetch(`/api/drogueria/${provId}/pedidos-emitidos`, {credentials: 'same-origin'});
+        const r = await fetch('/api/pedidos-emitidos/todos', {credentials: 'same-origin'});
         const d = await r.json();
         renderModalPedidos(d.pedidos || []);
     } catch(e) {
-        document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-rose-600">Error al cargar</td></tr>';
+        document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-rose-600">Error al cargar</td></tr>';
     }
 }
 
 function renderModalPedidos(pedidos) {
     const tbody = document.getElementById('modal-pedidos-body');
     if (!pedidos.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-xs text-[#aaa]">Sin pedidos registrados para esta droguería.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-[#aaa]">Sin pedidos emitidos.</td></tr>';
         return;
     }
     const ESTADO_LABEL = {ABIERTO: 'Abierto', RECIBIDO_PARCIAL: 'Recib. parcial', CERRADO: 'Cerrado'};
     const ESTADO_CLS   = {ABIERTO: 'bg-amber-100 text-amber-800', RECIBIDO_PARCIAL: 'bg-sky-100 text-sky-800', CERRADO: 'bg-emerald-100 text-emerald-800'};
+    // Color por sigla (mismo set que en /compras/armar)
+    const SIGLA_CLS = {
+        'Kel': 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+        '20J': 'bg-sky-100 text-sky-700 border-sky-200',
+    };
+    // Resaltar visualmente el "armado event" (mismo minuto) con un separador.
+    let prevGrupo = null;
     tbody.innerHTML = pedidos.map(p => {
         const pasos = [
             `<span class="text-emerald-600" title="Emitido ${p.fecha}">✓ Emitido</span>`,
@@ -420,10 +434,17 @@ function renderModalPedidos(pedidos) {
         ].join('<span class="text-[#ddd] mx-0.5">›</span>');
         const estadoCls = ESTADO_CLS[p.estado] || 'bg-[#f0f0f0] text-[#555]';
         const estadoLbl = ESTADO_LABEL[p.estado] || p.estado;
+        const siglaCls = SIGLA_CLS[p.drogueria_sigla] || 'bg-violet-100 text-violet-700 border-violet-200';
+        const drogCell = `<span class="text-[10px] ${siglaCls} border px-1.5 py-0.5 rounded font-bold mr-1">${p.drogueria_sigla || '?'}</span><span class="text-xs text-[#555]">${p.drogueria_nombre || '—'}</span>`;
         const acciones = `<a href="/pedidos-emitidos/${p.id}" class="text-sm text-sky-600 hover:underline font-semibold">Ver →</a>`
             + (ES_ADMIN ? ` <button type="button" onclick="borrarPedido(${p.id}, this)" class="text-sm text-rose-500 hover:text-rose-700 ml-3">Borrar</button>` : '');
-        return `<tr class="border-b border-surface-border hover:bg-[#fafafa]">
+        // Línea separadora cuando cambia el "grupo" (minuto del armado).
+        const sep = (prevGrupo !== null && p.fecha_grupo !== prevGrupo)
+            ? '<tr><td colspan="6" class="border-t-2 border-surface-border"></td></tr>' : '';
+        prevGrupo = p.fecha_grupo;
+        return sep + `<tr class="border-b border-surface-border hover:bg-[#fafafa]">
             <td class="px-4 py-3 font-mono text-sm font-semibold text-[#555]">#${p.id}</td>
+            <td class="px-4 py-3 whitespace-nowrap">${drogCell}</td>
             <td class="px-4 py-3 text-sm text-[#555] whitespace-nowrap">${p.fecha}</td>
             <td class="px-4 py-3 text-sm flex flex-wrap gap-1.5 items-center">${pasos}</td>
             <td class="px-4 py-3"><span class="text-xs font-semibold px-2 py-1 rounded ${estadoCls}">${estadoLbl}</span></td>
@@ -454,7 +475,7 @@ async function borrarPedido(id, btn) {
      onclick="if(event.target===this)this.classList.add('hidden')">
     <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 overflow-hidden">
         <div class="flex items-center justify-between px-6 py-4 border-b border-surface-border bg-[#fafafa]">
-            <h3 class="text-base font-bold text-[#1e1e1e]">📋 Pedidos — <span id="modal-pedidos-titulo"></span></h3>
+            <h3 class="text-base font-bold text-[#1e1e1e]">📋 Pedidos emitidos · <span id="modal-pedidos-titulo" class="text-[#777] font-normal"></span></h3>
             <button onclick="document.getElementById('modal-pedidos').classList.add('hidden')"
                     class="text-[#aaa] hover:text-[#555] text-xl font-bold leading-none">✕</button>
         </div>
@@ -463,6 +484,7 @@ async function borrarPedido(id, btn) {
                 <thead class="bg-[#f5f5f5] sticky top-0">
                     <tr>
                         <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">#</th>
+                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Droguería</th>
                         <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Fecha</th>
                         <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Pasos</th>
                         <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Estado</th>

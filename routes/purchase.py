@@ -926,11 +926,85 @@ def init_app(app):
 
     @app.route('/orders')
     def orders_list():
+        from collections import defaultdict
+
         from sqlalchemy.orm import joinedload
+
+        from routes.compras_dia import _sigla_drog
         with database.get_db() as session:
             pedidos = (session.query(Pedido)
                        .options(joinedload(Pedido.items))
                        .order_by(Pedido.creado_en.desc()).all())
+
+            # Construir mapas de items emitidos PENDIENTES (no recibidos):
+            #   observer_id → [{cantidad, fecha, drog_sigla, drog_nombre, pedido_id}]
+            #   producto_id_local → idem
+            # Sirve para cruzar contra cada producto de un Pedido guardado y
+            # mostrar "ya pediste X u el dd/mm a {drog}".
+            pend_q = (session.query(database.PedidoEmitidoItem)
+                      .options(joinedload(database.PedidoEmitidoItem.pedido)
+                               .joinedload(database.PedidoEmitido.drogueria))
+                      .filter(database.PedidoEmitidoItem.estado == 'PENDIENTE')
+                      .all())
+            pend_by_obs = defaultdict(list)
+            pend_by_prod = defaultdict(list)
+            for pi in pend_q:
+                drog_nombre = pi.pedido.drogueria.razon_social if pi.pedido and pi.pedido.drogueria else ''
+                info = {
+                    'cantidad': pi.cantidad_pedida,
+                    'fecha': pi.pedido.fecha.strftime('%d/%m') if pi.pedido and pi.pedido.fecha else '',
+                    'drog_sigla': _sigla_drog(drog_nombre),
+                    'drog_nombre': drog_nombre,
+                    'pedido_id': pi.pedido_id,
+                }
+                if pi.observer_id:
+                    pend_by_obs[pi.observer_id].append(info)
+                if pi.producto_id_local:
+                    pend_by_prod[pi.producto_id_local].append(info)
+
+            # Pre-resolver codigo_barra → (producto_id_local, observer_id) en lote
+            # para todos los productos de todos los pedidos guardados (1 query).
+            todos_codigos = set()
+            for p in pedidos:
+                for it in p.items:
+                    if it.codigo_barra:
+                        todos_codigos.add(it.codigo_barra.strip())
+            cb_to_prod = {}
+            if todos_codigos:
+                # Match por codigo_barra principal
+                for prod in (session.query(database.Producto)
+                             .filter(database.Producto.codigo_barra.in_(todos_codigos)).all()):
+                    cb_to_prod[prod.codigo_barra] = (prod.id, prod.observer_id)
+                # Match adicional por tabla 1-a-N
+                faltantes = todos_codigos - set(cb_to_prod.keys())
+                if faltantes:
+                    rows = (session.query(database.ProductoCodigoBarra.codigo_barra,
+                                           database.Producto.id,
+                                           database.Producto.observer_id)
+                            .join(database.Producto,
+                                  database.Producto.id == database.ProductoCodigoBarra.producto_id)
+                            .filter(database.ProductoCodigoBarra.codigo_barra.in_(faltantes)).all())
+                    for cb, pid, oid in rows:
+                        cb_to_prod.setdefault(cb, (pid, oid))
+
+            def _pendientes_de(cb):
+                if not cb:
+                    return []
+                pid_oid = cb_to_prod.get(cb.strip())
+                if not pid_oid:
+                    return []
+                pid, oid = pid_oid
+                # Dedup por pedido_id (puede aparecer doble si matchea por ambos)
+                vistos = set()
+                out = []
+                for src in (pend_by_prod.get(pid, []), pend_by_obs.get(oid, []) if oid else []):
+                    for inf in src:
+                        if inf['pedido_id'] in vistos:
+                            continue
+                        vistos.add(inf['pedido_id'])
+                        out.append(inf)
+                return out
+
             result = []
             for p in pedidos:
                 total_unidades = sum(it.cantidad for it in p.items)
@@ -952,6 +1026,8 @@ def init_app(app):
                     'estado': p.estado,
                     'tiene_analisis_guardado': bool(p.analisis_json),
                     'analisis_guardado_en': p.analisis_guardado_en.strftime('%d/%m/%Y %H:%M') if p.analisis_guardado_en else '',
+                    'mostrar_hasta': p.mostrar_hasta.strftime('%Y-%m-%d') if p.mostrar_hasta else '',
+                    'mostrar_hasta_label': p.mostrar_hasta.strftime('%d/%m/%y') if p.mostrar_hasta else '',
                     'canal': p.canal,
                     'canal_partner_nombre': canal_partner_nombre,
                     'n_productos': len(p.items),
@@ -964,6 +1040,7 @@ def init_app(app):
                             'cantidad': it.cantidad,
                             'precio_pvp': float(it.precio_pvp or 0),
                             'subtotal': float(it.subtotal or 0),
+                            'pendientes': _pendientes_de(it.codigo_barra),
                         }
                         for it in p.items
                     ], key=lambda x: (x['nombre'] or '').lower()),
@@ -1306,6 +1383,34 @@ def init_app(app):
                 f'sin={stats.get("no_encontrados", 0)}'
             )
             return jsonify({'ok': True, **stats, 'pedido': pedido.laboratorio})
+
+    @app.route('/order/<int:pedido_id>/mostrar-hasta', methods=['POST'])
+    def order_mostrar_hasta(pedido_id):
+        """Marca un pedido guardado para que aparezca como sugerencia en
+        'Pedido Reposición' (compras_dia) hasta la fecha indicada.
+        Body JSON: {fecha: 'YYYY-MM-DD' | null | ''}.
+        Pasar null/''  → desactiva la marca.
+        """
+        from datetime import date as _date
+        data = request.get_json(silent=True) or {}
+        raw = (data.get('fecha') or '').strip()
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'ok': False, 'error': 'Pedido no encontrado'}), 404
+            if not raw:
+                pedido.mostrar_hasta = None
+            else:
+                try:
+                    pedido.mostrar_hasta = _date.fromisoformat(raw)
+                except ValueError:
+                    return jsonify({'ok': False, 'error': 'Fecha inválida (esperado YYYY-MM-DD)'}), 400
+            session.commit()
+            return jsonify({
+                'ok': True,
+                'mostrar_hasta': pedido.mostrar_hasta.isoformat() if pedido.mostrar_hasta else '',
+                'mostrar_hasta_label': pedido.mostrar_hasta.strftime('%d/%m/%y') if pedido.mostrar_hasta else '',
+            })
 
     @app.route('/order/<int:pedido_id>/delete', methods=['POST'])
     def order_delete(pedido_id):

@@ -209,6 +209,15 @@
                             Enviar a Procesos
                         </button>
                         {% endif %}
+                        <button type="button"
+                                title="Mostrar este pedido como sugerencia en 'Pedido Reposición' hasta una fecha"
+                                onclick="event.stopPropagation(); event.preventDefault(); abrirMostrarHasta({{ p.id }}, '{{ p.mostrar_hasta }}', this); return false;"
+                                data-pedido-id="{{ p.id }}"
+                                class="btn-mostrar-hasta flex-1 md:flex-none flex items-center justify-center gap-1.5 {% if p.mostrar_hasta %}bg-indigo-100 border-indigo-400 text-indigo-800{% else %}bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-700{% endif %} border text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                            📌 <span class="lbl-mostrar-hasta">
+                                {% if p.mostrar_hasta_label %}Reposición hasta {{ p.mostrar_hasta_label }}{% else %}En Reposición…{% endif %}
+                            </span>
+                        </button>
                         <a href="{{ url_for('order_export_file', pedido_id=p.id, fmt='xlsx') }}" title="Exportar a Excel"
                            onclick="event.stopPropagation()"
                            class="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-green-50 hover:bg-green-100 border border-green-300 text-green-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
@@ -259,6 +268,7 @@
                         <tr class="text-[#999] uppercase tracking-wide text-[10px]">
                             <th class="text-left py-1.5 pr-3" style="width:340px">Producto</th>
                             <th class="text-left py-1.5 pr-3 text-[#bbb]">Cód. Barras</th>
+                            <th class="text-left py-1.5 pr-3 text-amber-700" title="Pendientes en pedidos emitidos a droguerías">Pendiente</th>
                             <th class="text-right py-1.5 pr-3">P.PVP</th>
                             <th class="text-right py-1.5 pr-3 text-brand">Cantidad</th>
                             <th class="text-right py-1.5">Subtotal</th>
@@ -299,6 +309,18 @@
                             </div>
                         </td>
                         <td class="py-1.5 pr-3 text-[#bbb] font-mono">{{ it.codigo_barra }}</td>
+                        <td class="py-1.5 pr-3 whitespace-nowrap">
+                            {% if it.pendientes %}
+                                {% for pe in it.pendientes %}
+                                <span class="inline-flex items-center gap-1 text-[10px] bg-amber-50 border border-amber-200 text-amber-800 px-1.5 py-0.5 rounded mr-1"
+                                      title="Pedido #{{ pe.pedido_id }} a {{ pe.drog_nombre }} el {{ pe.fecha }}">
+                                    <strong>{{ pe.cantidad }}u</strong> · {{ pe.fecha }} · {{ pe.drog_sigla }}
+                                </span>
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-[#ddd]">—</span>
+                            {% endif %}
+                        </td>
                         <td class="py-1.5 pr-3 text-right text-[#6f6f6f]">${{ it.precio_pvp | int }}</td>
                         <td class="py-1.5 pr-3 text-right font-bold text-brand">{{ it.cantidad }}</td>
                         <td class="py-1.5 text-right text-[#1e1e1e]">${{ '{:,.0f}'.format(it.subtotal).replace(',', '.') }}</td>
@@ -307,7 +329,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="border-t-2 border-[#e0e0e0]">
-                            <td colspan="3" class="py-2 text-[#999]">Total</td>
+                            <td colspan="4" class="py-2 text-[#999]">Total</td>
                             <td class="py-2 text-right font-bold text-brand">{{ p.total_unidades }}</td>
                             <td class="py-2 text-right font-bold text-[#1e1e1e]">${{ '{:,.0f}'.format(p.total_importe).replace(',', '.') }}</td>
                         </tr>
@@ -343,6 +365,16 @@
                             <p class="flex-1 text-sm font-medium text-[#1e1e1e] leading-snug">{{ it.nombre }}</p>
                         </div>
                         <p class="text-[10px] text-[#bbb] font-mono mb-2">{{ it.codigo_barra }}</p>
+                        {% if it.pendientes %}
+                        <div class="flex flex-wrap gap-1 mb-2">
+                            {% for pe in it.pendientes %}
+                            <span class="text-[10px] bg-amber-50 border border-amber-200 text-amber-800 px-1.5 py-0.5 rounded"
+                                  title="Pedido #{{ pe.pedido_id }} a {{ pe.drog_nombre }}">
+                                Pendiente <strong>{{ pe.cantidad }}u</strong> · {{ pe.fecha }} · {{ pe.drog_sigla }}
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                         <div class="grid grid-cols-3 gap-2 text-xs">
                             <div>
                                 <p class="text-[9px] text-[#999] uppercase">P.PVP</p>
@@ -450,6 +482,50 @@ function onCanalChange() {
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { cerrarModalProceso(); cerrarIndicadores(); }
 });
+
+// "Mostrar en Pedido Reposición hasta dd/mm/aa"
+async function abrirMostrarHasta(pedidoId, valorActual, btn) {
+    // Default: hoy + 7 días si no hay valor previo
+    let sugerido = valorActual;
+    if (!sugerido) {
+        const d = new Date(); d.setDate(d.getDate() + 7);
+        sugerido = d.toISOString().slice(0, 10);
+    }
+    const ingreso = prompt(
+        '¿Hasta qué fecha mostrar este pedido en "Pedido Reposición"?\n' +
+        'Formato: AAAA-MM-DD (ej. 2026-05-20).\n' +
+        'Dejá vacío para sacarlo de Reposición.',
+        sugerido
+    );
+    if (ingreso === null) return; // cancel
+    const fecha = ingreso.trim();
+    try {
+        const r = await fetch(`/order/${pedidoId}/mostrar-hasta`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({fecha: fecha}),
+        });
+        const data = await r.json();
+        if (!data.ok) { alert('Error: ' + (data.error || 'desconocido')); return; }
+        const lbl = btn.querySelector('.lbl-mostrar-hasta');
+        if (data.mostrar_hasta_label) {
+            lbl.textContent = `Reposición hasta ${data.mostrar_hasta_label}`;
+            btn.classList.remove('bg-indigo-50', 'hover:bg-indigo-100', 'border-indigo-300', 'text-indigo-700');
+            btn.classList.add('bg-indigo-100', 'border-indigo-400', 'text-indigo-800');
+        } else {
+            lbl.textContent = 'En Reposición…';
+            btn.classList.add('bg-indigo-50', 'hover:bg-indigo-100', 'border-indigo-300', 'text-indigo-700');
+            btn.classList.remove('bg-indigo-100', 'border-indigo-400', 'text-indigo-800');
+        }
+        // Actualizar el data-* del botón para futuros clicks
+        btn.dataset.mostrarHasta = data.mostrar_hasta;
+        btn.setAttribute('onclick',
+            `event.stopPropagation(); event.preventDefault(); abrirMostrarHasta(${pedidoId}, '${data.mostrar_hasta}', this); return false;`);
+    } catch (e) {
+        alert('Error de red: ' + e);
+    }
+}
 </script>
 
 <!-- Modal Alternativas por monodroga -->

@@ -637,7 +637,8 @@ def init_app(app):
         with database.get_db() as session:
             base = (session.query(ObsVentaDetalle)
                     .filter(ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta))
+                            ObsVentaDetalle.fecha_estadistica <= hasta,
+                            ObsVentaDetalle.tipo_operacion == 'V'))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
                 op = session.get(ObsProducto, producto_id)
@@ -936,7 +937,8 @@ def init_app(app):
         with database.get_db() as session:
             base = (session.query(ObsVentaDetalle)
                     .filter(ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta))
+                            ObsVentaDetalle.fecha_estadistica <= hasta,
+                            ObsVentaDetalle.tipo_operacion == 'V'))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1107,7 +1109,8 @@ def init_app(app):
         with database.get_db() as session:
             base = (session.query(ObsVentaDetalle)
                     .filter(ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta))
+                            ObsVentaDetalle.fecha_estadistica <= hasta,
+                            ObsVentaDetalle.tipo_operacion == 'V'))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1236,7 +1239,8 @@ def init_app(app):
                     .filter(ObsProducto.nombre_droga_observer == droga_id,
                             ObsVentaDetalle.fecha_estadistica >= desde,
                             ObsVentaDetalle.fecha_estadistica <= hasta,
-                            ObsVentaDetalle.medico_observer.isnot(None)))
+                            ObsVentaDetalle.medico_observer.isnot(None),
+                            ObsVentaDetalle.tipo_operacion == 'V'))
 
             # Top N médicos por cantidad total en el período.
             top_q = (base.with_entities(
@@ -1863,6 +1867,19 @@ def init_app(app):
                         .all())
             por_fecha_ped = {r[0]: float(r[1] or 0) for r in ped_rows}
 
+            # Total pendiente (independiente de fecha): suma de
+            # cantidad_pedida - cantidad_recibida en PedidoEmitidoItem con
+            # estado=PENDIENTE para este observer_id. Se muestra como barra
+            # extra a la derecha del chart de 30 días.
+            pend_row = (session.query(
+                            func.coalesce(func.sum(
+                                PedidoEmitidoItem.cantidad_pedida
+                                - PedidoEmitidoItem.cantidad_recibida), 0))
+                        .filter(PedidoEmitidoItem.observer_id == observer_id,
+                                PedidoEmitidoItem.estado == 'PENDIENTE')
+                        .scalar())
+            pendiente_total = float(pend_row or 0)
+
             labels, datos, datos_ped = [], [], []
             d = desde
             while d <= hoy:
@@ -1882,6 +1899,7 @@ def init_app(app):
                 'total_30d': round(total, 2),
                 'pedido_data': datos_ped,
                 'pedido_total_30d': round(total_ped, 2),
+                'pendiente_total': round(pendiente_total, 2),
                 'desde': desde.isoformat(),
                 'hasta': hoy.isoformat(),
             })

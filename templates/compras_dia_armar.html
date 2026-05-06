@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% set nav_active = "compras_dia" %}
 {% set hide_sidebar = True %}
-{% block title %}Armar pedido — {{ prov.razon_social }}{% endblock %}
+{% block title %}Armar pedido{% if prov %} — {{ prov.razon_social }}{% endif %}{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -15,13 +15,12 @@
     html, body { height: 100%; overflow: hidden; }
     body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
-    /* El thead sticky tiene que quedar DEBAJO del panel del gráfico (también
-       sticky top:0). Le damos un offset = altura aprox del panel. */
-    #panel-grafico { z-index: 30; transition: max-height 0.18s ease-out; }
-    /* Colapsado: ocultar cuerpo del gráfico, dejar solo el header con botón */
+    /* Panel gráfico NO sticky: scrollea con la página. El único sticky es
+       el thead de la tabla, anclado al top del .scroll-wrapper. */
+    #panel-grafico { transition: max-height 0.18s ease-out; }
     #panel-grafico.colapsado #grafico-body { display: none; }
     #panel-grafico.colapsado { padding-top: 6px; padding-bottom: 6px; }
-    table.tabla-armar thead { position: sticky; top: var(--chart-h, 360px); z-index: 20; }
+    table.tabla-armar thead { position: sticky; top: 0; z-index: 20; }
     /* En pantallas chicas, gráficos más bajos por default */
     @media (max-width: 1280px) {
         .chart-canvas-wrap { height: 180px !important; }
@@ -31,14 +30,18 @@
 
 {% block main %}
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Armar pedido — <span class="text-amber-700">{{ prov.razon_social }}</span></h1>
+    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Armar pedido{% if prov %} — <span class="text-amber-700">{{ prov.razon_social }}</span>{% else %} — <span class="text-fuchsia-700">Multi-droguería</span>{% endif %}</h1>
     {% if cierre %}
     <span class="text-xs bg-emerald-50 border border-emerald-300 px-2 py-1 rounded">
         Próximo cierre: <span class="font-bold">{{ cierre.hora_str }}</span> hs
     </span>
     {% endif %}
     <span class="text-xs text-[#6f6f6f] ml-auto">
+        {% if prov %}
         {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
+        {% else %}
+        {{ total_items }} candidatos bajo mínimo · <span class="text-fuchsia-700 font-semibold">{{ cubre }} con drog</span> · <span class="text-gray-500 font-semibold">{{ pendientes }} libres</span>
+        {% endif %}
     </span>
     <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
 </div>
@@ -59,6 +62,10 @@
 </div>
 {% endif %}
 
+{# Pedidos guardados con mostrar_hasta vigente: la info se muestra inline
+   en cada fila del armado (no como banner). Ver columna "Pendientes
+   guardados" más abajo. #}
+
 <div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
     <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…"
            class="bg-white border border-mint rounded px-2 py-1 text-sm w-72">
@@ -72,10 +79,50 @@
         <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
         Solo con sugerencia (subir/bajar)
     </label>
+    {% if prov %}
+    {# En modo single-drog, "otra drog" filtra los labs que NO cubre esta drog
+       (van a la cola del próximo prov). En multi-drog ese concepto se reemplaza
+       por el chip "Libre" debajo. #}
     <label class="flex items-center gap-1.5 text-xs text-amber-700 cursor-pointer">
         <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5" {% if cubre == 0 %}checked{% endif %}>
         Mostrar ⚠ otra drog
     </label>
+    {% endif %}
+    {% if not prov and drog_label %}
+    {% set _siglas_unicas = drog_label.values() | unique | list %}
+    <div class="flex items-start gap-4 text-[11px] text-[#3f6650] border-l border-mint pl-3 ml-1">
+        {# Columna 1: filtro Drog (checks vertical) #}
+        <div class="flex flex-col gap-0.5">
+            <span class="font-semibold mb-0.5">Drog:</span>
+            {% for sig in _siglas_unicas %}
+            <label class="flex items-center gap-1 cursor-pointer">
+                <input type="checkbox" class="filtro-drog-chk w-3.5 h-3.5" data-sig="{{ sig }}" checked>
+                <span>{{ sig }}</span>
+            </label>
+            {% endfor %}
+            <label class="flex items-center gap-1 cursor-pointer text-[#888]">
+                <input type="checkbox" id="filtro-drog-libre" class="w-3.5 h-3.5" checked>
+                <span>Libre</span>
+            </label>
+        </div>
+        {# Columna 2: bulk Libres a: (botones vertical, color por sigla) #}
+        {% set _bulk_colors = {
+            'Kel': 'bg-fuchsia-100 hover:bg-fuchsia-200 border-fuchsia-400 text-fuchsia-800',
+            '20J': 'bg-sky-100 hover:bg-sky-200 border-sky-400 text-sky-800',
+        } %}
+        <div class="flex flex-col gap-0.5" id="bulk-libres-bar">
+            <span class="font-semibold mb-0.5">Libres a:</span>
+            {% for drog_id, sig in drog_label.items() %}
+            <button type="button"
+                    onclick="asignarLibresA({{ drog_id }}, '{{ drog_nombre_full[drog_id] | e }}', '{{ sig }}')"
+                    class="text-[10px] {{ _bulk_colors.get(sig, 'bg-violet-100 hover:bg-violet-200 border-violet-400 text-violet-800') }} border-2 font-bold px-2 py-0.5 rounded text-left shadow-sm">
+                → {{ sig }}
+            </button>
+            {% endfor %}
+            <span id="bulk-libres-count" class="text-[10px] text-[#888] mt-0.5"></span>
+        </div>
+    </div>
+    {% endif %}
     <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
     <span id="contador-sug" class="text-[11px] font-semibold"></span>
     <button type="button" id="btn-orden-sug" onclick="toggleOrdenSug()"
@@ -94,8 +141,8 @@
 <!-- Wrapper scrolleable con altura fija: sticky se ancla al tope. -->
 <div class="scroll-wrapper">
 
-<!-- Panel gráfico sticky arriba (split: Año | Mes) -->
-<div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 sticky top-0 shadow-sm">
+<!-- Panel gráfico (scrollea con la página; el sticky es el thead de la tabla) -->
+<div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 shadow-sm">
     <div class="flex items-center justify-between mb-2 gap-2">
         <p id="chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
             Seleccioná un producto de la lista para ver el gráfico
@@ -139,12 +186,14 @@
                 <tr>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
+                    {% if not prov %}<th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-fuchsia-700">Drog</th>{% endif %}
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">EAN</th>
                     <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-emerald-700">Oferta</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Stock</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Mín</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Ayer</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Semana</th>
+                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-rose-700" title="Productos pendientes en pedidos previos (NO_VINO)">Pend.</th>
                     <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">A pedir</th>
                     <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">Acciones</th>
                 </tr>
@@ -160,19 +209,43 @@
                     data-sug="{{ it.min_sugerencia or '' }}"
                     data-oferta-dto="{{ it.oferta_dto or '' }}"
                     data-oferta-min="{{ it.oferta_min or '' }}"
+                    data-drogs="{{ (it.drogs_siglas or []) | join(',') }}"
+                    data-lab-id="{{ it.lab_local_id or '' }}"
                     onclick="seleccionarProducto(this)">
                     <td class="px-3 py-1">
                         {% if it.tipo == 'C' %}
                         <span class="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded mr-1 font-bold" title="Va por promedio de ventas (consumo estable)">Prom Vtas</span>
                         {% endif %}
+                        {% if it.no_pedir %}
+                        <span class="text-[9px] bg-rose-100 text-rose-700 border border-rose-300 px-1 py-0.5 rounded mr-1 font-bold" title="Marcado como 'No pedir'. Reactivá desde la columna Acciones.">⛔ NO PEDIR</span>
+                        {% endif %}
                         {{ it.desc }}
                     </td>
                     <td class="px-3 py-1 text-[#666]">
                         {{ it.lab_nombre }}
-                        {% if not it.cubre_lab %}
+                        {% if prov and not it.cubre_lab %}
                         <span class="text-[10px] text-amber-700 font-bold ml-1" title="Esta drog no cubre el lab — pasa a la cola del próximo prov">⚠ otra drog</span>
                         {% endif %}
                     </td>
+                    {% if not prov %}
+                    {% set _sigla_colors = {
+                        'Kel': 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+                        '20J': 'bg-sky-100 text-sky-700 border-sky-200',
+                    } %}
+                    <td class="px-3 py-1 text-center whitespace-nowrap drog-cell"
+                        onclick="event.stopPropagation(); abrirSelectorDrog(this)">
+                        <span class="drog-badges inline-flex items-center gap-0.5 cursor-pointer hover:bg-emerald-50 rounded px-0.5 py-0.5"
+                              title="Click para cambiar la droguería de este renglón">
+                        {% if it.drogs_siglas %}
+                            {% for sig in it.drogs_siglas %}
+                            <span class="text-[10px] {{ _sigla_colors.get(sig, 'bg-violet-100 text-violet-700 border-violet-200') }} border px-1.5 py-0.5 rounded font-bold">{{ sig }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span class="text-[10px] bg-gray-100 text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded font-medium libre-base">Libre</span>
+                        {% endif %}
+                        </span>
+                    </td>
+                    {% endif %}
                     <td class="px-3 py-1 font-mono text-xs text-[#888]">{{ it.ean or '—' }}</td>
                     <td class="px-3 py-1 whitespace-nowrap" onclick="event.stopPropagation()">
                         {% if it.oferta_dto %}
@@ -215,30 +288,57 @@
                     </td>
                     <td class="px-3 py-1 text-right font-mono text-[#666]">{{ it.u24h or '—' }}</td>
                     <td class="px-3 py-1 text-right font-mono text-[#666]">{{ it.u7d or '—' }}</td>
+                    <td class="px-3 py-1 text-center whitespace-nowrap">
+                        {% if it.pendientes_count and it.pendientes_count > 0 %}
+                        <span class="text-[10px] bg-rose-100 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded font-bold"
+                              title="{{ it.pendientes_count }} pedido(s) NO_VINO previo(s)">
+                            🔁 {{ it.pendientes_count }}
+                        </span>
+                        {% endif %}
+                        {% if it.pedidos_guardados %}
+                            {% for pg in it.pedidos_guardados %}
+                            <span class="text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded font-bold"
+                                  title="Pedido #{{ pg.pedido_id }} ({{ pg.pedido_lab }}) guardado el {{ pg.fecha }} · vigente hasta {{ pg.mostrar_hasta }}">
+                                📌 {{ pg.cantidad }}u · {{ pg.fecha }}
+                            </span>
+                            {% endfor %}
+                        {% endif %}
+                        {% if not it.pendientes_count and not it.pedidos_guardados %}
+                            <span class="text-[10px] text-[#ddd]">—</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
                         <input type="number" min="0" value="{{ it.a_pedir }}"
-                               {% if not it.cubre_lab %}disabled{% endif %}
+                               {% if prov and not it.cubre_lab %}disabled{% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
                     </td>
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
                         {% if it.producto_id_local %}
-                        <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
-                                title="Sacar hasta que vuelva a llegar al mínimo"
-                                class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">
-                            ✗ Sacar
-                        </button>
-                        <button onclick="excluir({{ it.producto_id_local }}, 'permanente', this)"
-                                title="No pedir más (hay que reactivar manualmente)"
-                                class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">
-                            ⛔ No pedir
-                        </button>
+                            {% if it.no_pedir %}
+                            <button onclick="reactivar({{ it.producto_id_local }}, this)"
+                                    title="Quitar la marca 'No pedir'. El producto vuelve a aparecer normalmente en futuros armados."
+                                    class="text-[10px] px-2 py-0.5 rounded border border-emerald-400 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-semibold">
+                                ↻ Reactivar
+                            </button>
+                            {% else %}
+                            <button onclick="excluir({{ it.producto_id_local }}, 'temporal', this)"
+                                    title="Sacar de ESTE pedido. El producto reaparece automáticamente la próxima vez que el stock caiga bajo el mínimo."
+                                    class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">
+                                ✗ Sacar
+                            </button>
+                            <button onclick="excluir({{ it.producto_id_local }}, 'permanente', this)"
+                                    title="Marcar como NO PEDIR (ningún pedido futuro). Para volver a pedirlo hay que reactivarlo manualmente."
+                                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">
+                                ⛔ No pedir
+                            </button>
+                            {% endif %}
                         {% else %}
                         <span class="text-[10px] text-[#bbb]">Sin Producto local</span>
                         {% endif %}
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="7" class="text-center text-sm text-[#999] py-6">No hay productos bajo el mínimo en este momento.</td></tr>
+                <tr><td colspan="{% if prov %}11{% else %}12{% endif %}" class="text-center text-sm text-[#999] py-6">No hay productos bajo el mínimo en este momento.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -256,10 +356,37 @@
 </div>{# /flex-1 overflow-auto wrapper #}
 
 <script>
+async function reactivar(prodId, btn) {
+    if (!await _confirmar('Reactivar este producto. Va a volver a aparecer en pedidos futuros como cualquier otro.', '↻ Reactivar', 'bg-emerald-600 hover:bg-emerald-700')) return;
+    btn.disabled = true;
+    try {
+        const r = await fetch(`/api/producto/${prodId}/reactivar`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+        });
+        const data = await r.json();
+        if (!data.ok) { alert('Error: ' + (data.error || '')); btn.disabled = false; return; }
+        // Quitar el badge "⛔ NO PEDIR" de la fila y reemplazar el botón por
+        // los originales (Sacar / No pedir).
+        const tr = btn.closest('tr');
+        const badge = tr.querySelector('span.bg-rose-100');
+        if (badge && badge.textContent.includes('NO PEDIR')) badge.remove();
+        btn.outerHTML =
+            `<button onclick="excluir(${prodId}, 'temporal', this)"
+                    title="Sacar de ESTE pedido."
+                    class="text-[10px] px-2 py-0.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100">✗ Sacar</button>
+             <button onclick="excluir(${prodId}, 'permanente', this)"
+                    title="Marcar como NO PEDIR."
+                    class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100 ml-1">⛔ No pedir</button>`;
+    } catch (e) {
+        alert('Error de red: ' + e); btn.disabled = false;
+    }
+}
+
 async function excluir(prodId, modo, btn) {
     const txt = modo === 'permanente'
-        ? '¿Marcar este producto como NO PEDIR? (hay que reactivar manualmente)'
-        : '¿Sacar de este pedido? (vuelve cuando el stock baje al mínimo otra vez)';
+        ? '¿Marcar como NO PEDIR?\n\nNo va a aparecer en NINGÚN pedido futuro.\nPara volver a pedirlo hay que reactivarlo manualmente.'
+        : '¿Sacar de este pedido?\n\nDesaparece de ESTE armado.\nVuelve automáticamente la próxima vez que el stock caiga bajo el mínimo.';
     if (!await _confirmar(txt, modo === 'permanente' ? '⛔ No pedir' : '✗ Sacar', modo === 'permanente' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-amber-600 hover:bg-amber-700')) return;
     btn.disabled = true;
     const r = await fetch(`/api/producto/${prodId}/excluir`, {
@@ -418,25 +545,49 @@ function renderAnio(p) {
 function renderMes(d, ing) {
     const hayIng = ing && ing.data && ing.data.some(v => v > 0);
     const hayPed = ing && ing.pedido_data && ing.pedido_data.some(v => v > 0);
+    const pendTotal = (ing && ing.pendiente_total) ? ing.pendiente_total : 0;
+    const hayPend = pendTotal > 0;
     const partes = [`Salidas ${d.total_30d}u (prom ${d.avg_diario}/d)`];
     if (hayPed) partes.push(`Pedido ${ing.pedido_total_30d}u`);
     if (hayIng) partes.push(`Entradas ${ing.total_30d}u`);
+    if (hayPend) partes.push(`Pend. ${pendTotal}u`);
     document.getElementById('chart-stats-mes').textContent = partes.join(' · ');
 
     if (_chartMes) _chartMes.destroy();
     const ctx = document.getElementById('chart-canvas-mes').getContext('2d');
+    // Si hay pendiente, agregamos una etiqueta extra "Pend." al final del eje X
+    // y un dataset 'bar' con valor solo en esa última posición.
+    const labelsBase = d.labels.slice();
+    const dataBase   = d.data.slice();
+    const pedidoBase = (ing && ing.pedido_data) ? ing.pedido_data.slice() : null;
+    const ingBase    = (ing && ing.data) ? ing.data.slice() : null;
+    if (hayPend) {
+        labelsBase.push('Pend.');
+        dataBase.push(null);                 // no afecta a Salidas
+        if (pedidoBase) pedidoBase.push(null);
+        if (ingBase) ingBase.push(null);
+    }
     const datasets = [{
-        type: 'bar', label: 'Salidas (ventas)', data: d.data,
+        type: 'bar', label: 'Salidas (ventas)', data: dataBase,
         backgroundColor: 'rgba(34,197,94,0.5)', borderColor: '#16a34a',
         borderWidth: 1, borderRadius: 2, order: 3,
     }];
+    if (hayPend) {
+        const pendArr = Array(dataBase.length).fill(null);
+        pendArr[pendArr.length - 1] = pendTotal;
+        datasets.push({
+            type: 'bar', label: `Pendiente ${pendTotal}u`, data: pendArr,
+            backgroundColor: 'rgba(217,119,6,0.55)', borderColor: '#b45309',
+            borderWidth: 1, borderRadius: 2, order: 3,
+        });
+    }
     // Pedido y Entradas: puntos/markers en lugar de barras. Con 30 días,
     // 3 barras agrupadas se comprimen mucho. Estos son eventos discretos
     // (pocos días al mes), se ven mejor como marcadores sobre las barras
     // de Salidas. Salidas sigue ocupando el ancho como protagonista.
     if (hayPed) {
         datasets.push({
-            type: 'line', label: 'Pedido', data: ing.pedido_data,
+            type: 'line', label: 'Pedido', data: pedidoBase,
             backgroundColor: '#3b82f6', borderColor: '#3b82f6',
             showLine: false,
             pointRadius: 7, pointHoverRadius: 10,
@@ -446,7 +597,7 @@ function renderMes(d, ing) {
     }
     if (hayIng) {
         datasets.push({
-            type: 'line', label: 'Entradas (ingreso)', data: ing.data,
+            type: 'line', label: 'Entradas (ingreso)', data: ingBase,
             backgroundColor: '#ea580c', borderColor: '#ea580c',
             showLine: false,
             pointRadius: 7, pointHoverRadius: 10,
@@ -454,13 +605,16 @@ function renderMes(d, ing) {
             order: 1,
         });
     }
-    // Promedio diario (línea horizontal punteada)
+    // Promedio diario (línea horizontal punteada). Se calcula sobre los 30 días
+    // base (excluye la barra Pendiente) y se rellena con null en esa última.
     const salidas = d.data.map(v => v || 0);
     const n = salidas.length;
     const avg30 = n ? salidas.reduce((a, b) => a + b, 0) / n : 0;
+    const avgArr = Array(n).fill(avg30);
+    if (hayPend) avgArr.push(null);
     datasets.push({
         type: 'line', label: `Prom. ${avg30.toFixed(1)}/día`,
-        data: Array(n).fill(avg30),
+        data: avgArr,
         borderColor: '#EAB308', borderWidth: 1.5, borderDash: [6, 3],
         pointRadius: 0, tension: 0, fill: false, order: 0,
     });
@@ -472,14 +626,36 @@ function renderMes(d, ing) {
         const slice = salidas.slice(desde, hasta);
         return slice.reduce((a, b) => a + b, 0) / slice.length;
     });
+    if (hayPend) ma7.push(null);
     datasets.push({
         type: 'line', label: 'Tend. 7d',
         data: ma7,
         borderColor: '#f97316', borderWidth: 2,
         pointRadius: 0, tension: 0.35, fill: false, order: 0,
     });
+    // Plugin: rotular cada barra con su valor (Salidas + Pendiente).
+    const blpMes = {id:'barLabelsMes', afterDraw(chart) {
+        const c = chart.ctx;
+        chart.data.datasets.forEach((dset, di) => {
+            const meta = chart.getDatasetMeta(di);
+            if (meta.type !== 'bar') return;
+            meta.data.forEach((bar, i) => {
+                const v = dset.data[i];
+                if (v == null || v <= 0) return;
+                c.save();
+                c.font = 'bold 9px sans-serif';
+                // Pendiente (di=1) en naranja oscuro, Salidas en verde oscuro.
+                c.fillStyle = di === 1 ? '#b45309' : '#15803d';
+                c.textAlign = 'center';
+                c.textBaseline = 'bottom';
+                c.fillText(Math.round(v), bar.x, bar.y - 2);
+                c.restore();
+            });
+        });
+    }};
     _chartMes = new Chart(ctx, {
-        data: {labels: d.labels, datasets},
+        plugins: [blpMes],
+        data: {labels: labelsBase, datasets},
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: {mode: 'index', intersect: false},
@@ -501,6 +677,8 @@ const _totalRows = document.querySelectorAll('.producto-row').length;
 const _filtroLibre    = document.getElementById('filtro-libre');
 const _filtroSug      = document.getElementById('filtro-sug');
 const _filtroOtraDrog = document.getElementById('filtro-otra-drog');
+const _filtroDrogChks = Array.from(document.querySelectorAll('.filtro-drog-chk'));
+const _filtroDrogLibre = document.getElementById('filtro-drog-libre');
 
 const _contadorSug = document.getElementById('contador-sug');
 function aplicarFiltros() {
@@ -508,16 +686,26 @@ function aplicarFiltros() {
     const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
     const soloLibre   = _filtroLibre.checked;
     const soloSug     = _filtroSug.checked;
-    const mostraOtra  = _filtroOtraDrog.checked;
+    // En multi-drog no existe el checkbox "otra drog" → asumimos true (mostrar).
+    const mostraOtra  = !_filtroOtraDrog || _filtroOtraDrog.checked;
+    // Drog filter: set de siglas tildadas + flag "Libre" (sin drog).
+    const drogChecked = new Set(_filtroDrogChks.filter(c => c.checked).map(c => c.dataset.sig));
+    const aceptaLibre = !_filtroDrogLibre || _filtroDrogLibre.checked;
+    const drogFilterActivo = _filtroDrogChks.length > 0;
     let visibles = 0;
     let nUp = 0, nDown = 0;
     document.querySelectorAll('.producto-row').forEach(row => {
         const sug = row.dataset.sug || '';
+        const drogs = (row.dataset.drogs || '').split(',').filter(Boolean);
+        const drogOk = !drogFilterActivo
+            || (drogs.length === 0 ? aceptaLibre
+                                   : drogs.some(d => drogChecked.has(d)));
         const ok = fnProd(row.dataset.nombre)
             && fnLab(row.dataset.lab || '')
             && (!soloLibre || row.dataset.tvc === 'L')
             && (!soloSug || sug === 'up' || sug === 'down')
-            && (mostraOtra || row.dataset.cubre !== 'n');
+            && (mostraOtra || row.dataset.cubre !== 'n')
+            && drogOk;
         row.style.display = ok ? '' : 'none';
         if (ok) {
             visibles++;
@@ -550,7 +738,167 @@ _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
-_filtroOtraDrog.addEventListener('change', aplicarFiltros);
+if (_filtroOtraDrog) _filtroOtraDrog.addEventListener('change', aplicarFiltros);
+_filtroDrogChks.forEach(c => c.addEventListener('change', aplicarFiltros));
+if (_filtroDrogLibre) _filtroDrogLibre.addEventListener('change', aplicarFiltros);
+
+// ── Asignación de drog por fila (estado local del armado, NO toca matriz) ───
+// Cada fila tiene:
+//   - data-drogs       = siglas que cubren el lab según matriz (CSV).
+//   - data-drog-elegida = sigla efectiva para emitir este armado.
+// Default:
+//   - 1 sigla en data-drogs → esa.
+//   - >1 siglas → la primera (alfabética).
+//   - 0 siglas (Libre) → '' hasta que se asigne (bulk o per-fila).
+const _DROG_COLORS = {
+    'Kel': 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+    '20J': 'bg-sky-100 text-sky-700 border-sky-200',
+};
+function _drogClass(sig) { return _DROG_COLORS[sig] || 'bg-violet-100 text-violet-700 border-violet-200'; }
+
+const _DROG_DISPONIBLES = (function() {
+    return Array.from(document.querySelectorAll('.filtro-drog-chk'))
+        .map(c => c.dataset.sig);
+})();
+
+function _drogElegidaDefault(row) {
+    const drogs = (row.dataset.drogs || '').split(',').filter(Boolean);
+    return drogs[0] || '';  // libre = ''
+}
+
+// Inicializar data-drog-elegida por default + repintar la celda.
+document.querySelectorAll('.producto-row').forEach(row => {
+    if (!row.dataset.drogElegida) row.dataset.drogElegida = _drogElegidaDefault(row);
+    _repintarDrogCell(row);
+});
+
+function _repintarDrogCell(row) {
+    const cell = row.querySelector('.drog-cell .drog-badges');
+    if (!cell) return;
+    const drogsMatriz = (row.dataset.drogs || '').split(',').filter(Boolean);
+    const elegida = row.dataset.drogElegida || '';
+    const esLibre = drogsMatriz.length === 0;
+    const partes = [];
+    if (esLibre) {
+        partes.push(`<span class="text-[10px] bg-gray-100 text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded font-medium">Libre</span>`);
+        if (elegida) {
+            partes.push(`<span class="text-[10px] text-[#bbb] mx-0.5">→</span>`);
+            partes.push(`<span class="text-[10px] ${_drogClass(elegida)} border px-1.5 py-0.5 rounded font-bold">${elegida}</span>`);
+        }
+    } else {
+        // Mostramos cada sigla de la matriz; resaltamos la elegida.
+        drogsMatriz.forEach(sig => {
+            const cls = _drogClass(sig);
+            const seleccionada = sig === elegida;
+            partes.push(`<span class="text-[10px] ${cls} border px-1.5 py-0.5 rounded font-bold ${seleccionada ? 'ring-2 ring-emerald-500' : 'opacity-50'}">${sig}</span>`);
+        });
+    }
+    cell.innerHTML = partes.join('');
+}
+
+function abrirSelectorDrog(td) {
+    const row = td.closest('.producto-row');
+    if (!row) return;
+    // Cerrar otros pickers abiertos
+    document.querySelectorAll('.drog-picker').forEach(p => p.remove());
+    const drogsMatriz = (row.dataset.drogs || '').split(',').filter(Boolean);
+    const opciones = drogsMatriz.length > 0 ? drogsMatriz : _DROG_DISPONIBLES;
+    const actual = row.dataset.drogElegida || '';
+    const picker = document.createElement('div');
+    picker.className = 'drog-picker absolute z-50 bg-white border border-surface-border shadow-xl rounded-lg p-2 flex flex-col gap-1';
+    picker.style.minWidth = '120px';
+    picker.innerHTML = opciones.map(sig =>
+        `<button type="button" data-sig="${sig}"
+                 class="text-[11px] ${_drogClass(sig)} border px-2 py-1 rounded font-bold text-left ${sig===actual?'ring-2 ring-emerald-500':''}">
+             → ${sig}
+         </button>`).join('') +
+        (drogsMatriz.length === 0 && actual ?
+            `<button type="button" data-sig="" class="text-[11px] bg-gray-100 text-gray-600 border border-gray-300 px-2 py-1 rounded font-bold text-left">✗ Quitar</button>` : '');
+    document.body.appendChild(picker);
+    const rect = td.getBoundingClientRect();
+    picker.style.position = 'fixed';
+    picker.style.top = (rect.bottom + 4) + 'px';
+    picker.style.left = rect.left + 'px';
+    picker.querySelectorAll('button').forEach(btn => {
+        btn.addEventListener('click', e => {
+            e.stopPropagation();
+            row.dataset.drogElegida = btn.dataset.sig;
+            _repintarDrogCell(row);
+            picker.remove();
+        });
+    });
+    // Cerrar al click afuera
+    setTimeout(() => {
+        document.addEventListener('click', function _cerrarPicker(e) {
+            if (!picker.contains(e.target)) {
+                picker.remove();
+                document.removeEventListener('click', _cerrarPicker);
+            }
+        });
+    }, 50);
+}
+
+function _libresVisibles() {
+    return Array.from(document.querySelectorAll('.producto-row'))
+        .filter(r => r.style.display !== 'none'
+                  && !(r.dataset.drogs || '').trim());
+}
+function _multiDrogVisibles() {
+    return Array.from(document.querySelectorAll('.producto-row'))
+        .filter(r => r.style.display !== 'none'
+                  && (r.dataset.drogs || '').split(',').filter(Boolean).length > 1);
+}
+function _actualizarBulkLibresCount() {
+    const el = document.getElementById('bulk-libres-count');
+    if (!el) return;
+    const libres = _libresVisibles();
+    const multi  = _multiDrogVisibles();
+    const partes = [];
+    if (libres.length) partes.push(`${libres.length} libre${libres.length===1?'':'s'}`);
+    if (multi.length)  partes.push(`${multi.length} multi-drog`);
+    el.textContent = partes.length ? `(${partes.join(' · ')})` : '(sin Libres ni multi-drog visibles)';
+}
+function asignarLibresA(drogId, drogNombre, drogSigla) {
+    // Asigna `drogSigla` a:
+    //   1. Filas Libres visibles (sin matriz) → set incondicional.
+    //   2. Filas multi-drog visibles que tengan esa sigla en su matriz → set.
+    // Solo toca filas VISIBLES (respeta filtros activos de producto/lab/etc).
+    const libres = _libresVisibles();
+    const multi  = _multiDrogVisibles().filter(r =>
+        (r.dataset.drogs || '').split(',').includes(drogSigla));
+    if (!libres.length && !multi.length) {
+        alert(`No hay filas Libres ni multi-drog con ${drogSigla} visibles.`);
+        return;
+    }
+    // Detectar si hay filtros activos para avisar.
+    const filtroProd = (_filtroProd.value || '').trim();
+    const filtroLab  = (_filtroLab.value  || '').trim();
+    const tieneFiltro = filtroProd || filtroLab;
+    const partes = [];
+    if (libres.length) partes.push(`${libres.length} libre${libres.length===1?'':'s'}`);
+    if (multi.length)  partes.push(`${multi.length} multi-drog`);
+    let msg = `Asignar ${partes.join(' + ')} a ${drogNombre}.`;
+    if (tieneFiltro) {
+        msg += `\n\n⚠ Hay filtros activos:`;
+        if (filtroProd) msg += `\n   · Producto: "${filtroProd}"`;
+        if (filtroLab)  msg += `\n   · Lab: "${filtroLab}"`;
+        msg += `\nSolo se aplicará a las filas visibles.`;
+    }
+    msg += `\n\n¿Continuar?`;
+    if (!confirm(msg)) return;
+    libres.forEach(row => {
+        row.dataset.drogElegida = drogSigla;
+        _repintarDrogCell(row);
+    });
+    multi.forEach(row => {
+        row.dataset.drogElegida = drogSigla;
+        _repintarDrogCell(row);
+    });
+}
+// Recalcular el contador cada vez que cambian los filtros
+const _origAplicar = aplicarFiltros;
+aplicarFiltros = function() { _origAplicar(); _actualizarBulkLibresCount(); };
+_actualizarBulkLibresCount();
 
 // Orden urgentes arriba: reordena DOM moviendo los `data-sug=up` al inicio del tbody.
 let _ordenSugActivo = false;
@@ -667,10 +1015,19 @@ function _scrollToVisible(row) {
         return rows.findIndex(r => r.dataset.pid === _selectedPid);
     }
     document.addEventListener('keydown', e => {
-        // Si el foco está en un input: solo Enter lo saca (blur)
-        const tag = document.activeElement.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
-            if (e.key === 'Enter') { e.preventDefault(); document.activeElement.blur(); }
+        // Si el foco está en un input de TEXTO/NÚMERO: solo Enter lo saca (blur).
+        // Checkbox/radio NO bloquean — sino que tildar un filtro de drog deja
+        // el foco ahí y mata las flechas/Enter para navegar la lista.
+        const ae = document.activeElement;
+        const tag = ae.tagName;
+        const tipo = (ae.type || '').toLowerCase();
+        const esInputBloqueante = (
+            (tag === 'INPUT' && tipo !== 'checkbox' && tipo !== 'radio')
+            || tag === 'TEXTAREA'
+            || tag === 'SELECT'
+        );
+        if (esInputBloqueante) {
+            if (e.key === 'Enter') { e.preventDefault(); ae.blur(); }
             return;
         }
 
@@ -713,7 +1070,7 @@ function _scrollToVisible(row) {
 })();
 
 // ── Agregar producto último momento ─────────────────────────────────
-const _PROV_ID = {{ prov.id }};
+const _PROV_ID = {{ prov.id if prov else 'null' }};
 const _agregarInput = document.getElementById('agregar-q');
 const _agregarResults = document.getElementById('agregar-results');
 let _agregarTimer = null;
@@ -847,46 +1204,103 @@ function subirAMinOferta(btn, minimo) {
     }
 }
 
-// ── Reagregar pendiente de pedido anterior ──────────────────────────
+// ── Agregar todos los items de un pedido de reposición programada ────
+function agregarTodosReposicion(items, pedidoId) {
+    if (!items || !items.length) return;
+    if (!confirm(`Agregar ${items.length} producto(s) del pedido #${pedidoId} al armado?`)) return;
+    items.forEach(it => reagregarPendiente(it));
+}
+
+// ── Reagregar pendiente de pedido anterior o pedido guardado ────────
 function reagregarPendiente(it) {
-    // Convertir el shape del pendiente a lo que agregarFila espera.
+    // Acepta dos shapes:
+    //   - pendientes_anteriores: usa `it.pendiente` (NO_VINO/parcial).
+    //   - pedidos_reposicion: usa `it.cantidad` (Pedido guardado con mostrar_hasta).
+    const cant = (it.pendiente != null ? it.pendiente : it.cantidad) || 0;
     agregarFila({
         pid: it.pid,
         producto_id_local: it.producto_id_local,
         desc: it.desc,
         lab_nombre: it.lab_nombre,
         stock: 0, minimo: 0, u24h: 0, u7d: 0,
-        a_pedir: it.pendiente,
+        a_pedir: cant,
         cubre_lab: true,
     });
 }
 
 // ── Emitir pedido ───────────────────────────────────────────────────
+// Mapa sigla → drog_id, para resolver multi-drog en el front.
+// drog_label viene como {id: sigla}; lo invertimos.
+const _DROG_LABEL = {{ drog_label | tojson if drog_label else '{}' }};
+const _DROG_NOMBRE_FULL = {{ drog_nombre_full | tojson if drog_nombre_full else '{}' }};
+const _SIGLA_TO_DROG_ID = (function() {
+    const out = {};
+    Object.entries(_DROG_LABEL).forEach(([id, sig]) => { out[sig] = parseInt(id); });
+    return out;
+})();
+const _ES_MULTI_DROG = !_PROV_ID;
+
+function _itemDeFila(row) {
+    const input = row.querySelector('input[type="number"]');
+    if (!input || input.disabled) return null;
+    const cantidad = parseInt(input.value || 0);
+    if (cantidad <= 0) return null;
+    const dto = parseFloat(row.dataset.ofertaDto);
+    const min = parseInt(row.dataset.ofertaMin);
+    return {
+        observer_id: parseInt(row.dataset.pid) || null,
+        producto_id_local: parseInt(row.dataset.prodId) || null,
+        descripcion: row.dataset.nombre,
+        lab_nombre: row.dataset.lab,
+        cantidad,
+        oferta_dto: isNaN(dto) ? null : dto,
+        oferta_min: isNaN(min) ? null : min,
+    };
+}
+
+async function _descargarPlantillaPedido(pedidoId, status) {
+    try {
+        const rp = await fetch(`/api/pedido-emitido/${pedidoId}/export-plantilla`, {credentials: 'same-origin'});
+        if (!rp.ok) return false;
+        const ct  = rp.headers.get('Content-Type') || '';
+        const blob = await rp.blob();
+        const cd  = rp.headers.get('Content-Disposition') || '';
+        const m   = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
+        let fname;
+        if (m) {
+            fname = m[1].replace(/['"]/g, '').trim();
+        } else {
+            const ext = ct.includes('spreadsheet') || ct.includes('excel') ? 'xlsx'
+                      : ct.includes('csv') ? 'csv' : 'txt';
+            fname = `Pedido_${pedidoId}.${ext}`;
+        }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fname; a.click();
+        URL.revokeObjectURL(url);
+        return true;
+    } catch (e) { return false; }
+}
+
 async function emitirPedido() {
+    if (_ES_MULTI_DROG) return emitirPedidoMultiDrog();
+    return emitirPedidoSingleDrog();
+}
+
+async function emitirPedidoSingleDrog() {
     const status = document.getElementById('emitir-status');
     const btn = document.getElementById('btn-emitir');
     const items = [];
     document.querySelectorAll('.producto-row').forEach(row => {
-        const input = row.querySelector('input[type="number"]');
-        if (!input || input.disabled) return;
-        const cantidad = parseInt(input.value || 0);
-        if (cantidad <= 0) return;
-        const dto = parseFloat(row.dataset.ofertaDto);
-        const min = parseInt(row.dataset.ofertaMin);
-        items.push({
-            observer_id: parseInt(row.dataset.pid) || null,
-            producto_id_local: parseInt(row.dataset.prodId) || null,
-            descripcion: row.dataset.nombre,
-            lab_nombre: row.dataset.lab,
-            cantidad,
-            oferta_dto: isNaN(dto) ? null : dto,
-            oferta_min: isNaN(min) ? null : min,
-        });
+        const it = _itemDeFila(row);
+        if (it) items.push(it);
     });
     if (!items.length) { status.textContent = 'No hay items con cantidad > 0.'; return; }
     const operador = await _pedirOperador('¿Quién emite el pedido?');
     if (!operador) return;
+    {% if prov %}
     if (!await _confirmar(`Emitir pedido a {{ prov.razon_social }} con ${items.length} items (${items.reduce((a,b)=>a+b.cantidad,0)} u)?`, 'Emitir pedido')) return;
+    {% endif %}
     btn.disabled = true; status.textContent = 'Emitiendo…';
     try {
         const r = await fetch('/api/pedidos/dia/emitir', {
@@ -897,32 +1311,94 @@ async function emitirPedido() {
         const d = await r.json();
         if (!d.ok) { status.textContent = 'Error: ' + (d.error || ''); btn.disabled = false; return; }
         status.textContent = '✓ Pedido #' + d.pedido_id + ' emitido';
-        // Descargar plantilla automáticamente si existe
-        try {
-            const rp = await fetch(`/api/pedido-emitido/${d.pedido_id}/export-plantilla`, {credentials: 'same-origin'});
-            if (rp.ok) {
-                const ct  = rp.headers.get('Content-Type') || '';
-                const blob = await rp.blob();
-                const cd  = rp.headers.get('Content-Disposition') || '';
-                const m   = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i);
-                let fname;
-                if (m) {
-                    fname = m[1].replace(/['"]/g, '').trim();
-                } else {
-                    const ext = ct.includes('spreadsheet') || ct.includes('excel') ? 'xlsx'
-                              : ct.includes('csv') ? 'csv' : 'txt';
-                    fname = `Pedido_${d.pedido_id}.${ext}`;
-                }
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url; a.download = fname; a.click();
-                URL.revokeObjectURL(url);
-                status.textContent += ' — descargando plantilla…';
-            }
-        } catch(e) {}
+        if (await _descargarPlantillaPedido(d.pedido_id, status)) {
+            status.textContent += ' — descargando plantilla…';
+        }
         setTimeout(() => { location.href = '/pedidos-emitidos/' + d.pedido_id; }, 1200);
     } catch (e) {
         status.textContent = 'Error de red'; btn.disabled = false;
+    }
+}
+
+async function emitirPedidoMultiDrog() {
+    const status = document.getElementById('emitir-status');
+    const btn = document.getElementById('btn-emitir');
+    // Agrupar items por sigla elegida
+    const buckets = {}; // sigla → [items]
+    let sinAsignar = 0;
+    document.querySelectorAll('.producto-row').forEach(row => {
+        const it = _itemDeFila(row);
+        if (!it) return;
+        const sig = (row.dataset.drogElegida || '').trim();
+        if (!sig) { sinAsignar++; return; }
+        if (!buckets[sig]) buckets[sig] = [];
+        buckets[sig].push(it);
+    });
+    const sigKeys = Object.keys(buckets);
+    if (!sigKeys.length) {
+        status.textContent = sinAsignar
+            ? `Hay ${sinAsignar} item(s) con cantidad pero sin drog asignada.`
+            : 'No hay items con cantidad > 0.';
+        return;
+    }
+    // Validar que todas las siglas tengan drog_id mapeado
+    const desconocidas = sigKeys.filter(s => !_SIGLA_TO_DROG_ID[s]);
+    if (desconocidas.length) {
+        alert(`Siglas sin drog_id mapeado: ${desconocidas.join(', ')}.\nNo se puede emitir.`);
+        return;
+    }
+    // Resumen
+    const lineas = sigKeys.map(s => {
+        const its = buckets[s];
+        const u = its.reduce((a, b) => a + b.cantidad, 0);
+        return `   · ${s} (${_DROG_NOMBRE_FULL[_SIGLA_TO_DROG_ID[s]] || s}): ${its.length} items · ${u}u`;
+    });
+    let msg = `Se van a emitir ${sigKeys.length} pedidos:\n\n${lineas.join('\n')}`;
+    if (sinAsignar) {
+        msg += `\n\n⚠ ${sinAsignar} item(s) con cantidad pero SIN drog asignada — NO se emitirán. ` +
+               `Cancelá, asignales drog (click en celda Drog o usá "Libres a:") y volvé a probar.`;
+    }
+    msg += `\n\n¿Continuar?`;
+    if (!await _confirmar(msg, 'Emitir todo')) return;
+    const operador = await _pedirOperador('¿Quién emite el pedido?');
+    if (!operador) return;
+    btn.disabled = true; status.textContent = 'Emitiendo…';
+    const resultados = [];
+    for (const sig of sigKeys) {
+        status.textContent = `Emitiendo ${sig}…`;
+        try {
+            const r = await fetch('/api/pedidos/dia/emitir', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({
+                    prov_id: _SIGLA_TO_DROG_ID[sig],
+                    items: buckets[sig],
+                    emitido_por: operador,
+                }),
+            });
+            const d = await r.json();
+            resultados.push({sigla: sig, ...d});
+        } catch (e) {
+            resultados.push({sigla: sig, ok: false, error: 'red'});
+        }
+    }
+    const exitos = resultados.filter(r => r.ok);
+    const fallos = resultados.filter(r => !r.ok);
+    let resumen = `${exitos.length}/${resultados.length} pedido(s) emitido(s):\n` +
+                  exitos.map(r => `  · ${r.sigla}: #${r.pedido_id}`).join('\n');
+    if (fallos.length) {
+        resumen += `\n\n⚠ Fallos:\n` + fallos.map(r => `  · ${r.sigla}: ${r.error || 'error'}`).join('\n');
+    }
+    status.textContent = resumen.split('\n')[0];
+    // Descargar plantillas en serie
+    for (const r of exitos) {
+        await _descargarPlantillaPedido(r.pedido_id, status);
+    }
+    alert(resumen + (exitos.length ? '\n\nPlantillas descargadas. Redirigiendo a Pedido del día…' : ''));
+    if (exitos.length) {
+        setTimeout(() => { location.href = '/pedidos/dia'; }, 800);
+    } else {
+        btn.disabled = false;
     }
 }
 

@@ -32,6 +32,26 @@ Pendiente para retomar en casa:
 Después → empezar **Etapa 2** (unificar `barcode_mappings` + `equivalencias_proveedor`
 en una sola tabla `mapeo_proveedor`).
 
+## Bug pendiente — parser de movimientos Observer (signos invertidos)
+
+**Detalle del problema** (detectado leyendo el detalle de movimientos en
+Observer):
+- **Ventas** vienen con `Envases = -1` (negativo, "vendí 1 unidad").
+- **Devoluciones de venta / NC** vienen con `Envases = +1` (positivo).
+
+**Bug actual**: el parser usa `int()` directo y borra el `-` (o aplica
+`abs()` ciego). Resultado: las cantidades se inflan — devoluciones se suman
+como si fueran ventas en lugar de restarse.
+
+**Fix correcto** (cuando tengamos export HTML/XLS para procesar):
+- `Tipo == 'Venta'` → sumar `abs(envases)` (cantidad real vendida).
+- `Tipo == 'Devolución de venta'` o `'Nota de crédito'` → **restar**
+  `abs(envases)` del total.
+- NO aplicar `int()` ciego que pierda el signo.
+
+Bloqueante: necesito el formato de export HTML/XLS de Observer para tocar
+el parser. Sin eso solo queda documentado.
+
 ## Sesión tarde 2026-05-04 (post-merge PR #5/#6/#7/#8/#9)
 
 **Hecho:**
