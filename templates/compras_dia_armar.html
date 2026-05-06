@@ -15,12 +15,19 @@
     html, body { height: 100%; overflow: hidden; }
     body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
-    /* Panel gráfico NO sticky: scrollea con la página. El único sticky es
-       el thead de la tabla, anclado al top del .scroll-wrapper. */
-    #panel-grafico { transition: max-height 0.18s ease-out; }
+    /* Panel gráfico: por default scrollea con la página. Cuando hay un
+       producto seleccionado (clase .chart-active), pasa a sticky top:0
+       y el thead se corre debajo usando --chart-h. */
+    #panel-grafico { transition: max-height 0.18s ease-out; z-index: 30; }
+    #panel-grafico.chart-active { position: sticky; top: 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
     #panel-grafico.colapsado #grafico-body { display: none; }
     #panel-grafico.colapsado { padding-top: 6px; padding-bottom: 6px; }
     table.tabla-armar thead { position: sticky; top: 0; z-index: 20; }
+    /* Cuando el panel está sticky (chart-active), el thead se ofsetea
+       debajo usando la variable --chart-h que setea _ajustarOffsetThead(). */
+    .scroll-wrapper:has(#panel-grafico.chart-active) table.tabla-armar thead {
+        top: var(--chart-h, 360px);
+    }
     /* En pantallas chicas, gráficos más bajos por default */
     @media (max-width: 1280px) {
         .chart-canvas-wrap { height: 180px !important; }
@@ -71,6 +78,19 @@
            class="bg-white border border-mint rounded px-2 py-1 text-sm w-72">
     <input type="text" id="filtro-lab" placeholder="Filtrar lab…"
            class="bg-white border border-mint rounded px-2 py-1 text-sm w-56">
+    {% if rubros_disponibles %}
+    {# Filtro de rubro server-side: recarga la página con ?rubros=X. #}
+    <select id="filtro-rubro" onchange="cambiarRubro(this.value)"
+            class="bg-white border border-mint rounded px-2 py-1 text-sm">
+        <option value="all" {% if not rubros_seleccionados %}selected{% endif %}>Todos los rubros</option>
+        {% for r in rubros_disponibles %}
+        <option value="{{ r.id }}"
+                {% if rubros_seleccionados and r.id in rubros_seleccionados and rubros_seleccionados | length == 1 %}selected{% endif %}>
+            {{ r.nombre }}
+        </option>
+        {% endfor %}
+    </select>
+    {% endif %}
     <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
         <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
         Solo venta libre
@@ -411,6 +431,13 @@ function seleccionarProducto(row) {
     row.classList.add('ring-2', 'ring-emerald-500', 'ring-inset');
     _selectedPid = row.dataset.pid;
     document.getElementById('chart-titulo').textContent = row.dataset.nombre;
+    // Activar sticky del panel gráfico una vez que hay selección.
+    const panel = document.getElementById('panel-grafico');
+    if (panel) {
+        panel.classList.add('chart-active');
+        // Recalcular --chart-h para que el thead se corra debajo.
+        if (typeof _ajustarOffsetThead === 'function') _ajustarOffsetThead();
+    }
     cargarChartAnio();
     cargarChartMes();
 }
@@ -741,6 +768,17 @@ _filtroSug.addEventListener('change', aplicarFiltros);
 if (_filtroOtraDrog) _filtroOtraDrog.addEventListener('change', aplicarFiltros);
 _filtroDrogChks.forEach(c => c.addEventListener('change', aplicarFiltros));
 if (_filtroDrogLibre) _filtroDrogLibre.addEventListener('change', aplicarFiltros);
+
+// ── Cambio de rubro (recarga server-side) ────────────────────────────
+function cambiarRubro(valor) {
+    const url = new URL(window.location.href);
+    if (valor === 'all') {
+        url.searchParams.set('rubros', 'all');
+    } else {
+        url.searchParams.set('rubros', valor);
+    }
+    window.location.href = url.toString();
+}
 
 // ── Asignación de drog por fila (estado local del armado, NO toca matriz) ───
 // Cada fila tiene:

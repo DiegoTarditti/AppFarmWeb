@@ -226,6 +226,357 @@ def init_app(app):
                                    categoria=categoria.descripcion if categoria else None,
                                    ext=ext)
 
+    @app.route('/intelligence/recurrentes')
+    @login_required
+    def intelligence_recurrentes():
+        """Identifica combos cliente×producto con patrón de compra recurrente.
+        Es la pantalla "predictiva": muestra qué clientes vienen pronto a buscar
+        qué medicamento, qué clientes están atrasados, y los productos con más
+        base de clientes habituales.
+        """
+        import statistics
+        from datetime import date as _date
+        from datetime import timedelta
+
+        from database import ObsCliente, ObsProducto, ObsVentaDetalle
+
+        # Filtros del query
+        min_compras = max(2, int(request.args.get('min_compras', 3)))
+        max_cv = float(request.args.get('max_cv', 0.5))  # 0.5 = semi-regular o mejor
+        dias_max_ultima = int(request.args.get('dias_max_ultima', 180))
+        producto_q = (request.args.get('producto') or '').strip().lower()
+        cliente_q = (request.args.get('cliente') or '').strip().lower()
+        orden = request.args.get('orden', 'urgencia')  # urgencia | freq | n
+        limit = max(20, min(int(request.args.get('limit', 300)), 1000))
+
+        hoy = _date.today()
+        desde = hoy - timedelta(days=dias_max_ultima * 2)  # margen
+
+        with database.get_db() as session:
+            # Query agregado por (cliente, producto): n, min/max fecha
+            base = (session.query(
+                        ObsVentaDetalle.cliente_observer.label('cli'),
+                        ObsVentaDetalle.producto_observer.label('prod'),
+                        _f.count(ObsVentaDetalle.id_producto_vendido).label('n'),
+                        _f.min(ObsVentaDetalle.fecha_operacion).label('primera'),
+                        _f.max(ObsVentaDetalle.fecha_operacion).label('ultima'),
+                        _f.sum(ObsVentaDetalle.cantidad).label('cant_total'),
+                        _f.sum(ObsVentaDetalle.importe).label('importe_total'),
+                    )
+                    .filter(
+                        ObsVentaDetalle.cliente_observer.isnot(None),
+                        ObsVentaDetalle.fecha_operacion >= desde,
+                        or_(ObsVentaDetalle.tipo_operacion == 'V',
+                            ObsVentaDetalle.tipo_operacion.is_(None)),
+                    )
+                    .group_by(ObsVentaDetalle.cliente_observer,
+                              ObsVentaDetalle.producto_observer)
+                    .having(_f.count(ObsVentaDetalle.id_producto_vendido) >= min_compras)
+                    .all())
+            # Filtrar última compra dentro de la ventana de actividad
+            base = [r for r in base
+                    if r.ultima and (hoy - r.ultima.date()).days <= dias_max_ultima]
+            if not base:
+                return render_template('intelligence_recurrentes.html',
+                    rows=[], total=0, filtros={
+                        'min_compras': min_compras, 'max_cv': max_cv,
+                        'dias_max_ultima': dias_max_ultima,
+                        'producto_q': producto_q, 'cliente_q': cliente_q,
+                        'orden': orden, 'limit': limit,
+                    })
+
+            # Para cada combo, traer las fechas para calcular CV/freq
+            # (1 query en bloque, filtrada por los pares).
+            par_keys = {(r.cli, r.prod) for r in base}
+            cli_ids = list({r.cli for r in base})
+            prod_ids = list({r.prod for r in base})
+            todas = (session.query(
+                        ObsVentaDetalle.cliente_observer,
+                        ObsVentaDetalle.producto_observer,
+                        ObsVentaDetalle.fecha_operacion,
+                    )
+                    .filter(
+                        ObsVentaDetalle.cliente_observer.in_(cli_ids),
+                        ObsVentaDetalle.producto_observer.in_(prod_ids),
+                        ObsVentaDetalle.fecha_operacion >= desde,
+                        or_(ObsVentaDetalle.tipo_operacion == 'V',
+                            ObsVentaDetalle.tipo_operacion.is_(None)),
+                    )
+                    .order_by(ObsVentaDetalle.cliente_observer,
+                              ObsVentaDetalle.producto_observer,
+                              ObsVentaDetalle.fecha_operacion).all())
+            from collections import defaultdict
+            fechas_por_par = defaultdict(list)
+            for cli, prod, fop in todas:
+                if (cli, prod) in par_keys and fop:
+                    fechas_por_par[(cli, prod)].append(fop)
+
+            # Resolver nombres
+            cli_map = {c.observer_id: c.apellido_nombre
+                       for c in session.query(ObsCliente).filter(ObsCliente.observer_id.in_(cli_ids)).all()}
+            prod_map = {p.observer_id: p.descripcion
+                        for p in session.query(ObsProducto).filter(ObsProducto.observer_id.in_(prod_ids)).all()}
+
+            # Procesar cada combo
+            rows = []
+            for r in base:
+                fechas = fechas_por_par.get((r.cli, r.prod), [])
+                if len(fechas) < 2:
+                    continue
+                deltas = [(fechas[i] - fechas[i-1]).days
+                          for i in range(1, len(fechas)) if fechas[i] != fechas[i-1]]
+                if not deltas:
+                    continue
+                media = statistics.mean(deltas)
+                desv = statistics.pstdev(deltas) if len(deltas) > 1 else 0
+                if media <= 0:
+                    continue
+                cv = desv / media
+                if cv > max_cv:
+                    continue
+                proxima = fechas[-1].date() + timedelta(days=int(round(media)))
+                dias_para = (proxima - hoy).days
+                cli_nombre = cli_map.get(r.cli, f'#{r.cli}')
+                prod_nombre = prod_map.get(r.prod, f'#{r.prod}')
+                # Filtros de búsqueda
+                if producto_q and producto_q not in (prod_nombre or '').lower():
+                    continue
+                if cliente_q and cliente_q not in (cli_nombre or '').lower():
+                    continue
+                rows.append({
+                    'cli_id': r.cli,
+                    'prod_id': r.prod,
+                    'cli_nombre': cli_nombre,
+                    'prod_nombre': prod_nombre,
+                    'n': r.n,
+                    'cant_total': float(r.cant_total or 0),
+                    'importe_total': float(r.importe_total or 0),
+                    'primera': r.primera.date() if r.primera else None,
+                    'ultima': r.ultima.date() if r.ultima else None,
+                    'dias_freq': round(media, 0),
+                    'cv': round(cv, 2),
+                    'proxima': proxima,
+                    'dias_para': dias_para,
+                    'estado': ('atrasada' if dias_para < -2
+                               else 'hoy' if -2 <= dias_para <= 2
+                               else 'pronto' if dias_para <= 7
+                               else 'futura'),
+                })
+            # Ordenar
+            if orden == 'freq':
+                rows.sort(key=lambda x: x['dias_freq'])
+            elif orden == 'n':
+                rows.sort(key=lambda x: -x['n'])
+            else:  # urgencia
+                rows.sort(key=lambda x: (x['dias_para'], x['cv']))
+            total = len(rows)
+            rows = rows[:limit]
+
+            # Stats de productos: top productos por cantidad de clientes recurrentes
+            prod_stats_map = defaultdict(lambda: {'clientes': 0, 'compras': 0, 'unidades': 0, 'importe': 0})
+            for r in rows:
+                ps = prod_stats_map[(r['prod_id'], r['prod_nombre'])]
+                ps['clientes'] += 1
+                ps['compras'] += r['n']
+                ps['unidades'] += r['cant_total']
+                ps['importe'] += r['importe_total']
+            top_productos = sorted([
+                {'id': k[0], 'nombre': k[1], **v} for k, v in prod_stats_map.items()
+            ], key=lambda x: -x['clientes'])[:20]
+
+            return render_template('intelligence_recurrentes.html',
+                rows=rows, total=total, top_productos=top_productos,
+                filtros={
+                    'min_compras': min_compras, 'max_cv': max_cv,
+                    'dias_max_ultima': dias_max_ultima,
+                    'producto_q': producto_q, 'cliente_q': cliente_q,
+                    'orden': orden, 'limit': limit,
+                })
+
+    @app.route('/cliente/<int:cliente_id>/producto/<int:producto_id>/comportamiento')
+    @login_required
+    def cliente_producto_comportamiento(cliente_id, producto_id):
+        """Análisis predictivo del comportamiento de un cliente con un producto.
+
+        Calcula frecuencia, patrón, próxima compra estimada, médicos habituales,
+        OS principal, co-compras frecuentes (otros productos en la misma operación).
+        """
+        import statistics
+        from collections import Counter
+        from datetime import timedelta
+
+        from database import (
+            ObsCliente,
+            ObsMedico,
+            ObsObraSocial,
+            ObsPlan,
+            ObsProducto,
+            ObsVentaDetalle,
+        )
+
+        with database.get_db() as session:
+            cliente = session.get(ObsCliente, cliente_id)
+            producto = session.get(ObsProducto, producto_id)
+            if not cliente or not producto:
+                flash('Cliente o producto no encontrado.', 'error')
+                return redirect(url_for('clientes_list'))
+
+            # Ventas (tipo='V' o NULL legacy) del producto al cliente
+            ventas = (session.query(ObsVentaDetalle)
+                      .filter(
+                          ObsVentaDetalle.cliente_observer == cliente_id,
+                          ObsVentaDetalle.producto_observer == producto_id,
+                          or_(ObsVentaDetalle.tipo_operacion == 'V',
+                              ObsVentaDetalle.tipo_operacion.is_(None)),
+                      )
+                      .order_by(ObsVentaDetalle.fecha_operacion)
+                      .all())
+            # Devoluciones / NC (anomalías)
+            anomalias = (session.query(ObsVentaDetalle)
+                         .filter(
+                             ObsVentaDetalle.cliente_observer == cliente_id,
+                             ObsVentaDetalle.producto_observer == producto_id,
+                             ObsVentaDetalle.tipo_operacion.in_(('D', 'NC')),
+                         )
+                         .order_by(ObsVentaDetalle.fecha_operacion).all())
+
+            # Stats temporales
+            fechas = [v.fecha_operacion for v in ventas if v.fecha_operacion]
+            n_compras = len(fechas)
+            stats = {
+                'n_compras': n_compras,
+                'primera': fechas[0].date() if fechas else None,
+                'ultima': fechas[-1].date() if fechas else None,
+                'dias_entre_promedio': None,
+                'dias_entre_std': None,
+                'patron': '—',
+                'proxima_estimada': None,
+                'dias_para_proxima': None,
+            }
+            if n_compras >= 2:
+                deltas = [(fechas[i] - fechas[i-1]).days
+                          for i in range(1, n_compras) if fechas[i] != fechas[i-1]]
+                if deltas:
+                    media = statistics.mean(deltas)
+                    desv = statistics.pstdev(deltas) if len(deltas) > 1 else 0
+                    stats['dias_entre_promedio'] = round(media, 1)
+                    stats['dias_entre_std'] = round(desv, 1)
+                    cv = (desv / media) if media else 0
+                    if cv < 0.25:
+                        stats['patron'] = 'regular (crónico/recurrente)'
+                    elif cv < 0.6:
+                        stats['patron'] = 'semi-regular'
+                    else:
+                        stats['patron'] = 'esporádico (irregular)'
+                    proxima = fechas[-1].date() + timedelta(days=int(round(media)))
+                    stats['proxima_estimada'] = proxima
+                    from datetime import date as _date
+                    hoy = _date.today()
+                    stats['dias_para_proxima'] = (proxima - hoy).days
+            elif n_compras == 1:
+                stats['patron'] = 'compra única'
+
+            # Cantidad
+            cants = [float(v.cantidad or 0) for v in ventas]
+            cant_stats = {
+                'tipica': statistics.median(cants) if cants else 0,
+                'min': min(cants) if cants else 0,
+                'max': max(cants) if cants else 0,
+                'total': sum(cants),
+            }
+
+            # Importes (suma)
+            gasto_total = float(sum(v.importe or 0 for v in ventas))
+            ahorro_os = float(sum(v.importe_a_cargo_os or 0 for v in ventas))
+            efectivo = float(sum(v.importe_efectivo or 0 for v in ventas))
+            tarjeta = float(sum(v.importe_tarjeta or 0 for v in ventas))
+            cta_cte = float(sum(v.importe_cuenta_corriente or 0 for v in ventas))
+            cheque = float(sum(v.importe_cheque or 0 for v in ventas))
+
+            # Médico habitual
+            medicos_count = Counter(v.medico_observer for v in ventas if v.medico_observer)
+            medicos_top = []
+            if medicos_count:
+                ids_top = [mid for mid, _ in medicos_count.most_common(3)]
+                medicos_map = {m.observer_id: m.descripcion for m in
+                               session.query(ObsMedico).filter(ObsMedico.observer_id.in_(ids_top)).all()}
+                for mid, n in medicos_count.most_common(3):
+                    medicos_top.append({
+                        'id': mid,
+                        'nombre': medicos_map.get(mid, f'#{mid}'),
+                        'n': n,
+                    })
+
+            # OS / Plan principal
+            os_count = Counter(v.obra_social_observer for v in ventas if v.obra_social_observer)
+            os_top = []
+            if os_count:
+                ids_top = [oid for oid, _ in os_count.most_common(3)]
+                os_map = {o.observer_id: o.descripcion for o in
+                          session.query(ObsObraSocial).filter(ObsObraSocial.observer_id.in_(ids_top)).all()}
+                for oid, n in os_count.most_common(3):
+                    os_top.append({
+                        'id': oid,
+                        'nombre': os_map.get(oid, f'#{oid}'),
+                        'n': n,
+                        'pct': round(100 * n / n_compras, 1) if n_compras else 0,
+                    })
+
+            n_particulares = sum(1 for v in ventas if v.es_venta_particular)
+
+            # Co-compras: otros productos en la misma operación
+            cocompra = []
+            ops_ids = list({v.id_operacion for v in ventas if v.id_operacion})
+            if ops_ids:
+                otros = (session.query(ObsVentaDetalle.producto_observer,
+                                        _f.count(ObsVentaDetalle.id_producto_vendido).label('n'),
+                                        _f.sum(ObsVentaDetalle.cantidad).label('cant_total'))
+                         .filter(ObsVentaDetalle.id_operacion.in_(ops_ids),
+                                 ObsVentaDetalle.producto_observer != producto_id,
+                                 or_(ObsVentaDetalle.tipo_operacion == 'V',
+                                     ObsVentaDetalle.tipo_operacion.is_(None)))
+                         .group_by(ObsVentaDetalle.producto_observer)
+                         .order_by(_f.count(ObsVentaDetalle.id_producto_vendido).desc())
+                         .limit(15).all())
+                if otros:
+                    pids = [r.producto_observer for r in otros]
+                    prod_map = {p.observer_id: p.descripcion for p in
+                                session.query(ObsProducto)
+                                .filter(ObsProducto.observer_id.in_(pids)).all()}
+                    for r in otros:
+                        cocompra.append({
+                            'id': r.producto_observer,
+                            'nombre': prod_map.get(r.producto_observer, f'#{r.producto_observer}'),
+                            'n': r.n,
+                            'pct': round(100 * r.n / n_compras, 1) if n_compras else 0,
+                            'cant_total': float(r.cant_total or 0),
+                        })
+
+            # Serie temporal para el chart
+            timeline = []
+            for v in ventas:
+                if v.fecha_operacion:
+                    timeline.append({
+                        'fecha': v.fecha_operacion.strftime('%Y-%m-%d'),
+                        'cantidad': float(v.cantidad or 0),
+                        'importe': float(v.importe or 0),
+                        'medico': v.medico_observer,
+                        'os': v.obra_social_observer,
+                    })
+
+            return render_template(
+                'cliente_producto_comportamiento.html',
+                cliente=cliente, producto=producto,
+                stats=stats, cant_stats=cant_stats,
+                gasto_total=gasto_total, ahorro_os=ahorro_os,
+                pago={'efectivo': efectivo, 'tarjeta': tarjeta,
+                      'cta_cte': cta_cte, 'cheque': cheque},
+                medicos_top=medicos_top, os_top=os_top,
+                n_particulares=n_particulares,
+                cocompra=cocompra, timeline=timeline,
+                anomalias=len(anomalias),
+            )
+
     @app.route('/clientes/<int:observer_id>/edit', methods=['POST'])
     @login_required
     def cliente_edit(observer_id):

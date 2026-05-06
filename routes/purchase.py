@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 
 from flask import flash, jsonify, make_response, redirect, render_template, request, url_for
+from flask_login import login_required
 from werkzeug.utils import secure_filename
 
 import database
@@ -1374,6 +1375,7 @@ def init_app(app):
             return jsonify({'ok': True, **stats, 'pedido': pedido.laboratorio})
 
     @app.route('/order/<int:pedido_id>/mostrar-hasta', methods=['POST'])
+    @login_required
     def order_mostrar_hasta(pedido_id):
         """Marca un pedido guardado para que aparezca como sugerencia en
         'Pedido Reposición' (compras_dia) hasta la fecha indicada.

@@ -7,6 +7,7 @@ import statistics
 import tempfile
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask_login import login_required
 
 import database
 from database import ExportTemplate, Laboratorio, OfertaMinimo, Producto
@@ -73,6 +74,7 @@ def init_app(app):
                                observer_disponible=observer_source.observer_disponible())
 
     @app.route('/laboratorio/create', methods=['POST'])
+    @login_required
     def laboratorio_create():
         nombre = request.form.get('nombre', '').strip()
         next_url = request.form.get('next') or request.referrer or url_for('laboratorios_list')
@@ -92,6 +94,7 @@ def init_app(app):
         return redirect(next_url)
 
     @app.route('/laboratorio/<int:lab_id>/edit', methods=['POST'])
+    @login_required
     def laboratorio_edit(lab_id):
         nombre = request.form.get('nombre', '').strip()
         if not nombre:
@@ -113,6 +116,7 @@ def init_app(app):
         return redirect(url_for('laboratorios_list'))
 
     @app.route('/laboratorio/<int:lab_id>/delete', methods=['POST'])
+    @login_required
     def laboratorio_delete(lab_id):
         next_url = request.form.get('next') or request.referrer or url_for('laboratorios_list')
         from database import (

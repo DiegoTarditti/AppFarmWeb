@@ -34,6 +34,7 @@ from routes import (
     productos,
     providers,
     purchase,
+    recetas_scan,
     vademecum,
 )
 from routes import help as help_module
@@ -74,6 +75,7 @@ _modules = [
     inferencia,
     informes,
     bi,
+    recetas_scan,
 ]
 
 

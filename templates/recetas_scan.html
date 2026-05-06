@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Scan recetas — Cruce Observer{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📋 Scan recetas · Cruce contra Observer</h1>
+    <span class="text-xs text-[#6f6f6f]">Pegá / escaneá hasta 50 códigos · matchea OPF, NumeroReceta o NumeroAutorizacionExterno</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-7xl mx-auto">
+
+        {% if error %}
+        <div class="bg-rose-50 border-l-4 border-rose-400 rounded-r p-3 mb-4">
+            <p class="text-sm text-rose-900 font-mono">⚠ {{ error }}</p>
+        </div>
+        {% endif %}
+
+        <form method="post" class="bg-white border border-surface-border rounded-xl p-4 mb-4">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div class="lg:col-span-2">
+                    <label class="text-[10px] font-semibold text-[#888] uppercase block mb-1">
+                        Códigos escaneados (uno por línea)
+                    </label>
+                    <textarea name="codigos" rows="10" autofocus placeholder="01709627048385&#10;8262988029868&#10;20260506163135214201&#10;..."
+                              class="w-full font-mono text-[13px] bg-[#fafafa] border border-surface-border rounded p-2 focus:border-emerald-500 focus:outline-none">{{ codigos }}</textarea>
+                    <p class="text-[10px] text-[#888] mt-1">Tip: enfocá este campo y empezá a escanear con la pistola — cada beep agrega una línea.</p>
+                </div>
+                <div class="space-y-2">
+                    <div>
+                        <label class="text-[10px] font-semibold text-[#888] uppercase block mb-1">Modo de búsqueda</label>
+                        <select name="modo" class="w-full border border-surface-border rounded px-2 py-1.5 text-sm">
+                            <option value="auto"     {% if modo == 'auto' %}selected{% endif %}>Auto (cualquiera)</option>
+                            <option value="opf"      {% if modo == 'opf' %}selected{% endif %}>Solo OPF (1ra barra del ticket)</option>
+                            <option value="numero"   {% if modo == 'numero' %}selected{% endif %}>Solo NúmeroReceta</option>
+                            <option value="autoriz"  {% if modo == 'autoriz' %}selected{% endif %}>Solo NúmeroAutorización (IMED)</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded text-sm">
+                        🔍 Cruzar contra Observer
+                    </button>
+                    <p class="text-[10px] text-[#888]">Ctrl+Enter en el textarea también lo dispara.</p>
+                </div>
+            </div>
+        </form>
+
+        {% if stats %}
+        <div class="bg-white border border-surface-border rounded-xl p-3 mb-4">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-center">
+                <div class="bg-[#fafafa] rounded-lg px-2 py-2">
+                    <p class="text-[10px] text-[#888] uppercase">Total</p>
+                    <p class="text-lg font-bold">{{ stats.total }}</p>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-2">
+                    <p class="text-[10px] text-emerald-700 uppercase">OK</p>
+                    <p class="text-lg font-bold text-emerald-800">{{ stats.found }}</p>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 rounded-lg px-2 py-2">
+                    <p class="text-[10px] text-rose-700 uppercase">No encontradas</p>
+                    <p class="text-lg font-bold text-rose-800">{{ stats.not_found }}</p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg px-2 py-2">
+                    <p class="text-[10px] text-amber-700 uppercase">Anuladas</p>
+                    <p class="text-lg font-bold text-amber-800">{{ stats.anulada }}</p>
+                </div>
+                <div class="bg-violet-50 border border-violet-200 rounded-lg px-2 py-2">
+                    <p class="text-[10px] text-violet-700 uppercase">Múltiples</p>
+                    <p class="text-lg font-bold text-violet-800">{{ stats.multi }}</p>
+                </div>
+                <div class="bg-[#fafafa] rounded-lg px-2 py-2">
+                    <p class="text-[10px] text-[#888] uppercase">Total $</p>
+                    <p class="text-sm font-bold">${{ '{:,.0f}'.format(stats.monto_total).replace(',', '.') }}</p>
+                    <p class="text-[10px] text-[#666]">OS: ${{ '{:,.0f}'.format(stats.monto_os).replace(',', '.') }}</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if resultados %}
+        <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+            <table class="w-full text-xs">
+                <thead class="bg-[#1c1c1e] text-[#EAB308]">
+                    <tr>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px]">Código</th>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px] w-20">Estado</th>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px] w-24">Match por</th>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px]">Afiliado</th>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px] w-28">Fecha venta</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-28">Total</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-28">A cargo OS</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-28">A cargo Afil.</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-20">Matrícula</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in resultados %}
+                {% set _bg = 'bg-rose-50' if r.estado == 'no_encontrada'
+                            else 'bg-amber-50' if r.estado == 'anulada'
+                            else '' %}
+                <tr class="border-t border-[#f0f0f0] {{ _bg }}">
+                    <td class="py-1.5 px-3 font-mono">{{ r.codigo }}</td>
+                    <td class="py-1.5 px-3">
+                        {% if r.estado == 'ok' %}
+                        <span class="text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-300 px-1.5 py-0.5 rounded font-bold">✓ OK</span>
+                        {% elif r.estado == 'anulada' %}
+                        <span class="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-1.5 py-0.5 rounded font-bold">⚠ ANULADA</span>
+                        {% elif r.estado == 'no_encontrada' %}
+                        <span class="text-[10px] bg-rose-100 text-rose-800 border border-rose-300 px-1.5 py-0.5 rounded font-bold">✗ NO HAY</span>
+                        {% endif %}
+                        {% if r.multiples %}
+                        <span class="text-[10px] bg-violet-100 text-violet-800 border border-violet-300 px-1.5 py-0.5 rounded font-bold ml-1">×{{ r.todas | length }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-1.5 px-3 text-[#666]">{{ r.tipo or '—' }}</td>
+                    {% if r.match %}
+                    <td class="py-1.5 px-3">
+                        <span class="font-mono text-[#888]">{{ r.match.NumeroAfiliado or '—' }}</span>
+                        {% if r.match.NombreAfiliado %}<span class="ml-1 text-[#1e1e1e]">{{ r.match.NombreAfiliado | truncate(30) }}</span>{% endif %}
+                    </td>
+                    <td class="py-1.5 px-3 font-mono text-[#666]">{{ r.match.FechaDeVenta.strftime('%d/%m/%y') if r.match.FechaDeVenta else '—' }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono">${{ '{:,.0f}'.format(r.match.TotalReceta or 0).replace(',', '.') }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono text-emerald-700">${{ '{:,.0f}'.format(r.match.TotalACargoOS or 0).replace(',', '.') }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono text-[#666]">${{ '{:,.0f}'.format(r.match.TotalAfiliado or 0).replace(',', '.') }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono text-[#666]">{{ r.match.MatriculaMedico or '—' }}</td>
+                    {% else %}
+                    <td colspan="6" class="py-1.5 px-3 italic text-[#999]">Sin match en Observer.Recetas</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="mt-3 flex flex-wrap gap-3 text-[10px] text-[#888]">
+            <span>🟢 verde = receta OK</span>
+            <span>🟡 amarillo = receta anulada en Observer</span>
+            <span>🔴 rojo = código no existe en Observer (probable error de scan o no cargada)</span>
+            <span>🟣 violeta = más de una receta matchea (revisar manualmente)</span>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+
+<script>
+document.querySelector('textarea[name=codigos]').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        e.target.closest('form').submit();
+    }
+});
+</script>
+{% endblock %}

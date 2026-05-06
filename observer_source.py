@@ -186,6 +186,54 @@ def explorar_schema(schema='DW', sample_rows=5, table=None):
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# SQL playground read-only (admin/dev) — para explorar Observer ad-hoc.
+# ──────────────────────────────────────────────────────────────────────────
+
+import re as _re
+
+
+def ejecutar_sql_readonly(query, max_rows=200, timeout=30):
+    """Ejecuta una query SOLO si empieza con SELECT (whitelist). Sin DDL/DML.
+    Devuelve {'cols': [...], 'rows': [...], 'truncated': bool}.
+    Lanza ValueError si la query no es read-only.
+    """
+    if not query or not query.strip():
+        raise ValueError('Query vacía')
+    q = query.strip().rstrip(';').strip()
+    # Strip leading comments (-- o /* */) si los hay
+    q_stripped = _re.sub(r'^(--[^\n]*\n|/\*.*?\*/\s*)+', '', q, flags=_re.DOTALL).lstrip()
+    # Whitelist: solo SELECT o WITH (CTE) — todo lo demás es write o DDL.
+    primer_token = q_stripped.split(None, 1)[0].upper() if q_stripped else ''
+    if primer_token not in ('SELECT', 'WITH'):
+        raise ValueError(f'Solo SELECT o WITH (CTE) permitidos. Recibí: {primer_token!r}')
+    # Blacklist defensiva: aunque empiece con SELECT, no permitir keywords destructivos.
+    bad = _re.search(
+        r'\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|EXEC|EXECUTE|MERGE|GRANT|REVOKE|BACKUP|RESTORE)\b',
+        q_stripped, _re.IGNORECASE)
+    if bad:
+        raise ValueError(f'Keyword no permitido: {bad.group(1).upper()}')
+    max_rows = max(1, min(int(max_rows or 200), 5000))
+    conn = _connect(timeout=timeout)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute(q)
+            try:
+                rows = cur.fetchmany(max_rows + 1)
+            except Exception:
+                rows = []
+            truncated = len(rows) > max_rows
+            if truncated:
+                rows = rows[:max_rows]
+            cols = [d[0] for d in (cur.description or [])]
+            return {'cols': cols, 'rows': rows, 'truncated': truncated, 'count': len(rows)}
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Syncs — cada función abre su propia conexión al source y recibe la session
 # local como parámetro para el upsert. Devuelve dict con stats.
 # ──────────────────────────────────────────────────────────────────────────

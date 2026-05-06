@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Compras recurrentes — Inteligencia{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">🔮 Compras recurrentes (cliente × producto)</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ total }} combos · top {{ rows | length }} mostrados</span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-7xl mx-auto">
+
+        <!-- Filtros -->
+        <form method="get" class="bg-white border border-surface-border rounded-xl p-3 mb-4 flex items-end gap-3 flex-wrap">
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Producto</label>
+                <input name="producto" value="{{ filtros.producto_q }}" placeholder="ej. amoxidal"
+                       class="border border-surface-border rounded px-2 py-1 text-sm w-48">
+            </div>
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Cliente</label>
+                <input name="cliente" value="{{ filtros.cliente_q }}" placeholder="ej. perez"
+                       class="border border-surface-border rounded px-2 py-1 text-sm w-48">
+            </div>
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Mín. compras</label>
+                <input name="min_compras" type="number" min="2" value="{{ filtros.min_compras }}"
+                       class="border border-surface-border rounded px-2 py-1 text-sm w-16">
+            </div>
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Máx CV (regularidad)</label>
+                <input name="max_cv" type="number" step="0.05" min="0.1" max="2" value="{{ filtros.max_cv }}"
+                       class="border border-surface-border rounded px-2 py-1 text-sm w-20">
+            </div>
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Días máx desde última</label>
+                <input name="dias_max_ultima" type="number" min="7" value="{{ filtros.dias_max_ultima }}"
+                       class="border border-surface-border rounded px-2 py-1 text-sm w-20">
+            </div>
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Orden</label>
+                <select name="orden" class="border border-surface-border rounded px-2 py-1 text-sm">
+                    <option value="urgencia" {% if filtros.orden == 'urgencia' %}selected{% endif %}>Por urgencia (próxima compra)</option>
+                    <option value="freq"     {% if filtros.orden == 'freq' %}selected{% endif %}>Por frecuencia (más seguido)</option>
+                    <option value="n"        {% if filtros.orden == 'n' %}selected{% endif %}>Por # compras totales</option>
+                </select>
+            </div>
+            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded text-sm">
+                Aplicar
+            </button>
+            <a href="{{ url_for('intelligence_recurrentes') }}" class="text-xs text-[#666] hover:text-[#1e1e1e] underline">Reset</a>
+        </form>
+
+        {% if not rows %}
+        <div class="bg-amber-50 border-l-4 border-amber-400 rounded-r p-4">
+            <p class="text-sm text-amber-900">No hay combos cliente×producto que cumplan los filtros.</p>
+            <p class="text-xs text-amber-800 mt-1">Probá bajando "Mín. compras" o subiendo "Máx CV".</p>
+        </div>
+        {% else %}
+
+        <!-- Top productos con base de clientes recurrentes -->
+        {% if top_productos %}
+        <div class="bg-white border border-surface-border rounded-xl p-3 mb-4">
+            <p class="text-sm font-semibold text-[#1e1e1e] mb-2">📊 Top productos con más clientes recurrentes (en este filtro)</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-[#fafafa]">
+                        <tr class="text-[#666] uppercase text-[10px]">
+                            <th class="text-left py-1.5 px-2">Producto</th>
+                            <th class="text-right py-1.5 px-2 w-20">Clientes recurrentes</th>
+                            <th class="text-right py-1.5 px-2 w-20">Compras</th>
+                            <th class="text-right py-1.5 px-2 w-20">Unidades</th>
+                            <th class="text-right py-1.5 px-2 w-24">Ingreso histórico</th>
+                            <th class="text-right py-1.5 px-2 w-12"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for p in top_productos %}
+                    <tr class="border-t border-[#f0f0f0] hover:bg-[#fafafa]">
+                        <td class="py-1.5 px-2 font-medium">{{ p.nombre }}</td>
+                        <td class="py-1.5 px-2 text-right font-mono font-bold text-amber-700">{{ p.clientes }}</td>
+                        <td class="py-1.5 px-2 text-right font-mono">{{ p.compras }}</td>
+                        <td class="py-1.5 px-2 text-right font-mono">{{ p.unidades | int }}</td>
+                        <td class="py-1.5 px-2 text-right font-mono text-emerald-700">${{ '{:,.0f}'.format(p.importe).replace(',', '.') }}</td>
+                        <td class="py-1.5 px-2 text-right">
+                            <a href="?producto={{ p.nombre[:20] | urlencode }}&min_compras={{ filtros.min_compras }}&max_cv={{ filtros.max_cv }}"
+                               class="text-violet-700 hover:underline text-[10px]">Ver →</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Tabla principal cliente × producto -->
+        <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+            <table class="w-full text-xs">
+                <thead class="bg-[#1c1c1e] text-[#EAB308]">
+                    <tr>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px]">Cliente</th>
+                        <th class="text-left py-2 px-3 font-semibold uppercase text-[10px]">Producto</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-16" title="Cantidad de compras">N°</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-20" title="Frecuencia promedio en días">Cada</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-16" title="Coef. de variación: 0=perfectamente regular">CV</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-20">Última</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-24">Próxima est.</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-20">Unidades</th>
+                        <th class="text-right py-2 px-3 font-semibold uppercase text-[10px] w-24">Gasto hist.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in rows %}
+                {% set _bg = 'bg-rose-50' if r.estado == 'atrasada'
+                            else 'bg-amber-50' if r.estado == 'hoy'
+                            else 'bg-emerald-50' if r.estado == 'pronto'
+                            else '' %}
+                <tr class="border-t border-[#f0f0f0] hover:brightness-95 cursor-pointer {{ _bg }}"
+                    onclick="window.location='{{ url_for('cliente_producto_comportamiento', cliente_id=r.cli_id, producto_id=r.prod_id) }}'">
+                    <td class="py-1.5 px-3">{{ r.cli_nombre }}</td>
+                    <td class="py-1.5 px-3 text-[#666]">{{ r.prod_nombre | truncate(50) }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono font-bold">{{ r.n }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono">{{ r.dias_freq | int }}d</td>
+                    <td class="py-1.5 px-3 text-right font-mono text-[#888]">{{ r.cv }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono text-[#666]">{{ r.ultima.strftime('%d/%m') }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono">
+                        {{ r.proxima.strftime('%d/%m') }}
+                        <span class="text-[10px]
+                            {% if r.estado == 'atrasada' %}text-rose-700 font-bold
+                            {% elif r.estado == 'hoy' %}text-amber-700 font-bold
+                            {% elif r.estado == 'pronto' %}text-emerald-700
+                            {% else %}text-[#888]{% endif %}">
+                            ({% if r.dias_para < 0 %}-{{ -r.dias_para }}d
+                             {% elif r.dias_para == 0 %}hoy
+                             {% else %}+{{ r.dias_para }}d{% endif %})
+                        </span>
+                    </td>
+                    <td class="py-1.5 px-3 text-right font-mono">{{ r.cant_total | int }}</td>
+                    <td class="py-1.5 px-3 text-right font-mono text-emerald-700">${{ '{:,.0f}'.format(r.importe_total).replace(',', '.') }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <p class="text-[10px] text-[#888] mt-3 italic">
+            <b>Leyenda</b>:
+            <span class="bg-rose-50 px-1 rounded">rojo</span> = atrasada (más de 2d después de la fecha esperada) ·
+            <span class="bg-amber-50 px-1 rounded">amarillo</span> = hoy/casi hoy ·
+            <span class="bg-emerald-50 px-1 rounded">verde</span> = próxima en 7d.
+            <b>CV</b> = dispersión (0 = perfectamente regular). Click en una fila para ver detalle.
+        </p>
+
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

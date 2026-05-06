@@ -906,6 +906,37 @@ def init_app(app):
                                data=data, schema=schema, sample=sample,
                                focus=focus, error=error)
 
+    @app.route('/observer/sql', methods=['GET', 'POST'])
+    @login_required
+    def observer_sql():
+        """Playground read-only para correr SELECT contra Observer SQL Server.
+        Solo dev/admin. Acepta SELECT o WITH (CTE). Bloquea DDL/DML.
+        """
+        if getattr(current_user, 'rol', None) not in ('dev', 'admin'):
+            return render_template('observer_sql.html',
+                                   error='Solo dev/admin pueden usar el playground SQL.',
+                                   query='', result=None), 403
+        query = request.form.get('query', '') if request.method == 'POST' else ''
+        try:
+            max_rows = int(request.form.get('max_rows') or 200)
+        except (TypeError, ValueError):
+            max_rows = 200
+        result = None
+        error = None
+        if request.method == 'POST' and query.strip():
+            if not observer_source.observer_disponible():
+                error = 'ObServer no está disponible desde este servidor.'
+            else:
+                try:
+                    result = observer_source.ejecutar_sql_readonly(query, max_rows=max_rows)
+                except (ValueError, RuntimeError) as e:
+                    error = str(e)
+                except Exception as e:
+                    error = f'Error SQL: {e}'
+        return render_template('observer_sql.html',
+                               query=query, max_rows=max_rows,
+                               result=result, error=error)
+
     @app.route('/observer/status')
     @login_required
     def observer_status():
