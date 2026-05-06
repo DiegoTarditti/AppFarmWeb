@@ -404,6 +404,9 @@
             <a id="link-lab" href="#" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-1.5 rounded-lg text-xs">
                 Ver ofertas del lab →
             </a>
+            <a id="link-equiv" href="#" class="bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-semibold px-3 py-1.5 rounded-lg text-xs">
+                Ver equivalencias →
+            </a>
             <button type="button" onclick="location.reload()" class="bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg text-xs">
                 Importar otro archivo
             </button>
@@ -1726,6 +1729,7 @@ async function _confirmarEImportar() {
         document.getElementById('result-msg').textContent =
             `${data.laboratorio}: ${data.insertados} insertados, ${data.actualizados} actualizados, ${data.saltados} saltados.`;
         document.getElementById('link-lab').href = `/laboratorio/${labId}/ofertas-minimo`;
+        document.getElementById('link-equiv').href = `/laboratorio/${labId}/equivalencias`;
     } catch (err) {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-3';

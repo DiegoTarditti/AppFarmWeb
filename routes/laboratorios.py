@@ -295,6 +295,39 @@ def init_app(app):
         return render_template('lab_ofertas_minimo.html',
                                lab=lab, ofertas=ofertas, total=len(ofertas))
 
+    @app.route('/laboratorio/<int:lab_id>/equivalencias', methods=['GET'])
+    def lab_equivalencias(lab_id):
+        """Equivalencias descripcion/código proveedor → producto local guardadas por imports."""
+        from database import EquivalenciaProveedor
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            rows = (session.query(EquivalenciaProveedor)
+                    .filter_by(laboratorio_id=lab_id)
+                    .order_by(EquivalenciaProveedor.descripcion_proveedor)
+                    .all())
+            equiv = [{
+                'id': r.id,
+                'descripcion_proveedor': r.descripcion_proveedor or '',
+                'producto_id': r.producto_id,
+                'producto_desc': r.producto.descripcion if r.producto else '—',
+                'producto_ean': r.producto.codigo_barra if r.producto else '—',
+            } for r in rows]
+        return render_template('lab_equivalencias.html',
+                               lab=lab, equiv=equiv, total=len(equiv))
+
+    @app.route('/laboratorio/<int:lab_id>/equivalencias/<int:eq_id>/borrar', methods=['POST'])
+    def lab_equivalencia_borrar(lab_id, eq_id):
+        from database import EquivalenciaProveedor
+        with database.get_db() as session:
+            eq = session.get(EquivalenciaProveedor, eq_id)
+            if eq and eq.laboratorio_id == lab_id:
+                session.delete(eq)
+                session.commit()
+        return redirect(url_for('lab_equivalencias', lab_id=lab_id))
+
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
     def lab_ofertas_minimo_borrar_todas(lab_id):
         with database.get_db() as session:
