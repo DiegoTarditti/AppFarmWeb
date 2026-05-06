@@ -12,6 +12,7 @@ import random
 from datetime import date, datetime, timedelta
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
+from sqlalchemy import or_
 from sqlalchemy import text as _text
 
 import database
@@ -1745,7 +1746,7 @@ def init_app(app):
                 ObsVD.obra_social_observer.isnot(None),
                 ObsVD.fecha_estadistica >= desde,
                 ObsVD.fecha_estadistica <= hasta,
-                ObsVD.tipo_operacion == 'V',
+                or_(ObsVD.tipo_operacion == 'V', ObsVD.tipo_operacion.is_(None)),
             ]
             otros_ids_full = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
             if os_id_filter:
@@ -2079,7 +2080,7 @@ def init_app(app):
                 ObsVentaDetalle.id_farmacia == id_farmacia,
                 ObsVentaDetalle.fecha_estadistica >= desde,
                 ObsVentaDetalle.fecha_estadistica <= hasta,
-                ObsVentaDetalle.tipo_operacion == 'V',
+                or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None)),
             )
             .group_by(
                 ObsVentaDetalle.cliente_observer,

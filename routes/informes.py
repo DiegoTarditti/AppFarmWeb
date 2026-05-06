@@ -15,7 +15,7 @@ from datetime import date
 
 from flask import jsonify, render_template, request
 from flask_login import login_required
-from sqlalchemy import distinct, func
+from sqlalchemy import distinct, func, or_
 
 import database
 from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock, ObsVentaMensual, Producto
@@ -638,7 +638,7 @@ def init_app(app):
             base = (session.query(ObsVentaDetalle)
                     .filter(ObsVentaDetalle.fecha_estadistica >= desde,
                             ObsVentaDetalle.fecha_estadistica <= hasta,
-                            ObsVentaDetalle.tipo_operacion == 'V'))
+                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
                 op = session.get(ObsProducto, producto_id)
@@ -938,7 +938,7 @@ def init_app(app):
             base = (session.query(ObsVentaDetalle)
                     .filter(ObsVentaDetalle.fecha_estadistica >= desde,
                             ObsVentaDetalle.fecha_estadistica <= hasta,
-                            ObsVentaDetalle.tipo_operacion == 'V'))
+                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1110,7 +1110,7 @@ def init_app(app):
             base = (session.query(ObsVentaDetalle)
                     .filter(ObsVentaDetalle.fecha_estadistica >= desde,
                             ObsVentaDetalle.fecha_estadistica <= hasta,
-                            ObsVentaDetalle.tipo_operacion == 'V'))
+                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1240,7 +1240,7 @@ def init_app(app):
                             ObsVentaDetalle.fecha_estadistica >= desde,
                             ObsVentaDetalle.fecha_estadistica <= hasta,
                             ObsVentaDetalle.medico_observer.isnot(None),
-                            ObsVentaDetalle.tipo_operacion == 'V'))
+                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
 
             # Top N médicos por cantidad total en el período.
             top_q = (base.with_entities(
