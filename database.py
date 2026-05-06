@@ -947,7 +947,6 @@ class ProductoAtributo(Base):
     __tablename__ = 'producto_atributos'
     producto_id        = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), primary_key=True)
     monodroga_norm     = Column(String(500), nullable=True, index=True)  # lower-case sin acentos para match
-    monodroga_display  = Column(String(500), nullable=True)              # case original para mostrar
     concentracion_mg   = Column(DECIMAL(12, 4), nullable=True, index=True)  # ej 500, 250.5, 0.05
     concentracion_unidad = Column(String(15), nullable=True)             # MG, MCG, G, UI, %, MG/ML, MG/5ML
     forma_farma        = Column(String(10), nullable=True, index=True)   # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
@@ -958,6 +957,16 @@ class ProductoAtributo(Base):
     raw_descripcion    = Column(String(300), nullable=True)              # snapshot de la descripción cuando se extrajo (detección de drift)
     extraido_en        = Column(DateTime, default=now_ar)
     producto = relationship('Producto', backref='atributos')
+
+    @property
+    def monodroga_display(self):
+        """Fuente única: Producto.monodroga. monodroga_display era un dup eliminado."""
+        return self.producto.monodroga if self.producto is not None else None
+
+    @monodroga_display.setter
+    def monodroga_display(self, value):
+        if self.producto is not None:
+            self.producto.monodroga = value
 
 
 class Modulo(Base):
@@ -2413,17 +2422,29 @@ def _pg_add_columns(conn):
             extraido_en          TIMESTAMP DEFAULT NOW()
         )
     """))
-    # Bump VARCHAR(200) → VARCHAR(500) en monodroga_* (polivitamínicos largos
-    # como SUPRADYN MAGNESIO superan 200 chars con todas las vitaminas listadas).
-    # Wrappeado por seguridad ante re-runs parciales o renombre futuro de columna.
-    for _alter in (
-        "ALTER TABLE producto_atributos ALTER COLUMN monodroga_norm    TYPE VARCHAR(500)",
-        "ALTER TABLE producto_atributos ALTER COLUMN monodroga_display TYPE VARCHAR(500)",
-    ):
-        try:
-            conn.execute(text(_alter))
-        except Exception:
-            pass
+    # Bump VARCHAR(200) → VARCHAR(500) en monodroga_norm.
+    try:
+        conn.execute(text("ALTER TABLE producto_atributos ALTER COLUMN monodroga_norm TYPE VARCHAR(500)"))
+    except Exception:
+        pass
+    # Migración: copiar monodroga_display → productos.monodroga donde esté vacío,
+    # luego dropear la columna (eliminada como dup de Producto.monodroga).
+    try:
+        conn.execute(text("""
+            UPDATE productos p
+               SET monodroga = pa.monodroga_display
+              FROM producto_atributos pa
+             WHERE pa.producto_id = p.id
+               AND (p.monodroga IS NULL OR p.monodroga = '')
+               AND pa.monodroga_display IS NOT NULL
+               AND pa.monodroga_display != ''
+        """))
+    except Exception:
+        pass
+    try:
+        conn.execute(text("ALTER TABLE producto_atributos DROP COLUMN IF EXISTS monodroga_display"))
+    except Exception:
+        pass
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_droga    ON producto_atributos (monodroga_norm)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_conc     ON producto_atributos (concentracion_mg)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_forma    ON producto_atributos (forma_farma)"))

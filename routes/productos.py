@@ -617,7 +617,7 @@ def init_app(app):
                             return jsonify({'error': f'{f} inválido'}), 400
             if 'monodroga' in data:
                 m = (data.get('monodroga') or '').strip()
-                atr.monodroga_display = m or None
+                prod.monodroga = m or None
                 atr.monodroga_norm = _normalizar_droga(m) if m else None
             atr.fuente = 'manual'
             atr.confianza = 'ALTA'
