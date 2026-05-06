@@ -1,6 +1,6 @@
 """Producto routes: list, CRUD, API + análisis histórico de precios."""
 
-from flask import jsonify, render_template, request
+from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
 import database
@@ -245,6 +245,36 @@ def init_app(app):
             except Exception as e:
                 session.rollback()
                 return {'error': str(e)}, 500
+
+    @app.route('/producto/nuevo', methods=['GET', 'POST'])
+    @login_required
+    def producto_nuevo():
+        """Crea un producto nuevo y redirige a su ficha completa.
+
+        GET ?ean=...&desc=... — si hay EAN crea directamente y redirige.
+                                Sin EAN muestra un form para ingresar el EAN.
+        POST — mismo flujo desde el form.
+        """
+        if request.method == 'POST':
+            ean = (request.form.get('ean') or '').strip()
+            desc = (request.form.get('desc') or '').strip()
+        else:
+            ean = (request.args.get('ean') or '').strip()
+            desc = (request.args.get('desc') or '').strip()
+
+        if not ean:
+            # Sin EAN → mostrar form simple para ingresar el código
+            return render_template('producto_nuevo.html', desc=desc)
+
+        with database.get_db() as session:
+            existing = session.query(Producto).filter_by(codigo_barra=ean).first()
+            if existing:
+                return redirect(url_for('producto_detalle', prod_id=existing.id))
+            prod = Producto(codigo_barra=ean, descripcion=desc or None)
+            session.add(prod)
+            session.commit()
+            prod_id = prod.id
+        return redirect(url_for('producto_detalle', prod_id=prod_id))
 
     @app.route('/producto/create', methods=['POST'])
     def producto_create():

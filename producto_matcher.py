@@ -952,3 +952,159 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
     finally:
         if own_session:
             session.close()
+
+
+def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
+                           threshold_min=0.50, session=None):
+    """Versión bulk de buscar_candidatos: carga los pools UNA sola vez.
+
+    Sustituye N llamadas secuenciales a buscar_candidatos (cada una carga
+    obs_productos entero y tokeniza ~122k filas) por una sola pasada.
+
+    Args:
+        items: list de dicts con 'idx' (int, identificador arbitrario) y
+               'descripcion'. Opcionalmente 'ean', 'codigo' (código interno
+               proveedor).
+        laboratorio_id: scope al lab local para boost y filtro obs.
+        top: máximo de candidatos por item.
+        threshold_min: jaccard mínimo para incluir un candidato.
+
+    Returns:
+        dict idx → list de candidatos (misma estructura que buscar_candidatos).
+    """
+    if not items:
+        return {}
+
+    import database
+
+    own_session = session is None
+    if own_session:
+        session = database.SessionLocal()
+
+    try:
+        # ── Pool 1: todos los Productos locales (una sola query) ─────────────
+        all_prods = session.query(database.Producto).all()
+        # Tokenizamos UNA sola vez y marcamos si pertenecen al lab pedido.
+        prod_index = []
+        for p in all_prods:
+            toks = tokens_significativos(p.descripcion or '')
+            is_lab = (laboratorio_id is not None
+                      and getattr(p, 'laboratorio_id', None) == laboratorio_id)
+            prod_index.append((p, toks, is_lab))
+
+        # ── Pool 2: ObServer (obs_productos) — una sola query ────────────────
+        lab_obs_id = None
+        if laboratorio_id:
+            lab_local = session.get(database.Laboratorio, laboratorio_id)
+            lab_obs_id = getattr(lab_local, 'observer_id', None) if lab_local else None
+
+        obs_q = session.query(database.ObsProducto).filter(
+            database.ObsProducto.fecha_baja.is_(None),
+        )
+        if lab_obs_id is not None:
+            obs_q = obs_q.filter(
+                database.ObsProducto.laboratorio_observer == lab_obs_id,
+            )
+        obs_index = []
+        for obs in obs_q.all():
+            toks = tokens_significativos(obs.descripcion or '')
+            alf = (obs.codigo_alfabeta or '').strip() or None
+            obs_index.append((obs, toks, alf))
+
+        # ── Matchear cada item ────────────────────────────────────────────────
+        result = {}
+        for it in items:
+            idx = it.get('idx', 0)
+            desc = (it.get('descripcion') or '').strip()
+            if not desc:
+                result[idx] = []
+                continue
+            toks_in = tokens_significativos(desc)
+            if not toks_in:
+                result[idx] = []
+                continue
+
+            alf_in = (it.get('codigo') or it.get('codigo_alfabeta') or '').strip() or None
+            cands = []
+            seen_keys = set()
+
+            # Productos locales
+            for p, toks_p, is_lab in prod_index:
+                if not toks_p:
+                    continue
+                s = jaccard(toks_in, toks_p)
+                if s < threshold_min:
+                    continue
+                boost = 0.05 if is_lab else 0.0
+                s_final = round(min(1.0, s + boost), 3)
+                key = ('prod', p.id)
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                cands.append({
+                    'producto_id': p.id,
+                    'observer_id': None,
+                    'descripcion': p.descripcion or '',
+                    'codigo_barra': getattr(p, 'codigo_barra', None),
+                    'codigo_alfabeta': getattr(p, 'codigo_alfabeta', '') or '',
+                    'precio_pvp': float(p.precio_pvp) if getattr(p, 'precio_pvp', None) else None,
+                    'score': s_final,
+                    '_origen': 'lab' if is_lab else 'global',
+                })
+
+            # ObServer
+            for obs, toks_o, alf_o in obs_index:
+                # Alfabeta exacto (sanity check: al menos 1 token en común)
+                if alf_in and alf_o and alf_in == alf_o:
+                    digits = ''.join(ch for ch in alf_in if ch.isdigit())
+                    if len(digits) >= 5:
+                        ok = (bool(toks_in & toks_o)
+                              and jaccard(toks_in, toks_o) >= 0.30
+                              ) if (toks_in and toks_o) else True
+                        if ok:
+                            key = ('obs', obs.observer_id)
+                            if key not in seen_keys:
+                                seen_keys.add(key)
+                                cands.append({
+                                    'producto_id': None,
+                                    'observer_id': obs.observer_id,
+                                    'descripcion': obs.descripcion or '',
+                                    'codigo_barra': None,
+                                    'codigo_alfabeta': alf_o or '',
+                                    'precio_pvp': None,
+                                    'score': 1.0,
+                                    '_origen': 'observer',
+                                })
+                        continue
+                if not toks_o:
+                    continue
+                s = jaccard(toks_in, toks_o)
+                if s < threshold_min:
+                    continue
+                key = ('obs', obs.observer_id)
+                if key in seen_keys or obs.observer_id is None:
+                    continue
+                seen_keys.add(key)
+                cands.append({
+                    'producto_id': None,
+                    'observer_id': obs.observer_id,
+                    'descripcion': obs.descripcion or '',
+                    'codigo_barra': None,
+                    'codigo_alfabeta': alf_o or '',
+                    'precio_pvp': None,
+                    'score': round(s, 3),
+                    '_origen': 'observer',
+                })
+
+            cands.sort(key=lambda x: -x['score'])
+            if cands:
+                top_score = cands[0]['score']
+                threshold_efectivo = max(threshold_min, top_score - 0.15)
+                cands = [c for c in cands if c['score'] >= threshold_efectivo]
+            result[idx] = cands[:top]
+
+        return result
+
+    finally:
+        if own_session:
+            session.close()

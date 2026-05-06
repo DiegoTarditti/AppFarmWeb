@@ -357,6 +357,8 @@
                         <kbd class="px-1.5 py-0.5 bg-white border border-[#ddd] rounded text-[10px] font-mono">Esc</kbd> salir
                     </div>
                     <div class="flex gap-1.5">
+                        <button type="button" onclick="rapidoCrearNuevo()"
+                                class="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 px-3 py-1 rounded">+ Crear nuevo</button>
                         <button type="button" onclick="rapidoSaltar()"
                                 class="text-xs bg-[#fafafa] hover:bg-[#f3f4f6] border border-[#ddd] text-[#555] px-3 py-1 rounded">Saltar →</button>
                     </div>
@@ -428,6 +430,7 @@ let _rows = [];
 let _mapping = {};
 let _items = [];
 let _normalizaciones = [];   // [{idx, original, limpia, cambios}]
+let _candidatosBulk = {};    // idx → [candidatos] prefetcheados en una sola llamada bulk
 let _step = 1;
 let _columnasActivas = new Set();   // índices de columnas seleccionadas en el snapshot
 let _camposVisibles = new Set();    // claves de campo que se muestran en el grid
@@ -976,8 +979,11 @@ async function validarItems(opciones={}) {
             return false;
         }
         _items = data.items;
+        _candidatosBulk = {};  // resetear para este lote
         _normalizaciones = data.normalizaciones || [];
         renderNormalizaciones();
+        // Prefetch todos los candidatos not_found en UNA sola llamada (fondo).
+        prefetchCandidatosBulk();
         if (!silencioso && window.AnalisisOverlay) {
             AnalisisOverlay.setPaso(2, 'done', `${data.stats.ok || 0} OK · ${data.stats.fuzzy || 0} fuzzy · ${data.stats.not_found || 0} no encontrados`);
             AnalisisOverlay.setPaso(3, 'active');
@@ -1127,12 +1133,13 @@ function renderValidacion(stats) {
                     }
                     let accion = '';
                     if (status === 'not_found') {
+                        const btnCrear = `<button type="button" class="btn-crear-nuevo text-[10px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300 ml-1" data-idx="${it._idx}" title="Crear como producto nuevo y abrir la ficha">+ Crear</button>`;
                         if (it._sin_candidatos) {
-                            accion = `<span class="text-[10px] bg-[#f3f4f6] text-[#888] px-2 py-0.5 rounded border border-[#ddd]" title="No hay productos en el catálogo con tokens en común. Probablemente sea un producto nuevo.">— sin candidatos —</span>`;
+                            accion = `<span class="text-[10px] bg-[#f3f4f6] text-[#888] px-2 py-0.5 rounded border border-[#ddd]" title="No hay productos similares en el catálogo.">— sin candidatos —</span>${btnCrear}`;
                         } else {
                             const cc = it._candidatos_count || 0;
-                            const lbl = cc > 0 ? `🔍 Buscar similar (${cc})` : '🔍 Buscar similar';
-                            accion = `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300" data-idx="${it._idx}">${lbl}</button>`;
+                            const lbl = cc > 0 ? `🔍 Similar (${cc})` : '🔍 Buscar';
+                            accion = `<button type="button" class="btn-buscar-candidato text-[10px] bg-violet-100 hover:bg-violet-200 text-violet-800 px-2 py-0.5 rounded border border-violet-300" data-idx="${it._idx}">${lbl}</button>${btnCrear}`;
                         }
                     }
                     const motivoExtra = (status === 'warning')
@@ -1156,22 +1163,103 @@ function renderValidacion(stats) {
                 (problematicos.length > 200 ? `<tr><td colspan="8" class="py-1 text-center text-[#999] text-[10px]">... y ${problematicos.length - 200} más (refiná el filtro de "Incluir:")</td></tr>` : '') +
                 '</tbody></table>';
 
-            // Listeners de los botones "Buscar similar"
+            // Listeners de los botones "Buscar similar" y "Crear nuevo"
             detalle.querySelectorAll('.btn-buscar-candidato').forEach(btn => {
                 btn.addEventListener('click', () => buscarCandidatos(parseInt(btn.dataset.idx, 10)));
             });
+            detalle.querySelectorAll('.btn-crear-nuevo').forEach(btn => {
+                btn.addEventListener('click', () => crearNuevoProducto(parseInt(btn.dataset.idx, 10)));
+            });
         }
+    }
+}
+
+function _renderCandidatosSlot(slot, itemIdx, candidatos) {
+    if (!candidatos || !candidatos.length) {
+        slot.innerHTML = '<span class="text-[10px] text-[#999]">No se encontraron candidatos.</span>';
+        return;
+    }
+    const rows = candidatos.map((c, ci) => `
+        <button type="button"
+                class="cand-row w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-violet-100 border border-transparent hover:border-violet-300 transition-colors"
+                data-pid="${c.producto_id || ''}"
+                data-desc="${escapeHtml(c.descripcion)}"
+                data-cb="${escapeHtml(c.codigo_barra || '')}"
+                data-alf="${escapeHtml(c.codigo_alfabeta || '')}"
+                data-origen="${c._origen || ''}">
+            <span class="text-violet-700 font-bold w-6 text-center">${ci + 1}</span>
+            <span class="flex-1 text-[11px] text-[#1e1e1e]">${escapeHtml(c.descripcion)}</span>
+            <span class="text-[10px] text-[#888] tabular-nums">${(c.score * 100).toFixed(0)}%</span>
+            ${c._origen === 'global' ? '<span class="text-[9px] text-amber-600 ml-1">(otro lab)</span>' : ''}
+            ${c._origen === 'observer' ? '<span class="text-[9px] text-violet-600 ml-1 font-semibold">ObServer</span>' : ''}
+        </button>
+    `).join('');
+    slot.innerHTML = `
+        <div class="mt-1 bg-violet-50 border border-violet-200 rounded p-1 max-h-48 overflow-y-auto flex flex-col gap-0.5">
+            ${rows}
+        </div>
+        <p class="text-[9px] text-[#888] mt-1">Click para vincular.</p>
+    `;
+    slot.querySelectorAll('.cand-row').forEach(row => {
+        row.addEventListener('click', () => {
+            const it = _items[itemIdx];
+            it._status = 'manual_ok';
+            it._producto_id = parseInt(row.dataset.pid, 10) || null;
+            it._match_descripcion_local = row.dataset.desc;
+            it._estrategia = 'manual';
+            it._motivo = `Match manual: "${row.dataset.desc}"`;
+            if (!it.ean && row.dataset.cb) it.ean = row.dataset.cb;
+            if (!it.codigo && row.dataset.alf) it.codigo = row.dataset.alf;
+            recalcularStats();
+            actualizarConfirmCount();
+            setTimeout(abrirSiguienteCandidato, 50);
+        });
+    });
+}
+
+async function prefetchCandidatosBulk() {
+    const labId = document.getElementById('lab-select').value;
+    const paraFetch = _items
+        .map((it, i) => ({idx: i, descripcion: it.descripcion || '', ean: it.ean || '', codigo: it.codigo || ''}))
+        .filter((_, i) => _items[i]._status === 'not_found' && !_items[i]._sin_candidatos);
+    if (!paraFetch.length) return;
+    try {
+        const r = await fetch('/api/ofertas/import-candidatos-bulk', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                items: paraFetch,
+                laboratorio_id: labId ? parseInt(labId, 10) : null,
+                top: 8,
+            }),
+        });
+        const data = await r.json();
+        if (data.candidatos_por_idx) {
+            for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
+                _candidatosBulk[parseInt(k, 10)] = v;
+            }
+        }
+    } catch (err) {
+        console.warn('Prefetch candidatos bulk falló:', err.message);
     }
 }
 
 async function buscarCandidatos(itemIdx) {
     const item = _items[itemIdx];
     if (!item) return;
-    const labId = document.getElementById('lab-select').value;
     const slot = document.getElementById('candidatos-' + itemIdx);
     if (!slot) return;
-    slot.innerHTML = '<span class="text-[10px] text-[#888]">⏳ Buscando…</span>';
 
+    // Si ya tenemos datos del prefetch bulk → renderizar sin llamada extra
+    if (_candidatosBulk[itemIdx] !== undefined) {
+        _renderCandidatosSlot(slot, itemIdx, _candidatosBulk[itemIdx]);
+        return;
+    }
+
+    // Fallback: llamada individual (mientras el bulk no terminó o falló)
+    slot.innerHTML = '<span class="text-[10px] text-[#888]">⏳ Buscando…</span>';
+    const labId = document.getElementById('lab-select').value;
     try {
         const r = await fetch('/api/ofertas/import-candidatos', {
             method: 'POST',
@@ -1184,55 +1272,24 @@ async function buscarCandidatos(itemIdx) {
             }),
         });
         const data = await r.json();
-        if (!data.candidatos || !data.candidatos.length) {
-            slot.innerHTML = '<span class="text-[10px] text-[#999]">No se encontraron candidatos.</span>';
-            return;
-        }
-        // Lista de candidatos clickeable directa (un click vincula).
-        // Cada candidato se renderiza como un row con la descripción + score.
-        const items = data.candidatos.map((c, ci) => `
-            <button type="button"
-                    class="cand-row w-full text-left flex items-center gap-2 px-2 py-1 rounded hover:bg-violet-100 border border-transparent hover:border-violet-300 transition-colors"
-                    data-pid="${c.producto_id || ''}"
-                    data-desc="${escapeHtml(c.descripcion)}"
-                    data-cb="${escapeHtml(c.codigo_barra)}"
-                    data-alf="${escapeHtml(c.codigo_alfabeta)}"
-                    data-origen="${c._origen || ''}">
-                <span class="text-violet-700 font-bold w-6 text-center">${ci + 1}</span>
-                <span class="flex-1 text-[11px] text-[#1e1e1e]">${escapeHtml(c.descripcion)}</span>
-                <span class="text-[10px] text-[#888] tabular-nums">${(c.score * 100).toFixed(0)}%</span>
-                ${c._origen === 'global' ? '<span class="text-[9px] text-amber-600 ml-1">(otro lab)</span>' : ''}
-                ${c._origen === 'observer' ? '<span class="text-[9px] text-violet-600 ml-1 font-semibold">ObServer</span>' : ''}
-            </button>
-        `).join('');
-        slot.innerHTML = `
-            <div class="mt-1 bg-violet-50 border border-violet-200 rounded p-1 max-h-48 overflow-y-auto flex flex-col gap-0.5">
-                ${items}
-            </div>
-            <p class="text-[9px] text-[#888] mt-1">Click en una fila para vincular.</p>
-        `;
-        slot.querySelectorAll('.cand-row').forEach(row => {
-            row.addEventListener('click', () => {
-                const it = _items[itemIdx];
-                it._status = 'manual_ok';
-                it._producto_id = parseInt(row.dataset.pid, 10);
-                it._match_descripcion_local = row.dataset.desc;
-                it._estrategia = 'manual';
-                it._motivo = `Match manual: "${row.dataset.desc}"`;
-                if (!it.ean && row.dataset.cb) it.ean = row.dataset.cb;
-                if (!it.codigo && row.dataset.alf) it.codigo = row.dataset.alf;
-                // Colapsar la fila completa: re-render del detalle. El item
-                // pasa a 'manual_ok' que NO se muestra como problema → desaparece.
-                recalcularStats();
-                actualizarConfirmCount();
-                // Auto-avance: abrir el siguiente not_found que aún no tenga
-                // candidatos cargados.
-                setTimeout(abrirSiguienteCandidato, 50);
-            });
-        });
+        _renderCandidatosSlot(slot, itemIdx, data.candidatos || []);
     } catch (err) {
         slot.innerHTML = `<span class="text-[10px] text-red-700">Error: ${escapeHtml(err.message)}</span>`;
     }
+}
+
+async function crearNuevoProducto(itemIdx) {
+    const item = _items[itemIdx];
+    if (!item) return;
+    const desc = (item.descripcion || '').trim();
+    const ean = (item.ean || '').trim();
+    // Abrir la ficha de creación en una nueva pestaña.
+    // Si hay EAN, el route lo crea y redirige a la ficha.
+    // Si no, muestra un form para ingresar EAN + descripción.
+    const params = new URLSearchParams();
+    if (desc) params.set('desc', desc);
+    if (ean) params.set('ean', ean);
+    window.open('/producto/nuevo?' + params.toString(), '_blank');
 }
 
 function abrirSiguienteCandidato() {
@@ -1317,10 +1374,15 @@ async function _rapidoMostrar(itemIdx) {
     // Resetear panel de búsqueda manual
     document.getElementById('rapido-busqueda-edit').classList.add('hidden');
 
-    // Cargar candidatos
+    // Cargar candidatos: usar prefetch si disponible
     const cont = document.getElementById('rapido-candidatos');
-    cont.innerHTML = '<p class="text-xs text-[#888] py-3 text-center">⏳ Buscando candidatos…</p>';
-    await _rapidoCargarCandidatos(item.descripcion || item.codigo || '');
+    if (_candidatosBulk[itemIdx] !== undefined) {
+        _rapidoCandidatos = _candidatosBulk[itemIdx];
+        _rapidoRenderCandidatos(cont);
+    } else {
+        cont.innerHTML = '<p class="text-xs text-[#888] py-3 text-center">⏳ Buscando candidatos…</p>';
+        await _rapidoCargarCandidatos(item.descripcion || item.codigo || '');
+    }
 }
 
 async function _rapidoCargarCandidatos(descripcion) {
@@ -1339,35 +1401,39 @@ async function _rapidoCargarCandidatos(descripcion) {
         });
         const data = await r.json();
         _rapidoCandidatos = data.candidatos || [];
-        if (!_rapidoCandidatos.length) {
-            cont.innerHTML = '<p class="text-xs text-[#999] py-3 text-center">No se encontraron candidatos. Saltá o editá la búsqueda.</p>';
-            return;
-        }
-        cont.innerHTML = _rapidoCandidatos.map((c, i) => `
-            <button type="button"
-                    class="rapido-cand-row w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg
-                           bg-white hover:bg-violet-50 border border-[#e5e7eb] hover:border-violet-400 transition-colors"
-                    data-idx="${i}">
-                <span class="w-7 h-7 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-sm flex-shrink-0">${i + 1}</span>
-                <span class="flex-1 min-w-0">
-                    <span class="block text-sm text-[#1e1e1e] font-medium truncate">${escapeHtml(c.descripcion)}</span>
-                    <span class="block text-[10px] text-[#888]">
-                        ${c.codigo_barra ? 'EAN ' + escapeHtml(c.codigo_barra) : ''}
-                        ${c.codigo_alfabeta ? ' · Alfa ' + escapeHtml(c.codigo_alfabeta) : ''}
-                        ${c.precio_pvp ? ' · $' + c.precio_pvp.toLocaleString('es-AR') : ''}
-                        ${c._origen === 'global' ? ' · <span class="text-amber-600 font-semibold">otro lab</span>' : ''}
-                        ${c._origen === 'observer' ? ' · <span class="text-violet-600 font-bold">ObServer</span>' : ''}
-                    </span>
-                </span>
-                <span class="text-xs font-bold text-violet-700 tabular-nums flex-shrink-0">${(c.score * 100).toFixed(0)}%</span>
-            </button>
-        `).join('');
-        cont.querySelectorAll('.rapido-cand-row').forEach(row => {
-            row.addEventListener('click', () => _rapidoVincular(parseInt(row.dataset.idx, 10)));
-        });
+        _rapidoRenderCandidatos(cont);
     } catch (err) {
         cont.innerHTML = `<p class="text-xs text-red-700 py-3 text-center">Error: ${escapeHtml(err.message)}</p>`;
     }
+}
+
+function _rapidoRenderCandidatos(cont) {
+    if (!_rapidoCandidatos.length) {
+        cont.innerHTML = '<p class="text-xs text-[#999] py-3 text-center">No se encontraron candidatos. Saltá, editá la búsqueda o creá el producto.</p>';
+        return;
+    }
+    cont.innerHTML = _rapidoCandidatos.map((c, i) => `
+        <button type="button"
+                class="rapido-cand-row w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg
+                       bg-white hover:bg-violet-50 border border-[#e5e7eb] hover:border-violet-400 transition-colors"
+                data-idx="${i}">
+            <span class="w-7 h-7 rounded-full bg-violet-100 text-violet-700 flex items-center justify-center font-bold text-sm flex-shrink-0">${i + 1}</span>
+            <span class="flex-1 min-w-0">
+                <span class="block text-sm text-[#1e1e1e] font-medium truncate">${escapeHtml(c.descripcion)}</span>
+                <span class="block text-[10px] text-[#888]">
+                    ${c.codigo_barra ? 'EAN ' + escapeHtml(c.codigo_barra) : ''}
+                    ${c.codigo_alfabeta ? ' · Alfa ' + escapeHtml(c.codigo_alfabeta) : ''}
+                    ${c.precio_pvp ? ' · $' + c.precio_pvp.toLocaleString('es-AR') : ''}
+                    ${c._origen === 'global' ? ' · <span class="text-amber-600 font-semibold">otro lab</span>' : ''}
+                    ${c._origen === 'observer' ? ' · <span class="text-violet-600 font-bold">ObServer</span>' : ''}
+                </span>
+            </span>
+            <span class="text-xs font-bold text-violet-700 tabular-nums flex-shrink-0">${(c.score * 100).toFixed(0)}%</span>
+        </button>
+    `).join('');
+    cont.querySelectorAll('.rapido-cand-row').forEach(row => {
+        row.addEventListener('click', () => _rapidoVincular(parseInt(row.dataset.idx, 10)));
+    });
 }
 
 function _rapidoVincular(candIdx) {
@@ -1384,6 +1450,11 @@ function _rapidoVincular(candIdx) {
     recalcularStats();
     actualizarConfirmCount();
     _rapidoSiguiente();
+}
+
+function rapidoCrearNuevo() {
+    crearNuevoProducto(_rapidoIdx);
+    rapidoSaltar();   // marca como saltado y avanza — el link ya se abrió en nueva pestaña
 }
 
 function rapidoSaltar() {
@@ -1426,8 +1497,9 @@ async function rapidoBuscar() {
 }
 
 function expandirTodosLosBuscarSimilar() {
-    // Dispara buscarCandidatos para todos los not_found en paralelo (pero
-    // limitamos a tandas de 5 para no saturar la API).
+    // Renderiza los candidatos para todos los not_found usando datos del
+    // prefetch bulk (que ya corrió en background después del validar).
+    // Si el bulk todavía no terminó, hace una única llamada bulk ahora.
     const pendientes = [];
     for (let i = 0; i < _items.length; i++) {
         if (_items[i]._status !== 'not_found') continue;
@@ -1439,13 +1511,21 @@ function expandirTodosLosBuscarSimilar() {
         alert('Todos los items ya tienen sus candidatos cargados o vinculados.');
         return;
     }
-    // Tandas de 5 en paralelo
-    (async () => {
-        const tanda = 5;
-        for (let k = 0; k < pendientes.length; k += tanda) {
-            await Promise.all(pendientes.slice(k, k + tanda).map(buscarCandidatos));
-        }
-    })();
+    // Si tenemos datos del bulk → renderizar directamente (sin fetch)
+    if (Object.keys(_candidatosBulk).length > 0) {
+        pendientes.forEach(i => {
+            const slot = document.getElementById('candidatos-' + i);
+            if (slot) _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
+        });
+    } else {
+        // Bulk no terminó: disparar una llamada bulk única ahora
+        prefetchCandidatosBulk().then(() => {
+            pendientes.forEach(i => {
+                const slot = document.getElementById('candidatos-' + i);
+                if (slot) _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
+            });
+        });
+    }
 }
 
 // ─── Normalización de descripciones ─────────────────────────────────────────

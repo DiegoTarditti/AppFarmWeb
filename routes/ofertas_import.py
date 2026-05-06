@@ -734,6 +734,39 @@ def init_app(app):
             'normalizados_count': len(normalizaciones),
         })
 
+    @app.route('/api/ofertas/import-candidatos-bulk', methods=['POST'])
+    @login_required
+    def api_ofertas_import_candidatos_bulk():
+        """Versión bulk: candidatos para N items not_found en UNA sola llamada.
+
+        Body JSON: { items: [{idx, descripcion, ean?, codigo?}, ...], laboratorio_id? }
+        Returns: { candidatos_por_idx: {idx: [candidatos]}, total_items: N }
+        """
+        import producto_matcher as pm
+        data = request.get_json(silent=True) or {}
+        items = data.get('items') or []
+        try:
+            lab_id = int(data.get('laboratorio_id')) if data.get('laboratorio_id') else None
+        except (TypeError, ValueError):
+            lab_id = None
+        try:
+            top = max(1, min(20, int(data.get('top', 8))))
+        except (ValueError, TypeError):
+            top = 8
+
+        if not items:
+            return jsonify({'candidatos_por_idx': {}, 'total_items': 0})
+
+        with database.get_db() as session:
+            resultado = pm.buscar_candidatos_bulk(
+                items, laboratorio_id=lab_id, top=top, session=session,
+            )
+        # JSON keys deben ser strings
+        return jsonify({
+            'candidatos_por_idx': {str(k): v for k, v in resultado.items()},
+            'total_items': len(resultado),
+        })
+
     @app.route('/api/ofertas/import-candidatos', methods=['POST'])
     @login_required
     def api_ofertas_import_candidatos():
