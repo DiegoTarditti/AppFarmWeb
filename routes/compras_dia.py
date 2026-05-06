@@ -24,6 +24,35 @@ DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 TARGET_DIAS_COBERTURA_DEFAULT = 7
 
 
+def _sigla_drog(nombre):
+    """Genera sigla corta para una droguería: 'Kellerhoff' → 'Kel',
+    '20 de Junio' → '20J'. Para mostrar como badge en el armado."""
+    if not nombre:
+        return '?'
+    n = str(nombre).strip()
+    for suf in (' S.A.', ' S.R.L.', ' S.A', ' SA', ' SRL', ' S.A.S'):
+        if n.endswith(suf):
+            n = n[:-len(suf)].strip()
+    # Strip prefijos genéricos para que "Drogueria 20 de Junio" → "20J" y no "Dro"
+    _low = n.lower()
+    for pref in ('drogueria ', 'droguería ', 'distribuidora '):
+        if _low.startswith(pref):
+            n = n[len(pref):].strip()
+            break
+    if n and n[0].isdigit():
+        partes = n.split()
+        digs = ''.join(c for c in partes[0] if c.isdigit())
+        ult = ''
+        for p in reversed(partes):
+            if p and p[0].isalpha():
+                ult = p[0].upper()
+                break
+        return f'{digs}{ult}'
+    # Solo letras → primeras 3 caps de la primera palabra significativa
+    primera = n.split()[0] if n.split() else n
+    return primera[:3].title()
+
+
 def _recalc_item_canonico(it):
     """Canónico = COALESCE(confirmada_obs, revisada_op, 0). Setea estado."""
     if it.cantidad_confirmada_obs is not None:
@@ -154,6 +183,36 @@ def init_app(app):
                     'recibido_por': p.recibido_por,
                     'cargado_por': p.cargado_por,
                     'tiene_factura': False,
+                    'drogueria_id': prov_id,
+                    'drogueria_nombre': p.drogueria.razon_social if p.drogueria else '—',
+                })
+        return jsonify({'ok': True, 'pedidos': data})
+
+    @app.route('/api/pedidos-emitidos/todos')
+    @login_required
+    def api_pedidos_emitidos_todos():
+        """Devuelve TODOS los pedidos emitidos sin filtrar por droguería.
+        Cada armado multi-drog genera ~1 PedidoEmitido por droguería; este endpoint
+        los muestra unificados para ver el panorama completo del día/semana."""
+        from database import PedidoEmitido
+        with get_db() as session:
+            pedidos = (session.query(PedidoEmitido)
+                       .order_by(PedidoEmitido.fecha.desc())
+                       .all())
+            data = []
+            for p in pedidos:
+                data.append({
+                    'id': p.id,
+                    'fecha': p.fecha.strftime('%d/%m/%Y %H:%M') if p.fecha else '—',
+                    'fecha_grupo': p.fecha.strftime('%Y-%m-%dT%H:%M') if p.fecha else '',
+                    'estado': p.estado,
+                    'total_items': p.total_items,
+                    'recibido_por': p.recibido_por,
+                    'cargado_por': p.cargado_por,
+                    'tiene_factura': False,
+                    'drogueria_id': p.drogueria_id,
+                    'drogueria_nombre': p.drogueria.razon_social if p.drogueria else '—',
+                    'drogueria_sigla': _sigla_drog(p.drogueria.razon_social) if p.drogueria else '?',
                 })
         return jsonify({'ok': True, 'pedidos': data})
 
@@ -274,17 +333,19 @@ def init_app(app):
             Producto,
         )
 
+        # prov ahora es OPCIONAL. Si no viene → modo "todas las drogs activas
+        # con horarios cargados". Mostramos badge por droguería en cada fila.
         prov_id = request.args.get('prov', type=int)
-        if not prov_id:
-            return redirect(url_for('compras_dia'))
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
 
         with get_db() as session:
-            prov = session.get(Provider, prov_id)
-            if not prov:
-                return redirect(url_for('compras_dia'))
+            prov = None
+            if prov_id:
+                prov = session.get(Provider, prov_id)
+                if not prov:
+                    return redirect(url_for('compras_dia'))
 
             # Universo: bajo mínimo en obs_stock + rubro Medicamentos (12).
             stock_q = (session.query(
@@ -311,7 +372,8 @@ def init_app(app):
                 ObsVentaDetalle.producto_observer,
                 ObsVentaDetalle.fecha_estadistica,
                 func.sum(ObsVentaDetalle.cantidad).label('cant'),
-            ).filter(ObsVentaDetalle.fecha_estadistica >= _semana)\
+            ).filter(ObsVentaDetalle.fecha_estadistica >= _semana,
+                     ObsVentaDetalle.tipo_operacion == 'V')\
              .group_by(ObsVentaDetalle.producto_observer,
                        ObsVentaDetalle.fecha_estadistica).all()
             v24h_rows = {}
@@ -407,11 +469,29 @@ def init_app(app):
                     'lab_local_id': r[4],
                 } for r in rows}
 
-            # Labs cubiertos por esta droguería (LaboratorioDrogueria).
-            labs_cubiertos = set(
-                r[0] for r in session.query(LaboratorioDrogueria.laboratorio_id)
-                .filter(LaboratorioDrogueria.drogueria_id == prov_id).all()
+            # Modo multi-drog: necesitamos saber qué drog(s) cubre cada lab.
+            # `labs_a_drogs[lab_id]` = lista de prov_ids que cubren ese lab.
+            from collections import defaultdict
+            labs_a_drogs = defaultdict(list)
+            for ld_lab, ld_drog in (session.query(
+                LaboratorioDrogueria.laboratorio_id,
+                LaboratorioDrogueria.drogueria_id,
+            ).all()):
+                labs_a_drogs[ld_lab].append(ld_drog)
+            # Si vino prov específico, mantenemos el set para legacy `cubre_lab`.
+            labs_cubiertos = set(labs_a_drogs.keys()) if not prov_id else set(
+                lab for lab, drogs in labs_a_drogs.items() if prov_id in drogs
             )
+            # Diccionario de drogs activas Y visibles en la matriz, con sus siglas.
+            # El filtro `matriz_visible` evita mostrar siglas como "Pha" o "Via"
+            # de droguerías que no aparecen como columna en /compras/labs-drogerias.
+            drogs_activas = (session.query(Provider)
+                             .filter(Provider.tipo == 'drogueria',
+                                     Provider.activo.is_(True),
+                                     Provider.matriz_visible.is_(True))
+                             .order_by(Provider.razon_social).all())
+            drog_label = {d.id: _sigla_drog(d.razon_social) for d in drogs_activas}
+            drog_nombre_full = {d.id: d.razon_social for d in drogs_activas}
             # Map lab observer → lab local id (por observer_id si está linkeado).
             lab_obs_to_local = dict(
                 session.query(Laboratorio.observer_id, Laboratorio.id)
@@ -537,6 +617,10 @@ def init_app(app):
                 if no_pedir_flag:
                     # Marcado "no pedir" — entra al listado pero default 0.
                     a_pedir = 0
+                # Multi-drog: lista de prov_ids que cubren este lab.
+                drogs_que_cubren = list(labs_a_drogs.get(lab_local_id, [])) if lab_local_id else []
+                drogs_siglas = [drog_label.get(d, '?') for d in drogs_que_cubren if d in drog_label]
+
                 items.append({
                     'no_pedir': no_pedir_flag,
                     'pid': r.pid,
@@ -559,12 +643,37 @@ def init_app(app):
                     'a_pedir': a_pedir,
                     'avg_diario': round(avg_diario, 3),
                     'cubre_lab': cubre_lab,
+                    'drogs_ids': drogs_que_cubren,    # [prov_id, ...]
+                    'drogs_siglas': drogs_siglas,     # ['Kel', '20J']
+                    'drog_principal': drogs_que_cubren[0] if drogs_que_cubren else None,
                     'ean': eans_armar.get(r.pid, ''),
                     **(ofertas_por_ean.get(eans_armar.get(r.pid, ''), {'oferta_dto': None, 'oferta_min': None})),
                 })
-            items.sort(key=lambda x: (not x['cubre_lab'], x['desc'].lower()))
+            # Orden: alfabético por descripción (modo multi-drog).
+            # Si vino prov específico, mantener orden cubre primero.
+            if prov_id:
+                items.sort(key=lambda x: (not x['cubre_lab'], x['desc'].lower()))
+            else:
+                items.sort(key=lambda x: x['desc'].lower())
 
-            cierre = proximo_cierre(session, prov_id)
+            # Counter de pendientes (NO_VINO de pedidos previos) por producto.
+            # Sirve para la columna "Pendientes" del armado.
+            obs_ids_items = [it['pid'] for it in items if it.get('pid')]
+            pendientes_por_obs = {}
+            if obs_ids_items:
+                from sqlalchemy import func as _func2
+                rows_pend = (session.query(
+                                PedidoEmitidoItem.observer_id,
+                                _func2.count(PedidoEmitidoItem.id),
+                            ).filter(
+                                PedidoEmitidoItem.estado == 'NO_VINO',
+                                PedidoEmitidoItem.observer_id.in_(obs_ids_items),
+                            ).group_by(PedidoEmitidoItem.observer_id).all())
+                pendientes_por_obs = {oid: cnt for oid, cnt in rows_pend}
+            for it in items:
+                it['pendientes_count'] = pendientes_por_obs.get(it['pid'], 0)
+
+            cierre = proximo_cierre(session, prov_id) if prov_id else None
 
             # Pendientes de pedidos anteriores a esta drog: pedida > recibida.
             # Incluye estado=NO_VINO y RECIBIDO_PARCIAL (recibida < pedida).
@@ -595,6 +704,59 @@ def init_app(app):
                     'cubre_lab': lab_id_pend in labs_cubiertos if lab_id_pend else False,
                 })
 
+            # Pedidos guardados con mostrar_hasta vigente → mapa
+            # observer_id → [{cantidad, fecha, pedido_id, pedido_lab, mostrar_hasta}].
+            # Se attacha a cada item del armado para mostrar inline en la fila.
+            from datetime import date as _date
+            from collections import defaultdict
+            from database import Pedido
+            ped_guardado_por_obs = defaultdict(list)
+            hoy_d = _date.today()
+            ped_q = (session.query(Pedido)
+                     .filter(Pedido.mostrar_hasta.isnot(None),
+                             Pedido.mostrar_hasta >= hoy_d)
+                     .order_by(Pedido.creado_en.desc()).all())
+            if ped_q:
+                todos_cb = set()
+                for ped in ped_q:
+                    for pi in ped.items:
+                        if pi.codigo_barra:
+                            todos_cb.add(pi.codigo_barra.strip())
+                cb_to_obs = {}
+                if todos_cb:
+                    for prod in (session.query(Producto)
+                                 .filter(Producto.codigo_barra.in_(todos_cb)).all()):
+                        if prod.observer_id:
+                            cb_to_obs[prod.codigo_barra] = prod.observer_id
+                    faltantes = todos_cb - set(cb_to_obs.keys())
+                    if faltantes:
+                        from database import ProductoCodigoBarra
+                        rows = (session.query(ProductoCodigoBarra.codigo_barra,
+                                              Producto.observer_id)
+                                .join(Producto,
+                                      Producto.id == ProductoCodigoBarra.producto_id)
+                                .filter(ProductoCodigoBarra.codigo_barra.in_(faltantes),
+                                        Producto.observer_id.isnot(None)).all())
+                        for cb, oid in rows:
+                            cb_to_obs.setdefault(cb, oid)
+                for ped in ped_q:
+                    info_pedido = {
+                        'pedido_id': ped.id,
+                        'pedido_lab': ped.laboratorio,
+                        'fecha': ped.creado_en.strftime('%d/%m') if ped.creado_en else '',
+                        'mostrar_hasta': ped.mostrar_hasta.strftime('%d/%m/%y'),
+                    }
+                    for pi in ped.items:
+                        oid = cb_to_obs.get((pi.codigo_barra or '').strip())
+                        if not oid:
+                            continue
+                        ped_guardado_por_obs[oid].append({
+                            **info_pedido, 'cantidad': pi.cantidad,
+                        })
+            # Attach a cada item del armado.
+            for it in items:
+                it['pedidos_guardados'] = ped_guardado_por_obs.get(it['pid'], [])
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
@@ -602,6 +764,8 @@ def init_app(app):
                                    pendientes=sum(1 for i in items if not i['cubre_lab']),
                                    cierre=cierre,
                                    target_dias=target_dias,
+                                   drog_label=drog_label,
+                                   drog_nombre_full=drog_nombre_full,
                                    pendientes_anteriores=pendientes_anteriores)
 
     @app.route('/api/pedidos/dia/buscar-producto')
@@ -857,6 +1021,45 @@ def init_app(app):
                 session.delete(row)
                 session.commit()
         return jsonify({'ok': True})
+
+    @app.route('/api/lab-drog/asignar-bulk', methods=['POST'])
+    @login_required
+    def api_lab_drog_asignar_bulk():
+        """Body: {drogueria_id, laboratorio_ids: [int, ...]}.
+        Crea entradas en LaboratorioDrogueria (lab × drog). Idempotente.
+        Usado para asignar en bulk los productos 'Libres' del armado a una drog."""
+        from database import LaboratorioDrogueria
+        data = request.get_json(silent=True) or {}
+        try:
+            drog_id = int(data.get('drogueria_id') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'drogueria_id inválido'}), 400
+        if not drog_id:
+            return jsonify({'ok': False, 'error': 'drogueria_id requerido'}), 400
+        labs_raw = data.get('laboratorio_ids') or []
+        try:
+            lab_ids = [int(x) for x in labs_raw if x]
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'laboratorio_ids inválidos'}), 400
+        if not lab_ids:
+            return jsonify({'ok': False, 'error': 'Sin laboratorios para asignar'}), 400
+        with get_db() as session:
+            existentes = set(r[0] for r in (session.query(LaboratorioDrogueria.laboratorio_id)
+                .filter(LaboratorioDrogueria.drogueria_id == drog_id,
+                        LaboratorioDrogueria.laboratorio_id.in_(lab_ids))).all())
+            creados = 0
+            for lid in lab_ids:
+                if lid in existentes:
+                    continue
+                session.add(LaboratorioDrogueria(laboratorio_id=lid, drogueria_id=drog_id))
+                creados += 1
+            session.commit()
+            return jsonify({
+                'ok': True,
+                'creados': creados,
+                'ya_existian': len(lab_ids) - creados,
+                'total_solicitados': len(lab_ids),
+            })
 
     @app.route('/api/pedidos/dia/emitir', methods=['POST'])
     @login_required

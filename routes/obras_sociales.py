@@ -1745,6 +1745,7 @@ def init_app(app):
                 ObsVD.obra_social_observer.isnot(None),
                 ObsVD.fecha_estadistica >= desde,
                 ObsVD.fecha_estadistica <= hasta,
+                ObsVD.tipo_operacion == 'V',
             ]
             otros_ids_full = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
             if os_id_filter:
@@ -2078,6 +2079,7 @@ def init_app(app):
                 ObsVentaDetalle.id_farmacia == id_farmacia,
                 ObsVentaDetalle.fecha_estadistica >= desde,
                 ObsVentaDetalle.fecha_estadistica <= hasta,
+                ObsVentaDetalle.tipo_operacion == 'V',
             )
             .group_by(
                 ObsVentaDetalle.cliente_observer,

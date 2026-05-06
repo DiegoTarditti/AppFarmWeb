@@ -9,6 +9,14 @@
     <div class="ml-auto flex items-center gap-3">
         <input type="text" id="filtro" placeholder="Filtrar laboratorio…"
                class="bg-white border border-surface-border rounded px-2 py-1 text-sm w-56">
+        <form action="{{ url_for('laboratorio_create') }}" method="post" class="flex items-center gap-1.5">
+            <input type="text" name="nombre" placeholder="+ Nuevo laboratorio…" required
+                   class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-52">
+            <button type="submit"
+                    class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2.5 py-1 rounded">
+                Agregar
+            </button>
+        </form>
         <button onclick="abrirConfig()"
                 class="text-xs border border-surface-border px-2 py-1 rounded hover:bg-black/[0.04]">
             ⚙ Columnas
@@ -45,7 +53,7 @@
             </thead>
             <tbody class="divide-y divide-surface-border">
                 {% for lab in labs %}
-                <tr class="hover:bg-black/[0.02] lab-row" data-nombre="{{ lab.nombre | lower }}">
+                <tr class="hover:bg-black/[0.02] lab-row group" data-nombre="{{ lab.nombre | lower }}">
                     <td class="px-3 py-1.5 font-medium sticky left-0 bg-white">
                         {% set of = ofertas_lab.get(lab.id) %}
                         <a href="{{ url_for('lab_ofertas_minimo', lab_id=lab.id) }}"
@@ -57,6 +65,11 @@
                             📋 {{ of.fecha }}
                         </a>
                         {% endif %}
+                        <button type="button" onclick="borrarLab({{ lab.id }}, '{{ lab.nombre | e }}')"
+                                title="Borrar laboratorio"
+                                class="ml-1 opacity-0 group-hover:opacity-100 text-[10px] text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-1 rounded transition-opacity">
+                            ✕
+                        </button>
                     </td>
                     {% for d in drogs %}
                     {% set checked = lab.id in matriz and d.id in matriz[lab.id] %}
@@ -100,6 +113,15 @@
 
 <script>
 const _todasDrogs = {{ todas_drogs | tojson }};
+
+async function borrarLab(labId, nombre) {
+    if (!confirm(`¿Borrar el laboratorio "${nombre}"?\n\nLos productos asociados quedarán sin laboratorio (no se borran).`)) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/laboratorio/${labId}/delete`;
+    document.body.appendChild(form);
+    form.submit();
+}
 
 async function toggleMatch(cb) {
     cb.disabled = true;

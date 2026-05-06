@@ -163,8 +163,8 @@
     }
     </script>
 
-    <button type="button" onclick="backfillCodigosBarra(this, false)"
-       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-violet-400 hover:shadow-sm transition-all">
+    <div onclick="backfillCodigosBarra(this, false)"
+       class="cursor-pointer text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-violet-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">
             <div class="w-10 h-10 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center flex-shrink-0">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
@@ -190,7 +190,7 @@
                 <p id="backfill-cb-result" class="text-xs mt-2 hidden font-mono"></p>
             </div>
         </div>
-    </button>
+    </div>
     <script>
     async function backfillCodigosBarra(btn, dry) {
         const resultEl = document.getElementById('backfill-cb-result');
@@ -226,8 +226,8 @@
     }
     </script>
 
-    <button type="button"
-       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-emerald-400 hover:shadow-sm transition-all">
+    <div
+       class="cursor-pointer text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-emerald-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">
             <div class="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
@@ -255,7 +255,7 @@
                 <p id="popular-obs-result" class="text-xs mt-2 hidden font-mono"></p>
             </div>
         </div>
-    </button>
+    </div>
     <script>
     async function popularDesdeObs(btn, dry) {
         const original = btn.textContent;
@@ -285,8 +285,8 @@
     }
     </script>
 
-    <button type="button"
-       class="text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-indigo-400 hover:shadow-sm transition-all">
+    <div
+       class="cursor-pointer text-left w-full bg-white border border-surface-border rounded-xl p-5 hover:border-indigo-400 hover:shadow-sm transition-all">
         <div class="flex items-start gap-3">
             <div class="w-10 h-10 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center flex-shrink-0">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
@@ -313,7 +313,7 @@
                 <p id="bridge-result" class="text-xs mt-2 hidden font-mono"></p>
             </div>
         </div>
-    </button>
+    </div>
     <script>
     async function bridgeObserver(btn, dry) {
         const resultEl = document.getElementById('bridge-result');
