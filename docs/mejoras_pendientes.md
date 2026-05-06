@@ -62,10 +62,10 @@ una tarea aparte.
   Bitmap Index Scan (~0.7ms vs full scan). Aplica a /obs/productos,
   modulo_packs, pack_detector, purchase. Ver commit posterior a `82bc3af`.
 
-### Bulk queries en `/api/pedido/<id>/indicadores`
-- **Trigger**: pedidos de más de 500 items tardan > 3 seg en abrir Indicadores.
-- **Esfuerzo**: 1-2 horas.
-- **Cómo**: hoy hace varios queries pequeños. Refactorear a 2-3 queries con joins masivos.
+### ~~Bulk queries en `/api/pedido/<id>/indicadores`~~ ✅ HECHO 2026-05-06
+- Iteraciones previas ya redujeron a queries en lote con `.in_(obs_ids)` y un solo SUM con CASE para u3m+u12m.
+- 2026-05-06 commit `b0e6ba6`: unificadas las 2 queries de `obs_ventas_mensuales` (u3m+u12m con CASE + serie_mensual GROUP BY) en 1 sola query raw, agregando en Python. Ahorra 1 round-trip Render→DB. 7 tests test_indicadores siguen verdes.
+- Si vuelve a tardar (pedidos >2000 items), siguiente paso: caching corto del JSON de respuesta por pedido_id+q.
 
 ### ~~Limpieza periódica de `home_card_clicks`~~ ✅ YA EXISTÍA
 - Endpoint `POST /api/cron/limpiar-home-card-clicks` en `routes/admin.py:572`. Workflow `.github/workflows/cron-limpiar-home-card-clicks.yml` corre domingos 03:30 UTC. Borra >90 días.
