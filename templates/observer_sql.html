@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}SQL Observer (read-only){% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">⚡ SQL Observer (read-only)</h1>
+    <span class="text-xs text-[#6f6f6f]">Solo SELECT / WITH. Bloquea DDL/DML. Máx 5000 filas.</span>
+    <a href="{{ url_for('observer_schema') }}" class="ml-auto text-xs text-violet-700 hover:text-violet-900 underline">← Schema explorer</a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-7xl mx-auto">
+
+        {% if error %}
+        <div class="bg-rose-50 border-l-4 border-rose-400 rounded-r p-3 mb-4">
+            <p class="text-sm text-rose-900 font-mono">⚠ {{ error }}</p>
+        </div>
+        {% endif %}
+
+        <form method="post" class="bg-white border border-surface-border rounded-xl p-3 mb-4">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block mb-1">Query SQL (read-only)</label>
+            <textarea name="query" rows="6" autofocus
+                      placeholder="SELECT DISTINCT IdTipoOperacion, COUNT(*) AS n FROM DW.ProductosVendidos GROUP BY IdTipoOperacion;"
+                      class="w-full font-mono text-[13px] bg-[#fafafa] border border-surface-border rounded p-2 focus:border-emerald-500 focus:outline-none">{{ query }}</textarea>
+            <div class="flex items-center gap-3 mt-2 flex-wrap">
+                <div class="flex items-center gap-1">
+                    <label class="text-[11px] text-[#666]">Máx filas:</label>
+                    <input type="number" name="max_rows" value="{{ max_rows or 200 }}" min="1" max="5000"
+                           class="border border-surface-border rounded px-2 py-1 text-sm w-20">
+                </div>
+                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-1.5 rounded text-sm">
+                    ▶ Ejecutar
+                </button>
+                <span class="text-[11px] text-[#888]">Ctrl+Enter también ejecuta.</span>
+            </div>
+        </form>
+
+        {% if result %}
+        <div class="bg-white border border-surface-border rounded-xl p-3 mb-4">
+            <p class="text-xs font-semibold text-[#555] mb-2">
+                {{ result.count }} fila{{ '' if result.count == 1 else 's' }}
+                {% if result.truncated %}<span class="text-amber-700">· truncado a {{ max_rows }}</span>{% endif %}
+                · {{ result.cols | length }} columna{{ '' if result.cols | length == 1 else 's' }}
+            </p>
+            {% if result.rows %}
+            <div class="overflow-x-auto border border-[#eee] rounded">
+                <table class="w-full text-[11px]">
+                    <thead class="bg-[#fafafa] sticky top-0">
+                        <tr>
+                            {% for c in result.cols %}
+                            <th class="px-2 py-1 text-left font-mono text-[10px] text-[#555] whitespace-nowrap border-b border-[#e5e5e5]">{{ c }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#f0f0f0]">
+                        {% for row in result.rows %}
+                        <tr class="hover:bg-[#fafafa]">
+                            {% for c in result.cols %}
+                            <td class="px-2 py-1 whitespace-nowrap font-mono text-[#1e1e1e]" title="{{ row.get(c) }}">
+                                {% set v = row.get(c) %}
+                                {% if v is none %}<span class="text-[#bbb]">NULL</span>
+                                {% elif v|string|length > 60 %}{{ v|string|truncate(60) }}
+                                {% else %}{{ v }}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-xs text-[#999] italic">Sin filas.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# Snippets útiles #}
+        <details class="bg-white border border-surface-border rounded-xl p-3">
+            <summary class="cursor-pointer text-xs font-semibold text-[#555] hover:text-[#1e1e1e]">📚 Snippets útiles</summary>
+            <div class="mt-2 space-y-2 text-[11px] font-mono">
+                {% set snippets = [
+                    ('Tipos de operación únicos', "SELECT DISTINCT IdTipoOperacion, COUNT(*) AS n\nFROM DW.ProductosVendidos\nGROUP BY IdTipoOperacion\nORDER BY n DESC;"),
+                    ('Movimientos del kardex de un producto', "SELECT TOP 50 *\nFROM DW.ProductosHistorico\nWHERE IdProducto = 12345\nORDER BY Fecha DESC;"),
+                    ('Stock por farmacia', "SELECT TOP 100 IdFarmacia, IdProducto, StockActual, Minimo, Maximo\nFROM DW.StockFarmaciasProductos\nWHERE Minimo > 0;"),
+                    ('Listar columnas de una tabla', "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH AS len, IS_NULLABLE\nFROM INFORMATION_SCHEMA.COLUMNS\nWHERE TABLE_NAME = 'ProductosVendidos'\nORDER BY ORDINAL_POSITION;"),
+                ] %}
+                {% for nombre, sql in snippets %}
+                <div class="border border-[#eee] rounded p-2">
+                    <p class="text-[#666] mb-1">{{ nombre }}</p>
+                    <pre class="bg-[#fafafa] p-2 rounded text-[#1e1e1e] overflow-x-auto cursor-pointer hover:bg-[#f0f0f0]"
+                         onclick="document.querySelector('textarea[name=query]').value = this.textContent.trim(); document.querySelector('textarea[name=query]').focus();">{{ sql }}</pre>
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+
+    </div>
+</div>
+
+<script>
+// Ctrl+Enter en el textarea ejecuta
+document.querySelector('textarea[name=query]').addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        e.target.closest('form').submit();
+    }
+});
+</script>
+{% endblock %}
