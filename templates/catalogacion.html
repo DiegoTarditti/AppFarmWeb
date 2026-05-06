@@ -64,6 +64,11 @@
                 🔄 Ejecutar backfill
             </button>
         </div>
+        <p class="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+            ⚠ Para catálogos grandes (10k+ productos) el botón puede caer por timeout HTTP.
+            Si tenés acceso a la Shell del servidor, ejecutalo desde ahí (no tiene timeout):
+            <code class="bg-white px-1 rounded border border-amber-300 font-mono text-[10px]">python -m scripts.backfill_atributos</code>
+        </p>
         <div id="backfill-log" class="mt-4 hidden">
             <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs text-emerald-900" id="backfill-result"></div>
         </div>

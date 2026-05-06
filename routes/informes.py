@@ -581,6 +581,764 @@ def init_app(app):
                                venta_tipo=venta_tipo,
                                labs_disponibles=labs_disponibles)
 
+    @app.route('/informes/ventas-multi')
+    @login_required
+    def informe_ventas_multi():
+        """Cruce de ventas por droga / producto / médico / fecha — pivot
+        configurable. Filtros opcionales y group_by para agrupar resultados.
+        """
+        from datetime import date as _date
+        from datetime import timedelta as _td
+
+        from sqlalchemy import func as _func
+
+        from database import (
+            ObsMedico,
+            ObsNombreDroga,
+            ObsProducto,
+            ObsVentaDetalle,
+        )
+
+        def _parse_d(s):
+            try:
+                return _date.fromisoformat(s) if s else None
+            except (ValueError, TypeError):
+                return None
+
+        hoy = _date.today()
+        desde = _parse_d(request.args.get('desde')) or (hoy - _td(days=30))
+        hasta = _parse_d(request.args.get('hasta')) or hoy
+        droga_id = request.args.get('droga_id', type=int)
+        producto_id = request.args.get('producto_id', type=int)
+        medico_id = request.args.get('medico_id', type=int)
+        os_id = request.args.get('os_id', type=int)
+        # Rubro: si no viene en URL, default = 12 (Medicamentos). Para "Todos"
+        # el user pasa rubro_id=0 explícito.
+        if 'rubro_id' in request.args:
+            rubro_id = request.args.get('rubro_id', type=int)
+        else:
+            rubro_id = 12  # Medicamentos por default
+        if rubro_id == 0:
+            rubro_id = None
+        excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
+        group_by = (request.args.get('group_by') or 'producto').strip()
+        if group_by not in ('producto', 'droga', 'medico', 'mes', 'dia', 'os'):
+            group_by = 'producto'
+
+        # Etiquetas opcionales para los filtros aplicados (mostrar en UI).
+        droga_nombre = producto_desc = medico_nombre = os_nombre = None
+
+        rows = []
+        total_cantidad = 0.0
+        total_importe = 0.0
+
+        # Solo ejecutamos el cruce si algún filtro fue aplicado o es rango corto.
+        # Sin filtros + 30d puede ser pesado, lo dejamos correr igual capeado a 200.
+        with database.get_db() as session:
+            base = (session.query(ObsVentaDetalle)
+                    .filter(ObsVentaDetalle.fecha_estadistica >= desde,
+                            ObsVentaDetalle.fecha_estadistica <= hasta))
+            if producto_id:
+                base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
+                op = session.get(ObsProducto, producto_id)
+                if op:
+                    producto_desc = op.descripcion
+            if medico_id:
+                base = base.filter(ObsVentaDetalle.medico_observer == medico_id)
+                m = session.get(ObsMedico, medico_id)
+                if m:
+                    medico_nombre = m.nombre
+            if os_id:
+                from database import ObsObraSocial
+                base = base.filter(ObsVentaDetalle.obra_social_observer == os_id)
+                os_obj = session.get(ObsObraSocial, os_id)
+                if os_obj:
+                    os_nombre = os_obj.descripcion
+            ya_joined_obs = False
+            ya_joined_subrubro = False
+            if droga_id or excluir_sin_droga or rubro_id:
+                # Cualquiera de estos requiere joinear ObsProducto.
+                base = base.join(
+                    ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                )
+                ya_joined_obs = True
+            if droga_id:
+                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
+                d = session.get(ObsNombreDroga, droga_id)
+                if d:
+                    droga_nombre = d.descripcion
+            if excluir_sin_droga:
+                base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+            if rubro_id:
+                from database import ObsSubrubro
+                base = base.join(
+                    ObsSubrubro,
+                    ObsSubrubro.observer_id == ObsProducto.subrubro_observer,
+                ).filter(ObsSubrubro.rubro_observer == rubro_id)
+                ya_joined_subrubro = True
+
+            # GROUP BY según el pivot elegido.
+            if group_by == 'producto':
+                q = (base.with_entities(
+                        ObsVentaDetalle.producto_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.producto_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                     .limit(200))
+                base_rows = q.all()
+                pids = [r.key for r in base_rows]
+                desc_por_pid = dict(session.query(ObsProducto.observer_id,
+                                                   ObsProducto.descripcion)
+                                     .filter(ObsProducto.observer_id.in_(pids)).all()) if pids else {}
+                for r in base_rows:
+                    rows.append({
+                        'key_id': r.key, 'key_label': desc_por_pid.get(r.key, f'#{r.key}'),
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            elif group_by == 'droga':
+                # Si ya joineamos por filtro de droga, no volver a joinear
+                # (psycopg2 rompe con DuplicateAlias).
+                base_q = base if ya_joined_obs else base.join(
+                    ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                )
+                q = (base_q.with_entities(
+                             ObsProducto.nombre_droga_observer.label('key'),
+                             _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                             _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                             _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                         ).group_by(ObsProducto.nombre_droga_observer)
+                         .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                         .limit(200))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                desc_por_id = dict(session.query(ObsNombreDroga.observer_id,
+                                                  ObsNombreDroga.descripcion)
+                                   .filter(ObsNombreDroga.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows.append({
+                        'key_id': r.key, 'key_label': desc_por_id.get(r.key, '— sin droga —' if not r.key else f'#{r.key}'),
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            elif group_by == 'medico':
+                q = (base.with_entities(
+                        ObsVentaDetalle.medico_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.medico_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                     .limit(200))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                med_por_id = dict(session.query(ObsMedico.observer_id, ObsMedico.nombre)
+                                  .filter(ObsMedico.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows.append({
+                        'key_id': r.key, 'key_label': med_por_id.get(r.key, '— sin médico (venta libre) —' if not r.key else f'#{r.key}'),
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            elif group_by == 'os':
+                from database import ObsObraSocial
+                q = (base.with_entities(
+                        ObsVentaDetalle.obra_social_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.obra_social_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                     .limit(200))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                os_por_id = dict(session.query(ObsObraSocial.observer_id,
+                                                ObsObraSocial.descripcion)
+                                 .filter(ObsObraSocial.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows.append({
+                        'key_id': r.key,
+                        'key_label': os_por_id.get(r.key, '— particular —' if not r.key else f'#{r.key}'),
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            elif group_by == 'mes':
+                anio = _func.extract('year', ObsVentaDetalle.fecha_estadistica)
+                mes = _func.extract('month', ObsVentaDetalle.fecha_estadistica)
+                q = (base.with_entities(
+                        anio.label('anio'), mes.label('mes'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(anio, mes).order_by(anio, mes))
+                for r in q.all():
+                    rows.append({
+                        'key_id': f'{int(r.anio)}-{int(r.mes):02d}',
+                        'key_label': f'{int(r.mes):02d}/{int(r.anio)}',
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            else:  # dia
+                q = (base.with_entities(
+                        ObsVentaDetalle.fecha_estadistica.label('fec'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.fecha_estadistica)
+                     .order_by(ObsVentaDetalle.fecha_estadistica))
+                for r in q.all():
+                    rows.append({
+                        'key_id': r.fec.isoformat() if r.fec else '',
+                        'key_label': r.fec.strftime('%d/%m/%Y') if r.fec else '—',
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            for r in rows:
+                total_cantidad += r['cantidad']
+                total_importe += r['importe']
+
+            # KPIs adicionales para el banner.
+            from datetime import timedelta as _td2
+            dias = max(1, (hasta - desde).days + 1)
+            ops_total = (base.with_entities(_func.count(ObsVentaDetalle.id_producto_vendido))
+                         .scalar() or 0)
+            top_med_row = (base.with_entities(
+                            ObsVentaDetalle.medico_observer.label('mid'),
+                            _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('c'),
+                          ).filter(ObsVentaDetalle.medico_observer.isnot(None))
+                           .group_by(ObsVentaDetalle.medico_observer)
+                           .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                           .first())
+            top_med_nombre = None
+            if top_med_row:
+                m = session.get(ObsMedico, top_med_row.mid)
+                top_med_nombre = m.nombre if m else None
+
+            from database import ObsObraSocial as _ObsOS
+            top_os_row = (base.with_entities(
+                            ObsVentaDetalle.obra_social_observer.label('oid'),
+                            _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('c'),
+                          ).filter(ObsVentaDetalle.obra_social_observer.isnot(None))
+                           .group_by(ObsVentaDetalle.obra_social_observer)
+                           .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                           .first())
+            top_os_nombre = None
+            if top_os_row:
+                _o = session.get(_ObsOS, top_os_row.oid)
+                top_os_nombre = _o.descripcion if _o else None
+
+            # Donut top 10 del grupo principal (los primeros rows ya están ordenados).
+            donut_data = [{'label': r['key_label'], 'value': r['cantidad']}
+                          for r in rows[:10]]
+
+            # Línea temporal por mes del período (cant + importe).
+            anio = _func.extract('year', ObsVentaDetalle.fecha_estadistica)
+            mes = _func.extract('month', ObsVentaDetalle.fecha_estadistica)
+            tl_q = (base.with_entities(
+                        anio.label('a'), mes.label('m'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('c'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('i'),
+                    ).group_by(anio, mes).order_by(anio, mes))
+            tl_por_mes = {f'{int(r.a)}-{int(r.m):02d}': (float(r.c or 0), float(r.i or 0))
+                          for r in tl_q.all()}
+            tl_labels = []
+            cur = _date(desde.year, desde.month, 1)
+            fin_mes = _date(hasta.year, hasta.month, 1)
+            while cur <= fin_mes:
+                tl_labels.append(f'{cur.year}-{cur.month:02d}')
+                if cur.month == 12:
+                    cur = _date(cur.year + 1, 1, 1)
+                else:
+                    cur = _date(cur.year, cur.month + 1, 1)
+            timeline = {
+                'labels': tl_labels,
+                'cantidad': [tl_por_mes.get(lb, (0, 0))[0] for lb in tl_labels],
+                'importe':  [tl_por_mes.get(lb, (0, 0))[1] for lb in tl_labels],
+            }
+
+        kpis = {
+            'ops_total': int(ops_total),
+            'ops_por_dia': round(ops_total / dias, 1) if dias else 0,
+            'ticket_promedio': (total_importe / ops_total) if ops_total else 0,
+            'top_medico': top_med_nombre,
+            'top_os': top_os_nombre,
+            'dias': dias,
+        }
+
+        # Lista de rubros para el dropdown.
+        from database import ObsRubro
+        with database.get_db() as session:
+            rubros = [{'id': r.observer_id, 'nombre': r.descripcion}
+                      for r in session.query(ObsRubro).order_by(ObsRubro.descripcion).all()]
+
+        return render_template('informe_ventas_multi.html',
+                               desde=desde, hasta=hasta,
+                               droga_id=droga_id, droga_nombre=droga_nombre,
+                               producto_id=producto_id, producto_desc=producto_desc,
+                               medico_id=medico_id, medico_nombre=medico_nombre,
+                               os_id=os_id, os_nombre=os_nombre,
+                               rubro_id=rubro_id,
+                               excluir_sin_droga=excluir_sin_droga,
+                               rubros=rubros,
+                               group_by=group_by, rows=rows,
+                               total_cantidad=total_cantidad,
+                               total_importe=total_importe,
+                               kpis=kpis,
+                               donut_data=donut_data,
+                               timeline=timeline)
+
+    @app.route('/informes/ventas-multi/export.xlsx')
+    @login_required
+    def informe_ventas_multi_export():
+        """Exporta la tabla del informe a XLSX. Acepta los mismos filtros
+        que la pantalla. Genera un workbook con headers + filas.
+        """
+        from datetime import date as _date
+        from datetime import timedelta as _td
+        from io import BytesIO
+
+        from sqlalchemy import func as _func
+
+        from database import (
+            ObsMedico,
+            ObsNombreDroga,
+            ObsProducto,
+            ObsVentaDetalle,
+        )
+
+        def _parse_d(s):
+            try:
+                return _date.fromisoformat(s) if s else None
+            except (ValueError, TypeError):
+                return None
+
+        hoy = _date.today()
+        desde = _parse_d(request.args.get('desde')) or (hoy - _td(days=30))
+        hasta = _parse_d(request.args.get('hasta')) or hoy
+        droga_id = request.args.get('droga_id', type=int)
+        producto_id = request.args.get('producto_id', type=int)
+        medico_id = request.args.get('medico_id', type=int)
+        group_by = (request.args.get('group_by') or 'producto').strip()
+        if group_by not in ('producto', 'droga', 'medico', 'mes', 'dia'):
+            group_by = 'producto'
+
+        # Reusar la misma lógica de query (copia del handler de la pantalla).
+        with database.get_db() as session:
+            base = (session.query(ObsVentaDetalle)
+                    .filter(ObsVentaDetalle.fecha_estadistica >= desde,
+                            ObsVentaDetalle.fecha_estadistica <= hasta))
+            if producto_id:
+                base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
+            if medico_id:
+                base = base.filter(ObsVentaDetalle.medico_observer == medico_id)
+            ya_joined_obs = False
+            if droga_id:
+                base = base.join(
+                    ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                ).filter(ObsProducto.nombre_droga_observer == droga_id)
+                ya_joined_obs = True
+
+            rows_data = []
+            if group_by == 'producto':
+                q = (base.with_entities(
+                        ObsVentaDetalle.producto_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.producto_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
+                base_rows = q.all()
+                pids = [r.key for r in base_rows]
+                desc_por_pid = dict(session.query(ObsProducto.observer_id, ObsProducto.descripcion)
+                                    .filter(ObsProducto.observer_id.in_(pids)).all()) if pids else {}
+                for r in base_rows:
+                    rows_data.append((desc_por_pid.get(r.key, f'#{r.key}'),
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+            elif group_by == 'droga':
+                base_q = base if ya_joined_obs else base.join(
+                    ObsProducto, ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+                q = (base_q.with_entities(
+                        ObsProducto.nombre_droga_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsProducto.nombre_droga_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                desc_por_id = dict(session.query(ObsNombreDroga.observer_id, ObsNombreDroga.descripcion)
+                                   .filter(ObsNombreDroga.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows_data.append((desc_por_id.get(r.key, '— sin droga —'),
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+            elif group_by == 'medico':
+                q = (base.with_entities(
+                        ObsVentaDetalle.medico_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.medico_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                med_por_id = dict(session.query(ObsMedico.observer_id, ObsMedico.nombre)
+                                  .filter(ObsMedico.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows_data.append((med_por_id.get(r.key, '— sin médico (venta libre) —'),
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+            elif group_by == 'mes':
+                anio = _func.extract('year', ObsVentaDetalle.fecha_estadistica)
+                mes = _func.extract('month', ObsVentaDetalle.fecha_estadistica)
+                q = (base.with_entities(anio.label('a'), mes.label('m'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(anio, mes).order_by(anio, mes))
+                for r in q.all():
+                    rows_data.append((f'{int(r.m):02d}/{int(r.a)}',
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+            else:  # dia
+                q = (base.with_entities(ObsVentaDetalle.fecha_estadistica.label('fec'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsVentaDetalle.fecha_estadistica)
+                     .order_by(ObsVentaDetalle.fecha_estadistica))
+                for r in q.all():
+                    rows_data.append((r.fec.strftime('%d/%m/%Y') if r.fec else '—',
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+
+        # Generar workbook.
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Ventas'
+
+        # Cabecera con resumen de filtros.
+        ws.append(['Informe ventas multi-dimensional'])
+        ws['A1'].font = Font(bold=True, size=14)
+        ws.append([f'Período: {desde.isoformat()} → {hasta.isoformat()}'])
+        filtros_txt = []
+        if droga_id: filtros_txt.append(f'droga_id={droga_id}')
+        if producto_id: filtros_txt.append(f'producto_id={producto_id}')
+        if medico_id: filtros_txt.append(f'medico_id={medico_id}')
+        ws.append([f"Filtros: {', '.join(filtros_txt) or '(ninguno)'}"])
+        ws.append([f'Agrupado por: {group_by}'])
+        ws.append([])
+
+        # Headers de tabla.
+        col_label = {'producto': 'Producto', 'droga': 'Droga',
+                     'medico': 'Médico', 'mes': 'Mes', 'dia': 'Día'}.get(group_by, 'Grupo')
+        headers = [col_label, 'Operaciones', 'Cantidad', 'Importe']
+        ws.append(headers)
+        for cell in ws[ws.max_row]:
+            cell.font = Font(bold=True, color='FFFFFF')
+            cell.fill = PatternFill('solid', fgColor='6B21A8')
+            cell.alignment = Alignment(horizontal='center')
+
+        for grupo, ops, cant, imp in rows_data:
+            ws.append([grupo, ops, cant, imp])
+
+        # Anchos.
+        ws.column_dimensions['A'].width = 50
+        ws.column_dimensions['B'].width = 14
+        ws.column_dimensions['C'].width = 14
+        ws.column_dimensions['D'].width = 16
+
+        bio = BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        from flask import send_file
+        nombre = f'ventas_multi_{group_by}_{desde.isoformat()}_{hasta.isoformat()}.xlsx'
+        return send_file(
+            bio,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=nombre,
+        )
+
+    @app.route('/api/informes/ventas-multi/detalle')
+    @login_required
+    def api_ventas_multi_detalle():
+        """Detalle drill-down de un grupo del informe ventas-multi.
+
+        Body:
+        - desde, hasta: rango de fechas (igual que la tabla principal).
+        - droga_id, producto_id, medico_id: filtros heredados de la tabla.
+        - drill_dim: dimensión del grupo clickeado (medico/droga/producto/mes/dia).
+        - drill_value: valor del grupo (ej. medico_observer=1234, mes='2026-04').
+
+        Devuelve top 50 productos del grupo con cantidad e importe.
+        """
+        from datetime import date as _date
+        from datetime import timedelta as _td
+
+        from sqlalchemy import func as _func
+
+        from database import ObsProducto, ObsVentaDetalle
+
+        def _parse_d(s):
+            try:
+                return _date.fromisoformat(s) if s else None
+            except (ValueError, TypeError):
+                return None
+
+        hoy = _date.today()
+        desde = _parse_d(request.args.get('desde')) or (hoy - _td(days=30))
+        hasta = _parse_d(request.args.get('hasta')) or hoy
+        droga_id = request.args.get('droga_id', type=int)
+        producto_id = request.args.get('producto_id', type=int)
+        medico_id = request.args.get('medico_id', type=int)
+        drill_dim = (request.args.get('drill_dim') or '').strip()
+        drill_value = (request.args.get('drill_value') or '').strip()
+
+        with database.get_db() as session:
+            base = (session.query(ObsVentaDetalle)
+                    .filter(ObsVentaDetalle.fecha_estadistica >= desde,
+                            ObsVentaDetalle.fecha_estadistica <= hasta))
+            if producto_id:
+                base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
+            if medico_id:
+                base = base.filter(ObsVentaDetalle.medico_observer == medico_id)
+            ya_joined_obs = False
+            if droga_id:
+                base = base.join(
+                    ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                ).filter(ObsProducto.nombre_droga_observer == droga_id)
+                ya_joined_obs = True
+
+            # Aplicar el drill: filtrar por la dimensión clickeada.
+            if drill_dim == 'medico':
+                try:
+                    mid = int(drill_value) if drill_value else None
+                except ValueError:
+                    mid = None
+                if mid is not None:
+                    base = base.filter(ObsVentaDetalle.medico_observer == mid)
+                else:
+                    base = base.filter(ObsVentaDetalle.medico_observer.is_(None))
+            elif drill_dim == 'producto':
+                try:
+                    pid = int(drill_value)
+                    base = base.filter(ObsVentaDetalle.producto_observer == pid)
+                except (ValueError, TypeError):
+                    pass
+            elif drill_dim == 'droga':
+                try:
+                    did = int(drill_value) if drill_value else None
+                except ValueError:
+                    did = None
+                if not ya_joined_obs:
+                    base = base.join(
+                        ObsProducto,
+                        ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                    )
+                if did is not None:
+                    base = base.filter(ObsProducto.nombre_droga_observer == did)
+                else:
+                    base = base.filter(ObsProducto.nombre_droga_observer.is_(None))
+            elif drill_dim == 'os':
+                try:
+                    oid = int(drill_value) if drill_value else None
+                except ValueError:
+                    oid = None
+                if oid is not None:
+                    base = base.filter(ObsVentaDetalle.obra_social_observer == oid)
+                else:
+                    base = base.filter(ObsVentaDetalle.obra_social_observer.is_(None))
+            elif drill_dim == 'mes':
+                try:
+                    anio_s, mes_s = drill_value.split('-')
+                    base = base.filter(
+                        _func.extract('year', ObsVentaDetalle.fecha_estadistica) == int(anio_s),
+                        _func.extract('month', ObsVentaDetalle.fecha_estadistica) == int(mes_s),
+                    )
+                except (ValueError, AttributeError):
+                    pass
+            elif drill_dim == 'dia':
+                fec = _parse_d(drill_value)
+                if fec:
+                    base = base.filter(ObsVentaDetalle.fecha_estadistica == fec)
+
+            # Agregar por producto.
+            q = (base.with_entities(
+                    ObsVentaDetalle.producto_observer.label('pid'),
+                    _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                    _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                    _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                ).group_by(ObsVentaDetalle.producto_observer)
+                 .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                 .limit(50))
+            rows = q.all()
+            pids = [r.pid for r in rows if r.pid]
+            desc_por_pid = dict(session.query(ObsProducto.observer_id, ObsProducto.descripcion)
+                                .filter(ObsProducto.observer_id.in_(pids)).all()) if pids else {}
+            return jsonify({'ok': True, 'items': [{
+                'producto_id': r.pid,
+                'descripcion': desc_por_pid.get(r.pid, f'#{r.pid}' if r.pid else '—'),
+                'cantidad': float(r.cant or 0),
+                'importe': float(r.imp or 0),
+                'operaciones': int(r.ops or 0),
+            } for r in rows]})
+
+    @app.route('/api/informes/ventas-multi/historico-droga-medico')
+    @login_required
+    def api_ventas_multi_hist_droga_medico():
+        """Histórico mensual de prescripción de una droga por médico.
+
+        Dado un droga_id + rango, devuelve top N médicos por cantidad total
+        y la serie de cantidad mensual de cada uno. Ideal para chart de líneas.
+        """
+        from datetime import date as _date
+        from datetime import timedelta as _td
+
+        from sqlalchemy import func as _func
+
+        from database import (
+            ObsMedico,
+            ObsProducto,
+            ObsVentaDetalle,
+        )
+
+        def _parse_d(s):
+            try:
+                return _date.fromisoformat(s) if s else None
+            except (ValueError, TypeError):
+                return None
+
+        droga_id = request.args.get('droga_id', type=int)
+        if not droga_id:
+            return jsonify({'ok': False, 'error': 'droga_id requerido'}), 400
+        hoy = _date.today()
+        desde = _parse_d(request.args.get('desde')) or (hoy - _td(days=180))
+        hasta = _parse_d(request.args.get('hasta')) or hoy
+        top_n = max(1, min(request.args.get('top', default=5, type=int), 15))
+
+        with database.get_db() as session:
+            anio = _func.extract('year', ObsVentaDetalle.fecha_estadistica)
+            mes = _func.extract('month', ObsVentaDetalle.fecha_estadistica)
+            base = (session.query(ObsVentaDetalle)
+                    .join(ObsProducto,
+                          ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+                    .filter(ObsProducto.nombre_droga_observer == droga_id,
+                            ObsVentaDetalle.fecha_estadistica >= desde,
+                            ObsVentaDetalle.fecha_estadistica <= hasta,
+                            ObsVentaDetalle.medico_observer.isnot(None)))
+
+            # Top N médicos por cantidad total en el período.
+            top_q = (base.with_entities(
+                        ObsVentaDetalle.medico_observer.label('mid'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                    ).group_by(ObsVentaDetalle.medico_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                     .limit(top_n))
+            top_rows = top_q.all()
+            top_ids = [r.mid for r in top_rows if r.mid]
+            nombres = dict(session.query(ObsMedico.observer_id, ObsMedico.nombre)
+                           .filter(ObsMedico.observer_id.in_(top_ids)).all()) if top_ids else {}
+
+            # Serie mensual por médico (solo top N).
+            por_medico = {mid: {} for mid in top_ids}
+            if top_ids:
+                serie_q = (base.with_entities(
+                              ObsVentaDetalle.medico_observer.label('mid'),
+                              anio.label('anio'), mes.label('mes'),
+                              _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                          ).filter(ObsVentaDetalle.medico_observer.in_(top_ids))
+                           .group_by(ObsVentaDetalle.medico_observer, anio, mes))
+                for r in serie_q.all():
+                    if not r.mid:
+                        continue
+                    key = f'{int(r.anio)}-{int(r.mes):02d}'
+                    por_medico[r.mid][key] = float(r.cant or 0)
+
+            # Construir labels de meses (incluyendo los vacíos).
+            labels = []
+            cur = _date(desde.year, desde.month, 1)
+            fin = _date(hasta.year, hasta.month, 1)
+            while cur <= fin:
+                labels.append(f'{cur.year}-{cur.month:02d}')
+                # avanzar 1 mes
+                if cur.month == 12:
+                    cur = _date(cur.year + 1, 1, 1)
+                else:
+                    cur = _date(cur.year, cur.month + 1, 1)
+
+            series = []
+            for mid in top_ids:
+                series.append({
+                    'medico_id': mid,
+                    'nombre': nombres.get(mid, f'Médico #{mid}'),
+                    'data': [por_medico[mid].get(lb, 0) for lb in labels],
+                    'total': sum(por_medico[mid].values()),
+                })
+            return jsonify({'ok': True, 'labels': labels, 'series': series})
+
+    @app.route('/api/informes/buscar-medico')
+    @login_required
+    def api_informes_buscar_medico():
+        """Autocomplete para el filtro médico. Top 20 por nombre."""
+        from database import ObsMedico
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        with database.get_db() as session:
+            results = (session.query(ObsMedico)
+                       .filter(ObsMedico.fecha_baja.is_(None),
+                               ObsMedico.nombre.ilike(f'%{q}%'))
+                       .order_by(ObsMedico.nombre)
+                       .limit(20).all())
+            return jsonify({'items': [{'id': m.observer_id,
+                                        'nombre': m.nombre,
+                                        'cuit': m.cuit or ''}
+                                       for m in results]})
+
+    @app.route('/api/informes/buscar-os')
+    @login_required
+    def api_informes_buscar_os():
+        """Autocomplete para filtro Obra Social."""
+        from database import ObsObraSocial
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        with database.get_db() as session:
+            results = (session.query(ObsObraSocial)
+                       .filter(ObsObraSocial.fecha_baja.is_(None),
+                               ObsObraSocial.descripcion.ilike(f'%{q}%'))
+                       .order_by(ObsObraSocial.descripcion)
+                       .limit(20).all())
+            return jsonify({'items': [{'id': o.observer_id, 'nombre': o.descripcion}
+                                       for o in results]})
+
+    @app.route('/api/informes/buscar-producto-obs')
+    @login_required
+    def api_informes_buscar_producto_obs():
+        """Autocomplete para filtro producto (catálogo Observer)."""
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        with database.get_db() as session:
+            results = (session.query(ObsProducto)
+                       .filter(ObsProducto.fecha_baja.is_(None),
+                               ObsProducto.descripcion.ilike(f'%{q}%'))
+                       .order_by(ObsProducto.descripcion)
+                       .limit(20).all())
+            return jsonify({'items': [{'id': p.observer_id, 'nombre': p.descripcion}
+                                       for p in results]})
+
     @app.route('/informes/pedido-auto', methods=['GET'])
     @login_required
     def informe_pedido_auto():

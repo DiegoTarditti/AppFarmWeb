@@ -32,7 +32,38 @@ Pendiente para retomar en casa:
 Después → empezar **Etapa 2** (unificar `barcode_mappings` + `equivalencias_proveedor`
 en una sola tabla `mapeo_proveedor`).
 
-## Otras cosas hechas hoy
+## Sesión tarde 2026-05-04 (post-merge PR #5/#6/#7/#8/#9)
+
+**Hecho:**
+- Mergeados PRs y deploy live en Render.
+- Pre-poblar productos + sync labs corrido en Render via shell (60157 productos
+  creados, 55867 con laboratorio_id, 1989 labs nuevos).
+- Card nuevo "🔬 Ventas por droga / producto / médico / fecha" agregado en
+  `/informes` (sección Catálogo y ventas).
+- Pantalla `/informes/ventas-multi` armada (rama `feat/informe-ventas-multi`):
+  - 4 filtros: rango fechas (default 30d), droga, producto, médico — los
+    3 últimos con autocomplete.
+  - 5 modos de agrupación: producto / droga / médico / mes / día.
+  - Top 200 ordenados por cantidad. Columnas: ítem, ops, cant, importe, % total.
+  - Endpoints nuevos: `/api/informes/buscar-medico`, `/api/informes/buscar-producto-obs`.
+  - Reusa `/api/informes/buscar-droga` existente (devuelve `descripcion`, JS
+    soporta `nombre || descripcion`).
+
+**Pendiente (rama `feat/informe-ventas-multi` sin commitear):**
+- Verificar autocomplete del médico en navegador (user reportó vacío).
+  Debug: F12 → Network al tipear, ver request a `/api/informes/buscar-medico`.
+  Si 404 → restart web. Si 500 → logs.
+- Una vez validado, commit + PR a main.
+- Pulido futuro: paginar resultados (ahora top 200 fijo), export XLSX, drill-down
+  (click en una fila para sub-agrupar), chart de evolución temporal.
+
+**Continuación de Etapa 1 (catálogo simplificación):**
+1. Validar 1-2 días con el código nuevo (lecturas alt1/2/3 ya removidas).
+2. Setear env `EAN_LEGACY_ALTS_DISABLED=1` en Render (defensivo).
+3. PR para DROP COLUMN `alt1/2/3` + remover del modelo.
+4. Etapa 2: unificar `barcode_mappings` + `equivalencias_proveedor`.
+
+## Otras cosas hechas hoy (mañana)
 - **`EquivalenciaProveedor`**: tabla nueva para guardar match manual texto→producto
   del wizard de ofertas (antes el match manual se perdía). Estrategia 0 del
   matcher consulta esta tabla antes del fuzzy.
