@@ -75,6 +75,11 @@
                    class="text-xs font-semibold px-3 py-1.5 rounded-lg border border-violet-300 text-violet-800 bg-violet-50 hover:bg-violet-100 transition-colors">
                     🧬 Catalogación
                 </a>
+                <a href="{{ url_for('productos_verificar_nuevos') }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 transition-colors"
+                   title="Verificar productos creados desde importación de ofertas — detectar duplicados">
+                    ⚠ Verificar nuevos
+                </a>
                 <button type="button" onclick="document.getElementById('form-nuevo').classList.toggle('hidden')"
                         class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors">
                     + Agregar producto
