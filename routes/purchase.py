@@ -1189,39 +1189,28 @@ def init_app(app):
 
                 ym_expr = database.ObsVentaMensual.anio * 100 + database.ObsVentaMensual.mes
 
-                # Una sola query para 3m y 12m. El rango 3m está dentro del 12m,
-                # así que filtramos por 12m y sumamos condicionalmente con CASE.
-                # Antes eran 2 round-trips → 1.
-                from sqlalchemy import case
-                rows_ventas = session.query(
+                # Una sola query: trae raw rows (producto, anio, mes, unidades)
+                # y agregamos en Python u3m / u12m / serie_mensual. Antes eran
+                # 2 round-trips (u3m+u12m con CASE, y serie_mensual GROUP BY) que
+                # tocaban la misma tabla con el mismo WHERE. Para N items × 12 meses
+                # son ~N*12 rows max — manejable. Ahorra 1 round-trip.
+                rows_raw = session.query(
                     database.ObsVentaMensual.producto_observer,
-                    _f.sum(case(
-                        (ym_expr.between(desde_3m, hasta),
-                         database.ObsVentaMensual.unidades),
-                        else_=0)).label('u3m'),
-                    _f.sum(database.ObsVentaMensual.unidades).label('u12m'),
+                    database.ObsVentaMensual.anio,
+                    database.ObsVentaMensual.mes,
+                    database.ObsVentaMensual.unidades,
                 ).filter(
                     database.ObsVentaMensual.id_farmacia == id_farmacia,
                     database.ObsVentaMensual.producto_observer.in_(obs_ids),
                     ym_expr.between(desde_12m, hasta),
-                ).group_by(database.ObsVentaMensual.producto_observer).all()
-                ventas_3m = {pid: float(u3 or 0) for (pid, u3, _) in rows_ventas}
-                ventas_12m = {pid: float(u12 or 0) for (pid, _, u12) in rows_ventas}
-
-                # Estacionalidad agregada: solo necesitamos total por (anio, mes) sumando
-                # TODOS los productos. Pre-2026-05 esto traía 1 row por (producto, mes)
-                # y se sumaba en Python — con N items × 12m = N×12 rows. Ahora SUMA en
-                # SQL devolviendo 12 rows fijas.
-                for (anio, mes, u_total) in session.query(
-                        database.ObsVentaMensual.anio,
-                        database.ObsVentaMensual.mes,
-                        _f.sum(database.ObsVentaMensual.unidades))\
-                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
-                            database.ObsVentaMensual.producto_observer.in_(obs_ids),
-                            ym_expr.between(desde_12m, hasta))\
-                    .group_by(database.ObsVentaMensual.anio,
-                              database.ObsVentaMensual.mes).all():
-                    serie_mensual[(anio, mes)] = float(u_total or 0)
+                ).all()
+                for pid, anio, mes, u in rows_raw:
+                    u_f = float(u or 0)
+                    ventas_12m[pid] = ventas_12m.get(pid, 0.0) + u_f
+                    ym = anio * 100 + mes
+                    if desde_3m <= ym <= hasta:
+                        ventas_3m[pid] = ventas_3m.get(pid, 0.0) + u_f
+                    serie_mensual[(anio, mes)] = serie_mensual.get((anio, mes), 0.0) + u_f
 
                 lab_ids = {p.laboratorio_observer for p in obs_prods if p.laboratorio_observer}
                 droga_ids = {p.nombre_droga_observer for p in obs_prods if p.nombre_droga_observer}
