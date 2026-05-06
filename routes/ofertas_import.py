@@ -555,9 +555,18 @@ def init_app(app):
                     'limpia': desc_limpia,
                     'cambios': cambios,
                 })
+            # Si el item tiene código interno de proveedor pero no EAN, lo
+            # mandamos también como `ean` para que match_producto lo busque
+            # en alt1/2/3 (donde _persistir_equivalencia lo guardó en imports
+            # anteriores). No genera falsos positivos: EANs reales tienen 8-13
+            # dígitos; códigos internos cortos no colisionan.
+            ean_input = it.get('ean') or None
+            codigo_input = (it.get('codigo') or '').strip() or None
+            if not ean_input and codigo_input:
+                ean_input = codigo_input
             items_para_match.append({
-                'ean': it.get('ean'),
-                'codigo_alfabeta': it.get('codigo'),
+                'ean': ean_input,
+                'codigo_alfabeta': codigo_input,
                 'descripcion': desc_limpia,
                 'precio': it.get('precio'),
             })

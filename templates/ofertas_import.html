@@ -1117,6 +1117,8 @@ function renderValidacion(stats) {
                                   status === 'warning' ? '⚠' :
                                   status === 'fuzzy' ? '🔍' : '';
                     const eanAlf = it.ean || it.codigo || '';
+                    // Si tiene código interno (no EAN) y está sin resolver → nota de equivalencia
+                    const tieneCodigoSinEan = !it.ean && it.codigo && status === 'not_found';
                     const matchDesc = it._match_descripcion_local || '';
                     const score = it._score != null ? (it._score * 100).toFixed(0) + '%' : '';
                     let origenBadge = '';
@@ -1145,12 +1147,16 @@ function renderValidacion(stats) {
                     const motivoExtra = (status === 'warning')
                         ? `<div class="text-[9px] text-amber-700 italic">${escapeHtml(it._motivo || '')}</div>`
                         : '';
+                    const equivNota = tieneCodigoSinEan
+                        ? `<div class="text-[9px] text-sky-700 mt-0.5">💾 Cod. interno <span class="font-mono">${escapeHtml(it.codigo)}</span> → se guardará como equivalencia al vincular y confirmar</div>`
+                        : '';
                     return `<tr class="${colorCls} align-top">
                         <td class="py-1 pr-2 w-4">${label}</td>
                         <td class="py-1 pr-2 font-mono text-[10px] whitespace-nowrap">${escapeHtml(eanAlf)}</td>
                         <td class="py-1 pr-2">
                             ${escapeHtml(it.descripcion || '')}
                             ${motivoExtra}
+                            ${equivNota}
                             <div id="candidatos-${it._idx}" class="mt-1"></div>
                         </td>
                         <td class="py-1 pr-2 text-[#bbb]">${matchDesc ? '→' : ''}</td>
