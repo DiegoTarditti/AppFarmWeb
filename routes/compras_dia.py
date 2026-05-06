@@ -191,13 +191,26 @@ def init_app(app):
     @app.route('/api/pedidos-emitidos/todos')
     @login_required
     def api_pedidos_emitidos_todos():
-        """Devuelve TODOS los pedidos emitidos sin filtrar por droguería.
-        Cada armado multi-drog genera ~1 PedidoEmitido por droguería; este endpoint
-        los muestra unificados para ver el panorama completo del día/semana."""
+        """Devuelve los pedidos emitidos recientes (últimos N días, por default 30).
+        Acepta ?dias=N&limit=M. Sin filtrar por droguería — cada armado multi-drog
+        genera ~1 PedidoEmitido por droguería; este endpoint los muestra unificados.
+        """
+        from datetime import datetime, timedelta
         from database import PedidoEmitido
+        try:
+            dias = max(1, min(int(request.args.get('dias', 30)), 365))
+        except (TypeError, ValueError):
+            dias = 30
+        try:
+            limit = max(1, min(int(request.args.get('limit', 200)), 1000))
+        except (TypeError, ValueError):
+            limit = 200
+        desde = datetime.now() - timedelta(days=dias)
         with get_db() as session:
             pedidos = (session.query(PedidoEmitido)
+                       .filter(PedidoEmitido.fecha >= desde)
                        .order_by(PedidoEmitido.fecha.desc())
+                       .limit(limit)
                        .all())
             data = []
             for p in pedidos:
