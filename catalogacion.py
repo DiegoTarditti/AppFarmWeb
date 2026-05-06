@@ -282,6 +282,7 @@ def upsert_atributos(producto, session, force=False):
         existente.extraido_en = database.now_ar()
         return existente
 
+    monodroga_display_val = merged.pop('monodroga_display', None)
     nuevo = ProductoAtributo(
         producto_id=producto.id,
         fuente=fuente,
@@ -289,6 +290,8 @@ def upsert_atributos(producto, session, force=False):
         raw_descripcion=desc_actual,
         **merged,
     )
+    if monodroga_display_val and not producto.monodroga:
+        producto.monodroga = monodroga_display_val
     session.add(nuevo)
     return nuevo
 

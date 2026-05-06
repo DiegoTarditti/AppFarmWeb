@@ -48,6 +48,20 @@
                 <div class="flex justify-between gap-3"><dt class="text-[#888]">PVP</dt><dd class="font-mono font-semibold">{{ '$' + ('{:,.2f}'.format(producto.precio_pvp)|replace(',','X')|replace('.',',')|replace('X','.')) if producto.precio_pvp else '—' }}</dd></div>
                 <div class="flex justify-between gap-3"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
                 <div class="flex justify-between gap-3"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
+                {% if producto.fuente_creacion %}
+                <div class="flex justify-between gap-3">
+                    <dt class="text-[#888]">Origen</dt>
+                    <dd>
+                        {% if producto.fuente_creacion == 'oferta_import' %}
+                        <span class="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-semibold">
+                            ⚠ Creado desde oferta — catalogar
+                        </span>
+                        {% else %}
+                        <span class="text-[11px] text-[#888]">{{ producto.fuente_creacion }}</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% endif %}
             </dl>
             <!-- EANs (1-a-N) -->
             <div class="mt-4 pt-4 border-t border-[#eee]">

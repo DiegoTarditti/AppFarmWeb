@@ -806,8 +806,54 @@ def init_app(app):
                                 .filter_by(producto_id=p.id).all()):
                         if cb:
                             prod_info[cb] = info
+            # Si la factura vino del converter (pdf_filename apunta a un PDF
+            # que sigue existiendo en CONVERTER_DIR) ofrecer "Corregir parsing"
+            # que lleva al pick. Si la importacion fue limpia el usuario lo
+            # ignora; si vio algo mal, click y a entrenar.
+            converter_token = None
+            if invoice.pdf_filename:
+                import os as _os
+
+                from helpers import CONVERTER_DIR  # type: ignore
+                if _os.path.exists(_os.path.join(CONVERTER_DIR, invoice.pdf_filename)):
+                    converter_token = invoice.pdf_filename
             return render_template('invoice_items.html', invoice=invoice,
-                                   items=items, prod_info=prod_info)
+                                   items=items, prod_info=prod_info,
+                                   converter_token=converter_token)
+
+    @app.route('/invoice/<int:invoice_id>/refresh-numero', methods=['POST'])
+    def invoice_refresh_numero(invoice_id):
+        """Reextrae numero_factura del PDF aplicando el regex robusto AR.
+        Util para facturas importadas antes del fix de _probar_parser que
+        rescata el numero cuando el parser auto-generado lo capturo roto.
+        """
+        import os as _os
+        import re as _re
+
+        from data_extract import extract_text_with_ocr_fallback
+        from helpers import CONVERTER_DIR, _normalize_quadrupled  # type: ignore
+        with database.get_db() as session:
+            inv = session.get(database.Invoice, invoice_id)
+            if not inv:
+                return jsonify({'ok': False, 'error': 'No existe'}), 404
+            pdf_path = None
+            if inv.pdf_filename:
+                for d in (CONVERTER_DIR, UPLOAD_FOLDER):
+                    p = _os.path.join(d, inv.pdf_filename)
+                    if _os.path.exists(p):
+                        pdf_path = p; break
+            if not pdf_path:
+                return jsonify({'ok': False, 'error': 'PDF no encontrado'}), 404
+            try:
+                txt = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
+            except Exception as e:
+                return jsonify({'ok': False, 'error': f'No pude leer PDF: {e}'}), 500
+            m = _re.search(r'\b(\d{4,5}-\d{6,10})\b', txt)
+            if not m:
+                return jsonify({'ok': False, 'error': 'No encontre numero formato AR (PPPP-NNNNNNNN)'}), 404
+            inv.numero_factura = m.group(1)[:20]
+            session.commit()
+            return jsonify({'ok': True, 'numero': inv.numero_factura})
 
     @app.route('/invoice/<int:invoice_id>/items/export')
     def invoice_items_export(invoice_id):

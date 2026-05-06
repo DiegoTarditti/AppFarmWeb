@@ -46,6 +46,55 @@
     </div>
     {% else %}
 
+    <!-- Cabecera del lote -->
+    <div class="bg-white border border-surface-border rounded-xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {% if cabecera.drogueria %}
+        <div>
+            <p class="text-[10px] uppercase tracking-wide text-[#888] font-bold mb-0.5">Droguería</p>
+            <p class="text-sm font-semibold text-[#1e1e1e]">{{ cabecera.drogueria }}</p>
+        </div>
+        {% endif %}
+        {% if cabecera.vigencia_hasta %}
+        <div>
+            <p class="text-[10px] uppercase tracking-wide text-[#888] font-bold mb-0.5">Vigencia</p>
+            <p class="text-sm text-[#1e1e1e]">
+                {% if cabecera.vigencia_desde %}{{ cabecera.vigencia_desde }} — {% endif %}{{ cabecera.vigencia_hasta }}
+            </p>
+        </div>
+        {% endif %}
+        {% if cabecera.dto_promedio is not none %}
+        <div>
+            <p class="text-[10px] uppercase tracking-wide text-[#888] font-bold mb-0.5">Descuento</p>
+            <p class="text-sm font-semibold text-emerald-700">
+                {{ cabecera.dto_promedio }}% prom.
+                <span class="text-[10px] text-[#999] font-normal">({{ cabecera.dto_min }}–{{ cabecera.dto_max }}%)</span>
+            </p>
+        </div>
+        {% endif %}
+        {% if cabecera.rent_promedio is not none %}
+        <div>
+            <p class="text-[10px] uppercase tracking-wide text-[#888] font-bold mb-0.5">Rentabilidad prom.</p>
+            <p class="text-sm font-semibold text-sky-700">{{ cabecera.rent_promedio }}%</p>
+        </div>
+        {% endif %}
+        <div>
+            <p class="text-[10px] uppercase tracking-wide text-[#888] font-bold mb-0.5">Con mínimo</p>
+            <p class="text-sm text-[#1e1e1e]">{{ cabecera.con_minimo }} de {{ total }}</p>
+        </div>
+        {% if cabecera.observacion %}
+        <div class="col-span-2 sm:col-span-4">
+            <p class="text-[10px] uppercase tracking-wide text-[#888] font-bold mb-0.5">Observación</p>
+            <p class="text-sm text-[#555]">{{ cabecera.observacion }}</p>
+        </div>
+        {% endif %}
+        <div class="col-span-2 sm:col-span-4 border-t border-[#f0f0f0] pt-2 flex justify-between items-center">
+            <span class="text-[10px] text-[#bbb]">Última actualización: {{ cabecera.actualizado_en or '—' }}</span>
+            <a href="{{ url_for('lab_equivalencias', lab_id=lab.id) }}" class="text-[10px] text-sky-600 hover:underline">Ver equivalencias →</a>
+        </div>
+    </div>
+
+    {% endif %}
+
     <div class="flex items-center gap-3">
         <div class="relative flex-1 max-w-sm">
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#888]" fill="none" stroke="currentColor" viewBox="0 0 24 24">

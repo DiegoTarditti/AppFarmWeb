@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Verificar productos nuevos{% endblock %}
+
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">Verificar productos nuevos</h1>
+        <p class="text-xs text-[#888] mt-0.5">Productos creados desde importación de ofertas — detectar posibles duplicados antes de que se acumulen.</p>
+    </div>
+    <a href="{{ url_for('productos_list') }}" class="text-xs text-sky-600 hover:underline">← Productos</a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+
+{% if not filas %}
+<div class="text-center text-[#999] py-20">
+    <p class="text-2xl mb-2">✓</p>
+    <p class="text-sm font-semibold">Sin productos pendientes de verificación.</p>
+    <p class="text-xs mt-1">Todos los productos creados desde ofertas ya fueron revisados.</p>
+</div>
+{% else %}
+
+<p class="text-xs text-[#888] mb-4">{{ total }} producto{{ 's' if total != 1 else '' }} pendiente{{ 's' if total != 1 else '' }}. Para cada uno el sistema buscó los más similares en el catálogo.</p>
+
+<div id="lista-verificar" class="space-y-3">
+{% for f in filas %}
+<div id="fila-{{ f.id }}" class="bg-white border border-surface-border rounded-xl overflow-hidden">
+    <div class="flex items-start gap-4 p-4">
+
+        <!-- Producto nuevo -->
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 mb-1">
+                <span class="text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-semibold">⚠ Nuevo</span>
+                {% if f.laboratorio != '—' %}
+                <span class="text-[10px] bg-sky-100 text-sky-800 border border-sky-200 px-2 py-0.5 rounded">{{ f.laboratorio }}</span>
+                {% endif %}
+            </div>
+            <p class="font-semibold text-sm text-[#1e1e1e]">{{ f.descripcion or '(sin descripción)' }}</p>
+            <p class="font-mono text-[11px] text-[#888] mt-0.5">EAN {{ f.ean }}</p>
+            <a href="{{ url_for('producto_detalle', prod_id=f.id) }}" target="_blank"
+               class="text-[10px] text-sky-600 hover:underline mt-1 inline-block">Ver ficha →</a>
+        </div>
+
+        <!-- Candidatos similares -->
+        <div class="flex-[2] min-w-0">
+            {% if f.candidatos %}
+            <p class="text-[10px] text-[#888] uppercase tracking-wide font-bold mb-2">Similares en catálogo</p>
+            <div class="space-y-1.5">
+                {% for c in f.candidatos %}
+                <div class="flex items-center gap-3 px-3 py-2 rounded-lg border border-[#e5e7eb] bg-[#fafafa]">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-medium text-[#1e1e1e] truncate">{{ c.descripcion }}</p>
+                        <p class="text-[10px] text-[#888] font-mono">
+                            {{ 'EAN ' + c.codigo_barra if c.codigo_barra else '' }}
+                            {% if c._origen == 'observer' %}<span class="text-violet-600 font-semibold ml-1">ObServer</span>{% endif %}
+                            {% if c._origen == 'global' %}<span class="text-amber-600 ml-1">otro lab</span>{% endif %}
+                        </p>
+                    </div>
+                    <span class="text-xs font-bold tabular-nums
+                        {% if c.score >= 0.85 %}text-red-700{% elif c.score >= 0.70 %}text-amber-700{% else %}text-[#888]{% endif %}">
+                        {{ (c.score * 100) | int }}%
+                    </span>
+                    {% if c.producto_id %}
+                    <button type="button"
+                            class="btn-fusionar text-[10px] bg-red-100 hover:bg-red-200 text-red-800 border border-red-300 px-2 py-1 rounded font-semibold whitespace-nowrap"
+                            data-nuevo="{{ f.id }}"
+                            data-target="{{ c.producto_id }}"
+                            data-nuevo-desc="{{ f.descripcion }}"
+                            data-target-desc="{{ c.descripcion }}">
+                        Fusionar →
+                    </button>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                ✓ Sin similares en el catálogo — parece un producto genuinamente nuevo.
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Acción verificado -->
+        <div class="flex-shrink-0">
+            <button type="button"
+                    class="btn-verificado text-[11px] bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded font-semibold"
+                    data-id="{{ f.id }}">
+                ✓ Es nuevo válido
+            </button>
+        </div>
+    </div>
+</div>
+{% endfor %}
+</div>
+
+{% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.btn-fusionar').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const nuevoId = btn.dataset.nuevo;
+        const targetId = btn.dataset.target;
+        const nuevoDesc = btn.dataset.nuevoDesc;
+        const targetDesc = btn.dataset.targetDesc;
+        if (!confirm(
+            `¿Fusionar?\n\n"${nuevoDesc}"\n→ se convierte en EAN alternativo de:\n"${targetDesc}"\n\nEl producto nuevo se eliminará.`
+        )) return;
+        btn.disabled = true;
+        btn.textContent = '⏳';
+        try {
+            const r = await fetch(`/producto/${nuevoId}/fusionar/${targetId}`, {
+                method: 'POST', credentials: 'same-origin',
+            });
+            const data = await r.json();
+            if (data.ok) {
+                document.getElementById('fila-' + nuevoId)?.remove();
+                _checkVacio();
+            } else {
+                alert('Error: ' + (data.error || 'desconocido'));
+                btn.disabled = false; btn.textContent = 'Fusionar →';
+            }
+        } catch (e) {
+            alert('Error de red: ' + e.message);
+            btn.disabled = false; btn.textContent = 'Fusionar →';
+        }
+    });
+});
+
+document.querySelectorAll('.btn-verificado').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        btn.disabled = true; btn.textContent = '⏳';
+        try {
+            const r = await fetch(`/producto/${id}/marcar-verificado`, {
+                method: 'POST', credentials: 'same-origin',
+            });
+            const data = await r.json();
+            if (data.ok) {
+                document.getElementById('fila-' + id)?.remove();
+                _checkVacio();
+            } else {
+                alert('Error: ' + (data.error || 'desconocido'));
+                btn.disabled = false; btn.textContent = '✓ Es nuevo válido';
+            }
+        } catch (e) {
+            alert('Error de red: ' + e.message);
+            btn.disabled = false; btn.textContent = '✓ Es nuevo válido';
+        }
+    });
+});
+
+function _checkVacio() {
+    const lista = document.getElementById('lista-verificar');
+    if (lista && !lista.children.length) {
+        lista.innerHTML = `
+            <div class="text-center text-[#999] py-20">
+                <p class="text-2xl mb-2">✓</p>
+                <p class="text-sm font-semibold">¡Todos revisados!</p>
+            </div>`;
+    }
+}
+</script>
+{% endblock %}

@@ -79,12 +79,73 @@
                 {% endif %}
 
                 <div class="mt-4 pt-3 border-t border-surface-border">
-                    <p class="text-xs text-emerald-700 font-semibold mb-2">✓ El parser funciona</p>
+                    {% if prueba.math_ok and prueba.total_ok %}
+                    {# Items 100% limpios: math row-by-row OK + total cuadra → import directo #}
+                    <p class="text-xs text-emerald-700 font-semibold mb-2">
+                        ✓ Parser funciona · math y total cuadran
+                    </p>
+                    <button type="button" onclick="importarDirecto()"
+                            class="block w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
+                        ▶ Importar directo ({{ prueba.n_items }} ítems OK) →
+                    </button>
+                    <p id="ai-status" class="hidden text-[11px] mt-1.5"></p>
                     <a href="{{ url_for('converter_verify', token=token) }}"
-                       class="block text-center w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
+                       class="block text-center text-[11px] text-[#6f6f6f] hover:text-[#1e1e1e] mt-2 underline">
+                        Revisar antes (modo verify)
+                    </a>
+                    {% else %}
+                    {# Items con dudas: math o total no cuadran → siempre verify #}
+                    <p class="text-xs text-amber-700 font-semibold mb-2">
+                        ⚠ Parser detectó items pero
+                        {% if not prueba.math_ok %}algunas filas no cuadran (cant×precio≠importe){% endif %}
+                        {% if not prueba.math_ok and not prueba.total_ok %} y {% endif %}
+                        {% if not prueba.total_ok %}el total no coincide con la suma{% endif %}.
+                        Revisá antes de importar.
+                    </p>
+                    <a href="{{ url_for('converter_verify', token=token) }}"
+                       class="block text-center w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-3 py-2 rounded-lg">
                         Verificar datos e importar →
                     </a>
+                    {% endif %}
                 </div>
+                <script>
+                async function importarDirecto() {
+                    const status = document.getElementById('ai-status');
+                    status.classList.remove('hidden', 'text-rose-700');
+                    status.classList.add('text-emerald-700');
+                    status.textContent = '⏳ Importando...';
+                    try {
+                        const r = await fetch('{{ url_for("converter_auto_import", token=token) }}',
+                            {method: 'POST', headers: {'Content-Type': 'application/json'},
+                             body: JSON.stringify({tipo_comprobante: 'FAC'})});
+                        const d = await r.json();
+                        if (!d.ok) {
+                            status.classList.add('text-rose-700');
+                            status.classList.remove('text-emerald-700');
+                            status.textContent = '✗ ' + (d.error || 'Falló');
+                            return;
+                        }
+                        status.textContent = '✓ Importado. Redirigiendo...';
+                        location.href = d.url_factura;
+                    } catch (e) {
+                        status.classList.add('text-rose-700');
+                        status.classList.remove('text-emerald-700');
+                        status.textContent = '✗ Error de red: ' + e.message;
+                    }
+                }
+                </script>
+                {% if prueba.math_ok and prueba.total_ok %}
+                {# Auto-disparo: si todo cuadra, importar directo sin que el user
+                   tenga que clickear. Pasa por la pantalla intermedia solo si el
+                   user usó ?force_review=1 (ej. botón "Revisar antes"). #}
+                <script>
+                {% if not (request.args.get('force_review') == '1') %}
+                document.addEventListener('DOMContentLoaded', () => {
+                    setTimeout(importarDirecto, 50);
+                });
+                {% endif %}
+                </script>
+                {% endif %}
                 {% else %}
                 <div class="flex items-center gap-2 text-red-700 mb-3">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>

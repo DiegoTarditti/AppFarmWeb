@@ -555,15 +555,49 @@ def init_app(app):
                     'limpia': desc_limpia,
                     'cambios': cambios,
                 })
+            # Si el item tiene código interno de proveedor pero no EAN, lo
+            # mandamos también como `ean` para que match_producto lo busque
+            # en alt1/2/3 (donde _persistir_equivalencia lo guardó en imports
+            # anteriores). No genera falsos positivos: EANs reales tienen 8-13
+            # dígitos; códigos internos cortos no colisionan.
+            ean_input = it.get('ean') or None
+            codigo_input = (it.get('codigo') or '').strip() or None
+            if not ean_input and codigo_input:
+                ean_input = codigo_input
             items_para_match.append({
-                'ean': it.get('ean'),
-                'codigo_alfabeta': it.get('codigo'),
+                'ean': ean_input,
+                'codigo_alfabeta': codigo_input,
                 'descripcion': desc_limpia,
                 'precio': it.get('precio'),
             })
 
         with database.get_db() as session:
             results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
+
+            # Capa 2 — match dimensional para los no encontrados.
+            # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
+            # y los cruza contra ProductoAtributo. Funciona sin EAN.
+            from catalogacion import extraer_de_descripcion, match_dimensional_candidatos
+            dim_matches = {}  # idx → lista de candidatos dimensionales
+            for idx_d, res_d in enumerate(results):
+                if res_d.producto is not None:
+                    continue
+                desc_d = (items_para_match[idx_d].get('descripcion') or '').strip()
+                if not desc_d:
+                    continue
+                atrs_d = extraer_de_descripcion(desc_d)
+                if not atrs_d or not atrs_d.get('monodroga_norm'):
+                    continue  # sin droga extraída, no tiene sentido buscar
+                candidatos_d = match_dimensional_candidatos(
+                    session,
+                    monodroga_norm=atrs_d.get('monodroga_norm'),
+                    concentracion_mg=atrs_d.get('concentracion_mg'),
+                    forma_farma=atrs_d.get('forma_farma'),
+                    cantidad_envase=atrs_d.get('cantidad_envase'),
+                    limit=5,
+                )
+                if candidatos_d:
+                    dim_matches[idx_d] = candidatos_d
 
             # Pre-fetch EANs reales (obs_codigos_barras) para productos que
             # sólo tienen pseudo-EAN OBS:N. Se usa para propagar el EAN al item
@@ -603,16 +637,43 @@ def init_app(app):
                 entry['descripcion'] = n['limpia']  # usamos la limpia de aquí en adelante
                 entry['_normalizado'] = True
             if res.producto is None:
-                entry['_status'] = 'not_found'
-                entry['_motivo'] = 'No está en el catálogo local'
-                entry['_candidatos_top'] = res.candidatos_top
-                # Pre-conteo de candidatos del pool obs (jaccard >= 0.20).
-                # Si es 0, la UI puede mostrar "sin candidatos" sin que el
-                # user tenga que clickear "Buscar similar" para descubrirlo.
-                cc = getattr(res, 'candidatos_count', 0) or 0
-                entry['_candidatos_count'] = cc
-                entry['_sin_candidatos'] = (cc == 0)
-                stats['not_found'] += 1
+                dim_cands = dim_matches.get(idx_item, [])
+                if dim_cands:
+                    top = dim_cands[0]
+                    entry['_candidatos_dimensional'] = dim_cands
+                    if top['score'] >= 12:
+                        # Score máximo (droga+conc+forma+cantidad) → auto-match
+                        entry['_status'] = 'fuzzy'
+                        entry['_estrategia'] = 'dimensional'
+                        entry['_score'] = top['score']
+                        entry['_confianza'] = top['confianza']
+                        entry['_match_descripcion_local'] = top['descripcion']
+                        entry['_producto_id'] = top['producto_id']
+                        if not entry.get('ean') and top.get('codigo_barra'):
+                            entry['ean'] = top['codigo_barra']
+                            entry['_ean_resuelto'] = True
+                        entry['_motivo'] = (
+                            f'Match dimensional (score {top["score"]}/12): '
+                            f'"{top["descripcion"][:80]}"'
+                        )
+                        stats['fuzzy'] += 1
+                    else:
+                        # Score parcial → candidatos para revisión manual
+                        entry['_status'] = 'not_found'
+                        entry['_motivo'] = 'No está en el catálogo — candidatos dimensionales disponibles'
+                        entry['_candidatos_top'] = res.candidatos_top
+                        cc = getattr(res, 'candidatos_count', 0) or 0
+                        entry['_candidatos_count'] = cc
+                        entry['_sin_candidatos'] = False  # hay dim cands
+                        stats['not_found'] += 1
+                else:
+                    entry['_status'] = 'not_found'
+                    entry['_motivo'] = 'No está en el catálogo local'
+                    entry['_candidatos_top'] = res.candidatos_top
+                    cc = getattr(res, 'candidatos_count', 0) or 0
+                    entry['_candidatos_count'] = cc
+                    entry['_sin_candidatos'] = (cc == 0)
+                    stats['not_found'] += 1
             else:
                 p = res.producto
                 entry['_match_descripcion_local'] = p.descripcion or ''
@@ -680,6 +741,39 @@ def init_app(app):
             'total': len(validados),
             'normalizaciones': normalizaciones,
             'normalizados_count': len(normalizaciones),
+        })
+
+    @app.route('/api/ofertas/import-candidatos-bulk', methods=['POST'])
+    @login_required
+    def api_ofertas_import_candidatos_bulk():
+        """Versión bulk: candidatos para N items not_found en UNA sola llamada.
+
+        Body JSON: { items: [{idx, descripcion, ean?, codigo?}, ...], laboratorio_id? }
+        Returns: { candidatos_por_idx: {idx: [candidatos]}, total_items: N }
+        """
+        import producto_matcher as pm
+        data = request.get_json(silent=True) or {}
+        items = data.get('items') or []
+        try:
+            lab_id = int(data.get('laboratorio_id')) if data.get('laboratorio_id') else None
+        except (TypeError, ValueError):
+            lab_id = None
+        try:
+            top = max(1, min(20, int(data.get('top', 8))))
+        except (ValueError, TypeError):
+            top = 8
+
+        if not items:
+            return jsonify({'candidatos_por_idx': {}, 'total_items': 0})
+
+        with database.get_db() as session:
+            resultado = pm.buscar_candidatos_bulk(
+                items, laboratorio_id=lab_id, top=top, session=session,
+            )
+        # JSON keys deben ser strings
+        return jsonify({
+            'candidatos_por_idx': {str(k): v for k, v in resultado.items()},
+            'total_items': len(resultado),
         })
 
     @app.route('/api/ofertas/import-candidatos', methods=['POST'])

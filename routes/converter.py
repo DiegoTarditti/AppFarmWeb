@@ -70,16 +70,89 @@ def _detectar_proveedor(info):
 
 
 def _probar_parser(parser_file, pdf_path):
-    """Prueba un parser sobre un PDF. Devuelve dict con éxito o error."""
+    """Prueba un parser sobre un PDF. Devuelve dict con éxito o error.
+
+    Incluye flags de calidad (math_ok, total_ok) que permiten al flujo
+    decidir si saltar la pantalla de verify y hacer import directo.
+    """
     if not parser_file:
         return {'ok': False, 'error': 'Sin parser configurado'}
     try:
         data = parse_invoice_pdf(pdf_path, parser_file)
         items = data.get('items') or []
+
+        # Fix tardio del numero de factura cuando el parser auto-generado lo
+        # captura roto (ej. "Nº:" en lugar de "0013-17985309"). Si lo que
+        # devolvio no tiene digitos o es muy corto, reescaneamos el PDF con
+        # un regex mas estricto (formato AR: PPPP-NNNNNNNN).
+        num_actual = (data.get('numero_factura') or '').strip()
+        num_es_invalido = (
+            not num_actual
+            or num_actual == 'SIN_NUMERO'
+            or not re.search(r'\d', num_actual)
+            or len(num_actual) < 4
+        )
+        if num_es_invalido:
+            try:
+                from data_extract import extract_text_with_ocr_fallback
+                from helpers import _normalize_quadrupled
+                txt_pdf = _normalize_quadrupled(extract_text_with_ocr_fallback(pdf_path))
+                m = re.search(r'\b(\d{4,5}-\d{6,10})\b', txt_pdf)
+                if m:
+                    data['numero_factura'] = m.group(1)
+            except Exception:
+                pass
         def _f(v):
             if v is None: return None
             try: return float(v)
             except Exception: return None
+        items_full = [{
+            'codigo_barra':    i.get('codigo_barra'),
+            'descripcion':     i.get('descripcion'),
+            'cantidad':        i.get('cantidad'),
+            'precio_publico':  _f(i.get('precio_publico')),
+            'dto':             _f(i.get('dto')),
+            'precio_unitario': _f(i.get('precio_unitario')),
+            'importe':         _f(i.get('importe')),
+            'lote':            i.get('lote'),
+            'vencimiento':     i.get('vencimiento'),
+        } for i in items]
+
+        # Flag math_ok: cant × precio_unitario ≈ importe en TODAS las filas.
+        # Tolerancia 1% por redondeo de centavos. Filas sin precio_unitario
+        # o sin importe no pueden validarse → si hay alguna así, math_ok=False
+        # (mejor pecar de cauto y mandar al verify).
+        math_ok = True
+        n_math_validable = 0
+        for it in items_full:
+            cant = it.get('cantidad')
+            unit = it.get('precio_unitario')
+            imp = it.get('importe')
+            try:
+                cant_n = float(cant) if cant is not None else None
+            except (TypeError, ValueError):
+                cant_n = None
+            if cant_n is None or unit is None or imp is None:
+                math_ok = False
+                continue
+            n_math_validable += 1
+            esperado = cant_n * unit
+            if esperado <= 0:
+                continue
+            diff_pct = abs(esperado - imp) / max(esperado, abs(imp))
+            if diff_pct > 0.01:  # > 1% diferencia
+                math_ok = False
+        if n_math_validable == 0:
+            math_ok = False
+
+        # Flag total_ok: sum(importes) ≈ total declarado. Tolerancia $1.
+        total_declarado = _f(data.get('total'))
+        total_ok = False
+        if total_declarado is not None and total_declarado > 0:
+            suma = sum((it.get('importe') or 0) for it in items_full)
+            if suma > 0 and abs(suma - total_declarado) <= 1.0:
+                total_ok = True
+
         return {
             'ok': len(items) > 0,
             'n_items': len(items),
@@ -88,24 +161,18 @@ def _probar_parser(parser_file, pdf_path):
                  'cantidad': i.get('cantidad'), 'importe': i.get('importe')}
                 for i in items[:5]
             ],
-            'items_full': [{
-                'codigo_barra':    i.get('codigo_barra'),
-                'descripcion':     i.get('descripcion'),
-                'cantidad':        i.get('cantidad'),
-                'precio_publico':  _f(i.get('precio_publico')),
-                'dto':             _f(i.get('dto')),
-                'precio_unitario': _f(i.get('precio_unitario')),
-                'importe':         _f(i.get('importe')),
-                'lote':            i.get('lote'),
-                'vencimiento':     i.get('vencimiento'),
-            } for i in items],
+            'items_full': items_full,
             'numero_factura': data.get('numero_factura'),
             'fecha': str(data.get('fecha') or ''),
-            'total': _f(data.get('total')),
+            'proveedor_razon': data.get('proveedor_razon'),
+            'proveedor_cuit': data.get('proveedor_cuit'),
+            'total': total_declarado,
             'monto_exento':  _f(data.get('monto_exento')),
             'monto_gravado': _f(data.get('monto_gravado')),
             'iva':           _f(data.get('iva')),
             'percepciones':  _f(data.get('percepciones')),
+            'math_ok': math_ok,
+            'total_ok': total_ok,
         }
     except Exception as e:
         return {'ok': False, 'error': str(e)}
@@ -360,6 +427,70 @@ def init_app(app):
             return jsonify({'error': str(e)}), 400
         except Exception as e:
             return jsonify({'error': f'Error al guardar: {e}'}), 500
+        return jsonify({'ok': True, 'invoice_id': inv_id,
+                        'url_factura': url_for('invoice_items', invoice_id=inv_id)})
+
+    @app.route('/converter/<token>/auto-import', methods=['POST'])
+    def converter_auto_import(token):
+        """Atajo: importa directo sin pasar por la pantalla de verify.
+
+        Solo permitido cuando el parser detectó items y math_ok + total_ok
+        (validación implícita en /detectar — esta ruta no chequea, asume
+        que el caller ya validó). Si no, debería ir por el verify normal.
+        """
+        safe = secure_filename(token)
+        path = os.path.join(CONVERTER_DIR, safe)
+        if not os.path.exists(path):
+            return jsonify({'ok': False, 'error': 'Documento no encontrado'}), 404
+
+        meta = _converter_read_meta(safe)
+        proveedor_id = meta.get('proveedor_id')
+        if not proveedor_id:
+            return jsonify({'ok': False, 'error': 'Sin proveedor identificado'}), 400
+
+        with database.get_db() as session:
+            prov = session.get(database.Provider, proveedor_id)
+            if not prov or not prov.parser_file:
+                return jsonify({'ok': False, 'error': 'Sin parser configurado'}), 400
+            parser_file = prov.parser_file
+
+        prueba = _probar_parser(parser_file, path)
+        if not prueba.get('ok'):
+            return jsonify({'ok': False, 'error': 'Parser no devolvió items'}), 400
+
+        # Re-validar math + total acá también (defense in depth)
+        if not (prueba.get('math_ok') and prueba.get('total_ok')):
+            return jsonify({
+                'ok': False,
+                'error': 'Items no son 100% limpios — usá el verify para revisar',
+            }), 400
+
+        # Construir header + rows como los espera _guardar_factura_desde_aprendizaje.
+        # OJO: el saver lee 'numero', 'razon_social', 'cuit' (no 'numero_factura'
+        # ni 'proveedor_*'). Mantener esos nombres o queda SIN_NUMERO.
+        num_raw = prueba.get('numero_factura') or ''
+        if num_raw == 'SIN_NUMERO':
+            num_raw = ''
+        header = {
+            'numero':         num_raw,
+            'fecha':          prueba.get('fecha') or '',
+            'razon_social':   prueba.get('proveedor_razon') or '',
+            'cuit':           prueba.get('proveedor_cuit') or '',
+            'total':          prueba.get('total'),
+            'monto_exento':   prueba.get('monto_exento'),
+            'monto_gravado':  prueba.get('monto_gravado'),
+            'iva':            prueba.get('iva'),
+            'percepciones':   prueba.get('percepciones'),
+        }
+        rows = prueba.get('items_full') or []
+        tipo = (request.get_json(silent=True) or {}).get('tipo_comprobante', 'FAC')
+
+        try:
+            inv_id, mensaje = _guardar_factura_desde_aprendizaje(safe, header, rows, tipo)
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'Error al guardar: {e}'}), 500
         return jsonify({'ok': True, 'invoice_id': inv_id,
                         'url_factura': url_for('invoice_items', invoice_id=inv_id)})
 

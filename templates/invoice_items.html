@@ -39,13 +39,23 @@
             <span class="font-bold text-sm text-[#1e1e1e]">Artículos de factura</span>
         </div>
         <div class="flex items-center gap-3">
+            {% if converter_token %}
+            <a href="{{ url_for('converter_pick', token=converter_token) }}"
+               title="Si algo se importó mal, abrí el modo aprendizaje para corregir el parser"
+               class="text-xs px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold flex items-center gap-1.5 transition-colors">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                </svg>
+                ✎ Corregir parsing
+            </a>
+            {% endif %}
             <a href="{{ url_for('index') }}" title="Inicio"
                class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
                 </svg>
             </a>
-            <a href="javascript:history.back()"
+            <a href="{{ url_for('converter_index') if converter_token else url_for('index') }}"
                class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
@@ -62,8 +72,29 @@
     <div class="bg-surface rounded-xl border border-surface-border px-6 py-4">
         <div class="flex flex-wrap gap-6 text-sm">
             <div>
-                <p class="text-xs text-[#6f6f6f] mb-0.5">Factura</p>
-                <p class="font-semibold text-[#1e1e1e]">{{ invoice.numero_factura }}</p>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">Factura Nº</p>
+                {% set _num_ok = invoice.numero_factura and (invoice.numero_factura | length) >= 4 and ('-' in invoice.numero_factura) %}
+                <p class="font-semibold text-[#1e1e1e]" id="num-fac-display">{{ invoice.numero_factura or '—' }}</p>
+                {% if not _num_ok %}
+                <button type="button" onclick="refreshNumeroFactura()" id="btn-refresh-num"
+                        class="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold">
+                    🔄 Reextraer del PDF
+                </button>
+                <script>
+                async function refreshNumeroFactura() {
+                    const btn = document.getElementById('btn-refresh-num');
+                    btn.disabled = true; btn.textContent = '⏳';
+                    try {
+                        const r = await fetch('{{ url_for("invoice_refresh_numero", invoice_id=invoice.id) }}',
+                            {method: 'POST', headers: {'Content-Type':'application/json'}});
+                        const d = await r.json();
+                        if (!d.ok) { alert(d.error || 'Falló'); btn.disabled = false; btn.textContent = '🔄 Reextraer del PDF'; return; }
+                        document.getElementById('num-fac-display').textContent = d.numero;
+                        btn.style.display = 'none';
+                    } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = '🔄 Reextraer'; }
+                }
+                </script>
+                {% endif %}
             </div>
             <div>
                 <p class="text-xs text-[#6f6f6f] mb-0.5">Proveedor</p>
@@ -82,6 +113,28 @@
                 <p class="text-xs text-[#6f6f6f] mb-0.5">Total factura</p>
                 <p class="font-semibold text-[#1e1e1e]">${{ invoice.total | arg_currency }}</p>
             </div>
+            {% endif %}
+            {# Verificacion matematica: Σ importes ítems vs total declarado. #}
+            {% set _suma_items = items | sum(attribute='importe') %}
+            <div>
+                <p class="text-xs text-[#6f6f6f] mb-0.5">Σ ítems</p>
+                <p class="font-semibold font-mono text-[#1e1e1e]">${{ _suma_items | arg_currency }}</p>
+            </div>
+            {% if invoice.total %}
+                {% set _diff = (_suma_items - invoice.total) | abs %}
+                {% if _diff < 1 %}
+                <div>
+                    <p class="text-xs text-[#6f6f6f] mb-0.5">Control</p>
+                    <p class="font-semibold text-emerald-700">✓ cuadra</p>
+                </div>
+                {% else %}
+                <div>
+                    <p class="text-xs text-[#6f6f6f] mb-0.5">Control</p>
+                    <p class="font-semibold text-rose-700" title="Σ ítems - total = {{ _diff | arg_currency }}">
+                        ⚠ difiere ${{ _diff | arg_currency }}
+                    </p>
+                </div>
+                {% endif %}
             {% endif %}
         </div>
 

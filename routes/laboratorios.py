@@ -3,6 +3,7 @@
 import datetime
 import json
 import os
+import statistics
 import tempfile
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
@@ -280,6 +281,31 @@ def init_app(app):
                     .order_by(OfertaMinimo.grupo_id.nullslast(),
                               OfertaMinimo.descripcion.nullslast(),
                               OfertaMinimo.ean).all())
+
+            # Cabecera: resumen del lote más reciente
+            dtos = [float(r.descuento_psl) for r in rows if r.descuento_psl is not None]
+            rents = [float(r.rentabilidad) for r in rows if r.rentabilidad is not None]
+            con_minimo = sum(1 for r in rows if r.unidades_minima and r.unidades_minima > 1)
+            # Droguería y vigencia: tomamos del registro más reciente
+            ultimo = max(rows, key=lambda r: r.actualizado_en or datetime.datetime.min) if rows else None
+            drog = None
+            if ultimo and ultimo.drogueria_id:
+                from database import Provider
+                drog_obj = session.get(Provider, ultimo.drogueria_id)
+                drog = drog_obj.razon_social if drog_obj else None
+            cabecera = {
+                'drogueria': drog,
+                'vigencia_desde': ultimo.vigencia_desde.strftime('%d/%m/%Y') if ultimo and ultimo.vigencia_desde else None,
+                'vigencia_hasta': ultimo.vigencia_hasta.strftime('%d/%m/%Y') if ultimo and ultimo.vigencia_hasta else None,
+                'observacion': ultimo.observacion if ultimo else None,
+                'dto_promedio': round(statistics.mean(dtos), 1) if dtos else None,
+                'dto_min': round(min(dtos), 1) if dtos else None,
+                'dto_max': round(max(dtos), 1) if dtos else None,
+                'rent_promedio': round(statistics.mean(rents), 1) if rents else None,
+                'con_minimo': con_minimo,
+                'actualizado_en': ultimo.actualizado_en.strftime('%d/%m/%Y %H:%M') if ultimo and ultimo.actualizado_en else None,
+            }
+
             ofertas = [{
                 'id': r.id,
                 'ean': r.ean,
@@ -293,7 +319,111 @@ def init_app(app):
                 'actualizado_en': r.actualizado_en.strftime('%d/%m/%Y %H:%M') if r.actualizado_en else '',
             } for r in rows]
         return render_template('lab_ofertas_minimo.html',
-                               lab=lab, ofertas=ofertas, total=len(ofertas))
+                               lab=lab, ofertas=ofertas, total=len(ofertas),
+                               cabecera=cabecera)
+
+    @app.route('/laboratorio/<int:lab_id>/equivalencias', methods=['GET'])
+    def lab_equivalencias(lab_id):
+        """Equivalencias descripcion/código proveedor → producto local guardadas por imports."""
+        from database import EquivalenciaProveedor
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            rows = (session.query(EquivalenciaProveedor)
+                    .filter_by(laboratorio_id=lab_id)
+                    .order_by(EquivalenciaProveedor.descripcion_proveedor)
+                    .all())
+            equiv = [{
+                'id': r.id,
+                'descripcion_proveedor': r.descripcion_proveedor or '',
+                'producto_id': r.producto_id,
+                'producto_desc': r.producto.descripcion if r.producto else '—',
+                'producto_ean': r.producto.codigo_barra if r.producto else '—',
+            } for r in rows]
+        return render_template('lab_equivalencias.html',
+                               lab=lab, equiv=equiv, total=len(equiv))
+
+    @app.route('/laboratorio/<int:lab_id>/equivalencias/<int:eq_id>/borrar', methods=['POST'])
+    def lab_equivalencia_borrar(lab_id, eq_id):
+        from database import EquivalenciaProveedor
+        with database.get_db() as session:
+            eq = session.get(EquivalenciaProveedor, eq_id)
+            if eq and eq.laboratorio_id == lab_id:
+                session.delete(eq)
+                session.commit()
+        return redirect(url_for('lab_equivalencias', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/equivalencias/semillar', methods=['POST'])
+    def lab_equivalencias_semillar(lab_id):
+        """Crea equivalencias retroactivas desde OfertaMinimo existentes.
+
+        Para cada oferta del lab busca el Producto por EAN (directo o alt) y,
+        si encuentra match, inserta la EquivalenciaProveedor usando la
+        descripción del archivo como clave.
+        """
+        from database import EquivalenciaProveedor
+        from producto_matcher import normalizar_texto
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+
+            ofertas = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).all()
+
+            # Carga todos los productos de una vez para no hacer N queries
+            todos = session.query(Producto).all()
+            ean_a_prod = {}
+            for p in todos:
+                for ean in [p.codigo_barra, p.codigo_barra_alt1,
+                            p.codigo_barra_alt2, p.codigo_barra_alt3]:
+                    if ean:
+                        ean_a_prod.setdefault(ean.strip(), p)
+
+            creadas = 0
+            actualizadas = 0
+            sin_match = 0
+            seen_norms = set()  # evita duplicados dentro del mismo batch
+            for o in ofertas:
+                desc_orig = (o.descripcion or '').strip()
+                if not desc_orig:
+                    continue
+                prod = ean_a_prod.get((o.ean or '').strip())
+                if not prod:
+                    sin_match += 1
+                    continue
+                desc_norm = normalizar_texto(desc_orig)[:200]
+                if not desc_norm or desc_norm in seen_norms:
+                    continue
+                seen_norms.add(desc_norm)
+                existente = (session.query(EquivalenciaProveedor)
+                             .filter_by(laboratorio_id=lab_id,
+                                        descripcion_proveedor_norm=desc_norm)
+                             .first())
+                if existente:
+                    if existente.producto_id != prod.id:
+                        existente.producto_id = prod.id
+                        actualizadas += 1
+                else:
+                    session.add(EquivalenciaProveedor(
+                        laboratorio_id=lab_id,
+                        descripcion_proveedor=desc_orig,
+                        descripcion_proveedor_norm=desc_norm,
+                        producto_id=prod.id,
+                    ))
+                    creadas += 1
+            session.commit()
+        partes = []
+        if creadas:
+            partes.append(f'{creadas} equivalencias creadas')
+        if actualizadas:
+            partes.append(f'{actualizadas} actualizadas')
+        if sin_match:
+            partes.append(f'{sin_match} ofertas sin match de EAN')
+        flash(', '.join(partes) or 'Sin cambios.', 'success' if creadas or actualizadas else 'info')
+        return redirect(url_for('lab_equivalencias', lab_id=lab_id))
 
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
     def lab_ofertas_minimo_borrar_todas(lab_id):

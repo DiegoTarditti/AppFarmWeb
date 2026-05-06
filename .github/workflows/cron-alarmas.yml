@@ -13,7 +13,7 @@ name: Cron — Notificar alarmas críticas a Telegram
 
 on:
   schedule:
-    - cron: '*/15 * * * *'   # cada 15 minutos
+    - cron: '*/30 * * * *'   # cada 30 minutos (bajado de 15 para ahorrar minutos de Actions)
   workflow_dispatch:           # permite disparar manual
 
 # Concurrencia: si un run anterior está corriendo, NO encolar otro

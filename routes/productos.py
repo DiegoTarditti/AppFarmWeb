@@ -1,6 +1,6 @@
 """Producto routes: list, CRUD, API + análisis histórico de precios."""
 
-from flask import jsonify, render_template, request
+from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 
 import database
@@ -9,6 +9,94 @@ from helpers import _find_producto
 
 
 def init_app(app):
+
+    @app.route('/productos/verificar-nuevos')
+    @login_required
+    def productos_verificar_nuevos():
+        """Pantalla de deduplicación: productos creados desde importación de ofertas
+        cruzados contra el catálogo completo para detectar duplicados."""
+        import producto_matcher as pm
+        with database.get_db() as session:
+            nuevos = (session.query(Producto)
+                      .filter(Producto.fuente_creacion == 'oferta_import')
+                      .order_by(Producto.descripcion)
+                      .all())
+            if not nuevos:
+                return render_template('productos_verificar.html',
+                                       filas=[], total=0)
+
+            items = [{'idx': p.id,
+                      'descripcion': p.descripcion or '',
+                      'ean': p.codigo_barra,
+                      'codigo': p.codigo_barra}
+                     for p in nuevos]
+
+            bulk = pm.buscar_candidatos_bulk(
+                items, top=5, threshold_min=0.55, session=session,
+            )
+
+            filas = []
+            for p in nuevos:
+                cands_raw = bulk.get(p.id, [])
+                # Excluir el producto mismo de sus propios candidatos
+                cands = [c for c in cands_raw if c.get('producto_id') != p.id]
+                filas.append({
+                    'id': p.id,
+                    'ean': p.codigo_barra,
+                    'descripcion': p.descripcion or '',
+                    'laboratorio': p.laboratorio.nombre if p.laboratorio else '—',
+                    'candidatos': cands,
+                })
+
+        return render_template('productos_verificar.html',
+                               filas=filas, total=len(filas))
+
+    @app.route('/producto/<int:prod_id>/fusionar/<int:target_id>', methods=['POST'])
+    @login_required
+    def producto_fusionar(prod_id, target_id):
+        """Fusiona prod_id (duplicado) dentro de target_id (el producto real).
+
+        Pasos:
+        1. Agrega el EAN del duplicado como alt barcode del target.
+        2. Actualiza OfertaMinimo con ean=duplicado → ean=target.
+        3. Elimina el producto duplicado.
+        """
+        from helpers import _add_alt_barcode
+        with database.get_db() as session:
+            dup = session.get(Producto, prod_id)
+            target = session.get(Producto, target_id)
+            if not dup or not target:
+                return jsonify({'error': 'Producto no encontrado'}), 404
+
+            dup_ean = dup.codigo_barra
+            target_ean = target.codigo_barra
+
+            # 1. EAN del duplicado como alt del target
+            if dup_ean and dup_ean != target_ean:
+                _add_alt_barcode(session, target_ean, dup_ean)
+
+            # 2. OfertaMinimo: redirigir EAN del dup → target
+            from database import OfertaMinimo
+            for oferta in session.query(OfertaMinimo).filter_by(ean=dup_ean).all():
+                oferta.ean = target_ean
+
+            # 3. Eliminar duplicado
+            session.delete(dup)
+            session.commit()
+
+        return jsonify({'ok': True, 'fusionado': prod_id, 'en': target_id})
+
+    @app.route('/producto/<int:prod_id>/marcar-verificado', methods=['POST'])
+    @login_required
+    def producto_marcar_verificado(prod_id):
+        """Limpia la marca fuente_creacion — el producto es válido, no es duplicado."""
+        with database.get_db() as session:
+            prod = session.get(Producto, prod_id)
+            if not prod:
+                return jsonify({'error': 'No encontrado'}), 404
+            prod.fuente_creacion = None
+            session.commit()
+        return jsonify({'ok': True})
 
     @app.route('/productos')
     def productos_list():
@@ -246,6 +334,53 @@ def init_app(app):
                 session.rollback()
                 return {'error': str(e)}, 500
 
+    @app.route('/producto/nuevo', methods=['GET', 'POST'])
+    @login_required
+    def producto_nuevo():
+        """Crea un producto nuevo y redirige a su ficha completa.
+
+        GET ?ean=...&desc=...&lab_id=... — si hay EAN crea directamente.
+        Sin EAN muestra un form para ingresar EAN + laboratorio.
+        POST — mismo flujo desde el form.
+        """
+        if request.method == 'POST':
+            ean = (request.form.get('ean') or '').strip()
+            desc = (request.form.get('desc') or '').strip()
+            lab_id_raw = request.form.get('lab_id') or ''
+        else:
+            ean = (request.args.get('ean') or '').strip()
+            desc = (request.args.get('desc') or '').strip()
+            lab_id_raw = request.args.get('lab_id') or ''
+
+        try:
+            lab_id = int(lab_id_raw) if lab_id_raw else None
+        except ValueError:
+            lab_id = None
+
+        if not ean:
+            with database.get_db() as session:
+                labs = (session.query(Laboratorio)
+                        .filter(Laboratorio.activo == True)  # noqa: E712
+                        .order_by(Laboratorio.nombre).all())
+                labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+            return render_template('producto_nuevo.html', desc=desc,
+                                   lab_id_sel=lab_id, laboratorios=labs_data)
+
+        with database.get_db() as session:
+            existing = session.query(Producto).filter_by(codigo_barra=ean).first()
+            if existing:
+                return redirect(url_for('producto_detalle', prod_id=existing.id))
+            prod = Producto(
+                codigo_barra=ean,
+                descripcion=desc or None,
+                laboratorio_id=lab_id,
+                fuente_creacion='oferta_import',
+            )
+            session.add(prod)
+            session.commit()
+            prod_id = prod.id
+        return redirect(url_for('producto_detalle', prod_id=prod_id))
+
     @app.route('/producto/create', methods=['POST'])
     def producto_create():
         data = request.get_json(silent=True) or {}
@@ -333,6 +468,7 @@ def init_app(app):
                 'monodroga_legacy': prod.monodroga,
                 'presentacion_legacy': prod.presentacion,
                 'accion_terapeutica_legacy': prod.accion_terapeutica,
+                'fuente_creacion': prod.fuente_creacion,
             }
             atributos = None
             if atr:
@@ -617,7 +753,7 @@ def init_app(app):
                             return jsonify({'error': f'{f} inválido'}), 400
             if 'monodroga' in data:
                 m = (data.get('monodroga') or '').strip()
-                atr.monodroga_display = m or None
+                prod.monodroga = m or None
                 atr.monodroga_norm = _normalizar_droga(m) if m else None
             atr.fuente = 'manual'
             atr.confianza = 'ALTA'

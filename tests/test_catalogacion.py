@@ -35,13 +35,13 @@ def _crear_producto_con_atributos(session, codigo_barra, descripcion,
     p = database.Producto(
         codigo_barra=codigo_barra,
         descripcion=descripcion,
+        monodroga=monodroga_display,  # fuente única: Producto.monodroga
     )
     session.add(p)
     session.flush()
     atr = database.ProductoAtributo(
         producto_id=p.id,
         monodroga_norm=monodroga_norm,
-        monodroga_display=monodroga_display,
         concentracion_mg=Decimal(str(concentracion_mg)) if concentracion_mg is not None else None,
         concentracion_unidad=concentracion_unidad,
         forma_farma=forma_farma,
