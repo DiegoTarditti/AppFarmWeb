@@ -251,26 +251,42 @@ def init_app(app):
     def producto_nuevo():
         """Crea un producto nuevo y redirige a su ficha completa.
 
-        GET ?ean=...&desc=... — si hay EAN crea directamente y redirige.
-                                Sin EAN muestra un form para ingresar el EAN.
+        GET ?ean=...&desc=...&lab_id=... — si hay EAN crea directamente.
+        Sin EAN muestra un form para ingresar EAN + laboratorio.
         POST — mismo flujo desde el form.
         """
         if request.method == 'POST':
             ean = (request.form.get('ean') or '').strip()
             desc = (request.form.get('desc') or '').strip()
+            lab_id_raw = request.form.get('lab_id') or ''
         else:
             ean = (request.args.get('ean') or '').strip()
             desc = (request.args.get('desc') or '').strip()
+            lab_id_raw = request.args.get('lab_id') or ''
+
+        try:
+            lab_id = int(lab_id_raw) if lab_id_raw else None
+        except ValueError:
+            lab_id = None
 
         if not ean:
-            # Sin EAN → mostrar form simple para ingresar el código
-            return render_template('producto_nuevo.html', desc=desc)
+            with database.get_db() as session:
+                labs = (session.query(Laboratorio)
+                        .filter(Laboratorio.activo == True)  # noqa: E712
+                        .order_by(Laboratorio.nombre).all())
+                labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+            return render_template('producto_nuevo.html', desc=desc,
+                                   lab_id_sel=lab_id, laboratorios=labs_data)
 
         with database.get_db() as session:
             existing = session.query(Producto).filter_by(codigo_barra=ean).first()
             if existing:
                 return redirect(url_for('producto_detalle', prod_id=existing.id))
-            prod = Producto(codigo_barra=ean, descripcion=desc or None)
+            prod = Producto(
+                codigo_barra=ean,
+                descripcion=desc or None,
+                laboratorio_id=lab_id,
+            )
             session.add(prod)
             session.commit()
             prod_id = prod.id

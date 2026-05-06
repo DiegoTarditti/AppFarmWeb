@@ -1283,12 +1283,14 @@ async function crearNuevoProducto(itemIdx) {
     if (!item) return;
     const desc = (item.descripcion || '').trim();
     const ean = (item.ean || '').trim();
+    const labId = document.getElementById('lab-select').value;
     // Abrir la ficha de creación en una nueva pestaña.
-    // Si hay EAN, el route lo crea y redirige a la ficha.
-    // Si no, muestra un form para ingresar EAN + descripción.
+    // Con EAN: el route crea el producto y redirige a la ficha completa.
+    // Sin EAN: muestra un form para ingresar EAN + lab + descripción.
     const params = new URLSearchParams();
     if (desc) params.set('desc', desc);
     if (ean) params.set('ean', ean);
+    if (labId) params.set('lab_id', labId);
     window.open('/producto/nuevo?' + params.toString(), '_blank');
 }
 

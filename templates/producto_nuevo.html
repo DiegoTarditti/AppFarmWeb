@@ -6,7 +6,7 @@
 <div class="flex-1 flex items-center justify-center p-6">
     <div class="bg-white border border-surface-border rounded-xl shadow-sm p-8 w-full max-w-md">
         <h1 class="text-lg font-bold text-[#1e1e1e] mb-1">Nuevo producto</h1>
-        <p class="text-sm text-[#888] mb-6">Ingresá el EAN/código de barra para crear el producto y acceder a la ficha completa.</p>
+        <p class="text-sm text-[#888] mb-6">Ingresá los datos básicos y accedé a la ficha completa para catalogar.</p>
         <form method="POST" action="{{ url_for('producto_nuevo') }}" class="space-y-4">
             <div>
                 <label class="block text-xs font-semibold text-[#555] mb-1">EAN / Código de barra <span class="text-red-600">*</span></label>
@@ -19,6 +19,16 @@
                 <input type="text" name="desc" value="{{ desc or '' }}"
                        class="w-full border border-[#ddd] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
                        placeholder="ALERTIAL 120 MG CPR X 10">
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-[#555] mb-1">Laboratorio</label>
+                <select name="lab_id"
+                        class="w-full border border-[#ddd] rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 bg-white">
+                    <option value="">— Sin laboratorio —</option>
+                    {% for lab in laboratorios %}
+                    <option value="{{ lab.id }}" {% if lab.id == lab_id_sel %}selected{% endif %}>{{ lab.nombre }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="flex gap-3 pt-2">
                 <button type="submit"
