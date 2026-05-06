@@ -385,6 +385,7 @@ def init_app(app):
             creadas = 0
             actualizadas = 0
             sin_match = 0
+            seen_norms = set()  # evita duplicados dentro del mismo batch
             for o in ofertas:
                 desc_orig = (o.descripcion or '').strip()
                 if not desc_orig:
@@ -394,8 +395,9 @@ def init_app(app):
                     sin_match += 1
                     continue
                 desc_norm = normalizar_texto(desc_orig)[:200]
-                if not desc_norm:
+                if not desc_norm or desc_norm in seen_norms:
                     continue
+                seen_norms.add(desc_norm)
                 existente = (session.query(EquivalenciaProveedor)
                              .filter_by(laboratorio_id=lab_id,
                                         descripcion_proveedor_norm=desc_norm)
