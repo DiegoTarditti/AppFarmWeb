@@ -373,7 +373,7 @@ def init_app(app):
                 ObsVentaDetalle.fecha_estadistica,
                 func.sum(ObsVentaDetalle.cantidad).label('cant'),
             ).filter(ObsVentaDetalle.fecha_estadistica >= _semana,
-                     ObsVentaDetalle.tipo_operacion == 'V')\
+                     or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None)))\
              .group_by(ObsVentaDetalle.producto_observer,
                        ObsVentaDetalle.fecha_estadistica).all()
             v24h_rows = {}

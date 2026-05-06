@@ -2520,16 +2520,17 @@ def _pg_add_columns(conn):
         )
     """))
     # tipo_operacion en obs_ventas_detalle: distingue 'V' (venta) de devoluciones/NC.
-    # El sync anterior no la traía; las filas existentes (NULL) se marcan como 'V'
-    # de forma aproximada — un re-sync completo las correría con el valor real.
+    # OJO: NO hacer UPDATE masivo de filas existentes — la tabla puede ser
+    # millones de rows y un UPDATE las reescribe (DELETE+INSERT en PG) llenando
+    # el disco de Render (incidente 2026-05-06: DiskFull). El ADD COLUMN con
+    # DEFAULT 'V' en PG ≥11 es instantáneo (catálogo, sin reescribir filas).
+    # Las filas existentes leen 'V' implícito; las nuevas también arrancan en
+    # 'V' hasta que un re-sync las pise con el tipo real (V/D/NC).
     conn.execute(text(
-        "ALTER TABLE obs_ventas_detalle ADD COLUMN IF NOT EXISTS tipo_operacion VARCHAR(2)"
+        "ALTER TABLE obs_ventas_detalle ADD COLUMN IF NOT EXISTS tipo_operacion VARCHAR(2) DEFAULT 'V'"
     ))
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_ovd_tipo ON obs_ventas_detalle(tipo_operacion)"
-    ))
-    conn.execute(text(
-        "UPDATE obs_ventas_detalle SET tipo_operacion = 'V' WHERE tipo_operacion IS NULL"
     ))
     # Índices para queries frecuentes
     for stmt in [
