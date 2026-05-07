@@ -48,22 +48,57 @@
 
     <!-- ============= PASO 1: Subir ============= -->
     <div id="panel-1" class="bg-white border border-surface-border rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-2">1. Elegí laboratorio y archivo</h2>
+        <h2 class="text-sm font-semibold text-[#1e1e1e] mb-2">1. Elegí destino y archivo</h2>
         <p class="text-xs text-[#6f6f6f] mb-4">
             <strong>Excel</strong>, <strong>PDF</strong> o <strong>foto/escaneo</strong> del proveedor con columnas tipo: EAN, Código, Descripción, Cantidad mínima, Descuento %, Plazo, Grupo. El sistema detecta los headers automáticamente y te deja remapear si lo hace mal. Para fotos y PDFs escaneados se usa OCR (puede tardar ~20s la primera vez).
         </p>
 
-        <div class="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-3">
-            <label class="text-xs font-semibold text-violet-900 block mb-1">
-                Laboratorio destino
-                <span class="text-[10px] font-normal text-violet-700">— elegilo ahora para que el primer match contra catálogo ya sea preciso</span>
-            </label>
-            <select id="lab-select-pre" class="w-full bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
-                <option value="">— Elegí un laboratorio —</option>
-                {% for l in laboratorios %}
-                <option value="{{ l.id }}">{{ l.nombre }}</option>
-                {% endfor %}
-            </select>
+        <!-- Toggle de modo: por lab o por drog (multi-lab) -->
+        <div class="bg-[#fafafa] border border-surface-border rounded-lg p-3 mb-3">
+            <p class="text-[11px] font-semibold text-[#555] uppercase tracking-wide mb-2">Modo de carga</p>
+            <div class="flex gap-2 mb-3">
+                <label class="flex-1 cursor-pointer">
+                    <input type="radio" name="modo-carga" value="lab" checked class="peer hidden" onchange="toggleModoCarga()">
+                    <div class="border-2 border-surface-border rounded-lg p-2 peer-checked:border-violet-500 peer-checked:bg-violet-50 transition-all">
+                        <p class="text-sm font-bold text-[#1e1e1e]">🧪 Por laboratorio</p>
+                        <p class="text-[10px] text-[#888] mt-0.5">Oferta clásica: todos los productos del archivo son del mismo lab.</p>
+                    </div>
+                </label>
+                <label class="flex-1 cursor-pointer">
+                    <input type="radio" name="modo-carga" value="drog" class="peer hidden" onchange="toggleModoCarga()">
+                    <div class="border-2 border-surface-border rounded-lg p-2 peer-checked:border-emerald-500 peer-checked:bg-emerald-50 transition-all">
+                        <p class="text-sm font-bold text-[#1e1e1e]">🚚 Por droguería (multi-lab)</p>
+                        <p class="text-[10px] text-[#888] mt-0.5">El archivo tiene productos de varios labs — se asocia a una drog y filtra el armado.</p>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Modo por lab -->
+            <div id="campo-lab" class="bg-violet-50 border border-violet-200 rounded-lg p-3">
+                <label class="text-xs font-semibold text-violet-900 block mb-1">
+                    Laboratorio destino
+                </label>
+                <select id="lab-select-pre" class="w-full bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">— Elegí un laboratorio —</option>
+                    {% for l in laboratorios %}
+                    <option value="{{ l.id }}">{{ l.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Modo por drog (oculto inicialmente) -->
+            <div id="campo-drog" class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 hidden">
+                <label class="text-xs font-semibold text-emerald-900 block mb-1">
+                    Droguería destino
+                    <span class="text-[10px] font-normal text-emerald-700">— el lab de cada producto se deduce automáticamente del catálogo</span>
+                </label>
+                <select id="drog-select-pre" class="w-full bg-white border border-emerald-300 rounded-lg px-3 py-2 text-sm">
+                    <option value="">— Elegí una droguería —</option>
+                    {% for d in droguerias %}
+                    <option value="{{ d.id }}">{{ d.razon_social }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         <input type="file" id="file-input" accept=".xlsx,.xls,.pdf,.jpg,.jpeg,.png,.webp,.bmp,.tiff,.tif"
@@ -494,14 +529,38 @@ function _sincronizarLab(srcId) {
 }
 _labPre.addEventListener('change', () => _sincronizarLab('pre'));
 
+// Toggle de modo: lab vs drog (multi-lab). Cuando es drog, no exige lab.
+function toggleModoCarga() {
+    const modo = document.querySelector('input[name="modo-carga"]:checked').value;
+    document.getElementById('campo-lab').classList.toggle('hidden', modo !== 'lab');
+    document.getElementById('campo-drog').classList.toggle('hidden', modo !== 'drog');
+}
+function _modoCargaActual() {
+    const r = document.querySelector('input[name="modo-carga"]:checked');
+    return r ? r.value : 'lab';
+}
+
 document.getElementById('btn-parse').addEventListener('click', async () => {
     const fileInput = document.getElementById('file-input');
     const status = document.getElementById('upload-status');
-    if (!_labPre.value) {
+    const modo = _modoCargaActual();
+    if (modo === 'lab' && !_labPre.value) {
         status.textContent = '⚠ Elegí un laboratorio destino primero.';
         status.className = 'text-xs text-amber-700 mt-2';
         _labPre.focus();
         return;
+    }
+    if (modo === 'drog' && !document.getElementById('drog-select-pre').value) {
+        status.textContent = '⚠ Elegí una droguería destino primero.';
+        status.className = 'text-xs text-amber-700 mt-2';
+        document.getElementById('drog-select-pre').focus();
+        return;
+    }
+    // En modo drog, propagar el drog al selector del paso 4.
+    if (modo === 'drog') {
+        const drogVal = document.getElementById('drog-select-pre').value;
+        const drogFinal = document.getElementById('drog-select');
+        if (drogFinal) drogFinal.value = drogVal;
     }
     if (!fileInput.files[0]) {
         status.textContent = '⚠ Seleccioná un archivo.';
@@ -952,6 +1011,7 @@ async function validarItems(opciones={}) {
                 items: _items,
                 laboratorio_id: labId ? parseInt(labId, 10) : null,
                 umbral_variacion: 30,
+                modo: (typeof _modoCargaActual === 'function') ? _modoCargaActual() : 'lab',
             }),
         });
         if (!silencioso && window.AnalisisOverlay) {
@@ -1669,19 +1729,29 @@ document.getElementById('reemplazar').addEventListener('change', (e) => {
 });
 
 async function _confirmarEImportar() {
+    const modo = _modoCargaActual();
     const labId = document.getElementById('lab-select').value;
+    let drogIdFromTop = document.getElementById('drog-select-pre')?.value || '';
     const reemplazar = document.getElementById('reemplazar').checked;
     const status = document.getElementById('save-status');
-    if (!labId) {
+    if (modo === 'lab' && !labId) {
         status.textContent = '⚠ Elegí un laboratorio.';
+        status.className = 'text-xs text-amber-700 mt-3';
+        return;
+    }
+    if (modo === 'drog' && !drogIdFromTop) {
+        status.textContent = '⚠ Elegí una droguería.';
         status.className = 'text-xs text-amber-700 mt-3';
         return;
     }
     status.textContent = '⏳ Guardando…';
     status.className = 'text-xs text-[#888] mt-3';
 
-    // Capturar campos Fase 2: droguería, vigencia, observación
-    const drogId = document.getElementById('drog-select')?.value || '';
+    // Drog: en modo lab viene del paso 4 (drog-select); en modo drog viene
+    // del toggle del paso 1 (drog-select-pre).
+    const drogId = (modo === 'drog')
+        ? drogIdFromTop
+        : (document.getElementById('drog-select')?.value || '');
     const vigenciaHasta = document.getElementById('vigencia-hasta')?.value || '';
     const observacion = document.getElementById('observacion-input')?.value || '';
 
@@ -1691,7 +1761,8 @@ async function _confirmarEImportar() {
             headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
             body: JSON.stringify({
-                laboratorio_id: parseInt(labId, 10),
+                modo: modo,  // 'lab' o 'drog'
+                laboratorio_id: (modo === 'lab') ? parseInt(labId, 10) : null,
                 drogueria_id: drogId ? parseInt(drogId, 10) : null,
                 vigencia_hasta: vigenciaHasta || null,
                 observacion: observacion || null,
