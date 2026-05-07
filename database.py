@@ -2117,14 +2117,31 @@ def _pg_add_columns(conn):
         "ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS backup_ultimo_tamano_mb DECIMAL(10, 2)",
     ]:
         conn.execute(text(ddl))
-    # Asegurar DEFAULT en observer_ventas_meses (si se agregó sin default en versiones previas).
-    conn.execute(text("ALTER TABLE configuracion ALTER COLUMN observer_ventas_meses SET DEFAULT 16"))
+    # Asegurar DEFAULT en columnas NOT NULL — SQLAlchemy `default=...` es
+    # client-side, no genera SQL DEFAULT, y un INSERT que omite la columna
+    # NotNull falla si la tabla se creó sin DEFAULT (problema histórico de
+    # tablas viejas: ALTER ADD COLUMN IF NOT EXISTS no actualiza el default).
+    for ddl in (
+        "ALTER TABLE configuracion ALTER COLUMN observer_ventas_meses SET DEFAULT 16",
+        "ALTER TABLE configuracion ALTER COLUMN backup_hora SET DEFAULT 17",
+        "ALTER TABLE configuracion ALTER COLUMN backup_diarios_max SET DEFAULT 7",
+        "ALTER TABLE configuracion ALTER COLUMN backup_semanales_max SET DEFAULT 0",
+        "ALTER TABLE configuracion ALTER COLUMN backup_quincenales_max SET DEFAULT 1",
+        "ALTER TABLE configuracion ALTER COLUMN backup_mensuales_max SET DEFAULT 0",
+    ):
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            pass
     conn.execute(text(
         "INSERT INTO configuracion "
         "(id, farmacia_nombre, umbral_pico, umbral_baja, umbral_tendencia, "
         " rot_alta_min, rot_alta_tol, rot_media_min, rot_media_tol, rot_baja_tol, "
-        " keep_alive_enabled, keep_alive_interval_min, observer_ventas_meses) "
-        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0, FALSE, 10, 16) "
+        " keep_alive_enabled, keep_alive_interval_min, observer_ventas_meses, "
+        " backup_hora, backup_diarios_max, backup_semanales_max, "
+        " backup_quincenales_max, backup_mensuales_max) "
+        "VALUES (1, 'Farmacia', 1.30, 0.70, 0.20, 20.0, 0.0, 5.0, 0.0, 0.0, FALSE, 10, 16, "
+        " 17, 7, 0, 1, 0) "
         "ON CONFLICT DO NOTHING"
     ))
     conn.execute(text(
