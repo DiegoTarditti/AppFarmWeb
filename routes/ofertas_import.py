@@ -28,6 +28,131 @@ def _to_int(v):
         return None
 
 
+def _guardar_modo_drog(data):
+    """Modo simple: oferta multi-lab asociada a una droguería.
+    Reemplaza todas las ofertas activas de esa drog (cualquier lab) con la
+    nueva lista. Cada item deduce su lab desde productos.laboratorio_id por
+    EAN. Si no se puede deducir, queda con laboratorio_id=NULL.
+    """
+    from datetime import date as _date_d
+    from datetime import datetime as _dt_d
+
+    from sqlalchemy import or_ as _or_d
+
+    from helpers import now_ar
+
+    drog_id = data.get('drogueria_id')
+    try:
+        drog_id = int(drog_id) if drog_id else None
+    except (TypeError, ValueError):
+        drog_id = None
+    if not drog_id:
+        return jsonify({'error': 'En modo drog hay que elegir una droguería'}), 400
+
+    items = data.get('items') or []
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items vacío'}), 400
+
+    vigencia_hasta = None
+    vigencia_str = (data.get('vigencia_hasta') or '').strip()
+    if vigencia_str:
+        try:
+            vigencia_hasta = _dt_d.strptime(vigencia_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    observacion = (data.get('observacion') or '').strip()[:200] or None
+    hoy = _date_d.today()
+
+    # Normalizar % de Excel
+    for it in items:
+        for k in ('descuento_psl', 'rentabilidad'):
+            v = it.get(k)
+            if v is not None and v != '':
+                try:
+                    fv = float(str(v).replace(',', '.'))
+                    if 0 < fv < 1:
+                        it[k] = fv * 100
+                except (ValueError, TypeError):
+                    pass
+
+    with database.get_db() as session:
+        from database import Producto
+
+        # Resolver lab por EAN en bulk para no hacer N queries
+        eans_unicos = list({(str(it.get('ean') or '').strip())
+                             for it in items if it.get('ean')})
+        ean_to_lab = {}
+        if eans_unicos:
+            for prod in (session.query(Producto)
+                         .filter(Producto.codigo_barra.in_(eans_unicos)).all()):
+                if prod.laboratorio_id:
+                    ean_to_lab[prod.codigo_barra] = prod.laboratorio_id
+            # Match adicional via tabla 1-a-N
+            faltantes = [e for e in eans_unicos if e not in ean_to_lab]
+            if faltantes:
+                from database import ProductoCodigoBarra
+                rows = (session.query(ProductoCodigoBarra.codigo_barra,
+                                       Producto.laboratorio_id)
+                        .join(Producto,
+                              Producto.id == ProductoCodigoBarra.producto_id)
+                        .filter(ProductoCodigoBarra.codigo_barra.in_(faltantes),
+                                Producto.laboratorio_id.isnot(None)).all())
+                for cb, lid in rows:
+                    ean_to_lab.setdefault(cb, lid)
+
+        # Reemplazar todas las ofertas activas de esta drog (auditoría: dejamos
+        # las viejas con activo=False).
+        viejas = (session.query(OfertaMinimo)
+                  .filter(OfertaMinimo.drogueria_id == drog_id,
+                          OfertaMinimo.activo.is_(True)).all())
+        for o in viejas:
+            o.activo = False
+
+        insertados = saltados = sin_lab = 0
+        for it in items:
+            ean = (str(it.get('ean') or '').strip()) or None
+            codigo = (str(it.get('codigo') or '').strip()) or None
+            if not ean and not codigo:
+                saltados += 1
+                continue
+            um = _to_int(it.get('unidades_minima'))
+            tipo_desc = 'con_minimo' if (um is not None and um > 1) else 'simple'
+            lab_id_item = ean_to_lab.get(ean) if ean else None
+            if not lab_id_item:
+                sin_lab += 1
+            obs_item = (str(it.get('observacion') or '').strip()[:200]
+                        or observacion or None)
+            session.add(OfertaMinimo(
+                laboratorio_id=lab_id_item,  # puede ser None
+                ean=(ean or '')[:20],
+                codigo=(codigo or None) and codigo[:50],
+                descripcion=(str(it.get('descripcion') or ''))[:300] or None,
+                unidades_minima=um,
+                descuento_psl=_to_float(it.get('descuento_psl')),
+                rentabilidad=_to_float(it.get('rentabilidad')),
+                plazo_pago=(str(it.get('plazo_pago') or ''))[:100] or None,
+                grupo_id=_to_int(it.get('grupo_id')),
+                tipo_descuento=tipo_desc,
+                drogueria_id=drog_id,
+                vigencia_desde=hoy if vigencia_hasta else None,
+                vigencia_hasta=vigencia_hasta,
+                observacion=obs_item,
+                activo=True,
+                actualizado_en=now_ar(),
+            ))
+            insertados += 1
+        session.commit()
+
+    return jsonify({
+        'ok': True,
+        'modo': 'drog',
+        'insertados': insertados,
+        'saltados': saltados,
+        'sin_lab': sin_lab,
+        'reemplazadas': len(viejas),
+    })
+
+
 def _to_float(v):
     if v is None or v == '':
         return None
@@ -504,6 +629,7 @@ def init_app(app):
             lab_id = int(lab_id) if lab_id else None
         except (TypeError, ValueError):
             lab_id = None
+        modo = (data.get('modo') or 'lab').strip().lower()
 
         if not items:
             return jsonify({'items': [], 'stats': {}})
@@ -572,32 +698,54 @@ def init_app(app):
             })
 
         with database.get_db() as session:
-            results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
+            if modo == 'drog':
+                # Fast path: solo match exacto por EAN/código en `productos`.
+                # No fuzzy ni fallback observer (que sin lab tokeniza 122K
+                # productos y clava la request). Los items sin match quedan
+                # como tales y el usuario puede mandar match manual.
+                results = [
+                    pm.match_producto(
+                        ean=it.get('ean'),
+                        codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
+                        descripcion=None,  # desactiva fuzzy descripción
+                        laboratorio_id=None,
+                        target='producto',
+                        incluir_observer=False,
+                        incluir_candidatos=False,
+                        precio_referencia=it.get('precio'),
+                        session=session,
+                    )
+                    for it in items_para_match
+                ]
+            else:
+                results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
 
             # Capa 2 — match dimensional para los no encontrados.
             # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
             # y los cruza contra ProductoAtributo. Funciona sin EAN.
+            # En modo drog la skipeamos también para velocidad.
             from catalogacion import extraer_de_descripcion, match_dimensional_candidatos
             dim_matches = {}  # idx → lista de candidatos dimensionales
-            for idx_d, res_d in enumerate(results):
-                if res_d.producto is not None:
-                    continue
-                desc_d = (items_para_match[idx_d].get('descripcion') or '').strip()
-                if not desc_d:
-                    continue
-                atrs_d = extraer_de_descripcion(desc_d)
-                if not atrs_d or not atrs_d.get('monodroga_norm'):
-                    continue  # sin droga extraída, no tiene sentido buscar
-                candidatos_d = match_dimensional_candidatos(
-                    session,
-                    monodroga_norm=atrs_d.get('monodroga_norm'),
-                    concentracion_mg=atrs_d.get('concentracion_mg'),
-                    forma_farma=atrs_d.get('forma_farma'),
-                    cantidad_envase=atrs_d.get('cantidad_envase'),
-                    limit=5,
-                )
-                if candidatos_d:
-                    dim_matches[idx_d] = candidatos_d
+            if modo != 'drog':
+                for idx_d, res_d in enumerate(results):
+                    if res_d.producto is not None:
+                        continue
+                    desc_d = (items_para_match[idx_d].get('descripcion') or '').strip()
+                    if not desc_d:
+                        continue
+                    atrs_d = extraer_de_descripcion(desc_d)
+                    if not atrs_d or not atrs_d.get('monodroga_norm'):
+                        continue  # sin droga extraída, no tiene sentido buscar
+                    candidatos_d = match_dimensional_candidatos(
+                        session,
+                        monodroga_norm=atrs_d.get('monodroga_norm'),
+                        concentracion_mg=atrs_d.get('concentracion_mg'),
+                        forma_farma=atrs_d.get('forma_farma'),
+                        cantidad_envase=atrs_d.get('cantidad_envase'),
+                        limit=5,
+                    )
+                    if candidatos_d:
+                        dim_matches[idx_d] = candidatos_d
 
             # Pre-fetch EANs reales (obs_codigos_barras) para productos que
             # sólo tienen pseudo-EAN OBS:N. Se usa para propagar el EAN al item
@@ -801,8 +949,23 @@ def init_app(app):
 
         Items pueden venir con descuentos en formato decimal Excel (0.2 = 20%);
         el sistema lo normaliza a enteros (×100 si entre 0 y 1).
+
+        Modos:
+        - 'lab' (default): pide laboratorio_id obligatorio. Todos los items van
+          al mismo lab. Soporta detección de conflictos por (lab, drog).
+        - 'drog': lab opcional/None. Cada item deduce su lab desde el catálogo
+          (productos.laboratorio_id por EAN). Ofertas con lab=None si no se
+          puede deducir. Requiere drogueria_id.
         """
         data = request.get_json(silent=True) or {}
+        modo = (data.get('modo') or 'lab').strip().lower()
+        if modo not in ('lab', 'drog'):
+            modo = 'lab'
+
+        # Modo drog: bypass simple, sin la lógica completa de conflictos.
+        if modo == 'drog':
+            return _guardar_modo_drog(data)
+
         try:
             lab_id = int(data.get('laboratorio_id'))
         except (TypeError, ValueError):

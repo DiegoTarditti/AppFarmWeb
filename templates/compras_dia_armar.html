@@ -43,6 +43,31 @@
         Próximo cierre: <span class="font-bold">{{ cierre.hora_str }}</span> hs
     </span>
     {% endif %}
+
+    {# Último sync de stock + botón sincronizar ahora #}
+    <span id="last-sync-info" class="text-xs flex items-center gap-1.5
+        {% if last_sync_min is not none and last_sync_min < 90 %}bg-emerald-50 border-emerald-300 text-emerald-800
+        {% elif last_sync_min is not none and last_sync_min < 360 %}bg-amber-50 border-amber-300 text-amber-800
+        {% else %}bg-rose-50 border-rose-300 text-rose-800{% endif %}
+        border px-2 py-1 rounded"
+          title="{% if last_sync_stock %}Última sincronización exitosa de stock vs ObServer.{% else %}No hay sync registrado.{% endif %}">
+        <span>🔄</span>
+        {% if last_sync_stock %}
+        <span>Sync stock: <b>{{ last_sync_stock.strftime('%d/%m %H:%M') }}</b>
+            <span class="text-[10px] opacity-70">(hace
+                {% if last_sync_min < 60 %}{{ last_sync_min }} min
+                {% elif last_sync_min < 1440 %}{{ (last_sync_min // 60) }} h
+                {% else %}{{ (last_sync_min // 1440) }} d{% endif %})</span></span>
+        {% else %}
+        <span>Sin sync registrado</span>
+        {% endif %}
+        <button type="button" onclick="sincronizarStockAhora(this)"
+                class="ml-1 text-sm bg-white border border-current font-bold px-3 py-1 rounded hover:opacity-70 transition-opacity"
+                title="Sincronizar stock con ObServer ahora">
+            Sincronizar ahora
+        </button>
+    </span>
+
     <span class="text-xs text-[#6f6f6f] ml-auto">
         {% if prov %}
         {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
@@ -52,6 +77,51 @@
     </span>
     <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
 </div>
+
+{# Estado oferta-drog: 3 banners distintos según usar_oferta #}
+{% if oferta_drog_n %}
+{# A. Filtro aplicado — usar_oferta='1' #}
+<div class="bg-emerald-50 border-b-2 border-emerald-300 px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
+    <span class="text-sm font-bold text-emerald-800">🎯 Filtrado por oferta de droguería</span>
+    <span class="text-xs text-emerald-700">
+        Mostrando solo los <b>{{ oferta_drog_n }} producto(s)</b> cargados
+        en la oferta activa para <b>{{ oferta_drog_nombre or 'esta droguería' }}</b>.
+    </span>
+    <a href="?prov={{ prov.id }}&usar_oferta=0" class="ml-auto text-xs bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100 font-semibold px-2.5 py-1 rounded">
+        Ver todos los productos
+    </a>
+    <a href="{{ url_for('ofertas_import_page') }}" class="text-xs text-emerald-700 hover:text-emerald-900 underline">Gestionar ofertas</a>
+</div>
+{% elif oferta_disponible_n and prov and not usar_oferta %}
+{# B. Hay oferta cargada pero no decidió todavía — preguntamos #}
+<div class="bg-amber-50 border-b-2 border-amber-300 px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <span class="text-2xl">🎯</span>
+    <div class="flex-1 min-w-0">
+        <p class="text-sm font-bold text-amber-900">Esta droguería tiene una oferta activa cargada</p>
+        <p class="text-xs text-amber-800">
+            <b>{{ oferta_disponible_n }} producto(s)</b> en la oferta de
+            <b>{{ oferta_nombre_drog or prov.razon_social }}</b>.
+            ¿Querés filtrar el armado para ver solo esos productos, o ver el listado completo bajo mínimo?
+        </p>
+    </div>
+    <a href="?prov={{ prov.id }}&usar_oferta=1"
+       class="text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded">
+        ✓ Filtrar por oferta
+    </a>
+    <a href="?prov={{ prov.id }}&usar_oferta=0"
+       class="text-sm bg-white border border-amber-400 text-amber-800 hover:bg-amber-100 font-semibold px-3 py-1.5 rounded">
+        Ver todos
+    </a>
+</div>
+{% elif oferta_disponible_n and prov and usar_oferta == '0' %}
+{# C. Decidió ver todos — ofrecer volver a filtrar #}
+<div class="bg-[#fafafa] border-b border-surface-border px-4 sm:px-6 py-1.5 flex items-center gap-3 flex-wrap text-xs">
+    <span class="text-[#666]">📋 Hay una oferta cargada con {{ oferta_disponible_n }} productos para esta drog.</span>
+    <a href="?prov={{ prov.id }}&usar_oferta=1" class="text-emerald-700 hover:text-emerald-900 underline font-semibold">
+        Filtrar por oferta →
+    </a>
+</div>
+{% endif %}
 
 {% if pendientes_anteriores %}
 <div class="bg-rose-50 border-b border-rose-200 px-4 sm:px-6 py-2">
@@ -294,16 +364,17 @@
                     </td>
                     <td class="px-3 py-1 text-right font-mono">{{ it.stock }}</td>
                     <td class="px-3 py-1 text-right font-mono text-[#666] whitespace-nowrap">
-                        {{ it.minimo }}
-                        {% if it.min_sugerencia == 'up' %}
-                        <span class="text-[10px] bg-rose-100 text-rose-700 font-bold px-1.5 py-0.5 rounded ml-1"
-                              title="Sugerido {{ it.min_sugerido }} · cobertura actual {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d">Subir mín. → {{ it.min_sugerido }}</span>
-                        {% elif it.min_sugerencia == 'down' %}
-                        <span class="text-[10px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded ml-1"
-                              title="Sugerido {{ it.min_sugerido }} · cobertura actual {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d">Bajar mín. → {{ it.min_sugerido }}</span>
-                        {% elif it.min_sugerencia == 'ok' %}
-                        <span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-1"
-                              title="Cobertura {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d — en rango">OK</span>
+                        {% if it.min_corregido %}
+                            <span class="line-through text-[#bbb]">{{ it.minimo }}</span>
+                            <span class="font-bold text-violet-700">→ {{ it.min_efectivo }}</span>
+                            <span class="text-[10px] bg-violet-100 text-violet-700 font-bold px-1.5 py-0.5 rounded ml-1"
+                                  title="Observer tiene mín={{ it.minimo }} desactualizado. Usamos {{ it.min_efectivo }} (forecast 7d). Avisá al POS para que lo corrija.">corregido</span>
+                        {% else %}
+                            {{ it.minimo }}
+                            {% if it.min_sugerencia == 'ok' %}
+                            <span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-1"
+                                  title="Cobertura {{ it.cobertura_d if it.cobertura_d is not none else '—' }}d — en rango">OK</span>
+                            {% endif %}
                         {% endif %}
                     </td>
                     <td class="px-3 py-1 text-right font-mono text-[#666]">{{ it.u24h or '—' }}</td>
@@ -376,6 +447,31 @@
 </div>{# /flex-1 overflow-auto wrapper #}
 
 <script>
+// Sincroniza stock contra ObServer y recarga la página al terminar.
+async function sincronizarStockAhora(btn) {
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sincronizando…';
+    try {
+        const r = await fetch('/admin/observer-sync/stock', {
+            method: 'POST', credentials: 'same-origin',
+        });
+        if (r.ok || r.status === 302) {
+            btn.textContent = '✓ OK · recargando…';
+            setTimeout(() => location.reload(), 700);
+        } else {
+            const t = await r.text();
+            alert('Error al sincronizar: ' + r.status + ' ' + t.slice(0, 200));
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    } catch (e) {
+        alert('Error de red: ' + e);
+        btn.disabled = false;
+        btn.textContent = original;
+    }
+}
+
 async function reactivar(prodId, btn) {
     if (!await _confirmar('Reactivar este producto. Va a volver a aparecer en pedidos futuros como cualquier otro.', '↻ Reactivar', 'bg-emerald-600 hover:bg-emerald-700')) return;
     btn.disabled = true;
@@ -532,11 +628,11 @@ function renderAnio(p) {
                     const yt=yS.getPixelForValue(pf),hw=bar.width/2;
                     ctx2.save();ctx2.fillStyle='rgba(234,179,8,0.22)';ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
                     ctx2.strokeStyle='rgba(234,179,8,0.7)';ctx2.lineWidth=1;ctx2.setLineDash([3,2]);ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt);ctx2.restore();
-                    ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle='#64748b';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-2);ctx2.restore();
-                    ctx2.save();ctx2.font='bold 8px sans-serif';ctx2.fillStyle='#b45309';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-2);ctx2.restore();
+                    ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle='#64748b';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-2);ctx2.restore();
+                    ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle='#b45309';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-2);ctx2.restore();
                     return;
                 }
-                ctx2.save();ctx2.font='8px sans-serif';ctx2.fillStyle=di===1?'rgba(34,197,94,0.9)':'#888';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-2);ctx2.restore();
+                ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle=di===1?'rgba(34,197,94,1)':'#555';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-2);ctx2.restore();
             });
         });
     }};
@@ -670,7 +766,7 @@ function renderMes(d, ing) {
                 const v = dset.data[i];
                 if (v == null || v <= 0) return;
                 c.save();
-                c.font = 'bold 9px sans-serif';
+                c.font = 'bold 11px sans-serif';
                 // Pendiente (di=1) en naranja oscuro, Salidas en verde oscuro.
                 c.fillStyle = di === 1 ? '#b45309' : '#15803d';
                 c.textAlign = 'center';
@@ -976,6 +1072,14 @@ document.querySelectorAll('.producto-row').forEach((row, i) => {
 
 aplicarFiltros();
 
+// Auto-seleccionar el primer producto visible al cargar para que el gráfico
+// arranque con datos en vez del placeholder "(sin selección)".
+(function _autoSelectPrimero() {
+    const rows = Array.from(document.querySelectorAll('.producto-row'))
+                       .filter(r => r.style.display !== 'none');
+    if (rows.length) seleccionarProducto(rows[0]);
+})();
+
 // Mide el alto real del panel del gráfico y lo usa de offset del thead sticky.
 function _ajustarOffsetThead() {
     const panel = document.getElementById('panel-grafico');
@@ -1209,7 +1313,16 @@ function agregarFila(it) {
             })() : '—'}
         </td>
         <td class="px-3 py-1 text-right font-mono">${it.stock}</td>
-        <td class="px-3 py-1 text-right font-mono text-[#666]">${it.minimo}</td>
+        <td class="px-3 py-1 text-right font-mono text-[#666] whitespace-nowrap">${
+            it.min_corregido
+                ? `<span class="line-through text-[#bbb]">${it.minimo}</span> ` +
+                  `<span class="font-bold text-violet-700">→ ${it.min_efectivo}</span> ` +
+                  `<span class="text-[10px] bg-violet-100 text-violet-700 font-bold px-1.5 py-0.5 rounded ml-1" ` +
+                  `title="Observer tiene mín=${it.minimo} desactualizado. Usamos ${it.min_efectivo} (forecast 7d).">corregido</span>`
+                : (it.min_sugerencia === 'ok'
+                    ? `${it.minimo} <span class="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded ml-1">OK</span>`
+                    : it.minimo)
+        }</td>
         <td class="px-3 py-1 text-right font-mono text-[#666]">${it.u24h || '—'}</td>
         <td class="px-3 py-1 text-right font-mono text-[#666]">${it.u7d || '—'}</td>
         <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">

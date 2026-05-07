@@ -134,7 +134,39 @@
             Solo en matriz pedidos
         </label>
         {% endif %}
+        <button type="button" onclick="document.getElementById('form-add-provider').classList.toggle('hidden')"
+                class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-3 py-2 rounded-lg">
+            + Agregar
+        </button>
     </div>
+
+    <!-- Form alta manual -->
+    <form id="form-add-provider" method="post" action="{{ url_for('provider_create_manual') }}"
+          class="hidden bg-white border-2 border-emerald-300 rounded-xl p-3 mb-4 flex flex-wrap items-end gap-3">
+        <div class="flex-1 min-w-[200px]">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block">Razón social</label>
+            <input name="razon_social" required placeholder="Ej. DROGUERÍA NUEVA S.A."
+                   class="w-full border border-surface-border rounded px-2 py-1 text-sm">
+        </div>
+        <div class="w-44">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block">CUIT (opcional)</label>
+            <input name="cuit" placeholder="30-12345678-9"
+                   class="w-full border border-surface-border rounded px-2 py-1 text-sm font-mono">
+        </div>
+        <div class="w-40">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block">Tipo</label>
+            <select name="tipo" class="w-full border border-surface-border rounded px-2 py-1 text-sm">
+                <option value="drogueria" {% if tipo_filter == 'drogueria' or not tipo_filter %}selected{% endif %}>Droguería</option>
+                <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
+                <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otro</option>
+            </select>
+        </div>
+        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-1.5 rounded">
+            Crear
+        </button>
+        <button type="button" onclick="document.getElementById('form-add-provider').classList.add('hidden')"
+                class="text-xs text-[#666] hover:text-[#1e1e1e]">Cancelar</button>
+    </form>
 
     <!-- Lista -->
     {% if providers %}

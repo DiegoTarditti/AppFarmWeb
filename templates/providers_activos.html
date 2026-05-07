@@ -52,7 +52,39 @@
                 class="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-800 hover:bg-red-100">
             Desactivar visibles
         </button>
+        <button type="button" onclick="document.getElementById('form-add-prov-act').classList.toggle('hidden')"
+                class="text-sm bg-brand hover:bg-brand-hover text-brand-dark font-bold px-3 py-1.5 rounded-lg">
+            + Agregar
+        </button>
     </div>
+
+    <!-- Form alta manual (mismo endpoint que providers.html) -->
+    <form id="form-add-prov-act" method="post" action="{{ url_for('provider_create_manual') }}"
+          class="hidden bg-white border-2 border-emerald-300 rounded-xl p-3 mb-4 flex flex-wrap items-end gap-3">
+        <div class="flex-1 min-w-[220px]">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block">Razón social</label>
+            <input name="razon_social" required placeholder="Ej. DROGUERÍA NUEVA S.A."
+                   class="w-full border border-surface-border rounded px-2 py-1 text-sm">
+        </div>
+        <div class="w-44">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block">CUIT (opcional)</label>
+            <input name="cuit" placeholder="30-12345678-9"
+                   class="w-full border border-surface-border rounded px-2 py-1 text-sm font-mono">
+        </div>
+        <div class="w-40">
+            <label class="text-[10px] font-semibold text-[#888] uppercase block">Tipo</label>
+            <select name="tipo" class="w-full border border-surface-border rounded px-2 py-1 text-sm">
+                <option value="drogueria" selected>Droguería</option>
+                <option value="laboratorio">Laboratorio</option>
+                <option value="otro">Otro</option>
+            </select>
+        </div>
+        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-1.5 rounded">
+            Crear
+        </button>
+        <button type="button" onclick="document.getElementById('form-add-prov-act').classList.add('hidden')"
+                class="text-xs text-[#666] hover:text-[#1e1e1e]">Cancelar</button>
+    </form>
 
     <form method="post" action="{{ url_for('providers_activos') }}">
         <div class="bg-white rounded-xl border border-surface-border overflow-hidden">

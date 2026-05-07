@@ -43,6 +43,13 @@
                 <option value="{{ lab.id }}" {% if request.args.get('lab')|string == lab.id|string %}selected{% endif %}>{{ lab.nombre }}</option>
                 {% endfor %}
             </select>
+            <select id="filter-rubro" onchange="onFilterChange()"
+                    class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <option value="">Todos los rubros</option>
+                {% for r in rubros %}
+                <option value="{{ r.id }}" {% if request.args.get('rubro')|string == r.id|string %}selected{% endif %}>{{ r.nombre }}</option>
+                {% endfor %}
+            </select>
             <div class="flex items-center gap-1.5">
                 <label for="filter-tvc" class="text-[10px] uppercase tracking-wide text-[#888] font-semibold">Tipo de venta:</label>
                 <select id="filter-tvc" onchange="onFilterChange()"
@@ -312,6 +319,7 @@ function currentFilters() {
     return {
         q: document.getElementById('search').value.trim(),
         lab: document.getElementById('filter-lab').value,
+        rubro: document.getElementById('filter-rubro')?.value || '',
         only_alt: document.getElementById('only-alt').checked,
         only_pack: document.getElementById('only-pack').checked,
         venta_tipo: document.getElementById('filter-tvc')?.value || '',
@@ -319,7 +327,7 @@ function currentFilters() {
 }
 
 function hasAnyFilter(f) {
-    return !!(f.q || f.lab || f.only_alt || f.only_pack || f.venta_tipo);
+    return !!(f.q || f.lab || f.rubro || f.only_alt || f.only_pack || f.venta_tipo);
 }
 
 async function loadProductos() {
@@ -328,6 +336,7 @@ async function loadProductos() {
     const params = new URLSearchParams();
     if (f.q) params.set('q', f.q);
     if (f.lab) params.set('lab', f.lab);
+    if (f.rubro) params.set('rubro', f.rubro);
     if (f.only_alt) params.set('only_alt', '1');
     if (f.only_pack) params.set('only_pack', '1');
     if (f.venta_tipo) params.set('venta_tipo', f.venta_tipo);
@@ -390,6 +399,8 @@ function onFilterChange() {
 function clearFilters() {
     document.getElementById('search').value = '';
     document.getElementById('filter-lab').value = '';
+    const r = document.getElementById('filter-rubro');
+    if (r) r.value = '';
     document.getElementById('only-alt').checked = false;
     document.getElementById('only-pack').checked = false;
     const tvc = document.getElementById('filter-tvc');

@@ -301,6 +301,39 @@ def init_app(app):
             'items': items,
         }
 
+    @app.route('/provider/create', methods=['POST'])
+    def provider_create_manual():
+        """Crea un Provider (drogueria/laboratorio/otro) desde el form de
+        /providers. Si ya existe uno con razon_social normalizada igual,
+        no duplica."""
+        razon_social = (request.form.get('razon_social') or '').strip()
+        cuit = (request.form.get('cuit') or '').strip()
+        tipo = (request.form.get('tipo') or 'drogueria').strip()
+        if tipo not in ('drogueria', 'laboratorio', 'otro'):
+            tipo = 'drogueria'
+        if not razon_social:
+            flash('Razón social obligatoria.')
+            return redirect(url_for('providers_list'))
+        with database.get_db() as session:
+            from helpers import _normalizar_nombre_entidad
+            norm_nuevo = _normalizar_nombre_entidad(razon_social)
+            for p in session.query(database.Provider).all():
+                if _normalizar_nombre_entidad(p.razon_social) == norm_nuevo:
+                    flash(f'Ya existe el proveedor: "{p.razon_social}". No se creó duplicado.')
+                    return redirect(url_for('providers_list', tipo=tipo))
+            prov = database.Provider(
+                razon_social=razon_social,
+                cuit=cuit or None,
+                tipo=tipo,
+                activo=True,
+                matriz_visible=(tipo == 'drogueria'),
+                match_strategy='barcode',
+            )
+            session.add(prov)
+            session.commit()
+            flash(f'Creado: {prov.razon_social} ({tipo}).')
+        return redirect(url_for('providers_list', tipo=tipo))
+
     @app.route('/provider/<int:provider_id>/edit', methods=['POST'])
     def provider_edit(provider_id):
         with database.get_db() as session:

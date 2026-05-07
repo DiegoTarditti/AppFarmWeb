@@ -353,6 +353,14 @@ def init_app(app):
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
+        # Ventana de meses para calcular tasa de rotación diaria. Default 3.
+        # Nota: los 12 meses siguen usándose para estacionalidad/forecast en
+        # purchase_engine; este parámetro solo afecta `target_unid` (cuánto pedir).
+        meses_rotacion = max(1, min(int(request.args.get('meses_rot') or 3), 12))
+        DIAS_PROM_MES = 30.42
+        dias_rotacion = int(meses_rotacion * DIAS_PROM_MES)
+        # Decisión sobre oferta-drog: '1' aplicar, '0' ignorar, None preguntar.
+        usar_oferta = (request.args.get('usar_oferta') or '').strip()
         # Rubros: CSV ej. ?rubros=12,5. Default: '12' (Medicamentos).
         # Pasar ?rubros=all (o vacío) para no filtrar.
         rubros_raw = (request.args.get('rubros') or '12').strip()
@@ -425,7 +433,37 @@ def init_app(app):
             """))
             session.commit()
 
-            base = (session.query(
+            # Si hay oferta activa cargada para esta drog, hay 3 estados:
+            #   - usar_oferta='1' → filtrar SOLO los del archivo.
+            #   - usar_oferta='0' → ignorar la oferta, modo armado normal.
+            #   - usar_oferta=None → mostrar pregunta intermedia (sin filtrar).
+            from datetime import date as _date_o
+
+            from database import ObsCodigoBarras as _OCB
+            from database import OfertaMinimo as _OM_drog
+            oferta_pids = set()
+            oferta_disponible_n = 0
+            oferta_nombre_drog = None
+            if prov_id:
+                hoy_o = _date_o.today()
+                eans_oferta = [r[0] for r in (session.query(_OM_drog.ean)
+                               .filter(_OM_drog.drogueria_id == prov_id,
+                                       _OM_drog.activo.is_(True),
+                                       or_(_OM_drog.vigencia_hasta.is_(None),
+                                           _OM_drog.vigencia_hasta >= hoy_o))
+                               .distinct().all()) if r[0]]
+                if eans_oferta:
+                    pids_oferta_full = {r[0] for r in (session.query(_OCB.producto_observer)
+                                        .filter(_OCB.codigo_barras.in_(eans_oferta),
+                                                _OCB.fecha_baja.is_(None)).distinct().all())}
+                    oferta_disponible_n = len(pids_oferta_full)
+                    if prov:
+                        oferta_nombre_drog = prov.razon_social
+                    # Solo aplicar el filtro si el usuario explícitamente eligió '1'.
+                    if usar_oferta == '1':
+                        oferta_pids = pids_oferta_full
+
+            base_q = (session.query(
                 ObsProducto.observer_id.label('pid'),
                 ObsProducto.descripcion.label('desc'),
                 ObsProducto.id_tipo_venta_control.label('tvc'),
@@ -440,16 +478,21 @@ def init_app(app):
                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
             .outerjoin(v12_q, v12_q.c.pid == ObsProducto.observer_id)
             .filter(ObsProducto.fecha_baja.is_(None))
-            # Universo: bajo mínimo OR cobertura insuficiente.
-            # Cobertura insuficiente: stock × 365 < TARGET_DIAS × u12m
-            # (equivale a stock/avg_diario < TARGET_DIAS, sin división).
-            .filter(or_(
-                stock_q.c.stock <= stock_q.c.minimo,
-                stock_q.c.stock * 365 < target_dias *
-                    func.coalesce(v12_q.c.u12m, 0),
-            ))
-            .filter(ObsProducto.subrubro_observer.isnot(None))  # filtro suave: que tenga subrubro
-            ).all()
+            .filter(ObsProducto.subrubro_observer.isnot(None)))
+
+            if oferta_pids:
+                # Modo oferta: solo productos del archivo (sin importar stock/lab).
+                base_q = base_q.filter(ObsProducto.observer_id.in_(oferta_pids))
+            else:
+                # Universo normal: bajo mínimo OR cobertura insuficiente.
+                # Cobertura insuficiente: stock × 365 < TARGET_DIAS × u12m
+                # (equivale a stock/avg_diario < TARGET_DIAS, sin división).
+                base_q = base_q.filter(or_(
+                    stock_q.c.stock <= stock_q.c.minimo,
+                    stock_q.c.stock * 365 < target_dias *
+                        func.coalesce(v12_q.c.u12m, 0),
+                ))
+            base = base_q.all()
 
             # Filtro rubro=Medicamentos (12). Lo aplicamos en Python por simplicidad
             # (los rubros viven en obs_subrubros.rubro_observer).
@@ -622,18 +665,42 @@ def init_app(app):
                 else:
                     min_sugerencia = 'ok'
 
+                # u_rot = unidades vendidas en los últimos `meses_rotacion`
+                # meses COMPLETOS (excluye el mes actual parcial). Es la base
+                # de la tasa de rotación diaria: capta mejor demanda reciente
+                # que el u12m anualizado (estacionalidad y cambios de hábito).
+                # ventas_arr es array 0..11 con [11] = mes actual parcial.
+                _i_end = 11  # exclusive (el actual parcial no entra)
+                _i_start = max(0, _i_end - meses_rotacion)
+                u_rot = sum(ventas_arr[_i_start:_i_end])
+
+                # MÍN EFECTIVO: si Observer tiene el mínimo desactualizado y
+                # nuestro forecast (min_sugerido) difiere, usamos NUESTRO valor
+                # — no arrastramos el error. Se marca como `min_corregido` para
+                # que la UI lo muestre claramente.
+                if min_sugerencia in ('up', 'down') and min_sugerido > 0:
+                    min_efectivo = min_sugerido
+                    min_corregido = True
+                else:
+                    min_efectivo = min_actual
+                    min_corregido = False
+
                 # Sin ventas 12m o sin mov 60d → no sugerir pedir aunque
                 # esté bajo mínimo (no tiene sentido reponer lo que no rota).
                 if u12m_int == 0 or sin_mov:
                     a_pedir = 0
                 else:
-                    # Sugerido = el mayor entre "llegar al mín" y "cubrir N días".
-                    # Si el producto entró por cobertura insuficiente (stock>mín),
-                    # min_actual - stock < 0 pero target_unid > stock → pide hasta target.
-                    target_unid = math.ceil(
-                        (u12m_int / 365.0) * target_dias)
-                    ideal = max(min_actual, target_unid)
-                    a_pedir = max(1, ideal - stock_actual)
+                    # Sugerido = el mayor entre "llegar al mín efectivo" y "cubrir N días".
+                    # Tasa diaria desde u_rot (ventana corta) → más responsiva
+                    # que dividir u12m / 365.
+                    daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
+                    target_unid = math.ceil(daily_rate * target_dias)
+                    ideal = max(min_efectivo, target_unid)
+                    # max(0, ...) en vez de max(1, ...): no forzar a pedir 1 cuando
+                    # stock = mín y cobertura ya está cubierta (caso típico de
+                    # producto que entró al listado por estar EN el mín, no abajo).
+                    # El filtro a_pedir<=0 más adelante esconde estas filas.
+                    a_pedir = max(0, ideal - stock_actual)
 
                 # Urgente = bajo o igual al mínimo. No urgente = entró sólo por
                 # cobertura insuficiente (stock arriba del mín pero rota rápido).
@@ -664,6 +731,8 @@ def init_app(app):
                     'tipo': tipo,  # 'C' crónico, 'N' normal
                     'stock': stock_actual,
                     'minimo': min_actual,
+                    'min_efectivo': min_efectivo,        # el que usamos para a_pedir
+                    'min_corregido': min_corregido,      # True si reemplazamos el de Observer
                     'min_sugerido': min_sugerido,
                     'min_sugerencia': min_sugerencia,
                     'cobertura_d': cobertura_d,
@@ -799,6 +868,17 @@ def init_app(app):
             rubros_seleccionados = (sorted(rubros_filtro)
                                      if rubros_filtro is not None else None)
 
+            # Último sync exitoso de stock (para mostrar en el encabezado).
+            from database import ObsSyncLog, now_ar
+            last_sync = (session.query(ObsSyncLog)
+                         .filter(ObsSyncLog.entidad == 'stock',
+                                 ObsSyncLog.error.is_(None))
+                         .order_by(ObsSyncLog.ejecutado_en.desc()).first())
+            last_sync_stock = last_sync.ejecutado_en if last_sync else None
+            last_sync_min = None
+            if last_sync_stock:
+                last_sync_min = int((now_ar() - last_sync_stock).total_seconds() // 60)
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
@@ -810,7 +890,223 @@ def init_app(app):
                                    drog_nombre_full=drog_nombre_full,
                                    pendientes_anteriores=pendientes_anteriores,
                                    rubros_disponibles=rubros_disponibles,
-                                   rubros_seleccionados=rubros_seleccionados)
+                                   rubros_seleccionados=rubros_seleccionados,
+                                   last_sync_stock=last_sync_stock,
+                                   last_sync_min=last_sync_min,
+                                   oferta_drog_n=len(oferta_pids) if oferta_pids else 0,
+                                   oferta_drog_nombre=oferta_nombre_drog,
+                                   oferta_disponible_n=oferta_disponible_n,
+                                   usar_oferta=usar_oferta)
+
+    @app.route('/compras/armar/exportar-minimos')
+    @login_required
+    def compras_armar_exportar_minimos():
+        """Exporta XLSX con productos que tienen sugerencia de cambio de mínimo
+        (subir o bajar). Para enviar a la gente del POS Observer y que actualicen
+        manualmente, ya que Observer no recalcula los mínimos automático.
+
+        Query params:
+          tipo=up|down|both (default: both)
+          rubros=12 (default Medicamentos, igual que /compras/armar)
+        """
+        import math
+        from datetime import date as _date
+        from io import BytesIO
+
+        from flask import send_file
+        from sqlalchemy import func
+
+        from database import (
+            ObsLaboratorio,
+            ObsProducto,
+            ObsRubro,
+            ObsStock,
+            ObsSubrubro,
+            ObsVentaMensual,
+        )
+
+        tipo = (request.args.get('tipo') or 'both').lower()
+        if tipo not in ('up', 'down', 'both'):
+            tipo = 'both'
+        rubros_raw = (request.args.get('rubros') or '12').strip()
+        if rubros_raw.lower() == 'all' or not rubros_raw:
+            rubros_filtro = None
+        else:
+            try:
+                rubros_filtro = set(int(x) for x in rubros_raw.split(',') if x.strip())
+            except ValueError:
+                rubros_filtro = {12}
+
+        with get_db() as session:
+            # Stock y mín por producto
+            stock_q = (session.query(
+                ObsStock.producto_observer.label('pid'),
+                func.sum(ObsStock.stock_actual).label('stock'),
+                func.sum(ObsStock.minimo).label('minimo'),
+            ).filter(ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
+              .group_by(ObsStock.producto_observer).subquery())
+            # u12m total
+            v12_q = (session.query(
+                ObsVentaMensual.producto_observer.label('pid'),
+                func.sum(ObsVentaMensual.unidades).label('u12m'),
+            ).group_by(ObsVentaMensual.producto_observer).subquery())
+
+            base = (session.query(
+                ObsProducto.observer_id.label('pid'),
+                ObsProducto.descripcion.label('desc'),
+                ObsProducto.subrubro_observer,
+                ObsLaboratorio.descripcion.label('lab_nombre'),
+                stock_q.c.stock,
+                stock_q.c.minimo,
+                func.coalesce(v12_q.c.u12m, 0).label('u12m'),
+            )
+            .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
+            .outerjoin(ObsLaboratorio,
+                       ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+            .outerjoin(v12_q, v12_q.c.pid == ObsProducto.observer_id)
+            .filter(ObsProducto.fecha_baja.is_(None))
+            .filter(ObsProducto.subrubro_observer.isnot(None))
+            ).all()
+
+            # Rubro lookup
+            subrubro_a_rubro = dict(
+                session.query(ObsSubrubro.observer_id, ObsSubrubro.rubro_observer).all())
+            rubro_nombres = {r.observer_id: r.descripcion
+                             for r in session.query(ObsRubro).all()}
+
+            # EANs (orden 1)
+            from database import ObsCodigoBarras
+            pids = [r.pid for r in base]
+            eans = {}
+            if pids:
+                for cb in (session.query(ObsCodigoBarras.producto_observer,
+                                          ObsCodigoBarras.codigo_barras)
+                           .filter(ObsCodigoBarras.producto_observer.in_(pids),
+                                   ObsCodigoBarras.fecha_baja.is_(None),
+                                   ObsCodigoBarras.orden == 1).all()):
+                    eans[cb.producto_observer] = cb.codigo_barras
+
+            # Ventas mes-a-mes para purchase_engine
+            hoy_d = _date.today()
+            end_month = hoy_d.month
+            start_month = ((end_month - 11 - 1) % 12) + 1
+            start_year = hoy_d.year if start_month <= end_month else hoy_d.year - 1
+            ventas_por_pid = {pid: [0]*12 for pid in pids}
+            if pids:
+                rows_vm = (session.query(ObsVentaMensual.producto_observer,
+                                          ObsVentaMensual.anio,
+                                          ObsVentaMensual.mes,
+                                          func.sum(ObsVentaMensual.unidades))
+                           .filter(ObsVentaMensual.producto_observer.in_(pids))
+                           .group_by(ObsVentaMensual.producto_observer,
+                                     ObsVentaMensual.anio, ObsVentaMensual.mes)
+                           .all())
+                for pid_v, anio, mes, uds in rows_vm:
+                    offset = (anio - start_year) * 12 + (mes - start_month)
+                    if 0 <= offset <= 11 and pid_v in ventas_por_pid:
+                        ventas_por_pid[pid_v][offset] += int(uds or 0)
+
+            from purchase_engine import (
+                analyze_product,
+                start_month_idx_from_period,
+                tipo_producto,
+            )
+
+            filas = []
+            for r in base:
+                # Filtro rubro
+                rub_id = subrubro_a_rubro.get(r.subrubro_observer)
+                if rubros_filtro is not None and rub_id not in rubros_filtro:
+                    continue
+                u12m = int(r.u12m or 0)
+                if u12m == 0:
+                    continue
+                ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
+                tipo_p = tipo_producto(ventas_arr)
+                sidx = start_month_idx_from_period(start_month, end_month)
+                _q, fcst7, _slope, _peak, _low, _c, sin_mov = analyze_product(
+                    ventas_arr, int(r.stock or 0), n_days=7, start_month_idx=sidx,
+                    data_start_month=start_month, end_month=end_month, tipo=tipo_p,
+                )
+                if sin_mov:
+                    continue
+                min_sugerido = int(math.ceil(fcst7)) if fcst7 > 0 else 0
+                min_actual = int(r.minimo or 0)
+                # Misma lógica que /compras/armar
+                if min_actual == 0 or min_actual < min_sugerido * 0.6:
+                    sug = 'up'
+                elif min_sugerido > 0 and min_actual > min_sugerido * 2.0:
+                    sug = 'down'
+                else:
+                    sug = 'ok'
+                if sug == 'ok':
+                    continue
+                if tipo == 'up' and sug != 'up':
+                    continue
+                if tipo == 'down' and sug != 'down':
+                    continue
+                filas.append({
+                    'ean': eans.get(r.pid, ''),
+                    'descripcion': r.desc,
+                    'lab': r.lab_nombre or '—',
+                    'rubro': rubro_nombres.get(rub_id, ''),
+                    'sugerencia': 'SUBIR' if sug == 'up' else 'BAJAR',
+                    'min_actual': min_actual,
+                    'min_sugerido': min_sugerido,
+                    'diferencia': min_sugerido - min_actual,
+                    'stock_actual': int(r.stock or 0),
+                    'u12m': u12m,
+                    'tipo': tipo_p,
+                })
+
+            # Orden: SUBIR primero (más urgente), después BAJAR. Dentro: por
+            # diferencia absoluta descendente.
+            filas.sort(key=lambda x: (
+                0 if x['sugerencia'] == 'SUBIR' else 1,
+                -abs(x['diferencia']),
+            ))
+
+            # Excel
+            import openpyxl
+            from openpyxl.styles import Alignment, Font, PatternFill
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = 'Sugerencias'
+            headers = ['EAN', 'Producto', 'Laboratorio', 'Rubro', 'Sugerencia',
+                       'Mín actual', 'Mín sugerido', 'Diferencia',
+                       'Stock actual', 'Ventas 12m', 'Tipo']
+            ws.append(headers)
+            # Header style
+            for cell in ws[1]:
+                cell.font = Font(bold=True, color='FFFFFF')
+                cell.fill = PatternFill(start_color='1c1c1e', end_color='1c1c1e',
+                                         fill_type='solid')
+                cell.alignment = Alignment(horizontal='center')
+            # Filas
+            for f in filas:
+                ws.append([f['ean'], f['descripcion'], f['lab'], f['rubro'],
+                            f['sugerencia'], f['min_actual'], f['min_sugerido'],
+                            f['diferencia'], f['stock_actual'], f['u12m'], f['tipo']])
+            # Color rojo claro las SUBIR, azul claro las BAJAR
+            from openpyxl.styles import PatternFill as PF
+            row_red = PF(start_color='fee2e2', end_color='fee2e2', fill_type='solid')
+            row_blu = PF(start_color='dbeafe', end_color='dbeafe', fill_type='solid')
+            for i, f in enumerate(filas, start=2):
+                fill = row_red if f['sugerencia'] == 'SUBIR' else row_blu
+                for col in range(1, len(headers) + 1):
+                    ws.cell(row=i, column=col).fill = fill
+            # Anchos
+            anchos = [16, 50, 25, 18, 12, 12, 14, 12, 14, 12, 8]
+            for i, w in enumerate(anchos, start=1):
+                ws.column_dimensions[chr(64 + i) if i <= 26 else 'A' + chr(64 + i - 26)].width = w
+            ws.freeze_panes = 'A2'
+
+            buf = BytesIO()
+            wb.save(buf)
+            buf.seek(0)
+            fname = f'Sugerencias_minimos_{hoy_d.strftime("%Y%m%d")}.xlsx'
+            return send_file(buf, as_attachment=True, download_name=fname,
+                             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
     @app.route('/api/pedidos/dia/buscar-producto')
     @login_required
@@ -833,7 +1129,9 @@ def init_app(app):
         )
         q = (request.args.get('q') or '').strip()
         prov_id = request.args.get('prov', type=int)
-        if len(q) < 2 or not prov_id:
+        # En multi-drog (prov_id None/null/empty) la búsqueda igual debe funcionar
+        # — solo no calculamos cubre_lab para una drog específica.
+        if len(q) < 2:
             return jsonify({'ok': True, 'items': []})
 
         # Tokenizar y armar filtros AND sobre descripcion (case-insensitive).
@@ -901,9 +1199,16 @@ def init_app(app):
                 for r in session.query(ObsLaboratorio.observer_id,
                                        ObsLaboratorio.descripcion).all()
             }
-            labs_cubiertos = set(r[0] for r in session.query(
-                LaboratorioDrogueria.laboratorio_id
-            ).filter(LaboratorioDrogueria.drogueria_id == prov_id).all())
+            # Si vino prov específica, calculamos `cubre_lab` para esa drog;
+            # si no, en modo multi-drog asumimos cubierto cuando hay matriz.
+            if prov_id:
+                labs_cubiertos = set(r[0] for r in session.query(
+                    LaboratorioDrogueria.laboratorio_id
+                ).filter(LaboratorioDrogueria.drogueria_id == prov_id).all())
+            else:
+                labs_cubiertos = set(r[0] for r in session.query(
+                    LaboratorioDrogueria.laboratorio_id
+                ).distinct().all())
 
             eans_buscar = {}
             if obs_ids:
@@ -928,6 +1233,35 @@ def init_app(app):
                     if not prev or dto > prev['oferta_dto']:
                         ofertas_buscar[of.ean] = {'oferta_dto': dto, 'oferta_min': um}
 
+            # Ventas mes-a-mes para forecast (mismo pattern que /compras/armar).
+            from datetime import date as _datef
+
+            from database import ObsVentaMensual
+            hoy_f = _datef.today()
+            end_month_f = hoy_f.month
+            start_month_f = ((end_month_f - 11 - 1) % 12) + 1
+            start_year_f = hoy_f.year if start_month_f <= end_month_f else hoy_f.year - 1
+            ventas_por_pid_f = {pid: [0]*12 for pid in obs_ids}
+            if obs_ids:
+                rows_vm_f = (session.query(ObsVentaMensual.producto_observer,
+                                            ObsVentaMensual.anio,
+                                            ObsVentaMensual.mes,
+                                            func.sum(ObsVentaMensual.unidades))
+                             .filter(ObsVentaMensual.producto_observer.in_(obs_ids))
+                             .group_by(ObsVentaMensual.producto_observer,
+                                       ObsVentaMensual.anio, ObsVentaMensual.mes).all())
+                for pid_v, anio, mes, uds in rows_vm_f:
+                    offset = (anio - start_year_f) * 12 + (mes - start_month_f)
+                    if 0 <= offset <= 11 and pid_v in ventas_por_pid_f:
+                        ventas_por_pid_f[pid_v][offset] += int(uds or 0)
+            import math as _math
+
+            from purchase_engine import (
+                analyze_product,
+                start_month_idx_from_period,
+                tipo_producto,
+            )
+
             items = []
             for r in base:
                 local = local_rows.get(r.observer_id)
@@ -937,6 +1271,39 @@ def init_app(app):
                 stock = int(stock_rows.get(r.observer_id, 0) or 0)
                 minimo = int(min_rows.get(r.observer_id, 0) or 0)
                 ean_b = eans_buscar.get(r.observer_id, '')
+
+                # Calcular min_sugerido + min_sugerencia + min_corregido (igual
+                # que en /compras/armar). Si no hay ventas, no hay sugerencia.
+                ventas_arr = ventas_por_pid_f.get(r.observer_id, [0]*12)
+                u12m_int = sum(ventas_arr)
+                tipo_p = tipo_producto(ventas_arr)
+                sidx = start_month_idx_from_period(start_month_f, end_month_f)
+                _q, fcst7, _slope, _peak, _low, _c, sin_mov = analyze_product(
+                    ventas_arr, stock, n_days=7, start_month_idx=sidx,
+                    data_start_month=start_month_f, end_month=end_month_f, tipo=tipo_p,
+                )
+                min_sugerido = int(_math.ceil(fcst7)) if fcst7 > 0 else 0
+                if u12m_int == 0 or sin_mov:
+                    min_sugerencia = None
+                elif minimo == 0 or minimo < min_sugerido * 0.6:
+                    min_sugerencia = 'up'
+                elif min_sugerido > 0 and minimo > min_sugerido * 2.0:
+                    min_sugerencia = 'down'
+                else:
+                    min_sugerencia = 'ok'
+                # Mín efectivo: si Observer está desfasado, usamos el sugerido.
+                if min_sugerencia in ('up', 'down') and min_sugerido > 0:
+                    min_efectivo = min_sugerido
+                    min_corregido = True
+                else:
+                    min_efectivo = minimo
+                    min_corregido = False
+                # a_pedir simple: llegar al mín efectivo desde el stock.
+                if u12m_int == 0 or sin_mov:
+                    a_pedir = 0
+                else:
+                    a_pedir = max(0, min_efectivo - stock) if min_efectivo else 1
+
                 items.append({
                     'pid': r.observer_id,
                     'producto_id_local': local[1] if local else None,
@@ -944,9 +1311,14 @@ def init_app(app):
                     'lab_nombre': r.lab_nombre or '—',
                     'stock': stock,
                     'minimo': minimo,
+                    'min_sugerido': min_sugerido,
+                    'min_sugerencia': min_sugerencia,
+                    'min_corregido': min_corregido,
+                    'min_efectivo': min_efectivo,
                     'u24h': int(v24h_rows2.get(r.observer_id, 0) or 0),
                     'u7d':  int(v7d_rows2.get(r.observer_id, 0) or 0),
-                    'a_pedir': max(0, minimo - stock) if minimo else 1,
+                    'u12m': u12m_int,
+                    'a_pedir': a_pedir,
                     'cubre_lab': lab_local_id in labs_cubiertos,
                     'ean': ean_b,
                     **(ofertas_buscar.get(ean_b, {'oferta_dto': None, 'oferta_min': None})),

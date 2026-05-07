@@ -28,6 +28,13 @@
         {{ proc.estado }}
     </span>
     <div class="ml-auto flex items-center gap-2">
+        {% if proc.tipo == 'drogueria' and proc.partner_id and proc.estado != 'CERRADO' %}
+        <a href="{{ url_for('compras_dia_armar', prov=proc.partner_id) }}"
+           class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark transition-colors"
+           title="Armar pedido para esta droguería (si tiene oferta cargada, te pregunta si filtrar)">
+            📦 Armar pedido →
+        </a>
+        {% endif %}
         {% if proc.estado != 'CERRADO' and proc.cruce_hecho_en %}
         <form method="post" action="{{ url_for('proceso_cerrar', proceso_id=proc.id) }}">
             <button class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">

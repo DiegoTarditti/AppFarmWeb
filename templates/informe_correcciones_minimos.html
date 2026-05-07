@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Correcciones de mínimos{% endblock %}
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📐 Correcciones de mínimos sugeridas</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ total }} productos · {{ grupos | length }} laboratorios</span>
+    <a href="{{ url_for('informes_index') }}" class="ml-auto text-xs text-[#666] hover:underline">← Informes</a>
+    <a href="{{ url_for('compras_armar_exportar_minimos', tipo=tipo_filter) }}"
+       class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-2.5 py-1 rounded">
+        ⬇ Exportar XLSX
+    </a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6">
+    <div class="max-w-6xl mx-auto">
+
+        {# Filtros #}
+        <form method="get" class="bg-white border border-surface-border rounded-xl p-3 mb-4 flex items-end gap-3 flex-wrap">
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Laboratorio</label>
+                <select name="lab_id" class="border border-surface-border rounded px-2 py-1 text-sm w-64">
+                    <option value="">Todos</option>
+                    {% for lab in labs_disponibles %}
+                    <option value="{{ lab[0] }}" {% if lab_id_filter == lab[0] %}selected{% endif %}>{{ lab[1] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="text-[10px] font-semibold text-[#888] uppercase block">Sugerencia</label>
+                <select name="tipo" class="border border-surface-border rounded px-2 py-1 text-sm">
+                    <option value="both" {% if tipo_filter == 'both' %}selected{% endif %}>Subir + Bajar</option>
+                    <option value="up"   {% if tipo_filter == 'up' %}selected{% endif %}>Solo Subir</option>
+                    <option value="down" {% if tipo_filter == 'down' %}selected{% endif %}>Solo Bajar</option>
+                </select>
+            </div>
+            <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded text-sm">
+                Aplicar
+            </button>
+            <a href="{{ url_for('informe_correcciones_minimos') }}" class="text-xs text-[#666] hover:underline">Reset</a>
+        </form>
+
+        {% if not grupos %}
+        <div class="bg-emerald-50 border-l-4 border-emerald-400 rounded-r p-4">
+            <p class="text-sm text-emerald-900 font-bold">✓ Todos los mínimos están en rango</p>
+            <p class="text-xs text-emerald-800 mt-1">No hay productos con sugerencia de subir o bajar el mínimo según el forecast actual{% if lab_id_filter %} para este laboratorio{% endif %}.</p>
+        </div>
+        {% else %}
+
+        {# Panel de gráficos (sticky arriba) #}
+        {% include '_grafico_dual_panel.html' %}
+
+        {# Grupos por lab #}
+        <div class="space-y-3">
+        {% for g in grupos %}
+        <details class="bg-white border border-surface-border rounded-xl overflow-hidden" {% if grupos | length <= 3 %}open{% endif %}>
+            <summary class="cursor-pointer px-4 py-3 hover:bg-[#fafafa] flex items-center gap-3">
+                <span class="text-sm font-bold text-[#1e1e1e]">{{ g.lab_nombre }}</span>
+                <span class="text-xs text-[#666]">{{ g.productos | length }} productos</span>
+                {% if g.n_up %}<span class="text-[10px] bg-rose-100 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded font-bold">↑ {{ g.n_up }} subir</span>{% endif %}
+                {% if g.n_down %}<span class="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold">↓ {{ g.n_down }} bajar</span>{% endif %}
+            </summary>
+            <div class="border-t border-surface-border overflow-x-auto">
+                <table class="w-full text-xs">
+                    <thead class="bg-[#fafafa]">
+                        <tr class="text-[#666] uppercase text-[10px]">
+                            <th class="text-left py-1.5 px-3">Producto</th>
+                            <th class="text-left py-1.5 px-3 w-32">EAN</th>
+                            <th class="text-center py-1.5 px-3 w-20">Sug.</th>
+                            <th class="text-right py-1.5 px-3 w-20">Mín actual</th>
+                            <th class="text-right py-1.5 px-3 w-22">Mín sugerido</th>
+                            <th class="text-right py-1.5 px-3 w-20">Diferencia</th>
+                            <th class="text-right py-1.5 px-3 w-16">Stock</th>
+                            <th class="text-right py-1.5 px-3 w-16">12m</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for p in g.productos %}
+                    <tr class="border-t border-[#f0f0f0] hover:bg-emerald-50 cursor-pointer producto-row"
+                        data-pid="{{ p.pid }}" data-desc="{{ p.desc | e }}">
+                        <td class="py-1.5 px-3">{{ p.desc }}</td>
+                        <td class="py-1.5 px-3 font-mono text-[#888]">{{ p.ean or '—' }}</td>
+                        <td class="py-1.5 px-3 text-center">
+                            {% if p.sugerencia == 'up' %}
+                            <span class="text-[10px] bg-rose-100 text-rose-700 border border-rose-200 px-1.5 py-0.5 rounded font-bold">↑ SUBIR</span>
+                            {% else %}
+                            <span class="text-[10px] bg-blue-100 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded font-bold">↓ BAJAR</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-1.5 px-3 text-right font-mono text-[#888] line-through">{{ p.min_actual }}</td>
+                        <td class="py-1.5 px-3 text-right font-mono font-bold text-violet-700">{{ p.min_sugerido }}</td>
+                        <td class="py-1.5 px-3 text-right font-mono {% if p.diferencia > 0 %}text-rose-700{% else %}text-blue-700{% endif %}">
+                            {% if p.diferencia > 0 %}+{% endif %}{{ p.diferencia }}
+                        </td>
+                        <td class="py-1.5 px-3 text-right font-mono text-[#666]">{{ p.stock_actual }}</td>
+                        <td class="py-1.5 px-3 text-right font-mono text-[#666]">{{ p.u12m }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+        {% endfor %}
+        </div>
+
+        <p class="text-[10px] text-[#888] mt-4 italic">
+            <b>Cómo se calcula:</b> "min sugerido" es el forecast a 7 días (ventas proyectadas con estacionalidad y tendencia).
+            Marcamos <b>SUBIR</b> si el mínimo de Observer es menor que 0.6× del forecast,
+            y <b>BAJAR</b> si es mayor que 2× del forecast. La idea es que el mínimo cubra ~7 días de ventas típicas.
+        </p>
+
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Click en cualquier fila → cargar charts. Delegated, soporta filas en
+// múltiples <details> colapsados.
+document.addEventListener('click', e => {
+    const row = e.target.closest('tr.producto-row[data-pid]');
+    if (!row) return;
+    const pid = parseInt(row.dataset.pid);
+    const desc = row.dataset.desc || '';
+    if (typeof window.cargarGraficoDual === 'function' && pid) {
+        window.cargarGraficoDual(pid, desc);
+    } else {
+        console.error('cargarGraficoDual no está disponible o pid inválido', pid);
+    }
+});
+
+// Auto-cargar el chart con el primer producto cuando todo esté listo.
+(function _autoLoadChart() {
+    const intentos = 50;  // 50 × 100ms = 5s máx
+    let i = 0;
+    const tick = () => {
+        i++;
+        const fn = window.cargarGraficoDual;
+        const chartLib = typeof Chart !== 'undefined';
+        if (fn && chartLib) {
+            const firstRow = document.querySelector('tr.producto-row[data-pid]');
+            if (firstRow) {
+                const pid = parseInt(firstRow.dataset.pid);
+                const desc = firstRow.dataset.desc || '';
+                if (pid) fn(pid, desc);
+            }
+            return;
+        }
+        if (i < intentos) setTimeout(tick, 100);
+        else console.error('Timeout esperando Chart.js o cargarGraficoDual');
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', tick);
+    } else {
+        tick();
+    }
+})();
+</script>
+{% endblock %}

@@ -751,16 +751,34 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
                 c['_origen'] = 'observer'
             cands.extend(res_obs.candidatos_top)
 
-        # Dedup por (origen, id) y ordenar por score desc.
-        mejor_por_id = {}
+        # Dedup por código alfabeta (o EAN como fallback), conservando solo el
+        # candidato con mejor score. Si empatan: priorizar local (lab > global)
+        # sobre observer. Antes deduplicaba por (origen, id), lo que dejaba
+        # el mismo producto duplicado entre Producto local y ObsProducto.
+        _PRIO = {'lab': 3, 'global': 2, 'observer': 1}
+        mejor_por_clave = {}
         for c in cands:
-            origen = c.get('_origen', 'global')
-            key = (origen, c.get('producto_id') or c.get('observer_id'))
-            if key[1] is None:
+            alfa = (c.get('codigo_alfabeta') or '').strip()
+            ean = (c.get('codigo_barra') or '').strip()
+            if alfa:
+                key = ('alfa', alfa)
+            elif ean:
+                key = ('ean', ean)
+            else:
+                origen = c.get('_origen', 'global')
+                key = (origen, c.get('producto_id') or c.get('observer_id'))
+            if not key[1]:
                 continue
-            if key not in mejor_por_id or c['score'] > mejor_por_id[key]['score']:
-                mejor_por_id[key] = c
-        out = sorted(mejor_por_id.values(), key=lambda x: -x['score'])
+            existing = mejor_por_clave.get(key)
+            if existing is None:
+                mejor_por_clave[key] = c
+                continue
+            if c['score'] > existing['score']:
+                mejor_por_clave[key] = c
+            elif c['score'] == existing['score']:
+                if _PRIO.get(c.get('_origen'), 0) > _PRIO.get(existing.get('_origen'), 0):
+                    mejor_por_clave[key] = c
+        out = sorted(mejor_por_clave.values(), key=lambda x: -x['score'])
         # Threshold adaptativo: cortar candidatos muy lejos del mejor.
         # Si el top es 1.00 → exigir ≥ 0.85.
         # Si el top es 0.75 → exigir ≥ 0.60 (max(threshold_min, 0.60)).

@@ -512,7 +512,9 @@ class OfertaMinimo(Base):
     """
     __tablename__ = 'ofertas_minimo'
     id              = Column(Integer, primary_key=True)
-    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=False)
+    # nullable=True: en ofertas multi-lab por droguería el lab se deduce por
+    # producto (puede no encontrarse) o queda directamente NULL.
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=True, index=True)
     ean             = Column(String(20), nullable=False)
     descripcion     = Column(String(300))
     codigo          = Column(String(50))
@@ -1982,6 +1984,12 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS vigencia_hasta DATE"))
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS observacion VARCHAR(200)"))
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT TRUE"))
+    # Hacer laboratorio_id nullable: ahora permitimos ofertas por-droguería
+    # multi-lab donde el lab se deduce por producto (puede ser NULL).
+    try:
+        conn.execute(text("ALTER TABLE ofertas_minimo ALTER COLUMN laboratorio_id DROP NOT NULL"))
+    except Exception:
+        pass  # ya era nullable
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ofertas_drog ON ofertas_minimo(drogueria_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ofertas_vig  ON ofertas_minimo(vigencia_hasta)"))
     conn.execute(text("""
