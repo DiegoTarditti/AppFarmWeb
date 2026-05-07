@@ -100,10 +100,15 @@ def init_app(app):
 
     @app.route('/productos')
     def productos_list():
+        from database import ObsRubro
         with database.get_db() as session:
             labs = [{'id': l.id, 'nombre': l.nombre}
                     for l in session.query(Laboratorio).order_by(Laboratorio.nombre).all()]
-            return render_template('productos.html', laboratorios=labs)
+            rubros = [{'id': r.observer_id, 'nombre': r.descripcion}
+                      for r in session.query(ObsRubro)
+                                       .order_by(ObsRubro.descripcion).all()]
+            return render_template('productos.html',
+                                    laboratorios=labs, rubros=rubros)
 
     @app.route('/api/productos')
     def api_productos():
@@ -112,6 +117,7 @@ def init_app(app):
 
         q = (request.args.get('q') or '').strip()
         lab = (request.args.get('lab') or '').strip()
+        rubro = (request.args.get('rubro') or '').strip()
         only_alt = request.args.get('only_alt') in ('1', 'true')
         only_pack = request.args.get('only_pack') in ('1', 'true')
         venta_tipo = (request.args.get('venta_tipo') or '').strip()
@@ -160,6 +166,19 @@ def init_app(app):
                 base = base.filter(Producto.id.in_(sub))
             if only_pack:
                 base = base.filter(Producto.es_pack == 1)
+            # Filtro por rubro (vía obs_productos.subrubro_observer → obs_subrubros.rubro_observer).
+            if rubro:
+                from database import ObsProducto, ObsSubrubro
+                try:
+                    rubro_id = int(rubro)
+                    sub_ids = (session.query(ObsSubrubro.observer_id)
+                               .filter(ObsSubrubro.rubro_observer == rubro_id).subquery())
+                    obs_pids = (session.query(ObsProducto.observer_id)
+                                .filter(ObsProducto.subrubro_observer.in_(sub_ids)).subquery())
+                    base = base.filter(Producto.observer_id.in_(obs_pids))
+                except (ValueError, TypeError):
+                    pass
+
             # Filtro por tipo de venta y control (vía obs_productos.id_tipo_venta_control)
             if venta_tipo:
                 from database import ObsProducto
