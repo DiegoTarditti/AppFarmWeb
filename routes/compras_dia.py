@@ -438,7 +438,9 @@ def init_app(app):
             #   - usar_oferta='0' → ignorar la oferta, modo armado normal.
             #   - usar_oferta=None → mostrar pregunta intermedia (sin filtrar).
             from datetime import date as _date_o
-            from database import OfertaMinimo as _OM_drog, ObsCodigoBarras as _OCB
+
+            from database import ObsCodigoBarras as _OCB
+            from database import OfertaMinimo as _OM_drog
             oferta_pids = set()
             oferta_disponible_n = 0
             oferta_nombre_drog = None
@@ -907,16 +909,21 @@ def init_app(app):
           tipo=up|down|both (default: both)
           rubros=12 (default Medicamentos, igual que /compras/armar)
         """
-        from io import BytesIO
-        from datetime import date as _date
         import math
+        from datetime import date as _date
+        from io import BytesIO
 
         from flask import send_file
-        from database import (
-            ObsLaboratorio, ObsProducto, ObsRubro, ObsStock,
-            ObsSubrubro, ObsVentaMensual,
-        )
         from sqlalchemy import func
+
+        from database import (
+            ObsLaboratorio,
+            ObsProducto,
+            ObsRubro,
+            ObsStock,
+            ObsSubrubro,
+            ObsVentaMensual,
+        )
 
         tipo = (request.args.get('tipo') or 'both').lower()
         if tipo not in ('up', 'down', 'both'):
@@ -1000,7 +1007,9 @@ def init_app(app):
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
 
             from purchase_engine import (
-                analyze_product, start_month_idx_from_period, tipo_producto,
+                analyze_product,
+                start_month_idx_from_period,
+                tipo_producto,
             )
 
             filas = []
@@ -1226,6 +1235,7 @@ def init_app(app):
 
             # Ventas mes-a-mes para forecast (mismo pattern que /compras/armar).
             from datetime import date as _datef
+
             from database import ObsVentaMensual
             hoy_f = _datef.today()
             end_month_f = hoy_f.month
@@ -1244,10 +1254,13 @@ def init_app(app):
                     offset = (anio - start_year_f) * 12 + (mes - start_month_f)
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid_f:
                         ventas_por_pid_f[pid_v][offset] += int(uds or 0)
-            from purchase_engine import (
-                analyze_product, start_month_idx_from_period, tipo_producto,
-            )
             import math as _math
+
+            from purchase_engine import (
+                analyze_product,
+                start_month_idx_from_period,
+                tipo_producto,
+            )
 
             items = []
             for r in base:

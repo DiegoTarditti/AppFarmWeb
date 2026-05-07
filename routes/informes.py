@@ -475,12 +475,20 @@ def init_app(app):
         from datetime import date as _date
 
         from sqlalchemy import func
+
         from database import (
-            ObsLaboratorio, ObsProducto, ObsRubro, ObsStock,
-            ObsSubrubro, ObsVentaMensual, ObsCodigoBarras,
+            ObsCodigoBarras,
+            ObsLaboratorio,
+            ObsProducto,
+            ObsRubro,
+            ObsStock,
+            ObsSubrubro,
+            ObsVentaMensual,
         )
         from purchase_engine import (
-            analyze_product, start_month_idx_from_period, tipo_producto,
+            analyze_product,
+            start_month_idx_from_period,
+            tipo_producto,
         )
 
         lab_id_filter = request.args.get('lab_id', type=int)

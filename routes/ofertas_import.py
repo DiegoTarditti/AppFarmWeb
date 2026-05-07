@@ -34,8 +34,11 @@ def _guardar_modo_drog(data):
     nueva lista. Cada item deduce su lab desde productos.laboratorio_id por
     EAN. Si no se puede deducir, queda con laboratorio_id=NULL.
     """
-    from datetime import date as _date_d, datetime as _dt_d
+    from datetime import date as _date_d
+    from datetime import datetime as _dt_d
+
     from sqlalchemy import or_ as _or_d
+
     from helpers import now_ar
 
     drog_id = data.get('drogueria_id')
