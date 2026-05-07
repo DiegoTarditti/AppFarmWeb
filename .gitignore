@@ -27,6 +27,9 @@ dc.sh
 backups/
 *.sql
 
+# Scripts locales con credenciales (URL externa de Render con password)
+dump.ps1
+
 # Scratchpad personal
 NotasDiego/
 Pruebas/
