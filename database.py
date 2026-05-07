@@ -2229,10 +2229,19 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS partner_id INTEGER"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal_elegido_en TIMESTAMP"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS mostrar_hasta DATE"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_mostrar_hasta ON pedidos(mostrar_hasta)"))
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_partner_id ON pedidos(partner_id)"))
-    # Para el check `check_pedidos_pendientes_viejos` (filtra estado + creado_en).
-    conn.execute(text("CREATE INDEX IF NOT EXISTS idx_pedidos_estado_creado ON pedidos(estado, creado_en)"))
+    # CREATE INDEX IF NOT EXISTS puede tirar UniqueViolation si pg_class tiene
+    # row huérfana (deploy previo abortó). Como corremos en AUTOCOMMIT, cada
+    # DDL es su propia tx — absorbemos el error y seguimos. La data queda OK.
+    for _idx_sql in (
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_mostrar_hasta ON pedidos(mostrar_hasta)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_partner_id ON pedidos(partner_id)",
+        # Para el check `check_pedidos_pendientes_viejos` (filtra estado + creado_en).
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_estado_creado ON pedidos(estado, creado_en)",
+    ):
+        try:
+            conn.execute(text(_idx_sql))
+        except Exception:
+            pass
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS modulo_packs (
             id SERIAL PRIMARY KEY,
