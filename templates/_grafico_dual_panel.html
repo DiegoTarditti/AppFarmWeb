@@ -1,0 +1,281 @@
+{# Panel con 2 gráficos (Año 12m + Mes 30d) reutilizable.
+
+   Uso:
+     1. Incluir Chart.js antes (si no está): {% block extra_head %} <script src="..."></script>
+     2. {% include '_grafico_dual_panel.html' %} en la posición donde querés el panel.
+     3. Llamar `cargarGraficoDual(observerId, nombre)` desde el código de la página
+        (típicamente en el click de una fila de tabla).
+
+   Datos: usa /api/observer-product/<id>/chart, /chart-mes, /ingresos-mes.
+   Mismo render que /compras/armar.
+#}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<div id="dual-grafico-panel" class="bg-white border border-surface-border rounded-xl px-4 py-3 mb-4 shadow-sm">
+    <div class="flex items-center justify-between mb-2 gap-2">
+        <p id="dual-chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
+            Click en un producto para ver el gráfico
+        </p>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <!-- Año -->
+        <div>
+            <div class="flex items-center justify-between mb-1">
+                <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Año (12m)</p>
+            </div>
+            <div class="bg-white border border-surface-border rounded-lg relative" style="height:200px">
+                <canvas id="dual-chart-canvas-anio"></canvas>
+                <p id="dual-chart-empty-anio" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
+            </div>
+            <div class="flex flex-wrap gap-1 mt-1.5" id="dual-chart-stats-grid"></div>
+        </div>
+        <!-- Mes -->
+        <div>
+            <div class="flex items-center justify-between mb-1">
+                <p class="text-[10px] font-bold uppercase text-[#888] tracking-wide">Mes (30 días)</p>
+                <p id="dual-chart-stats-mes" class="text-[10px] text-[#6f6f6f] font-mono">&nbsp;</p>
+            </div>
+            <div class="bg-white border border-surface-border rounded-lg relative" style="height:200px">
+                <canvas id="dual-chart-canvas-mes"></canvas>
+                <p id="dual-chart-empty-mes" class="absolute inset-0 flex items-center justify-center text-xs text-[#bbb]">(sin selección)</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    const _MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    let _chartAnio = null;
+    let _chartMes = null;
+
+    function _errorAnio(msg) {
+        const e = document.getElementById('dual-chart-empty-anio');
+        e.textContent = msg; e.classList.remove('hidden');
+        if (_chartAnio) { _chartAnio.destroy(); _chartAnio = null; }
+        document.getElementById('dual-chart-stats-grid').innerHTML = '';
+    }
+    function _errorMes(msg) {
+        const e = document.getElementById('dual-chart-empty-mes');
+        e.textContent = msg; e.classList.remove('hidden');
+        if (_chartMes) { _chartMes.destroy(); _chartMes = null; }
+        document.getElementById('dual-chart-stats-mes').textContent = '';
+    }
+
+    function _renderAnio(p) {
+        const avg = p.avg_monthly||0, slope = p.slope||0, rot = p.rotacion||'B';
+        const rC = {A:'#15803d',M:'#b45309',B:'#dc2626'}, rL = {A:'Alta',M:'Media',B:'Baja'};
+        const sd = avg>0&&p.stock>0 ? Math.round(p.stock/(avg/30.4))+'d' : p.stock<=0?'agotado':'—';
+        const minimo = p.minimo || 0;
+        const stockBajoMin = minimo > 0 && p.stock < minimo;
+        const grid = document.getElementById('dual-chart-stats-grid');
+
+        if (p.sin_historial || !p.ventas || !p.ventas.length) {
+            const sH = [
+                {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+                {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+                {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?'#dc2626':(p.stock<=0?'#f87171':'#1e1e1e')},
+            ];
+            if (minimo > 0) sH.push({l:'Mín.',v:minimo,c:'#7c3aed'});
+            sH.push({l:'Cobertura',v:sd,c:'#888'});
+            grid.innerHTML = sH.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1 text-center"><p class="text-[8px] text-[#aaa] uppercase tracking-wide leading-none mb-0.5">${s.l}</p><p class="text-[11px] font-bold leading-none" style="color:${s.c}">${s.v}</p></div>`).join('');
+            if (_chartAnio) { _chartAnio.destroy(); _chartAnio = null; }
+            const empty = document.getElementById('dual-chart-empty-anio');
+            empty.textContent = 'Sin historial mensual.';
+            empty.classList.remove('hidden');
+            return;
+        }
+        const ventas = p.ventas, sm = p.start_month||4, FM = 11, N_D = p.n_days||35;
+        const monthLabels = Array.from({length:12}, (_,i) => _MES[(sm-1+i)%12]);
+        const today = new Date(), de = today.getDate(), dim = new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+        const ps = ventas[11]||0;
+        const pf = (avg>0&&de>0) ? Math.round(ps+(avg/dim)*(dim-de)) : (ps>0&&de>0?Math.round(ps*dim/de):0);
+        const pr = Math.max(0, pf-ps);
+        const vals = ventas.slice(0,FM), mx = (FM-1)/2, my = vals.reduce((a,b)=>a+b,0)/FM;
+        const nF = N_D>=35?2:1;
+        const fv = [];
+        for (let o=0;o<nF;o++) {
+            const si = (avg>0&&ventas[o]>0)?ventas[o]/avg:1.0, th = Math.min(FM+o-mx,2.0);
+            fv.push(Math.max(0,Math.round(avg*si+slope*th)));
+        }
+        const fl = fv.map((_,i)=>_MES[(sm-1+i)%12]+'→'), tc = 12+nF;
+        const tC = avg>0?avg*0.6:Infinity;
+        const tL = Array.from({length:tc},(_,i)=>{const r=my+slope*(i-mx);return Math.max(0,avg>0?Math.min(Math.max(r,avg-tC),avg+tC):r);});
+        const labels = [...monthLabels.map((m,i)=>i===11?m+'*':m),...fl];
+        const hd = [...ventas,...Array(nF).fill(null)], fd = [...Array(12).fill(null),...fv];
+        const blp = {id:'barLabels',afterDraw(chart){
+            const ctx2=chart.ctx,yS=chart.scales.y;
+            chart.data.datasets.forEach((d,di)=>{
+                const meta=chart.getDatasetMeta(di);
+                if(meta.type!=='bar') return;
+                meta.data.forEach((bar,i)=>{
+                    const v=d.data[i]; if(v==null||v<=0) return;
+                    if(di===0&&i===11&&pr>0){
+                        const yt=yS.getPixelForValue(pf),hw=bar.width/2;
+                        ctx2.save();ctx2.fillStyle='rgba(234,179,8,0.22)';ctx2.fillRect(bar.x-hw,yt,bar.width,bar.y-yt);
+                        ctx2.strokeStyle='rgba(234,179,8,0.7)';ctx2.lineWidth=1;ctx2.setLineDash([3,2]);ctx2.strokeRect(bar.x-hw,yt,bar.width,bar.y-yt);ctx2.restore();
+                        ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle='#64748b';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(ps,bar.x,bar.y-2);ctx2.restore();
+                        ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle='#b45309';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText('~'+pf,bar.x,yt-2);ctx2.restore();
+                        return;
+                    }
+                    ctx2.save();ctx2.font='bold 11px sans-serif';ctx2.fillStyle=di===1?'rgba(34,197,94,1)':'#555';ctx2.textAlign='center';ctx2.textBaseline='bottom';ctx2.fillText(Math.round(v),bar.x,bar.y-2);ctx2.restore();
+                });
+            });
+        }};
+        const ctx = document.getElementById('dual-chart-canvas-anio').getContext('2d');
+        if (_chartAnio) _chartAnio.destroy();
+        _chartAnio = new Chart(ctx, {
+            type:'bar', plugins:[blp],
+            data:{labels, datasets:[
+                {label:'Ventas',data:hd,type:'bar',backgroundColor:'rgba(34,197,94,0.5)',borderColor:'rgba(34,197,94,0.85)',borderWidth:1,borderRadius:3,order:3},
+                {label:'Proyección',data:fd,type:'bar',backgroundColor:'rgba(99,102,241,0.25)',borderColor:'rgba(99,102,241,0.7)',borderWidth:1,borderRadius:3,borderDash:[4,2],order:3},
+                {label:'Tendencia',data:tL,type:'line',borderColor:'#f97316',borderWidth:2,pointRadius:0,tension:0,fill:false,order:1},
+                {label:'Prom.',data:Array(tc).fill(avg),type:'line',borderColor:'#EAB308',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2},
+                ...(p.stock>0?[{label:'Stock',data:Array(tc).fill(p.stock),type:'line',borderColor:'#ef4444',borderWidth:1.5,borderDash:[3,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+                ...(minimo>0?[{label:'Mínimo',data:Array(tc).fill(minimo),type:'line',borderColor:'#7c3aed',borderWidth:1.5,borderDash:[6,3],pointRadius:0,tension:0,fill:false,order:2}]:[]),
+            ]},
+            options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+                plugins:{legend:{labels:{color:'#888',font:{size:10},boxWidth:14,padding:8}},tooltip:{backgroundColor:'#fff',titleColor:'#1e1e1e',bodyColor:'#555',borderColor:'#e0e0e0',borderWidth:1}},
+                scales:{x:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:9}}},y:{grid:{color:'#e8e8e8'},ticks:{color:'#999',font:{size:9}},beginAtZero:true}}}
+        });
+        const ss = slope>0.05?'↑':slope<-0.05?'↓':'→', sc = slope>0.05?'#4ade80':slope<-0.05?'#f87171':'#888';
+        const stats = [
+            {l:'Prom/mes',v:Math.round(avg),c:'#1e1e1e'},
+            {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||'#888'},
+            {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
+            {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?'#dc2626':(p.stock<=0?'#f87171':'#1e1e1e')},
+        ];
+        if (minimo > 0) stats.push({l:'Mín.',v:minimo,c:'#7c3aed'});
+        stats.push({l:'Cobertura',v:sd,c:'#888'});
+        if (ps>0) stats.push({l:`Mes (${de}/${dim}d)`,v:`${ps}/~${pf}`,c:'#b45309'});
+        grid.innerHTML = stats.map(s=>`<div class="bg-[#fafafa] rounded-lg px-2 py-1 text-center"><p class="text-[8px] text-[#aaa] uppercase tracking-wide leading-none mb-0.5">${s.l}</p><p class="text-[11px] font-bold leading-none" style="color:${s.c}">${s.v}</p></div>`).join('');
+    }
+
+    function _renderMes(d, ing) {
+        const hayIng = ing && ing.data && ing.data.some(v => v > 0);
+        const hayPed = ing && ing.pedido_data && ing.pedido_data.some(v => v > 0);
+        const pendTotal = (ing && ing.pendiente_total) ? ing.pendiente_total : 0;
+        const hayPend = pendTotal > 0;
+        const partes = [`Salidas ${d.total_30d}u (prom ${d.avg_diario}/d)`];
+        if (hayPed) partes.push(`Pedido ${ing.pedido_total_30d}u`);
+        if (hayIng) partes.push(`Entradas ${ing.total_30d}u`);
+        if (hayPend) partes.push(`Pend. ${pendTotal}u`);
+        document.getElementById('dual-chart-stats-mes').textContent = partes.join(' · ');
+
+        if (_chartMes) _chartMes.destroy();
+        const ctx = document.getElementById('dual-chart-canvas-mes').getContext('2d');
+        const labelsBase = d.labels.slice();
+        const dataBase   = d.data.slice();
+        const pedidoBase = (ing && ing.pedido_data) ? ing.pedido_data.slice() : null;
+        const ingBase    = (ing && ing.data) ? ing.data.slice() : null;
+        if (hayPend) {
+            labelsBase.push('Pend.'); dataBase.push(null);
+            if (pedidoBase) pedidoBase.push(null);
+            if (ingBase) ingBase.push(null);
+        }
+        const datasets = [{
+            type: 'bar', label: 'Salidas (ventas)', data: dataBase,
+            backgroundColor: 'rgba(34,197,94,0.5)', borderColor: '#16a34a',
+            borderWidth: 1, borderRadius: 2, order: 3,
+        }];
+        if (hayPend) {
+            const pendArr = Array(dataBase.length).fill(null);
+            pendArr[pendArr.length - 1] = pendTotal;
+            datasets.push({
+                type: 'bar', label: `Pendiente ${pendTotal}u`, data: pendArr,
+                backgroundColor: 'rgba(217,119,6,0.55)', borderColor: '#b45309',
+                borderWidth: 1, borderRadius: 2, order: 3,
+            });
+        }
+        if (hayPed) {
+            datasets.push({type: 'line', label: 'Pedido', data: pedidoBase,
+                backgroundColor: '#3b82f6', borderColor: '#3b82f6',
+                showLine: false, pointRadius: 7, pointHoverRadius: 10,
+                pointStyle: 'triangle', order: 2});
+        }
+        if (hayIng) {
+            datasets.push({type: 'line', label: 'Entradas (ingreso)', data: ingBase,
+                backgroundColor: '#ea580c', borderColor: '#ea580c',
+                showLine: false, pointRadius: 7, pointHoverRadius: 10,
+                pointStyle: 'rectRot', order: 1});
+        }
+        const salidas = d.data.map(v => v || 0);
+        const n = salidas.length;
+        const avg30 = n ? salidas.reduce((a, b) => a + b, 0) / n : 0;
+        const avgArr = Array(n).fill(avg30);
+        if (hayPend) avgArr.push(null);
+        datasets.push({type: 'line', label: `Prom. ${avg30.toFixed(1)}/día`,
+            data: avgArr, borderColor: '#EAB308', borderWidth: 1.5, borderDash: [6, 3],
+            pointRadius: 0, tension: 0, fill: false, order: 0});
+        const W = 7;
+        const ma7 = salidas.map((_, i) => {
+            const desde = Math.max(0, i - Math.floor(W / 2));
+            const hasta = Math.min(n, desde + W);
+            const slice = salidas.slice(desde, hasta);
+            return slice.reduce((a, b) => a + b, 0) / slice.length;
+        });
+        if (hayPend) ma7.push(null);
+        datasets.push({type: 'line', label: 'Tend. 7d', data: ma7,
+            borderColor: '#f97316', borderWidth: 2,
+            pointRadius: 0, tension: 0.35, fill: false, order: 0});
+        const blpMes = {id:'barLabelsMes', afterDraw(chart) {
+            const c = chart.ctx;
+            chart.data.datasets.forEach((dset, di) => {
+                const meta = chart.getDatasetMeta(di);
+                if (meta.type !== 'bar') return;
+                meta.data.forEach((bar, i) => {
+                    const v = dset.data[i];
+                    if (v == null || v <= 0) return;
+                    c.save();
+                    c.font = 'bold 11px sans-serif';
+                    c.fillStyle = di === 1 ? '#b45309' : '#15803d';
+                    c.textAlign = 'center'; c.textBaseline = 'bottom';
+                    c.fillText(Math.round(v), bar.x, bar.y - 2);
+                    c.restore();
+                });
+            });
+        }};
+        _chartMes = new Chart(ctx, {
+            plugins: [blpMes],
+            data: {labels: labelsBase, datasets},
+            options: {responsive: true, maintainAspectRatio: false,
+                interaction: {mode: 'index', intersect: false},
+                plugins: {legend: {display: true, labels: {color: '#888', font: {size: 9}, boxWidth: 12, padding: 6}},
+                          tooltip: {backgroundColor: '#fff', titleColor: '#1e1e1e', bodyColor: '#555', borderColor: '#e0e0e0', borderWidth: 1}},
+                scales: {x: {grid: {display: false}, ticks: {color: '#999', font: {size: 9}}},
+                         y: {grid: {color: '#eee'}, ticks: {color: '#999', font: {size: 9}}, beginAtZero: true}}}
+        });
+    }
+
+    async function _cargarAnio(observerId) {
+        document.getElementById('dual-chart-empty-anio').classList.add('hidden');
+        try {
+            const r = await fetch(`/api/observer-product/${observerId}/chart`, {credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { _errorAnio('Error: ' + (d.error || 'sin datos')); return; }
+            _renderAnio(d);
+        } catch (e) { _errorAnio('Error de red'); }
+    }
+    async function _cargarMes(observerId) {
+        document.getElementById('dual-chart-empty-mes').classList.add('hidden');
+        try {
+            const [rv, ri] = await Promise.all([
+                fetch(`/api/observer-product/${observerId}/chart-mes`, {credentials: 'same-origin'}),
+                fetch(`/api/observer-product/${observerId}/ingresos-mes`, {credentials: 'same-origin'}),
+            ]);
+            const dv = await rv.json();
+            const di = await ri.json();
+            if (!dv.ok) { _errorMes('Error: ' + (dv.error || 'sin datos')); return; }
+            _renderMes(dv, di.ok ? di : null);
+        } catch (e) { _errorMes('Error de red'); }
+    }
+
+    // Función pública: setea título y dispara ambos charts.
+    window.cargarGraficoDual = function(observerId, nombre) {
+        if (!observerId) return;
+        document.getElementById('dual-chart-titulo').textContent = nombre || ('#' + observerId);
+        _cargarAnio(observerId);
+        _cargarMes(observerId);
+    };
+})();
+</script>

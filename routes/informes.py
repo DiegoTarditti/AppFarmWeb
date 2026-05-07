@@ -464,6 +464,179 @@ def init_app(app):
                                    'monto_12m': total_m,
                                })
 
+    @app.route('/informes/correcciones-minimos')
+    @login_required
+    def informe_correcciones_minimos():
+        """Productos cuyo mínimo en Observer está desfasado del calculado por
+        nuestra forecast (subir/bajar). Agrupado por laboratorio. Útil para
+        mandar al staff del POS para que lo actualicen manualmente.
+        """
+        import math
+        from datetime import date as _date
+
+        from sqlalchemy import func
+        from database import (
+            ObsLaboratorio, ObsProducto, ObsRubro, ObsStock,
+            ObsSubrubro, ObsVentaMensual, ObsCodigoBarras,
+        )
+        from purchase_engine import (
+            analyze_product, start_month_idx_from_period, tipo_producto,
+        )
+
+        lab_id_filter = request.args.get('lab_id', type=int)
+        tipo_filter = (request.args.get('tipo') or 'both').lower()
+        if tipo_filter not in ('up', 'down', 'both'):
+            tipo_filter = 'both'
+        rubros_raw = (request.args.get('rubros') or '12').strip()
+        if rubros_raw.lower() == 'all' or not rubros_raw:
+            rubros_filtro = None
+        else:
+            try:
+                rubros_filtro = set(int(x) for x in rubros_raw.split(',') if x.strip())
+            except ValueError:
+                rubros_filtro = {12}
+
+        with database.get_db() as session:
+            stock_q = (session.query(
+                ObsStock.producto_observer.label('pid'),
+                func.sum(ObsStock.stock_actual).label('stock'),
+                func.sum(ObsStock.minimo).label('minimo'),
+            ).filter(ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
+              .group_by(ObsStock.producto_observer).subquery())
+            v12_q = (session.query(
+                ObsVentaMensual.producto_observer.label('pid'),
+                func.sum(ObsVentaMensual.unidades).label('u12m'),
+            ).group_by(ObsVentaMensual.producto_observer).subquery())
+
+            base = (session.query(
+                ObsProducto.observer_id.label('pid'),
+                ObsProducto.descripcion.label('desc'),
+                ObsProducto.subrubro_observer,
+                ObsLaboratorio.observer_id.label('lab_id'),
+                ObsLaboratorio.descripcion.label('lab_nombre'),
+                stock_q.c.stock,
+                stock_q.c.minimo,
+                func.coalesce(v12_q.c.u12m, 0).label('u12m'),
+            )
+            .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
+            .outerjoin(ObsLaboratorio,
+                       ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+            .outerjoin(v12_q, v12_q.c.pid == ObsProducto.observer_id)
+            .filter(ObsProducto.fecha_baja.is_(None))
+            .filter(ObsProducto.subrubro_observer.isnot(None))
+            ).all()
+
+            subrubro_a_rubro = dict(
+                session.query(ObsSubrubro.observer_id, ObsSubrubro.rubro_observer).all())
+
+            pids = [r.pid for r in base]
+            eans = {}
+            if pids:
+                for cb in (session.query(ObsCodigoBarras.producto_observer,
+                                          ObsCodigoBarras.codigo_barras)
+                           .filter(ObsCodigoBarras.producto_observer.in_(pids),
+                                   ObsCodigoBarras.fecha_baja.is_(None),
+                                   ObsCodigoBarras.orden == 1).all()):
+                    eans[cb.producto_observer] = cb.codigo_barras
+
+            hoy_d = _date.today()
+            end_month = hoy_d.month
+            start_month = ((end_month - 11 - 1) % 12) + 1
+            start_year = hoy_d.year if start_month <= end_month else hoy_d.year - 1
+            ventas_por_pid = {pid: [0]*12 for pid in pids}
+            if pids:
+                rows_vm = (session.query(ObsVentaMensual.producto_observer,
+                                          ObsVentaMensual.anio,
+                                          ObsVentaMensual.mes,
+                                          func.sum(ObsVentaMensual.unidades))
+                           .filter(ObsVentaMensual.producto_observer.in_(pids))
+                           .group_by(ObsVentaMensual.producto_observer,
+                                     ObsVentaMensual.anio, ObsVentaMensual.mes)
+                           .all())
+                for pid_v, anio, mes, uds in rows_vm:
+                    offset = (anio - start_year) * 12 + (mes - start_month)
+                    if 0 <= offset <= 11 and pid_v in ventas_por_pid:
+                        ventas_por_pid[pid_v][offset] += int(uds or 0)
+
+            # Procesar
+            grupos = {}  # lab_id -> {nombre, productos: []}
+            for r in base:
+                rub_id = subrubro_a_rubro.get(r.subrubro_observer)
+                if rubros_filtro is not None and rub_id not in rubros_filtro:
+                    continue
+                if lab_id_filter and r.lab_id != lab_id_filter:
+                    continue
+                u12m = int(r.u12m or 0)
+                if u12m == 0:
+                    continue
+                ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
+                tipo_p = tipo_producto(ventas_arr)
+                sidx = start_month_idx_from_period(start_month, end_month)
+                _q, fcst7, _slope, _peak, _low, _c, sin_mov = analyze_product(
+                    ventas_arr, int(r.stock or 0), n_days=7, start_month_idx=sidx,
+                    data_start_month=start_month, end_month=end_month, tipo=tipo_p,
+                )
+                if sin_mov:
+                    continue
+                min_sug = int(math.ceil(fcst7)) if fcst7 > 0 else 0
+                min_act = int(r.minimo or 0)
+                if min_act == 0 or min_act < min_sug * 0.6:
+                    sug = 'up'
+                elif min_sug > 0 and min_act > min_sug * 2.0:
+                    sug = 'down'
+                else:
+                    continue  # OK, no sugerencia
+                if tipo_filter == 'up' and sug != 'up':
+                    continue
+                if tipo_filter == 'down' and sug != 'down':
+                    continue
+                lab_key = r.lab_id or 0
+                if lab_key not in grupos:
+                    grupos[lab_key] = {
+                        'lab_id': r.lab_id,
+                        'lab_nombre': r.lab_nombre or '— sin lab —',
+                        'productos': [],
+                    }
+                grupos[lab_key]['productos'].append({
+                    'pid': r.pid,
+                    'desc': r.desc,
+                    'ean': eans.get(r.pid, ''),
+                    'sugerencia': sug,
+                    'min_actual': min_act,
+                    'min_sugerido': min_sug,
+                    'diferencia': min_sug - min_act,
+                    'stock_actual': int(r.stock or 0),
+                    'u12m': u12m,
+                    'tipo': tipo_p,
+                })
+
+            # Sort productos dentro de cada lab por urgencia (subir primero, dif desc)
+            for g in grupos.values():
+                g['productos'].sort(key=lambda x: (
+                    0 if x['sugerencia'] == 'up' else 1,
+                    -abs(x['diferencia']),
+                ))
+                g['n_up'] = sum(1 for p in g['productos'] if p['sugerencia'] == 'up')
+                g['n_down'] = sum(1 for p in g['productos'] if p['sugerencia'] == 'down')
+            # Ordenar grupos por cantidad de productos descendente
+            grupos_list = sorted(grupos.values(),
+                                  key=lambda g: -len(g['productos']))
+
+            # Para el dropdown del filtro de lab
+            labs_disponibles = (session.query(ObsLaboratorio.observer_id,
+                                               ObsLaboratorio.descripcion)
+                                .filter(ObsLaboratorio.fecha_baja.is_(None))
+                                .order_by(ObsLaboratorio.descripcion).all())
+
+            return render_template(
+                'informe_correcciones_minimos.html',
+                grupos=grupos_list,
+                total=sum(len(g['productos']) for g in grupos_list),
+                lab_id_filter=lab_id_filter,
+                tipo_filter=tipo_filter,
+                labs_disponibles=labs_disponibles,
+            )
+
     @app.route('/informes/bajo-minimo')
     @login_required
     def informe_bajo_minimo():

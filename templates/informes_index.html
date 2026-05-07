@@ -38,6 +38,16 @@
                     <p class="font-bold text-sm text-[#1e1e1e]">Productos bajo mínimo</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos cuyo stock actual está por debajo del mínimo de ObServer. Filtrá por lab y ordená por urgencia.</p>
                 </a>
+
+                <a href="{{ url_for('informe_correcciones_minimos') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-violet-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📐</div>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Correcciones de mínimos sugeridas</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos cuyo mínimo en Observer está desfasado del calculado. Agrupado por laboratorio. Para mandar al staff del POS y que actualice manualmente.</p>
+                </a>
             </div>
         </div>
 
