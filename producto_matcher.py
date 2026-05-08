@@ -130,6 +130,10 @@ def normalizar_texto(s) -> str:
         return f'{intp}pp{decp}' if decp else intp
     s = re.sub(r'(\d+)\.(\d+)', _norm_decimal, s)
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
+    # Separar 'x' del número que la sigue: "x30" → "x 30" (x es conector,
+    # no parte del numero). Cubre tambien "compx30" → "comp x 30".
+    s = re.sub(r'([a-z])x(\d)', r'\1 x \2', s)
+    s = re.sub(r'\bx(\d)', r'x \1', s)
     # Merge letra-vitamina + número adyacentes ("b 12" → "b12").
     s = re.sub(r'\b([bcdek])\s+(\d+)\b', r'\1\2', s)
     s = re.sub(r'\s+', ' ', s).strip()

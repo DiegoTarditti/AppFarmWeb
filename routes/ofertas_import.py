@@ -190,9 +190,34 @@ def _normalizar_descripcion_proveedor(s):
     if not s or not isinstance(s, str):
         return s, []
     cambios = []
-    # Tokens adyacentes idénticos (case-insensitive para detección, pero
-    # preservamos el casing del primero). "1000 1000" → "1000".
     tokens = s.split()
+
+    # Pasada 1: dedup de bigramas y trigramas repetidos consecutivamente.
+    # "AP 850 AP 850 mg" → "AP 850 mg" (bigrama AP+850 repetido).
+    # "DIABESIL AP 1000 DIABESIL AP 1000 mg" → "DIABESIL AP 1000 mg".
+    # Probamos k=3 antes que k=2 para que el match sea greedy del mas largo.
+    def _dedup_ngrams(toks, k):
+        out_l = []
+        i = 0
+        while i < len(toks):
+            if i + 2 * k <= len(toks):
+                a = [t.lower() for t in toks[i:i + k]]
+                b = [t.lower() for t in toks[i + k:i + 2 * k]]
+                if a == b:
+                    cambios.append((f'dup_{k}gram',
+                                     ' '.join(toks[i:i + 2 * k]),
+                                     ' '.join(toks[i:i + k])))
+                    out_l.extend(toks[i:i + k])
+                    i += 2 * k
+                    continue
+            out_l.append(toks[i])
+            i += 1
+        return out_l
+
+    tokens = _dedup_ngrams(tokens, 3)
+    tokens = _dedup_ngrams(tokens, 2)
+
+    # Pasada 2: tokens adyacentes idénticos (1-grama). "1000 1000" → "1000".
     out = []
     skip = False
     for i, tok in enumerate(tokens):
