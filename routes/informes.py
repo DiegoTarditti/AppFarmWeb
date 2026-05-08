@@ -1618,10 +1618,8 @@ def init_app(app):
                      .filter(ObsProducto.fecha_baja.is_(None))
                      .filter(ObsProducto.laboratorio_observer == lab_id)
                      .filter(stock_q.c.stock < stock_q.c.minimo)
-                     .order_by(
-                        (stock_q.c.minimo - stock_q.c.stock).desc(),
-                        func.coalesce(ventas_sub.c.u12m, 0).desc(),
-                     ))
+                     # A→Z por descripción (default global del proyecto).
+                     .order_by(ObsProducto.descripcion.asc()))
                 if venta_tipo == 'libre':
                     q = q.filter(ObsProducto.id_tipo_venta_control == 'L')
                 elif venta_tipo == 'receta':
