@@ -2098,15 +2098,14 @@ def init_app(app):
         with database.get_db() as session:
             # ── OfertaMinimo ──────────────────────────────────────────────────
             rows_om = (session.query(OfertaMinimo, Laboratorio, Provider)
-                       .join(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                       .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
                        .outerjoin(Provider, Provider.id == OfertaMinimo.drogueria_id)
-                       .filter(OfertaMinimo.activo == True)
                        .order_by(Laboratorio.nombre, OfertaMinimo.descripcion)
                        .all())
             ofertas = [{
                 'id':          o.id,
                 'lab_id':      o.laboratorio_id,
-                'lab':         lab.nombre,
+                'lab':         lab.nombre if lab else '—',
                 'drog':        prov.razon_social if prov else None,
                 'ean':         o.ean or '',
                 'descripcion': o.descripcion or '',
