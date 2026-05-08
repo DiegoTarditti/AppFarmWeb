@@ -2093,36 +2093,55 @@ def init_app(app):
     @app.route('/informes/ofertas-activas')
     @login_required
     def informe_ofertas_activas():
-        """Gestión global de ofertas cargadas: OfertaMinimo (todos los tipos) + Módulos."""
-        from database import DescuentoBase, Laboratorio, Modulo, OfertaMinimo, Provider
+        """Gestión global de ofertas cargadas: OfertaMinimo agrupadas + Módulos."""
+        from sqlalchemy import func as _func
+
+        from database import Laboratorio, Modulo, ModuloPack, OfertaMinimo, Provider
         with database.get_db() as session:
-            # ── OfertaMinimo ──────────────────────────────────────────────────
+            # ── OfertaMinimo — agrupar por (lab, tipo, drogueria) ─────────────
             rows_om = (session.query(OfertaMinimo, Laboratorio, Provider)
                        .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
                        .outerjoin(Provider, Provider.id == OfertaMinimo.drogueria_id)
-                       .order_by(Laboratorio.nombre, OfertaMinimo.descripcion)
+                       .order_by(Laboratorio.nombre, OfertaMinimo.tipo_descuento,
+                                 Provider.razon_social, OfertaMinimo.descripcion)
                        .all())
-            ofertas = [{
-                'id':          o.id,
-                'lab_id':      o.laboratorio_id,
-                'lab':         lab.nombre if lab else '—',
-                'drog':        prov.razon_social if prov else None,
-                'ean':         o.ean or '',
-                'descripcion': o.descripcion or '',
-                'tipo':        o.tipo_descuento or 'simple',
-                'unidades_minima': o.unidades_minima,
-                'descuento':   float(o.descuento_psl) if o.descuento_psl is not None else None,
-                'vigencia':    o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
-            } for o, lab, prov in rows_om]
+
+            # Agrupar en Python por (lab_id, tipo, drogueria_id)
+            grupos_dict = {}
+            for o, lab, prov in rows_om:
+                key = (o.laboratorio_id, o.tipo_descuento or 'simple', o.drogueria_id)
+                if key not in grupos_dict:
+                    vh_max = o.vigencia_hasta
+                    grupos_dict[key] = {
+                        'lab':      lab.nombre if lab else '—',
+                        'lab_id':   o.laboratorio_id,
+                        'drog':     prov.razon_social if prov else None,
+                        'drog_id':  o.drogueria_id,
+                        'tipo':     o.tipo_descuento or 'simple',
+                        'vigencia': vh_max.strftime('%d/%m/%Y') if vh_max else None,
+                        'items':    [],
+                    }
+                g = grupos_dict[key]
+                g['items'].append({
+                    'id':              o.id,
+                    'ean':             o.ean or '',
+                    'descripcion':     o.descripcion or '',
+                    'unidades_minima': o.unidades_minima,
+                    'descuento':       float(o.descuento_psl) if o.descuento_psl is not None else None,
+                    'vigencia':        o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
+                })
+                # Actualizar vigencia máxima del grupo
+                if o.vigencia_hasta and (
+                        g['vigencia'] is None or
+                        o.vigencia_hasta > (grupos_dict[key].get('_vh') or o.vigencia_hasta)):
+                    g['vigencia'] = o.vigencia_hasta.strftime('%d/%m/%Y')
+
+            grupos = list(grupos_dict.values())
 
             # ── Módulos ───────────────────────────────────────────────────────
-            from sqlalchemy import func as _func
-
-            from database import ModuloPack
             rows_mod = (session.query(Modulo, Laboratorio,
                                       _func.count(ModuloPack.id).label('n_packs'))
-                        .join(Laboratorio, Laboratorio.id == Modulo.laboratorio_id,
-                              isouter=True)
+                        .outerjoin(Laboratorio, Laboratorio.id == Modulo.laboratorio_id)
                         .outerjoin(ModuloPack, ModuloPack.modulo_id == Modulo.id)
                         .group_by(Modulo.id, Laboratorio.id)
                         .order_by(Laboratorio.nombre, Modulo.nombre)
@@ -2137,23 +2156,37 @@ def init_app(app):
             } for m, lab, n_packs in rows_mod]
 
         resumen = {
-            'con_minimo': sum(1 for o in ofertas if o['tipo'] == 'con_minimo'),
-            'simple':     sum(1 for o in ofertas if o['tipo'] == 'simple' and not o['drog']),
-            'multi_lab':  sum(1 for o in ofertas if o['drog']),
+            'con_minimo': sum(1 for g in grupos if g['tipo'] == 'con_minimo' and not g['drog']),
+            'simple':     sum(1 for g in grupos if g['tipo'] == 'simple' and not g['drog']),
+            'multi_lab':  sum(1 for g in grupos if g['drog']),
             'modulos':    len(modulos),
         }
         return render_template('informe_ofertas_activas.html',
-                               ofertas=ofertas, modulos=modulos, resumen=resumen)
+                               grupos=grupos, modulos=modulos, resumen=resumen)
 
-    @app.route('/informes/ofertas-activas/borrar-oferta/<int:oferta_id>', methods=['POST'])
+    @app.route('/informes/ofertas-activas/borrar-grupo', methods=['POST'])
     @login_required
-    def informe_oferta_borrar(oferta_id):
+    def informe_grupo_borrar():
+        """Elimina todas las OfertaMinimo de un grupo (lab+tipo+drogueria)."""
         from database import OfertaMinimo
+        data = request.get_json(silent=True) or {}
+        lab_id   = data.get('lab_id')
+        tipo     = data.get('tipo')
+        drog_id  = data.get('drog_id')
         with database.get_db() as session:
-            o = session.get(OfertaMinimo, oferta_id)
-            if o:
-                session.delete(o)
-                session.commit()
+            q = session.query(OfertaMinimo)
+            if lab_id is not None:
+                q = q.filter(OfertaMinimo.laboratorio_id == lab_id)
+            else:
+                q = q.filter(OfertaMinimo.laboratorio_id.is_(None))
+            if tipo:
+                q = q.filter(OfertaMinimo.tipo_descuento == tipo)
+            if drog_id is not None:
+                q = q.filter(OfertaMinimo.drogueria_id == drog_id)
+            else:
+                q = q.filter(OfertaMinimo.drogueria_id.is_(None))
+            q.delete(synchronize_session=False)
+            session.commit()
         return ('', 204)
 
     @app.route('/informes/ofertas-activas/borrar-modulo/<int:modulo_id>', methods=['POST'])
