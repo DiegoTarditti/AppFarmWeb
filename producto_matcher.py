@@ -860,10 +860,14 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 # - obs_index: lista de (obj, norm, tokens, alfabeta)
                 # - by_norm: dict normalizado → list of obs (para descripcion exacta)
                 # - by_alfabeta: dict alfabeta → obs (para alfabeta exacto)
+                # - obs_inv: {token → list[indice_en_obs_index]} — inverted index
+                #   para reducir la fase 3 fuzzy de N×M a N×|candidatos|
+                #   (típico 50-200 candidatos por item en lugar de 122k).
                 obs_index = []
                 by_norm = {}
                 by_alfabeta = {}
-                for obs in obs_pool:
+                obs_inv = {}
+                for ii, obs in enumerate(obs_pool):
                     desc = obs.descripcion or ''
                     norm = normalizar_texto(desc)
                     toks = tokens_significativos(desc)
@@ -873,6 +877,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                         by_norm.setdefault(norm, []).append(obs)
                     if alf:
                         by_alfabeta[alf] = obs
+                    for t in toks:
+                        obs_inv.setdefault(t, []).append(ii)
 
                 threshold_obs = 0.80
                 for i in no_match_idx:
@@ -917,21 +923,24 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                             estrategia = 'descripcion_exacta'
                             score = 1.0
 
-                    # 3. tokens superset / fuzzy
-                    # Mientras iteramos también contamos cuántos obs son
-                    # "candidatos razonables" (jaccard >= UMBRAL_CAND).
-                    # Sirve para que la UI muestre "sin candidatos" upfront
-                    # en items donde sabemos que el modal va a venir vacío.
+                    # 3. tokens superset / fuzzy — usa inverted index.
+                    # Solo evaluamos los obs que comparten ≥1 token con el
+                    # input, no los 122k del pool. Reduce ~1000× el trabajo.
                     UMBRAL_CAND = 0.20
                     candidatos_count = 0
                     if not encontrado:
                         toks_in = tokens_significativos(desc_in)
                         if toks_in:
+                            cand_idxs = set()
+                            for t in toks_in:
+                                if t in obs_inv:
+                                    cand_idxs.update(obs_inv[t])
                             mejor = None
                             mejor_score = 0.0
                             empate = False
                             supersets = []
-                            for obs, _norm, toks_o, _alf in obs_index:
+                            for ii in cand_idxs:
+                                obs, _norm, toks_o, _alf = obs_index[ii]
                                 if toks_o and toks_in.issubset(toks_o):
                                     supersets.append(obs)
                                 s = jaccard(toks_in, toks_o)
@@ -1002,13 +1011,15 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
     try:
         # ── Pool 1: todos los Productos locales (una sola query) ─────────────
         all_prods = session.query(database.Producto).all()
-        # Tokenizamos UNA sola vez y marcamos si pertenecen al lab pedido.
-        prod_index = []
-        for p in all_prods:
+        prod_index = []  # lista de (p, toks, is_lab) - mantenida para iteracion ordenada
+        prod_inv = {}    # {token: list[index_in_prod_index]} — inverted index
+        for i, p in enumerate(all_prods):
             toks = tokens_significativos(p.descripcion or '')
             is_lab = (laboratorio_id is not None
                       and getattr(p, 'laboratorio_id', None) == laboratorio_id)
             prod_index.append((p, toks, is_lab))
+            for t in toks:
+                prod_inv.setdefault(t, []).append(i)
 
         # ── Pool 2: ObServer (obs_productos) — una sola query ────────────────
         lab_obs_id = None
@@ -1023,13 +1034,22 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             obs_q = obs_q.filter(
                 database.ObsProducto.laboratorio_observer == lab_obs_id,
             )
-        obs_index = []
-        for obs in obs_q.all():
+        obs_index = []   # lista de (obs, toks, alf)
+        obs_inv = {}     # {token: list[index_in_obs_index]} — inverted index
+        obs_alfa_idx = {}  # {alfabeta: index} — para match exacto por alfa
+        for i, obs in enumerate(obs_q.all()):
             toks = tokens_significativos(obs.descripcion or '')
             alf = (obs.codigo_alfabeta or '').strip() or None
             obs_index.append((obs, toks, alf))
+            for t in toks:
+                obs_inv.setdefault(t, []).append(i)
+            if alf:
+                obs_alfa_idx[alf] = i
 
-        # ── Matchear cada item ────────────────────────────────────────────────
+        # ── Matchear cada item usando inverted index ─────────────────────────
+        # En lugar de iterar los 122k productos por item (1056 × 122k = 128M),
+        # solo evaluamos los que comparten >=1 token significativo con el input.
+        # Tipico: 50-200 candidatos por item.
         result = {}
         for it in items:
             idx = it.get('idx', 0)
@@ -1046,10 +1066,13 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             cands = []
             seen_keys = set()
 
-            # Productos locales
-            for p, toks_p, is_lab in prod_index:
-                if not toks_p:
-                    continue
+            # Productos locales — solo los que comparten al menos 1 token
+            cand_prod_idxs = set()
+            for t in toks_in:
+                if t in prod_inv:
+                    cand_prod_idxs.update(prod_inv[t])
+            for ci in cand_prod_idxs:
+                p, toks_p, is_lab = prod_index[ci]
                 s = jaccard(toks_in, toks_p)
                 if s < threshold_min:
                     continue
@@ -1070,32 +1093,40 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
                     '_origen': 'lab' if is_lab else 'global',
                 })
 
-            # ObServer
-            for obs, toks_o, alf_o in obs_index:
-                # Alfabeta exacto (sanity check: al menos 1 token en común)
-                if alf_in and alf_o and alf_in == alf_o:
-                    digits = ''.join(ch for ch in alf_in if ch.isdigit())
-                    if len(digits) >= 5:
-                        ok = (bool(toks_in & toks_o)
-                              and jaccard(toks_in, toks_o) >= 0.30
-                              ) if (toks_in and toks_o) else True
-                        if ok:
-                            key = ('obs', obs.observer_id)
-                            if key not in seen_keys:
-                                seen_keys.add(key)
-                                cands.append({
-                                    'producto_id': None,
-                                    'observer_id': obs.observer_id,
-                                    'descripcion': obs.descripcion or '',
-                                    'codigo_barra': None,
-                                    'codigo_alfabeta': alf_o or '',
-                                    'precio_pvp': None,
-                                    'score': 1.0,
-                                    '_origen': 'observer',
-                                })
-                        continue
-                if not toks_o:
-                    continue
+            # ObServer — alfabeta exacto primero, despues fuzzy via inverted
+            obs_alfa_match_idx = None
+            if alf_in:
+                digits = ''.join(ch for ch in alf_in if ch.isdigit())
+                if len(digits) >= 5 and alf_in in obs_alfa_idx:
+                    obs_alfa_match_idx = obs_alfa_idx[alf_in]
+                    obs, toks_o, alf_o = obs_index[obs_alfa_match_idx]
+                    ok = (bool(toks_in & toks_o)
+                          and jaccard(toks_in, toks_o) >= 0.30
+                          ) if (toks_in and toks_o) else True
+                    if ok:
+                        key = ('obs', obs.observer_id)
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            cands.append({
+                                'producto_id': None,
+                                'observer_id': obs.observer_id,
+                                'descripcion': obs.descripcion or '',
+                                'codigo_barra': None,
+                                'codigo_alfabeta': alf_o or '',
+                                'precio_pvp': None,
+                                'score': 1.0,
+                                '_origen': 'observer',
+                            })
+
+            # ObServer fuzzy via inverted index
+            cand_obs_idxs = set()
+            for t in toks_in:
+                if t in obs_inv:
+                    cand_obs_idxs.update(obs_inv[t])
+            if obs_alfa_match_idx is not None:
+                cand_obs_idxs.discard(obs_alfa_match_idx)
+            for ci in cand_obs_idxs:
+                obs, toks_o, alf_o = obs_index[ci]
                 s = jaccard(toks_in, toks_o)
                 if s < threshold_min:
                     continue

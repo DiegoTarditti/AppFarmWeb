@@ -1292,42 +1292,37 @@ async function prefetchCandidatosBulk(onProgress) {
         .map((it, i) => ({idx: i, descripcion: it.descripcion || '', ean: it.ean || '', codigo: it.codigo || ''}))
         .filter((_, i) => _items[i]._status === 'not_found' && !_items[i]._sin_candidatos);
     if (!paraFetch.length) return;
-    // Chunkear: 1056 items en una sola request puede timeoutear (cada chunk
-    // tokeniza 122k obs_productos contra el chunk → ~1.5-3s por chunk).
-    const CHUNK = 100;
+    // Una sola request: con el inverted index del backend, 1000+ items
+    // tardan ~5-10s. Sin chunking porque chunkear forzaba cargar el pool
+    // 11 veces para 1056 items.
     const labIdInt = labId ? parseInt(labId, 10) : null;
     const total = paraFetch.length;
-    let done = 0;
+    if (typeof onProgress === 'function') onProgress(0, total);
     let autoMatched = 0;
-    for (let i = 0; i < paraFetch.length; i += CHUNK) {
-        const slice = paraFetch.slice(i, i + CHUNK);
-        try {
-            const r = await fetch('/api/ofertas/import-candidatos-bulk', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                credentials: 'same-origin',
-                body: JSON.stringify({items: slice, laboratorio_id: labIdInt, top: 8}),
-            });
-            const data = await r.json();
-            if (data.candidatos_por_idx) {
-                for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
-                    const idx = parseInt(k, 10);
-                    _candidatosBulk[idx] = v;
-                    // Auto-match si el top candidato es 1.0 (jaccard perfecto:
-                    // mismos tokens significativos). Reduce trabajo manual.
-                    if (autoMatchTop(idx, v)) autoMatched++;
-                }
+    try {
+        const r = await fetch('/api/ofertas/import-candidatos-bulk', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({items: paraFetch, laboratorio_id: labIdInt, top: 8}),
+        });
+        const data = await r.json();
+        if (data.candidatos_por_idx) {
+            for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
+                const idx = parseInt(k, 10);
+                _candidatosBulk[idx] = v;
+                // Auto-match si el top candidato pasa el threshold.
+                if (autoMatchTop(idx, v)) autoMatched++;
             }
-        } catch (err) {
-            console.warn(`Prefetch chunk ${i}-${i+slice.length} falló:`, err.message);
         }
-        done += slice.length;
-        if (typeof onProgress === 'function') onProgress(done, total);
+    } catch (err) {
+        console.warn('Prefetch candidatos bulk falló:', err.message);
     }
+    if (typeof onProgress === 'function') onProgress(total, total);
     if (autoMatched > 0) {
         recalcularStats();
         actualizarConfirmCount();
-        console.info(`Auto-matched ${autoMatched} items con score 1.0`);
+        console.info(`Auto-matched ${autoMatched} items con score >= ${AUTO_MATCH_THRESHOLD}`);
     }
 }
 
