@@ -249,24 +249,12 @@ def get_or_create_proveedor(session, razon_social, cuit=None, **extras):
 
 
 def _get_or_create_provider_by_name(razon_social, cuit='', parser_name=''):
+    """Wrapper con sesión propia sobre `get_or_create_proveedor`. Usado desde
+    rutas Flask que no tienen sesión abierta. Devuelve (id, parser_file)."""
     with database.get_db() as session:
-        provider = None
-        if cuit:
-            provider = session.query(database.Provider).filter_by(cuit=cuit).first()
-        if not provider:
-            from sqlalchemy import func
-            provider = session.query(database.Provider).filter(
-                func.lower(database.Provider.razon_social) == razon_social.lower()
-            ).first()
-        if not provider:
-            provider = database.Provider(razon_social=razon_social,
-                                         cuit=cuit or None,
-                                         parser_file=parser_name)
-            session.add(provider)
-            session.commit()
-        elif not provider.parser_file and parser_name:
-            provider.parser_file = parser_name
-            session.commit()
+        provider = get_or_create_proveedor(session, razon_social, cuit,
+                                           parser_file=parser_name)
+        session.commit()
         return provider.id, provider.parser_file
 
 

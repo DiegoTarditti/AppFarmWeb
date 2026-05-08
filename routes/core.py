@@ -18,8 +18,22 @@ def init_app(app):
         with database.get_db() as session:
             uid = current_user.id if current_user.is_authenticated else None
             cards, _modo = hc.resolve_cards_para_usuario(session, uid)
-        # Solo visibles
+            # Counts para badges en cards. Una sola transacción.
+            badges = {
+                'pedidos_pendientes': session.query(database.Pedido)
+                    .filter(database.Pedido.estado == 'PENDIENTE').count(),
+                'reclamos_abiertos': session.query(database.Claim)
+                    .filter(database.Claim.estado == 'ABIERTO').count(),
+                'docs_pendientes': session.query(database.DocumentoPendiente)
+                    .filter(database.DocumentoPendiente.estado == 'PENDIENTE').count(),
+                'procesos_abiertos': session.query(database.ProcesoCompra)
+                    .filter(database.ProcesoCompra.estado != 'COMPLETADO').count(),
+            }
         cards = [c for c in cards if not c.get('oculto')]
+        # Inyectar badge_count en cada card según su badge_key
+        for c in cards:
+            key = c.get('badge_key')
+            c['badge_count'] = badges.get(key) if key else None
         return render_template('index.html', config=get_config(), acciones=cards)
 
     @app.route('/ingresos')

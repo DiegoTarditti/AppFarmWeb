@@ -12,7 +12,6 @@ from database import Producto
 from helpers import (
     UPLOAD_FOLDER,
     _ensure_parser_file,
-    _get_or_create_provider_by_name,
     _make_parser_slug,
     allowed_file,
     get_providers,
