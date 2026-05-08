@@ -217,4 +217,10 @@ def parse_modulos_xlsx(path):
         modules.append(current)
 
     # Filtrar módulos sin ítems (ej. fila de título global)
-    return [m for m in modules if m['items']]
+    modules = [m for m in modules if m['items']]
+
+    # Productos por orden alfabético dentro de cada módulo (regla global del proyecto).
+    for m in modules:
+        m['items'].sort(key=lambda it: (it.get('descripcion') or '').strip().upper())
+
+    return modules
