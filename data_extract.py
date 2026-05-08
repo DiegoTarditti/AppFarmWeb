@@ -191,40 +191,18 @@ def parse_erp_excel(excel_path):
     return items
 
 
-def get_or_create_provider(session, razon_social, cuit=None, domicilio=None, parser_file=None):
-    from helpers import _normalizar_nombre_entidad
-    razon_social = (razon_social or '').strip()
-    cuit = (cuit or '').strip()
-    provider = None
-    if cuit:
-        provider = session.query(Provider).filter_by(cuit=cuit).first()
-    # Match por razón social normalizada profundo (sin acentos, sin sufijo societario).
-    if not provider and razon_social:
-        norm_buscado = _normalizar_nombre_entidad(razon_social)
-        for c in session.query(Provider).all():
-            if _normalizar_nombre_entidad(c.razon_social) == norm_buscado:
-                provider = c
-                break
-    if not provider and razon_social:
-        provider = Provider(razon_social=razon_social, cuit=cuit or None,
-                            domicilio=domicilio, parser_file=parser_file)
-        session.add(provider)
-        session.flush()
-    else:
-        # Actualizar datos faltantes del proveedor existente
-        changed = False
-        if provider and cuit and not provider.cuit:
-            provider.cuit = cuit
-            changed = True
-        if provider and domicilio and not provider.domicilio:
-            provider.domicilio = domicilio
-            changed = True
-        if provider and parser_file and not provider.parser_file:
-            provider.parser_file = parser_file
-            changed = True
-        if changed:
-            session.flush()
-    return provider
+def _resolve_provider_from_invoice(session, invoice):
+    """Lookup read-only del Provider asociado a un Invoice: CUIT primero,
+    razón social exacta después. Devuelve None si no matchea — no crea."""
+    if not invoice:
+        return None
+    if invoice.proveedor_cuit:
+        prov = session.query(Provider).filter_by(cuit=invoice.proveedor_cuit).first()
+        if prov:
+            return prov
+    if invoice.proveedor_razon:
+        return session.query(Provider).filter_by(razon_social=invoice.proveedor_razon).first()
+    return None
 
 
 def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobante='FAC'):
@@ -249,8 +227,9 @@ def save_invoice_to_db(session, invoice_data, pdf_filename=None, tipo_comprobant
     )
     session.add(invoice)
     session.flush()
-    prov = get_or_create_provider(session, invoice.proveedor_razon, invoice.proveedor_cuit,
-                                  invoice.proveedor_domicilio)
+    from helpers import get_or_create_proveedor
+    prov = get_or_create_proveedor(session, invoice.proveedor_razon, invoice.proveedor_cuit,
+                                   domicilio=invoice.proveedor_domicilio)
     prov_id = prov.id if prov is not None else None
     for item in invoice_data['items']:
         pu = item.get('precio_unitario')
@@ -352,19 +331,10 @@ def compare_invoice_vs_erp(session, factura_id):
                         erp_by_barcode[bc] = erp_item
 
     # Cargar proveedor, estrategia de match y mappings
-    proveedor_id = None
-    match_strategy = 'barcode'
+    prov = _resolve_provider_from_invoice(session, invoice)
+    proveedor_id = prov.id if prov else None
+    match_strategy = (prov.match_strategy or 'barcode') if prov else 'barcode'
     mappings_by_factura_barcode = {}
-    if invoice and invoice.proveedor_cuit:
-        prov = session.query(Provider).filter_by(cuit=invoice.proveedor_cuit).first()
-        if prov:
-            proveedor_id = prov.id
-            match_strategy = prov.match_strategy or 'barcode'
-    if proveedor_id is None and invoice and invoice.proveedor_razon:
-        prov = session.query(Provider).filter_by(razon_social=invoice.proveedor_razon).first()
-        if prov:
-            proveedor_id = prov.id
-            match_strategy = prov.match_strategy or 'barcode'
     if proveedor_id:
         for m in session.query(BarcodeMapping).filter_by(proveedor_id=proveedor_id).all():
             mappings_by_factura_barcode[m.codigo_barra_factura] = m.codigo_barra_erp
@@ -494,18 +464,13 @@ def create_claim(session, factura_id, difference_ids):
     if not invoice:
         raise ValueError('Factura no encontrada')
 
-    # Buscar proveedor: primero por CUIT, luego por razón social exacta en proveedores,
-    # evitando crear un proveedor nuevo con datos sucios de la factura.
-    provider = None
-    if invoice.proveedor_cuit:
-        provider = session.query(Provider).filter_by(cuit=invoice.proveedor_cuit).first()
+    # Lookup read-only por CUIT/razón social; si no existe, crear con normalización.
+    provider = _resolve_provider_from_invoice(session, invoice)
     if not provider:
-        provider = session.query(Provider).filter_by(
-            razon_social=invoice.proveedor_razon
-        ).first()
-    if not provider:
-        provider = get_or_create_provider(session, invoice.proveedor_razon,
-                                          invoice.proveedor_cuit, invoice.proveedor_domicilio)
+        from helpers import get_or_create_proveedor
+        provider = get_or_create_proveedor(session, invoice.proveedor_razon,
+                                           invoice.proveedor_cuit,
+                                           domicilio=invoice.proveedor_domicilio)
     claim = Claim(
         proveedor_id=provider.id,
         factura_id=invoice.id,
