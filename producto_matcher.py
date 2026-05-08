@@ -834,6 +834,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
     if own_session:
         session = database.SessionLocal()
     try:
+        import time as _t_bulk
+        _bulk_t0 = _t_bulk.time()
         # Fase 1: matchear contra `productos` local SIN fallback observer.
         # PRE-CARGA el pool UNA VEZ y lo pasa a cada match_producto via `pool=`.
         # Sin esto, match_producto carga el pool entero (~5k filas locales) y
@@ -850,12 +852,16 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 shared_pool = session.query(P_phase).all()
         else:
             shared_pool = []
+        print(f'[bulk] pool local cargado: {len(shared_pool)} items en {_t_bulk.time()-_bulk_t0:.2f}s', flush=True)
+        _t1 = _t_bulk.time()
 
         # Pre-tokenizar el pool UNA VEZ y cachear en el objeto. match_producto
         # va a reusar esto si encuentra el atributo _toks_cached, evitando
         # 5M tokenizaciones redundantes para 1000 items × 5k productos.
         for c in shared_pool:
             c._toks_cached = tokens_significativos(c.descripcion or '')
+        print(f'[bulk] tokenizado pool local en {_t_bulk.time()-_t1:.2f}s', flush=True)
+        _t2 = _t_bulk.time()
 
         results = [
             match_producto(
@@ -874,11 +880,14 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
             )
             for it in items
         ]
+        print(f'[bulk] fase 1 (match local x{len(items)}): {_t_bulk.time()-_t2:.2f}s', flush=True)
+        _t3 = _t_bulk.time()
 
         # Fase 2: fallback observer en bulk con UNA precarga + UNA tokenización
         # del pool. Inline (no via match_producto) para evitar N×M tokenizaciones.
         if target == 'producto':
             no_match_idx = [i for i, r in enumerate(results) if r.producto is None]
+            print(f'[bulk] fase 2: {len(no_match_idx)} items sin match local, cargando obs_pool…', flush=True)
             if no_match_idx:
                 lab_obs_id = None
                 if laboratorio_id:
@@ -889,6 +898,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                     obs_q = obs_q.filter(database.ObsProducto.laboratorio_observer == lab_obs_id)
                 obs_q = obs_q.filter(database.ObsProducto.fecha_baja.is_(None))
                 obs_pool = obs_q.all()
+                print(f'[bulk] obs_pool cargado: {len(obs_pool)} items en {_t_bulk.time()-_t3:.2f}s', flush=True)
+                _t4 = _t_bulk.time()
 
                 # Pre-tokenizar UNA sola vez todo el pool. Estructuras:
                 # - obs_index: lista de (obj, norm, tokens, alfabeta)
@@ -913,6 +924,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                         by_alfabeta[alf] = obs
                     for t in toks:
                         obs_inv.setdefault(t, []).append(ii)
+                print(f'[bulk] obs index construido en {_t_bulk.time()-_t4:.2f}s ({len(obs_inv)} tokens unicos)', flush=True)
+                _t5 = _t_bulk.time()
 
                 threshold_obs = 0.80
                 for i in no_match_idx:
@@ -1008,7 +1021,9 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                         # pueda decidir qué UI mostrar.
                         res.candidatos_count = candidatos_count
                         results[i] = res
+                print(f'[bulk] fase 3 (obs fuzzy x{len(no_match_idx)}): {_t_bulk.time()-_t5:.2f}s', flush=True)
 
+        print(f'[bulk] TOTAL: {_t_bulk.time()-_bulk_t0:.2f}s', flush=True)
         return results
     finally:
         if own_session:
