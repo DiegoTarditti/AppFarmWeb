@@ -57,7 +57,8 @@ CAMPOS = {
         'descripcion': 'Código interno del proveedor / SKU',
         'tipo': 'text',
         'nucleo': True,
-        'keywords': ['codigo', 'cod', 'sku', 'cod_interno', 'codigo_interno', 'art', 'ref'],
+        'keywords': ['codigo', 'cod', 'sku', 'cod_interno', 'codigo_interno',
+                     'art', 'ref', 'nro', 'num', 'numero', 'id_producto'],
         'ejemplos': ['BON-001', '79-65', 'AMX500'],
     },
     'descripcion': {
@@ -82,7 +83,8 @@ CAMPOS = {
         'descripcion': 'Precio unitario en $ (acepta formatos AR y EN)',
         'tipo': 'money',
         'nucleo': True,
-        'keywords': ['precio', 'pvf', 'p_unit', 'importe', 'costo'],
+        'keywords': ['precio', 'pvf', 'p_unit', 'importe', 'costo',
+                     'valor', 'precio_neto', 'p_lista', 'precio_lista', 'lista', 'precio_oferta'],
         'ejemplos': ['1.234,56', '4500', '$ 1500.50'],
     },
     'descuento_psl': {
@@ -91,7 +93,8 @@ CAMPOS = {
         'tipo': 'pct',
         'nucleo': True,
         'keywords': ['descuento', 'dto', 'desc', 'desc_pct', 'porcentaje', 'pct',
-                     'rebaja', 'descuento_psl', 'descuento_psf', 'dscto', 'descto'],
+                     'rebaja', 'descuento_psl', 'descuento_psf', 'dscto', 'descto',
+                     'bonif', 'bonificacion', 'bonificion', 'bonificacion_psl'],
         'regex_valor': r'^\d{1,2}(?:[.,]\d{1,3})?\s*%?$',
         'ejemplos': ['25', '7,5%', '0.20'],
     },
@@ -119,7 +122,8 @@ CAMPOS = {
         'tipo': 'int',
         'nucleo': False,
         'keywords': ['minimo', 'min_unidades', 'unidades_minima', 'unidades_min',
-                     'min_cantidad', 'cant_min', 'cantidad_min', 'unid_min', 'minima'],
+                     'min_cantidad', 'cant_min', 'cantidad_min', 'unid_min', 'minima',
+                     'cant_minima', 'requerido', 'min_compra'],
         'ejemplos': ['12', '50', '100'],
     },
     'precio_publico': {
@@ -185,6 +189,15 @@ CAMPOS = {
         'nucleo': False,
         'keywords': ['vencimiento', 'venc', 'vto', 'expiracion'],
         'ejemplos': ['12/2026', '31/12/2025'],
+    },
+    'vigencia_hasta': {
+        'label': 'Vigencia hasta',
+        'descripcion': 'Fecha hasta la que aplica la oferta/descuento',
+        'tipo': 'date',
+        'nucleo': False,
+        'keywords': ['vigencia', 'vigencia_hasta', 'hasta', 'fecha_hasta',
+                     'valido_hasta', 'valid_hasta', 'oferta_hasta', 'expira'],
+        'ejemplos': ['31/05/2026', '30/06/2026'],
     },
 }
 

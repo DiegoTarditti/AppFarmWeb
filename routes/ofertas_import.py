@@ -342,7 +342,7 @@ def _previsualizar_pdf(path):
         sample_rows=rows[:10] if rows else None,
         candidatos=['ean', 'codigo', 'descripcion', 'unidades_minima',
                     'precio', 'descuento_psl', 'rentabilidad', 'plazo_pago',
-                    'grupo_id'],
+                    'grupo_id', 'vigencia_hasta'],
     )
 
     return {
@@ -411,7 +411,7 @@ def _previsualizar_imagen(path):
         sample_rows=rows[:10] if rows else None,
         candidatos=['ean', 'codigo', 'descripcion', 'unidades_minima',
                     'precio', 'descuento_psl', 'rentabilidad', 'plazo_pago',
-                    'grupo_id'],
+                    'grupo_id', 'vigencia_hasta'],
     )
 
     return {

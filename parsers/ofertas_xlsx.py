@@ -150,30 +150,52 @@ def _coerce_row(row, mapa):
 
 
 def _parse_heuristico_sin_header(rows):
-    """Fallback: si no encontramos headers, detectar columnas por el contenido
-    de las primeras filas — la columna que tenga EAN-like values es la EAN.
-    Mantiene retrocompatibilidad con el parser anterior (ean + descripción)."""
-    ean_col = None
-    desc_col = None
-    for row in rows[:10]:
-        if not row:
-            continue
-        for ci, val in enumerate(row):
-            if _is_ean_value(val) and ean_col is None:
-                ean_col = ci
-            elif ean_col is not None and ci != ean_col and val and not _is_ean_value(val):
-                if desc_col is None:
-                    desc_col = ci
+    """Fallback: si no encontramos headers, detectar columnas por contenido.
+
+    Usa field_inference para clasificar cada columna por los valores que
+    contiene. Detecta EAN, descripción, porcentajes (descuento/rentabilidad),
+    enteros cortos (mínimo), y dinero (precio).
+    """
+    import field_inference as fi
+
+    data_rows = [r for r in rows[:20] if r and any(v is not None for v in r)]
+    if not data_rows:
+        return {'ean': 0, 'descripcion': 1}, None
+
+    n_cols = max(len(r) for r in data_rows)
+    candidatos = ['ean', 'codigo', 'descripcion', 'unidades_minima',
+                  'precio', 'descuento_psl', 'rentabilidad', 'grupo_id']
+
+    mapa = fi.inferir_columnas(
+        headers=[''] * n_cols,
+        sample_rows=data_rows,
+        candidatos=candidatos,
+    )
+
+    # Garantizar EAN y descripción mínimos si no se detectaron
+    usadas = set(mapa.values())
+    if 'ean' not in mapa:
+        for ci in range(n_cols):
+            if ci not in usadas:
+                sample = [r[ci] if ci < len(r) else None for r in data_rows]
+                if any(_is_ean_value(v) for v in sample):
+                    mapa['ean'] = ci
+                    usadas.add(ci)
                     break
-        if ean_col is not None and desc_col is not None:
-            break
+        else:
+            mapa['ean'] = 0
+            usadas.add(0)
+    if 'descripcion' not in mapa:
+        for ci in range(n_cols):
+            if ci not in usadas:
+                sample = [r[ci] if ci < len(r) else None for r in data_rows]
+                if any(isinstance(v, str) and len(v) > 5 for v in sample):
+                    mapa['descripcion'] = ci
+                    break
+        else:
+            mapa['descripcion'] = 1 if mapa.get('ean') != 1 else 2
 
-    if ean_col is None:
-        ean_col, desc_col = 0, 1
-    if desc_col is None:
-        desc_col = 1 if ean_col != 1 else 2
-
-    return {'ean': ean_col, 'descripcion': desc_col}, None
+    return mapa, None
 
 
 def parse_ofertas_xlsx(path):
