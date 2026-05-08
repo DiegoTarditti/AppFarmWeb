@@ -1286,32 +1286,81 @@ function _renderCandidatosSlot(slot, itemIdx, candidatos) {
     });
 }
 
-async function prefetchCandidatosBulk() {
+async function prefetchCandidatosBulk(onProgress) {
     const labId = document.getElementById('lab-select').value;
     const paraFetch = _items
         .map((it, i) => ({idx: i, descripcion: it.descripcion || '', ean: it.ean || '', codigo: it.codigo || ''}))
         .filter((_, i) => _items[i]._status === 'not_found' && !_items[i]._sin_candidatos);
     if (!paraFetch.length) return;
+    // Una sola request: con el inverted index del backend, 1000+ items
+    // tardan ~5-10s. Sin chunking porque chunkear forzaba cargar el pool
+    // 11 veces para 1056 items.
+    const labIdInt = labId ? parseInt(labId, 10) : null;
+    const total = paraFetch.length;
+    if (typeof onProgress === 'function') onProgress(0, total);
+    let autoMatched = 0;
     try {
         const r = await fetch('/api/ofertas/import-candidatos-bulk', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
-            body: JSON.stringify({
-                items: paraFetch,
-                laboratorio_id: labId ? parseInt(labId, 10) : null,
-                top: 8,
-            }),
+            body: JSON.stringify({items: paraFetch, laboratorio_id: labIdInt, top: 8}),
         });
         const data = await r.json();
         if (data.candidatos_por_idx) {
             for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
-                _candidatosBulk[parseInt(k, 10)] = v;
+                const idx = parseInt(k, 10);
+                _candidatosBulk[idx] = v;
+                // Auto-match si el top candidato pasa el threshold.
+                if (autoMatchTop(idx, v)) autoMatched++;
             }
         }
     } catch (err) {
         console.warn('Prefetch candidatos bulk falló:', err.message);
     }
+    if (typeof onProgress === 'function') onProgress(total, total);
+    if (autoMatched > 0) {
+        recalcularStats();
+        actualizarConfirmCount();
+        console.info(`Auto-matched ${autoMatched} items con score >= ${AUTO_MATCH_THRESHOLD}`);
+    }
+}
+
+// Marca un item como vinculado automáticamente. Reglas:
+//   1. Si hay 1 solo candidato (post-dedup) → auto-match (es la única opción).
+//   2. Si el top score >= AUTO_MATCH_THRESHOLD → auto-match.
+//   3. Si hay empate entre top y 2do candidato → solo si tienen mismo alfa
+//      (= mismo producto duplicado, prioriza el local).
+const AUTO_MATCH_THRESHOLD = 0.9;
+function autoMatchTop(itemIdx, candidatos) {
+    if (!candidatos || !candidatos.length) return false;
+    const top = candidatos[0];
+    let motivoLabel = '';
+    if (candidatos.length === 1) {
+        // Único candidato disponible — es la única opción posible.
+        motivoLabel = `Auto-match (único candidato, score ${top.score.toFixed(2)})`;
+    } else if (top.score >= AUTO_MATCH_THRESHOLD) {
+        // Top con score alto. Cuidado con empates ambiguos.
+        if (candidatos[1].score === top.score) {
+            const a = (top.codigo_alfabeta || '').trim();
+            const b = (candidatos[1].codigo_alfabeta || '').trim();
+            if (!(a && b && a === b)) return false;  // empate ambiguo
+        }
+        motivoLabel = `Auto-match (score ${top.score.toFixed(2)})`;
+    } else {
+        return false;
+    }
+    const it = _items[itemIdx];
+    if (!it || it._status !== 'not_found') return false;
+    it._status = 'manual_ok';
+    it._producto_id = top.producto_id || null;
+    it._observer_id = top.observer_id || null;
+    it._match_descripcion_local = top.descripcion || '';
+    it._estrategia = 'auto_match';
+    it._motivo = `${motivoLabel}: "${(top.descripcion || '').substring(0, 80)}"`;
+    if (!it.ean && top.codigo_barra) it.ean = top.codigo_barra;
+    if (!it.codigo && top.codigo_alfabeta) it.codigo = top.codigo_alfabeta;
+    return true;
 }
 
 async function buscarCandidatos(itemIdx) {
@@ -1582,21 +1631,45 @@ function expandirTodosLosBuscarSimilar() {
         alert('Todos los items ya tienen sus candidatos cargados o vinculados.');
         return;
     }
-    // Si tenemos datos del bulk → renderizar directamente (sin fetch)
-    if (Object.keys(_candidatosBulk).length > 0) {
+    const btn = document.getElementById('btn-expandir-todos');
+    const renderPendientes = () => {
         pendientes.forEach(i => {
             const slot = document.getElementById('candidatos-' + i);
             if (slot) _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
         });
-    } else {
-        // Bulk no terminó: disparar una llamada bulk única ahora
-        prefetchCandidatosBulk().then(() => {
-            pendientes.forEach(i => {
-                const slot = document.getElementById('candidatos-' + i);
-                if (slot) _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
-            });
-        });
+    };
+    // Si tenemos datos del bulk → renderizar directamente (sin fetch).
+    if (Object.keys(_candidatosBulk).length >= pendientes.length) {
+        renderPendientes();
+        return;
     }
+    // Bulk no terminó (o no precargó suficiente): correr ahora con progreso.
+    if (btn) btn.disabled = true;
+    const onProgress = (done, total) => {
+        if (btn) btn.textContent = `🔍 Buscando… ${done}/${total}`;
+        // Renderizar progresivamente lo que ya tenemos
+        pendientes.forEach(i => {
+            if (_candidatosBulk[i] === undefined) return;
+            const slot = document.getElementById('candidatos-' + i);
+            if (slot && !slot.innerHTML.trim()) {
+                _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
+            }
+        });
+    };
+    prefetchCandidatosBulk(onProgress).then(() => {
+        renderPendientes();
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔍 Expandir todos';
+        }
+    }).catch(err => {
+        console.error('Error en prefetch:', err);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔍 Expandir todos';
+        }
+        alert('Error buscando candidatos: ' + (err.message || 'desconocido'));
+    });
 }
 
 // ─── Normalización de descripciones ─────────────────────────────────────────

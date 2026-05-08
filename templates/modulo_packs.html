@@ -89,8 +89,8 @@
             <p id="imp-msg" class="text-xs mt-2 hidden"></p>
         </div>
 
-        <!-- Filtro por laboratorio -->
-        <div class="flex items-center gap-2 flex-wrap mb-4">
+        <!-- Filtros: lab pills + búsqueda + toggle sin equivalencia -->
+        <div class="flex items-center gap-2 flex-wrap mb-3">
             <span class="text-xs text-[#999] font-medium mr-1">Filtrar:</span>
             <button type="button" onclick="filtrarLab(null)" id="pill-todos"
                     class="pill-lab text-xs font-semibold px-3 py-1 rounded-full border transition-colors bg-brand text-brand-dark border-brand">
@@ -107,6 +107,17 @@
                 Sin laboratorio
             </button>
         </div>
+        <div class="flex items-center gap-2 flex-wrap mb-3">
+            <input type="text" id="search-input" oninput="filtrarBusqueda()" placeholder='Buscar por descripción o EAN — multi-token: "amox 500"'
+                   class="bg-white border border-[#e0e0e0] rounded-lg px-3 py-1.5 text-xs flex-1 min-w-[260px] max-w-[440px] focus:outline-none focus:ring-1 focus:ring-brand">
+            <label class="text-xs text-[#666] flex items-center gap-1.5 cursor-pointer select-none">
+                <input type="checkbox" id="chk-sin-equiv" onchange="filtrarBusqueda()"
+                       class="accent-amber-500">
+                <span>Solo packs sin equivalencia</span>
+                <span id="cnt-sin-equiv" class="ml-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"></span>
+            </label>
+            <span id="cnt-resultados" class="ml-auto text-xs text-[#999]"></span>
+        </div>
 
         <!-- Módulos -->
         <div id="modulos-container" class="space-y-1">
@@ -117,7 +128,8 @@
         {% if m.lista_nombre != ns.lista_actual %}
         {% set ns.lista_actual = m.lista_nombre %}
         {% set ns.lista_lab_id = m.lab_id %}
-        <div class="flex items-center gap-3 px-4 py-2.5 bg-[#1e3a5f] rounded-xl mt-5 mb-1"
+        <div class="lista-header flex items-center gap-3 px-3 py-1.5 bg-[#1e3a5f] rounded-lg mt-4 mb-1"
+             data-lista="{{ m.lista_nombre }}"
              data-lab-header="{{ m.lab_nombre if m.lab_nombre != '—' else '' }}">
             <svg class="w-4 h-4 text-white/60 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
@@ -175,9 +187,9 @@
 
         {# ── Pack (nivel 2) — omitir marcadores de lista ── #}
         {% if not m.is_lista_marker %}
-        <div class="bg-white border border-[#e0e0e0] rounded-xl overflow-hidden ml-4" id="modulo-{{ m.id }}" data-lab="{{ m.lab_nombre if m.lab_nombre != '—' else '' }}" data-lista="{{ m.lista_nombre }}">
+        <div class="modulo-block bg-white border border-[#e0e0e0] rounded-lg overflow-hidden ml-4" id="modulo-{{ m.id }}" data-lab="{{ m.lab_nombre if m.lab_nombre != '—' else '' }}" data-lista="{{ m.lista_nombre }}">
             <!-- Encabezado del pack -->
-            <div class="flex items-center gap-3 px-4 py-2 bg-[#fefce8] border-b border-[#fde68a] cursor-pointer select-none"
+            <div class="flex items-center gap-2 px-3 py-1.5 bg-[#fefce8] border-b border-[#fde68a] cursor-pointer select-none"
                  onclick="toggleModulo({{ m.id }})">
                 <svg id="arrow-{{ m.id }}" class="w-3 h-3 text-[#92400e] transition-transform flex-shrink-0"
                      fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,10 +235,13 @@
                 {% set es_pack = (mp.cantidad or 0) > 1 %}
                 {% set sin_equiv = es_pack and mp.ean_unidad == mp.ean_pack %}
                 <!-- Fila vista -->
-                <tr class="border-t border-[#f0f0f0] {% if es_pack %}bg-amber-50/40 hover:bg-amber-50/70{% else %}hover:bg-amber-50/30{% endif %}" id="pack-row-{{ mp.id }}">
-                    <td class="px-2 py-1.5 text-center">
+                <tr class="border-t border-[#f0f0f0] {% if es_pack %}bg-amber-50/40 hover:bg-amber-50/70{% else %}hover:bg-amber-50/30{% endif %} pack-tr"
+                    id="pack-row-{{ mp.id }}"
+                    data-search="{{ ((mp.desc_pack or '') ~ ' ' ~ (mp.desc_unidad or '') ~ ' ' ~ (mp.ean_pack or '') ~ ' ' ~ (mp.ean_unidad or '')) | lower }}"
+                    data-sin-equiv="{{ '1' if sin_equiv else '0' }}">
+                    <td class="px-2 py-1 text-center">
                         {% if es_pack %}
-                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-white text-[11px] font-bold"
+                            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold"
                                   title="Pack de {{ mp.cantidad }} unidades{% if sin_equiv %} · falta equivalencia{% endif %}">✓</span>
                             {% if sin_equiv %}
                             <div class="text-[9px] text-amber-700 font-semibold mt-0.5">revisar</div>
@@ -235,18 +250,33 @@
                             <span class="text-[#ddd]">—</span>
                         {% endif %}
                     </td>
-                    <td class="px-4 py-1.5 font-mono text-[#555]">{{ mp.ean_pack }}</td>
-                    <td class="px-3 py-1.5 text-[#1e1e1e]">{{ mp.desc_pack or '—' }}</td>
-                    <td class="px-3 py-1.5 font-mono text-[#555]">{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '—' }}</td>
-                    <td class="px-3 py-1.5 text-[#6f6f6f]">{{ mp.desc_unidad or '—' }}</td>
-                    <td class="px-3 py-1.5 text-center font-semibold text-brand">{{ mp.cant_modulo if mp.cant_modulo is not none else '—' }}</td>
-                    <td class="px-3 py-1.5 text-center text-[#555]">{{ mp.cantidad }}</td>
-                    <td class="px-3 py-1.5 text-center font-semibold text-[#1e1e1e]">
+                    <td class="px-3 py-1 font-mono text-[#555] text-[11px]">{{ mp.ean_pack }}</td>
+                    <td class="px-2 py-1 text-[#1e1e1e]">{{ mp.desc_pack or '—' }}</td>
+                    <td class="px-2 py-1 font-mono text-[#555] text-[11px]">{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '—' }}</td>
+                    <td class="px-2 py-1 text-[#6f6f6f]">{{ mp.desc_unidad or '—' }}</td>
+                    <td class="px-2 py-1 text-center font-semibold text-brand">{{ mp.cant_modulo if mp.cant_modulo is not none else '—' }}</td>
+                    <td class="px-2 py-1 text-center text-[#555]">{{ mp.cantidad }}</td>
+                    <td class="px-2 py-1 text-center font-semibold text-[#1e1e1e]">
                         {% if mp.cant_modulo is not none %}{{ mp.cant_modulo * mp.cantidad }}{% else %}—{% endif %}
                     </td>
-                    <td class="px-3 py-1.5 text-center text-[#555]">{{ '%.1f' % mp.desc_pct if mp.desc_pct is not none else '—' }}</td>
+                    <td class="px-2 py-1 text-center text-[#555]">{{ '%.1f' % mp.desc_pct if mp.desc_pct is not none else '—' }}</td>
                     <td class="px-2 py-1.5 text-center">
                         <div class="flex items-center justify-center gap-1">
+                            {# Chart usa ean_unidad (la equivalencia) — los packs no tienen ventas
+                               propias, las ventas viven en el EAN de la unidad. Si no hay equiv
+                               (sin_equiv), el boton queda deshabilitado para evitar charts vacios. #}
+                            {% if not sin_equiv %}
+                            <button type="button" onclick="openChart('{{ mp.ean_unidad }}')"
+                                    class="w-5 h-5 flex items-center justify-center rounded text-[#bbb] hover:text-amber-500 hover:bg-amber-50 transition-colors"
+                                    title="Gráfico histórico de ventas (EAN unidad: {{ mp.ean_unidad }})">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                            </button>
+                            {% else %}
+                            <span class="w-5 h-5 flex items-center justify-center rounded text-[#ddd] cursor-not-allowed"
+                                  title="Sin equivalencia — no hay datos de ventas">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                            </span>
+                            {% endif %}
                             {% if sin_equiv %}
                             <button type="button" data-desc="{{ mp.desc_pack or '' }}"
                                     onclick="editPackRow({{ mp.id }}, this.dataset.desc)"
@@ -356,12 +386,28 @@
                     <td class="px-3 py-1.5 text-center font-semibold text-brand editable-pack cursor-pointer hover:bg-amber-100"
                         id="td-cantidad-{{ mp.id }}" data-id="{{ mp.id }}" data-field="cantidad">{{ mp.cantidad }}</td>
                     <td class="px-2 py-1.5 text-center">
-                        <button onclick="deletePack({{ mp.id }})"
-                                class="w-5 h-5 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors mx-auto">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                            </svg>
-                        </button>
+                        <div class="flex items-center justify-center gap-1">
+                            {# Igual que arriba: chart usa ean_unidad (la equivalencia). #}
+                            {% set _orphan_sin_equiv = (mp.cantidad or 0) > 1 and mp.ean_unidad == mp.ean_pack %}
+                            {% if not _orphan_sin_equiv %}
+                            <button type="button" onclick="openChart('{{ mp.ean_unidad }}')"
+                                    class="w-5 h-5 flex items-center justify-center rounded text-[#bbb] hover:text-amber-500 hover:bg-amber-50 transition-colors"
+                                    title="Gráfico histórico (EAN unidad: {{ mp.ean_unidad }})">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                            </button>
+                            {% else %}
+                            <span class="w-5 h-5 flex items-center justify-center rounded text-[#ddd]"
+                                  title="Pack sin equivalencia — sin datos de ventas">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+                            </span>
+                            {% endif %}
+                            <button onclick="deletePack({{ mp.id }})"
+                                    class="w-5 h-5 flex items-center justify-center rounded text-[#ccc] hover:text-red-500 hover:bg-red-50 transition-colors">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -370,6 +416,9 @@
             </div>
         </div>
         {% endif %}
+
+        {# Modal de gráfico histórico (define openChart globalmente) #}
+        {% include '_grafico_historico.html' %}
 
         {% if not modulos and not orphan_packs %}
         <div class="text-center py-16 text-[#bbb] text-sm">
@@ -433,6 +482,26 @@
 
 {% block after_main %}
 <script>
+// ── Auto-abrir panel via #hash ───────────────────────────────────────
+// /modulo-packs#importar abre el panel de importar Excel.
+// /modulo-packs#nueva abre el panel de nueva lista.
+// Útil para que los botones de /modulo-packs/vista no requieran 2 clicks.
+(function autoAbrirPorHash() {
+    const h = (window.location.hash || '').toLowerCase();
+    if (!h) return;
+    const target = h === '#importar' ? 'importar-panel'
+                 : h === '#nueva' ? 'nuevo-modulo-panel'
+                 : null;
+    if (!target) return;
+    document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById(target);
+        if (el) {
+            el.classList.remove('hidden');
+            el.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+    });
+})();
+
 // ── Desplegables ────────────────────────────────────────────────────
 function buildDropdownItems(type, items) {
     const dd = document.getElementById('dd-' + type);
@@ -547,6 +616,55 @@ function selectEditEan(packId, ean, desc) {
     document.getElementById('edit-unidad-label-' + packId).title = desc;
     document.getElementById('dd-edit-unidad-' + packId).classList.add('hidden');
 }
+
+// ── Búsqueda + filtro sin equivalencia ──────────────────────────────
+function filtrarBusqueda() {
+    const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+    const soloSinEq = document.getElementById('chk-sin-equiv')?.checked;
+    const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+    const matchTokens = (txt) => tokens.every(t => txt.includes(t));
+
+    let visiblesPacks = 0;
+    let totalSinEq = 0;
+
+    // Iterar packs
+    document.querySelectorAll('.pack-tr').forEach(tr => {
+        const txt = tr.dataset.search || '';
+        const sinEq = tr.dataset.sinEquiv === '1';
+        if (sinEq) totalSinEq++;
+        let visible = true;
+        if (soloSinEq && !sinEq) visible = false;
+        if (visible && tokens.length && !matchTokens(txt)) visible = false;
+        tr.style.display = visible ? '' : 'none';
+        if (visible) visiblesPacks++;
+    });
+
+    // Ocultar módulos sin filas visibles
+    document.querySelectorAll('.modulo-block').forEach(mod => {
+        const filasVisibles = mod.querySelectorAll('.pack-tr:not([style*="display: none"])').length;
+        mod.style.display = filasVisibles > 0 ? '' : 'none';
+    });
+
+    // Ocultar headers de lista que ya no tienen módulos visibles debajo
+    document.querySelectorAll('.lista-header').forEach(h => {
+        let next = h.nextElementSibling;
+        let tieneVisibles = false;
+        while (next && !next.classList.contains('lista-header')) {
+            if (next.classList.contains('modulo-block') && next.style.display !== 'none') {
+                tieneVisibles = true; break;
+            }
+            next = next.nextElementSibling;
+        }
+        h.style.display = tieneVisibles ? '' : 'none';
+    });
+
+    // Contadores
+    const cntRes = document.getElementById('cnt-resultados');
+    if (cntRes) cntRes.textContent = q || soloSinEq ? `${visiblesPacks} pack${visiblesPacks === 1 ? '' : 's'}` : '';
+    const cntSinEq = document.getElementById('cnt-sin-equiv');
+    if (cntSinEq) cntSinEq.textContent = totalSinEq > 0 ? totalSinEq : '';
+}
+document.addEventListener('DOMContentLoaded', filtrarBusqueda);  // inicializa contador
 
 // ── Módulos: toggle / crear / eliminar ──────────────────────────────
 function toggleModulo(id) {
@@ -711,10 +829,15 @@ function actualizarNombreLista() {
 }
 // Inicializar con la fecha actual y escuchar cambios del partner_selector
 document.addEventListener('DOMContentLoaded', () => {
-    // Restaurar filtro de lab persistido
+    // Filtro de lab: ?lab=X en URL > localStorage
     try {
-        const saved = localStorage.getItem('modulo_packs_lab');
-        if (saved) filtrarLab(saved);
+        const urlLab = new URLSearchParams(window.location.search).get('lab');
+        if (urlLab) {
+            filtrarLab(urlLab);
+        } else {
+            const saved = localStorage.getItem('modulo_packs_lab');
+            if (saved) filtrarLab(saved);
+        }
     } catch(e) {}
     actualizarNombreLista();
     const w = document.getElementById('imp-lab-wrap');

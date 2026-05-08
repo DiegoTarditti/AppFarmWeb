@@ -1002,8 +1002,9 @@ function renderModulosRaw() {
             const _pack = MODULO_PACKS[it.ean];
             const esPack = !!_pack;
             const unidadesPorSlot = _pack ? it.cant * _pack.cantidad : it.cant;
-            const cantPedida = _pack ? (pedidoQty[_pack.ean_unidad] ?? 0) : (pedidoQty[it.ean] ?? 0);
-            const rot = pedidoRot[_pack ? _pack.ean_unidad : it.ean] || {};
+            const eanLookup = _pack ? _pack.ean_unidad : it.ean;
+            const cantPedida = pedidoQty[eanLookup] ?? 0;
+            const rot = pedidoRot[eanLookup] || {};
             const rotBadge = rotBadgeHtml(rot.rotacion, rot.avg);
             const packBadge = esPack
                 ? `<span class="text-emerald-600 font-bold" title="Pack: ${_pack.cantidad} unid./${it.cant}">✓</span>`
@@ -1011,9 +1012,21 @@ function renderModulosRaw() {
             const unModCell = esPack
                 ? `<span class="font-semibold text-emerald-700">${unidadesPorSlot}</span>`
                 : `<span class="text-[#999]">${unidadesPorSlot}</span>`;
+            // Para packs, mostrar la equivalencia debajo del nombre del pack
+            // (el chart, cant.pedida y rot ya viven en el EAN unidad).
+            // Descripción: pedidoNom > _pack.desc_unidad (backend) > '(sin descripción)'.
+            // Código alfabeta de la unidad si está disponible.
+            let equivLine = '';
+            if (esPack) {
+                const _eu = _pack.ean_unidad;
+                const _descU = pedidoNom[_eu] || _pack.desc_unidad || '(sin descripción)';
+                const _alfaU = _pack.codigo_alfabeta_unidad
+                    ? `<span class="text-[10px] text-emerald-700 font-semibold ml-1">[${_pack.codigo_alfabeta_unidad}]</span>` : '';
+                equivLine = `<div class="text-[10px] text-[#888] mt-0.5 ml-1">↳ <span class="font-mono text-[10px] text-[#aaa]">${_eu}</span>${_alfaU} · ${_descU}</div>`;
+            }
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
-                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(it.ean)}${ALFA_BTN(it.descripcion)}${it.descripcion}</td>
+                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(eanLookup)}${ALFA_BTN(it.descripcion)}${it.descripcion}${equivLine}</td>
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
