@@ -44,7 +44,8 @@ _STOPWORDS = {
     'cap', 'caps', 'capsula', 'capsulas',
     'tab', 'tableta', 'tabletas',
     'amp', 'ampolla', 'ampollas',
-    'jbe', 'jarabe', 'crema', 'gel', 'pomada',
+    'jbe', 'jarabe', 'crema', 'cre', 'gel', 'pomada',
+    'ung', 'unguento', 'unguentos',
     'sup', 'supositorio', 'supositorios',
     'ovu', 'ovulo', 'ovulos',
     'tampon', 'tampones',
@@ -54,7 +55,15 @@ _STOPWORDS = {
     'gts', 'gotas',
     'sol', 'solucion',
     'sus', 'susp', 'suspension',
-    'emul', 'emulsion',
+    'emul', 'emu', 'emulsion',
+    'lec', 'leche',  # leche limpiadora/tonificante
+    # Variantes oftálmicas (col = colirio, oft = oftálmico)
+    'col', 'colir', 'colirios',
+    'oft', 'oftal', 'oftalmico', 'oftalmica', 'oftalmicos', 'oftalmicas',
+    # Otras formas comunes
+    'nas', 'nasal', 'nasales',
+    'aur', 'auricular', 'auriculares',
+    'derm', 'dermat', 'dermatologico',
     'inh', 'inhalador', 'inhalacion', 'aerosol',
     'spray',
     'sobre', 'sobres', 'frasco', 'frascos',
@@ -77,11 +86,22 @@ _STOPWORDS = {
     # en bulk match y dejaba ítems como not_found erróneamente.
     'blister', 'blisters', 'bl',
     'ps', 'p',                              # p.bl. (perlas blister)
-    # Unidades de medida
-    'mg', 'gr', 'g', 'ml', 'l', 'mcg', 'ui', 'mui', 'kg',
+    # Unidades de medida (incluyendo plurales y variantes que aparecen en
+    # listas de proveedor: "x 400 grs", "x 100 gms", "x 500 ml").
+    # NO incluir 'lt' — en farma argentina suele ser variante de marca
+    # (DERMAGLOS LT, etc.) y filtrarlo achica el discriminador.
+    'mg', 'mgs', 'gr', 'grs', 'g', 'gs', 'gm', 'gms',
+    'ml', 'mls', 'l', 'lts',
+    'mcg', 'mcgs', 'ui', 'mui', 'kg', 'kgs',
+    'cc',  # cc = cm³ en jarabes
     # Conectores/cantidad
     'x', 'un', 'unid', 'unidades', 'uds',
     'oral', 'tópico', 'topico', 'topica', 'sublingual',
+    # Formas farmacéuticas comunes en proveedores (jga = jeringa, prell = prellenada)
+    'jga', 'jeringa', 'jeringas', 'jer',
+    'prell', 'prellenada', 'prellenadas', 'prellenado', 'prellenados',
+    'env', 'envase', 'envases',
+    'fco', 'fcos',
 }
 
 
@@ -100,6 +120,15 @@ def normalizar_texto(s) -> str:
         return ''
     s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
     s = s.lower()
+    # Normalizar decimales ANTES de eliminar puntos: "0.5" y "0.50" deben ser
+    # equivalentes. Strip trailing zeros del decimal y reemplazar el "." por
+    # "pp" (separador único que sobrevive al replace de no-alphanumeric).
+    # Asi: 0.5 → 0pp5, 0.50 → 0pp5, 0.05 → 0pp05 (sin trailing zero).
+    # No colisiona con enteros: 15 ≠ 1pp5.
+    def _norm_decimal(m):
+        intp, decp = m.group(1), m.group(2).rstrip('0')
+        return f'{intp}pp{decp}' if decp else intp
+    s = re.sub(r'(\d+)\.(\d+)', _norm_decimal, s)
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
     # Merge letra-vitamina + número adyacentes ("b 12" → "b12").
     s = re.sub(r'\b([bcdek])\s+(\d+)\b', r'\1\2', s)
