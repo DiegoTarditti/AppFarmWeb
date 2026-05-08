@@ -702,35 +702,25 @@ def init_app(app):
             })
 
         with database.get_db() as session:
-            if modo == 'drog':
-                # Fast path: solo match exacto por EAN/código en `productos`.
-                # No fuzzy ni fallback observer (que sin lab tokeniza 122K
-                # productos y clava la request). Los items sin match quedan
-                # como tales y el usuario puede mandar match manual.
-                results = [
-                    pm.match_producto(
-                        ean=it.get('ean'),
-                        codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
-                        descripcion=None,  # desactiva fuzzy descripción
-                        laboratorio_id=None,
-                        target='producto',
-                        incluir_observer=False,
-                        incluir_candidatos=False,
-                        precio_referencia=it.get('precio'),
-                        session=session,
-                    )
-                    for it in items_para_match
-                ]
-            else:
-                results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
+            # match_productos_bulk hace el flujo completo (EAN → alfa → fuzzy
+            # descripción → fallback observer) reusando una sola precarga de
+            # pools. Funciona igual con o sin laboratorio_id; sin lab los
+            # pools son globales pero solo se preloadan una vez por request.
+            # Antes el modo drog tenía un fast-path que skipeaba fuzzy "por
+            # performance", pero eso dejaba items con score 1.0 sin
+            # auto-match. Volvemos al flujo unificado.
+            results = pm.match_productos_bulk(
+                items_para_match,
+                laboratorio_id=lab_id,  # None en modo drog → busca global
+                session=session,
+            )
 
             # Capa 2 — match dimensional para los no encontrados.
             # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
             # y los cruza contra ProductoAtributo. Funciona sin EAN.
-            # En modo drog la skipeamos también para velocidad.
             from catalogacion import extraer_de_descripcion, match_dimensional_candidatos
             dim_matches = {}  # idx → lista de candidatos dimensionales
-            if modo != 'drog':
+            if True:
                 for idx_d, res_d in enumerate(results):
                     if res_d.producto is not None:
                         continue

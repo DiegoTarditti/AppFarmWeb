@@ -1332,19 +1332,28 @@ async function prefetchCandidatosBulk(onProgress) {
 }
 
 // Marca un item como vinculado automáticamente si el top candidato tiene
-// score 1.0 (jaccard perfecto). Devuelve true si auto-matcheó.
+// score >= AUTO_MATCH_THRESHOLD. Devuelve true si auto-matcheó.
+const AUTO_MATCH_THRESHOLD = 0.9;
 function autoMatchTop(itemIdx, candidatos) {
     if (!candidatos || !candidatos.length) return false;
     const top = candidatos[0];
-    if (top.score < 1.0) return false;
+    if (top.score < AUTO_MATCH_THRESHOLD) return false;
+    // Si hay otro candidato con el MISMO score, dudoso — no auto-match.
+    if (candidatos.length > 1 && candidatos[1].score === top.score) {
+        // Excepción: si ambos son alfas iguales (mismo producto en local +
+        // observer), prioriza el local (primero por orden) sin marcar dudoso.
+        const a = (top.codigo_alfabeta || '').trim();
+        const b = (candidatos[1].codigo_alfabeta || '').trim();
+        if (!(a && b && a === b)) return false;
+    }
     const it = _items[itemIdx];
     if (!it || it._status !== 'not_found') return false;
     it._status = 'manual_ok';
     it._producto_id = top.producto_id || null;
     it._observer_id = top.observer_id || null;
     it._match_descripcion_local = top.descripcion || '';
-    it._estrategia = 'auto_match_score_perfecto';
-    it._motivo = `Auto-match (score 1.0): "${(top.descripcion || '').substring(0, 80)}"`;
+    it._estrategia = 'auto_match_score';
+    it._motivo = `Auto-match (score ${top.score.toFixed(2)}): "${(top.descripcion || '').substring(0, 80)}"`;
     if (!it.ean && top.codigo_barra) it.ean = top.codigo_barra;
     if (!it.codigo && top.codigo_alfabeta) it.codigo = top.codigo_alfabeta;
     return true;
