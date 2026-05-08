@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mock — Emerald / Gradient</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep:    #07241C;
+    --bg:         #0A2F25;
+    --surface:    #103D31;
+    --surface-2:  #164A3C;
+    --line:       rgba(95,230,188,.12);
+    --line-2:     rgba(95,230,188,.22);
+    --mint:       #5FE6BC;
+    --mint-deep:  #10B981;
+    --mint-bright:#34D399;
+    --orange:     #FB923C;
+    --orange-deep:#EA580C;
+    --text:       #ECFDF5;
+    --text-mute:  #86A89C;
+    --text-soft:  #B8D4C9;
+  }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg-deep); color: var(--text); }
+  .display { font-family: 'Space Grotesk'; letter-spacing:-.02em; }
+
+  /* Sidebar */
+  .nav-item { transition: all .15s; color: var(--text-mute); }
+  .nav-item:hover { background: rgba(95,230,188,.06); color: var(--text); }
+  .nav-item.active {
+    background: linear-gradient(90deg, rgba(95,230,188,.15) 0%, rgba(95,230,188,.02) 100%);
+    color: var(--mint);
+    border-left: 2px solid var(--mint);
+    font-weight: 600;
+  }
+
+  /* Topbar */
+  .topbar { background: rgba(7,36,28,.6); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+  .badge-prod { background: linear-gradient(135deg, var(--mint) 0%, var(--mint-deep) 100%); color: var(--bg-deep); }
+
+  /* HERO con gradient + formas geométricas */
+  .hero {
+    position: relative;
+    background: linear-gradient(135deg, var(--bg) 0%, var(--surface) 60%, var(--surface-2) 100%);
+    border: 1px solid var(--line-2);
+    border-radius: 20px;
+    padding: 36px 40px;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,.3), 0 0 0 1px rgba(95,230,188,.05) inset;
+  }
+  .hero::before {
+    content:''; position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 90% -10%, rgba(95,230,188,.18), transparent 40%),
+      radial-gradient(circle at 110% 110%, rgba(16,185,129,.12), transparent 50%);
+    pointer-events:none;
+  }
+
+  /* Geometría: cuadrados rotados / círculos */
+  .geo-shapes { position:absolute; right:-10px; top:50%; transform:translateY(-50%); display:flex; gap:8px; opacity:.85; }
+  .geo-shapes .geo {
+    width:60px; height:60px; border-radius:14px;
+    background: linear-gradient(135deg, var(--mint) 0%, var(--mint-deep) 100%);
+    box-shadow: 0 8px 24px rgba(16,185,129,.4);
+  }
+  .geo-shapes .geo:nth-child(1) { transform: rotate(15deg); }
+  .geo-shapes .geo:nth-child(2) { transform: rotate(-10deg) translateY(-12px); border-radius:50%; background: linear-gradient(135deg, var(--mint-bright) 0%, var(--mint) 100%); }
+  .geo-shapes .geo:nth-child(3) { transform: rotate(25deg) translateY(8px); background: linear-gradient(135deg, #34D399 0%, #059669 100%); }
+  .geo-shapes .geo:nth-child(4) { transform: rotate(-5deg); border-radius:50%; width:48px; height:48px; background: var(--surface-2); border:2px solid var(--mint); box-shadow:none; }
+
+  /* Cards */
+  .action-card {
+    background: linear-gradient(135deg, var(--surface) 0%, var(--bg) 100%);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px;
+    transition: all .25s cubic-bezier(.4,0,.2,1);
+    position: relative;
+    overflow: hidden;
+  }
+  .action-card::after {
+    content:''; position:absolute; top:0; right:0;
+    width:100px; height:100px;
+    background: radial-gradient(circle, rgba(95,230,188,.12), transparent 70%);
+    transform: translate(40%,-40%);
+    pointer-events:none;
+    transition: opacity .25s;
+    opacity:0;
+  }
+  .action-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--mint);
+    box-shadow: 0 12px 32px -8px rgba(95,230,188,.25), 0 0 0 1px rgba(95,230,188,.2) inset;
+  }
+  .action-card:hover::after { opacity:1; }
+
+  .action-card.featured {
+    background: linear-gradient(135deg, var(--mint) 0%, var(--mint-deep) 100%);
+    border-color: var(--mint-bright);
+    color: var(--bg-deep);
+  }
+  .action-card.featured .desc { color: rgba(7,36,28,.7); }
+  .action-card.featured .icon-tile { background: rgba(7,36,28,.15); color: var(--bg-deep); }
+
+  .icon-tile {
+    display:flex;align-items:center;justify-content:center;
+    width:42px;height:42px;border-radius:11px;
+    background: rgba(95,230,188,.1);
+    color: var(--mint);
+    font-size:18px;
+    border: 1px solid var(--line-2);
+    transition: all .25s;
+  }
+  .action-card:hover .icon-tile { background: rgba(95,230,188,.2); transform: scale(1.05); }
+  .icon-tile.warn { background: rgba(251,146,60,.12); color: var(--orange); border-color: rgba(251,146,60,.25); }
+
+  /* Cat cards: gradient panel */
+  .cat-card {
+    position:relative;
+    background: linear-gradient(135deg, var(--surface) 0%, var(--bg) 100%);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 24px;
+    transition: all .2s;
+    overflow:hidden;
+  }
+  .cat-card::before {
+    content:''; position:absolute; top:0; right:0; width:140px; height:140px;
+    background: radial-gradient(circle, rgba(95,230,188,.15), transparent 70%);
+    transform: translate(40%, -40%);
+  }
+  .cat-card:hover { border-color: var(--mint); box-shadow: 0 8px 28px -8px rgba(95,230,188,.3); }
+  .cat-card.brand {
+    background: linear-gradient(135deg, var(--mint) 0%, var(--mint-deep) 100%);
+    border-color: var(--mint-bright);
+    color: var(--bg-deep);
+  }
+  .cat-card.brand::before { background: radial-gradient(circle, rgba(255,255,255,.2), transparent 70%); }
+  .cat-card.brand .desc { color: rgba(7,36,28,.75); }
+
+  .cat-icon {
+    width:46px; height:46px; border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px;
+    background: rgba(95,230,188,.1);
+    color: var(--mint);
+    border: 1px solid var(--line-2);
+  }
+  .cat-card.brand .cat-icon { background: rgba(7,36,28,.2); color: var(--bg-deep); border-color: rgba(7,36,28,.3); }
+
+  .quiet-link {
+    color: var(--text-soft); font-weight:500; font-size:12px;
+    padding:7px 12px; border-radius:8px;
+    background: rgba(95,230,188,.06);
+    border: 1px solid var(--line);
+    transition: all .15s;
+  }
+  .quiet-link:hover { background: rgba(95,230,188,.15); color: var(--mint); border-color: var(--line-2); }
+  .cat-card.brand .quiet-link { background: rgba(7,36,28,.15); color: var(--bg-deep); border-color: rgba(7,36,28,.2); }
+  .cat-card.brand .quiet-link:hover { background: var(--bg-deep); color: var(--mint); }
+
+  /* Primary CTA — naranja como en el referente */
+  .primary-btn {
+    background: linear-gradient(135deg, var(--orange) 0%, var(--orange-deep) 100%);
+    color: #FFF;
+    font-weight: 700;
+    padding: 11px 22px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 16px rgba(234,88,12,.4), 0 0 0 1px rgba(251,146,60,.3) inset;
+    transition: all .2s;
+    font-size: 14px;
+  }
+  .primary-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(234,88,12,.5), 0 0 0 1px rgba(251,146,60,.4) inset;
+  }
+
+  .section-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text-mute);
+    display:flex; align-items:center; gap:10px;
+  }
+  .section-label::before { content:''; width:20px; height:2px; background: var(--mint); border-radius:2px; }
+
+  .stat-num { font-family:'Space Grotesk'; font-weight: 700; letter-spacing:-.03em; }
+  .glow-text { background: linear-gradient(135deg, var(--mint) 0%, var(--mint-bright) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+</style>
+</head>
+<body>
+
+<div class="flex min-h-screen">
+
+  <!-- SIDEBAR -->
+  <aside class="w-64 flex flex-col py-4 px-3" style="background: linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%); border-right:1px solid var(--line);">
+    <div class="px-3 mb-6 pb-4" style="border-bottom:1px solid var(--line);">
+      <div class="flex items-center gap-2.5 mb-1">
+        <div class="w-9 h-9 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, var(--mint) 0%, var(--mint-deep) 100%); color: var(--bg-deep); font-weight:800;">📋</div>
+        <div>
+          <div class="display text-base font-bold leading-tight">Control Stock</div>
+          <div class="text-[10px] tracking-wider uppercase" style="color:var(--text-mute);">Farmacia Badía</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 text-sm">
+      <a class="nav-item active block px-3 py-2 rounded-lg mb-1">⌂ &nbsp;Inicio</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">▤ &nbsp;Dashboard</a>
+
+      <div class="text-[10px] font-semibold tracking-[.2em] uppercase px-3 mt-5 mb-2" style="color:var(--text-mute);">Gestión</div>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Proveedores</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Droguerías</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Laboratorios</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Ctas. Corrientes</a>
+
+      <div class="text-[10px] font-semibold tracking-[.2em] uppercase px-3 mt-5 mb-2" style="color:var(--text-mute);">Operaciones</div>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Documentos</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1 pl-6 text-xs" style="color:var(--text-mute);">↳ Convertir / aprender</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Control de Ingreso</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Obras Sociales</a>
+
+      <div class="text-[10px] font-semibold tracking-[.2em] uppercase px-3 mt-5 mb-2" style="color:var(--text-mute);">Compras</div>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Pedido de reposición</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Reposición grupal</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Procesos</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">◇ Productos</a>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 flex flex-col">
+
+    <!-- TOPBAR -->
+    <header class="h-14 topbar flex items-center justify-end px-8 gap-4 sticky top-0 z-10">
+      <span class="text-[10px] font-bold tracking-[.18em] badge-prod px-2.5 py-1 rounded">PROD</span>
+      <button class="relative" style="color:var(--text-soft);">
+        🔔
+        <span class="absolute -top-1 -right-1 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" style="background:var(--orange);color:#fff;">4</span>
+      </button>
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold display" style="background: linear-gradient(135deg, var(--mint) 0%, var(--mint-deep) 100%); color: var(--bg-deep);">A</div>
+        <div class="text-xs">
+          <div class="font-semibold">Administrador</div>
+          <div class="tracking-wider uppercase text-[10px]" style="color:var(--text-mute);">Admin</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 px-10 py-8 max-w-[1500px]">
+
+      <!-- HEADER -->
+      <div class="mb-7">
+        <div class="section-label mb-3">Inicio · Mayo 2026</div>
+        <h1 class="display text-4xl font-bold leading-tight">Bienvenido a <span class="glow-text">Farmacia Badía</span></h1>
+        <p class="text-sm mt-2" style="color:var(--text-soft);">Elegí por dónde trabajar hoy.</p>
+      </div>
+
+      <!-- HERO con gradient + formas -->
+      <div class="hero mb-9">
+        <div class="relative z-10 max-w-xl">
+          <div class="section-label mb-3">⚡ Acción del día</div>
+          <h2 class="display text-3xl font-bold leading-tight mb-3">
+            Pedido de <span class="glow-text">reposición</span>
+          </h2>
+          <p class="text-sm mb-6" style="color:var(--text-soft);">Armar pedidos a droguerías con countdown de cierre. Pantalla operativa diaria · cierra a las 17:30.</p>
+
+          <div class="flex items-center gap-4 mb-6">
+            <a href="#" class="primary-btn">Ir al pedido →</a>
+            <a href="#" class="text-sm font-medium" style="color:var(--text-soft);">Ver pendientes →</a>
+          </div>
+
+          <!-- Stats inline -->
+          <div class="grid grid-cols-3 gap-6 pt-5" style="border-top:1px solid var(--line);">
+            <div>
+              <div class="stat-num text-2xl glow-text">12</div>
+              <div class="text-[11px] uppercase tracking-wider mt-1" style="color:var(--text-mute);">Pedidos pendientes</div>
+            </div>
+            <div>
+              <div class="stat-num text-2xl" style="color:var(--orange);">3</div>
+              <div class="text-[11px] uppercase tracking-wider mt-1" style="color:var(--text-mute);">Reclamos abiertos</div>
+            </div>
+            <div>
+              <div class="stat-num text-2xl">$487K</div>
+              <div class="text-[11px] uppercase tracking-wider mt-1" style="color:var(--text-mute);">Compras del mes</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Formas geométricas -->
+        <div class="geo-shapes">
+          <div class="geo"></div>
+          <div class="geo"></div>
+          <div class="geo"></div>
+          <div class="geo"></div>
+        </div>
+      </div>
+
+      <!-- 3 CATEGORÍAS -->
+      <div class="section-label mb-4">Entidades</div>
+      <div class="grid grid-cols-3 gap-4 mb-9">
+
+        <div class="cat-card">
+          <div class="flex items-start justify-between mb-5 relative z-10">
+            <div class="cat-icon">🧪</div>
+            <span class="text-[10px] font-bold tracking-widest uppercase" style="color:var(--text-mute);">01</span>
+          </div>
+          <div class="display font-bold text-xl leading-tight mb-1 relative z-10">Laboratorios</div>
+          <div class="desc text-xs mb-5 relative z-10" style="color:var(--text-soft);">Módulos, ofertas y análisis de compra</div>
+          <div class="flex gap-1.5 flex-wrap relative z-10">
+            <a class="quiet-link" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Packs</a>
+          </div>
+        </div>
+
+        <div class="cat-card brand">
+          <div class="flex items-start justify-between mb-5 relative z-10">
+            <div class="cat-icon">💊</div>
+            <span class="text-[10px] font-bold tracking-widest uppercase opacity-70">02</span>
+          </div>
+          <div class="display font-bold text-xl leading-tight mb-1 relative z-10">Droguerías</div>
+          <div class="desc text-xs mb-5 relative z-10">Facturas, cuenta corriente y reclamos</div>
+          <div class="flex gap-1.5 flex-wrap relative z-10">
+            <a class="quiet-link" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Nueva</a>
+          </div>
+        </div>
+
+        <div class="cat-card">
+          <div class="flex items-start justify-between mb-5 relative z-10">
+            <div class="cat-icon">🏢</div>
+            <span class="text-[10px] font-bold tracking-widest uppercase" style="color:var(--text-mute);">03</span>
+          </div>
+          <div class="display font-bold text-xl leading-tight mb-1 relative z-10">Otros</div>
+          <div class="desc text-xs mb-5 relative z-10" style="color:var(--text-soft);">Proveedores que no son droguería ni lab</div>
+          <div class="flex gap-1.5 flex-wrap relative z-10">
+            <a class="quiet-link" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Reclamos</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACCIONES FRECUENTES -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="section-label">Acciones frecuentes</div>
+        <a href="#" class="text-xs font-medium" style="color:var(--text-mute);">⚙ Personalizar</a>
+      </div>
+
+      <div class="grid grid-cols-4 gap-3 mb-10">
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">📊</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Procesos de compra</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Análisis → pedido → factura</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">🛒</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Pedidos guardados</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Análisis convertidos en pedidos</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">📈</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Importar ofertas</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Excel del proveedor con descuentos</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">🏷️</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Productos</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Catálogo master con códigos y PVP</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3" style="background: linear-gradient(135deg, rgba(251,146,60,.15) 0%, rgba(234,88,12,.05) 100%); border-color: rgba(251,146,60,.3);">
+          <div class="icon-tile warn">⚠️</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="font-semibold text-sm">Reclamos</span>
+              <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style="background:var(--orange);color:#fff;">3</span>
+            </div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Diferencias pendientes</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">📥</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Control de ingreso</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Subir facturas y cruzar con ERP</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">💳</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Cuentas corrientes</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Saldos y pagos por proveedor</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">📚</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Catálogo ObServer</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">122k productos con stock y lab</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">👥</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Clientes</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">84k con notas, WhatsApp y tags</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">⚙️</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Configuración</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Ajustes del sistema</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">📊</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Mis informes</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Cruces, ventas y stock por lab</div>
+          </div>
+        </a>
+
+        <a class="action-card flex items-start gap-3">
+          <div class="icon-tile">🛡️</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Obras sociales</div>
+            <div class="desc text-xs leading-snug mt-0.5" style="color:var(--text-soft);">Análisis financiero y catálogo</div>
+          </div>
+        </a>
+
+      </div>
+
+      <!-- NOTA -->
+      <div class="mt-6 p-5 rounded-xl text-xs" style="background: rgba(95,230,188,.04); border:1px solid var(--line); color:var(--text-soft);">
+        <div class="section-label mb-3">Iteración 3 — Emerald gradient</div>
+        <strong style="color:var(--mint);">Inspirado en el referente Black Friday SaaS:</strong>
+        <span class="block mt-2 leading-relaxed">
+        ① Background dark forest (`#07241C`) con gradient sutil hacia surface (`#103D31`).
+        ② Hero con radial-gradients superpuestos + 4 formas geométricas (cuadrados rotados + círculos) en el lateral derecho con glow mint.
+        ③ Acentos en mint bright (`#5FE6BC`) — tipografía con gradient ("Farmacia Badía", "reposición").
+        ④ CTA primario en naranja (`#FB923C`→`#EA580C`) con glow — contraste cálido sobre el fondo frío, igual que el referente.
+        ⑤ Cards con gradient sutil + radial highlight en hover (esquina superior derecha).
+        ⑥ Categoría "Droguerías" en mint sólido como destacada, otras en surface.
+        ⑦ Reclamos con tinte naranja sutil (no mint) → señalización por color de la urgencia.
+        ⑧ Sidebar gradient vertical, item activo con border izq mint y fondo gradient horizontal.
+        </span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

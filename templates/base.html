@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Farmacia{% endblock %}</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -84,6 +84,275 @@
             aside { transition: width 0.18s ease; }
         }
         {% block extra_print_css %}{% endblock %}
+
+        /* ════════════════════════════════════════════════════════════════════
+           DESIGN SYSTEM — Tokens + Componentes (emerald theme)
+           ════════════════════════════════════════════════════════════════════
+           Cómo usar:
+             • Página opt-in al tema oscuro → {% block body_class %}theme-emerald{% endblock %}
+             • Encabezado: <header class="page-header">...</header>
+             • Botones: .btn .btn-primary | .btn-secondary | .btn-ghost | .btn-danger
+                        modificadores: .btn-sm | .btn-lg
+             • Cards: .card | .card-action (con hover) | .card-featured
+             • Badges: .badge .badge-mint | .badge-orange | .badge-danger | .badge-info | .badge-mute
+             • Íconos: .icon-tile (+ -warn / -danger / -sm / -lg)
+             • Detalle: <div class="detail-row"><span class="detail-label">…</span><span class="detail-value">…</span></div>
+             • Eyebrow: <div class="section-label">…</div>
+             • Tipo display: <h1 class="display">…</h1> · texto con gradient: <span class="glow-text">…</span>
+           ════════════════════════════════════════════════════════════════════ */
+        :root {
+            /* Surfaces (dark) */
+            --ds-bg-deep:     #07241C;
+            --ds-bg:          #0A2F25;
+            --ds-surface:     #103D31;
+            --ds-surface-2:   #164A3C;
+            /* Surfaces (light) */
+            --ds-paper:       #FFFFFF;
+            --ds-paper-alt:   #F8FAFC;
+            /* Borders */
+            --ds-line:        rgba(95,230,188,.12);
+            --ds-line-2:      rgba(95,230,188,.22);
+            --ds-line-light:  #E5E7EB;
+            /* Mint family */
+            --ds-mint:        #5FE6BC;
+            --ds-mint-deep:   #10B981;
+            --ds-mint-bright: #34D399;
+            /* CTA / cálidos */
+            --ds-orange:      #FB923C;
+            --ds-orange-deep: #EA580C;
+            /* Texto sobre dark */
+            --ds-text:        #ECFDF5;
+            --ds-text-soft:   #B8D4C9;
+            --ds-text-mute:   #86A89C;
+            /* Texto sobre light */
+            --ds-text-on-light:      #0F172A;
+            --ds-text-mute-on-light: #6B7280;
+            /* Estados */
+            --ds-danger:      #EF4444;
+            --ds-warn:        #F59E0B;
+            --ds-success:     #10B981;
+            --ds-info:        #3B82F6;
+            /* Radii */
+            --ds-r-sm: 6px;
+            --ds-r-md: 10px;
+            --ds-r-lg: 14px;
+            --ds-r-xl: 20px;
+            /* Shadows */
+            --ds-shadow-sm:    0 1px 2px rgba(0,0,0,.08);
+            --ds-shadow-md:    0 4px 12px rgba(0,0,0,.12);
+            --ds-shadow-lg:    0 12px 32px rgba(0,0,0,.18);
+            --ds-glow-mint:    0 0 0 1px rgba(95,230,188,.2), 0 8px 24px -4px rgba(95,230,188,.25);
+            --ds-glow-orange:  0 4px 16px rgba(234,88,12,.4), 0 0 0 1px rgba(251,146,60,.3) inset;
+        }
+
+        /* ── Theme opt-in: aplica fondo dark forest a la pantalla ─────────── */
+        body.theme-emerald {
+            background-color: var(--ds-bg-deep) !important;
+            background-image: none !important;
+            color: var(--ds-text);
+        }
+        body.theme-emerald table thead { background-color: var(--ds-surface) !important; }
+        body.theme-emerald table thead th {
+            background-color: var(--ds-surface) !important;
+            color: var(--ds-mint) !important;
+            border-color: var(--ds-line) !important;
+        }
+
+        /* ── Tipografía display ───────────────────────────────────────────── */
+        .display { font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif; letter-spacing: -.02em; }
+        .glow-text {
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-bright) 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+        }
+
+        /* ── Section label / eyebrow ──────────────────────────────────────── */
+        .section-label {
+            font-size: 11px; font-weight: 600; letter-spacing: .12em;
+            text-transform: uppercase; color: var(--ds-text-mute);
+            display: inline-flex; align-items: center; gap: 10px;
+        }
+        .section-label::before {
+            content: ''; width: 20px; height: 2px;
+            background: var(--ds-mint); border-radius: 2px;
+        }
+        body:not(.theme-emerald) .section-label { color: var(--ds-text-mute-on-light); }
+
+        /* ── Page header (encabezado de pantalla unificado) ──────────────── */
+        .page-header {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 16px; flex-wrap: wrap; margin-bottom: 24px;
+        }
+        .page-header__left { flex: 1; min-width: 0; }
+        .page-header__title {
+            font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+            font-size: 28px; font-weight: 700; letter-spacing: -.02em;
+            line-height: 1.15; margin: 6px 0 0 0;
+        }
+        .page-header__subtitle { font-size: 13px; color: var(--ds-text-soft); margin-top: 6px; }
+        body:not(.theme-emerald) .page-header__subtitle { color: var(--ds-text-mute-on-light); }
+        .page-header__actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+        /* ── Botones ─────────────────────────────────────────────────────── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 9px 16px; font-size: 13px; font-weight: 600;
+            border-radius: var(--ds-r-md);
+            cursor: pointer; border: 1px solid transparent;
+            transition: all .15s; white-space: nowrap;
+            font-family: inherit; text-decoration: none;
+            line-height: 1.2;
+        }
+        .btn:disabled { opacity: .5; cursor: not-allowed; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-lg { padding: 12px 22px; font-size: 14px; }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);
+            color: #fff; box-shadow: var(--ds-glow-orange);
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(234,88,12,.5), 0 0 0 1px rgba(251,146,60,.4) inset; }
+        .btn-secondary {
+            background: rgba(95,230,188,.1); border-color: var(--ds-line-2); color: var(--ds-mint);
+        }
+        .btn-secondary:hover { background: rgba(95,230,188,.18); border-color: var(--ds-mint); }
+        body:not(.theme-emerald) .btn-secondary {
+            background: rgba(16,185,129,.08); border-color: rgba(16,185,129,.3); color: var(--ds-mint-deep);
+        }
+        body:not(.theme-emerald) .btn-secondary:hover { background: rgba(16,185,129,.15); }
+        .btn-ghost { background: transparent; color: var(--ds-text-soft); }
+        .btn-ghost:hover { background: rgba(255,255,255,.05); color: var(--ds-text); }
+        body:not(.theme-emerald) .btn-ghost { color: var(--ds-text-mute-on-light); }
+        body:not(.theme-emerald) .btn-ghost:hover { background: rgba(0,0,0,.04); color: var(--ds-text-on-light); }
+        .btn-danger { background: var(--ds-danger); color: #fff; }
+        .btn-danger:hover { background: #DC2626; transform: translateY(-1px); }
+        .btn-mint {
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+            color: var(--ds-bg-deep); box-shadow: 0 4px 14px rgba(16,185,129,.3);
+        }
+        .btn-mint:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(16,185,129,.4); }
+
+        /* ── Cards ───────────────────────────────────────────────────────── */
+        .card {
+            background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+            border: 1px solid var(--ds-line);
+            border-radius: var(--ds-r-lg);
+            padding: 18px;
+            transition: all .25s cubic-bezier(.4,0,.2,1);
+        }
+        body:not(.theme-emerald) .card {
+            background: var(--ds-paper); border-color: var(--ds-line-light);
+            box-shadow: var(--ds-shadow-sm);
+        }
+        .card-action {
+            cursor: pointer; position: relative; overflow: hidden;
+            text-decoration: none; color: inherit; display: block;
+        }
+        .card-action::after {
+            content:''; position:absolute; top:0; right:0;
+            width: 100px; height: 100px;
+            background: radial-gradient(circle, rgba(95,230,188,.12), transparent 70%);
+            transform: translate(40%, -40%);
+            opacity: 0; transition: opacity .25s; pointer-events: none;
+        }
+        .card-action:hover {
+            transform: translateY(-2px);
+            border-color: var(--ds-mint);
+            box-shadow: var(--ds-glow-mint);
+        }
+        .card-action:hover::after { opacity: 1; }
+        body:not(.theme-emerald) .card-action:hover {
+            border-color: var(--ds-mint-deep);
+            box-shadow: 0 8px 24px -4px rgba(16,185,129,.2);
+        }
+        .card-featured {
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+            border-color: var(--ds-mint-bright);
+            color: var(--ds-bg-deep);
+        }
+
+        /* ── Icon tiles ──────────────────────────────────────────────────── */
+        .icon-tile {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 40px; height: 40px;
+            border-radius: var(--ds-r-md);
+            background: rgba(95,230,188,.1); color: var(--ds-mint);
+            border: 1px solid var(--ds-line-2);
+            flex-shrink: 0; font-size: 18px;
+            transition: all .25s;
+        }
+        body:not(.theme-emerald) .icon-tile {
+            background: rgba(16,185,129,.08);
+            color: var(--ds-mint-deep);
+            border-color: rgba(16,185,129,.2);
+        }
+        .icon-tile-warn { background: rgba(251,146,60,.12); color: var(--ds-orange); border-color: rgba(251,146,60,.25); }
+        .icon-tile-danger { background: rgba(239,68,68,.12); color: var(--ds-danger); border-color: rgba(239,68,68,.25); }
+        .icon-tile-info { background: rgba(59,130,246,.12); color: var(--ds-info); border-color: rgba(59,130,246,.25); }
+        .icon-tile-sm { width: 32px; height: 32px; font-size: 14px; border-radius: var(--ds-r-sm); }
+        .icon-tile-lg { width: 48px; height: 48px; font-size: 22px; border-radius: var(--ds-r-lg); }
+
+        /* ── Badges ──────────────────────────────────────────────────────── */
+        .badge {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px;
+            font-size: 11px; font-weight: 600; line-height: 1.4;
+            border-radius: 6px; letter-spacing: .02em;
+            white-space: nowrap;
+        }
+        .badge-mint { background: rgba(95,230,188,.15); color: var(--ds-mint); }
+        body:not(.theme-emerald) .badge-mint { background: rgba(16,185,129,.12); color: var(--ds-mint-deep); }
+        .badge-orange { background: rgba(251,146,60,.15); color: var(--ds-orange); }
+        .badge-danger { background: rgba(239,68,68,.15); color: var(--ds-danger); }
+        .badge-info { background: rgba(59,130,246,.15); color: var(--ds-info); }
+        .badge-warn { background: rgba(245,158,11,.15); color: var(--ds-warn); }
+        .badge-mute { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+        body:not(.theme-emerald) .badge-mute { background: rgba(0,0,0,.06); color: var(--ds-text-mute-on-light); }
+        .badge-pill { border-radius: 999px; padding: 2px 10px; }
+
+        /* ── Detail rows (label : value) ─────────────────────────────────── */
+        .detail-row {
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 10px 0; gap: 16px;
+            border-bottom: 1px solid var(--ds-line);
+        }
+        body:not(.theme-emerald) .detail-row { border-bottom-color: var(--ds-line-light); }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-label {
+            font-size: 11px; color: var(--ds-text-mute);
+            text-transform: uppercase; letter-spacing: .08em;
+            font-weight: 600; flex-shrink: 0;
+        }
+        body:not(.theme-emerald) .detail-label { color: var(--ds-text-mute-on-light); }
+        .detail-value { font-size: 13px; font-weight: 500; text-align: right; }
+
+        /* ── Form inputs ─────────────────────────────────────────────────── */
+        .ds-input, .ds-select, .ds-textarea {
+            background: var(--ds-surface);
+            border: 1px solid var(--ds-line);
+            border-radius: var(--ds-r-md);
+            padding: 9px 12px; font-size: 13px;
+            color: var(--ds-text);
+            transition: all .15s;
+            font-family: inherit; width: 100%;
+        }
+        body:not(.theme-emerald) .ds-input,
+        body:not(.theme-emerald) .ds-select,
+        body:not(.theme-emerald) .ds-textarea {
+            background: var(--ds-paper); color: var(--ds-text-on-light); border-color: var(--ds-line-light);
+        }
+        .ds-input:focus, .ds-select:focus, .ds-textarea:focus {
+            outline: none; border-color: var(--ds-mint);
+            box-shadow: 0 0 0 3px rgba(95,230,188,.15);
+        }
+        .ds-label {
+            display: block; font-size: 11px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: .06em;
+            color: var(--ds-text-mute); margin-bottom: 6px;
+        }
+        body:not(.theme-emerald) .ds-label { color: var(--ds-text-mute-on-light); }
+
+        /* ── Divider ─────────────────────────────────────────────────────── */
+        .ds-divider { height: 1px; background: var(--ds-line); margin: 20px 0; border: 0; }
+        body:not(.theme-emerald) .ds-divider { background: var(--ds-line-light); }
     </style>
     {% block extra_head %}{% endblock %}
     <script>
@@ -124,7 +393,7 @@
     })();
     </script>
 </head>
-<body class="min-h-screen flex font-sans">
+<body class="min-h-screen flex font-sans {% block body_class %}{% endblock %}">
 
 <!-- ── Banner Sync ObServer (visible si algún sync está atrasado) ── -->
 <div id="sync-banner" class="hidden fixed top-0 left-0 right-0 z-[60] px-4 py-2 text-sm flex items-center gap-3 shadow-md">
@@ -424,6 +693,11 @@
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
             Ctas. Corrientes
         </a>
+        <a href="{{ url_for('claims_list') }}"
+           class="{{ nav_active_cls if nav_active == 'reclamos' else nav_link }}">
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M4.93 19h14.14A2 2 0 0020.93 17l-7.07-12a2 2 0 00-3.72 0L3.07 17A2 2 0 004.93 19z"/></svg>
+            Reclamos
+        </a>
 
         <p class="px-3 pt-3 pb-1 text-[10px] font-bold text-[#F4C430] uppercase tracking-widest">Operaciones</p>
         <a href="{{ url_for('docs_pendientes') }}"
@@ -485,11 +759,21 @@
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
             Procesos
         </a>
+        <a href="{{ url_for('ofertas_import_page') }}"
+           class="{{ nav_active_cls if nav_active == 'ofertas_import' else nav_link }} pl-8 text-[13px]">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Importar ofertas
+        </a>
         {% block nav_after_compras %}{% endblock %}
         <a href="{{ url_for('productos_list') }}"
            class="{{ nav_active_cls if nav_active == 'productos' else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
             Productos
+        </a>
+        <a href="{{ url_for('obs_productos') }}"
+           class="{{ nav_active_cls if nav_active == 'obs_productos' else nav_link }} pl-8 text-[13px]">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+            Catálogo ObServer
         </a>
         <a href="{{ url_for('vademecum_index') }}"
            class="{{ nav_active_cls if nav_active == 'vademecum' else nav_link }}">

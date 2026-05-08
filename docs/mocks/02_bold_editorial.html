@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mock — Bold / Editorial</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --coffee: #1F1611;
+    --coffee-2: #3B2A1E;
+    --cream: #FAF6F0;
+    --paper: #FFFFFF;
+    --brand: #EAB308;
+    --brand-deep: #B45309;
+    --line: #E8E0D4;
+  }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--cream); color: var(--coffee); }
+  .display { font-family: 'Space Grotesk', system-ui, sans-serif; letter-spacing:-.02em; }
+  .nav-item { transition: all .15s; color:#9CA3AF; }
+  .nav-item:hover { background: rgba(255,255,255,.04); color:#FFF; }
+  .nav-item.active { background: var(--brand); color: var(--coffee); font-weight: 700; }
+
+  /* Hero split */
+  .hero-split { display:grid; grid-template-columns: 1fr 1.1fr; min-height:220px; border-radius:20px; overflow:hidden; box-shadow: 0 4px 24px rgba(31,22,17,.06); }
+  .hero-left { background: var(--paper); padding: 32px 36px; display:flex; flex-direction:column; justify-content:center; position:relative; border:1px solid var(--line); border-right:0; border-radius:20px 0 0 20px; }
+  .hero-right { background: var(--brand); padding: 32px 36px; display:flex; flex-direction:column; justify-content:space-between; position:relative; color: var(--coffee); border-radius:0 20px 20px 0; }
+  .hero-corner { position:absolute; top:0; right:0; width:54px; height:54px; background: var(--coffee); clip-path: polygon(100% 0, 0 0, 100% 100%); }
+
+  /* Cards */
+  .action-card { background: var(--paper); border:1px solid var(--line); border-radius:14px; transition: all .2s cubic-bezier(.4,0,.2,1); position:relative; overflow:hidden; }
+  .action-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:0; background: var(--brand); transition: width .2s; }
+  .action-card:hover { transform: translateY(-2px); border-color: var(--coffee); box-shadow: 6px 6px 0 var(--coffee); }
+  .action-card:hover::before { width:4px; }
+  .action-card.featured { background: var(--coffee); color:#FFF; border-color: var(--coffee); }
+  .action-card.featured::before { background: var(--brand); width:4px; }
+  .action-card.featured .icon-tile { background: var(--brand); color: var(--coffee); }
+  .action-card.featured .desc { color: rgba(255,255,255,.7); }
+  .action-card.featured:hover { box-shadow: 6px 6px 0 var(--brand); }
+
+  .icon-tile { display:flex;align-items:center;justify-content:center; width:42px;height:42px;border-radius:10px;background:#FEF3C7;color:var(--brand-deep); font-size:18px; }
+  .icon-tile.dark { background: var(--coffee); color: var(--brand); }
+  .icon-tile.outline { background:transparent; border:1.5px solid var(--coffee); color: var(--coffee); }
+
+  /* Cat cards: editorial */
+  .cat-card { background: var(--paper); border:1px solid var(--line); border-radius:14px; padding:22px; transition: all .2s; position:relative; overflow:hidden; }
+  .cat-card:hover { border-color: var(--coffee); box-shadow: 4px 4px 0 var(--coffee); }
+  .cat-card.dark { background: var(--coffee); color:#FFF; border-color: var(--coffee); }
+  .cat-card.dark:hover { box-shadow: 4px 4px 0 var(--brand); }
+  .cat-card.dark .desc { color: rgba(255,255,255,.65); }
+  .cat-card.brand { background: var(--brand); color: var(--coffee); border-color: var(--brand); }
+  .cat-card.brand:hover { box-shadow: 4px 4px 0 var(--coffee); }
+
+  .quiet-link { font-family: 'Space Grotesk'; font-weight:500; font-size:12px; padding:6px 12px; border-radius:6px; background:rgba(31,22,17,.06); color: var(--coffee); text-transform:uppercase; letter-spacing:.06em; }
+  .quiet-link:hover { background: var(--coffee); color:#FFF; }
+  .cat-card.dark .quiet-link { background:rgba(255,255,255,.1); color:#FFF; }
+  .cat-card.dark .quiet-link:hover { background: var(--brand); color: var(--coffee); }
+  .cat-card.brand .quiet-link { background:rgba(31,22,17,.1); color: var(--coffee); }
+  .cat-card.brand .quiet-link:hover { background: var(--coffee); color: var(--brand); }
+
+  .primary-btn {
+    display:inline-flex; align-items:center; gap:8px;
+    background: var(--coffee); color: var(--brand);
+    font-family:'Space Grotesk'; font-weight:700; font-size:13px;
+    padding: 10px 18px; border-radius: 8px;
+    text-transform: uppercase; letter-spacing: .08em;
+    transition: all .15s;
+  }
+  .primary-btn:hover { background:#000; transform: translateX(2px); }
+
+  .section-label { font-family:'Space Grotesk'; font-size:11px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color: var(--coffee-2); display:flex; align-items:center; gap:10px; }
+  .section-label::before { content:''; width:24px; height:2px; background: var(--brand); }
+
+  .vertical-tag { writing-mode: vertical-rl; transform: rotate(180deg); font-family:'Space Grotesk'; font-size:10px; letter-spacing:.3em; text-transform:uppercase; opacity:.6; }
+  .topbar { background: var(--cream); border-bottom: 1px solid var(--line); }
+  .badge-prod { background: var(--coffee); color: var(--brand); }
+</style>
+</head>
+<body>
+
+<div class="flex min-h-screen">
+
+  <!-- SIDEBAR -->
+  <aside class="w-64 bg-[#1c1c1e] text-gray-300 flex flex-col py-4 px-3">
+    <div class="px-3 mb-6 pb-4 border-b border-white/10">
+      <div class="display text-[20px] font-bold text-white leading-tight">Control de<br>Stock<span class="text-[var(--brand)]">.</span></div>
+      <div class="text-[11px] text-gray-500 mt-1 tracking-widest uppercase">Farmacia Badía</div>
+    </div>
+
+    <nav class="flex-1 text-sm">
+      <a class="nav-item active block px-3 py-2 rounded-lg mb-1">→ Inicio</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Dashboard</a>
+
+      <div class="text-[10px] font-bold tracking-[.2em] text-gray-600 uppercase px-3 mt-5 mb-2">Gestión</div>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Proveedores</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Droguerías</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Laboratorios</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Ctas. Corrientes</a>
+
+      <div class="text-[10px] font-bold tracking-[.2em] text-gray-600 uppercase px-3 mt-5 mb-2">Operaciones</div>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Documentos</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1 pl-6 text-gray-500">↳ Convertir / aprender</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Control de Ingreso</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Obras Sociales</a>
+
+      <div class="text-[10px] font-bold tracking-[.2em] text-gray-600 uppercase px-3 mt-5 mb-2">Compras</div>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Pedido de reposición</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Reposición grupal</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Procesos</a>
+      <a class="nav-item block px-3 py-2 rounded-lg mb-1">Productos</a>
+    </nav>
+
+    <div class="px-3 pt-4 border-t border-white/10 text-[10px] text-gray-600 tracking-widest uppercase">v. 2026.05</div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 flex flex-col">
+
+    <!-- TOPBAR -->
+    <header class="h-14 topbar flex items-center justify-end px-8 gap-4 sticky top-0 z-10">
+      <span class="text-[10px] font-bold tracking-[.18em] badge-prod px-2.5 py-1 rounded">PROD</span>
+      <button class="text-coffee relative">
+        🔔
+        <span class="absolute -top-1 -right-1 bg-[var(--coffee)] text-[var(--brand)] text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">4</span>
+      </button>
+      <div class="flex items-center gap-2">
+        <div class="w-9 h-9 rounded-full bg-[var(--coffee)] text-[var(--brand)] font-bold flex items-center justify-center display">A</div>
+        <div class="text-xs">
+          <div class="font-bold">Administrador</div>
+          <div class="text-gray-500 tracking-wider uppercase text-[10px]">Admin</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 px-10 py-8 max-w-[1500px]">
+
+      <!-- HEADER -->
+      <div class="mb-8 flex items-end justify-between">
+        <div>
+          <div class="section-label mb-3">Inicio · Mayo 2026</div>
+          <h1 class="display text-5xl font-bold leading-none">Farmacia Badía<span class="text-[var(--brand)]">.</span></h1>
+          <p class="text-[var(--coffee-2)] text-sm mt-3 max-w-md">Elegí por dónde trabajar hoy — todos los flujos de stock, compras y reclamos en un solo lugar.</p>
+        </div>
+        <div class="text-right text-xs text-[var(--coffee-2)] uppercase tracking-widest">
+          <div>Mié 7 mayo</div>
+          <div class="display text-3xl font-bold text-[var(--coffee)] mt-1">14:32</div>
+        </div>
+      </div>
+
+      <!-- HERO SPLIT -->
+      <div class="hero-split mb-10">
+        <div class="hero-left">
+          <div class="section-label mb-4">Acción del día</div>
+          <h2 class="display text-3xl font-bold leading-tight">Pedido de<br><span class="text-[var(--brand-deep)]">reposición</span></h2>
+          <p class="text-sm text-[var(--coffee-2)] mt-3 mb-5 max-w-xs">Armar pedidos a droguerías con countdown de cierre. Pantalla operativa diaria.</p>
+          <div>
+            <a href="#" class="primary-btn">Ir al pedido →</a>
+          </div>
+          <div class="vertical-tag absolute left-4 top-1/2 -translate-y-1/2 text-[var(--coffee-2)]">Operativa · diaria</div>
+        </div>
+        <div class="hero-right">
+          <div class="hero-corner"></div>
+          <div class="text-[10px] tracking-[.3em] uppercase font-bold opacity-80">Stats</div>
+          <div class="grid grid-cols-3 gap-6">
+            <div>
+              <div class="display text-4xl font-bold leading-none">12</div>
+              <div class="text-xs uppercase tracking-wider mt-2 opacity-80">Pedidos<br>pendientes</div>
+            </div>
+            <div>
+              <div class="display text-4xl font-bold leading-none">3</div>
+              <div class="text-xs uppercase tracking-wider mt-2 opacity-80">Reclamos<br>abiertos</div>
+            </div>
+            <div>
+              <div class="display text-4xl font-bold leading-none">$487K</div>
+              <div class="text-xs uppercase tracking-wider mt-2 opacity-80">Compras<br>del mes</div>
+            </div>
+          </div>
+          <div class="text-[10px] tracking-[.3em] uppercase font-bold opacity-60">Cierre droguerías · 17:30</div>
+        </div>
+      </div>
+
+      <!-- 3 CATEGORÍAS -->
+      <div class="section-label mb-4">Entidades</div>
+      <div class="grid grid-cols-3 gap-4 mb-10">
+
+        <div class="cat-card">
+          <div class="flex items-start justify-between mb-5">
+            <div class="icon-tile outline">🧪</div>
+            <span class="text-[10px] font-bold tracking-widest uppercase text-[var(--coffee-2)]">01</span>
+          </div>
+          <div class="display font-bold text-2xl leading-tight">Laboratorios</div>
+          <div class="desc text-xs text-[var(--coffee-2)] mt-1.5 mb-5">Módulos, ofertas y análisis de compra</div>
+          <div class="flex gap-1.5 flex-wrap">
+            <a class="quiet-link" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Packs</a>
+          </div>
+        </div>
+
+        <div class="cat-card dark">
+          <div class="flex items-start justify-between mb-5">
+            <div class="icon-tile dark">💊</div>
+            <span class="text-[10px] font-bold tracking-widest uppercase opacity-60">02</span>
+          </div>
+          <div class="display font-bold text-2xl leading-tight">Droguerías</div>
+          <div class="desc text-xs mt-1.5 mb-5">Facturas, cuenta corriente y reclamos</div>
+          <div class="flex gap-1.5 flex-wrap">
+            <a class="quiet-link" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Nueva</a>
+          </div>
+        </div>
+
+        <div class="cat-card brand">
+          <div class="flex items-start justify-between mb-5">
+            <div class="icon-tile" style="background:var(--coffee);color:var(--brand)">🏢</div>
+            <span class="text-[10px] font-bold tracking-widest uppercase opacity-70">03</span>
+          </div>
+          <div class="display font-bold text-2xl leading-tight">Otros</div>
+          <div class="desc text-xs mt-1.5 mb-5">Proveedores que no son droguería ni lab</div>
+          <div class="flex gap-1.5 flex-wrap">
+            <a class="quiet-link" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Reclamos</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACCIONES FRECUENTES -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="section-label">Acciones frecuentes</div>
+        <a href="#" class="text-xs text-[var(--coffee-2)] hover:text-[var(--coffee)] uppercase tracking-widest font-bold">⚙️ Personalizar</a>
+      </div>
+
+      <div class="grid grid-cols-4 gap-3 mb-10">
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">📊</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Procesos de compra</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Análisis → pedido → factura</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">🛒</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Pedidos guardados</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Análisis convertidos en pedidos</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">📈</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Importar ofertas</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Excel del proveedor con descuentos</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">🏷️</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Productos</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Catálogo master con códigos y PVP</div>
+          </div>
+        </a>
+
+        <a class="action-card featured p-4 flex items-start gap-3">
+          <div class="icon-tile">⚠️</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold text-sm">Reclamos</span>
+              <span class="text-[10px] font-bold bg-[var(--brand)] text-[var(--coffee)] px-1.5 py-0.5 rounded">3</span>
+            </div>
+            <div class="desc text-xs leading-snug mt-0.5">Diferencias pendientes y completadas</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">📥</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Control de ingreso</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Subir facturas y cruzar con ERP</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">💳</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Cuentas corrientes</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Saldos y pagos por proveedor</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">📚</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Catálogo ObServer</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">122k productos con ventas y stock</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">👥</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Clientes</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">84k con notas, WhatsApp y tags</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">⚙️</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Configuración</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Ajustes del sistema</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">📊</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Mis informes</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Cruces, ventas y stock por lab</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">🛡️</div>
+          <div class="min-w-0">
+            <div class="font-bold text-sm">Obras sociales</div>
+            <div class="desc text-xs text-[var(--coffee-2)] leading-snug mt-0.5">Análisis financiero y catálogo</div>
+          </div>
+        </a>
+
+      </div>
+
+      <!-- NOTA -->
+      <div class="mt-6 p-5 rounded-xl text-xs text-[var(--coffee-2)] bg-[var(--paper)] border border-[var(--line)]">
+        <div class="section-label mb-2">Iteración 3 — bold / editorial</div>
+        <strong class="text-[var(--coffee)]">Inspirado en branding (white + coffee + brand-color, color blocking):</strong>
+        <span class="block mt-2 leading-relaxed">
+        ① Tipografía display (Space Grotesk) con punto amarillo de remate.
+        ② Hero <em>split</em> dos paneles: izquierda blanca con CTA + derecha amarillo sólido con stats del día.
+        ③ Triángulo café en esquina superior derecha (referencia editorial).
+        ④ 3 entidades en 3 estados de color: white + dark coffee + amarillo sólido (no todas iguales, jerarquía clara).
+        ⑤ Cards con efecto offset shadow (sombra sólida desplazada) al hover, en vez de blur.
+        ⑥ Card de Reclamos en café oscuro con accent amarillo: pega fuerte sin ser estridente.
+        ⑦ Numeración 01/02/03 en categorías, vertical tag en hero, micro-detalles editoriales.
+        </span>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

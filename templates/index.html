@@ -2,210 +2,177 @@
 {% set nav_active = "inicio" %}
 
 {% block title %}Inicio — {{ config.farmacia_nombre }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 
 {% block extra_head %}
     <style>
         ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: #a8d5ba; border-radius: 99px; }
-        ::-webkit-scrollbar-thumb:hover { background: #7fb99f; }
+        ::-webkit-scrollbar-thumb { background: rgba(95,230,188,.25); border-radius: 99px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--ds-mint); }
 
-        /* Hero entity cards */
-        .entity-card {
-            display: flex; flex-direction: column; gap: 8px;
-            padding: 14px 16px;
-            border-radius: 14px;
-            border: 1px solid #cfe3d6;
-            background: #fff;
-            transition: transform .15s, box-shadow .15s, border-color .15s;
+        /* Hero pedido reposición — gradient + formas geométricas */
+        .home-hero {
+            position: relative;
+            background: linear-gradient(135deg, var(--ds-bg) 0%, var(--ds-surface) 60%, var(--ds-surface-2) 100%);
+            border: 1px solid var(--ds-line-2);
+            border-radius: 20px;
+            padding: 32px 36px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,.3);
         }
-        .entity-card:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(30,60,40,.10); border-color: #7fb99f; }
-        .entity-card .hero {
-            padding: 0 0 8px 0;
-            display: flex; align-items: center; gap: 10px;
-            border-bottom: 1px solid #e6efe9;
-            margin-bottom: 6px;
+        .home-hero::before {
+            content:''; position:absolute; inset:0;
+            background:
+              radial-gradient(circle at 90% -10%, rgba(95,230,188,.18), transparent 40%),
+              radial-gradient(circle at 110% 110%, rgba(16,185,129,.12), transparent 50%);
+            pointer-events:none;
         }
-        .entity-card .hero .icon {
-            width: 32px; height: 32px; border-radius: 8px;
-            display:flex; align-items:center; justify-content:center;
-            flex-shrink: 0; color: #fff;
+        .home-hero__shapes { position:absolute; right:-20px; top:50%; transform:translateY(-50%); display:flex; gap:8px; opacity:.85; pointer-events:none; }
+        .home-hero__shapes .geo {
+            width:56px; height:56px; border-radius:14px;
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+            box-shadow: 0 8px 24px rgba(16,185,129,.4);
         }
-        .entity-card .hero .icon svg { width: 18px; height: 18px; }
-        .entity-card .hero h2 { font-size: 15px; font-weight: 700; line-height: 1.15; color: #1e1e1e; }
-        .entity-card .hero p  { font-size: 11px; color: #6b8778; margin-top: 1px; }
-        .entity-card.lab    .hero .icon { background: #2E7D5B; }
-        .entity-card.drog   .hero .icon { background: #7FB99F; }
-        .entity-card.prov   .hero .icon { background: #F4C430; color: #1a1100; }
-        .entity-card .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-        .entity-card .btn-main {
-            flex: 1; text-align: center;
-            background: #2E7D5B; color: #fff;
-            padding: 6px 10px; border-radius: 8px;
-            font-size: 12px; font-weight: 600;
-            transition: background .12s;
-        }
-        .entity-card .btn-main:hover { background: #1F5D40; }
-        .entity-card .btn-sub {
-            text-align: center;
-            background: #F0F7F3; color: #2E7D5B;
-            padding: 5px 8px; border-radius: 8px;
-            font-size: 11px; font-weight: 500;
-            border: 1px solid #D6ECDE;
-            transition: background .12s, border-color .12s;
-        }
-        .entity-card .btn-sub:hover { background: #D6ECDE; border-color: #7FB99F; }
+        .home-hero__shapes .geo:nth-child(1) { transform: rotate(15deg); }
+        .home-hero__shapes .geo:nth-child(2) { transform: rotate(-10deg) translateY(-12px); border-radius:50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
+        .home-hero__shapes .geo:nth-child(3) { transform: rotate(25deg) translateY(8px); }
+        .home-hero__shapes .geo:nth-child(4) { transform: rotate(-5deg); border-radius:50%; width:44px; height:44px; background: var(--ds-surface-2); border:2px solid var(--ds-mint); box-shadow:none; }
+        @media (max-width: 900px) { .home-hero__shapes { display: none; } }
 
-        /* Utility cards (segunda fila) */
-        .util-card {
-            background: #fff; border: 1px solid rgba(0,0,0,.06); border-radius: 14px;
-            padding: 16px;
-            display:flex; flex-direction:column; gap:10px;
-            transition: box-shadow .15s, border-color .15s, transform .15s, filter .15s;
-            text-decoration: none; color: inherit;
-        }
-        .util-card:hover { box-shadow: 0 6px 18px rgba(30,60,40,.10); transform: translateY(-1px); filter: brightness(.97); }
-        .util-card .icon-wrap { width: 36px; height: 36px; border-radius: 10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; background:#fff; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
-        .util-card .title { font-weight: 600; font-size: 14px; color: #1e1e1e; }
-        .util-card .desc  { font-size: 11px; color: #6b8778; margin-top: 2px; line-height: 1.35; }
-        .util-card .sub-link { display:inline-flex; align-items:center; gap:4px;
-                               padding: 5px 10px; border-radius: 7px; font-size: 11px; font-weight: 500;
-                               background: #F0F7F3; color: #2E7D5B; border: 1px solid #D6ECDE; }
-        .util-card .sub-link:hover { background:#D6ECDE; }
-        .util-card .sub-link.strong { background:#2E7D5B; color:#fff; border-color:#2E7D5B; font-weight:600; }
-        .util-card .sub-link.strong:hover { background:#1F5D40; }
+        .stat-num { font-family:'Space Grotesk', sans-serif; font-weight: 700; letter-spacing:-.03em; font-size: 24px; }
+
+        /* Entity card (las 3 categorías) */
+        .entity-card { padding: 22px; }
+        .entity-card .entity-num { font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color: var(--ds-text-mute); }
+
+        /* Action card content (cards de la grilla) */
+        .action-content { display:flex; align-items:flex-start; gap:12px; }
+        .action-content__body { min-width: 0; flex: 1; }
+        .action-content__title { font-weight: 600; font-size: 14px; color: var(--ds-text); }
+        .action-content__desc  { font-size: 12px; color: var(--ds-text-soft); margin-top: 3px; line-height: 1.4; }
     </style>
 {% endblock %}
 
 {% block main %}
-    <div class="flex-1 py-4 px-4 sm:px-6 overflow-auto">
+    <div class="flex-1 py-8 px-6 sm:px-8 overflow-auto">
         <div class="max-w-6xl mx-auto">
 
-            <!-- Header -->
-            <div class="mb-3 flex items-baseline gap-3 flex-wrap">
-                <h1 class="text-lg font-bold text-[#1e1e1e]">{{ config.farmacia_nombre }}</h1>
-                <p class="text-xs text-[#6b8778]">Elegí por dónde trabajar hoy</p>
-            </div>
+            <!-- Page header -->
+            <header class="page-header">
+                <div class="page-header__left">
+                    <span class="section-label">Inicio</span>
+                    <h1 class="page-header__title">{{ config.farmacia_nombre }}<span class="glow-text">.</span></h1>
+                    <p class="page-header__subtitle">Elegí por dónde trabajar hoy.</p>
+                </div>
+                <div class="page-header__actions">
+                    <a href="{{ url_for('personalizar_home') }}" class="btn btn-ghost btn-sm" title="Personalizar acciones frecuentes">
+                        ⚙ Personalizar
+                    </a>
+                </div>
+            </header>
 
-            <!-- Card destacada: Pedido de reposición -->
-            <a href="{{ url_for('compras_dia') }}"
-               class="block mb-5 bg-gradient-to-r from-amber-50 to-amber-100 hover:from-amber-100 hover:to-amber-200
-                      border-2 border-amber-300 hover:border-amber-500 rounded-xl px-5 py-4
-                      transition-all group">
-                <div class="flex items-center gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-amber-500 group-hover:bg-amber-600 flex items-center justify-center text-white flex-shrink-0 shadow-sm transition-colors">
-                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
-                        </svg>
+            <!-- HERO: Pedido de reposición -->
+            <a href="{{ url_for('compras_dia') }}" class="home-hero block mb-8 hover:no-underline">
+                <div class="relative z-10 max-w-xl">
+                    <div class="section-label mb-3">⚡ Acción del día</div>
+                    <h2 class="display text-3xl font-bold leading-tight mb-2 text-white">
+                        Pedido de <span class="glow-text">reposición</span>
+                    </h2>
+                    <p class="text-sm mb-5" style="color:var(--ds-text-soft);">
+                        Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria
+                    </p>
+                    <div class="flex items-center gap-4">
+                        <span class="btn btn-primary">Ir al pedido →</span>
+                        <a href="{{ url_for('orders_list') }}"
+                           onclick="event.stopPropagation()"
+                           class="text-sm font-medium hover:underline" style="color:var(--ds-text-soft);">
+                            Ver pedidos pendientes →
+                        </a>
                     </div>
-                    <div class="flex-1 min-w-0">
-                        <h2 class="text-base font-bold text-amber-900">📦 Pedido de reposición</h2>
-                        <p class="text-xs text-amber-800/80 mt-0.5">Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria</p>
-                    </div>
-                    <span class="text-amber-900 group-hover:text-amber-950 font-bold text-sm flex items-center gap-1 flex-shrink-0">
-                        Ir <span class="group-hover:translate-x-0.5 transition-transform">→</span>
-                    </span>
+                </div>
+                <div class="home-hero__shapes">
+                    <div class="geo"></div>
+                    <div class="geo"></div>
+                    <div class="geo"></div>
+                    <div class="geo"></div>
                 </div>
             </a>
 
-            <!-- 3 entity hero cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+            <!-- 3 ENTIDADES -->
+            <div class="section-label mb-3">Entidades</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
 
-                <!-- Laboratorios -->
-                <div class="entity-card lab">
-                    <div class="hero">
-                        <div class="icon">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2>Laboratorios</h2>
-                            <p>Módulos, ofertas y análisis de compra</p>
-                        </div>
+                <div class="card entity-card">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="icon-tile icon-tile-lg">🧪</div>
+                        <span class="entity-num">01</span>
                     </div>
-                    <div class="actions">
-                        <a href="{{ url_for('laboratorios_list') }}" class="btn-main">Ver laboratorios →</a>
-                    </div>
-                    <div class="actions">
-                        <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn-sub flex-1">Procesos LAB</a>
-                        <a href="{{ url_for('modulo_packs_list') }}" class="btn-sub flex-1">Packs</a>
+                    <div class="display font-bold text-xl leading-tight mb-1">Laboratorios</div>
+                    <div class="text-xs mb-4" style="color:var(--ds-text-soft);">Módulos, ofertas y análisis de compra</div>
+                    <div class="flex flex-wrap gap-1.5">
+                        <a href="{{ url_for('laboratorios_list') }}" class="btn btn-secondary btn-sm">Ver →</a>
+                        <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-ghost btn-sm">Procesos</a>
+                        <a href="{{ url_for('modulo_packs_list') }}" class="btn btn-ghost btn-sm">Packs</a>
                     </div>
                 </div>
 
-                <!-- Droguerías -->
-                <div class="entity-card drog">
-                    <div class="hero">
-                        <div class="icon">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2>Droguerías</h2>
-                            <p>Facturas, cuenta corriente y reclamos</p>
-                        </div>
+                <div class="card entity-card">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="icon-tile icon-tile-lg">💊</div>
+                        <span class="entity-num">02</span>
                     </div>
-                    <div class="actions">
-                        <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn-main">Ver droguerías →</a>
-                    </div>
-                    <div class="actions">
-                        <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn-sub flex-1">Procesos DROG</a>
-                        <a href="{{ url_for('ingresos') }}" class="btn-sub flex-1">Nueva factura</a>
+                    <div class="display font-bold text-xl leading-tight mb-1">Droguerías</div>
+                    <div class="text-xs mb-4" style="color:var(--ds-text-soft);">Facturas, cuenta corriente y reclamos</div>
+                    <div class="flex flex-wrap gap-1.5">
+                        <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm">Ver →</a>
+                        <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-ghost btn-sm">Procesos</a>
+                        <a href="{{ url_for('ingresos') }}" class="btn btn-ghost btn-sm">Nueva</a>
                     </div>
                 </div>
 
-                <!-- Proveedores -->
-                <div class="entity-card prov">
-                    <div class="hero">
-                        <div class="icon">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                      d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2>Otros</h2>
-                            <p>Proveedores que no son droguería ni laboratorio</p>
-                        </div>
+                <div class="card entity-card">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="icon-tile icon-tile-lg">🏢</div>
+                        <span class="entity-num">03</span>
                     </div>
-                    <div class="actions">
-                        <a href="{{ url_for('providers_list') }}?tipo=otro" class="btn-main">Ver otros →</a>
-                    </div>
-                    <div class="actions">
-                        <a href="{{ url_for('procesos_list') }}?tipo=otro" class="btn-sub flex-1">Procesos</a>
-                        <a href="{{ url_for('claims_list') }}" class="btn-sub flex-1">Reclamos</a>
+                    <div class="display font-bold text-xl leading-tight mb-1">Otros</div>
+                    <div class="text-xs mb-4" style="color:var(--ds-text-soft);">Proveedores que no son droguería ni lab</div>
+                    <div class="flex flex-wrap gap-1.5">
+                        <a href="{{ url_for('providers_list') }}?tipo=otro" class="btn btn-secondary btn-sm">Ver →</a>
+                        <a href="{{ url_for('procesos_list') }}?tipo=otro" class="btn btn-ghost btn-sm">Procesos</a>
+                        <a href="{{ url_for('claims_list') }}" class="btn btn-ghost btn-sm">Reclamos</a>
                     </div>
                 </div>
-
             </div>
 
-            <!-- Utility row: acciones comunes -->
+            <!-- ACCIONES FRECUENTES -->
             <div class="flex items-center justify-between mb-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wide text-[#5a7a69]">Acciones frecuentes</h3>
-                <a href="{{ url_for('personalizar_home') }}"
-                   class="text-xs text-[#5a7a69] hover:text-[#1F5D40] flex items-center gap-1">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                    </svg>
-                    Personalizar
-                </a>
+                <div class="section-label">Acciones frecuentes</div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3">
                 {% for card in acciones %}
-                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="util-card" style="background: {{ card.bg }};">
-                    <div class="flex items-start gap-3">
-                        <div class="icon-wrap">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: {{ card.fg }};">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ card.icono_path }}"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <p class="title">{{ card.titulo }}</p>
-                            <p class="desc">{{ card.desc }}</p>
+                {% set tone_cls = '' %}
+                {% if card.tone == 'warn' %}{% set tone_cls = 'icon-tile-warn' %}
+                {% elif card.tone == 'danger' %}{% set tone_cls = 'icon-tile-danger' %}
+                {% elif card.tone == 'info' %}{% set tone_cls = 'icon-tile-info' %}
+                {% endif %}
+                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="card card-action">
+                    <div class="action-content">
+                        <div class="icon-tile {{ tone_cls }}">{{ card.emoji or '◆' }}</div>
+                        <div class="action-content__body">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="action-content__title">{{ card.titulo }}</span>
+                                {% if card.badge_count and card.badge_count > 0 %}
+                                    {% set badge_cls = 'badge-mute' %}
+                                    {% if card.tone == 'warn' %}{% set badge_cls = 'badge-orange' %}
+                                    {% elif card.tone == 'danger' %}{% set badge_cls = 'badge-danger' %}
+                                    {% elif card.tone == 'info' %}{% set badge_cls = 'badge-info' %}
+                                    {% else %}{% set badge_cls = 'badge-mint' %}
+                                    {% endif %}
+                                    <span class="badge {{ badge_cls }} badge-pill">{{ card.badge_count }}</span>
+                                {% endif %}
+                            </div>
+                            <div class="action-content__desc">{{ card.desc }}</div>
                         </div>
                     </div>
                 </a>
