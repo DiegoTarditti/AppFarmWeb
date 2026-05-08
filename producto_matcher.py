@@ -1237,6 +1237,35 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
                     '_origen': 'observer',
                 })
 
+            # Dedup final por alfabeta (o EAN como fallback). Productos
+            # duplicados entre `productos` local y `obs_productos` apuntan al
+            # mismo Alfabeta — los unimos en uno solo. Tiebreak: priorizar
+            # local sobre observer (el local tiene EAN, queda más completo).
+            _PRIO = {'lab': 3, 'global': 2, 'observer': 1}
+            mejor_por_clave = {}
+            for c in cands:
+                alfa = (c.get('codigo_alfabeta') or '').strip()
+                ean_c = (c.get('codigo_barra') or '').strip()
+                if alfa:
+                    key = ('alfa', alfa)
+                elif ean_c:
+                    key = ('ean', ean_c)
+                else:
+                    key = (c.get('_origen', 'global'),
+                           c.get('producto_id') or c.get('observer_id'))
+                if not key[1]:
+                    continue
+                existing = mejor_por_clave.get(key)
+                if existing is None:
+                    mejor_por_clave[key] = c
+                    continue
+                if c['score'] > existing['score']:
+                    mejor_por_clave[key] = c
+                elif c['score'] == existing['score']:
+                    if _PRIO.get(c.get('_origen'), 0) > _PRIO.get(existing.get('_origen'), 0):
+                        mejor_por_clave[key] = c
+            cands = list(mejor_por_clave.values())
+
             cands.sort(key=lambda x: -x['score'])
             if cands:
                 top_score = cands[0]['score']
