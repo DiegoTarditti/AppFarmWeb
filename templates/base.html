@@ -89,7 +89,7 @@
            DESIGN SYSTEM — Tokens + Componentes (emerald theme)
            ════════════════════════════════════════════════════════════════════
            Cómo usar:
-             • Página opt-in al tema oscuro → block body_class -> theme-emerald
+             • Página opt-in al tema oscuro → sobreescribir el block body_class con "theme-emerald"
              • Encabezado: <header class="page-header">...</header>
              • Botones: .btn .btn-primary | .btn-secondary | .btn-ghost | .btn-danger
                         modificadores: .btn-sm | .btn-lg
@@ -832,7 +832,7 @@
 
     {# ── Top bar desktop ── #}
     {% if current_user.is_authenticated %}
-    <div class="hidden lg:flex items-center justify-between gap-3 px-5 h-11 bg-white border-b border-[#ececec] flex-shrink-0">
+    <div class="hidden lg:flex items-center justify-between gap-3 px-5 h-11 border-b flex-shrink-0 {% if nav_active == 'inicio' %}bg-transparent border-transparent{% else %}bg-white border-[#ececec]{% endif %}">
         <p class="text-[12px] font-semibold text-[#6b7280] truncate" title="{{ self.title() }}">
             {{ self.title() | replace(' — Farmacia Badía','') | replace(' — Farmacia','') }}
         </p>

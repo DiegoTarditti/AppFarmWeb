@@ -1,9 +1,57 @@
 # App Seguimiento — cómo sigo en casa
 
-Estado al **2026-05-04** al cerrar la sesión en la oficina. Esta nota es para
+Estado al **2026-05-07** al cerrar la sesión en la oficina. Esta nota es para
 arrancar la sesión siguiente sin volver a leer todo el chat.
 
-## Lo más reciente (sesión 2026-05-04)
+## Lo más reciente (sesión 2026-05-07)
+
+### Acceso remoto a la PC de oficina (Tailscale + SSH)
+
+Pendiente terminar mañana:
+- ✅ Tailscale instalado y andando — esta PC en tailnet es `badia-oficina-1`
+  (IP `100.101.4.71`).
+- ✅ OpenSSH Server instalado (`Add-WindowsCapability` completado).
+- ✅ `sshd` arrancado, responde a `ssh Lisandro@localhost`.
+- ⏳ **Falta**: confirmar que el user `Lisandro` tenga password de Windows
+  configurada (no me la sabía hoy). Si no la recuerda:
+  `net user Lisandro *` desde PowerShell admin para resetearla.
+- ⏳ **Falta**: dejar `sshd` en arranque automático:
+  `Set-Service -Name sshd -StartupType Automatic`
+- ⏳ **Falta**: regla firewall para puerto 22:
+  `New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22`
+- ⏳ **Falta**: probar desde casa: `ssh Lisandro@100.101.4.71`.
+- 🔮 **Opcional, después**: configurar clave pública (`ssh-keygen` en casa,
+  copiar `.pub` a `C:\Users\Lisandro\.ssh\authorized_keys` en oficina) para
+  no tipear password cada vez.
+
+### Features pusheadas hoy (PR #17 mergeado a main)
+
+Render debería haber deployado. Pendiente probar con data real:
+1. `docs/pendiente_de_prueba_2026-05-07.md` — lista completa con plan ordenado
+   por prioridad (mín corregido > rotación 3m > ofertas multi-lab > informe
+   correcciones > crear drog manual).
+2. Reverts documentados en sección 9 del mismo doc por si rompe algo.
+
+### Refactors de simplificación (no urgente)
+
+Auditoría guardada en `docs/simplify_2026-05-07.md`. Top 3:
+1. **[30min]** Migrar `compras_dia_armar.html` a `_grafico_dual_panel.html`
+   (borra ~250 líneas duplicadas, el componente ya existe pero no se adoptó).
+2. **[1h]** Extraer `cargar_ventas_12m` + `clasificar_min` a `purchase_helpers.py`
+   — duplicación grande en 4 callsites de `compras_dia.py` + `informes.py`.
+3. **[15min]** Limpiar imports dentro del loop en `compras_dia.py:625-649`.
+
+**No tocar antes** de validar las features de hoy en prod.
+
+### Agente nuevo: `simplify`
+
+Guardado en `.claude/agents/simplify.md`. Revisa working tree o últimos N
+commits buscando duplicación, simplificaciones obvias y bugs sutiles. Solo
+lectura. Para correrlo: `/simplify` o invocar como subagent_type.
+
+---
+
+## Sesión 2026-05-04
 
 **Etapa 1 del plan de simplificación de catálogo (en curso):**
 Cortar duplicación de EANs en `productos`. Hoy un EAN puede vivir en 4 lugares
