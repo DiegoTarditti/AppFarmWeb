@@ -51,6 +51,26 @@
             </div>
         </div>
 
+        {# ═══════════════════ OFERTAS ═══════════════════ #}
+        <div class="mb-6">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
+                <span class="text-base">🏷️</span> Ofertas y descuentos
+            </h2>
+            <p class="text-[11px] text-[#6f6f6f] mb-3">Gestión de todas las ofertas cargadas en el sistema.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <a href="{{ url_for('informe_ofertas_activas') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">🏷️</div>
+                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Ofertas activas</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Todas las ofertas cargadas — por lab, droguería y módulos. Filtrá por tipo y eliminá las que ya no aplican.</p>
+                </a>
+            </div>
+        </div>
+
         <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
             <span class="text-base">📊</span> Catálogo y ventas
         </h2>

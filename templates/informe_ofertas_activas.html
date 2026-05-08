@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Ofertas activas{% endblock %}
+
+{% block main %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+        <h1 class="text-base font-bold text-[#1e1e1e]">Ofertas activas</h1>
+        <p class="text-xs text-[#888] mt-0.5">Todas las ofertas cargadas en el sistema — por lab, droguería y módulos.</p>
+    </div>
+    <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline">← Informes</a>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+
+    {# ── Resumen ── #}
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-white border border-surface-border rounded-xl p-3 text-center">
+            <p class="text-2xl font-bold text-emerald-700">{{ resumen.con_minimo }}</p>
+            <p class="text-[10px] text-[#888] uppercase tracking-wide mt-0.5">Con mínimo</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-3 text-center">
+            <p class="text-2xl font-bold text-sky-700">{{ resumen.simple }}</p>
+            <p class="text-[10px] text-[#888] uppercase tracking-wide mt-0.5">Simples (lab directo)</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-3 text-center">
+            <p class="text-2xl font-bold text-violet-700">{{ resumen.multi_lab }}</p>
+            <p class="text-[10px] text-[#888] uppercase tracking-wide mt-0.5">Por droguería</p>
+        </div>
+        <div class="bg-white border border-surface-border rounded-xl p-3 text-center">
+            <p class="text-2xl font-bold text-amber-700">{{ resumen.modulos }}</p>
+            <p class="text-[10px] text-[#888] uppercase tracking-wide mt-0.5">Módulos</p>
+        </div>
+    </div>
+
+    {# ── Filtros ── #}
+    <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs text-[#888]">Mostrar:</span>
+        <button onclick="filtrar('todos')"   id="pill-todos"      class="pill pill-active">Todos</button>
+        <button onclick="filtrar('con_minimo')" id="pill-con_minimo" class="pill">Con mínimo</button>
+        <button onclick="filtrar('simple')"  id="pill-simple"     class="pill">Simples</button>
+        <button onclick="filtrar('multi')"   id="pill-multi"      class="pill">Por droguería</button>
+        <button onclick="filtrar('modulo')"  id="pill-modulo"     class="pill">Módulos</button>
+        <div class="ml-auto relative">
+            <input id="q-buscar" type="text" placeholder="Filtrar descripción o lab…"
+                   class="bg-white border border-surface-border rounded-lg pl-3 pr-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand w-56">
+        </div>
+    </div>
+
+    {# ── Tabla OfertaMinimo ── #}
+    <div id="tabla-ofertas" class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-2 border-b border-[#f0f0f0] flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#555]">Ofertas por producto</span>
+            <span id="count-om" class="text-[10px] text-[#999]">{{ ofertas|length }} registros</span>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+            <thead class="bg-[#fafafa] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2">Laboratorio</th>
+                    <th class="text-left px-3 py-2">Droguería</th>
+                    <th class="text-left px-3 py-2">Descripción</th>
+                    <th class="text-left px-3 py-2 font-mono">EAN</th>
+                    <th class="text-center px-3 py-2">Tipo</th>
+                    <th class="text-right px-3 py-2">Mín.</th>
+                    <th class="text-right px-3 py-2">Dto%</th>
+                    <th class="text-right px-3 py-2">Vigencia</th>
+                    <th class="text-center px-3 py-2 w-10"></th>
+                </tr>
+            </thead>
+            <tbody id="tbody-om" class="divide-y divide-[#f5f5f5]">
+                {% for o in ofertas %}
+                <tr id="om-{{ o.id }}"
+                    data-tipo="{{ o.tipo }}"
+                    data-drog="{{ 'si' if o.drog else 'no' }}"
+                    data-text="{{ (o.lab + ' ' + o.descripcion + ' ' + (o.drog or ''))|lower }}"
+                    class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-semibold text-[#333]">{{ o.lab }}</td>
+                    <td class="px-3 py-1.5 text-[#666]">{{ o.drog or '—' }}</td>
+                    <td class="px-3 py-1.5 text-[#1e1e1e] max-w-xs truncate">{{ o.descripcion or '—' }}</td>
+                    <td class="px-3 py-1.5 font-mono text-[#888]">{{ o.ean or '—' }}</td>
+                    <td class="px-3 py-1.5 text-center">
+                        {% if o.drog %}
+                        <span class="text-[9px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-semibold">DROG</span>
+                        {% elif o.tipo == 'con_minimo' %}
+                        <span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">C/MÍN</span>
+                        {% else %}
+                        <span class="text-[9px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded font-semibold">SIMPLE</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-right text-[#555]">{{ o.unidades_minima if o.unidades_minima else '—' }}</td>
+                    <td class="px-3 py-1.5 text-right {% if o.descuento %}text-emerald-700 font-semibold{% else %}text-[#bbb]{% endif %}">
+                        {{ '%.1f'|format(o.descuento) if o.descuento is not none else '—' }}
+                    </td>
+                    <td class="px-3 py-1.5 text-right text-[#999] text-[10px]">{{ o.vigencia or '—' }}</td>
+                    <td class="px-3 py-1.5 text-center">
+                        <button class="btn-del-om text-red-400 hover:text-red-700 font-bold" data-id="{{ o.id }}" title="Eliminar">✕</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% if not ofertas %}
+        <div class="text-center py-10 text-[#bbb] text-sm">Sin ofertas cargadas.</div>
+        {% endif %}
+    </div>
+
+    {# ── Tabla Módulos ── #}
+    <div id="tabla-modulos" class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="px-4 py-2 border-b border-[#f0f0f0] flex items-center justify-between">
+            <span class="text-xs font-semibold text-[#555]">Módulos de descuento</span>
+            <span class="text-[10px] text-[#999]">{{ modulos|length }} módulos</span>
+        </div>
+        <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+            <thead class="bg-[#fafafa] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2">Laboratorio</th>
+                    <th class="text-left px-3 py-2">Nombre del módulo</th>
+                    <th class="text-center px-3 py-2">Estado</th>
+                    <th class="text-right px-3 py-2">Packs</th>
+                    <th class="text-right px-3 py-2">Creado</th>
+                    <th class="text-center px-3 py-2 w-10"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#f5f5f5]">
+                {% for m in modulos %}
+                <tr id="mod-{{ m.id }}" data-tipo="modulo"
+                    data-text="{{ (m.lab + ' ' + m.nombre)|lower }}"
+                    class="hover:bg-black/[0.02]">
+                    <td class="px-3 py-1.5 font-semibold text-[#333]">{{ m.lab }}</td>
+                    <td class="px-3 py-1.5 text-[#1e1e1e]">{{ m.nombre }}</td>
+                    <td class="px-3 py-1.5 text-center">
+                        {% if m.activo %}
+                        <span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold">ACTIVO</span>
+                        {% else %}
+                        <span class="text-[9px] bg-[#f0f0f0] text-[#999] px-1.5 py-0.5 rounded">inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-1.5 text-right text-[#888]">{{ m.n_packs }}</td>
+                    <td class="px-3 py-1.5 text-right text-[#999] text-[10px]">{{ m.creado }}</td>
+                    <td class="px-3 py-1.5 text-center">
+                        <button class="btn-del-mod text-red-400 hover:text-red-700 font-bold" data-id="{{ m.id }}" title="Eliminar">✕</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% if not modulos %}
+        <div class="text-center py-10 text-[#bbb] text-sm">Sin módulos cargados.</div>
+        {% endif %}
+    </div>
+
+</div>
+
+<style>
+.pill { @apply text-xs px-3 py-1 rounded-full border border-surface-border bg-white text-[#555] hover:bg-[#f5f5f5] transition-colors; }
+.pill-active { @apply bg-[#1e1e1e] text-white border-[#1e1e1e]; }
+</style>
+
+<script>
+let _filtroActivo = 'todos';
+
+function filtrar(tipo) {
+    _filtroActivo = tipo;
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('pill-active'));
+    document.getElementById('pill-' + tipo)?.classList.add('pill-active');
+    aplicarFiltros();
+}
+
+function aplicarFiltros() {
+    const q = document.getElementById('q-buscar').value.trim().toLowerCase();
+    const tipo = _filtroActivo;
+
+    // Filas OfertaMinimo
+    const tablaOm = document.getElementById('tabla-ofertas');
+    let visOm = 0;
+    document.querySelectorAll('#tbody-om tr').forEach(tr => {
+        const t = tr.dataset.tipo;
+        const d = tr.dataset.drog;
+        const txt = tr.dataset.text;
+        let visible = true;
+        if (tipo === 'con_minimo') visible = t === 'con_minimo';
+        else if (tipo === 'simple')   visible = t === 'simple' && d === 'no';
+        else if (tipo === 'multi')    visible = d === 'si';
+        else if (tipo === 'modulo')   visible = false;
+        if (visible && q) visible = txt.includes(q);
+        tr.style.display = visible ? '' : 'none';
+        if (visible) visOm++;
+    });
+    document.getElementById('count-om').textContent = `${visOm} registros`;
+    tablaOm.style.display = (tipo === 'modulo') ? 'none' : '';
+
+    // Filas Módulos
+    const tablaMod = document.getElementById('tabla-modulos');
+    document.querySelectorAll('#tabla-modulos tbody tr').forEach(tr => {
+        let visible = (tipo === 'todos' || tipo === 'modulo');
+        if (visible && q) visible = tr.dataset.text.includes(q);
+        tr.style.display = visible ? '' : 'none';
+    });
+    tablaMod.style.display = (tipo === 'con_minimo' || tipo === 'simple' || tipo === 'multi') ? 'none' : '';
+}
+
+document.getElementById('q-buscar').addEventListener('input', aplicarFiltros);
+
+// Borrar OfertaMinimo
+document.querySelectorAll('.btn-del-om').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar esta oferta?')) return;
+        const id = btn.dataset.id;
+        btn.disabled = true; btn.textContent = '⏳';
+        const r = await fetch(`/informes/ofertas-activas/borrar-oferta/${id}`, { method: 'POST', credentials: 'same-origin' });
+        if (r.ok) {
+            document.getElementById('om-' + id)?.remove();
+        } else {
+            alert('Error al eliminar.');
+            btn.disabled = false; btn.textContent = '✕';
+        }
+    });
+});
+
+// Borrar Módulo
+document.querySelectorAll('.btn-del-mod').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        if (!confirm('¿Eliminar este módulo y todos sus packs?')) return;
+        const id = btn.dataset.id;
+        btn.disabled = true; btn.textContent = '⏳';
+        const r = await fetch(`/informes/ofertas-activas/borrar-modulo/${id}`, { method: 'POST', credentials: 'same-origin' });
+        if (r.ok) {
+            document.getElementById('mod-' + id)?.remove();
+        } else {
+            alert('Error al eliminar.');
+            btn.disabled = false; btn.textContent = '✕';
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -2089,3 +2089,81 @@ def init_app(app):
             items = [{'id': r.observer_id, 'descripcion': r.descripcion}
                      for r in results]
         return jsonify({'items': items})
+
+    @app.route('/informes/ofertas-activas')
+    @login_required
+    def informe_ofertas_activas():
+        """Gestión global de ofertas cargadas: OfertaMinimo (todos los tipos) + Módulos."""
+        from database import DescuentoBase, Laboratorio, Modulo, OfertaMinimo, Provider
+        with database.get_db() as session:
+            # ── OfertaMinimo ──────────────────────────────────────────────────
+            rows_om = (session.query(OfertaMinimo, Laboratorio, Provider)
+                       .join(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                       .outerjoin(Provider, Provider.id == OfertaMinimo.drogueria_id)
+                       .filter(OfertaMinimo.activo == True)
+                       .order_by(Laboratorio.nombre, OfertaMinimo.descripcion)
+                       .all())
+            ofertas = [{
+                'id':          o.id,
+                'lab_id':      o.laboratorio_id,
+                'lab':         lab.nombre,
+                'drog':        prov.razon_social if prov else None,
+                'ean':         o.ean or '',
+                'descripcion': o.descripcion or '',
+                'tipo':        o.tipo_descuento or 'simple',
+                'unidades_minima': o.unidades_minima,
+                'descuento':   float(o.descuento_psl) if o.descuento_psl is not None else None,
+                'vigencia':    o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
+            } for o, lab, prov in rows_om]
+
+            # ── Módulos ───────────────────────────────────────────────────────
+            from sqlalchemy import func as _func
+
+            from database import ModuloPack
+            rows_mod = (session.query(Modulo, Laboratorio,
+                                      _func.count(ModuloPack.id).label('n_packs'))
+                        .join(Laboratorio, Laboratorio.id == Modulo.laboratorio_id,
+                              isouter=True)
+                        .outerjoin(ModuloPack, ModuloPack.modulo_id == Modulo.id)
+                        .group_by(Modulo.id, Laboratorio.id)
+                        .order_by(Laboratorio.nombre, Modulo.nombre)
+                        .all())
+            modulos = [{
+                'id':      m.id,
+                'lab':     lab.nombre if lab else '—',
+                'nombre':  m.nombre,
+                'activo':  m.activo,
+                'n_packs': n_packs,
+                'creado':  m.creado_en.strftime('%d/%m/%Y') if m.creado_en else '',
+            } for m, lab, n_packs in rows_mod]
+
+        resumen = {
+            'con_minimo': sum(1 for o in ofertas if o['tipo'] == 'con_minimo'),
+            'simple':     sum(1 for o in ofertas if o['tipo'] == 'simple' and not o['drog']),
+            'multi_lab':  sum(1 for o in ofertas if o['drog']),
+            'modulos':    len(modulos),
+        }
+        return render_template('informe_ofertas_activas.html',
+                               ofertas=ofertas, modulos=modulos, resumen=resumen)
+
+    @app.route('/informes/ofertas-activas/borrar-oferta/<int:oferta_id>', methods=['POST'])
+    @login_required
+    def informe_oferta_borrar(oferta_id):
+        from database import OfertaMinimo
+        with database.get_db() as session:
+            o = session.get(OfertaMinimo, oferta_id)
+            if o:
+                session.delete(o)
+                session.commit()
+        return ('', 204)
+
+    @app.route('/informes/ofertas-activas/borrar-modulo/<int:modulo_id>', methods=['POST'])
+    @login_required
+    def informe_modulo_borrar(modulo_id):
+        from database import Modulo
+        with database.get_db() as session:
+            m = session.get(Modulo, modulo_id)
+            if m:
+                session.delete(m)
+                session.commit()
+        return ('', 204)
