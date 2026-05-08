@@ -1014,9 +1014,16 @@ function renderModulosRaw() {
                 : `<span class="text-[#999]">${unidadesPorSlot}</span>`;
             // Para packs, mostrar la equivalencia debajo del nombre del pack
             // (el chart, cant.pedida y rot ya viven en el EAN unidad).
-            const equivLine = esPack
-                ? `<div class="text-[10px] text-[#888] mt-0.5 ml-1">↳ <span class="font-mono text-[10px] text-[#aaa]">${_pack.ean_unidad}</span> · ${pedidoNom[_pack.ean_unidad] || '(sin descripción)'}</div>`
-                : '';
+            // Descripción: pedidoNom > _pack.desc_unidad (backend) > '(sin descripción)'.
+            // Código alfabeta de la unidad si está disponible.
+            let equivLine = '';
+            if (esPack) {
+                const _eu = _pack.ean_unidad;
+                const _descU = pedidoNom[_eu] || _pack.desc_unidad || '(sin descripción)';
+                const _alfaU = _pack.codigo_alfabeta_unidad
+                    ? `<span class="text-[10px] text-emerald-700 font-semibold ml-1">[${_pack.codigo_alfabeta_unidad}]</span>` : '';
+                equivLine = `<div class="text-[10px] text-[#888] mt-0.5 ml-1">↳ <span class="font-mono text-[10px] text-[#aaa]">${_eu}</span>${_alfaU} · ${_descU}</div>`;
+            }
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
                 <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(eanLookup)}${ALFA_BTN(it.descripcion)}${it.descripcion}${equivLine}</td>
