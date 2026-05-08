@@ -89,7 +89,7 @@
            DESIGN SYSTEM — Tokens + Componentes (emerald theme)
            ════════════════════════════════════════════════════════════════════
            Cómo usar:
-             • Página opt-in al tema oscuro → {% block body_class %}theme-emerald{% endblock %}
+             • Página opt-in al tema oscuro → block body_class -> theme-emerald
              • Encabezado: <header class="page-header">...</header>
              • Botones: .btn .btn-primary | .btn-secondary | .btn-ghost | .btn-danger
                         modificadores: .btn-sm | .btn-lg
@@ -671,7 +671,7 @@
             Dashboard
         </a>
 
-        <p class="px-3 pt-3 pb-1 text-[10px] font-bold text-[#F4C430] uppercase tracking-widest">Gestión</p>
+        <p class="px-3 pt-4 pb-1 text-[10px] font-semibold text-[#6b7280] uppercase tracking-[.18em]">Gestión</p>
         <a href="{{ url_for('providers_list') }}"
            class="{{ nav_active_cls if nav_active == 'proveedores' else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
@@ -699,7 +699,7 @@
             Reclamos
         </a>
 
-        <p class="px-3 pt-3 pb-1 text-[10px] font-bold text-[#F4C430] uppercase tracking-widest">Operaciones</p>
+        <p class="px-3 pt-4 pb-1 text-[10px] font-semibold text-[#6b7280] uppercase tracking-[.18em]">Operaciones</p>
         <a href="{{ url_for('docs_pendientes') }}"
            class="{{ nav_active_cls if nav_active in ('docs_pendientes', 'convertir') else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/></svg>
@@ -832,7 +832,11 @@
 
     {# ── Top bar desktop ── #}
     {% if current_user.is_authenticated %}
-    <div class="hidden lg:flex items-center justify-end gap-3 px-5 h-11 bg-white border-b border-[#ececec] flex-shrink-0">
+    <div class="hidden lg:flex items-center justify-between gap-3 px-5 h-11 bg-white border-b border-[#ececec] flex-shrink-0">
+        <p class="text-[12px] font-semibold text-[#6b7280] truncate" title="{{ self.title() }}">
+            {{ self.title() | replace(' — Farmacia Badía','') | replace(' — Farmacia','') }}
+        </p>
+        <div class="flex items-center gap-3">
         <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide"
               style="background-color: {{ entorno.color }}; color: #fff;"
               title="{{ entorno.descripcion }}">{{ entorno.label }}</span>
@@ -879,6 +883,7 @@
            class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:bg-red-50 hover:text-red-600">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
         </a>
+        </div>{# /right group #}
     </div>
     {% endif %}
 

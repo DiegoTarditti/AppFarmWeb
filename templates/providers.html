@@ -8,388 +8,383 @@
     {% else %}Proveedores (todos){% endif %} — Farmacia
 {% endblock %}
 
+{% block body_class %}theme-emerald{% endblock %}
+
 {% block extra_head %}
 <style>
-    .prov-card {
-        background: #ffffff;
-        border: 1px solid #cfe3d6;
-        border-radius: 14px;
-        overflow: hidden;
-        transition: box-shadow .15s, border-color .15s, transform .15s;
-    }
-    .prov-card:hover { box-shadow: 0 6px 18px rgba(30,60,40,.08); border-color: #7fb99f; }
-    .prov-card .band {
-        background: #1f2937;
-        color: #F4C430;
-        padding: 10px 16px;
+    .prov-card { padding: 0; overflow: hidden; }
+    .prov-card__band {
+        background: linear-gradient(135deg, var(--ds-surface-2) 0%, var(--ds-surface) 100%);
+        padding: 11px 18px;
         display: flex; align-items: center; gap: 10px;
-        border-bottom: 2px solid #2E7D5B;
+        border-bottom: 1px solid var(--ds-line);
     }
-    .prov-card .band .idtag {
-        font-size: 10px; font-weight: 600;
-        color: #A8D5BA;
-        background: rgba(46,125,91,.25);
-        border: 1px solid #2E7D5B;
-        padding: 1px 6px; border-radius: 99px;
-    }
-    .prov-card .band .type-tag {
-        font-size: 10px; font-weight: 700;
-        padding: 1px 7px; border-radius: 99px;
-    }
-    .prov-card .band .type-tag.drog { color: #fef9c3; background: rgba(244,196,48,.2); border: 1px solid #F4C430; }
-    .prov-card .band .type-tag.lab  { color: #ddd6fe; background: rgba(139,92,246,.25); border: 1px solid #8b5cf6; }
-    .prov-card .band .type-tag.otro { color: #d1d5db; background: rgba(148,163,184,.25); border: 1px solid #94a3b8; }
-    .prov-card .band .plantilla-badge {
-        font-size: 10px; font-weight: 600; color: #064e3b;
-        background: #d1fae5; border: 1px solid #10b981;
-        padding: 1px 6px; border-radius: 99px;
-    }
-    .prov-card .subhead {
+    .prov-card__band .name { font-weight: 600; font-size: 14px; color: var(--ds-text); }
+    .prov-card__subhead {
         font-family: ui-monospace, Consolas, monospace;
-        font-size: 11px; color: #6f6f6f;
-        padding: 6px 16px; background: #f8faf9;
-        border-bottom: 1px solid #e6efe9;
+        font-size: 11px; color: var(--ds-text-mute);
+        padding: 7px 18px;
+        background: rgba(0,0,0,.18);
+        border-bottom: 1px solid var(--ds-line);
     }
-    .prov-card .body { padding: 10px 16px; }
-    .action-link {
-        display: inline-flex; align-items: center; gap: 5px;
-        padding: 4px 9px; border-radius: 8px;
-        font-size: 12px; font-weight: 500; color: #555;
-        transition: background .12s, color .12s;
-        cursor: pointer;
-        background: none; border: none;
-    }
-    .action-link:hover { background: #E8F3ED; color: #1F5D40; }
-    .action-link.danger:hover { background: #FEE2E2; color: #B91C1C; }
-    .action-link.plantilla:hover { background: #f3e8ff; color: #6b21a8; }
-    .action-link.parser:hover { background: #fef3c7; color: #92400e; }
+    .prov-card__body { padding: 12px 18px; }
+
     .stat-pill {
         display: inline-flex; align-items: center; gap: 5px;
-        padding: 3px 9px; border-radius: 99px;
-        font-size: 11px; font-weight: 600;
-        background: #FFF7DC; color: #92630b;
-        border: 1px solid #F4C430;
+        padding: 3px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 500;
+        background: rgba(95,230,188,.06); color: var(--ds-text-soft);
+        border: 1px solid var(--ds-line);
+        text-decoration: none;
+        transition: all .15s;
     }
-    .stat-pill .num { color: #1a1100; font-weight: 700; }
+    .stat-pill:hover { background: rgba(95,230,188,.12); color: var(--ds-text); }
+    .stat-pill .num { color: var(--ds-mint); font-weight: 700; }
+
+    .action-link {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 9px; border-radius: var(--ds-r-sm);
+        font-size: 12px; font-weight: 500;
+        color: var(--ds-text-soft); background: transparent;
+        border: 1px solid transparent; cursor: pointer;
+        transition: all .15s; text-decoration: none;
+    }
+    .action-link:hover { background: rgba(95,230,188,.1); color: var(--ds-mint); }
+    .action-link.danger:hover { background: rgba(239,68,68,.1); color: var(--ds-danger); }
+    .action-link.violet:hover { background: rgba(139,92,246,.12); color: #C4B5FD; }
+    .action-link.amber:hover { background: rgba(245,158,11,.12); color: var(--ds-warn); }
+
+    .filter-bar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        padding: 14px 18px;
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .filter-bar .search-wrap { position: relative; flex: 1; min-width: 240px; }
+    .filter-bar .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--ds-text-mute); pointer-events: none; }
+    .filter-bar .search-input {
+        width: 100%;
+        background: var(--ds-surface); border: 1px solid var(--ds-line);
+        color: var(--ds-text); border-radius: var(--ds-r-md);
+        padding: 8px 10px 8px 34px; font-size: 13px;
+    }
+    .filter-bar .search-input:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+    .filter-bar .search-input::placeholder { color: var(--ds-text-mute); }
+
+    .add-form {
+        background: linear-gradient(135deg, rgba(95,230,188,.08) 0%, rgba(16,185,129,.04) 100%);
+        border: 1px solid rgba(95,230,188,.3);
+        border-radius: var(--ds-r-lg);
+        padding: 14px 18px;
+        display: flex; flex-wrap: wrap; align-items: end; gap: 12px;
+    }
+    .empty-state {
+        padding: 56px 24px; text-align: center;
+        color: var(--ds-text-soft); font-size: 14px;
+    }
+
+    .matriz-pill {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 11px; padding: 3px 8px; border-radius: var(--ds-r-sm);
+        border: 1px solid var(--ds-line); background: rgba(0,0,0,.15);
+        color: var(--ds-text-soft); cursor: pointer;
+    }
 </style>
 {% endblock %}
 
 {% block main %}
-<!-- Header sticky -->
-<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">
-        {% if tipo_filter == 'drogueria' %}Droguerías
-        {% elif tipo_filter == 'laboratorio' %}Laboratorios (proveedores)
-        {% elif tipo_filter == 'otro' %}Otros proveedores
-        {% else %}Proveedores{% endif %}
-    </h1>
-    <span class="text-xs text-[#6f6f6f]" id="prov-count-lbl">
-        <span id="prov-count">{{ providers|length }}</span>
-        proveedor<span id="prov-plural">{{ 'es' if providers|length != 1 }}</span>
-    </span>
-    <div class="ml-auto flex items-center gap-2">
-        {% if tipo_filter == 'drogueria' %}
-        <a href="{{ url_for('labs_drogerias_matriz') }}"
-           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
-            🔗 Matriz lab × drog
-        </a>
-        {% endif %}
-        <a href="{{ url_for('providers_activos') }}"
-           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
-            Activar / desactivar
-        </a>
-    </div>
-</div>
+<div class="flex-1 overflow-auto py-6 px-6">
+    <div class="max-w-6xl mx-auto">
 
-<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
-
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-4 py-3 text-sm">
-            {{ messages[0] }}
-        </div>
-        {% endif %}
-    {% endwith %}
-
-    <!-- Filtros -->
-    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-3 flex-wrap">
-        <div class="relative flex-1 min-w-[240px]">
-            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
-            </svg>
-            <input type="text" id="prov-search" placeholder="Buscar por nombre, CUIT o parser…"
-                   oninput="filterProviders()"
-                   class="w-full bg-surface-input border border-surface-border rounded-lg pl-10 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-        </div>
-        <select id="prov-tipo" onchange="filterProviders()"
-                class="bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand w-44">
-            <option value="">Todos los tipos</option>
-            <option value="drogueria" {% if tipo_filter == 'drogueria' %}selected{% endif %}>Droguerías</option>
-            <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorios</option>
-            <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otros</option>
-        </select>
-        {% if tipo_filter == 'drogueria' %}
-        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none">
-            <input type="checkbox" id="filtro-matriz-drog" class="w-3.5 h-3.5" onchange="filterProviders()">
-            Solo en matriz pedidos
-        </label>
-        {% endif %}
-        <button type="button" onclick="document.getElementById('form-add-provider').classList.toggle('hidden')"
-                class="ml-auto bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-3 py-2 rounded-lg">
-            + Agregar
-        </button>
-    </div>
-
-    <!-- Form alta manual -->
-    <form id="form-add-provider" method="post" action="{{ url_for('provider_create_manual') }}"
-          class="hidden bg-white border-2 border-emerald-300 rounded-xl p-3 mb-4 flex flex-wrap items-end gap-3">
-        <div class="flex-1 min-w-[200px]">
-            <label class="text-[10px] font-semibold text-[#888] uppercase block">Razón social</label>
-            <input name="razon_social" required placeholder="Ej. DROGUERÍA NUEVA S.A."
-                   class="w-full border border-surface-border rounded px-2 py-1 text-sm">
-        </div>
-        <div class="w-44">
-            <label class="text-[10px] font-semibold text-[#888] uppercase block">CUIT (opcional)</label>
-            <input name="cuit" placeholder="30-12345678-9"
-                   class="w-full border border-surface-border rounded px-2 py-1 text-sm font-mono">
-        </div>
-        <div class="w-40">
-            <label class="text-[10px] font-semibold text-[#888] uppercase block">Tipo</label>
-            <select name="tipo" class="w-full border border-surface-border rounded px-2 py-1 text-sm">
-                <option value="drogueria" {% if tipo_filter == 'drogueria' or not tipo_filter %}selected{% endif %}>Droguería</option>
-                <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
-                <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otro</option>
-            </select>
-        </div>
-        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-1.5 rounded">
-            Crear
-        </button>
-        <button type="button" onclick="document.getElementById('form-add-provider').classList.add('hidden')"
-                class="text-xs text-[#666] hover:text-[#1e1e1e]">Cancelar</button>
-    </form>
-
-    <!-- Lista -->
-    {% if providers %}
-    <div class="space-y-3" id="prov-list">
-        {% for p in providers %}
-        <div class="prov-card prov-row" id="row-{{ p.id }}"
-             data-nombre="{{ p.razon_social | lower }}"
-             data-cuit="{{ p.cuit or '' }}"
-             data-parser="{{ (p.parser_file or '') | lower }}"
-             data-tipo="{{ p.tipo or 'drogueria' }}"
-             data-matriz="{{ 'y' if p.matriz_visible else 'n' }}">
-
-            <div id="view-{{ p.id }}">
-                <div class="band">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                    </svg>
-                    <span class="font-bold text-sm">{{ p.razon_social }}</span>
-                    {% if p.tipo == 'laboratorio' %}
-                        <span class="type-tag lab">LAB</span>
-                    {% elif p.tipo == 'otro' %}
-                        <span class="type-tag otro">OTRO</span>
-                    {% else %}
-                        <span class="type-tag drog">DROG</span>
-                    {% endif %}
-                    {% if p.has_plantilla %}
-                        <span class="plantilla-badge" title="Plantilla de exportación configurada">✓ PLANTILLA</span>
-                    {% endif %}
-                    <span class="idtag ml-auto">#{{ p.id }}</span>
-                </div>
-                <div class="subhead">
-                    {% if p.cuit %}CUIT {{ p.cuit }} · {% endif %}
-                    parsers/{{ p.parser_file or '—' }}.py ·
-                    cruce por {{ 'descripción' if p.match_strategy == 'descripcion' else 'código de barra' }}
-                </div>
-                <div class="body">
-                    <div class="flex items-center gap-1 flex-wrap">
-                        <a href="{{ url_for('provider_invoices', provider_id=p.id) }}" class="stat-pill">
-                            <span class="num">{{ p.invoice_count }}</span> factura{{ 's' if p.invoice_count != 1 }}
-                        </a>
-                        <span class="stat-pill">
-                            <span class="num">{{ p.claim_count }}</span> reclamo{{ 's' if p.claim_count != 1 }}
-                        </span>
-
-                        <span class="w-px h-4 bg-surface-border mx-2"></span>
-
-                        {% if p.tipo == 'drogueria' %}
-                        <a href="{{ url_for('provider_horarios', provider_id=p.id) }}"
-                           class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border
-                                  {% if p.tiene_horarios %}
-                                  bg-emerald-50 text-emerald-700 border-emerald-200
-                                  {% else %}
-                                  bg-[#f5f5f5] text-[#999] border-[#e0e0e0]
-                                  {% endif %}">
-                            🕐
-                            {% if p.tiene_horarios %}
-                                {{ p.horario_count }} slot{{ 's' if p.horario_count != 1 else '' }}
-                            {% else %}
-                                Sin horario
-                            {% endif %}
-                        </a>
-                        <a href="{{ url_for('descuentos_base_lista') }}"
-                           class="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100">
-                            💸 Descuentos base
-                        </a>
-                        <label class="inline-flex items-center gap-1.5 text-[11px] cursor-pointer select-none text-[#555]">
-                            <input type="checkbox"
-                                   class="w-3.5 h-3.5"
-                                   {% if p.matriz_visible %}checked{% endif %}
-                                   onchange="toggleMatrizVisible({{ p.id }}, this)">
-                            En matriz pedidos
-                        </label>
-                        {% endif %}
-                        <a href="{{ url_for('provider_mappings', provider_id=p.id) }}" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                            </svg>
-                            Equivalencias
-                        </a>
-                        <a href="{{ url_for('plantillas_list', tipo=p.tipo, id=p.id) }}" class="action-link plantilla">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            Plantillas
-                        </a>
-                        {% if p.parser_file %}
-                        <button onclick="openParserPreview({{ p.id }}, '{{ p.razon_social | e }}')" class="action-link parser">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                            </svg>
-                            Probar parser
-                        </button>
-                        {% endif %}
-
-                        <span class="flex-1"></span>
-
-                        <button onclick="openEdit({{ p.id }})" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                            </svg>
-                            Editar
-                        </button>
-                        <button onclick="confirmDelete({{ p.id }}, '{{ p.razon_social | e }}')" class="action-link danger">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                            Eliminar
-                        </button>
-                    </div>
-                </div>
+        <!-- Page header -->
+        <header class="page-header">
+            <div class="page-header__left">
+                <span class="section-label">Gestión</span>
+                <h1 class="page-header__title">
+                    {% if tipo_filter == 'drogueria' %}Droguerías
+                    {% elif tipo_filter == 'laboratorio' %}<span class="glow-text">Laboratorios</span>
+                    {% elif tipo_filter == 'otro' %}Otros proveedores
+                    {% else %}<span class="glow-text">Proveedores</span>{% endif %}
+                </h1>
+                <p class="page-header__subtitle">
+                    <span id="prov-count">{{ providers|length }}</span>
+                    proveedor<span id="prov-plural">{{ 'es' if providers|length != 1 }}</span>
+                </p>
             </div>
-
-            <!-- Formulario de edición (oculto) -->
-            <form id="edit-{{ p.id }}" class="hidden px-4 py-4 bg-[#f8faf9] border-t border-[#e6efe9]"
-                  method="post" action="{{ url_for('provider_edit', provider_id=p.id) }}">
-                <div class="grid grid-cols-3 gap-3">
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">Razón social</label>
-                        <input type="text" name="razon_social" value="{{ p.razon_social }}"
-                            class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">CUIT</label>
-                        <input type="text" name="cuit" value="{{ p.cuit }}"
-                            class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand font-mono">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">Parser (sin .py)</label>
-                        <input type="text" name="parser_file" value="{{ p.parser_file }}"
-                            class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand font-mono">
-                    </div>
-                </div>
-                <div class="mt-3">
-                    <label class="block text-xs text-[#6f6f6f] mb-1">Carpeta de facturas (ruta predeterminada)</label>
-                    <input type="text" name="ruta_facturas" value="{{ p.ruta_facturas }}"
-                           placeholder="C:\AppFarmacia\Facturas\Kellerhoff"
-                           class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand font-mono">
-                </div>
-                <div class="mt-3 grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">Estrategia de cruce con ERP</label>
-                        <select name="match_strategy"
-                            class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                            <option value="barcode" {% if p.match_strategy != 'descripcion' %}selected{% endif %}>Código de barra (por defecto)</option>
-                            <option value="descripcion" {% if p.match_strategy == 'descripcion' %}selected{% endif %}>Nombre / descripción del medicamento</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">Tipo de proveedor</label>
-                        <select name="tipo"
-                            class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                            <option value="drogueria" {% if p.tipo == 'drogueria' %}selected{% endif %}>Droguería</option>
-                            <option value="laboratorio" {% if p.tipo == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
-                            <option value="otro" {% if p.tipo == 'otro' %}selected{% endif %}>Otro</option>
-                        </select>
-                    </div>
-                </div>
-                {% if p.tipo == 'drogueria' %}
-                <div class="mt-3 grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">Descuento con transfer (%)</label>
-                        <input type="number" name="descuento_con_transfer" step="0.01" min="0" max="100"
-                               value="{{ p.descuento_con_transfer or '' }}"
-                               placeholder="ej: 31.03"
-                               class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-[#6f6f6f] mb-1">Descuento sin transfer (%)</label>
-                        <input type="number" name="descuento_sin_transfer" step="0.01" min="0" max="100"
-                               value="{{ p.descuento_sin_transfer or '' }}"
-                               placeholder="ej: 28.50"
-                               class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                    </div>
-                </div>
+            <div class="page-header__actions">
+                {% if tipo_filter == 'drogueria' %}
+                <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-ghost btn-sm">
+                    🔗 Matriz lab × drog
+                </a>
                 {% endif %}
-                <input type="hidden" name="tipo_filter" value="{{ tipo_filter }}">
-                <div class="mt-3 flex items-center gap-2">
-                    <input type="hidden" name="grabar_productos" value="0">
-                    <input type="checkbox" id="gp-{{ p.id }}" name="grabar_productos" value="1"
-                           {% if p.grabar_productos != 0 %}checked{% endif %}
-                           class="w-4 h-4 accent-brand">
-                    <label for="gp-{{ p.id }}" class="text-sm cursor-pointer select-none">
-                        Grabar códigos de barra en tabla de productos al importar facturas
-                    </label>
-                    <span class="text-xs text-[#999]">(desactivar para Pharmos y proveedores sin EAN real)</span>
-                </div>
-                <div class="flex justify-end gap-2 mt-3">
-                    <button type="button" onclick="closeEdit({{ p.id }})"
-                        class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg border border-surface-border transition-colors">
-                        Cancelar
-                    </button>
-                    <button type="submit"
-                        class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg transition-colors">
-                        Guardar
-                    </button>
-                </div>
-            </form>
+                <a href="{{ url_for('providers_activos') }}" class="btn btn-secondary btn-sm">
+                    Activar / desactivar
+                </a>
+                <button type="button" onclick="document.getElementById('form-add-provider').classList.toggle('hidden')"
+                        class="btn btn-primary btn-sm">
+                    + Agregar
+                </button>
+            </div>
+        </header>
 
-            <form id="del-{{ p.id }}" method="post"
-                  action="{{ url_for('provider_delete', provider_id=p.id) }}" class="hidden"></form>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+            <div class="card mb-4" style="background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.3); color:#FCD34D; padding:10px 14px; font-size:13px;">
+                {{ messages[0] }}
+            </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Filtros -->
+        <div class="filter-bar mb-4">
+            <div class="search-wrap">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
+                </svg>
+                <input type="text" id="prov-search" placeholder="Buscar por nombre, CUIT o parser…"
+                       oninput="filterProviders()" class="search-input">
+            </div>
+            <select id="prov-tipo" onchange="filterProviders()" class="ds-select" style="width:170px;">
+                <option value="">Todos los tipos</option>
+                <option value="drogueria" {% if tipo_filter == 'drogueria' %}selected{% endif %}>Droguerías</option>
+                <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorios</option>
+                <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otros</option>
+            </select>
+            {% if tipo_filter == 'drogueria' %}
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color:var(--ds-text-soft);">
+                <input type="checkbox" id="filtro-matriz-drog" onchange="filterProviders()" style="accent-color:var(--ds-mint);">
+                Solo en matriz pedidos
+            </label>
+            {% endif %}
         </div>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="bg-white border border-dashed border-surface-border rounded-xl px-6 py-12 text-center text-sm text-[#999]">
-        No hay proveedores registrados.
-    </div>
-    {% endif %}
 
+        <!-- Form alta manual -->
+        <form id="form-add-provider" method="post" action="{{ url_for('provider_create_manual') }}"
+              class="add-form hidden mb-4">
+            <div class="flex-1 min-w-[200px]">
+                <label class="ds-label">Razón social</label>
+                <input name="razon_social" required placeholder="Ej. DROGUERÍA NUEVA S.A." class="ds-input">
+            </div>
+            <div style="width:170px;">
+                <label class="ds-label">CUIT (opcional)</label>
+                <input name="cuit" placeholder="30-12345678-9" class="ds-input" style="font-family:ui-monospace,monospace;">
+            </div>
+            <div style="width:160px;">
+                <label class="ds-label">Tipo</label>
+                <select name="tipo" class="ds-select">
+                    <option value="drogueria" {% if tipo_filter == 'drogueria' or not tipo_filter %}selected{% endif %}>Droguería</option>
+                    <option value="laboratorio" {% if tipo_filter == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
+                    <option value="otro" {% if tipo_filter == 'otro' %}selected{% endif %}>Otro</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-mint">Crear</button>
+            <button type="button" onclick="document.getElementById('form-add-provider').classList.add('hidden')"
+                    class="btn btn-ghost btn-sm">Cancelar</button>
+        </form>
+
+        <!-- Lista -->
+        {% if providers %}
+        <div class="space-y-3" id="prov-list">
+            {% for p in providers %}
+            <div class="card prov-card prov-row" id="row-{{ p.id }}"
+                 data-nombre="{{ p.razon_social | lower }}"
+                 data-cuit="{{ p.cuit or '' }}"
+                 data-parser="{{ (p.parser_file or '') | lower }}"
+                 data-tipo="{{ p.tipo or 'drogueria' }}"
+                 data-matriz="{{ 'y' if p.matriz_visible else 'n' }}">
+
+                <div id="view-{{ p.id }}">
+                    <div class="prov-card__band">
+                        <svg class="w-4 h-4" style="color:var(--ds-mint);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <span class="name">{{ p.razon_social }}</span>
+                        {% if p.tipo == 'laboratorio' %}
+                            <span class="badge" style="background:rgba(139,92,246,.15); color:#C4B5FD;">LAB</span>
+                        {% elif p.tipo == 'otro' %}
+                            <span class="badge badge-mute">OTRO</span>
+                        {% else %}
+                            <span class="badge badge-warn">DROG</span>
+                        {% endif %}
+                        {% if p.has_plantilla %}
+                            <span class="badge badge-mint" title="Plantilla de exportación configurada">✓ PLANTILLA</span>
+                        {% endif %}
+                        <span class="badge badge-mute ml-auto">#{{ p.id }}</span>
+                    </div>
+                    <div class="prov-card__subhead">
+                        {% if p.cuit %}CUIT {{ p.cuit }} · {% endif %}
+                        parsers/{{ p.parser_file or '—' }}.py ·
+                        cruce por {{ 'descripción' if p.match_strategy == 'descripcion' else 'código de barra' }}
+                    </div>
+                    <div class="prov-card__body">
+                        <div class="flex items-center gap-1 flex-wrap">
+                            <a href="{{ url_for('provider_invoices', provider_id=p.id) }}" class="stat-pill">
+                                <span class="num">{{ p.invoice_count }}</span> factura{{ 's' if p.invoice_count != 1 }}
+                            </a>
+                            <span class="stat-pill">
+                                <span class="num">{{ p.claim_count }}</span> reclamo{{ 's' if p.claim_count != 1 }}
+                            </span>
+
+                            <span style="width:1px; height:18px; background:var(--ds-line); margin:0 8px;"></span>
+
+                            {% if p.tipo == 'drogueria' %}
+                            <a href="{{ url_for('provider_horarios', provider_id=p.id) }}"
+                               class="action-link">
+                                🕐
+                                {% if p.tiene_horarios %}
+                                    <span style="color:var(--ds-mint);">{{ p.horario_count }} slot{{ 's' if p.horario_count != 1 else '' }}</span>
+                                {% else %}
+                                    Sin horario
+                                {% endif %}
+                            </a>
+                            <a href="{{ url_for('descuentos_base_lista') }}" class="action-link violet">
+                                💸 Descuentos base
+                            </a>
+                            <label class="matriz-pill">
+                                <input type="checkbox" {% if p.matriz_visible %}checked{% endif %}
+                                       onchange="toggleMatrizVisible({{ p.id }}, this)"
+                                       style="accent-color:var(--ds-mint); width:13px; height:13px;">
+                                En matriz pedidos
+                            </label>
+                            {% endif %}
+                            <a href="{{ url_for('provider_mappings', provider_id=p.id) }}" class="action-link">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                                </svg>
+                                Equivalencias
+                            </a>
+                            <a href="{{ url_for('plantillas_list', tipo=p.tipo, id=p.id) }}" class="action-link violet">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                Plantillas
+                            </a>
+                            {% if p.parser_file %}
+                            <button onclick="openParserPreview({{ p.id }}, '{{ p.razon_social | e }}')" class="action-link amber">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                Probar parser
+                            </button>
+                            {% endif %}
+
+                            <span class="flex-1"></span>
+
+                            <button onclick="openEdit({{ p.id }})" class="action-link">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                                </svg>
+                                Editar
+                            </button>
+                            <button onclick="confirmDelete({{ p.id }}, '{{ p.razon_social | e }}')" class="action-link danger">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                </svg>
+                                Eliminar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form de edición (oculto) -->
+                <form id="edit-{{ p.id }}" class="hidden"
+                      method="post" action="{{ url_for('provider_edit', provider_id=p.id) }}"
+                      style="padding: 18px; background: rgba(0,0,0,.18); border-top: 1px solid var(--ds-line);">
+                    <div class="grid grid-cols-3 gap-3">
+                        <div>
+                            <label class="ds-label">Razón social</label>
+                            <input type="text" name="razon_social" value="{{ p.razon_social }}" class="ds-input">
+                        </div>
+                        <div>
+                            <label class="ds-label">CUIT</label>
+                            <input type="text" name="cuit" value="{{ p.cuit }}" class="ds-input" style="font-family:ui-monospace,monospace;">
+                        </div>
+                        <div>
+                            <label class="ds-label">Parser (sin .py)</label>
+                            <input type="text" name="parser_file" value="{{ p.parser_file }}" class="ds-input" style="font-family:ui-monospace,monospace;">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="ds-label">Carpeta de facturas (ruta predeterminada)</label>
+                        <input type="text" name="ruta_facturas" value="{{ p.ruta_facturas }}"
+                               placeholder="C:\AppFarmacia\Facturas\Kellerhoff"
+                               class="ds-input" style="font-family:ui-monospace,monospace;">
+                    </div>
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="ds-label">Estrategia de cruce con ERP</label>
+                            <select name="match_strategy" class="ds-select">
+                                <option value="barcode" {% if p.match_strategy != 'descripcion' %}selected{% endif %}>Código de barra (por defecto)</option>
+                                <option value="descripcion" {% if p.match_strategy == 'descripcion' %}selected{% endif %}>Nombre / descripción del medicamento</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="ds-label">Tipo de proveedor</label>
+                            <select name="tipo" class="ds-select">
+                                <option value="drogueria" {% if p.tipo == 'drogueria' %}selected{% endif %}>Droguería</option>
+                                <option value="laboratorio" {% if p.tipo == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
+                                <option value="otro" {% if p.tipo == 'otro' %}selected{% endif %}>Otro</option>
+                            </select>
+                        </div>
+                    </div>
+                    {% if p.tipo == 'drogueria' %}
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="ds-label">Descuento con transfer (%)</label>
+                            <input type="number" name="descuento_con_transfer" step="0.01" min="0" max="100"
+                                   value="{{ p.descuento_con_transfer or '' }}" placeholder="ej: 31.03" class="ds-input">
+                        </div>
+                        <div>
+                            <label class="ds-label">Descuento sin transfer (%)</label>
+                            <input type="number" name="descuento_sin_transfer" step="0.01" min="0" max="100"
+                                   value="{{ p.descuento_sin_transfer or '' }}" placeholder="ej: 28.50" class="ds-input">
+                        </div>
+                    </div>
+                    {% endif %}
+                    <input type="hidden" name="tipo_filter" value="{{ tipo_filter }}">
+                    <div class="mt-4 flex items-center gap-2">
+                        <input type="hidden" name="grabar_productos" value="0">
+                        <input type="checkbox" id="gp-{{ p.id }}" name="grabar_productos" value="1"
+                               {% if p.grabar_productos != 0 %}checked{% endif %}
+                               style="accent-color:var(--ds-mint); width:15px; height:15px;">
+                        <label for="gp-{{ p.id }}" class="text-sm cursor-pointer select-none" style="color:var(--ds-text-soft);">
+                            Grabar códigos de barra en tabla de productos al importar facturas
+                        </label>
+                        <span class="text-xs" style="color:var(--ds-text-mute);">(desactivar para Pharmos y proveedores sin EAN real)</span>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button type="button" onclick="closeEdit({{ p.id }})" class="btn btn-ghost btn-sm">Cancelar</button>
+                        <button type="submit" class="btn btn-mint btn-sm">Guardar</button>
+                    </div>
+                </form>
+
+                <form id="del-{{ p.id }}" method="post"
+                      action="{{ url_for('provider_delete', provider_id=p.id) }}" class="hidden"></form>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card empty-state">
+            No hay proveedores registrados.
+        </div>
+        {% endif %}
+
+    </div>
 </div>
 
-<!-- Modal parser preview (sin cambios) -->
+<!-- Modal parser preview -->
 <div id="parser-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
     <div class="absolute inset-0 bg-black/70" onclick="closeParserPreview()"></div>
-    <div class="relative bg-white border border-[#e0e0e0] rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-[#e0e0e0] flex-shrink-0">
+    <div class="card relative w-full max-w-5xl max-h-[90vh] flex flex-col" style="padding:0;">
+        <div class="flex items-center justify-between px-6 py-4" style="border-bottom: 1px solid var(--ds-line);">
             <div>
-                <p class="font-semibold" id="modal-title">Probar parser</p>
-                <p class="text-xs text-[#6f6f6f] mt-0.5" id="modal-subtitle">Subí una factura para ver cómo la interpreta el parser</p>
+                <p class="font-semibold" id="modal-title" style="color:var(--ds-text);">Probar parser</p>
+                <p class="text-xs mt-0.5" id="modal-subtitle" style="color:var(--ds-text-soft);">Subí una factura para ver cómo la interpreta el parser</p>
             </div>
-            <button type="button" title="Cerrar" onclick="closeParserPreview()" class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
+            <button type="button" title="Cerrar" onclick="closeParserPreview()" class="btn btn-ghost btn-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
@@ -397,33 +392,34 @@
         </div>
         <div id="modal-upload" class="px-6 py-6 flex-shrink-0">
             <div id="modal-drop"
-                 class="border-2 border-dashed border-[#e0e0e0] rounded-xl p-8 text-center cursor-pointer hover:border-brand/50 transition-colors"
-                 onclick="document.getElementById('modal-file').click()">
-                <svg class="w-8 h-8 text-[#888] mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 onclick="document.getElementById('modal-file').click()"
+                 style="border: 2px dashed var(--ds-line-2); border-radius: var(--ds-r-lg); padding: 32px; text-align: center; cursor: pointer; transition: border-color .15s;"
+                 onmouseover="this.style.borderColor='var(--ds-mint)'" onmouseout="this.style.borderColor='var(--ds-line-2)'">
+                <svg class="w-8 h-8 mx-auto mb-2" style="color: var(--ds-text-mute);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
                 </svg>
-                <p class="text-sm text-[#6f6f6f]" id="modal-file-label">Arrastrá o hacé clic para elegir una factura PDF</p>
+                <p class="text-sm" id="modal-file-label" style="color:var(--ds-text-soft);">Arrastrá o hacé clic para elegir una factura PDF</p>
                 <input type="file" id="modal-file" accept=".pdf" title="Seleccionar factura PDF" class="hidden" onchange="runPreview()">
             </div>
-            <div id="modal-loading" class="hidden text-center py-4 text-sm text-[#6f6f6f]">
-                <svg class="w-5 h-5 animate-spin mx-auto mb-2 text-brand" fill="none" viewBox="0 0 24 24">
+            <div id="modal-loading" class="hidden text-center py-4 text-sm" style="color:var(--ds-text-soft);">
+                <svg class="w-5 h-5 animate-spin mx-auto mb-2" style="color:var(--ds-mint);" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
                     <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
                 </svg>
                 Procesando...
             </div>
-            <div id="modal-error" class="hidden mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-3"></div>
+            <div id="modal-error" class="hidden mt-3 text-sm rounded-lg px-4 py-3"
+                 style="color:#FCA5A5; background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3);"></div>
         </div>
         <div id="modal-results" class="hidden flex-1 overflow-hidden flex flex-col px-6 pb-6">
-            <div class="flex items-center gap-6 text-sm mb-4 pb-4 border-b border-[#e0e0e0] flex-shrink-0">
-                <div><span class="text-[#6f6f6f]">Factura:</span> <span class="font-mono ml-1" id="res-numero"></span></div>
-                <div><span class="text-[#6f6f6f]">Fecha:</span> <span class="ml-1" id="res-fecha"></span></div>
-                <div><span class="text-[#6f6f6f]">Proveedor:</span> <span class="ml-1" id="res-proveedor"></span></div>
-                <div><span class="text-[#6f6f6f]">Total:</span> <span class="text-brand font-mono ml-1" id="res-total"></span></div>
+            <div class="flex items-center gap-6 text-sm mb-4 pb-4 flex-shrink-0" style="border-bottom: 1px solid var(--ds-line);">
+                <div><span style="color:var(--ds-text-mute);">Factura:</span> <span class="font-mono ml-1" id="res-numero" style="color:var(--ds-text);"></span></div>
+                <div><span style="color:var(--ds-text-mute);">Fecha:</span> <span class="ml-1" id="res-fecha" style="color:var(--ds-text);"></span></div>
+                <div><span style="color:var(--ds-text-mute);">Proveedor:</span> <span class="ml-1" id="res-proveedor" style="color:var(--ds-text);"></span></div>
+                <div><span style="color:var(--ds-text-mute);">Total:</span> <span class="font-mono ml-1" id="res-total" style="color:var(--ds-mint);"></span></div>
                 <div class="ml-auto flex items-center gap-3">
-                    <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20" id="res-count"></span>
-                    <button type="button" onclick="exportParserXLS()"
-                            class="flex items-center gap-1.5 text-xs text-[#6f6f6f] hover:text-brand px-3 py-1.5 rounded-lg hover:bg-black/[0.06] border border-[#e0e0e0] transition-colors">
+                    <span class="badge badge-mint" id="res-count"></span>
+                    <button type="button" onclick="exportParserXLS()" class="btn btn-ghost btn-sm">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                         </svg>
@@ -433,7 +429,7 @@
             </div>
             <div class="overflow-auto flex-1">
                 <table class="w-full text-xs">
-                    <thead class="bg-[#f0f0f0] sticky top-0">
+                    <thead style="position: sticky; top: 0; z-index: 5;">
                         <tr>
                             <th class="px-3 py-2 text-left font-semibold uppercase whitespace-nowrap">#</th>
                             <th class="px-3 py-2 text-left font-semibold uppercase whitespace-nowrap">Código de barra</th>
@@ -446,7 +442,7 @@
                             <th class="px-3 py-2 text-left font-semibold uppercase whitespace-nowrap">Vence</th>
                         </tr>
                     </thead>
-                    <tbody id="res-tbody" class="divide-y divide-[#e0e0e0]"></tbody>
+                    <tbody id="res-tbody"></tbody>
                 </table>
             </div>
         </div>
@@ -468,18 +464,15 @@ function openParserPreview(id, name) {
     document.getElementById('modal-results').classList.add('hidden');
     document.getElementById('parser-modal').classList.remove('hidden');
 }
-function closeParserPreview() {
-    document.getElementById('parser-modal').classList.add('hidden');
-}
+function closeParserPreview() { document.getElementById('parser-modal').classList.add('hidden'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeParserPreview(); });
 
 const dz = document.getElementById('modal-drop');
 if (dz) {
-    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('border-brand/50'); });
-    dz.addEventListener('dragleave', () => dz.classList.remove('border-brand/50'));
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor = 'var(--ds-mint)'; });
+    dz.addEventListener('dragleave', () => dz.style.borderColor = 'var(--ds-line-2)');
     dz.addEventListener('drop', e => {
-        e.preventDefault();
-        dz.classList.remove('border-brand/50');
+        e.preventDefault(); dz.style.borderColor = 'var(--ds-line-2)';
         const file = e.dataTransfer.files[0];
         if (file && file.name.toLowerCase().endsWith('.pdf')) {
             document.getElementById('modal-file').files = e.dataTransfer.files;
@@ -520,17 +513,18 @@ async function runPreview() {
         data.items.forEach((it, i) => {
             const ok = it.codigo_barra && it.descripcion && it.cantidad;
             const tr = document.createElement('tr');
-            tr.className = 'hover:bg-black/[0.04] ' + (ok ? '' : 'opacity-50');
+            tr.style.borderBottom = '1px solid var(--ds-line)';
+            if (!ok) tr.style.opacity = '0.5';
             tr.innerHTML = `
-                <td class="px-3 py-2 text-[#999]">${i+1}</td>
-                <td class="px-3 py-2 font-mono text-brand">${it.codigo_barra || '<span class="text-red-600">—</span>'}</td>
-                <td class="px-3 py-2">${it.descripcion || '<span class="text-red-600">—</span>'}</td>
+                <td class="px-3 py-2" style="color:var(--ds-text-mute);">${i+1}</td>
+                <td class="px-3 py-2 font-mono" style="color:var(--ds-mint);">${it.codigo_barra || '<span style="color:var(--ds-danger);">—</span>'}</td>
+                <td class="px-3 py-2">${it.descripcion || '<span style="color:var(--ds-danger);">—</span>'}</td>
                 <td class="px-3 py-2 text-right">${it.cantidad || '—'}</td>
-                <td class="px-3 py-2 text-right font-mono text-[#555]">${it.precio_unitario || '—'}</td>
-                <td class="px-3 py-2 text-right font-mono text-[#555]">${it.dto || '—'}</td>
-                <td class="px-3 py-2 text-right font-mono text-[#555]">${it.importe || '—'}</td>
-                <td class="px-3 py-2 text-[#888]">${it.lote || '—'}</td>
-                <td class="px-3 py-2 text-[#888]">${it.vencimiento || '—'}</td>
+                <td class="px-3 py-2 text-right font-mono" style="color:var(--ds-text-soft);">${it.precio_unitario || '—'}</td>
+                <td class="px-3 py-2 text-right font-mono" style="color:var(--ds-text-soft);">${it.dto || '—'}</td>
+                <td class="px-3 py-2 text-right font-mono" style="color:var(--ds-text-soft);">${it.importe || '—'}</td>
+                <td class="px-3 py-2" style="color:var(--ds-text-mute);">${it.lote || '—'}</td>
+                <td class="px-3 py-2" style="color:var(--ds-text-mute);">${it.vencimiento || '—'}</td>
             `;
             tbody.appendChild(tr);
         });
@@ -546,18 +540,15 @@ async function runPreview() {
 async function exportParserXLS() {
     if (!_lastParserData) return;
     const resp = await fetch(`/provider/${_previewProviderId}/parser-preview/export`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(_lastParserData)
     });
     if (!resp.ok) { alert('Error al exportar'); return; }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `parser_${_previewProviderId}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = `parser_${_previewProviderId}.xlsx`;
+    a.click(); URL.revokeObjectURL(url);
 }
 
 function openEdit(id) {
