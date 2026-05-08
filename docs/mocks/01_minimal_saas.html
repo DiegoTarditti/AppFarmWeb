@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mock — Inicio rediseñado</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        colors: {
+          brand: { DEFAULT: '#EAB308', dark: '#CA8A04', soft: '#FEF3C7' },
+          ink:   { 900: '#111827', 700: '#374151', 500: '#6B7280', 300: '#D1D5DB' },
+          surface: { DEFAULT: '#FFFFFF', alt: '#F8FAFC', border: '#E5E7EB' },
+          sidebar: { bg: '#1c1c1e', surface: '#2c2c2e', muted: '#6B7280', text: '#E5E7EB' },
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; background:#F4F5F1; color:#0F172A; }
+  .nav-item { transition: all .15s; color:#9CA3AF; }
+  .nav-item:hover { background: rgba(255,255,255,.04); color:#F3F4F6; }
+  .nav-item.active { background: rgba(234,179,8,.08); color:#FEF3C7; border-left: 2px solid #EAB308; }
+  .panel { background:transparent; padding:0; }
+  .action-card {
+    background:#FFFFFF;
+    border:1px solid rgba(15,23,42,.04);
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.02);
+    transition: all .2s cubic-bezier(.4,0,.2,1);
+    border-radius:12px;
+  }
+  .action-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(15,23,42,.08), 0 4px 8px -2px rgba(15,23,42,.04);
+    border-color: rgba(16,185,129,.3);
+  }
+  .action-card.featured { background: linear-gradient(135deg,#FFFBEB 0%,#FEF3C7 100%); border-color:rgba(234,179,8,.2); }
+  .icon-tile {
+    display:flex;align-items:center;justify-content:center;
+    width:38px;height:38px;border-radius:9px;
+    background:#F0FDF4;color:#059669;
+    transition: all .2s;
+  }
+  .action-card:hover .icon-tile { background:#DCFCE7; transform: scale(1.05); }
+  .icon-tile.warn { background:#FEF3C7;color:#B45309; }
+  .icon-tile.azure { background:#EFF6FF;color:#2563EB; }
+  .icon-tile.rose  { background:#FFF1F2;color:#BE123C; }
+  .icon-tile.violet { background:#F5F3FF;color:#7C3AED; }
+  .cat-card {
+    background:#FFFFFF; border:1px solid rgba(15,23,42,.04); border-radius:14px; padding:22px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04);
+    transition: all .2s;
+  }
+  .cat-card:hover { box-shadow: 0 8px 20px -4px rgba(15,23,42,.06); }
+  .cat-card .head { display:flex;align-items:center;gap:14px;margin-bottom:18px; }
+  .cat-icon { width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center; font-size:20px; }
+  .quiet-link { color:#475569;font-weight:500;font-size:13px;padding:7px 12px;border-radius:8px;background:#F8FAFC;border:1px solid rgba(15,23,42,.04); transition: all .15s; }
+  .quiet-link:hover { background:#F1F5F9; color:#0F172A; }
+  .primary-btn {
+    background: linear-gradient(135deg,#FBBF24 0%,#EAB308 100%);
+    color:#1A1A1A;font-weight:600;padding:9px 18px;border-radius:10px;
+    display:inline-flex;align-items:center;gap:6px;
+    box-shadow: 0 1px 2px rgba(234,179,8,.3), 0 4px 12px rgba(234,179,8,.15);
+    transition: all .2s;
+  }
+  .primary-btn:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(234,179,8,.4), 0 8px 20px rgba(234,179,8,.2); }
+  .hero {
+    background: linear-gradient(135deg,#FFFBEB 0%,#FEF9C3 100%);
+    border:1px solid rgba(234,179,8,.15);
+    box-shadow: 0 1px 3px rgba(234,179,8,.08);
+  }
+  .hero-icon {
+    background: linear-gradient(135deg,#FBBF24 0%,#F59E0B 100%);
+    box-shadow: 0 4px 12px rgba(245,158,11,.25);
+  }
+  .section-label { font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#94A3B8; }
+  .topbar { background: rgba(255,255,255,.7); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(15,23,42,.04); }
+  .badge-prod { background: linear-gradient(135deg,#10B981 0%,#059669 100%); color:#fff; box-shadow: 0 1px 3px rgba(16,185,129,.3); }
+</style>
+</head>
+<body class="text-ink-900">
+
+<div class="flex min-h-screen">
+
+  <!-- SIDEBAR -->
+  <aside class="w-64 bg-sidebar-bg text-sidebar-text flex flex-col py-4 px-3">
+    <div class="px-2 mb-6">
+      <div class="flex items-start gap-2">
+        <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center text-sidebar-bg font-bold">📋</div>
+        <div>
+          <div class="font-bold text-brand leading-tight">Control de Stock</div>
+          <div class="text-xs text-sidebar-muted">Farmacia Badía</div>
+        </div>
+      </div>
+    </div>
+
+    <nav class="flex-1 text-sm">
+      <a class="nav-item active block px-3 py-2 rounded mb-1">🏠 &nbsp;Inicio</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">📊 &nbsp;Dashboard</a>
+
+      <div class="text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase px-3 mt-5 mb-2">Gestión</div>
+      <a class="nav-item block px-3 py-2 rounded mb-1">🏢 &nbsp;Proveedores</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">💊 &nbsp;Droguerías</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">🧪 &nbsp;Laboratorios</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">💳 &nbsp;Ctas. Corrientes</a>
+
+      <div class="text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase px-3 mt-5 mb-2">Operaciones</div>
+      <a class="nav-item block px-3 py-2 rounded mb-1">📄 &nbsp;Documentos</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1 pl-8 text-sidebar-muted">↳ Convertir / aprender</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">📥 &nbsp;Control de Ingreso</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">🛡️ &nbsp;Obras Sociales</a>
+
+      <div class="text-[11px] font-semibold tracking-wider text-sidebar-muted uppercase px-3 mt-5 mb-2">Compras</div>
+      <a class="nav-item block px-3 py-2 rounded mb-1">🛒 &nbsp;Pedido de reposición</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">📦 &nbsp;Reposición grupal</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">⚙️ &nbsp;Procesos</a>
+      <a class="nav-item block px-3 py-2 rounded mb-1">🏷️ &nbsp;Productos</a>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="flex-1 flex flex-col">
+
+    <!-- TOPBAR -->
+    <header class="h-14 topbar flex items-center justify-end px-6 gap-3 sticky top-0 z-10">
+      <span class="text-[10px] font-bold tracking-wider badge-prod px-2 py-1 rounded-md">PROD</span>
+      <button class="text-ink-500 hover:text-ink-700 relative">
+        🔔
+        <span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center">4</span>
+      </button>
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-full bg-brand text-ink-900 font-bold flex items-center justify-center text-sm">A</div>
+        <div class="text-xs">
+          <div class="font-semibold">Administrador</div>
+          <div class="text-ink-500">ADMIN</div>
+        </div>
+      </div>
+    </header>
+
+    <div class="flex-1 px-8 py-7 max-w-[1400px]">
+
+      <!-- HEADER -->
+      <div class="mb-6">
+        <h1 class="text-2xl font-bold">Farmacia Badía</h1>
+        <p class="text-ink-500 text-sm">Elegí por dónde trabajar hoy</p>
+      </div>
+
+      <!-- HERO BANNER -->
+      <div class="hero rounded-2xl p-5 mb-7 flex items-center gap-5">
+        <div class="hero-icon w-14 h-14 rounded-xl flex items-center justify-center text-2xl">🛒</div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-0.5">
+            <span class="font-bold text-lg">Pedido de reposición</span>
+            <span class="text-[10px] font-semibold uppercase tracking-wider bg-brand/15 text-amber-700 px-2 py-0.5 rounded">Hoy</span>
+          </div>
+          <div class="text-ink-500 text-sm">Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria</div>
+        </div>
+        <a href="#" class="primary-btn">Ir al pedido →</a>
+      </div>
+
+      <!-- 3 CATEGORÍAS -->
+      <div class="grid grid-cols-3 gap-4 mb-6">
+
+        <div class="cat-card">
+          <div class="head">
+            <div class="cat-icon" style="background:#DBEAFE;color:#1D4ED8">🧪</div>
+            <div>
+              <div class="font-semibold">Laboratorios</div>
+              <div class="text-xs text-ink-500">Módulos, ofertas y análisis de compra</div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <a class="quiet-link flex-1 text-center" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Packs</a>
+          </div>
+        </div>
+
+        <div class="cat-card">
+          <div class="head">
+            <div class="cat-icon" style="background:#DCFCE7;color:#15803D">💊</div>
+            <div>
+              <div class="font-semibold">Droguerías</div>
+              <div class="text-xs text-ink-500">Facturas, cuenta corriente y reclamos</div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <a class="quiet-link flex-1 text-center" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Nueva</a>
+          </div>
+        </div>
+
+        <div class="cat-card">
+          <div class="head">
+            <div class="cat-icon" style="background:#F3E8FF;color:#7E22CE">🏢</div>
+            <div>
+              <div class="font-semibold">Otros</div>
+              <div class="text-xs text-ink-500">Proveedores que no son droguería ni lab</div>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <a class="quiet-link flex-1 text-center" href="#">Ver →</a>
+            <a class="quiet-link" href="#">Procesos</a>
+            <a class="quiet-link" href="#">Reclamos</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACCIONES FRECUENTES -->
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="section-label">Acciones frecuentes</h2>
+        <a href="#" class="text-xs font-medium text-ink-500 hover:text-ink-900 flex items-center gap-1">⚙️ Personalizar</a>
+      </div>
+
+      <div class="grid grid-cols-4 gap-3">
+
+        <a class="action-card p-4 flex items-start gap-3 hover:no-underline">
+          <div class="icon-tile">📊</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Procesos de compra</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Análisis → pedido → factura</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">🛒</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Pedidos guardados</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Análisis convertidos en pedidos</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile azure">📈</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Importar ofertas</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Excel del proveedor con descuentos</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile warn">🏷️</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Productos</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Catálogo master con códigos y PVP</div>
+          </div>
+        </a>
+
+        <a class="action-card featured p-4 flex items-start gap-3 relative">
+          <div class="icon-tile rose">⚠️</div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="font-semibold text-sm">Reclamos</span>
+              <span class="text-[10px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full">3</span>
+            </div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Diferencias pendientes y completadas</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">📥</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Control de ingreso</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Subir facturas y cruzar con ERP</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile violet">💳</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Cuentas corrientes</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Saldos y pagos por proveedor</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile warn">📚</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Catálogo ObServer</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">122k productos con ventas, stock y lab</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile azure">👥</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Clientes</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">84k con notas, WhatsApp y tags</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile">⚙️</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Configuración</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Ajustes del sistema</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile violet">📊</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Mis informes</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Cruces de catálogo, ventas y stock</div>
+          </div>
+        </a>
+
+        <a class="action-card p-4 flex items-start gap-3">
+          <div class="icon-tile rose">🛡️</div>
+          <div class="min-w-0">
+            <div class="font-semibold text-sm">Obras sociales</div>
+            <div class="text-xs text-ink-500 leading-snug mt-0.5">Análisis financiero y catálogo</div>
+          </div>
+        </a>
+
+      </div>
+
+      <!-- NOTA EXPLICATIVA -->
+      <div class="mt-10 p-4 rounded-xl text-xs text-ink-500 bg-white/60 border border-black/5">
+        <strong class="text-ink-700">Iteración 2 — moderno:</strong>
+        ① Sombras suaves en vez de bordes duros → cards "flotan", menos lineal.
+        ② Hero con gradient amarillo + ícono con glow → CTA con peso real y micro-interacción al hover.
+        ③ Íconos por categoría (verde=compras, azul=datos, ámbar=catálogo, rojo=alertas, violeta=finanzas) → escaneo más rápido.
+        ④ Badge contador en Reclamos ("3") → estado visible sin abrir.
+        ⑤ Background sage tenue (no blanco crudo) → menos cansancio visual.
+        ⑥ Topbar con blur translúcido + badge PROD con gradient → sensación moderna SaaS.
+      </div>
+
+    </div>
+  </main>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Design System — Showcase</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ↓↓↓ Estos tokens y componentes son los MISMOS que en base.html ↓↓↓ */
+  :root {
+    --ds-bg-deep: #07241C; --ds-bg: #0A2F25; --ds-surface: #103D31; --ds-surface-2: #164A3C;
+    --ds-paper: #FFFFFF; --ds-paper-alt: #F8FAFC;
+    --ds-line: rgba(95,230,188,.12); --ds-line-2: rgba(95,230,188,.22); --ds-line-light: #E5E7EB;
+    --ds-mint: #5FE6BC; --ds-mint-deep: #10B981; --ds-mint-bright: #34D399;
+    --ds-orange: #FB923C; --ds-orange-deep: #EA580C;
+    --ds-text: #ECFDF5; --ds-text-soft: #B8D4C9; --ds-text-mute: #86A89C;
+    --ds-text-on-light: #0F172A; --ds-text-mute-on-light: #6B7280;
+    --ds-danger: #EF4444; --ds-warn: #F59E0B; --ds-success: #10B981; --ds-info: #3B82F6;
+    --ds-r-sm: 6px; --ds-r-md: 10px; --ds-r-lg: 14px; --ds-r-xl: 20px;
+    --ds-shadow-sm: 0 1px 2px rgba(0,0,0,.08); --ds-shadow-md: 0 4px 12px rgba(0,0,0,.12);
+    --ds-shadow-lg: 0 12px 32px rgba(0,0,0,.18);
+    --ds-glow-mint: 0 0 0 1px rgba(95,230,188,.2), 0 8px 24px -4px rgba(95,230,188,.25);
+    --ds-glow-orange: 0 4px 16px rgba(234,88,12,.4), 0 0 0 1px rgba(251,146,60,.3) inset;
+  }
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  body.theme-emerald { background-color: var(--ds-bg-deep); color: var(--ds-text); }
+
+  .display { font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif; letter-spacing: -.02em; }
+  .glow-text { background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-bright) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+  .section-label { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ds-text-mute); display: inline-flex; align-items: center; gap: 10px; }
+  .section-label::before { content: ''; width: 20px; height: 2px; background: var(--ds-mint); border-radius: 2px; }
+  body:not(.theme-emerald) .section-label { color: var(--ds-text-mute-on-light); }
+
+  .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .page-header__left { flex: 1; min-width: 0; }
+  .page-header__title { font-family: 'Space Grotesk'; font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; margin: 6px 0 0 0; }
+  .page-header__subtitle { font-size: 13px; color: var(--ds-text-soft); margin-top: 6px; }
+  body:not(.theme-emerald) .page-header__subtitle { color: var(--ds-text-mute-on-light); }
+  .page-header__actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; border-radius: var(--ds-r-md); cursor: pointer; border: 1px solid transparent; transition: all .15s; white-space: nowrap; font-family: inherit; text-decoration: none; line-height: 1.2; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-lg { padding: 12px 22px; font-size: 14px; }
+  .btn-primary { background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%); color: #fff; box-shadow: var(--ds-glow-orange); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(234,88,12,.5), 0 0 0 1px rgba(251,146,60,.4) inset; }
+  .btn-secondary { background: rgba(95,230,188,.1); border-color: var(--ds-line-2); color: var(--ds-mint); }
+  .btn-secondary:hover { background: rgba(95,230,188,.18); border-color: var(--ds-mint); }
+  body:not(.theme-emerald) .btn-secondary { background: rgba(16,185,129,.08); border-color: rgba(16,185,129,.3); color: var(--ds-mint-deep); }
+  body:not(.theme-emerald) .btn-secondary:hover { background: rgba(16,185,129,.15); }
+  .btn-ghost { background: transparent; color: var(--ds-text-soft); }
+  .btn-ghost:hover { background: rgba(255,255,255,.05); color: var(--ds-text); }
+  body:not(.theme-emerald) .btn-ghost { color: var(--ds-text-mute-on-light); }
+  body:not(.theme-emerald) .btn-ghost:hover { background: rgba(0,0,0,.04); color: var(--ds-text-on-light); }
+  .btn-danger { background: var(--ds-danger); color: #fff; }
+  .btn-danger:hover { background: #DC2626; transform: translateY(-1px); }
+  .btn-mint { background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%); color: var(--ds-bg-deep); box-shadow: 0 4px 14px rgba(16,185,129,.3); }
+  .btn-mint:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(16,185,129,.4); }
+
+  .card { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%); border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); padding: 18px; transition: all .25s cubic-bezier(.4,0,.2,1); }
+  body:not(.theme-emerald) .card { background: var(--ds-paper); border-color: var(--ds-line-light); box-shadow: var(--ds-shadow-sm); }
+  .card-action { cursor: pointer; position: relative; overflow: hidden; text-decoration: none; color: inherit; display: block; }
+  .card-action::after { content:''; position:absolute; top:0; right:0; width: 100px; height: 100px; background: radial-gradient(circle, rgba(95,230,188,.12), transparent 70%); transform: translate(40%, -40%); opacity: 0; transition: opacity .25s; pointer-events: none; }
+  .card-action:hover { transform: translateY(-2px); border-color: var(--ds-mint); box-shadow: var(--ds-glow-mint); }
+  .card-action:hover::after { opacity: 1; }
+  body:not(.theme-emerald) .card-action:hover { border-color: var(--ds-mint-deep); box-shadow: 0 8px 24px -4px rgba(16,185,129,.2); }
+  .card-featured { background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%); border-color: var(--ds-mint-bright); color: var(--ds-bg-deep); }
+
+  .icon-tile { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: var(--ds-r-md); background: rgba(95,230,188,.1); color: var(--ds-mint); border: 1px solid var(--ds-line-2); flex-shrink: 0; font-size: 18px; transition: all .25s; }
+  body:not(.theme-emerald) .icon-tile { background: rgba(16,185,129,.08); color: var(--ds-mint-deep); border-color: rgba(16,185,129,.2); }
+  .icon-tile-warn { background: rgba(251,146,60,.12); color: var(--ds-orange); border-color: rgba(251,146,60,.25); }
+  .icon-tile-danger { background: rgba(239,68,68,.12); color: var(--ds-danger); border-color: rgba(239,68,68,.25); }
+  .icon-tile-info { background: rgba(59,130,246,.12); color: var(--ds-info); border-color: rgba(59,130,246,.25); }
+  .icon-tile-sm { width: 32px; height: 32px; font-size: 14px; border-radius: var(--ds-r-sm); }
+  .icon-tile-lg { width: 48px; height: 48px; font-size: 22px; border-radius: var(--ds-r-lg); }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; font-size: 11px; font-weight: 600; line-height: 1.4; border-radius: 6px; letter-spacing: .02em; white-space: nowrap; }
+  .badge-mint { background: rgba(95,230,188,.15); color: var(--ds-mint); }
+  body:not(.theme-emerald) .badge-mint { background: rgba(16,185,129,.12); color: var(--ds-mint-deep); }
+  .badge-orange { background: rgba(251,146,60,.15); color: var(--ds-orange); }
+  .badge-danger { background: rgba(239,68,68,.15); color: var(--ds-danger); }
+  .badge-info { background: rgba(59,130,246,.15); color: var(--ds-info); }
+  .badge-warn { background: rgba(245,158,11,.15); color: var(--ds-warn); }
+  .badge-mute { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+  body:not(.theme-emerald) .badge-mute { background: rgba(0,0,0,.06); color: var(--ds-text-mute-on-light); }
+  .badge-pill { border-radius: 999px; padding: 2px 10px; }
+
+  .detail-row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 0; gap: 16px; border-bottom: 1px solid var(--ds-line); }
+  body:not(.theme-emerald) .detail-row { border-bottom-color: var(--ds-line-light); }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-label { font-size: 11px; color: var(--ds-text-mute); text-transform: uppercase; letter-spacing: .08em; font-weight: 600; flex-shrink: 0; }
+  body:not(.theme-emerald) .detail-label { color: var(--ds-text-mute-on-light); }
+  .detail-value { font-size: 13px; font-weight: 500; text-align: right; }
+
+  .ds-input, .ds-select, .ds-textarea { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); padding: 9px 12px; font-size: 13px; color: var(--ds-text); transition: all .15s; font-family: inherit; width: 100%; }
+  body:not(.theme-emerald) .ds-input, body:not(.theme-emerald) .ds-select, body:not(.theme-emerald) .ds-textarea { background: var(--ds-paper); color: var(--ds-text-on-light); border-color: var(--ds-line-light); }
+  .ds-input:focus, .ds-select:focus, .ds-textarea:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+  .ds-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); margin-bottom: 6px; }
+  body:not(.theme-emerald) .ds-label { color: var(--ds-text-mute-on-light); }
+
+  .ds-divider { height: 1px; background: var(--ds-line); margin: 20px 0; border: 0; }
+  body:not(.theme-emerald) .ds-divider { background: var(--ds-line-light); }
+
+  /* Showcase scaffolding */
+  .pane { padding: 32px 40px; min-height: 100vh; }
+  .pane-light { background: #F4F5F1; color: var(--ds-text-on-light); }
+  .pane-dark  { background: var(--ds-bg-deep); color: var(--ds-text); }
+  .group { margin-bottom: 28px; }
+  .group h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; opacity: .55; margin-bottom: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .demo-toggle { position: fixed; top: 20px; right: 20px; z-index: 100; }
+</style>
+</head>
+<body class="theme-emerald">
+
+<button class="btn btn-secondary demo-toggle" onclick="document.body.classList.toggle('theme-emerald')">
+  Toggle theme dark/light
+</button>
+
+<div class="pane">
+
+  <header class="page-header">
+    <div class="page-header__left">
+      <span class="section-label">Design system · v1</span>
+      <h1 class="page-header__title">Componentes <span class="glow-text">unificados</span></h1>
+      <p class="page-header__subtitle">Showcase de tokens y clases reutilizables. Toggle arriba a la derecha para alternar dark / light.</p>
+    </div>
+    <div class="page-header__actions">
+      <button class="btn btn-ghost">Cancelar</button>
+      <button class="btn btn-secondary">Exportar</button>
+      <button class="btn btn-primary">Acción primaria →</button>
+    </div>
+  </header>
+
+  <hr class="ds-divider">
+
+  <div class="group">
+    <h3>Botones</h3>
+    <div class="row">
+      <button class="btn btn-primary">Primary (orange)</button>
+      <button class="btn btn-mint">Mint (mint gradient)</button>
+      <button class="btn btn-secondary">Secondary</button>
+      <button class="btn btn-ghost">Ghost</button>
+      <button class="btn btn-danger">Danger</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-primary btn-sm">SM</button>
+      <button class="btn btn-primary">Default</button>
+      <button class="btn btn-primary btn-lg">LG</button>
+      <button class="btn btn-secondary" disabled>Disabled</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Badges</h3>
+    <div class="row">
+      <span class="badge badge-mint">Activo</span>
+      <span class="badge badge-orange">Pendiente</span>
+      <span class="badge badge-danger">3 abiertos</span>
+      <span class="badge badge-warn">Atención</span>
+      <span class="badge badge-info">Info</span>
+      <span class="badge badge-mute">Inactivo</span>
+      <span class="badge badge-mint badge-pill">12 unidades</span>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Icon tiles</h3>
+    <div class="row">
+      <div class="icon-tile">📦</div>
+      <div class="icon-tile icon-tile-warn">⚠️</div>
+      <div class="icon-tile icon-tile-danger">🚨</div>
+      <div class="icon-tile icon-tile-info">ℹ️</div>
+      <div class="icon-tile icon-tile-sm">🛒</div>
+      <div class="icon-tile">📊</div>
+      <div class="icon-tile icon-tile-lg">🏥</div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Cards</h3>
+    <div class="grid-4">
+      <a class="card card-action" href="#">
+        <div class="row" style="margin-bottom:10px;">
+          <div class="icon-tile">📊</div>
+          <span class="badge badge-mute">Hoy</span>
+        </div>
+        <div class="display" style="font-weight:700;">Procesos</div>
+        <div style="font-size:12px; opacity:.7; margin-top:4px;">Análisis → pedido → factura</div>
+      </a>
+
+      <a class="card card-action" href="#">
+        <div class="row" style="margin-bottom:10px;">
+          <div class="icon-tile icon-tile-warn">⚠️</div>
+          <span class="badge badge-danger">3</span>
+        </div>
+        <div class="display" style="font-weight:700;">Reclamos</div>
+        <div style="font-size:12px; opacity:.7; margin-top:4px;">Diferencias abiertas</div>
+      </a>
+
+      <div class="card card-featured">
+        <div class="row" style="margin-bottom:10px;">
+          <div class="icon-tile" style="background:rgba(7,36,28,.2);color:var(--ds-bg-deep);border-color:rgba(7,36,28,.3);">⚡</div>
+        </div>
+        <div class="display" style="font-weight:700; font-size:18px;">Featured</div>
+        <div style="font-size:12px; opacity:.75; margin-top:4px;">Card destacada con gradient mint sólido</div>
+      </div>
+
+      <div class="card">
+        <div class="display" style="font-weight:700; margin-bottom:10px;">Detail rows</div>
+        <div class="detail-row">
+          <span class="detail-label">Total</span>
+          <span class="detail-value">$487.230</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Estado</span>
+          <span class="detail-value"><span class="badge badge-mint">Activo</span></span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Vence</span>
+          <span class="detail-value">07/05/2026</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Form inputs</h3>
+    <div class="grid-2">
+      <div>
+        <label class="ds-label">Razón social</label>
+        <input class="ds-input" placeholder="Droguería..." value="Droguería Suizo Argentina S.A.">
+      </div>
+      <div>
+        <label class="ds-label">Match strategy</label>
+        <select class="ds-select">
+          <option>Por código de barra</option>
+          <option>Por descripción</option>
+        </select>
+      </div>
+      <div style="grid-column: span 2;">
+        <label class="ds-label">Notas</label>
+        <textarea class="ds-textarea" rows="3" placeholder="Comentarios..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h3>Page header (variante con stats)</h3>
+    <div class="card">
+      <header class="page-header" style="margin-bottom:0;">
+        <div class="page-header__left">
+          <span class="section-label">Factura · 0001-00012345</span>
+          <h1 class="page-header__title">Droguería <span class="glow-text">Kellerhoff</span></h1>
+          <p class="page-header__subtitle">Recibida 07/05/2026 · 124 ítems · 3 diferencias detectadas</p>
+        </div>
+        <div class="page-header__actions">
+          <button class="btn btn-ghost btn-sm">⋯</button>
+          <button class="btn btn-secondary btn-sm">Editar encabezado</button>
+          <button class="btn btn-danger btn-sm">Eliminar</button>
+          <button class="btn btn-primary">Generar reclamo →</button>
+        </div>
+      </header>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
