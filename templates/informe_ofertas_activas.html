@@ -70,7 +70,7 @@
                     {% endif %}
 
                     {# Meta #}
-                    <span class="text-[10px] text-[#bbb] flex-shrink-0">{{ g.items|length }} prod.</span>
+                    <span class="text-[10px] text-[#bbb] flex-shrink-0">{{ g.prods|length }} prod.</span>
                     {% if g.vigencia %}
                     <span class="text-[10px] text-[#bbb] flex-shrink-0">hasta {{ g.vigencia }}</span>
                     {% endif %}
@@ -100,7 +100,7 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-[#f0f0f0]">
-                            {% for item in g.items %}
+                            {% for item in g.prods %}
                             <tr id="om-{{ item.id }}" class="hover:bg-white">
                                 <td class="px-4 py-1 pl-10 text-[#1e1e1e] max-w-xs truncate">{{ item.descripcion or '—' }}</td>
                                 <td class="px-3 py-1 font-mono text-[#aaa]">{{ item.ean or '—' }}</td>

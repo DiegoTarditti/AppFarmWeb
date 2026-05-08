@@ -2122,10 +2122,10 @@ def init_app(app):
                         'vigencia':   o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
                         'actualizado': o.actualizado_en.strftime('%d/%m/%Y') if o.actualizado_en else None,
                         '_vh':        o.vigencia_hasta,
-                        'items':      [],
+                        'prods':      [],
                     }
                 g = grupos_dict[key]
-                g['items'].append({
+                g['prods'].append({
                     'id':              o.id,
                     'ean':             o.ean or '',
                     'descripcion':     o.descripcion or '',
