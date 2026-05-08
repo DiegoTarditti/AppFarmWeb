@@ -1286,31 +1286,38 @@ function _renderCandidatosSlot(slot, itemIdx, candidatos) {
     });
 }
 
-async function prefetchCandidatosBulk() {
+async function prefetchCandidatosBulk(onProgress) {
     const labId = document.getElementById('lab-select').value;
     const paraFetch = _items
         .map((it, i) => ({idx: i, descripcion: it.descripcion || '', ean: it.ean || '', codigo: it.codigo || ''}))
         .filter((_, i) => _items[i]._status === 'not_found' && !_items[i]._sin_candidatos);
     if (!paraFetch.length) return;
-    try {
-        const r = await fetch('/api/ofertas/import-candidatos-bulk', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                items: paraFetch,
-                laboratorio_id: labId ? parseInt(labId, 10) : null,
-                top: 8,
-            }),
-        });
-        const data = await r.json();
-        if (data.candidatos_por_idx) {
-            for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
-                _candidatosBulk[parseInt(k, 10)] = v;
+    // Chunkear: 1056 items en una sola request puede timeoutear (cada chunk
+    // tokeniza 122k obs_productos contra el chunk → ~1.5-3s por chunk).
+    const CHUNK = 100;
+    const labIdInt = labId ? parseInt(labId, 10) : null;
+    const total = paraFetch.length;
+    let done = 0;
+    for (let i = 0; i < paraFetch.length; i += CHUNK) {
+        const slice = paraFetch.slice(i, i + CHUNK);
+        try {
+            const r = await fetch('/api/ofertas/import-candidatos-bulk', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({items: slice, laboratorio_id: labIdInt, top: 8}),
+            });
+            const data = await r.json();
+            if (data.candidatos_por_idx) {
+                for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
+                    _candidatosBulk[parseInt(k, 10)] = v;
+                }
             }
+        } catch (err) {
+            console.warn(`Prefetch chunk ${i}-${i+slice.length} falló:`, err.message);
         }
-    } catch (err) {
-        console.warn('Prefetch candidatos bulk falló:', err.message);
+        done += slice.length;
+        if (typeof onProgress === 'function') onProgress(done, total);
     }
 }
 
@@ -1582,21 +1589,45 @@ function expandirTodosLosBuscarSimilar() {
         alert('Todos los items ya tienen sus candidatos cargados o vinculados.');
         return;
     }
-    // Si tenemos datos del bulk → renderizar directamente (sin fetch)
-    if (Object.keys(_candidatosBulk).length > 0) {
+    const btn = document.getElementById('btn-expandir-todos');
+    const renderPendientes = () => {
         pendientes.forEach(i => {
             const slot = document.getElementById('candidatos-' + i);
             if (slot) _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
         });
-    } else {
-        // Bulk no terminó: disparar una llamada bulk única ahora
-        prefetchCandidatosBulk().then(() => {
-            pendientes.forEach(i => {
-                const slot = document.getElementById('candidatos-' + i);
-                if (slot) _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
-            });
-        });
+    };
+    // Si tenemos datos del bulk → renderizar directamente (sin fetch).
+    if (Object.keys(_candidatosBulk).length >= pendientes.length) {
+        renderPendientes();
+        return;
     }
+    // Bulk no terminó (o no precargó suficiente): correr ahora con progreso.
+    if (btn) btn.disabled = true;
+    const onProgress = (done, total) => {
+        if (btn) btn.textContent = `🔍 Buscando… ${done}/${total}`;
+        // Renderizar progresivamente lo que ya tenemos
+        pendientes.forEach(i => {
+            if (_candidatosBulk[i] === undefined) return;
+            const slot = document.getElementById('candidatos-' + i);
+            if (slot && !slot.innerHTML.trim()) {
+                _renderCandidatosSlot(slot, i, _candidatosBulk[i] || []);
+            }
+        });
+    };
+    prefetchCandidatosBulk(onProgress).then(() => {
+        renderPendientes();
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔍 Expandir todos';
+        }
+    }).catch(err => {
+        console.error('Error en prefetch:', err);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🔍 Expandir todos';
+        }
+        alert('Error buscando candidatos: ' + (err.message || 'desconocido'));
+    });
 }
 
 // ─── Normalización de descripciones ─────────────────────────────────────────
