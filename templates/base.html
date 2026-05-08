@@ -832,7 +832,7 @@
 
     {# ── Top bar desktop ── #}
     {% if current_user.is_authenticated %}
-    <div class="hidden lg:flex items-center justify-end gap-3 px-5 h-11 bg-white border-b border-[#ececec] flex-shrink-0">
+    <div class="hidden lg:flex items-center justify-end gap-3 px-5 h-11 border-b flex-shrink-0 {% if nav_active == 'inicio' %}bg-transparent border-transparent{% else %}bg-white border-[#ececec]{% endif %}">
         <span class="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide"
               style="background-color: {{ entorno.color }}; color: #fff;"
               title="{{ entorno.descripcion }}">{{ entorno.label }}</span>

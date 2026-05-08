@@ -16,7 +16,7 @@
             background: linear-gradient(135deg, var(--ds-bg) 0%, var(--ds-surface) 60%, var(--ds-surface-2) 100%);
             border: 1px solid var(--ds-line-2);
             border-radius: 20px;
-            padding: 32px 36px;
+            padding: 20px 28px;
             overflow: hidden;
             box-shadow: 0 8px 32px rgba(0,0,0,.3);
         }
@@ -29,14 +29,14 @@
         }
         .home-hero__shapes { position:absolute; right:-20px; top:50%; transform:translateY(-50%); display:flex; gap:8px; opacity:.85; pointer-events:none; }
         .home-hero__shapes .geo {
-            width:56px; height:56px; border-radius:14px;
+            width:40px; height:40px; border-radius:10px;
             background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
             box-shadow: 0 8px 24px rgba(16,185,129,.4);
         }
         .home-hero__shapes .geo:nth-child(1) { transform: rotate(15deg); }
         .home-hero__shapes .geo:nth-child(2) { transform: rotate(-10deg) translateY(-12px); border-radius:50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
         .home-hero__shapes .geo:nth-child(3) { transform: rotate(25deg) translateY(8px); }
-        .home-hero__shapes .geo:nth-child(4) { transform: rotate(-5deg); border-radius:50%; width:44px; height:44px; background: var(--ds-surface-2); border:2px solid var(--ds-mint); box-shadow:none; }
+        .home-hero__shapes .geo:nth-child(4) { transform: rotate(-5deg); border-radius:50%; width:30px; height:30px; background: var(--ds-surface-2); border:2px solid var(--ds-mint); box-shadow:none; }
         @media (max-width: 900px) { .home-hero__shapes { display: none; } }
 
         .stat-num { font-family:'Space Grotesk', sans-serif; font-weight: 700; letter-spacing:-.03em; font-size: 24px; }
@@ -75,14 +75,14 @@
             <a href="{{ url_for('compras_dia') }}" class="home-hero block mb-8 hover:no-underline">
                 <div class="relative z-10 max-w-xl">
                     <div class="section-label mb-3">⚡ Acción del día</div>
-                    <h2 class="display text-3xl font-bold leading-tight mb-2 text-white">
+                    <h2 class="display text-xl font-bold leading-tight mb-1 text-white">
                         Pedido de <span class="glow-text">reposición</span>
                     </h2>
-                    <p class="text-sm mb-5" style="color:var(--ds-text-soft);">
+                    <p class="text-xs mb-4" style="color:var(--ds-text-soft);">
                         Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria
                     </p>
                     <div class="flex items-center gap-4">
-                        <span class="btn btn-primary">Ir al pedido →</span>
+                        <span class="btn btn-primary btn-sm">Ir al pedido →</span>
                         <a href="{{ url_for('orders_list') }}"
                            onclick="event.stopPropagation()"
                            class="text-sm font-medium hover:underline" style="color:var(--ds-text-soft);">

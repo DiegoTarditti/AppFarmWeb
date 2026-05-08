@@ -6,7 +6,10 @@ live al próximo cierre. Desde acá se entra al armado del pedido.
 Empleados pueden editar la tabla de horarios; descuentos quedan fuera del scope
 de este rol (ver decisión de roles).
 """
+import math
+from datetime import date as _date
 from datetime import datetime
+from datetime import timedelta as _td
 
 from flask import jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -14,6 +17,8 @@ from sqlalchemy import or_, text
 
 import database
 from database import ProveedorHorarioReparto, Provider, get_db
+from purchase_engine import AVG_DAYS_PER_MONTH
+from purchase_helpers import calcular_min_sugerido, clasificar_min
 from services.horarios import horarios_por_dia, proximo_cierre
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -395,8 +400,6 @@ def init_app(app):
             ).group_by(ObsVentaMensual.producto_observer).subquery())
 
             # Ventas ayer y última semana por producto.
-            from datetime import date as _date
-            from datetime import timedelta as _td
             hoy_d = _date.today()
             _ayer = hoy_d - _td(days=1)
             _semana = hoy_d - _td(days=7)
@@ -437,15 +440,13 @@ def init_app(app):
             #   - usar_oferta='1' → filtrar SOLO los del archivo.
             #   - usar_oferta='0' → ignorar la oferta, modo armado normal.
             #   - usar_oferta=None → mostrar pregunta intermedia (sin filtrar).
-            from datetime import date as _date_o
-
             from database import ObsCodigoBarras as _OCB
             from database import OfertaMinimo as _OM_drog
             oferta_pids = set()
             oferta_disponible_n = 0
             oferta_nombre_drog = None
             if prov_id:
-                hoy_o = _date_o.today()
+                hoy_o = _date.today()
                 eans_oferta = [r[0] for r in (session.query(_OM_drog.ean)
                                .filter(_OM_drog.drogueria_id == prov_id,
                                        _OM_drog.activo.is_(True),
@@ -622,12 +623,6 @@ def init_app(app):
                                 or lab_obs_to_local.get(r.lab_obs_id) \
                                 or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, ''))
                 cubre_lab = lab_local_id in labs_cubiertos
-                from purchase_engine import (
-                    AVG_DAYS_PER_MONTH,
-                    analyze_product,
-                    start_month_idx_from_period,
-                    tipo_producto,
-                )
                 u12m_int = int(r.u12m or 0)
                 u24h_val = int(v24h_rows.get(r.pid, 0) or 0)
                 u7d_val  = int(v7d_rows.get(r.pid, 0) or 0)
@@ -635,35 +630,18 @@ def init_app(app):
                 stock_actual = int(r.stock or 0)
                 ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
 
-                # Tipo C (crónico) vs N (normal).
-                tipo = tipo_producto(ventas_arr)
-                # Forecast a 7 días con estacionalidad + prorrateo + slope amortiguado si C.
-                sidx = start_month_idx_from_period(start_month, end_month)
-                _qty, fcst7, slope, _peak, _low, _comment, sin_mov = analyze_product(
-                    ventas_arr, stock_actual, n_days=7, start_month_idx=sidx,
-                    data_start_month=start_month, end_month=end_month, tipo=tipo,
+                # Forecast a 7 días + promedio mensual con prorrateo.
+                min_sugerido, avg_m, sin_mov, tipo = calcular_min_sugerido(
+                    ventas_arr, stock_actual, start_month, end_month,
                 )
-                import math
-                min_sugerido = int(math.ceil(fcst7)) if fcst7 > 0 else 0
-                # Promedio mensual con prorrateo si aplica (igual que analyze_purchase).
-                from purchase_engine import FULL_MONTHS, _prorate_partial
-                _pp = _prorate_partial(ventas_arr, end_month)
-                if _pp is not None:
-                    avg_m = (sum(ventas_arr[:FULL_MONTHS]) + _pp) / (FULL_MONTHS + 1)
-                else:
-                    avg_m = sum(ventas_arr[:FULL_MONTHS]) / FULL_MONTHS if FULL_MONTHS else 0
                 avg_diario = avg_m / AVG_DAYS_PER_MONTH if avg_m else 0
                 cobertura_d = (round(min_actual / avg_diario)
                                if avg_diario > 0 and min_actual > 0 else None)
                 # Sugerencia up/down/ok comparando contra el forecast 7d.
                 if u12m_int == 0 or sin_mov:
                     min_sugerencia = None
-                elif min_actual == 0 or min_actual < min_sugerido * 0.6:
-                    min_sugerencia = 'up'
-                elif min_sugerido > 0 and min_actual > min_sugerido * 2.0:
-                    min_sugerencia = 'down'
                 else:
-                    min_sugerencia = 'ok'
+                    min_sugerencia = clasificar_min(min_actual, min_sugerido)
 
                 # u_rot = unidades vendidas en los últimos `meses_rotacion`
                 # meses COMPLETOS (excluye el mes actual parcial). Es la base
@@ -808,7 +786,6 @@ def init_app(app):
             # observer_id → [{cantidad, fecha, pedido_id, pedido_lab, mostrar_hasta}].
             # Se attacha a cada item del armado para mostrar inline en la fila.
             from collections import defaultdict
-            from datetime import date as _date
 
             from database import Pedido
             ped_guardado_por_obs = defaultdict(list)
@@ -909,8 +886,6 @@ def init_app(app):
           tipo=up|down|both (default: both)
           rubros=12 (default Medicamentos, igual que /compras/armar)
         """
-        import math
-        from datetime import date as _date
         from io import BytesIO
 
         from flask import send_file
@@ -1006,12 +981,6 @@ def init_app(app):
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid:
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
 
-            from purchase_engine import (
-                analyze_product,
-                start_month_idx_from_period,
-                tipo_producto,
-            )
-
             filas = []
             for r in base:
                 # Filtro rubro
@@ -1022,23 +991,13 @@ def init_app(app):
                 if u12m == 0:
                     continue
                 ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
-                tipo_p = tipo_producto(ventas_arr)
-                sidx = start_month_idx_from_period(start_month, end_month)
-                _q, fcst7, _slope, _peak, _low, _c, sin_mov = analyze_product(
-                    ventas_arr, int(r.stock or 0), n_days=7, start_month_idx=sidx,
-                    data_start_month=start_month, end_month=end_month, tipo=tipo_p,
+                min_sugerido, _avg_m, sin_mov, tipo_p = calcular_min_sugerido(
+                    ventas_arr, int(r.stock or 0), start_month, end_month,
                 )
                 if sin_mov:
                     continue
-                min_sugerido = int(math.ceil(fcst7)) if fcst7 > 0 else 0
                 min_actual = int(r.minimo or 0)
-                # Misma lógica que /compras/armar
-                if min_actual == 0 or min_actual < min_sugerido * 0.6:
-                    sug = 'up'
-                elif min_sugerido > 0 and min_actual > min_sugerido * 2.0:
-                    sug = 'down'
-                else:
-                    sug = 'ok'
+                sug = clasificar_min(min_actual, min_sugerido)
                 if sug == 'ok':
                     continue
                 if tipo == 'up' and sug != 'up':
@@ -1163,11 +1122,9 @@ def init_app(app):
             ).filter(ObsStock.producto_observer.in_(obs_ids),
                      ObsStock.minimo.isnot(None))
              .group_by(ObsStock.producto_observer).all())
-            from datetime import date as _date2
-            from datetime import timedelta as _td2
-            hoy2   = _date2.today()
-            _ayer2 = hoy2 - _td2(days=1)
-            _sem2  = hoy2 - _td2(days=7)
+            hoy2   = _date.today()
+            _ayer2 = hoy2 - _td(days=1)
+            _sem2  = hoy2 - _td(days=7)
             _det2  = session.query(
                 ObsVentaDetalle.producto_observer,
                 ObsVentaDetalle.fecha_estadistica,
@@ -1234,10 +1191,8 @@ def init_app(app):
                         ofertas_buscar[of.ean] = {'oferta_dto': dto, 'oferta_min': um}
 
             # Ventas mes-a-mes para forecast (mismo pattern que /compras/armar).
-            from datetime import date as _datef
-
             from database import ObsVentaMensual
-            hoy_f = _datef.today()
+            hoy_f = _date.today()
             end_month_f = hoy_f.month
             start_month_f = ((end_month_f - 11 - 1) % 12) + 1
             start_year_f = hoy_f.year if start_month_f <= end_month_f else hoy_f.year - 1
@@ -1254,14 +1209,6 @@ def init_app(app):
                     offset = (anio - start_year_f) * 12 + (mes - start_month_f)
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid_f:
                         ventas_por_pid_f[pid_v][offset] += int(uds or 0)
-            import math as _math
-
-            from purchase_engine import (
-                analyze_product,
-                start_month_idx_from_period,
-                tipo_producto,
-            )
-
             items = []
             for r in base:
                 local = local_rows.get(r.observer_id)
@@ -1276,21 +1223,13 @@ def init_app(app):
                 # que en /compras/armar). Si no hay ventas, no hay sugerencia.
                 ventas_arr = ventas_por_pid_f.get(r.observer_id, [0]*12)
                 u12m_int = sum(ventas_arr)
-                tipo_p = tipo_producto(ventas_arr)
-                sidx = start_month_idx_from_period(start_month_f, end_month_f)
-                _q, fcst7, _slope, _peak, _low, _c, sin_mov = analyze_product(
-                    ventas_arr, stock, n_days=7, start_month_idx=sidx,
-                    data_start_month=start_month_f, end_month=end_month_f, tipo=tipo_p,
+                min_sugerido, _avg_m, sin_mov, _tipo_p = calcular_min_sugerido(
+                    ventas_arr, stock, start_month_f, end_month_f,
                 )
-                min_sugerido = int(_math.ceil(fcst7)) if fcst7 > 0 else 0
                 if u12m_int == 0 or sin_mov:
                     min_sugerencia = None
-                elif minimo == 0 or minimo < min_sugerido * 0.6:
-                    min_sugerencia = 'up'
-                elif min_sugerido > 0 and minimo > min_sugerido * 2.0:
-                    min_sugerencia = 'down'
                 else:
-                    min_sugerencia = 'ok'
+                    min_sugerencia = clasificar_min(minimo, min_sugerido)
                 # Mín efectivo: si Observer está desfasado, usamos el sugerido.
                 if min_sugerencia in ('up', 'down') and min_sugerido > 0:
                     min_efectivo = min_sugerido

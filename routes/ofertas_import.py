@@ -248,9 +248,13 @@ def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descr
     if cod and cod != ean and len(cod) <= 20 and ' ' not in cod:
         _add_alt_barcode(session, ean, cod)
 
-    # Caso 2: descripción del archivo → producto local. Solo si NO hay código
-    # corto usable (porque sino preferimos guardar el código que es más estable).
-    if not cod or len(cod) > 20 or ' ' in cod:
+    # Caso 2: descripción del archivo → producto local. Solo si:
+    # - NO hay código corto usable (ese es más estable), Y
+    # - el EAN NO es un EAN real (7-14 dígitos) — si ya hay EAN, el próximo
+    #   import lo encuentra directo y la equiv. de descripción es ruido.
+    import re as _re
+    _ean_es_real = bool(_re.match(r'^\d{7,14}$', ean))
+    if not _ean_es_real and (not cod or len(cod) > 20 or ' ' in cod):
         if prod and descripcion:
             desc_orig = str(descripcion).strip()[:200]
             if not desc_orig:
@@ -342,7 +346,7 @@ def _previsualizar_pdf(path):
         sample_rows=rows[:10] if rows else None,
         candidatos=['ean', 'codigo', 'descripcion', 'unidades_minima',
                     'precio', 'descuento_psl', 'rentabilidad', 'plazo_pago',
-                    'grupo_id'],
+                    'grupo_id', 'vigencia_hasta'],
     )
 
     return {
@@ -411,7 +415,7 @@ def _previsualizar_imagen(path):
         sample_rows=rows[:10] if rows else None,
         candidatos=['ean', 'codigo', 'descripcion', 'unidades_minima',
                     'precio', 'descuento_psl', 'rentabilidad', 'plazo_pago',
-                    'grupo_id'],
+                    'grupo_id', 'vigencia_hasta'],
     )
 
     return {
