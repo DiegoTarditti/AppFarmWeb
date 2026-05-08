@@ -824,7 +824,18 @@ def init_app(app):
                     entry['_candidatos_top'] = res.candidatos_top
                     cc = getattr(res, 'candidatos_count', 0) or 0
                     entry['_candidatos_count'] = cc
-                    entry['_sin_candidatos'] = (cc == 0)
+                    # En modo drog NO corrimos fuzzy/dim para no clavar la
+                    # request con 200+ items, asi que cc=0 no significa que
+                    # no haya candidatos — solo que no los buscamos. Mostrar
+                    # "🔍 Buscar" para que el usuario los pida on-demand.
+                    if modo == 'drog':
+                        entry['_sin_candidatos'] = False
+                        entry['_motivo'] = (
+                            'No está en el catálogo local. Click "🔍 Buscar" '
+                            'para buscar similares (modo drog no precarga candidatos).'
+                        )
+                    else:
+                        entry['_sin_candidatos'] = (cc == 0)
                     stats['not_found'] += 1
             else:
                 p = res.producto
