@@ -701,19 +701,22 @@ def init_app(app):
                 'precio': it.get('precio'),
             })
 
+        # Timing instrumentation — para diagnosticar dónde se cuelga.
+        import time as _t
+        _t0 = _t.time()
+        print(f'[ofertas-validar] start: {len(items_para_match)} items, modo={modo}, lab_id={lab_id}', flush=True)
+
         with database.get_db() as session:
             # match_productos_bulk hace el flujo completo (EAN → alfa → fuzzy
             # descripción → fallback observer) reusando una sola precarga de
             # pools. Funciona igual con o sin laboratorio_id; sin lab los
             # pools son globales pero solo se preloadan una vez por request.
-            # Antes el modo drog tenía un fast-path que skipeaba fuzzy "por
-            # performance", pero eso dejaba items con score 1.0 sin
-            # auto-match. Volvemos al flujo unificado.
             results = pm.match_productos_bulk(
                 items_para_match,
                 laboratorio_id=lab_id,  # None en modo drog → busca global
                 session=session,
             )
+            print(f'[ofertas-validar] match_productos_bulk: {_t.time() - _t0:.2f}s', flush=True)
 
             # Capa 2 — match dimensional para los no encontrados.
             # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
