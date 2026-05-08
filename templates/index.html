@@ -10,55 +10,74 @@
         ::-webkit-scrollbar-thumb { background: rgba(95,230,188,.25); border-radius: 99px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--ds-mint); }
 
-        /* Hero pedido reposición — gradient + formas geométricas */
+        /* Container compacto para pantallas chicas (1366x768 ok) */
+        .home-container { max-width: 1400px; padding: 18px 22px; }
+        @media (max-width: 1280px) { .home-container { padding: 16px 18px; } }
+
+        /* Hero pedido reposición — compacto, shapes anclados arriba-derecha */
         .home-hero {
             position: relative;
             background: linear-gradient(135deg, var(--ds-bg) 0%, var(--ds-surface) 60%, var(--ds-surface-2) 100%);
             border: 1px solid var(--ds-line-2);
-            border-radius: 20px;
-            padding: 20px 28px;
+            border-radius: 16px;
+            padding: 18px 22px;
             overflow: hidden;
-            box-shadow: 0 8px 32px rgba(0,0,0,.3);
+            box-shadow: 0 6px 20px rgba(0,0,0,.25);
+            display: flex; align-items: center; gap: 18px;
         }
         .home-hero::before {
             content:''; position:absolute; inset:0;
             background:
-              radial-gradient(circle at 90% -10%, rgba(95,230,188,.18), transparent 40%),
-              radial-gradient(circle at 110% 110%, rgba(16,185,129,.12), transparent 50%);
+              radial-gradient(circle at 90% 0%, rgba(95,230,188,.18), transparent 45%),
+              radial-gradient(circle at 110% 110%, rgba(16,185,129,.10), transparent 50%);
             pointer-events:none;
         }
-        .home-hero__shapes { position:absolute; right:-20px; top:50%; transform:translateY(-50%); display:flex; gap:8px; opacity:.85; pointer-events:none; }
-        .home-hero__shapes .geo {
-            width:40px; height:40px; border-radius:10px;
-            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
-            box-shadow: 0 8px 24px rgba(16,185,129,.4);
+        .home-hero__body { position: relative; z-index: 1; flex: 1; min-width: 0; }
+        .home-hero__title { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+        .home-hero__desc { font-size: 12px; color: var(--ds-text-soft); margin-top: 3px; line-height: 1.4; }
+        .home-hero__cta { position: relative; z-index: 1; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+        .home-hero__shapes {
+            position: relative; z-index: 1;
+            display: flex; gap: 6px; flex-shrink: 0;
+            margin-right: -6px;
         }
-        .home-hero__shapes .geo:nth-child(1) { transform: rotate(15deg); }
-        .home-hero__shapes .geo:nth-child(2) { transform: rotate(-10deg) translateY(-12px); border-radius:50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
-        .home-hero__shapes .geo:nth-child(3) { transform: rotate(25deg) translateY(8px); }
-        .home-hero__shapes .geo:nth-child(4) { transform: rotate(-5deg); border-radius:50%; width:30px; height:30px; background: var(--ds-surface-2); border:2px solid var(--ds-mint); box-shadow:none; }
-        @media (max-width: 900px) { .home-hero__shapes { display: none; } }
+        .home-hero__shapes .geo {
+            width: 36px; height: 36px; border-radius: 9px;
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+            box-shadow: 0 6px 16px rgba(16,185,129,.35);
+        }
+        .home-hero__shapes .geo:nth-child(1) { transform: rotate(12deg); }
+        .home-hero__shapes .geo:nth-child(2) { transform: rotate(-8deg) translateY(-8px); border-radius: 50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
+        .home-hero__shapes .geo:nth-child(3) { transform: rotate(18deg) translateY(6px); }
+        @media (max-width: 1100px) { .home-hero__shapes { display: none; } }
+        @media (max-width: 720px) {
+            .home-hero { flex-direction: column; align-items: flex-start; }
+            .home-hero__cta { width: 100%; }
+        }
 
-        .stat-num { font-family:'Space Grotesk', sans-serif; font-weight: 700; letter-spacing:-.03em; font-size: 24px; }
+        /* Entity cards — más compactas */
+        .entity-card { padding: 16px 18px; }
+        .entity-card .entity-num { font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--ds-text-mute); }
+        .entity-card .entity-title { font-family:'Space Grotesk',sans-serif; font-weight: 700; font-size: 18px; line-height: 1.15; }
 
-        /* Entity card (las 3 categorías) */
-        .entity-card { padding: 22px; }
-        .entity-card .entity-num { font-size:10px; font-weight:700; letter-spacing:.18em; text-transform:uppercase; color: var(--ds-text-mute); }
-
-        /* Action card content (cards de la grilla) */
-        .action-content { display:flex; align-items:flex-start; gap:12px; }
+        /* Action card grid */
+        .action-content { display: flex; align-items: flex-start; gap: 12px; }
         .action-content__body { min-width: 0; flex: 1; }
-        .action-content__title { font-weight: 600; font-size: 14px; color: var(--ds-text); }
-        .action-content__desc  { font-size: 12px; color: var(--ds-text-soft); margin-top: 3px; line-height: 1.4; }
+        .action-content__title { font-weight: 600; font-size: 13px; color: var(--ds-text); }
+        .action-content__desc { font-size: 11px; color: var(--ds-text-soft); margin-top: 2px; line-height: 1.35; }
+
+        /* Page header compacto en home */
+        .home-page-header { margin-bottom: 16px; }
+        .home-page-header .page-header__title { font-size: 22px; }
     </style>
 {% endblock %}
 
 {% block main %}
-    <div class="flex-1 py-8 px-6 sm:px-8 overflow-auto">
-        <div class="max-w-6xl mx-auto">
+    <div class="flex-1 overflow-auto">
+        <div class="home-container">
 
             <!-- Page header -->
-            <header class="page-header">
+            <header class="page-header home-page-header">
                 <div class="page-header__left">
                     <span class="section-label">Inicio</span>
                     <h1 class="page-header__title">{{ config.farmacia_nombre }}<span class="glow-text">.</span></h1>
@@ -71,27 +90,22 @@
                 </div>
             </header>
 
-            <!-- HERO: Pedido de reposición -->
-            <a href="{{ url_for('compras_dia') }}" class="home-hero block mb-8 hover:no-underline">
-                <div class="relative z-10 max-w-xl">
-                    <div class="section-label mb-3">⚡ Acción del día</div>
-                    <h2 class="display text-xl font-bold leading-tight mb-1 text-white">
-                        Pedido de <span class="glow-text">reposición</span>
-                    </h2>
-                    <p class="text-xs mb-4" style="color:var(--ds-text-soft);">
-                        Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria
-                    </p>
-                    <div class="flex items-center gap-4">
-                        <span class="btn btn-primary btn-sm">Ir al pedido →</span>
-                        <a href="{{ url_for('orders_list') }}"
-                           onclick="event.stopPropagation()"
-                           class="text-sm font-medium hover:underline" style="color:var(--ds-text-soft);">
-                            Ver pedidos pendientes →
-                        </a>
-                    </div>
+            <!-- HERO: Pedido de reposición (compacto, en fila) -->
+            <a href="{{ url_for('compras_dia') }}" class="home-hero mb-5 hover:no-underline">
+                <div class="home-hero__body">
+                    <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
+                    <div class="home-hero__title">Pedido de <span class="glow-text">reposición</span></div>
+                    <div class="home-hero__desc">Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria</div>
+                </div>
+                <div class="home-hero__cta">
+                    <span class="btn btn-primary">Ir al pedido →</span>
+                    <a href="{{ url_for('orders_list') }}"
+                       onclick="event.stopPropagation()"
+                       class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);">
+                        Ver pendientes →
+                    </a>
                 </div>
                 <div class="home-hero__shapes">
-                    <div class="geo"></div>
                     <div class="geo"></div>
                     <div class="geo"></div>
                     <div class="geo"></div>
@@ -99,16 +113,16 @@
             </a>
 
             <!-- 3 ENTIDADES -->
-            <div class="section-label mb-3">Entidades</div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="section-label" style="margin-bottom:8px;">Entidades</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
 
                 <div class="card entity-card">
-                    <div class="flex items-start justify-between mb-4">
-                        <div class="icon-tile icon-tile-lg">🧪</div>
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="icon-tile">🧪</div>
                         <span class="entity-num">01</span>
                     </div>
-                    <div class="display font-bold text-xl leading-tight mb-1">Laboratorios</div>
-                    <div class="text-xs mb-4" style="color:var(--ds-text-soft);">Módulos, ofertas y análisis de compra</div>
+                    <div class="entity-title">Laboratorios</div>
+                    <div class="text-xs mt-1 mb-3" style="color:var(--ds-text-soft);">Módulos, ofertas y análisis</div>
                     <div class="flex flex-wrap gap-1.5">
                         <a href="{{ url_for('laboratorios_list') }}" class="btn btn-secondary btn-sm">Ver →</a>
                         <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-ghost btn-sm">Procesos</a>
@@ -117,12 +131,12 @@
                 </div>
 
                 <div class="card entity-card">
-                    <div class="flex items-start justify-between mb-4">
-                        <div class="icon-tile icon-tile-lg">💊</div>
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="icon-tile">💊</div>
                         <span class="entity-num">02</span>
                     </div>
-                    <div class="display font-bold text-xl leading-tight mb-1">Droguerías</div>
-                    <div class="text-xs mb-4" style="color:var(--ds-text-soft);">Facturas, cuenta corriente y reclamos</div>
+                    <div class="entity-title">Droguerías</div>
+                    <div class="text-xs mt-1 mb-3" style="color:var(--ds-text-soft);">Facturas, ctas. corrientes y reclamos</div>
                     <div class="flex flex-wrap gap-1.5">
                         <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm">Ver →</a>
                         <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-ghost btn-sm">Procesos</a>
@@ -131,12 +145,12 @@
                 </div>
 
                 <div class="card entity-card">
-                    <div class="flex items-start justify-between mb-4">
-                        <div class="icon-tile icon-tile-lg">🏢</div>
+                    <div class="flex items-start justify-between mb-3">
+                        <div class="icon-tile">🏢</div>
                         <span class="entity-num">03</span>
                     </div>
-                    <div class="display font-bold text-xl leading-tight mb-1">Otros</div>
-                    <div class="text-xs mb-4" style="color:var(--ds-text-soft);">Proveedores que no son droguería ni lab</div>
+                    <div class="entity-title">Otros</div>
+                    <div class="text-xs mt-1 mb-3" style="color:var(--ds-text-soft);">Proveedores no droguería ni lab</div>
                     <div class="flex flex-wrap gap-1.5">
                         <a href="{{ url_for('providers_list') }}?tipo=otro" class="btn btn-secondary btn-sm">Ver →</a>
                         <a href="{{ url_for('procesos_list') }}?tipo=otro" class="btn btn-ghost btn-sm">Procesos</a>
@@ -146,7 +160,7 @@
             </div>
 
             <!-- ACCIONES FRECUENTES -->
-            <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center justify-between mb-2">
                 <div class="section-label">Acciones frecuentes</div>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3">

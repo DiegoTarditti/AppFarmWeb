@@ -1,283 +1,282 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Cruce manual — Farmacia</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0', head: '#f0f0f0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-        input[type=number] { -moz-appearance: textfield; }
-        input[type=number]::-webkit-inner-spin-button,
-        input[type=number]::-webkit-outer-spin-button { opacity: 0.4; }
-    </style>
-</head>
-<body class="min-h-screen font-sans">
+{% extends "base.html" %}
+{% set nav_active = "ingresos" %}
 
-<header class="bg-surface border-b border-surface-border px-6 py-4">
-    <div class="max-w-[1600px] mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                </svg>
+{% block title %}Cruce manual — Factura {{ invoice.numero_factura }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Compare-specific tweaks: tablas con sticky header dentro del card */
+    .compare-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+    .compare-card__head {
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--ds-line);
+        display: flex; align-items: center; gap: 10px;
+        flex-shrink: 0;
+        background: rgba(95,230,188,.04);
+    }
+    .compare-card__title { font-weight: 600; font-size: 14px; color: var(--ds-text); }
+    .compare-card__body { overflow: auto; max-height: 70vh; }
+    .compare-card__body table { width: 100%; font-size: 13px; }
+    .compare-card__body thead { position: sticky; top: 0; z-index: 5; }
+    .compare-card__body thead th {
+        padding: 10px 12px;
+        font-size: 10px; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase;
+        text-align: left;
+    }
+    .compare-card__body tbody td { padding: 9px 12px; border-bottom: 1px solid var(--ds-line); }
+    .compare-card__body tbody tr:last-child td { border-bottom: 0; }
+    .compare-card__body tbody tr { transition: background-color .15s; }
+    .compare-card__body tbody tr:hover { background: rgba(95,230,188,.04); }
+    .compare-card__body td.center, .compare-card__body th.center { text-align: center; }
+    .compare-card__body td.right,  .compare-card__body th.right  { text-align: right; }
+    .num-pill {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 24px; height: 24px; border-radius: 999px;
+        background: rgba(95,230,188,.15); color: var(--ds-mint);
+        font-size: 11px; font-weight: 700;
+    }
+    .mono-xs { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ds-text-mute); }
+    .mapping-input {
+        width: 56px; text-align: center; font-weight: 700;
+        padding: 6px 8px; font-size: 13px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line-2);
+        color: var(--ds-mint);
+        border-radius: var(--ds-r-sm);
+        transition: all .15s;
+    }
+    .mapping-input:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+    .mapping-input::placeholder { color: var(--ds-text-mute); font-weight: 400; }
+    .observer-input {
+        background: var(--ds-surface); border: 1px solid var(--ds-line);
+        color: var(--ds-text); border-radius: var(--ds-r-sm);
+        padding: 5px 8px; font-size: 12px; width: 160px;
+    }
+    .observer-input:focus { outline: none; border-color: #A78BFA; box-shadow: 0 0 0 3px rgba(167,139,250,.15); }
+    .btn-violet {
+        background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%);
+        color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.3);
+    }
+    .btn-violet:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(124,58,237,.4); }
+    /* Hint box */
+    .hint-box {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-md);
+        padding: 12px 16px;
+        font-size: 13px; color: var(--ds-text-soft); line-height: 1.5;
+    }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { opacity: 0.4; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 py-6 px-6 overflow-auto">
+    <div class="max-w-[1600px] mx-auto">
+
+        <!-- Page header -->
+        <header class="page-header">
+            <div class="page-header__left">
+                <span class="section-label">Factura · {{ invoice.numero_factura }}</span>
+                <h1 class="page-header__title">Cruce <span class="glow-text">manual</span></h1>
+                <p class="page-header__subtitle">
+                    {{ invoice.proveedor_razon or '—' }} · {{ invoice.fecha }} ·
+                    {{ invoice.total_articulos or '?' }} ítems
+                </p>
             </div>
-            <span class="font-bold text-sm text-[#1e1e1e]">Control de Stock</span>
-        </div>
-        <a href="{{ url_for('index') }}"
-           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-            </svg>
-            Inicio
-        </a>
-    </div>
-</header>
-
-<main class="max-w-[1600px] mx-auto px-6 py-8 space-y-5">
-
-    <!-- Info factura -->
-    <div class="bg-surface rounded-xl border border-surface-border px-5 py-3">
-        <div class="flex flex-wrap items-center justify-between gap-y-1 text-sm">
-            <div class="flex flex-wrap items-center gap-x-6 gap-y-1">
-                <span class="text-[#6f6f6f]">Factura:</span>
-                <span class="font-semibold">{{ invoice.numero_factura }}</span>
-                <span class="text-[#999]">·</span>
-                <span class="text-[#6f6f6f]">Proveedor:</span>
-                <span class="font-semibold">{{ invoice.proveedor_razon or '—' }}</span>
-                <span class="text-[#999]">·</span>
-                <span class="text-[#6f6f6f]">Fecha:</span>
-                <span class="font-semibold">{{ invoice.fecha }}</span>
+            <div class="page-header__actions">
+                <a href="{{ url_for('pick_fields', invoice_id=invoice.id) }}" class="btn btn-ghost btn-sm">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
+                    </svg>
+                    Del PDF
+                </a>
+                <a href="{{ url_for('invoice_items', invoice_id=invoice.id) }}" class="btn btn-secondary btn-sm">
+                    Ver todos los ítems
+                </a>
             </div>
-            <a href="{{ url_for('pick_fields', invoice_id=invoice.id) }}"
-               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1 transition-colors">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
-                </svg>
-                Seleccionar del PDF
-            </a>
-        </div>
-    </div>
+        </header>
 
-    <!-- Ver todos los artículos -->
-    <div class="flex justify-start">
-        <a href="{{ url_for('invoice_items', invoice_id=invoice.id) }}"
-           class="inline-flex items-center gap-2 bg-surface hover:bg-surface-input border border-surface-border text-[#1e1e1e] text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-            <svg class="w-4 h-4 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-            </svg>
-            Ver todos los artículos de la factura
-            <span class="text-xs text-[#6f6f6f] font-normal">({{ invoice.total_articulos or '?' }} ítems)</span>
-        </a>
-    </div>
-
-    <!-- Instrucción -->
-    <div class="bg-surface border border-[#d0d0d0] rounded-xl px-5 py-3 text-sm text-[#555] leading-relaxed">
-        <span class="text-[#1e1e1e] font-semibold">Cruce manual:</span>
-        si un ítem de la factura (tabla izquierda) corresponde a un ítem del ERP (tabla derecha)
-        que no coincidió por código de barras, ingresá el <strong class="text-brand">número de fila</strong>
-        de la izquierda en el campo "Nro" de la fila del ERP correspondiente.
-        Luego presioná <em>Aplicar cruce</em>.
-    </div>
-
-    <form method="POST" action="{{ url_for('apply_mapping', invoice_id=invoice.id) }}">
-
-        <div class="grid grid-cols-2 gap-4">
-
-            <!-- ── LEFT: factura diffs ── -->
-            <div class="bg-surface rounded-xl border border-surface-border overflow-hidden flex flex-col">
-                <div class="px-5 py-3 border-b border-surface-border flex items-center gap-3 flex-shrink-0">
-                    <span class="font-semibold text-[#1e1e1e]">Factura — ítems con diferencias</span>
-                    {% if invoice_diffs %}
-                    <span class="bg-red-900/40 text-red-600 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-red-700/30">
-                        {{ invoice_diffs|length }}
-                    </span>
-                    {% endif %}
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-surface-head border-b border-surface-border">
-                            <tr>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-10">#</th>
-                                <th class="px-2 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide w-8"></th>
-                                <th class="px-3 py-2.5 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código</th>
-                                <th class="px-3 py-2.5 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción</th>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Fact.</th>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">ERP</th>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Dif.</th>
-                                <th class="px-3 py-2.5 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">P. Unit.</th>
-                                <th class="px-3 py-2.5 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Obs.</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-surface-border">
-                            {% for diff in invoice_diffs %}
-                            {% set p_unit = inv_prices.get(diff.codigo_barra, 0) %}
-                            <tr class="transition-colors" id="inv-row-{{ loop.index }}"
-                                data-price="{{ p_unit }}">
-                                <td class="px-3 py-2.5 text-center">
-                                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand/20 text-brand text-xs font-bold">
-                                        {{ loop.index }}
-                                    </span>
-                                </td>
-                                <td class="px-2 py-2.5 text-center" id="inv-check-{{ loop.index }}">
-                                    <!-- tilde inyectada por JS cuando hay match -->
-                                </td>
-                                <td class="px-3 py-2.5 font-mono text-xs text-[#6f6f6f]">{{ diff.codigo_barra or '—' }}</td>
-                                <td class="px-3 py-2.5 text-[#1e1e1e] max-w-[200px]">
-                                    <span class="block truncate" title="{{ diff.descripcion }}">{{ diff.descripcion }}</span>
-                                </td>
-                                <td class="px-3 py-2.5 text-center text-[#1e1e1e] font-medium">{{ diff.cantidad_factura }}</td>
-                                <td class="px-3 py-2.5 text-center text-[#6f6f6f]">{{ diff.cantidad_erp }}</td>
-                                <td class="px-3 py-2.5 text-center">
-                                    {% if diff.diferencia > 0 %}
-                                        <span class="bg-green-900/40 text-green-600 font-semibold px-2 py-0.5 rounded-full text-xs border border-green-700/30">+{{ diff.diferencia }}</span>
-                                    {% else %}
-                                        <span class="bg-red-900/40 text-red-600 font-semibold px-2 py-0.5 rounded-full text-xs border border-red-700/30">{{ diff.diferencia }}</span>
-                                    {% endif %}
-                                </td>
-                                <td class="px-3 py-2.5 text-right font-mono text-xs text-[#555]">
-                                    {% if p_unit %}$ {{ p_unit | arg_currency }}{% else %}—{% endif %}
-                                </td>
-                                <td class="px-3 py-2.5 text-xs text-[#888] max-w-[140px]">
-                                    <span class="block truncate" title="{{ diff.observaciones }}">{{ diff.observaciones or '—' }}</span>
-                                </td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="8" class="px-5 py-8 text-center text-[#999] text-sm">
-                                    Sin diferencias detectadas
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- ── RIGHT: ERP items with issues ── -->
-            <div class="bg-surface rounded-xl border border-surface-border overflow-hidden flex flex-col">
-                <div class="px-5 py-3 border-b border-surface-border flex items-center gap-3 flex-shrink-0">
-                    <span class="font-semibold text-[#1e1e1e]">ERP — ítems sin coincidencia exacta</span>
-                    {% if erp_items %}
-                    <span class="bg-yellow-900/40 text-yellow-700 text-xs font-semibold px-2.5 py-0.5 rounded-full border border-yellow-700/30">
-                        {{ erp_items|length }}
-                    </span>
-                    {% endif %}
-                    {% if observer_disponible %}
-                    <form method="post" action="{{ url_for('observer_sync_factura', invoice_id=invoice.id) }}"
-                          class="ml-auto flex items-center gap-1.5"
-                          onsubmit="return confirmObserverSync(this);">
-                        <input type="text" name="comprobante" placeholder="Nº comprobante ObServer"
-                               value="{{ invoice.numero_factura or '' }}" required
-                               title="Número del comprobante de recepción en ObServer"
-                               class="text-[11px] bg-[#f5f5f5] border border-[#d0d0d0] rounded px-2 py-1 w-36 focus:outline-none focus:ring-1 focus:ring-violet-500">
-                        <button type="submit"
-                                class="flex items-center gap-1.5 text-[11px] font-semibold bg-violet-600 hover:bg-violet-700 text-white px-2.5 py-1 rounded-lg transition-colors">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                            Traer desde ObServer
-                        </button>
-                    </form>
-                    <script>
-                    function confirmObserverSync(form) {
-                        const nro = (form.querySelector('input[name="comprobante"]').value || '').trim();
-                        if (!nro) { alert('Ingresá el Nº de comprobante de ObServer.'); return false; }
-                        return confirm('Traer recepciones del comprobante "' + nro + '" desde ObServer?\n\nReemplaza los datos ERP actuales.');
-                    }
-                    </script>
-                    {% endif %}
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-sm">
-                        <thead class="bg-surface-head border-b border-surface-border">
-                            <tr>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-brand uppercase tracking-wide w-16">Nro</th>
-                                <th class="px-3 py-2.5 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código</th>
-                                <th class="px-3 py-2.5 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción</th>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Cant.</th>
-                                <th class="px-3 py-2.5 text-right text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Unit. ERP</th>
-                                <th class="px-3 py-2.5 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Ratio</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-surface-border">
-                            {% for erp in erp_items %}
-                            {% set unit_erp = (erp.precio_unitario / erp.cantidad) if erp.cantidad and erp.precio_unitario else 0 %}
-                            <tr class="hover:bg-black/[0.04] transition-colors" id="erp-row-{{ erp.id }}"
-                                data-unit-erp="{{ unit_erp }}">
-                                <td class="px-3 py-2">
-                                    <input type="number"
-                                           name="mapping_{{ erp.id }}"
-                                           min="1" max="{{ invoice_diffs|length }}"
-                                           placeholder="—"
-                                           oninput="highlightMatch(this, {{ erp.id }})"
-                                           class="w-14 bg-[#f5f5f5] border border-[#d0d0d0] text-brand text-center font-bold rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-brand placeholder-[#aaa] transition-colors">
-                                </td>
-                                <td class="px-3 py-2.5 font-mono text-xs text-[#6f6f6f]">{{ erp.codigo_barra or '—' }}</td>
-                                <td class="px-3 py-2.5 text-[#1e1e1e] max-w-[200px]">
-                                    <span class="block truncate" title="{{ erp.descripcion }}">{{ erp.descripcion }}</span>
-                                </td>
-                                <td class="px-3 py-2.5 text-center text-[#1e1e1e] font-medium">{{ erp.cantidad }}</td>
-                                <td class="px-3 py-2.5 text-right font-mono text-xs text-[#555]">
-                                    {% if unit_erp %}$ {{ unit_erp | arg_currency }}{% else %}—{% endif %}
-                                </td>
-                                <td class="px-3 py-2.5 text-center text-xs" id="ratio-{{ erp.id }}">—</td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="6" class="px-5 py-8 text-center text-[#999] text-sm">
-                                    Todos los ítems del ERP coinciden exactamente con la factura
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
+        <!-- Instrucción -->
+        <div class="hint-box mb-5">
+            <strong style="color:var(--ds-mint);">Cruce manual:</strong>
+            si un ítem de la factura (tabla izquierda) corresponde a un ítem del ERP (tabla derecha)
+            que no coincidió por código de barras, ingresá el
+            <strong style="color:var(--ds-mint-bright);">número de fila</strong>
+            de la izquierda en el campo "Nro" de la fila del ERP. Luego presioná <em>Aplicar cruce</em>.
         </div>
 
-        <!-- Actions -->
-        <div class="flex items-center justify-between mt-5">
-            <a href="{{ url_for('show_results', invoice_id=invoice.id) }}"
-               class="text-sm text-[#888] hover:text-[#1e1e1e] transition-colors flex items-center gap-1.5">
-                Continuar sin cruzar
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                </svg>
-            </a>
-            <button type="submit"
-                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                </svg>
-                Aplicar cruce y continuar
-            </button>
-        </div>
+        <form method="POST" action="{{ url_for('apply_mapping', invoice_id=invoice.id) }}">
 
-    </form>
+            <div class="grid grid-cols-2 gap-4">
 
-</main>
+                <!-- ── LEFT: factura diffs ── -->
+                <div class="card compare-card">
+                    <div class="compare-card__head">
+                        <span class="compare-card__title">Factura — ítems con diferencias</span>
+                        {% if invoice_diffs %}
+                        <span class="badge badge-danger badge-pill">{{ invoice_diffs|length }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="compare-card__body">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th class="center" style="width:36px;">#</th>
+                                    <th class="center" style="width:28px;"></th>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th class="center">Fact.</th>
+                                    <th class="center">ERP</th>
+                                    <th class="center">Dif.</th>
+                                    <th class="right">P. Unit.</th>
+                                    <th>Obs.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for diff in invoice_diffs %}
+                                {% set p_unit = inv_prices.get(diff.codigo_barra, 0) %}
+                                <tr id="inv-row-{{ loop.index }}" data-price="{{ p_unit }}">
+                                    <td class="center"><span class="num-pill">{{ loop.index }}</span></td>
+                                    <td class="center" id="inv-check-{{ loop.index }}"></td>
+                                    <td class="mono-xs">{{ diff.codigo_barra or '—' }}</td>
+                                    <td style="max-width:200px;">
+                                        <span class="block truncate" title="{{ diff.descripcion }}">{{ diff.descripcion }}</span>
+                                    </td>
+                                    <td class="center" style="font-weight:500;">{{ diff.cantidad_factura }}</td>
+                                    <td class="center" style="color:var(--ds-text-mute);">{{ diff.cantidad_erp }}</td>
+                                    <td class="center">
+                                        {% if diff.diferencia > 0 %}
+                                            <span class="badge badge-mint">+{{ diff.diferencia }}</span>
+                                        {% else %}
+                                            <span class="badge badge-danger">{{ diff.diferencia }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="right mono-xs">
+                                        {% if p_unit %}$ {{ p_unit | arg_currency }}{% else %}—{% endif %}
+                                    </td>
+                                    <td style="max-width:140px; font-size:11px; color:var(--ds-text-mute);">
+                                        <span class="block truncate" title="{{ diff.observaciones }}">{{ diff.observaciones or '—' }}</span>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="9" style="padding:32px; text-align:center; color:var(--ds-text-mute);">
+                                        Sin diferencias detectadas
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ── RIGHT: ERP items ── -->
+                <div class="card compare-card">
+                    <div class="compare-card__head">
+                        <span class="compare-card__title">ERP — ítems sin coincidencia exacta</span>
+                        {% if erp_items %}
+                        <span class="badge badge-warn badge-pill">{{ erp_items|length }}</span>
+                        {% endif %}
+                        {% if observer_disponible %}
+                        <form method="post" action="{{ url_for('observer_sync_factura', invoice_id=invoice.id) }}"
+                              class="ml-auto flex items-center gap-1.5"
+                              onsubmit="return confirmObserverSync(this);">
+                            <input type="text" name="comprobante" placeholder="Nº comprobante ObServer"
+                                   value="{{ invoice.numero_factura or '' }}" required
+                                   title="Número del comprobante de recepción en ObServer"
+                                   class="observer-input">
+                            <button type="submit" class="btn btn-violet btn-sm">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                                ObServer
+                            </button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <div class="compare-card__body">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th class="center" style="width:84px; color:var(--ds-mint) !important;">Nro</th>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th class="center">Cant.</th>
+                                    <th class="right">Unit. ERP</th>
+                                    <th class="center">Ratio</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for erp in erp_items %}
+                                {% set unit_erp = (erp.precio_unitario / erp.cantidad) if erp.cantidad and erp.precio_unitario else 0 %}
+                                <tr id="erp-row-{{ erp.id }}" data-unit-erp="{{ unit_erp }}">
+                                    <td class="center">
+                                        <input type="number"
+                                               name="mapping_{{ erp.id }}"
+                                               min="1" max="{{ invoice_diffs|length }}"
+                                               placeholder="—"
+                                               oninput="highlightMatch(this, {{ erp.id }})"
+                                               class="mapping-input">
+                                    </td>
+                                    <td class="mono-xs">{{ erp.codigo_barra or '—' }}</td>
+                                    <td style="max-width:200px;">
+                                        <span class="block truncate" title="{{ erp.descripcion }}">{{ erp.descripcion }}</span>
+                                    </td>
+                                    <td class="center" style="font-weight:500;">{{ erp.cantidad }}</td>
+                                    <td class="right mono-xs">
+                                        {% if unit_erp %}$ {{ unit_erp | arg_currency }}{% else %}—{% endif %}
+                                    </td>
+                                    <td class="center" style="font-size:11px; color:var(--ds-text-mute);" id="ratio-{{ erp.id }}">—</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="6" style="padding:32px; text-align:center; color:var(--ds-text-mute);">
+                                        Todos los ítems del ERP coinciden exactamente con la factura
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Actions -->
+            <div class="flex items-center justify-between mt-6">
+                <a href="{{ url_for('show_results', invoice_id=invoice.id) }}" class="btn btn-ghost">
+                    Continuar sin cruzar
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </a>
+                <button type="submit" class="btn btn-primary btn-lg">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                    Aplicar cruce y continuar
+                </button>
+            </div>
+
+        </form>
+
+    </div>
+</div>
 
 <script>
 // Rastrea qué fila de factura está vinculada a cada erpId
 const erpToInvRow = {};
+
+function confirmObserverSync(form) {
+    const nro = (form.querySelector('input[name="comprobante"]').value || '').trim();
+    if (!nro) { alert('Ingresá el Nº de comprobante de ObServer.'); return false; }
+    return confirm('Traer recepciones del comprobante "' + nro + '" desde ObServer?\n\nReemplaza los datos ERP actuales.');
+}
 
 function highlightMatch(input, erpId) {
     const val = parseInt(input.value);
@@ -300,18 +299,18 @@ function highlightMatch(input, erpId) {
     const invRow   = document.getElementById(`inv-row-${val}`);
     const invCheck = document.getElementById(`inv-check-${val}`);
     if (invRow) {
-        invRow.style.backgroundColor = 'rgba(34,197,94,0.12)';
+        invRow.style.backgroundColor = 'rgba(95,230,188,0.10)';
         erpToInvRow[erpId] = val;
     }
     if (invCheck) {
         invCheck.innerHTML = `
-            <svg class="w-4 h-4 text-green-600 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg style="width:16px;height:16px;color:var(--ds-mint);margin:0 auto;display:block;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
             </svg>`;
     }
 
     // Resaltar fila ERP
-    if (erpRow) erpRow.style.backgroundColor = 'rgba(234,179,8,0.08)';
+    if (erpRow) erpRow.style.backgroundColor = 'rgba(251,146,60,0.08)';
 
     // Calcular y mostrar ratio: Unit.ERP / P.Unit.Factura
     if (ratioCell && invRow) {
@@ -320,10 +319,10 @@ function highlightMatch(input, erpId) {
         if (unitErp > 0 && pUnit > 0) {
             const pct   = ((unitErp - pUnit) / unitErp * 100);
             const sign  = pct >= 0 ? '+' : '';
-            const color = pct >= 0 ? '#4ADE80' : '#F87171';
-            ratioCell.innerHTML = `<span style="color:${color};font-weight:600;font-size:12px">${sign}${pct.toFixed(1)}%</span>`;
+            const color = pct >= 0 ? 'var(--ds-mint-bright)' : '#F87171';
+            ratioCell.innerHTML = `<span style="color:${color};font-weight:600;">${sign}${pct.toFixed(1)}%</span>`;
         } else {
-            ratioCell.innerHTML = '<span style="color:#555">s/d</span>';
+            ratioCell.innerHTML = '<span style="color:var(--ds-text-mute)">s/d</span>';
         }
     }
 }
@@ -335,6 +334,4 @@ function clearInvRow(rowNum) {
     if (invCheck) invCheck.innerHTML = '';
 }
 </script>
-
-</body>
-</html>
+{% endblock %}

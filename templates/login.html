@@ -1,58 +1,91 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Ingresar — Farmacia</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = { theme: { extend: {
-            fontFamily: { sans: ['Inter', 'sans-serif'] },
-            colors: { brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' } }
-        }}}
-    </script>
-    <style>body { background-color: #f3f3f3; font-family: 'Inter', sans-serif; }</style>
-</head>
-<body class="min-h-screen flex items-center justify-center px-4">
-    <div class="w-full max-w-sm bg-white rounded-2xl border border-[#e0e0e0] shadow-sm p-8">
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+
+{% block title %}Ingresar — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .login-shell {
+        flex: 1;
+        display: flex; align-items: center; justify-content: center;
+        padding: 24px;
+        position: relative;
+        overflow: hidden;
+    }
+    .login-shell::before {
+        content: ''; position: absolute; inset: 0;
+        background:
+            radial-gradient(circle at 15% 20%, rgba(95,230,188,.10), transparent 35%),
+            radial-gradient(circle at 85% 80%, rgba(16,185,129,.08), transparent 40%);
+        pointer-events: none;
+    }
+    .login-card {
+        position: relative; z-index: 1;
+        width: 100%; max-width: 380px;
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line-2);
+        border-radius: 18px;
+        padding: 36px 32px;
+        box-shadow: 0 20px 50px -12px rgba(0,0,0,.45), 0 0 0 1px rgba(95,230,188,.08) inset;
+    }
+    .login-icon {
+        width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 14px;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+        color: var(--ds-bg-deep);
+        box-shadow: 0 8px 24px rgba(16,185,129,.35);
+    }
+    .flash {
+        margin-bottom: 14px; padding: 9px 12px; border-radius: 8px;
+        font-size: 12px; line-height: 1.4;
+    }
+    .flash-error   { background: rgba(239,68,68,.12); color: #FCA5A5; border: 1px solid rgba(239,68,68,.3); }
+    .flash-warning { background: rgba(245,158,11,.12); color: #FCD34D; border: 1px solid rgba(245,158,11,.3); }
+    .flash-info    { background: rgba(95,230,188,.10); color: var(--ds-mint); border: 1px solid var(--ds-line-2); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="login-shell">
+    <div class="login-card">
         <div class="text-center mb-6">
-            <div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-brand flex items-center justify-center">
-                <svg class="w-6 h-6 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <div class="login-icon">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                </svg>
             </div>
-            <h1 class="text-xl font-bold text-[#1e1e1e]">Farmacia</h1>
-            <p class="text-xs text-[#999] mt-1">Ingresá para continuar</p>
+            <h1 class="display font-bold text-2xl">Control de <span class="glow-text">Stock</span></h1>
+            <p class="text-xs mt-1" style="color:var(--ds-text-mute);">Ingresá para continuar</p>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-        {% for cat, msg in messages %}
-        <div class="mb-4 px-3 py-2 rounded-lg text-xs border
-            {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
-            {% elif cat == 'warning' %}bg-amber-50 text-amber-800 border-amber-200
-            {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">
-            {{ msg }}
-        </div>
-        {% endfor %}
+            {% for cat, msg in messages %}
+            <div class="flash flash-{{ 'error' if cat == 'error' else ('warning' if cat == 'warning' else 'info') }}">
+                {{ msg }}
+            </div>
+            {% endfor %}
         {% endif %}
         {% endwith %}
 
         <form method="post" class="space-y-3">
             <div>
-                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Usuario</label>
-                <input type="text" name="username" value="{{ username or '' }}" required autofocus autocomplete="username"
-                    class="w-full bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                <label class="ds-label">Usuario</label>
+                <input type="text" name="username" value="{{ username or '' }}"
+                       required autofocus autocomplete="username"
+                       class="ds-input">
             </div>
             <div>
-                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">Contraseña</label>
+                <label class="ds-label">Contraseña</label>
                 <input type="password" name="password" required autocomplete="current-password"
-                    class="w-full bg-[#f5f5f5] border border-[#e0e0e0] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
+                       class="ds-input">
             </div>
-            <button type="submit"
-                class="w-full bg-brand hover:bg-brand-hover text-brand-dark font-semibold py-2 rounded-lg text-sm transition-colors mt-2">
-                Ingresar
+            <button type="submit" class="btn btn-primary btn-lg w-full" style="justify-content:center; margin-top:8px;">
+                Ingresar →
             </button>
         </form>
     </div>
-</body>
-</html>
+</div>
+{% endblock %}

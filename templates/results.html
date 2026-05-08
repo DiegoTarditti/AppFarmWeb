@@ -1,89 +1,122 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Resultados — Farmacia</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0', head: '#f0f0f0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-    </style>
-</head>
-<body class="min-h-screen font-sans">
+{% extends "base.html" %}
+{% set nav_active = "ingresos" %}
 
-<header class="bg-surface border-b border-surface-border px-6 py-4">
-    <div class="max-w-6xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                </svg>
+{% block title %}Resultados — Factura {{ invoice.numero_factura }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Tabla de diferencias dentro de un card */
+    .diffs-card { padding: 0; overflow: hidden; }
+    .diffs-card__head {
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--ds-line);
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px; flex-wrap: wrap;
+        background: rgba(95,230,188,.04);
+    }
+    .diffs-card__body { overflow: auto; max-height: 65vh; }
+    .diffs-card__body table { width: 100%; font-size: 13px; }
+    .diffs-card__body thead { position: sticky; top: 0; z-index: 5; }
+    .diffs-card__body thead th {
+        padding: 10px 14px;
+        font-size: 10px; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase;
+        text-align: left;
+    }
+    .diffs-card__body tbody td { padding: 10px 14px; border-bottom: 1px solid var(--ds-line); }
+    .diffs-card__body tbody tr:last-child td { border-bottom: 0; }
+    .diffs-card__body tbody tr { transition: background-color .15s; }
+    .diffs-card__body tbody tr:hover { background: rgba(95,230,188,.04); }
+    .diffs-card__body td.center, .diffs-card__body th.center { text-align: center; }
+    .diffs-card__foot {
+        padding: 14px 20px;
+        border-top: 1px solid var(--ds-line);
+        display: flex; justify-content: flex-end;
+    }
+    .mono-xs { font-family: ui-monospace, monospace; font-size: 11px; color: var(--ds-text-mute); }
+
+    /* Panel info de factura */
+    .info-card { padding: 22px 24px; }
+    .info-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; margin-top: 6px; }
+    @media (max-width: 1100px) { .info-grid { grid-template-columns: repeat(3, 1fr); } }
+    .info-grid__cell .label {
+        font-size: 10px; font-weight: 600; letter-spacing: .08em;
+        text-transform: uppercase; color: var(--ds-text-mute); margin-bottom: 4px;
+    }
+    .info-grid__cell .value { font-weight: 600; font-size: 14px; color: var(--ds-text); }
+    .info-grid__cell .value.accent { color: var(--ds-mint); }
+    .info-grid__cell .value.warn { color: var(--ds-warn); }
+
+    /* Warning box */
+    .warn-box {
+        background: rgba(245,158,11,.08);
+        border: 1px solid rgba(245,158,11,.3);
+        border-radius: var(--ds-r-md);
+        padding: 12px 16px;
+        font-size: 13px;
+        color: #FCD34D;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 16px;
+    }
+
+    /* Empty state */
+    .empty-state { padding: 56px 24px; text-align: center; }
+    .empty-state__icon {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 56px; height: 56px; border-radius: 16px;
+        background: rgba(95,230,188,.12);
+        border: 1px solid rgba(95,230,188,.25);
+        color: var(--ds-mint);
+        margin-bottom: 14px;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 py-6 px-6 overflow-auto">
+    <div class="max-w-6xl mx-auto">
+
+        {% set needs_edit = invoice.numero_factura in ('SIN_NUMERO', '', None) or not invoice.proveedor_razon %}
+
+        <!-- Page header -->
+        <header class="page-header">
+            <div class="page-header__left">
+                <span class="section-label">
+                    Factura · {{ invoice.numero_factura or 'sin número' }}
+                    {% if invoice.tipo_comprobante == 'NCR' %}
+                        <span class="badge badge-danger">NCR</span>
+                    {% else %}
+                        <span class="badge badge-mint">FAC</span>
+                    {% endif %}
+                </span>
+                <h1 class="page-header__title">Resultados del <span class="glow-text">cruce</span></h1>
+                <p class="page-header__subtitle">
+                    {{ invoice.proveedor_razon or '—' }} · {{ invoice.fecha }} ·
+                    {% if differences %}{{ differences|length }} diferencias detectadas{% else %}coincidencia exacta con ERP{% endif %}
+                </p>
             </div>
-            <span class="font-bold text-sm text-[#1e1e1e]">Control de Stock</span>
-        </div>
-        <a href="{{ url_for('index') }}"
-           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-            </svg>
-            Inicio
-        </a>
-    </div>
-</header>
-
-<main class="max-w-6xl mx-auto px-6 py-8 space-y-6">
-
-    <!-- Info factura -->
-    {% set needs_edit = invoice.numero_factura in ('SIN_NUMERO', '', None) or not invoice.proveedor_razon %}
-    <div class="bg-surface rounded-xl border {% if needs_edit %}border-yellow-600/40{% else %}border-surface-border{% endif %} p-6">
-        <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center gap-2">
-                <p class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-widest">Comprobante procesado</p>
-                {% if invoice.tipo_comprobante == 'NCR' %}
-                <span class="bg-red-900/40 text-red-600 text-xs font-bold px-2 py-0.5 rounded border border-red-700/30">NCR</span>
-                {% else %}
-                <span class="bg-brand/20 text-brand text-xs font-bold px-2 py-0.5 rounded border border-brand/30">FAC</span>
-                {% endif %}
-            </div>
-            <div class="flex items-center gap-3">
-                <a href="{{ url_for('pick_fields', invoice_id=invoice.id) }}"
-                   class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1 transition-colors">
+            <div class="page-header__actions">
+                <a href="{{ url_for('pick_fields', invoice_id=invoice.id) }}" class="btn btn-ghost btn-sm">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
                     </svg>
-                    Seleccionar del PDF
+                    Del PDF
                 </a>
-                <span class="text-[#bbb]">·</span>
-                <button type="button" onclick="toggleEdit()" id="btn-edit"
-                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1 transition-colors">
+                <button type="button" onclick="toggleEdit()" id="btn-edit" class="btn btn-secondary btn-sm">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
                     </svg>
-                    Editar
+                    Editar encabezado
                 </button>
+                <a href="{{ url_for('invoice_items', invoice_id=invoice.id) }}" class="btn btn-secondary btn-sm">
+                    Ver ítems ({{ invoice.total_articulos or '?' }})
+                </a>
             </div>
-        </div>
+        </header>
 
         {% if needs_edit %}
-        <div class="flex items-center justify-between bg-yellow-900/20 border border-yellow-600/30 text-yellow-700 rounded-lg px-3 py-2 text-xs mb-4">
+        <div class="warn-box mb-5">
             <div class="flex items-center gap-2">
                 <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
@@ -91,192 +124,171 @@
                 Algunos campos no se extrajeron del PDF. Completalos manualmente.
             </div>
             <a href="{{ url_for('pick_fields', invoice_id=invoice.id) }}"
-               class="flex items-center gap-1 text-yellow-800 hover:text-yellow-100 font-semibold underline underline-offset-2 transition-colors ml-4 whitespace-nowrap">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"/>
-                </svg>
+               class="font-semibold underline underline-offset-2 hover:no-underline whitespace-nowrap">
                 Seleccionar del PDF →
             </a>
         </div>
         {% endif %}
 
-        <!-- Vista -->
-        <div id="header-view" class="grid grid-cols-6 gap-4">
-            <div>
-                <p class="text-xs text-[#6f6f6f] mb-1">Número</p>
-                <p class="font-semibold {% if invoice.numero_factura in ('SIN_NUMERO','',None) %}text-yellow-700{% else %}text-[#1e1e1e]{% endif %}">
-                    {{ invoice.numero_factura or '—' }}
-                </p>
-            </div>
-            <div>
-                <p class="text-xs text-[#6f6f6f] mb-1">Proveedor</p>
-                <p class="font-semibold text-[#1e1e1e]">{{ invoice.proveedor_razon or '—' }}</p>
-            </div>
-            <div>
-                <p class="text-xs text-[#6f6f6f] mb-1">Fecha</p>
-                <p class="font-semibold text-[#1e1e1e]">{{ invoice.fecha }}</p>
-            </div>
-            <div>
-                <p class="text-xs text-[#6f6f6f] mb-1">Artículos</p>
-                <p class="font-semibold text-[#1e1e1e]">{{ invoice.total_articulos or '—' }}</p>
-            </div>
-            <div>
-                <p class="text-xs text-[#6f6f6f] mb-1">Unidades (factura / conv.)</p>
-                <p class="font-semibold">
-                    {% if invoice.total_unidades %}
-                        <span class="text-[#1e1e1e]">{{ invoice.total_unidades }}</span>
-                        <span class="text-[#999] mx-1">/</span>
-                        <span class="{% if invoice.total_unidades == total_unidades_calc %}text-green-600{% else %}text-yellow-700{% endif %}">
+        <!-- Vista del comprobante (siempre visible salvo modo edición) -->
+        <div id="header-view" class="card info-card mb-5">
+            <div class="info-grid">
+                <div class="info-grid__cell">
+                    <div class="label">Número</div>
+                    <div class="value {% if invoice.numero_factura in ('SIN_NUMERO','',None) %}warn{% endif %}">
+                        {{ invoice.numero_factura or '—' }}
+                    </div>
+                </div>
+                <div class="info-grid__cell">
+                    <div class="label">Proveedor</div>
+                    <div class="value">{{ invoice.proveedor_razon or '—' }}</div>
+                </div>
+                <div class="info-grid__cell">
+                    <div class="label">Fecha</div>
+                    <div class="value">{{ invoice.fecha }}</div>
+                </div>
+                <div class="info-grid__cell">
+                    <div class="label">Artículos</div>
+                    <div class="value">{{ invoice.total_articulos or '—' }}</div>
+                </div>
+                <div class="info-grid__cell">
+                    <div class="label">Unidades (fact / conv)</div>
+                    <div class="value">
+                        {% if invoice.total_unidades %}
+                            {{ invoice.total_unidades }}
+                            <span style="color:var(--ds-text-mute); margin: 0 4px;">/</span>
+                            <span class="{% if invoice.total_unidades == total_unidades_calc %}accent{% else %}warn{% endif %}" style="font-weight:600;">
+                                {{ total_unidades_calc }}
+                            </span>
+                        {% else %}
                             {{ total_unidades_calc }}
-                        </span>
-                    {% else %}
-                        <span class="text-[#1e1e1e]">{{ total_unidades_calc }}</span>
-                    {% endif %}
-                </p>
-            </div>
-            <div>
-                <p class="text-xs text-[#6f6f6f] mb-1">Total</p>
-                <p class="font-semibold text-brand">$ {{ invoice.total | arg_currency }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="info-grid__cell">
+                    <div class="label">Total</div>
+                    <div class="value accent">$ {{ invoice.total | arg_currency }}</div>
+                </div>
             </div>
         </div>
 
-        <!-- Formulario de edición -->
-        <form id="header-edit" class="hidden" method="post"
+        <!-- Form de edición (toggle) -->
+        <form id="header-edit" class="card info-card mb-5 hidden" method="post"
               action="{{ url_for('update_invoice_header', invoice_id=invoice.id) }}">
             <div class="grid grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-xs text-[#6f6f6f] mb-1">Número de factura</label>
-                    <input type="text" name="numero_factura"
+                    <label class="ds-label">Número de factura</label>
+                    <input type="text" name="numero_factura" class="ds-input"
                            value="{{ invoice.numero_factura if invoice.numero_factura not in ('SIN_NUMERO', None) else '' }}"
-                           placeholder="Ej: 0013-17854274"
-                           class="w-full bg-[#f5f5f5] border border-[#e0e0e0] text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand placeholder-[#aaa]">
+                           placeholder="Ej: 0013-17854274">
                 </div>
                 <div>
-                    <label class="block text-xs text-[#6f6f6f] mb-1">Proveedor</label>
-                    <input type="text" name="proveedor_razon"
+                    <label class="ds-label">Proveedor</label>
+                    <input type="text" name="proveedor_razon" class="ds-input"
                            value="{{ invoice.proveedor_razon or '' }}"
-                           placeholder="Razón social del proveedor"
-                           class="w-full bg-[#f5f5f5] border border-[#e0e0e0] text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand placeholder-[#aaa]">
+                           placeholder="Razón social del proveedor">
                 </div>
             </div>
-            <div class="flex justify-end gap-2 mt-4">
-                <button type="button" onclick="toggleEdit()"
-                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg border border-[#e0e0e0] transition-colors">
-                    Cancelar
-                </button>
-                <button type="submit"
-                    class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg transition-colors">
-                    Guardar
-                </button>
+            <div class="flex justify-end gap-2 mt-5">
+                <button type="button" onclick="toggleEdit()" class="btn btn-ghost btn-sm">Cancelar</button>
+                <button type="submit" class="btn btn-mint btn-sm">Guardar</button>
             </div>
         </form>
-    </div>
 
-    <!-- Botón ver todos los artículos -->
-    <div class="flex justify-start">
-        <a href="{{ url_for('invoice_items', invoice_id=invoice.id) }}"
-           class="inline-flex items-center gap-2 bg-surface hover:bg-surface-input border border-surface-border text-[#1e1e1e] text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-            <svg class="w-4 h-4 text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
-            </svg>
-            Ver todos los artículos de la factura
-            <span class="text-xs text-[#6f6f6f] font-normal">({{ invoice.total_articulos or '?' }} ítems)</span>
-        </a>
-    </div>
+        {% if differences %}
+        <form method="post" action="{{ url_for('create_claim_route') }}">
+            <input type="hidden" name="invoice_id" value="{{ invoice.id }}">
 
-    {% if differences %}
-    <form method="post" action="{{ url_for('create_claim_route') }}">
-        <input type="hidden" name="invoice_id" value="{{ invoice.id }}">
-
-        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
-            <div class="flex items-center justify-between px-6 py-4 border-b border-surface-border">
-                <div>
-                    <p class="font-semibold text-[#1e1e1e]">Diferencias detectadas</p>
-                    <p class="text-xs text-[#6f6f6f] mt-0.5">Seleccioná los ítems para incluir en el reclamo</p>
+            <div class="card diffs-card">
+                <div class="diffs-card__head">
+                    <div>
+                        <div class="font-semibold" style="font-size:14px; color:var(--ds-text);">Diferencias detectadas</div>
+                        <div class="text-xs mt-0.5" style="color:var(--ds-text-soft);">
+                            Seleccioná los ítems para incluir en el reclamo
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <a href="{{ url_for('invoice_differences_export', invoice_id=invoice.id) }}"
+                           class="btn btn-ghost btn-sm">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            Exportar XLS
+                        </a>
+                        <span class="badge badge-danger badge-pill">
+                            {{ differences|length }} diferencia{{ 's' if differences|length != 1 }}
+                        </span>
+                        <label class="flex items-center gap-1.5 text-xs cursor-pointer hover:opacity-100" style="color:var(--ds-text-soft);">
+                            <input type="checkbox" id="selectAll" onchange="toggleAll(this)"
+                                   style="accent-color: var(--ds-mint);">
+                            Seleccionar todo
+                        </label>
+                    </div>
                 </div>
-                <div class="flex items-center gap-3">
-                    <a href="{{ url_for('invoice_differences_export', invoice_id=invoice.id) }}"
-                       class="flex items-center gap-1.5 text-xs text-[#6f6f6f] hover:text-brand px-3 py-1.5 rounded-lg hover:bg-black/[0.04] border border-surface-border transition-colors">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+
+                <div class="diffs-card__body">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th class="center" style="width:36px;"></th>
+                                <th>Código</th>
+                                <th>Descripción</th>
+                                <th class="center">Fact.</th>
+                                <th class="center">ERP</th>
+                                <th class="center">Dif.</th>
+                                <th>Observaciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for diff in differences %}
+                            <tr>
+                                <td class="center">
+                                    <input type="checkbox" name="selected_differences" value="{{ diff.id }}"
+                                           style="accent-color: var(--ds-mint);">
+                                </td>
+                                <td class="mono-xs">{{ diff.codigo_barra }}</td>
+                                <td>{{ diff.descripcion }}</td>
+                                <td class="center" style="font-weight:500;">{{ diff.cantidad_factura }}</td>
+                                <td class="center" style="color:var(--ds-text-mute);">{{ diff.cantidad_erp }}</td>
+                                <td class="center">
+                                    {% if diff.diferencia > 0 %}
+                                        <span class="badge badge-mint">+{{ diff.diferencia }}</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">{{ diff.diferencia }}</span>
+                                    {% endif %}
+                                </td>
+                                <td style="font-size:11px; color:var(--ds-text-mute);">{{ diff.observaciones or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="diffs-card__foot">
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
                         </svg>
-                        Exportar XLS
-                    </a>
-                    <span class="bg-red-900/40 text-red-600 text-xs font-semibold px-3 py-1 rounded-full border border-red-700/30">
-                        {{ differences|length }} diferencia{{ 's' if differences|length != 1 }}
-                    </span>
-                    <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer hover:text-[#1e1e1e] transition-colors">
-                        <input type="checkbox" id="selectAll" onchange="toggleAll(this)"
-                               class="rounded border-surface-border bg-surface-input focus:ring-brand text-brand">
-                        Seleccionar todo
-                    </label>
+                        Generar reclamo
+                    </button>
                 </div>
             </div>
+        </form>
 
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-surface-head border-b border-surface-border">
-                        <tr>
-                            <th class="px-4 py-3 w-10"></th>
-                            <th class="px-4 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código</th>
-                            <th class="px-4 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción</th>
-                            <th class="px-4 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Fact.</th>
-                            <th class="px-4 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">ERP</th>
-                            <th class="px-4 py-3 text-center text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Dif.</th>
-                            <th class="px-4 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Observaciones</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-surface-border">
-                        {% for diff in differences %}
-                        <tr class="hover:bg-black/[0.04] transition-colors">
-                            <td class="px-4 py-3 text-center">
-                                <input type="checkbox" name="selected_differences" value="{{ diff.id }}"
-                                       class="rounded border-surface-border bg-surface-input focus:ring-brand text-brand">
-                            </td>
-                            <td class="px-4 py-3 font-mono text-xs text-[#6f6f6f]">{{ diff.codigo_barra }}</td>
-                            <td class="px-4 py-3 text-[#1e1e1e]">{{ diff.descripcion }}</td>
-                            <td class="px-4 py-3 text-center text-[#1e1e1e]">{{ diff.cantidad_factura }}</td>
-                            <td class="px-4 py-3 text-center text-[#1e1e1e]">{{ diff.cantidad_erp }}</td>
-                            <td class="px-4 py-3 text-center">
-                                {% if diff.diferencia > 0 %}
-                                    <span class="bg-green-900/40 text-green-600 font-semibold px-2 py-0.5 rounded-full text-xs border border-green-700/30">+{{ diff.diferencia }}</span>
-                                {% else %}
-                                    <span class="bg-red-900/40 text-red-600 font-semibold px-2 py-0.5 rounded-full text-xs border border-red-700/30">{{ diff.diferencia }}</span>
-                                {% endif %}
-                            </td>
-                            <td class="px-4 py-3 text-xs text-[#6f6f6f]">{{ diff.observaciones or '—' }}</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        {% else %}
+        <div class="card empty-state">
+            <div class="empty-state__icon">
+                <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
+                </svg>
             </div>
-
-            <div class="px-6 py-4 border-t border-surface-border flex justify-end">
-                <button type="submit"
-                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-6 py-2 rounded-lg text-sm transition-colors flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    Generar reclamo
-                </button>
-            </div>
+            <div class="display font-bold text-lg mb-1">Sin diferencias</div>
+            <div class="text-sm" style="color:var(--ds-text-soft);">La factura coincide con el stock ERP.</div>
         </div>
-    </form>
+        {% endif %}
 
-    {% else %}
-    <div class="bg-surface rounded-xl border border-surface-border p-10 text-center">
-        <div class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-green-900/40 border border-green-700/30 mb-3">
-            <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-            </svg>
-        </div>
-        <p class="font-semibold text-[#1e1e1e]">Sin diferencias</p>
-        <p class="text-sm text-[#6f6f6f] mt-1">La factura coincide con el stock ERP.</p>
     </div>
-    {% endif %}
-
-</main>
+</div>
 
 <script>
 function toggleAll(source) {
@@ -289,10 +301,8 @@ function toggleEdit() {
     view.classList.toggle('hidden');
     form.classList.toggle('hidden');
 }
-// Auto-abrir edición si hay campos sin extraer
 {% if needs_edit %}
 document.addEventListener('DOMContentLoaded', () => toggleEdit());
 {% endif %}
 </script>
-</body>
-</html>
+{% endblock %}
