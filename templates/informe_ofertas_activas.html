@@ -33,11 +33,11 @@
         </div>
     </div>
 
-    {# ── Grupos OfertaMinimo ── #}
+    {# ── Grupos OfertaMinimo — nivel 1 con detalle desplegable ── #}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="px-4 py-2 border-b border-[#f0f0f0] flex items-center justify-between">
-            <span class="text-xs font-semibold text-[#555]">Ofertas por producto</span>
-            <span class="text-[10px] text-[#999]">{{ grupos|length }} grupos</span>
+            <span class="text-xs font-semibold text-[#555]">Ofertas de productos</span>
+            <span class="text-[10px] text-[#999]">{{ grupos|length }} ofertas</span>
         </div>
 
         {% if not grupos %}
@@ -46,17 +46,21 @@
         <div class="divide-y divide-[#f5f5f5]">
             {% for g in grupos %}
             <details class="group/det">
-                <summary class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-black/[0.02] list-none">
-                    {# Chevron #}
-                    <svg class="w-3.5 h-3.5 text-[#aaa] flex-shrink-0 transition-transform group-open/det:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+                <summary class="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-black/[0.02] list-none select-none">
+                    <svg class="w-3.5 h-3.5 text-[#ccc] flex-shrink-0 transition-transform group-open/det:rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
 
-                    {# Nombre #}
+                    {# Nombre: observacion si existe, si no lab + tipo #}
                     <span class="font-semibold text-sm text-[#1e1e1e] flex-1 min-w-0 truncate">
-                        {{ g.lab }}
-                        {% if g.drog %}<span class="text-[#888] font-normal"> via {{ g.drog }}</span>{% endif %}
+                        {% if g.observacion %}
+                            {{ g.observacion }}
+                            <span class="text-[#aaa] font-normal text-xs"> — {{ g.lab }}</span>
+                        {% else %}
+                            {{ g.lab }}
+                            {% if g.drog %}<span class="text-[#888] font-normal"> via {{ g.drog }}</span>{% endif %}
+                        {% endif %}
                     </span>
 
-                    {# Badge tipo #}
+                    {# Tipo badge #}
                     {% if g.drog %}
                     <span class="text-[9px] bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">DROG</span>
                     {% elif g.tipo == 'con_minimo' %}
@@ -65,21 +69,23 @@
                     <span class="text-[9px] bg-sky-100 text-sky-700 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">SIMPLE</span>
                     {% endif %}
 
-                    {# Conteo y vigencia #}
-                    <span class="text-[10px] text-[#999] flex-shrink-0">{{ g.items|length }} prod.</span>
+                    {# Meta #}
+                    <span class="text-[10px] text-[#bbb] flex-shrink-0">{{ g.items|length }} prod.</span>
                     {% if g.vigencia %}
                     <span class="text-[10px] text-[#bbb] flex-shrink-0">hasta {{ g.vigencia }}</span>
                     {% endif %}
+                    {% if g.actualizado %}
+                    <span class="text-[10px] text-[#ddd] flex-shrink-0 hidden sm:inline">imp. {{ g.actualizado }}</span>
+                    {% endif %}
 
-                    {# Botón eliminar grupo #}
-                    <button class="btn-del-grupo ml-2 text-red-300 hover:text-red-600 text-xs font-bold flex-shrink-0 px-1"
+                    <button class="btn-del-grupo ml-1 text-red-300 hover:text-red-600 text-xs font-bold flex-shrink-0 px-1"
                             data-lab-id="{{ g.lab_id if g.lab_id is not none else 'null' }}"
                             data-tipo="{{ g.tipo }}"
+                            data-obs="{{ g.observacion }}"
                             data-drog-id="{{ g.drog_id if g.drog_id is not none else 'null' }}"
                             title="Eliminar todas las ofertas de este grupo">✕</button>
                 </summary>
 
-                {# Detalle desplegado #}
                 <div class="border-t border-[#f5f5f5] bg-[#fafafa] overflow-x-auto">
                     <table class="w-full text-xs">
                         <thead class="text-[9px] uppercase tracking-wide text-[#bbb]">
@@ -116,11 +122,11 @@
         {% endif %}
     </div>
 
-    {# ── Módulos ── #}
+    {# ── Módulos — nivel 1 solamente: una fila por lab ── #}
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <div class="px-4 py-2 border-b border-[#f0f0f0] flex items-center justify-between">
             <span class="text-xs font-semibold text-[#555]">Módulos de descuento</span>
-            <span class="text-[10px] text-[#999]">{{ modulos|length }} módulos</span>
+            <span class="text-[10px] text-[#999]">{{ modulos|length }} labs</span>
         </div>
 
         {% if not modulos %}
@@ -128,19 +134,12 @@
         {% else %}
         <div class="divide-y divide-[#f5f5f5]">
             {% for m in modulos %}
-            <div id="mod-{{ m.id }}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.02]">
-                <span class="font-semibold text-sm text-[#1e1e1e] flex-1 min-w-0 truncate">
-                    {{ m.lab }} — <span class="font-normal text-[#555]">{{ m.nombre }}</span>
-                </span>
-                {% if m.activo %}
-                <span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-semibold flex-shrink-0">ACTIVO</span>
-                {% else %}
-                <span class="text-[9px] bg-[#f0f0f0] text-[#999] px-1.5 py-0.5 rounded flex-shrink-0">inactivo</span>
-                {% endif %}
-                <span class="text-[10px] text-[#999] flex-shrink-0">{{ m.n_packs }} packs</span>
-                <span class="text-[10px] text-[#bbb] flex-shrink-0">{{ m.creado }}</span>
-                <button class="btn-del-mod text-red-300 hover:text-red-600 text-xs font-bold flex-shrink-0 px-1"
-                        data-id="{{ m.id }}" title="Eliminar módulo y todos sus packs">✕</button>
+            <div class="flex items-center gap-3 px-4 py-2.5 hover:bg-black/[0.02]">
+                <span class="font-semibold text-sm text-[#1e1e1e] flex-1">{{ m.lab }}</span>
+                <span class="text-[10px] text-[#999]">{{ m.n_modulos }} módulos</span>
+                <span class="text-[10px] text-[#bbb]">imp. {{ m.importado }}</span>
+                <a href="{{ url_for('lab_ofertas_minimo', lab_id=m.lab_id) }}"
+                   class="text-[10px] text-sky-500 hover:underline">Ver →</a>
             </div>
             {% endfor %}
         </div>
@@ -150,15 +149,11 @@
 </div>
 
 <script>
-// Borrar grupo completo
 document.querySelectorAll('.btn-del-grupo').forEach(btn => {
     btn.addEventListener('click', async e => {
         e.preventDefault();
         e.stopPropagation();
-        const lab   = btn.dataset.labId;
-        const tipo  = btn.dataset.tipo;
-        const drog  = btn.dataset.drogId;
-        const n = btn.closest('details').querySelector('summary span.flex-1')?.textContent?.trim() || 'este grupo';
+        const n = btn.closest('details').querySelector('.flex-1')?.textContent?.trim() || 'este grupo';
         if (!confirm(`¿Eliminar todas las ofertas de "${n}"?`)) return;
         btn.disabled = true; btn.textContent = '⏳';
         const r = await fetch('/informes/ofertas-activas/borrar-grupo', {
@@ -166,35 +161,14 @@ document.querySelectorAll('.btn-del-grupo').forEach(btn => {
             credentials: 'same-origin',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
-                lab_id:  lab === 'null' ? null : parseInt(lab),
-                tipo,
-                drog_id: drog === 'null' ? null : parseInt(drog),
+                lab_id:  btn.dataset.labId  === 'null' ? null : parseInt(btn.dataset.labId),
+                tipo:    btn.dataset.tipo,
+                obs:     btn.dataset.obs,
+                drog_id: btn.dataset.drogId === 'null' ? null : parseInt(btn.dataset.drogId),
             }),
         });
-        if (r.ok) {
-            btn.closest('details').remove();
-        } else {
-            alert('Error al eliminar.');
-            btn.disabled = false; btn.textContent = '✕';
-        }
-    });
-});
-
-// Borrar módulo
-document.querySelectorAll('.btn-del-mod').forEach(btn => {
-    btn.addEventListener('click', async () => {
-        if (!confirm('¿Eliminar este módulo y todos sus packs?')) return;
-        const id = btn.dataset.id;
-        btn.disabled = true; btn.textContent = '⏳';
-        const r = await fetch(`/informes/ofertas-activas/borrar-modulo/${id}`, {
-            method: 'POST', credentials: 'same-origin',
-        });
-        if (r.ok) {
-            document.getElementById('mod-' + id)?.remove();
-        } else {
-            alert('Error al eliminar.');
-            btn.disabled = false; btn.textContent = '✕';
-        }
+        if (r.ok) btn.closest('details').remove();
+        else { alert('Error al eliminar.'); btn.disabled = false; btn.textContent = '✕'; }
     });
 });
 </script>

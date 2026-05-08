@@ -2102,24 +2102,27 @@ def init_app(app):
             rows_om = (session.query(OfertaMinimo, Laboratorio, Provider)
                        .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
                        .outerjoin(Provider, Provider.id == OfertaMinimo.drogueria_id)
-                       .order_by(Laboratorio.nombre, OfertaMinimo.tipo_descuento,
-                                 Provider.razon_social, OfertaMinimo.descripcion)
+                       .filter(OfertaMinimo.activo == True)
+                       .order_by(Laboratorio.nombre, OfertaMinimo.observacion,
+                                 OfertaMinimo.tipo_descuento, OfertaMinimo.descripcion)
                        .all())
 
-            # Agrupar en Python por (lab_id, tipo, drogueria_id)
+            # Agrupar por (lab_id, observacion, tipo, drogueria_id)
             grupos_dict = {}
             for o, lab, prov in rows_om:
-                key = (o.laboratorio_id, o.tipo_descuento or 'simple', o.drogueria_id)
+                key = (o.laboratorio_id, o.observacion or '', o.tipo_descuento or 'simple', o.drogueria_id)
                 if key not in grupos_dict:
-                    vh_max = o.vigencia_hasta
                     grupos_dict[key] = {
-                        'lab':      lab.nombre if lab else '—',
-                        'lab_id':   o.laboratorio_id,
-                        'drog':     prov.razon_social if prov else None,
-                        'drog_id':  o.drogueria_id,
-                        'tipo':     o.tipo_descuento or 'simple',
-                        'vigencia': vh_max.strftime('%d/%m/%Y') if vh_max else None,
-                        'items':    [],
+                        'lab':        lab.nombre if lab else '—',
+                        'lab_id':     o.laboratorio_id,
+                        'drog':       prov.razon_social if prov else None,
+                        'drog_id':    o.drogueria_id,
+                        'tipo':       o.tipo_descuento or 'simple',
+                        'observacion': o.observacion or '',
+                        'vigencia':   o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
+                        'actualizado': o.actualizado_en.strftime('%d/%m/%Y') if o.actualizado_en else None,
+                        '_vh':        o.vigencia_hasta,
+                        'items':      [],
                     }
                 g = grupos_dict[key]
                 g['items'].append({
@@ -2130,30 +2133,30 @@ def init_app(app):
                     'descuento':       float(o.descuento_psl) if o.descuento_psl is not None else None,
                     'vigencia':        o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
                 })
-                # Actualizar vigencia máxima del grupo
-                if o.vigencia_hasta and (
-                        g['vigencia'] is None or
-                        o.vigencia_hasta > (grupos_dict[key].get('_vh') or o.vigencia_hasta)):
+                if o.vigencia_hasta and (g['_vh'] is None or o.vigencia_hasta > g['_vh']):
+                    g['_vh'] = o.vigencia_hasta
                     g['vigencia'] = o.vigencia_hasta.strftime('%d/%m/%Y')
 
-            grupos = list(grupos_dict.values())
+            grupos = [dict(g, _vh=None) for g in grupos_dict.values()]
 
-            # ── Módulos ───────────────────────────────────────────────────────
-            rows_mod = (session.query(Modulo, Laboratorio,
-                                      _func.count(ModuloPack.id).label('n_packs'))
+            # ── Módulos — agrupar por lab (nivel 1 solamente) ────────────────
+            from sqlalchemy import func as _func2
+            rows_mod = (session.query(
+                            Laboratorio.nombre.label('lab_nombre'),
+                            Modulo.laboratorio_id,
+                            _func2.count(Modulo.id).label('n_modulos'),
+                            _func2.max(Modulo.creado_en).label('ultima_importacion'),
+                        )
                         .outerjoin(Laboratorio, Laboratorio.id == Modulo.laboratorio_id)
-                        .outerjoin(ModuloPack, ModuloPack.modulo_id == Modulo.id)
-                        .group_by(Modulo.id, Laboratorio.id)
-                        .order_by(Laboratorio.nombre, Modulo.nombre)
+                        .group_by(Modulo.laboratorio_id, Laboratorio.nombre)
+                        .order_by(Laboratorio.nombre)
                         .all())
             modulos = [{
-                'id':      m.id,
-                'lab':     lab.nombre if lab else '—',
-                'nombre':  m.nombre,
-                'activo':  m.activo,
-                'n_packs': n_packs,
-                'creado':  m.creado_en.strftime('%d/%m/%Y') if m.creado_en else '',
-            } for m, lab, n_packs in rows_mod]
+                'lab_id':   r.laboratorio_id,
+                'lab':      r.lab_nombre or '—',
+                'n_modulos': r.n_modulos,
+                'importado': r.ultima_importacion.strftime('%d/%m/%Y') if r.ultima_importacion else '',
+            } for r in rows_mod]
 
         resumen = {
             'con_minimo': sum(1 for g in grupos if g['tipo'] == 'con_minimo' and not g['drog']),
@@ -2170,9 +2173,10 @@ def init_app(app):
         """Elimina todas las OfertaMinimo de un grupo (lab+tipo+drogueria)."""
         from database import OfertaMinimo
         data = request.get_json(silent=True) or {}
-        lab_id   = data.get('lab_id')
-        tipo     = data.get('tipo')
-        drog_id  = data.get('drog_id')
+        lab_id  = data.get('lab_id')
+        tipo    = data.get('tipo')
+        obs     = data.get('obs', '')
+        drog_id = data.get('drog_id')
         with database.get_db() as session:
             q = session.query(OfertaMinimo)
             if lab_id is not None:
@@ -2181,6 +2185,10 @@ def init_app(app):
                 q = q.filter(OfertaMinimo.laboratorio_id.is_(None))
             if tipo:
                 q = q.filter(OfertaMinimo.tipo_descuento == tipo)
+            if obs:
+                q = q.filter(OfertaMinimo.observacion == obs)
+            else:
+                q = q.filter(OfertaMinimo.observacion.is_(None) | (OfertaMinimo.observacion == ''))
             if drog_id is not None:
                 q = q.filter(OfertaMinimo.drogueria_id == drog_id)
             else:
