@@ -137,6 +137,19 @@ def jaccard(a: set, b: set) -> float:
     return len(inter) / len(union)
 
 
+def _toks_de_candidato(c) -> set:
+    """Devuelve tokens significativos de un Producto/ObsProducto.
+
+    Si el caller pre-tokenizó el pool y guardó los tokens en `c._toks_cached`,
+    los reusa (evita re-tokenizar 5M veces cuando matcheás 1000 items contra
+    un pool de 5k productos).
+    """
+    cached = getattr(c, '_toks_cached', None)
+    if cached is not None:
+        return cached
+    return tokens_significativos(c.descripcion or '')
+
+
 def comparar_descripciones(a, b) -> float:
     """Score 0..1 entre dos descripciones. Útil para usar fuera del módulo."""
     return jaccard(tokens_significativos(a), tokens_significativos(b))
@@ -516,7 +529,7 @@ def match_producto(*,
             if not result.producto:
                 supersets = []
                 for c in candidatos:
-                    toks_c = tokens_significativos(c.descripcion)
+                    toks_c = _toks_de_candidato(c)
                     if toks_c and toks_input.issubset(toks_c):
                         supersets.append(c)
                 if len(supersets) == 1:
@@ -536,7 +549,7 @@ def match_producto(*,
                     # un pack no es la "unidad" de otro pack.
                     if skip_packs and descripcion_es_pack(c.descripcion):
                         continue
-                    toks_c = tokens_significativos(c.descripcion)
+                    toks_c = _toks_de_candidato(c)
                     score = jaccard(toks_input, toks_c)
                     # Modifier: cantidad envase
                     if cantidad_envase and _extraer_cantidad_envase(c.descripcion) == cantidad_envase:
@@ -578,7 +591,7 @@ def match_producto(*,
                 for c in global_candidatos:
                     if skip_packs and descripcion_es_pack(c.descripcion):
                         continue
-                    toks_c = tokens_significativos(c.descripcion)
+                    toks_c = _toks_de_candidato(c)
                     score = jaccard(toks_input, toks_c)
                     if cantidad_envase and _extraer_cantidad_envase(c.descripcion) == cantidad_envase:
                         score = min(1.0, score + 0.10)
@@ -651,7 +664,7 @@ def match_producto(*,
                 cand_pool = session.query(P).all()
             scored = []
             for c in cand_pool:
-                toks_c = tokens_significativos(c.descripcion)
+                toks_c = _toks_de_candidato(c)
                 score = jaccard(toks_input, toks_c)
                 if score > 0:
                     scored.append({
@@ -822,8 +835,28 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
         session = database.SessionLocal()
     try:
         # Fase 1: matchear contra `productos` local SIN fallback observer.
-        # incluir_candidatos=False porque el bulk no los usa (la UI los pide
-        # aparte via /import-candidatos). Eso ahorra una pasada por item.
+        # PRE-CARGA el pool UNA VEZ y lo pasa a cada match_producto via `pool=`.
+        # Sin esto, match_producto carga el pool entero (~5k filas locales) y
+        # tokeniza cada vez — para 1000+ items son 5M jaccards + 5M
+        # tokenizaciones redundantes (~60-90s).
+        spec_phase = _TARGETS.get(target)
+        P_phase = spec_phase.model(database) if spec_phase else None
+        if P_phase is not None:
+            lab_col_phase = getattr(P_phase, spec_phase.lab_field, None)
+            if laboratorio_id and lab_col_phase is not None:
+                shared_pool = (session.query(P_phase)
+                               .filter(lab_col_phase == laboratorio_id).all())
+            else:
+                shared_pool = session.query(P_phase).all()
+        else:
+            shared_pool = []
+
+        # Pre-tokenizar el pool UNA VEZ y cachear en el objeto. match_producto
+        # va a reusar esto si encuentra el atributo _toks_cached, evitando
+        # 5M tokenizaciones redundantes para 1000 items × 5k productos.
+        for c in shared_pool:
+            c._toks_cached = tokens_significativos(c.descripcion or '')
+
         results = [
             match_producto(
                 ean=it.get('ean'),
@@ -836,6 +869,7 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 precio_referencia=it.get('precio'),
                 cantidad_envase=it.get('cantidad_envase'),
                 monodroga=it.get('monodroga'),
+                pool=shared_pool,  # ← clave: pool pre-cargado y reusado
                 session=session,
             )
             for it in items
