@@ -448,6 +448,26 @@
 
 {% block after_main %}
 <script>
+// ── Auto-abrir panel via #hash ───────────────────────────────────────
+// /modulo-packs#importar abre el panel de importar Excel.
+// /modulo-packs#nueva abre el panel de nueva lista.
+// Útil para que los botones de /modulo-packs/vista no requieran 2 clicks.
+(function autoAbrirPorHash() {
+    const h = (window.location.hash || '').toLowerCase();
+    if (!h) return;
+    const target = h === '#importar' ? 'importar-panel'
+                 : h === '#nueva' ? 'nuevo-modulo-panel'
+                 : null;
+    if (!target) return;
+    document.addEventListener('DOMContentLoaded', () => {
+        const el = document.getElementById(target);
+        if (el) {
+            el.classList.remove('hidden');
+            el.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+    });
+})();
+
 // ── Desplegables ────────────────────────────────────────────────────
 function buildDropdownItems(type, items) {
     const dd = document.getElementById('dd-' + type);
@@ -775,10 +795,15 @@ function actualizarNombreLista() {
 }
 // Inicializar con la fecha actual y escuchar cambios del partner_selector
 document.addEventListener('DOMContentLoaded', () => {
-    // Restaurar filtro de lab persistido
+    // Filtro de lab: ?lab=X en URL > localStorage
     try {
-        const saved = localStorage.getItem('modulo_packs_lab');
-        if (saved) filtrarLab(saved);
+        const urlLab = new URLSearchParams(window.location.search).get('lab');
+        if (urlLab) {
+            filtrarLab(urlLab);
+        } else {
+            const saved = localStorage.getItem('modulo_packs_lab');
+            if (saved) filtrarLab(saved);
+        }
     } catch(e) {}
     actualizarNombreLista();
     const w = document.getElementById('imp-lab-wrap');
