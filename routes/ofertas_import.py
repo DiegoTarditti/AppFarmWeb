@@ -190,9 +190,34 @@ def _normalizar_descripcion_proveedor(s):
     if not s or not isinstance(s, str):
         return s, []
     cambios = []
-    # Tokens adyacentes idénticos (case-insensitive para detección, pero
-    # preservamos el casing del primero). "1000 1000" → "1000".
     tokens = s.split()
+
+    # Pasada 1: dedup de bigramas y trigramas repetidos consecutivamente.
+    # "AP 850 AP 850 mg" → "AP 850 mg" (bigrama AP+850 repetido).
+    # "DIABESIL AP 1000 DIABESIL AP 1000 mg" → "DIABESIL AP 1000 mg".
+    # Probamos k=3 antes que k=2 para que el match sea greedy del mas largo.
+    def _dedup_ngrams(toks, k):
+        out_l = []
+        i = 0
+        while i < len(toks):
+            if i + 2 * k <= len(toks):
+                a = [t.lower() for t in toks[i:i + k]]
+                b = [t.lower() for t in toks[i + k:i + 2 * k]]
+                if a == b:
+                    cambios.append((f'dup_{k}gram',
+                                     ' '.join(toks[i:i + 2 * k]),
+                                     ' '.join(toks[i:i + k])))
+                    out_l.extend(toks[i:i + k])
+                    i += 2 * k
+                    continue
+            out_l.append(toks[i])
+            i += 1
+        return out_l
+
+    tokens = _dedup_ngrams(tokens, 3)
+    tokens = _dedup_ngrams(tokens, 2)
+
+    # Pasada 2: tokens adyacentes idénticos (1-grama). "1000 1000" → "1000".
     out = []
     skip = False
     for i, tok in enumerate(tokens):
@@ -701,36 +726,29 @@ def init_app(app):
                 'precio': it.get('precio'),
             })
 
+        # Timing instrumentation — para diagnosticar dónde se cuelga.
+        import time as _t
+        _t0 = _t.time()
+        print(f'[ofertas-validar] start: {len(items_para_match)} items, modo={modo}, lab_id={lab_id}', flush=True)
+
         with database.get_db() as session:
-            if modo == 'drog':
-                # Fast path: solo match exacto por EAN/código en `productos`.
-                # No fuzzy ni fallback observer (que sin lab tokeniza 122K
-                # productos y clava la request). Los items sin match quedan
-                # como tales y el usuario puede mandar match manual.
-                results = [
-                    pm.match_producto(
-                        ean=it.get('ean'),
-                        codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
-                        descripcion=None,  # desactiva fuzzy descripción
-                        laboratorio_id=None,
-                        target='producto',
-                        incluir_observer=False,
-                        incluir_candidatos=False,
-                        precio_referencia=it.get('precio'),
-                        session=session,
-                    )
-                    for it in items_para_match
-                ]
-            else:
-                results = pm.match_productos_bulk(items_para_match, laboratorio_id=lab_id, session=session)
+            # match_productos_bulk hace el flujo completo (EAN → alfa → fuzzy
+            # descripción → fallback observer) reusando una sola precarga de
+            # pools. Funciona igual con o sin laboratorio_id; sin lab los
+            # pools son globales pero solo se preloadan una vez por request.
+            results = pm.match_productos_bulk(
+                items_para_match,
+                laboratorio_id=lab_id,  # None en modo drog → busca global
+                session=session,
+            )
+            print(f'[ofertas-validar] match_productos_bulk: {_t.time() - _t0:.2f}s', flush=True)
 
             # Capa 2 — match dimensional para los no encontrados.
             # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
             # y los cruza contra ProductoAtributo. Funciona sin EAN.
-            # En modo drog la skipeamos también para velocidad.
             from catalogacion import extraer_de_descripcion, match_dimensional_candidatos
             dim_matches = {}  # idx → lista de candidatos dimensionales
-            if modo != 'drog':
+            if True:
                 for idx_d, res_d in enumerate(results):
                     if res_d.producto is not None:
                         continue
@@ -824,7 +842,18 @@ def init_app(app):
                     entry['_candidatos_top'] = res.candidatos_top
                     cc = getattr(res, 'candidatos_count', 0) or 0
                     entry['_candidatos_count'] = cc
-                    entry['_sin_candidatos'] = (cc == 0)
+                    # En modo drog NO corrimos fuzzy/dim para no clavar la
+                    # request con 200+ items, asi que cc=0 no significa que
+                    # no haya candidatos — solo que no los buscamos. Mostrar
+                    # "🔍 Buscar" para que el usuario los pida on-demand.
+                    if modo == 'drog':
+                        entry['_sin_candidatos'] = False
+                        entry['_motivo'] = (
+                            'No está en el catálogo local. Click "🔍 Buscar" '
+                            'para buscar similares (modo drog no precarga candidatos).'
+                        )
+                    else:
+                        entry['_sin_candidatos'] = (cc == 0)
                     stats['not_found'] += 1
             else:
                 p = res.producto

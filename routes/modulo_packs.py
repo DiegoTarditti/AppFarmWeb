@@ -124,40 +124,12 @@ def init_app(app):
 
     @app.route('/modulo-packs/vista')
     def modulo_packs_vista():
-        with database.get_db() as session:
-            prod_map = {p.codigo_barra: p for p in session.query(Producto).all()}
-            # Solo labs que tienen al menos un módulo
-            labs_con_modulos = {
-                lid for (lid,) in session.query(Modulo.laboratorio_id)
-                .filter(Modulo.laboratorio_id.isnot(None)).distinct().all()
-            }
-            labs = (session.query(Laboratorio)
-                    .filter(Laboratorio.id.in_(labs_con_modulos))
-                    .order_by(Laboratorio.nombre).all()) if labs_con_modulos else []
-            lab_filter = request.args.get('lab', '').strip()
-
-            q = session.query(Modulo).outerjoin(Laboratorio).order_by(Laboratorio.nombre, Modulo.nombre)
-            modulos_raw = q.all()
-
-            modulos = []
-            for m in modulos_raw:
-                lab_nombre = m.laboratorio.nombre if m.laboratorio else ''
-                if lab_filter and lab_nombre != lab_filter:
-                    continue
-                packs = [{'ean_pack': mp.ean_pack,
-                          'desc_pack': mp.descripcion or '—',
-                          'ean_unidad': mp.ean_unidad,
-                          'desc_unidad': (prod_map[mp.ean_unidad].descripcion or '—') if mp.ean_unidad in prod_map else '—',
-                          'cantidad': mp.cantidad}
-                         for mp in m.packs]
-                modulos.append({'id': m.id, 'nombre': m.nombre,
-                                'lab_nombre': lab_nombre or '—',
-                                'packs': packs})
-
-            return render_template('modulo_packs_vista.html',
-                                   modulos=modulos,
-                                   labs=[{'id': l.id, 'nombre': l.nombre} for l in labs],
-                                   lab_filter=lab_filter)
+        # /modulo-packs/vista fue consolidado en /modulo-packs (las dos vistas
+        # hacían lo mismo). Mantenemos la ruta como redirect para no romper
+        # bookmarks / links externos.
+        lab = request.args.get('lab', '').strip()
+        return redirect(
+            url_for('modulo_packs_list') + (f'?lab={lab}' if lab else ''))
 
     @app.route('/modulo-packs/plantilla')
     def modulo_packs_plantilla():

@@ -1,9 +1,68 @@
 # App Seguimiento — cómo sigo en casa
 
-Estado al **2026-05-07** al cerrar la sesión en la oficina. Esta nota es para
+Estado al **2026-05-08** al cerrar la sesión en la oficina. Esta nota es para
 arrancar la sesión siguiente sin volver a leer todo el chat.
 
-## Lo más reciente (sesión 2026-05-07)
+## Lo más reciente (sesión 2026-05-08)
+
+### Motor de búsqueda / matching de productos — ampliado y optimizado
+
+PR #24 (`fix/modulo-packs-mejoras` → `dev`, mergeado) reescribe gran parte del
+matcher. Foco: importación de ofertas multi-lab (modo droguería) que antes
+saltaba el fuzzy match para no clavarse con archivos grandes.
+
+**Performance — inverted index `{token → set(producto_ids)}`:**
+- Antes: 1056 items × 60k productos locales × 122k obs = 128M+ jaccards (4-7 min).
+- Ahora: cada item evalúa solo los productos que comparten ≥1 token significativo
+  con el input (~50-200 candidatos por item). **15-30s totales para 1056 items**.
+- Aplicado en `match_productos_bulk` (fase 1 locales + fase 3 obs) y
+  `buscar_candidatos_bulk` (prefetch de candidatos).
+- Cache de tokens en pool pre-cargado (`c._toks_cached`) — evita 5M
+  tokenizaciones redundantes.
+
+**Exactitud — normalización mejorada de descripciones:**
+- **Decimales**: `0.5` y `0.50` ahora son equivalentes (antes splitteaba en
+  "0 5" vs "0 50"). XANAX 0.5 vs 0.50 → score 0.6 → 1.0.
+- **`x` pegado a número**: `x30` → `x 30`, `compx30` → `comp x 30`. Resuelve
+  los DIABESIL AP 1000 mg comp.rec.x30 que el proveedor exporta sin espacios.
+- **Bigramas/trigramas duplicados**: el preprocesador `_normalizar_descripcion_proveedor`
+  ahora detecta `AP 850 AP 850` → `AP 850` (antes solo limpiaba 1-grams
+  adyacentes tipo "1000 1000").
+- **Stopwords faltantes**: `grs/gms/mgs` (variantes plural unidad), `oft/col/nasal`
+  (formas oftálmicas, colirio, nasal), `emu/cre/ung/lec` (variantes cortas
+  de emulsión, crema, ungüento, leche). Antes `TROPIOFTAL F sol.oft` no
+  matcheaba con `TROPIOFTAL F COL` por desfase de stopwords.
+
+**Auto-matching:**
+- Threshold default bajado a `0.9` (antes `1.0`).
+- **1 solo candidato post-dedup** → auto-match independiente del score
+  (es la única opción posible).
+- **Empate en score** → auto-match solo si el alfabeta es el mismo (= mismo
+  producto duplicado entre local y observer); si el alfa difiere, manual.
+- **Dedup por alfabeta también en bulk**: antes `buscar_candidatos_bulk`
+  dedupaba por `('prod', id)` vs `('obs', id)` → mostraba duplicados. Ahora
+  agrupa por alfabeta como ya lo hacía la versión single-item.
+
+**Resultado en archivo real (1056 items, droguería CIAFARMA):**
+- Iteración 1 (post-índice): 8 OK + 744 fuzzy + 304 pendientes (71% auto).
+- Iteración 2 (post-dedup): 147 OK + 744 fuzzy + 165 pendientes (84% auto).
+- Iteración 3 (post-normalización + 1-cand): pendiente medir, esperado <100.
+
+**Observación importante (pendiente prod):**
+- DB de Render se cayó hoy a las 4:34 PM por **disco lleno (93%)**. Plan
+  upgradeado a Basic-4gb pero el disco sigue en 1GB (es separado del RAM).
+  Soporte de Render abierto. Cuando vuelva, identificar qué tabla creció
+  tanto: `obs_ventas_mensuales`, `obs_productos`, `home_card_clicks` son
+  candidatos. Query:
+  ```sql
+  SELECT relname AS tabla, pg_size_pretty(pg_total_relation_size(relid)) AS size
+  FROM pg_catalog.pg_statio_user_tables
+  ORDER BY pg_total_relation_size(relid) DESC LIMIT 15;
+  ```
+
+---
+
+## Sesión 2026-05-07
 
 ### Acceso remoto a la PC de oficina (Tailscale + SSH)
 

@@ -44,7 +44,8 @@ _STOPWORDS = {
     'cap', 'caps', 'capsula', 'capsulas',
     'tab', 'tableta', 'tabletas',
     'amp', 'ampolla', 'ampollas',
-    'jbe', 'jarabe', 'crema', 'gel', 'pomada',
+    'jbe', 'jarabe', 'crema', 'cre', 'gel', 'pomada',
+    'ung', 'unguento', 'unguentos',
     'sup', 'supositorio', 'supositorios',
     'ovu', 'ovulo', 'ovulos',
     'tampon', 'tampones',
@@ -54,7 +55,15 @@ _STOPWORDS = {
     'gts', 'gotas',
     'sol', 'solucion',
     'sus', 'susp', 'suspension',
-    'emul', 'emulsion',
+    'emul', 'emu', 'emulsion',
+    'lec', 'leche',  # leche limpiadora/tonificante
+    # Variantes oftálmicas (col = colirio, oft = oftálmico)
+    'col', 'colir', 'colirios',
+    'oft', 'oftal', 'oftalmico', 'oftalmica', 'oftalmicos', 'oftalmicas',
+    # Otras formas comunes
+    'nas', 'nasal', 'nasales',
+    'aur', 'auricular', 'auriculares',
+    'derm', 'dermat', 'dermatologico',
     'inh', 'inhalador', 'inhalacion', 'aerosol',
     'spray',
     'sobre', 'sobres', 'frasco', 'frascos',
@@ -77,11 +86,22 @@ _STOPWORDS = {
     # en bulk match y dejaba ítems como not_found erróneamente.
     'blister', 'blisters', 'bl',
     'ps', 'p',                              # p.bl. (perlas blister)
-    # Unidades de medida
-    'mg', 'gr', 'g', 'ml', 'l', 'mcg', 'ui', 'mui', 'kg',
+    # Unidades de medida (incluyendo plurales y variantes que aparecen en
+    # listas de proveedor: "x 400 grs", "x 100 gms", "x 500 ml").
+    # NO incluir 'lt' — en farma argentina suele ser variante de marca
+    # (DERMAGLOS LT, etc.) y filtrarlo achica el discriminador.
+    'mg', 'mgs', 'gr', 'grs', 'g', 'gs', 'gm', 'gms',
+    'ml', 'mls', 'l', 'lts',
+    'mcg', 'mcgs', 'ui', 'mui', 'kg', 'kgs',
+    'cc',  # cc = cm³ en jarabes
     # Conectores/cantidad
     'x', 'un', 'unid', 'unidades', 'uds',
     'oral', 'tópico', 'topico', 'topica', 'sublingual',
+    # Formas farmacéuticas comunes en proveedores (jga = jeringa, prell = prellenada)
+    'jga', 'jeringa', 'jeringas', 'jer',
+    'prell', 'prellenada', 'prellenadas', 'prellenado', 'prellenados',
+    'env', 'envase', 'envases',
+    'fco', 'fcos',
 }
 
 
@@ -100,7 +120,20 @@ def normalizar_texto(s) -> str:
         return ''
     s = unicodedata.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode('ascii')
     s = s.lower()
+    # Normalizar decimales ANTES de eliminar puntos: "0.5" y "0.50" deben ser
+    # equivalentes. Strip trailing zeros del decimal y reemplazar el "." por
+    # "pp" (separador único que sobrevive al replace de no-alphanumeric).
+    # Asi: 0.5 → 0pp5, 0.50 → 0pp5, 0.05 → 0pp05 (sin trailing zero).
+    # No colisiona con enteros: 15 ≠ 1pp5.
+    def _norm_decimal(m):
+        intp, decp = m.group(1), m.group(2).rstrip('0')
+        return f'{intp}pp{decp}' if decp else intp
+    s = re.sub(r'(\d+)\.(\d+)', _norm_decimal, s)
     s = re.sub(r'[^a-z0-9\s]', ' ', s)
+    # Separar 'x' del número que la sigue: "x30" → "x 30" (x es conector,
+    # no parte del numero). Cubre tambien "compx30" → "comp x 30".
+    s = re.sub(r'([a-z])x(\d)', r'\1 x \2', s)
+    s = re.sub(r'\bx(\d)', r'x \1', s)
     # Merge letra-vitamina + número adyacentes ("b 12" → "b12").
     s = re.sub(r'\b([bcdek])\s+(\d+)\b', r'\1\2', s)
     s = re.sub(r'\s+', ' ', s).strip()
@@ -135,6 +168,40 @@ def jaccard(a: set, b: set) -> float:
     inter = a & b
     union = a | b
     return len(inter) / len(union)
+
+
+def _toks_de_candidato(c) -> set:
+    """Devuelve tokens significativos de un Producto/ObsProducto.
+
+    Si el caller pre-tokenizó el pool y guardó los tokens en `c._toks_cached`,
+    los reusa (evita re-tokenizar 5M veces cuando matcheás 1000 items contra
+    un pool de 5k productos).
+    """
+    cached = getattr(c, '_toks_cached', None)
+    if cached is not None:
+        return cached
+    return tokens_significativos(c.descripcion or '')
+
+
+# Variable thread-local-ish para pasar el inverted index al match_producto
+# sin cambiar firma. Se setea desde match_productos_bulk antes de iterar y
+# se borra al final. Solo aplica al pool del caller (no afecta llamadas
+# sueltas a match_producto que cargan su propio pool).
+_THREAD_POOL_INV = {'inv': None, 'pool': None}
+
+
+def _candidatos_via_inv(toks_input, inv, pool):
+    """Devuelve la lista de candidatos del pool que comparten ≥1 token con
+    el input, según el inverted index. Reduce 60k iteraciones a 50-200.
+    """
+    if not inv or not toks_input:
+        return pool
+    idxs = set()
+    for t in toks_input:
+        bucket = inv.get(t)
+        if bucket:
+            idxs.update(bucket)
+    return [pool[i] for i in idxs]
 
 
 def comparar_descripciones(a, b) -> float:
@@ -502,6 +569,15 @@ def match_producto(*,
                     cand_query = session.query(P)
                 candidatos = cand_query.all()
 
+            # OPTIMIZACION: si el caller setea _THREAD_POOL_INV con el inverted
+            # index del pool (ver match_productos_bulk), restringimos `candidatos`
+            # a los que comparten al menos 1 token significativo con el input.
+            # Para 60k productos × 1000 items pasa de 60M a ~150k jaccards.
+            if pool is not None and _THREAD_POOL_INV.get('pool') is pool:
+                inv = _THREAD_POOL_INV.get('inv')
+                if inv:
+                    candidatos = _candidatos_via_inv(toks_input, inv, pool)
+
             # Estrategia 3: descripción exacta normalizada (+ lab si dado)
             input_norm = normalizar_texto(descripcion)
             for c in candidatos:
@@ -516,7 +592,7 @@ def match_producto(*,
             if not result.producto:
                 supersets = []
                 for c in candidatos:
-                    toks_c = tokens_significativos(c.descripcion)
+                    toks_c = _toks_de_candidato(c)
                     if toks_c and toks_input.issubset(toks_c):
                         supersets.append(c)
                 if len(supersets) == 1:
@@ -536,7 +612,7 @@ def match_producto(*,
                     # un pack no es la "unidad" de otro pack.
                     if skip_packs and descripcion_es_pack(c.descripcion):
                         continue
-                    toks_c = tokens_significativos(c.descripcion)
+                    toks_c = _toks_de_candidato(c)
                     score = jaccard(toks_input, toks_c)
                     # Modifier: cantidad envase
                     if cantidad_envase and _extraer_cantidad_envase(c.descripcion) == cantidad_envase:
@@ -578,7 +654,7 @@ def match_producto(*,
                 for c in global_candidatos:
                     if skip_packs and descripcion_es_pack(c.descripcion):
                         continue
-                    toks_c = tokens_significativos(c.descripcion)
+                    toks_c = _toks_de_candidato(c)
                     score = jaccard(toks_input, toks_c)
                     if cantidad_envase and _extraer_cantidad_envase(c.descripcion) == cantidad_envase:
                         score = min(1.0, score + 0.10)
@@ -651,7 +727,7 @@ def match_producto(*,
                 cand_pool = session.query(P).all()
             scored = []
             for c in cand_pool:
-                toks_c = tokens_significativos(c.descripcion)
+                toks_c = _toks_de_candidato(c)
                 score = jaccard(toks_input, toks_c)
                 if score > 0:
                     scored.append({
@@ -821,9 +897,44 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
     if own_session:
         session = database.SessionLocal()
     try:
+        import time as _t_bulk
+        _bulk_t0 = _t_bulk.time()
         # Fase 1: matchear contra `productos` local SIN fallback observer.
-        # incluir_candidatos=False porque el bulk no los usa (la UI los pide
-        # aparte via /import-candidatos). Eso ahorra una pasada por item.
+        # PRE-CARGA el pool UNA VEZ y lo pasa a cada match_producto via `pool=`.
+        # Sin esto, match_producto carga el pool entero (~5k filas locales) y
+        # tokeniza cada vez — para 1000+ items son 5M jaccards + 5M
+        # tokenizaciones redundantes (~60-90s).
+        spec_phase = _TARGETS.get(target)
+        P_phase = spec_phase.model(database) if spec_phase else None
+        if P_phase is not None:
+            lab_col_phase = getattr(P_phase, spec_phase.lab_field, None)
+            if laboratorio_id and lab_col_phase is not None:
+                shared_pool = (session.query(P_phase)
+                               .filter(lab_col_phase == laboratorio_id).all())
+            else:
+                shared_pool = session.query(P_phase).all()
+        else:
+            shared_pool = []
+        print(f'[bulk] pool local cargado: {len(shared_pool)} items en {_t_bulk.time()-_bulk_t0:.2f}s', flush=True)
+        _t1 = _t_bulk.time()
+
+        # Pre-tokenizar el pool UNA VEZ y cachear en el objeto. match_producto
+        # va a reusar esto si encuentra el atributo _toks_cached, evitando
+        # 5M tokenizaciones redundantes para 1000 items × 5k productos.
+        # Tambien construimos un inverted index {token → list[idx]} y lo
+        # exponemos via _THREAD_POOL_INV para que match_producto reduzca el
+        # scan de 60k → ~150 candidatos por item.
+        pool_inv = {}
+        for ii, c in enumerate(shared_pool):
+            toks = tokens_significativos(c.descripcion or '')
+            c._toks_cached = toks
+            for t in toks:
+                pool_inv.setdefault(t, []).append(ii)
+        _THREAD_POOL_INV['pool'] = shared_pool
+        _THREAD_POOL_INV['inv'] = pool_inv
+        print(f'[bulk] tokenizado pool local en {_t_bulk.time()-_t1:.2f}s ({len(pool_inv)} tokens unicos)', flush=True)
+        _t2 = _t_bulk.time()
+
         results = [
             match_producto(
                 ean=it.get('ean'),
@@ -836,15 +947,19 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 precio_referencia=it.get('precio'),
                 cantidad_envase=it.get('cantidad_envase'),
                 monodroga=it.get('monodroga'),
+                pool=shared_pool,  # ← clave: pool pre-cargado y reusado
                 session=session,
             )
             for it in items
         ]
+        print(f'[bulk] fase 1 (match local x{len(items)}): {_t_bulk.time()-_t2:.2f}s', flush=True)
+        _t3 = _t_bulk.time()
 
         # Fase 2: fallback observer en bulk con UNA precarga + UNA tokenización
         # del pool. Inline (no via match_producto) para evitar N×M tokenizaciones.
         if target == 'producto':
             no_match_idx = [i for i, r in enumerate(results) if r.producto is None]
+            print(f'[bulk] fase 2: {len(no_match_idx)} items sin match local, cargando obs_pool…', flush=True)
             if no_match_idx:
                 lab_obs_id = None
                 if laboratorio_id:
@@ -855,15 +970,21 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                     obs_q = obs_q.filter(database.ObsProducto.laboratorio_observer == lab_obs_id)
                 obs_q = obs_q.filter(database.ObsProducto.fecha_baja.is_(None))
                 obs_pool = obs_q.all()
+                print(f'[bulk] obs_pool cargado: {len(obs_pool)} items en {_t_bulk.time()-_t3:.2f}s', flush=True)
+                _t4 = _t_bulk.time()
 
                 # Pre-tokenizar UNA sola vez todo el pool. Estructuras:
                 # - obs_index: lista de (obj, norm, tokens, alfabeta)
                 # - by_norm: dict normalizado → list of obs (para descripcion exacta)
                 # - by_alfabeta: dict alfabeta → obs (para alfabeta exacto)
+                # - obs_inv: {token → list[indice_en_obs_index]} — inverted index
+                #   para reducir la fase 3 fuzzy de N×M a N×|candidatos|
+                #   (típico 50-200 candidatos por item en lugar de 122k).
                 obs_index = []
                 by_norm = {}
                 by_alfabeta = {}
-                for obs in obs_pool:
+                obs_inv = {}
+                for ii, obs in enumerate(obs_pool):
                     desc = obs.descripcion or ''
                     norm = normalizar_texto(desc)
                     toks = tokens_significativos(desc)
@@ -873,6 +994,10 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                         by_norm.setdefault(norm, []).append(obs)
                     if alf:
                         by_alfabeta[alf] = obs
+                    for t in toks:
+                        obs_inv.setdefault(t, []).append(ii)
+                print(f'[bulk] obs index construido en {_t_bulk.time()-_t4:.2f}s ({len(obs_inv)} tokens unicos)', flush=True)
+                _t5 = _t_bulk.time()
 
                 threshold_obs = 0.80
                 for i in no_match_idx:
@@ -917,21 +1042,24 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                             estrategia = 'descripcion_exacta'
                             score = 1.0
 
-                    # 3. tokens superset / fuzzy
-                    # Mientras iteramos también contamos cuántos obs son
-                    # "candidatos razonables" (jaccard >= UMBRAL_CAND).
-                    # Sirve para que la UI muestre "sin candidatos" upfront
-                    # en items donde sabemos que el modal va a venir vacío.
+                    # 3. tokens superset / fuzzy — usa inverted index.
+                    # Solo evaluamos los obs que comparten ≥1 token con el
+                    # input, no los 122k del pool. Reduce ~1000× el trabajo.
                     UMBRAL_CAND = 0.20
                     candidatos_count = 0
                     if not encontrado:
                         toks_in = tokens_significativos(desc_in)
                         if toks_in:
+                            cand_idxs = set()
+                            for t in toks_in:
+                                if t in obs_inv:
+                                    cand_idxs.update(obs_inv[t])
                             mejor = None
                             mejor_score = 0.0
                             empate = False
                             supersets = []
-                            for obs, _norm, toks_o, _alf in obs_index:
+                            for ii in cand_idxs:
+                                obs, _norm, toks_o, _alf = obs_index[ii]
                                 if toks_o and toks_in.issubset(toks_o):
                                     supersets.append(obs)
                                 s = jaccard(toks_in, toks_o)
@@ -965,9 +1093,15 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                         # pueda decidir qué UI mostrar.
                         res.candidatos_count = candidatos_count
                         results[i] = res
+                print(f'[bulk] fase 3 (obs fuzzy x{len(no_match_idx)}): {_t_bulk.time()-_t5:.2f}s', flush=True)
 
+        print(f'[bulk] TOTAL: {_t_bulk.time()-_bulk_t0:.2f}s', flush=True)
         return results
     finally:
+        # Limpiar el inverted index global para no contaminar otros requests
+        # ni mantener referencias a objetos del session ya cerrado.
+        _THREAD_POOL_INV['pool'] = None
+        _THREAD_POOL_INV['inv'] = None
         if own_session:
             session.close()
 
@@ -1002,13 +1136,15 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
     try:
         # ── Pool 1: todos los Productos locales (una sola query) ─────────────
         all_prods = session.query(database.Producto).all()
-        # Tokenizamos UNA sola vez y marcamos si pertenecen al lab pedido.
-        prod_index = []
-        for p in all_prods:
+        prod_index = []  # lista de (p, toks, is_lab) - mantenida para iteracion ordenada
+        prod_inv = {}    # {token: list[index_in_prod_index]} — inverted index
+        for i, p in enumerate(all_prods):
             toks = tokens_significativos(p.descripcion or '')
             is_lab = (laboratorio_id is not None
                       and getattr(p, 'laboratorio_id', None) == laboratorio_id)
             prod_index.append((p, toks, is_lab))
+            for t in toks:
+                prod_inv.setdefault(t, []).append(i)
 
         # ── Pool 2: ObServer (obs_productos) — una sola query ────────────────
         lab_obs_id = None
@@ -1023,13 +1159,22 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             obs_q = obs_q.filter(
                 database.ObsProducto.laboratorio_observer == lab_obs_id,
             )
-        obs_index = []
-        for obs in obs_q.all():
+        obs_index = []   # lista de (obs, toks, alf)
+        obs_inv = {}     # {token: list[index_in_obs_index]} — inverted index
+        obs_alfa_idx = {}  # {alfabeta: index} — para match exacto por alfa
+        for i, obs in enumerate(obs_q.all()):
             toks = tokens_significativos(obs.descripcion or '')
             alf = (obs.codigo_alfabeta or '').strip() or None
             obs_index.append((obs, toks, alf))
+            for t in toks:
+                obs_inv.setdefault(t, []).append(i)
+            if alf:
+                obs_alfa_idx[alf] = i
 
-        # ── Matchear cada item ────────────────────────────────────────────────
+        # ── Matchear cada item usando inverted index ─────────────────────────
+        # En lugar de iterar los 122k productos por item (1056 × 122k = 128M),
+        # solo evaluamos los que comparten >=1 token significativo con el input.
+        # Tipico: 50-200 candidatos por item.
         result = {}
         for it in items:
             idx = it.get('idx', 0)
@@ -1046,10 +1191,13 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             cands = []
             seen_keys = set()
 
-            # Productos locales
-            for p, toks_p, is_lab in prod_index:
-                if not toks_p:
-                    continue
+            # Productos locales — solo los que comparten al menos 1 token
+            cand_prod_idxs = set()
+            for t in toks_in:
+                if t in prod_inv:
+                    cand_prod_idxs.update(prod_inv[t])
+            for ci in cand_prod_idxs:
+                p, toks_p, is_lab = prod_index[ci]
                 s = jaccard(toks_in, toks_p)
                 if s < threshold_min:
                     continue
@@ -1070,32 +1218,40 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
                     '_origen': 'lab' if is_lab else 'global',
                 })
 
-            # ObServer
-            for obs, toks_o, alf_o in obs_index:
-                # Alfabeta exacto (sanity check: al menos 1 token en común)
-                if alf_in and alf_o and alf_in == alf_o:
-                    digits = ''.join(ch for ch in alf_in if ch.isdigit())
-                    if len(digits) >= 5:
-                        ok = (bool(toks_in & toks_o)
-                              and jaccard(toks_in, toks_o) >= 0.30
-                              ) if (toks_in and toks_o) else True
-                        if ok:
-                            key = ('obs', obs.observer_id)
-                            if key not in seen_keys:
-                                seen_keys.add(key)
-                                cands.append({
-                                    'producto_id': None,
-                                    'observer_id': obs.observer_id,
-                                    'descripcion': obs.descripcion or '',
-                                    'codigo_barra': None,
-                                    'codigo_alfabeta': alf_o or '',
-                                    'precio_pvp': None,
-                                    'score': 1.0,
-                                    '_origen': 'observer',
-                                })
-                        continue
-                if not toks_o:
-                    continue
+            # ObServer — alfabeta exacto primero, despues fuzzy via inverted
+            obs_alfa_match_idx = None
+            if alf_in:
+                digits = ''.join(ch for ch in alf_in if ch.isdigit())
+                if len(digits) >= 5 and alf_in in obs_alfa_idx:
+                    obs_alfa_match_idx = obs_alfa_idx[alf_in]
+                    obs, toks_o, alf_o = obs_index[obs_alfa_match_idx]
+                    ok = (bool(toks_in & toks_o)
+                          and jaccard(toks_in, toks_o) >= 0.30
+                          ) if (toks_in and toks_o) else True
+                    if ok:
+                        key = ('obs', obs.observer_id)
+                        if key not in seen_keys:
+                            seen_keys.add(key)
+                            cands.append({
+                                'producto_id': None,
+                                'observer_id': obs.observer_id,
+                                'descripcion': obs.descripcion or '',
+                                'codigo_barra': None,
+                                'codigo_alfabeta': alf_o or '',
+                                'precio_pvp': None,
+                                'score': 1.0,
+                                '_origen': 'observer',
+                            })
+
+            # ObServer fuzzy via inverted index
+            cand_obs_idxs = set()
+            for t in toks_in:
+                if t in obs_inv:
+                    cand_obs_idxs.update(obs_inv[t])
+            if obs_alfa_match_idx is not None:
+                cand_obs_idxs.discard(obs_alfa_match_idx)
+            for ci in cand_obs_idxs:
+                obs, toks_o, alf_o = obs_index[ci]
                 s = jaccard(toks_in, toks_o)
                 if s < threshold_min:
                     continue
@@ -1113,6 +1269,35 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
                     'score': round(s, 3),
                     '_origen': 'observer',
                 })
+
+            # Dedup final por alfabeta (o EAN como fallback). Productos
+            # duplicados entre `productos` local y `obs_productos` apuntan al
+            # mismo Alfabeta — los unimos en uno solo. Tiebreak: priorizar
+            # local sobre observer (el local tiene EAN, queda más completo).
+            _PRIO = {'lab': 3, 'global': 2, 'observer': 1}
+            mejor_por_clave = {}
+            for c in cands:
+                alfa = (c.get('codigo_alfabeta') or '').strip()
+                ean_c = (c.get('codigo_barra') or '').strip()
+                if alfa:
+                    key = ('alfa', alfa)
+                elif ean_c:
+                    key = ('ean', ean_c)
+                else:
+                    key = (c.get('_origen', 'global'),
+                           c.get('producto_id') or c.get('observer_id'))
+                if not key[1]:
+                    continue
+                existing = mejor_por_clave.get(key)
+                if existing is None:
+                    mejor_por_clave[key] = c
+                    continue
+                if c['score'] > existing['score']:
+                    mejor_por_clave[key] = c
+                elif c['score'] == existing['score']:
+                    if _PRIO.get(c.get('_origen'), 0) > _PRIO.get(existing.get('_origen'), 0):
+                        mejor_por_clave[key] = c
+            cands = list(mejor_por_clave.values())
 
             cands.sort(key=lambda x: -x['score'])
             if cands:
