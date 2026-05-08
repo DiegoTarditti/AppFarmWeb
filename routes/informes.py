@@ -471,7 +471,6 @@ def init_app(app):
         nuestra forecast (subir/bajar). Agrupado por laboratorio. Útil para
         mandar al staff del POS para que lo actualicen manualmente.
         """
-        import math
         from datetime import date as _date
 
         from sqlalchemy import func
@@ -485,11 +484,7 @@ def init_app(app):
             ObsSubrubro,
             ObsVentaMensual,
         )
-        from purchase_engine import (
-            analyze_product,
-            start_month_idx_from_period,
-            tipo_producto,
-        )
+        from purchase_helpers import calcular_min_sugerido, clasificar_min
 
         lab_id_filter = request.args.get('lab_id', type=int)
         tipo_filter = (request.args.get('tipo') or 'both').lower()
@@ -578,21 +573,14 @@ def init_app(app):
                 if u12m == 0:
                     continue
                 ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
-                tipo_p = tipo_producto(ventas_arr)
-                sidx = start_month_idx_from_period(start_month, end_month)
-                _q, fcst7, _slope, _peak, _low, _c, sin_mov = analyze_product(
-                    ventas_arr, int(r.stock or 0), n_days=7, start_month_idx=sidx,
-                    data_start_month=start_month, end_month=end_month, tipo=tipo_p,
+                min_sug, _avg_m, sin_mov, tipo_p = calcular_min_sugerido(
+                    ventas_arr, int(r.stock or 0), start_month, end_month,
                 )
                 if sin_mov:
                     continue
-                min_sug = int(math.ceil(fcst7)) if fcst7 > 0 else 0
                 min_act = int(r.minimo or 0)
-                if min_act == 0 or min_act < min_sug * 0.6:
-                    sug = 'up'
-                elif min_sug > 0 and min_act > min_sug * 2.0:
-                    sug = 'down'
-                else:
+                sug = clasificar_min(min_act, min_sug)
+                if sug == 'ok':
                     continue  # OK, no sugerencia
                 if tipo_filter == 'up' and sug != 'up':
                     continue
