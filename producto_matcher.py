@@ -150,6 +150,27 @@ def _toks_de_candidato(c) -> set:
     return tokens_significativos(c.descripcion or '')
 
 
+# Variable thread-local-ish para pasar el inverted index al match_producto
+# sin cambiar firma. Se setea desde match_productos_bulk antes de iterar y
+# se borra al final. Solo aplica al pool del caller (no afecta llamadas
+# sueltas a match_producto que cargan su propio pool).
+_THREAD_POOL_INV = {'inv': None, 'pool': None}
+
+
+def _candidatos_via_inv(toks_input, inv, pool):
+    """Devuelve la lista de candidatos del pool que comparten ≥1 token con
+    el input, según el inverted index. Reduce 60k iteraciones a 50-200.
+    """
+    if not inv or not toks_input:
+        return pool
+    idxs = set()
+    for t in toks_input:
+        bucket = inv.get(t)
+        if bucket:
+            idxs.update(bucket)
+    return [pool[i] for i in idxs]
+
+
 def comparar_descripciones(a, b) -> float:
     """Score 0..1 entre dos descripciones. Útil para usar fuera del módulo."""
     return jaccard(tokens_significativos(a), tokens_significativos(b))
@@ -515,6 +536,15 @@ def match_producto(*,
                     cand_query = session.query(P)
                 candidatos = cand_query.all()
 
+            # OPTIMIZACION: si el caller setea _THREAD_POOL_INV con el inverted
+            # index del pool (ver match_productos_bulk), restringimos `candidatos`
+            # a los que comparten al menos 1 token significativo con el input.
+            # Para 60k productos × 1000 items pasa de 60M a ~150k jaccards.
+            if pool is not None and _THREAD_POOL_INV.get('pool') is pool:
+                inv = _THREAD_POOL_INV.get('inv')
+                if inv:
+                    candidatos = _candidatos_via_inv(toks_input, inv, pool)
+
             # Estrategia 3: descripción exacta normalizada (+ lab si dado)
             input_norm = normalizar_texto(descripcion)
             for c in candidatos:
@@ -858,9 +888,18 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
         # Pre-tokenizar el pool UNA VEZ y cachear en el objeto. match_producto
         # va a reusar esto si encuentra el atributo _toks_cached, evitando
         # 5M tokenizaciones redundantes para 1000 items × 5k productos.
-        for c in shared_pool:
-            c._toks_cached = tokens_significativos(c.descripcion or '')
-        print(f'[bulk] tokenizado pool local en {_t_bulk.time()-_t1:.2f}s', flush=True)
+        # Tambien construimos un inverted index {token → list[idx]} y lo
+        # exponemos via _THREAD_POOL_INV para que match_producto reduzca el
+        # scan de 60k → ~150 candidatos por item.
+        pool_inv = {}
+        for ii, c in enumerate(shared_pool):
+            toks = tokens_significativos(c.descripcion or '')
+            c._toks_cached = toks
+            for t in toks:
+                pool_inv.setdefault(t, []).append(ii)
+        _THREAD_POOL_INV['pool'] = shared_pool
+        _THREAD_POOL_INV['inv'] = pool_inv
+        print(f'[bulk] tokenizado pool local en {_t_bulk.time()-_t1:.2f}s ({len(pool_inv)} tokens unicos)', flush=True)
         _t2 = _t_bulk.time()
 
         results = [
@@ -1026,6 +1065,10 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
         print(f'[bulk] TOTAL: {_t_bulk.time()-_bulk_t0:.2f}s', flush=True)
         return results
     finally:
+        # Limpiar el inverted index global para no contaminar otros requests
+        # ni mantener referencias a objetos del session ya cerrado.
+        _THREAD_POOL_INV['pool'] = None
+        _THREAD_POOL_INV['inv'] = None
         if own_session:
             session.close()
 
