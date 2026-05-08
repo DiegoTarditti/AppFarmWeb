@@ -1326,20 +1326,29 @@ async function prefetchCandidatosBulk(onProgress) {
     }
 }
 
-// Marca un item como vinculado automáticamente si el top candidato tiene
-// score >= AUTO_MATCH_THRESHOLD. Devuelve true si auto-matcheó.
+// Marca un item como vinculado automáticamente. Reglas:
+//   1. Si hay 1 solo candidato (post-dedup) → auto-match (es la única opción).
+//   2. Si el top score >= AUTO_MATCH_THRESHOLD → auto-match.
+//   3. Si hay empate entre top y 2do candidato → solo si tienen mismo alfa
+//      (= mismo producto duplicado, prioriza el local).
 const AUTO_MATCH_THRESHOLD = 0.9;
 function autoMatchTop(itemIdx, candidatos) {
     if (!candidatos || !candidatos.length) return false;
     const top = candidatos[0];
-    if (top.score < AUTO_MATCH_THRESHOLD) return false;
-    // Si hay otro candidato con el MISMO score, dudoso — no auto-match.
-    if (candidatos.length > 1 && candidatos[1].score === top.score) {
-        // Excepción: si ambos son alfas iguales (mismo producto en local +
-        // observer), prioriza el local (primero por orden) sin marcar dudoso.
-        const a = (top.codigo_alfabeta || '').trim();
-        const b = (candidatos[1].codigo_alfabeta || '').trim();
-        if (!(a && b && a === b)) return false;
+    let motivoLabel = '';
+    if (candidatos.length === 1) {
+        // Único candidato disponible — es la única opción posible.
+        motivoLabel = `Auto-match (único candidato, score ${top.score.toFixed(2)})`;
+    } else if (top.score >= AUTO_MATCH_THRESHOLD) {
+        // Top con score alto. Cuidado con empates ambiguos.
+        if (candidatos[1].score === top.score) {
+            const a = (top.codigo_alfabeta || '').trim();
+            const b = (candidatos[1].codigo_alfabeta || '').trim();
+            if (!(a && b && a === b)) return false;  // empate ambiguo
+        }
+        motivoLabel = `Auto-match (score ${top.score.toFixed(2)})`;
+    } else {
+        return false;
     }
     const it = _items[itemIdx];
     if (!it || it._status !== 'not_found') return false;
@@ -1347,8 +1356,8 @@ function autoMatchTop(itemIdx, candidatos) {
     it._producto_id = top.producto_id || null;
     it._observer_id = top.observer_id || null;
     it._match_descripcion_local = top.descripcion || '';
-    it._estrategia = 'auto_match_score';
-    it._motivo = `Auto-match (score ${top.score.toFixed(2)}): "${(top.descripcion || '').substring(0, 80)}"`;
+    it._estrategia = 'auto_match';
+    it._motivo = `${motivoLabel}: "${(top.descripcion || '').substring(0, 80)}"`;
     if (!it.ean && top.codigo_barra) it.ean = top.codigo_barra;
     if (!it.codigo && top.codigo_alfabeta) it.codigo = top.codigo_alfabeta;
     return true;
