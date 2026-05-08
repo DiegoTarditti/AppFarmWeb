@@ -1298,6 +1298,7 @@ async function prefetchCandidatosBulk(onProgress) {
     const labIdInt = labId ? parseInt(labId, 10) : null;
     const total = paraFetch.length;
     let done = 0;
+    let autoMatched = 0;
     for (let i = 0; i < paraFetch.length; i += CHUNK) {
         const slice = paraFetch.slice(i, i + CHUNK);
         try {
@@ -1310,7 +1311,11 @@ async function prefetchCandidatosBulk(onProgress) {
             const data = await r.json();
             if (data.candidatos_por_idx) {
                 for (const [k, v] of Object.entries(data.candidatos_por_idx)) {
-                    _candidatosBulk[parseInt(k, 10)] = v;
+                    const idx = parseInt(k, 10);
+                    _candidatosBulk[idx] = v;
+                    // Auto-match si el top candidato es 1.0 (jaccard perfecto:
+                    // mismos tokens significativos). Reduce trabajo manual.
+                    if (autoMatchTop(idx, v)) autoMatched++;
                 }
             }
         } catch (err) {
@@ -1319,6 +1324,30 @@ async function prefetchCandidatosBulk(onProgress) {
         done += slice.length;
         if (typeof onProgress === 'function') onProgress(done, total);
     }
+    if (autoMatched > 0) {
+        recalcularStats();
+        actualizarConfirmCount();
+        console.info(`Auto-matched ${autoMatched} items con score 1.0`);
+    }
+}
+
+// Marca un item como vinculado automáticamente si el top candidato tiene
+// score 1.0 (jaccard perfecto). Devuelve true si auto-matcheó.
+function autoMatchTop(itemIdx, candidatos) {
+    if (!candidatos || !candidatos.length) return false;
+    const top = candidatos[0];
+    if (top.score < 1.0) return false;
+    const it = _items[itemIdx];
+    if (!it || it._status !== 'not_found') return false;
+    it._status = 'manual_ok';
+    it._producto_id = top.producto_id || null;
+    it._observer_id = top.observer_id || null;
+    it._match_descripcion_local = top.descripcion || '';
+    it._estrategia = 'auto_match_score_perfecto';
+    it._motivo = `Auto-match (score 1.0): "${(top.descripcion || '').substring(0, 80)}"`;
+    if (!it.ean && top.codigo_barra) it.ean = top.codigo_barra;
+    if (!it.codigo && top.codigo_alfabeta) it.codigo = top.codigo_alfabeta;
+    return true;
 }
 
 async function buscarCandidatos(itemIdx) {
