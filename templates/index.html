@@ -48,7 +48,28 @@
             background:
               radial-gradient(circle at 92% 50%, rgba(95,230,188,.22), transparent 38%),
               radial-gradient(circle at 105% 110%, rgba(16,185,129,.10), transparent 50%);
+            pointer-events:none; z-index: 0;
+        }
+        /* Pattern de líneas diagonales sutiles (textura tipo papel grabado) */
+        .home-hero::after {
+            content:''; position:absolute; inset:0; z-index: 0;
+            background-image: repeating-linear-gradient(
+                45deg,
+                rgba(95,230,188,.05) 0,
+                rgba(95,230,188,.05) 1px,
+                transparent 1px,
+                transparent 12px
+            );
             pointer-events:none;
+        }
+        /* Pattern de dots con fade (overlay extra encima del ::after) */
+        .home-hero__dots {
+            position: absolute; inset: 0; z-index: 0;
+            background-image: radial-gradient(circle, rgba(95,230,188,.10) 1px, transparent 1.5px);
+            background-size: 18px 18px;
+            pointer-events: none;
+            -webkit-mask-image: linear-gradient(to right, transparent 0%, black 50%, transparent 100%);
+            mask-image: linear-gradient(to right, transparent 0%, black 50%, transparent 100%);
         }
         .home-hero__body { position: relative; z-index: 1; flex: 1; min-width: 0; }
         .home-hero__title { font-family:'Space Grotesk',sans-serif; font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
@@ -104,6 +125,7 @@
                 </header>
 
                 <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
+                    <span class="home-hero__dots" aria-hidden="true"></span>
                     <div class="home-hero__body">
                         <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
                         <div class="home-hero__title">Pedido de <span class="glow-text">reposición</span></div>
