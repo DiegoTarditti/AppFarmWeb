@@ -239,8 +239,14 @@
         body.theme-emerald .border-\[\#e0e0e0\],
         body.theme-emerald .border-\[\#d0d0d0\],
         body.theme-emerald .border-\[\#ccc\],
+        body.theme-emerald .border-\[\#ede8e0\],
         body.theme-emerald .border-gray-200,
         body.theme-emerald .border-gray-300 { border-color: var(--ds-line) !important; }
+        /* Fondos pastel cremas/durazno (algunas plantillas los usan para destacar
+           filas) — los traducimos a un naranja muy translúcido sobre dark. */
+        body.theme-emerald .bg-\[\#f5f0e8\],
+        body.theme-emerald .bg-\[\#fef9c3\],
+        body.theme-emerald .bg-\[\#f0fdf4\] { background-color: rgba(245,158,11,.08) !important; }
 
         /* Inputs/selects con bg-white quedan ilegibles — los pasamos a dark */
         body.theme-emerald input.bg-white,
