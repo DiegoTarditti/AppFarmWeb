@@ -50,29 +50,13 @@
               radial-gradient(circle at 105% 110%, rgba(16,185,129,.10), transparent 50%);
             pointer-events:none;
         }
-        /* Decoración: 3 formas absolute integradas en el degradé, sutiles */
-        .home-hero__deco {
-            position: absolute; top: 50%; right: 28px;
-            transform: translateY(-50%);
-            display: flex; gap: 8px; pointer-events: none;
-            opacity: .55;
-        }
-        .home-hero__deco .geo {
-            width: 28px; height: 28px; border-radius: 7px;
-            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
-        }
-        .home-hero__deco .geo:nth-child(1) { transform: rotate(12deg); }
-        .home-hero__deco .geo:nth-child(2) { transform: rotate(-8deg) translateY(-6px); border-radius: 50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
-        .home-hero__deco .geo:nth-child(3) { transform: rotate(18deg) translateY(4px); }
-        @media (max-width: 1100px) { .home-hero__deco { display: none; } }
         .home-hero__body { position: relative; z-index: 1; flex: 1; min-width: 0; }
         .home-hero__title { font-family:'Space Grotesk',sans-serif; font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
         .home-hero__desc { font-size: 12px; color: var(--ds-text-soft); margin-top: 2px; line-height: 1.4; }
-        .home-hero__cta { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; flex-shrink: 0; padding-right: 120px; }
-        @media (max-width: 1100px) { .home-hero__cta { padding-right: 0; } }
+        .home-hero__cta { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
         @media (max-width: 720px) {
             .home-hero { flex-direction: column; align-items: flex-start; }
-            .home-hero__cta { width: 100%; padding-right: 0; }
+            .home-hero__cta { width: 100%; }
         }
 
         /* Entity cards — más compactas, icon + título en línea */
@@ -132,11 +116,6 @@
                            class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);">
                             Ver pendientes →
                         </a>
-                    </div>
-                    <div class="home-hero__deco" aria-hidden="true">
-                        <div class="geo"></div>
-                        <div class="geo"></div>
-                        <div class="geo"></div>
                     </div>
                 </a>
             </div>
