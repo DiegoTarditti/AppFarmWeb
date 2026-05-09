@@ -2,97 +2,212 @@
 {% set nav_active = "compras" %}
 {% set hide_sidebar = True %}
 {% block title %}Pedido de reposición — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cd-topbar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 24px;
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .cd-topbar h1 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 16px; font-weight: 700; color: var(--ds-text);
+        margin: 0;
+    }
+    .cd-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+    .cd-prov-card {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        overflow: hidden;
+    }
+    .cd-prov-head {
+        padding: 12px 18px;
+        border-bottom: 1px solid var(--ds-line);
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; flex-wrap: wrap;
+    }
+    .cd-prov-head h2 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+    }
+    .cd-prov-head .sub { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px; }
+    .cd-cierre-pill {
+        background: rgba(95,230,188,.08);
+        border: 1px solid rgba(95,230,188,.25);
+        border-radius: var(--ds-r-md);
+        padding: 8px 12px;
+        min-width: 200px;
+    }
+    .cd-cierre-pill .label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); }
+    .cd-cierre-pill .hora { font-size: 13px; font-weight: 600; color: var(--ds-mint); margin-top: 1px; }
+    .cd-cierre-pill .countdown-text { font-size: 11px; color: var(--ds-text); margin-top: 2px; }
+    .cd-cierre-pill .countdown-text .num { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: var(--ds-text); }
+    .cd-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .cd-table thead th {
+        padding: 8px 12px; text-align: center;
+        font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+        font-weight: 600; color: var(--ds-text-mute);
+        background: rgba(0,0,0,.18);
+    }
+    .cd-table tbody tr { border-top: 1px solid var(--ds-line); }
+    .cd-table tbody td {
+        padding: 6px 12px; text-align: center; color: var(--ds-text);
+        font-family: ui-monospace, Consolas, monospace;
+    }
+    .cd-table tbody td .empty { color: var(--ds-text-mute); }
+    /* Modales (overlay base) */
+    .cd-modal-back { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
+    .cd-modal-card {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        color: var(--ds-text);
+    }
+    .cd-modal-head {
+        background: rgba(0,0,0,.18);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 14px 20px;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .cd-modal-head h2, .cd-modal-head h3 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 15px; font-weight: 700; margin: 0; color: var(--ds-text);
+    }
+    .cd-modal-close {
+        font-size: 20px; line-height: 1; color: var(--ds-text-mute);
+        background: none; border: 0; cursor: pointer;
+        padding: 4px 8px; border-radius: 6px;
+    }
+    .cd-modal-close:hover { color: var(--ds-text); background: rgba(255,255,255,.05); }
+    .cd-day-col {
+        background: rgba(0,0,0,.18);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-md);
+        padding: 10px;
+    }
+    .cd-day-col .day-name { font-size: 10px; text-transform: uppercase; color: var(--ds-text-mute); font-weight: 700; margin-bottom: 8px; }
+    .cd-day-col .hora-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px; }
+    .cd-day-col .hora-row .h { font-family: ui-monospace, Consolas, monospace; color: var(--ds-text); }
+    .cd-day-col .hora-row .del-btn {
+        color: var(--ds-text-mute); background: none; border: 0; cursor: pointer;
+        padding: 0 4px;
+    }
+    .cd-day-col .hora-row .del-btn:hover { color: var(--ds-danger); }
+    .cd-copy-btn {
+        margin-top: 8px; width: 100%;
+        font-size: 10px; color: var(--ds-info);
+        background: rgba(59,130,246,.08);
+        border: 1px solid rgba(59,130,246,.25);
+        border-radius: 4px; padding: 4px 6px;
+        cursor: pointer; transition: all .15s;
+    }
+    .cd-copy-btn:hover { background: rgba(59,130,246,.16); }
+    .cd-pedidos-row td { padding: 12px 16px; vertical-align: middle; }
+    .cd-pedidos-row { border-bottom: 1px solid var(--ds-line); transition: background .15s; }
+    .cd-pedidos-row:hover { background: rgba(95,230,188,.04); }
+    .cd-pedidos-table thead th {
+        padding: 12px 16px; text-align: left;
+        font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+        color: var(--ds-text-mute); font-weight: 600;
+        background: rgba(0,0,0,.18);
+        border-bottom: 1px solid var(--ds-line);
+    }
+</style>
+{% endblock %}
 
 {% block main %}
-<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">🛒 Pedido de reposición</h1>
-    <p class="text-xs text-[#6f6f6f]">Horarios de cierre por droguería + countdown al próximo reparto.</p>
+<div class="cd-topbar">
+    <div>
+        <h1>🛒 Pedido de reposición</h1>
+        <p class="sub">Horarios de cierre por droguería + countdown al próximo reparto.</p>
+    </div>
     {% if sin_horarios %}
     <div class="flex items-center gap-2">
         <select id="select-prov-nuevo" title="Elegí una droguería para cargar sus horarios de cierre"
-                class="bg-white border border-surface-border rounded-lg px-2 py-1 text-xs">
+                class="ds-select" style="font-size:12px; padding: 6px 10px;">
             <option value="">+ Cargar horarios de droguería…</option>
             {% for d in sin_horarios %}
             <option value="{{ d.id }}" data-nombre="{{ d.nombre }}">{{ d.nombre }}</option>
             {% endfor %}
         </select>
-        <button type="button" onclick="abrirEdicionDesdeSelect()"
-                class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1 rounded-lg">
+        <button type="button" onclick="abrirEdicionDesdeSelect()" class="btn btn-mint btn-sm">
             Cargar
         </button>
     </div>
     {% endif %}
     <div class="ml-auto flex items-center gap-3">
-        <a href="{{ url_for('compras_dia_armar') }}"
-           class="text-xs bg-fuchsia-600 hover:bg-fuchsia-700 text-white px-3 py-1.5 rounded-lg font-bold">
+        <a href="{{ url_for('compras_dia_armar') }}" class="btn btn-primary btn-sm">
             📦 Armar pedido (todas las drogs) →
         </a>
         {% if current_user.rol != 'pedidos' %}
-        <a href="{{ url_for('labs_drogerias_matriz') }}" class="text-xs bg-violet-50 border border-violet-300 text-violet-700 hover:bg-violet-100 px-3 py-1.5 rounded-lg font-medium">🔗 Matriz lab × drog</a>
-        <a href="{{ url_for('index') }}" class="text-xs text-sky-600 hover:underline">← Inicio</a>
+        <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-ghost btn-sm">🔗 Matriz lab × drog</a>
+        <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">← Inicio</a>
         {% endif %}
     </div>
 </div>
 
-<div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-5">
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-4">
     {% for prov in proveedores %}
-    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden"
-         data-prov-id="{{ prov.id }}">
-        <div class="px-4 py-3 border-b border-surface-border flex items-center justify-between gap-3 flex-wrap">
+    <div class="cd-prov-card" data-prov-id="{{ prov.id }}">
+        <div class="cd-prov-head">
             <div>
-                <h2 class="font-bold text-base text-[#1e1e1e]">{{ prov.nombre }}</h2>
-                <div class="flex items-center gap-2 mt-0.5">
-                    <p class="text-xs text-[#6f6f6f]">Tope de pedido / próximo reparto</p>
+                <h2>{{ prov.nombre }}</h2>
+                <div class="flex items-center gap-2">
+                    <p class="sub">Tope de pedido / próximo reparto</p>
                     {% if prov.plantilla %}
                     <a href="{{ url_for('plantillas_list', tipo='drogueria', id=prov.id) }}"
-                       class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 hover:bg-violet-200"
+                       class="badge"
+                       style="background: rgba(139,92,246,.15); color: #C4B5FD; border: 1px solid rgba(139,92,246,.25); font-size:10px;"
                        title="{{ prov.plantilla.nombre }}">
                         {{ prov.plantilla.formato }} · {{ prov.plantilla.n_campos }} campos
                     </a>
                     {% else %}
                     <a href="{{ url_for('plantillas_list', tipo='drogueria', id=prov.id) }}"
-                       class="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-[#ccc] text-[#aaa] hover:border-[#999] hover:text-[#666]">
+                       class="badge badge-mute"
+                       style="border: 1px dashed var(--ds-line-2); font-size: 10px;">
                         sin plantilla
                     </a>
                     {% endif %}
                 </div>
             </div>
-            <div class="flex items-center gap-3">
-                <div class="bg-emerald-50 border border-emerald-300 rounded-lg px-3 py-2 min-w-[210px]">
+            <div class="flex items-center gap-2 flex-wrap">
+                <div class="cd-cierre-pill">
                     {% if prov.proximo_cierre %}
-                    <p class="text-[11px] uppercase text-[#6f6f6f] tracking-wide">Cierre próximo reparto</p>
-                    <p class="text-sm font-semibold text-emerald-700"
-                       data-cierre-hora>{{ prov.proximo_cierre.hora_str }} hs</p>
-                    <p class="text-xs text-[#1e1e1e]">
-                        Faltan <span class="font-mono font-bold" data-countdown>--:--:--</span>
+                    <p class="label">Cierre próximo reparto</p>
+                    <p class="hora" data-cierre-hora>{{ prov.proximo_cierre.hora_str }} hs</p>
+                    <p class="countdown-text">
+                        Faltan <span class="num" data-countdown>--:--:--</span>
                     </p>
                     {% else %}
-                    <p class="text-xs text-[#999]">Sin horarios cargados</p>
+                    <p style="font-size:12px; color: var(--ds-text-mute);">Sin horarios cargados</p>
                     {% endif %}
                 </div>
-                <a href="{{ url_for('compras_dia_armar', prov=prov.id) }}"
-                   class="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-brand hover:bg-brand-hover text-brand-dark font-bold text-sm">
+                <a href="{{ url_for('compras_dia_armar', prov=prov.id) }}" class="btn btn-primary btn-sm">
                     Armar pedido →
                 </a>
                 <button type="button"
                         onclick="abrirModalPedidos({{ prov.id }}, '{{ prov.nombre }}')"
-                        class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-semibold
-                               {% if prov.pedidos_activos %}border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100
-                               {% else %}border-surface-border text-[#666] hover:bg-black/[0.04]{% endif %}">
-                    📋 Pedidos{% if prov.pedidos_activos %} <span class="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">{{ prov.pedidos_activos }}</span>{% endif %}
+                        class="btn btn-sm{% if prov.pedidos_activos %} btn-secondary{% else %} btn-ghost{% endif %}"
+                        {% if prov.pedidos_activos %}style="border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); color: var(--ds-warn);"{% endif %}>
+                    📋 Pedidos{% if prov.pedidos_activos %}
+                        <span class="badge badge-warn badge-pill" style="margin-left:4px;">{{ prov.pedidos_activos }}</span>
+                    {% endif %}
                 </button>
-                <button type="button" onclick="abrirEdicionHorarios({{ prov.id }}, this)"
-                        class="text-xs text-[#666] hover:text-[#1e1e1e] px-2 py-1 rounded border border-surface-border hover:bg-black/[0.04]">
+                <button type="button" onclick="abrirEdicionHorarios({{ prov.id }}, this)" class="btn btn-ghost btn-sm">
                     Editar horarios
                 </button>
             </div>
         </div>
 
-        <table class="w-full text-sm">
-            <thead class="bg-[#f0f0f0]">
+        <table class="cd-table">
+            <thead>
                 <tr>
                     {% for d in dias %}
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">{{ d }}</th>
+                    <th>{{ d }}</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -100,17 +215,17 @@
                 {# Calculamos cuántas filas necesitamos: max horarios entre todos los días. #}
                 {% set max_filas = (prov.horarios_por_dia | map('length') | max) if prov.horarios_por_dia else 0 %}
                 {% for fila in range(max_filas) %}
-                <tr class="border-t border-surface-border">
+                <tr>
                     {% for horarios_dia in prov.horarios_por_dia %}
-                    <td class="px-3 py-1.5 text-center text-[#1e1e1e] font-mono">
-                        {% if fila < horarios_dia | length %}{{ horarios_dia[fila] }}{% else %}<span class="text-[#ccc]">—</span>{% endif %}
+                    <td>
+                        {% if fila < horarios_dia | length %}{{ horarios_dia[fila] }}{% else %}<span class="empty">—</span>{% endif %}
                     </td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
                 {% if max_filas == 0 %}
                 <tr>
-                    <td colspan="7" class="text-center text-sm text-[#999] py-6">
+                    <td colspan="7" style="padding: 24px; color: var(--ds-text-mute); font-family: inherit;">
                         Sin horarios cargados. Tocá "Editar horarios" para agregar.
                     </td>
                 </tr>
@@ -119,40 +234,42 @@
         </table>
     </div>
     {% else %}
-    <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+    <div class="card" style="border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); color: var(--ds-warn);">
         No hay proveedores con horarios cargados. Agregá horarios desde acá o desde el panel de proveedores.
     </div>
     {% endfor %}
 </div>
 
 <!-- Modal edición horarios -->
-<div id="modal-horarios" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4"
+<div id="modal-horarios" class="hidden fixed inset-0 z-[90] flex items-center justify-center cd-modal-back p-4"
      onclick="if(event.target===this) cerrarEdicion()">
-    <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto p-5 shadow-2xl">
-        <div class="flex items-center justify-between mb-3 sticky top-0 bg-white pb-2 border-b border-surface-border">
-            <h2 class="text-base font-bold text-[#1e1e1e]">Editar horarios — <span id="modal-prov-nombre"></span></h2>
-            <button type="button" onclick="cerrarEdicion()" class="text-[#999] hover:text-[#1e1e1e] text-xl leading-none">✕</button>
+    <div class="cd-modal-card max-w-2xl w-full max-h-[90vh] overflow-auto">
+        <div class="cd-modal-head">
+            <h2>Editar horarios — <span id="modal-prov-nombre" style="color: var(--ds-mint); font-weight: 600;"></span></h2>
+            <button type="button" onclick="cerrarEdicion()" class="cd-modal-close">✕</button>
         </div>
-        <div id="modal-grilla" class="grid grid-cols-7 gap-2 mb-3"></div>
-        <div class="border-t border-surface-border pt-3 flex items-end gap-2">
-            <div>
-                <label class="text-[10px] uppercase text-[#6f6f6f] font-semibold">Día</label>
-                <select id="add-dia" class="block bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm">
-                    <option value="0">Lun</option><option value="1">Mar</option><option value="2">Mié</option>
-                    <option value="3">Jue</option><option value="4">Vie</option><option value="5">Sáb</option>
-                    <option value="6">Dom</option>
-                </select>
+        <div style="padding: 18px 20px;">
+            <div id="modal-grilla" class="grid grid-cols-7 gap-2 mb-3"></div>
+            <div class="ds-divider"></div>
+            <div class="flex items-end gap-3 flex-wrap">
+                <div>
+                    <label class="ds-label">Día</label>
+                    <select id="add-dia" class="ds-select" style="width: auto; padding: 7px 10px; font-size: 13px;">
+                        <option value="0">Lun</option><option value="1">Mar</option><option value="2">Mié</option>
+                        <option value="3">Jue</option><option value="4">Vie</option><option value="5">Sáb</option>
+                        <option value="6">Dom</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="ds-label">Hora (HH:MM)</label>
+                    <input type="text" id="add-hora" placeholder="09:30 o 0930"
+                           title="Acepta 09:30, 0930, 930 o 9:30"
+                           class="ds-input" style="width: 140px; font-family: ui-monospace, Consolas, monospace; padding: 7px 10px; font-size: 13px;">
+                </div>
+                <button type="button" onclick="agregarHora()" class="btn btn-mint btn-sm">
+                    Agregar
+                </button>
             </div>
-            <div>
-                <label class="text-[10px] uppercase text-[#6f6f6f] font-semibold">Hora (HH:MM)</label>
-                <input type="text" id="add-hora" placeholder="09:30 o 0930"
-                       title="Acepta 09:30, 0930, 930 o 9:30"
-                       class="block bg-white border border-surface-border rounded-lg px-2 py-1.5 text-sm w-32 font-mono">
-            </div>
-            <button type="button" onclick="agregarHora()"
-                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm">
-                Agregar
-            </button>
         </div>
     </div>
 </div>
@@ -201,21 +318,20 @@ async function refrescarGrilla() {
     grilla.innerHTML = '';
     for (let d = 0; d < 7; d++) {
         const col = document.createElement('div');
-        col.className = 'border border-surface-border rounded-lg p-2 bg-[#fafafa]';
-        col.innerHTML = `<p class="text-[10px] uppercase text-[#666] font-bold mb-2">${DIAS[d]}</p>`;
+        col.className = 'cd-day-col';
+        col.innerHTML = `<p class="day-name">${DIAS[d]}</p>`;
         for (const h of _porDia[d]) {
             const row = document.createElement('div');
-            row.className = 'flex items-center justify-between text-xs mb-1';
-            row.innerHTML = `<span class="font-mono">${h.hora}</span>
-                             <button onclick="borrarHora(${h.id})"
-                                     class="text-[#bbb] hover:text-rose-500 ml-1">✕</button>`;
+            row.className = 'hora-row';
+            row.innerHTML = `<span class="h">${h.hora}</span>
+                             <button onclick="borrarHora(${h.id})" class="del-btn" title="Borrar horario">✕</button>`;
             col.appendChild(row);
         }
         // Botón "Copiar a..." — solo si tiene horarios cargados
         if (_porDia[d].length > 0) {
             const copyBtn = document.createElement('button');
             copyBtn.type = 'button';
-            copyBtn.className = 'mt-2 w-full text-[10px] text-sky-700 hover:text-sky-900 hover:bg-sky-50 border border-sky-200 rounded px-1.5 py-1';
+            copyBtn.className = 'cd-copy-btn';
             copyBtn.textContent = '📋 Copiar a…';
             copyBtn.onclick = () => abrirCopiarA(d);
             col.appendChild(copyBtn);
@@ -226,7 +342,7 @@ async function refrescarGrilla() {
 
 function abrirCopiarA(diaOrigen) {
     const back = document.createElement('div');
-    back.className = 'fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4';
+    back.className = 'fixed inset-0 z-[100] cd-modal-back flex items-center justify-center p-4';
     back.onclick = (e) => { if (e.target === back) back.remove(); };
     const horasOrigen = _porDia[diaOrigen].map(h => h.hora).sort();
 
@@ -234,26 +350,36 @@ function abrirCopiarA(diaOrigen) {
     for (let d = 0; d < 7; d++) {
         if (d === diaOrigen) continue;
         checks += `
-            <label class="flex items-center gap-2 text-sm py-1 cursor-pointer hover:bg-[#f5f5f5] rounded px-2">
+            <label class="flex items-center gap-2 text-sm py-1 cursor-pointer rounded px-2"
+                   style="color: var(--ds-text);"
+                   onmouseover="this.style.background='rgba(95,230,188,.06)'"
+                   onmouseout="this.style.background='transparent'">
                 <input type="checkbox" class="cb-dia" data-dia="${d}" data-nombre="${DIAS[d]}">
                 <span>${DIAS[d]}</span>
-                <span class="text-[10px] text-[#999] ml-auto">${(_porDia[d] || []).length} horario(s)</span>
+                <span style="font-size:10px; color: var(--ds-text-mute); margin-left: auto;">${(_porDia[d] || []).length} horario(s)</span>
             </label>`;
     }
 
     back.innerHTML = `
-        <div class="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl space-y-3">
-            <h3 class="font-bold text-sm">📋 Copiar horarios de <span class="text-amber-700">${DIAS[diaOrigen]}</span> a otros días</h3>
-            <p class="text-xs text-[#6f6f6f]">Horarios a copiar: <span class="font-mono">${horasOrigen.join(' · ')}</span></p>
-            <div class="flex gap-2 flex-wrap text-[11px]">
-                <button type="button" onclick="copiarASeleccionar([1,2,3,4,5])" class="px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">Lun-Vie</button>
-                <button type="button" onclick="copiarASeleccionar([0,1,2,3,4,5,6])" class="px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">Toda la semana</button>
-                <button type="button" onclick="copiarASeleccionar([])" class="px-2 py-1 rounded bg-[#f0f0f0] hover:bg-[#e8e8e8] text-[#666]">Limpiar</button>
+        <div class="cd-modal-card max-w-md w-full" style="padding: 0;">
+            <div class="cd-modal-head">
+                <h3>📋 Copiar horarios de <span style="color: var(--ds-warn);">${DIAS[diaOrigen]}</span> a otros días</h3>
             </div>
-            <div class="border-t border-surface-border pt-2">${checks}</div>
-            <div class="flex justify-end gap-2 pt-2">
-                <button type="button" id="btn-copiar-cancelar" class="text-[#999] hover:text-[#1e1e1e] text-sm px-3 py-1.5">Cancelar</button>
-                <button type="button" id="btn-copiar-aplicar" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg text-sm">Copiar</button>
+            <div style="padding: 16px 20px;" class="space-y-3">
+                <p style="font-size: 12px; color: var(--ds-text-soft);">
+                    Horarios a copiar:
+                    <span style="font-family: ui-monospace, Consolas, monospace; color: var(--ds-mint);">${horasOrigen.join(' · ')}</span>
+                </p>
+                <div class="flex gap-2 flex-wrap">
+                    <button type="button" onclick="copiarASeleccionar([1,2,3,4,5])" class="btn btn-ghost btn-sm" style="font-size:11px;">Lun-Vie</button>
+                    <button type="button" onclick="copiarASeleccionar([0,1,2,3,4,5,6])" class="btn btn-ghost btn-sm" style="font-size:11px;">Toda la semana</button>
+                    <button type="button" onclick="copiarASeleccionar([])" class="btn btn-ghost btn-sm" style="font-size:11px;">Limpiar</button>
+                </div>
+                <div style="border-top: 1px solid var(--ds-line); padding-top: 8px;">${checks}</div>
+                <div class="flex justify-end gap-2 pt-1">
+                    <button type="button" id="btn-copiar-cancelar" class="btn btn-ghost btn-sm">Cancelar</button>
+                    <button type="button" id="btn-copiar-aplicar" class="btn btn-mint btn-sm">Copiar</button>
+                </div>
             </div>
         </div>`;
     document.body.appendChild(back);
@@ -383,8 +509,8 @@ function actualizarUI() {
         const secs = (info.target - ahora) / 1000;
         cd.textContent = _formatHHMMSS(secs);
         if (hora) hora.textContent = info.hora_str + ' hs';
-        if (secs <= 600) cd.classList.add('text-red-600');
-        else cd.classList.remove('text-red-600');
+        if (secs <= 600) cd.style.color = 'var(--ds-danger)';
+        else cd.style.color = '';
     });
 }
 refrescarCountdowns();
@@ -399,56 +525,64 @@ async function abrirModalPedidos(provId, provNombre) {
     // multi-drog genera ~1 PedidoEmitido por droguería — así se ve el cuadro
     // completo. provId/provNombre se ignoran (se conservan por compat).
     document.getElementById('modal-pedidos-titulo').textContent = 'Todas las droguerías';
-    document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-[#aaa]">Cargando…</td></tr>';
+    document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="6" style="padding: 24px; text-align: center; color: var(--ds-text-mute); font-size: 12px;">Cargando…</td></tr>';
     document.getElementById('modal-pedidos').classList.remove('hidden');
     try {
         const r = await fetch('/api/pedidos-emitidos/todos', {credentials: 'same-origin'});
         const d = await r.json();
         renderModalPedidos(d.pedidos || []);
     } catch(e) {
-        document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-rose-600">Error al cargar</td></tr>';
+        document.getElementById('modal-pedidos-body').innerHTML = '<tr><td colspan="6" style="padding: 24px; text-align: center; color: var(--ds-danger); font-size: 12px;">Error al cargar</td></tr>';
     }
 }
 
 function renderModalPedidos(pedidos) {
     const tbody = document.getElementById('modal-pedidos-body');
     if (!pedidos.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-center text-xs text-[#aaa]">Sin pedidos emitidos.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="padding: 24px; text-align: center; color: var(--ds-text-mute); font-size: 12px;">Sin pedidos emitidos.</td></tr>';
         return;
     }
     const ESTADO_LABEL = {ABIERTO: 'Abierto', RECIBIDO_PARCIAL: 'Recib. parcial', CERRADO: 'Cerrado'};
-    const ESTADO_CLS   = {ABIERTO: 'bg-amber-100 text-amber-800', RECIBIDO_PARCIAL: 'bg-sky-100 text-sky-800', CERRADO: 'bg-emerald-100 text-emerald-800'};
-    // Color por sigla (mismo set que en /compras/armar)
-    const SIGLA_CLS = {
-        'Kel': 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
-        '20J': 'bg-sky-100 text-sky-700 border-sky-200',
+    // badges con tokens del DS
+    const ESTADO_CLS = {
+        ABIERTO: 'badge-warn',
+        RECIBIDO_PARCIAL: 'badge-info',
+        CERRADO: 'badge-mint',
     };
+    // Color por sigla (mismo set que en /compras/armar)
+    const SIGLA_STYLE = {
+        'Kel': 'background: rgba(217,70,239,.15); color: #F0ABFC; border: 1px solid rgba(217,70,239,.3);',
+        '20J': 'background: rgba(59,130,246,.15); color: #93C5FD; border: 1px solid rgba(59,130,246,.3);',
+    };
+    const SIGLA_DEFAULT = 'background: rgba(139,92,246,.15); color: #C4B5FD; border: 1px solid rgba(139,92,246,.3);';
     // Resaltar visualmente el "armado event" (mismo minuto) con un separador.
     let prevGrupo = null;
     tbody.innerHTML = pedidos.map(p => {
+        const ok = 'color: var(--ds-mint);';
+        const mute = 'color: var(--ds-text-mute);';
         const pasos = [
-            `<span class="text-emerald-600" title="Emitido ${p.fecha}">✓ Emitido</span>`,
-            p.recibido_por ? `<span class="text-emerald-600" title="Recibido por ${p.recibido_por}">✓ Recibido</span>` : `<span class="text-[#ccc]">· Recepción</span>`,
-            p.cargado_por  ? `<span class="text-emerald-600" title="Cargado por ${p.cargado_por}">✓ Cargado</span>`  : `<span class="text-[#ccc]">· Carga Obs.</span>`,
-            p.tiene_factura ? `<span class="text-emerald-600">✓ Factura</span>` : `<span class="text-[#ccc]">· Factura</span>`,
-        ].join('<span class="text-[#ddd] mx-0.5">›</span>');
-        const estadoCls = ESTADO_CLS[p.estado] || 'bg-[#f0f0f0] text-[#555]';
+            `<span style="${ok}" title="Emitido ${p.fecha}">✓ Emitido</span>`,
+            p.recibido_por ? `<span style="${ok}" title="Recibido por ${p.recibido_por}">✓ Recibido</span>` : `<span style="${mute}">· Recepción</span>`,
+            p.cargado_por  ? `<span style="${ok}" title="Cargado por ${p.cargado_por}">✓ Cargado</span>`  : `<span style="${mute}">· Carga Obs.</span>`,
+            p.tiene_factura ? `<span style="${ok}">✓ Factura</span>` : `<span style="${mute}">· Factura</span>`,
+        ].join(`<span style="${mute} margin: 0 4px;">›</span>`);
+        const estadoCls = ESTADO_CLS[p.estado] || 'badge-mute';
         const estadoLbl = ESTADO_LABEL[p.estado] || p.estado;
-        const siglaCls = SIGLA_CLS[p.drogueria_sigla] || 'bg-violet-100 text-violet-700 border-violet-200';
-        const drogCell = `<span class="text-[10px] ${siglaCls} border px-1.5 py-0.5 rounded font-bold mr-1">${p.drogueria_sigla || '?'}</span><span class="text-xs text-[#555]">${p.drogueria_nombre || '—'}</span>`;
-        const acciones = `<a href="/pedidos-emitidos/${p.id}" class="text-sm text-sky-600 hover:underline font-semibold">Ver →</a>`
-            + (ES_ADMIN ? ` <button type="button" onclick="borrarPedido(${p.id}, this)" class="text-sm text-rose-500 hover:text-rose-700 ml-3">Borrar</button>` : '');
+        const siglaStyle = SIGLA_STYLE[p.drogueria_sigla] || SIGLA_DEFAULT;
+        const drogCell = `<span class="badge" style="${siglaStyle} font-size: 10px; font-weight: 700; margin-right: 6px;">${p.drogueria_sigla || '?'}</span><span style="font-size: 12px; color: var(--ds-text-soft);">${p.drogueria_nombre || '—'}</span>`;
+        const acciones = `<a href="/pedidos-emitidos/${p.id}" style="font-size: 13px; color: var(--ds-mint); font-weight: 600; text-decoration: none;">Ver →</a>`
+            + (ES_ADMIN ? ` <button type="button" onclick="borrarPedido(${p.id}, this)" style="font-size: 13px; color: var(--ds-danger); background: none; border: 0; cursor: pointer; margin-left: 12px;">Borrar</button>` : '');
         // Línea separadora cuando cambia el "grupo" (minuto del armado).
         const sep = (prevGrupo !== null && p.fecha_grupo !== prevGrupo)
-            ? '<tr><td colspan="6" class="border-t-2 border-surface-border"></td></tr>' : '';
+            ? `<tr><td colspan="6" style="border-top: 2px solid var(--ds-line-2); padding: 0;"></td></tr>` : '';
         prevGrupo = p.fecha_grupo;
-        return sep + `<tr class="border-b border-surface-border hover:bg-[#fafafa]">
-            <td class="px-4 py-3 font-mono text-sm font-semibold text-[#555]">#${p.id}</td>
-            <td class="px-4 py-3 whitespace-nowrap">${drogCell}</td>
-            <td class="px-4 py-3 text-sm text-[#555] whitespace-nowrap">${p.fecha}</td>
-            <td class="px-4 py-3 text-sm flex flex-wrap gap-1.5 items-center">${pasos}</td>
-            <td class="px-4 py-3"><span class="text-xs font-semibold px-2 py-1 rounded ${estadoCls}">${estadoLbl}</span></td>
-            <td class="px-4 py-3 whitespace-nowrap">${acciones}</td>
+        return sep + `<tr class="cd-pedidos-row">
+            <td style="font-family: ui-monospace, Consolas, monospace; font-weight: 600; color: var(--ds-text-soft);">#${p.id}</td>
+            <td style="white-space: nowrap;">${drogCell}</td>
+            <td style="font-size: 12px; color: var(--ds-text-soft); white-space: nowrap;">${p.fecha}</td>
+            <td><div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px;">${pasos}</div></td>
+            <td><span class="badge ${estadoCls} badge-pill">${estadoLbl}</span></td>
+            <td style="white-space: nowrap;">${acciones}</td>
         </tr>`;
     }).join('');
 }
@@ -471,24 +605,23 @@ async function borrarPedido(id, btn) {
 </script>
 
 <!-- Modal pedidos por droguería -->
-<div id="modal-pedidos" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+<div id="modal-pedidos" class="hidden fixed inset-0 z-50 flex items-center justify-center cd-modal-back"
      onclick="if(event.target===this)this.classList.add('hidden')">
-    <div class="bg-white rounded-xl shadow-xl w-full max-w-4xl mx-4 overflow-hidden">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-surface-border bg-[#fafafa]">
-            <h3 class="text-base font-bold text-[#1e1e1e]">📋 Pedidos emitidos · <span id="modal-pedidos-titulo" class="text-[#777] font-normal"></span></h3>
-            <button onclick="document.getElementById('modal-pedidos').classList.add('hidden')"
-                    class="text-[#aaa] hover:text-[#555] text-xl font-bold leading-none">✕</button>
+    <div class="cd-modal-card w-full max-w-4xl mx-4 overflow-hidden">
+        <div class="cd-modal-head">
+            <h3>📋 Pedidos emitidos · <span id="modal-pedidos-titulo" style="color: var(--ds-text-mute); font-weight: 400;"></span></h3>
+            <button onclick="document.getElementById('modal-pedidos').classList.add('hidden')" class="cd-modal-close">✕</button>
         </div>
-        <div class="overflow-auto max-h-[75vh]">
-            <table class="w-full">
-                <thead class="bg-[#f5f5f5] sticky top-0">
+        <div style="overflow: auto; max-height: 75vh;">
+            <table class="cd-pedidos-table" style="width: 100%; border-collapse: collapse;">
+                <thead style="position: sticky; top: 0; z-index: 1;">
                     <tr>
-                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">#</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Droguería</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Fecha</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Pasos</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Estado</th>
-                        <th class="px-4 py-3 text-left text-xs uppercase font-semibold text-[#6f6f6f]">Acciones</th>
+                        <th>#</th>
+                        <th>Droguería</th>
+                        <th>Fecha</th>
+                        <th>Pasos</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
                     </tr>
                 </thead>
                 <tbody id="modal-pedidos-body"></tbody>
