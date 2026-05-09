@@ -1695,9 +1695,40 @@ def init_app(app):
                 'M': float(cfg.rot_media_tol) if cfg else 0.0,
                 'B': float(cfg.rot_baja_tol)  if cfg else 0.0,
             }
+            # Pre-cargar descripciones de unidades equivalentes:
+            # - Locales (Producto.codigo_barra) → Producto.descripcion + codigo_alfabeta
+            # - Observer-only (OBS:N) → ObsProducto.descripcion + codigo_alfabeta
+            mp_rows = session.query(ModuloPack).order_by(ModuloPack.ean_pack).all()
+            ean_unidad_locales = {mp.ean_unidad for mp in mp_rows if mp.ean_unidad and not mp.ean_unidad.startswith('OBS:')}
+            ean_unidad_obs_ids = []
+            for mp in mp_rows:
+                if mp.ean_unidad and mp.ean_unidad.startswith('OBS:'):
+                    try:
+                        ean_unidad_obs_ids.append(int(mp.ean_unidad[4:]))
+                    except (ValueError, TypeError):
+                        pass
+            unit_desc_by_ean = {}
+            unit_alfa_by_ean = {}
+            if ean_unidad_locales:
+                for cb, desc, alfa in session.query(
+                    database.Producto.codigo_barra, database.Producto.descripcion,
+                    database.Producto.codigo_alfabeta
+                ).filter(database.Producto.codigo_barra.in_(ean_unidad_locales)).all():
+                    unit_desc_by_ean[cb] = desc or ''
+                    unit_alfa_by_ean[cb] = alfa or ''
+            if ean_unidad_obs_ids:
+                for oid, desc, alfa in session.query(
+                    database.ObsProducto.observer_id, database.ObsProducto.descripcion,
+                    database.ObsProducto.codigo_alfabeta
+                ).filter(database.ObsProducto.observer_id.in_(ean_unidad_obs_ids)).all():
+                    unit_desc_by_ean[f'OBS:{oid}'] = desc or ''
+                    unit_alfa_by_ean[f'OBS:{oid}'] = str(alfa or '')
+
             packs = [{'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
-                      'cantidad': mp.cantidad, 'descripcion': mp.descripcion or ''}
-                     for mp in session.query(ModuloPack).order_by(ModuloPack.ean_pack).all()]
+                      'cantidad': mp.cantidad, 'descripcion': mp.descripcion or '',
+                      'desc_unidad': unit_desc_by_ean.get(mp.ean_unidad, ''),
+                      'codigo_alfabeta_unidad': unit_alfa_by_ean.get(mp.ean_unidad, '')}
+                     for mp in mp_rows]
             from datetime import datetime as _dt
             if not pedido.analizado_en:
                 pedido.analizado_en = now_ar()

@@ -164,6 +164,14 @@
                         class="hidden flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
                     Procesar
                 </button>
+                <!-- Ocultar módulos vacíos (visible solo tras procesar) -->
+                <label id="lbl-hide-empty" class="hidden flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none"
+                       title="Oculta módulos cuyos productos no aplican al pedido">
+                    <input type="checkbox" id="chk-hide-empty" checked
+                           onchange="aplicarOcultarVacios()"
+                           class="rounded border-[#ccc]">
+                    Ocultar vacíos
+                </label>
                 <!-- Confirmar (hidden until processed) -->
                 <button id="btn-confirmar-modulos" onclick="confirmarModulos()"
                         class="hidden flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
@@ -207,7 +215,7 @@
         <!-- Resumen por producto -->
         <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4 overflow-x-auto">
             <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen por producto</p>
-            <table class="w-full text-xs border-collapse" style="min-width:800px">
+            <table class="w-full text-xs border-collapse" style="min-width:880px">
                 <thead>
                     <tr class="bg-[#f5f0e8] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
                         <th class="text-left px-2 py-1.5" style="min-width:180px">Producto</th>
@@ -217,7 +225,8 @@
                         <th class="text-right px-2 py-1.5 text-emerald-700">Propuesta Total</th>
                         <th class="text-right px-2 py-1.5 text-sky-700">Saldo</th>
                         <th class="text-right px-2 py-1.5 text-[#888]">Tol.%</th>
-                        <th class="text-right px-2 py-1.5 text-rose-700">Precio Total</th>
+                        <th class="text-right px-2 py-1.5 text-rose-700" title="precio_pvp × propuesta total">Importe</th>
+                        <th class="text-right px-2 py-1.5 text-emerald-700" title="Ahorro estimado = pvp × cubierto × desc%">Ahorro</th>
                     </tr>
                 </thead>
                 <tbody id="tbody-resumen-mod"></tbody>
@@ -894,6 +903,46 @@ function mostrarRevisionPacks(candidatos) {
     }
 }
 
+// === Helpers de descuento (Fase 1: visibilidad) =========================
+// PVP del item, resolviendo packs (igual que en procesarModulos).
+function _itemPvp(it) {
+    const pack = MODULO_PACKS[it.ean];
+    const tgt = pack ? pack.ean_unidad : it.ean;
+    return pedidoPvp[tgt] || PRODUCT_PRICES[tgt] || PRODUCT_PRICES[it.ean] || 0;
+}
+// Unidades por slot (con pack si aplica).
+function _itemUps(it) {
+    const pack = MODULO_PACKS[it.ean];
+    return pack ? it.cant * pack.cantidad : it.cant;
+}
+// Descuento promedio del módulo, ponderado por (pvp × unidades por slot × cant).
+function _moduloDescPctPonderado(mod) {
+    let num = 0, den = 0;
+    mod.items.forEach(it => {
+        const peso = _itemPvp(it) * _itemUps(it);
+        num += peso * (it.desc_pct || 0);
+        den += peso;
+    });
+    return den > 0 ? num / den : 0;
+}
+// Ahorro $ estimado del módulo dado prop (cuántas veces se arma).
+// Si no se pasa prop, usa it.propuesta (post-confirmación) o 0.
+function _moduloAhorro(mod, prop) {
+    return mod.items.reduce((acc, it) => {
+        const p = prop != null ? prop : (it.propuesta || 0);
+        return acc + _itemPvp(it) * _itemUps(it) * p * ((it.desc_pct || 0) / 100);
+    }, 0);
+}
+// Color helper por nivel de descuento.
+function _descColorCls(pct) {
+    if (pct >= 15) return 'text-emerald-700 font-semibold';
+    if (pct >= 8)  return 'text-amber-700';
+    return 'text-[#999]';
+}
+function _fmtPesos(n) {
+    return n > 0 ? '$' + Math.round(n).toLocaleString('es-AR') : '<span class="text-[#ccc]">—</span>';
+}
+
 function renderModulosRaw() {
     const body = document.getElementById('modulos-body');
     let html = `<table class="w-full text-xs border-collapse min-w-[1000px]" id="tbl-modulos">
@@ -917,15 +966,35 @@ function renderModulosRaw() {
     </thead>
     <tbody id="tbody-modulos">`;
 
-    modulesData.forEach((mod, mi) => {
+    // Sort: por descuento ponderado desc (más conveniente arriba). Si el sort
+    // del usuario es 'alfa', ordenar por nombre. En ambos casos, modificar
+    // modulesData en place altera la indexación → solo construimos el orden
+    // de render con un mapeo mi→idxOriginal.
+    const sortMode = (window.MOD_SORT_MODE || 'desc');  // 'desc' | 'alfa'
+    const _idxOrden = modulesData.map((_, i) => i);
+    if (sortMode === 'alfa') {
+        _idxOrden.sort((a, b) => (modulesData[a].nombre || '')
+            .localeCompare(modulesData[b].nombre || '', 'es', {sensitivity: 'base'}));
+    } else {
+        _idxOrden.sort((a, b) => _moduloDescPctPonderado(modulesData[b]) -
+                                 _moduloDescPctPonderado(modulesData[a]));
+    }
+
+    _idxOrden.forEach(mi => {
+        const mod = modulesData[mi];
         const modId = `mod-${mi}`;
+        const descProm = _moduloDescPctPonderado(mod);
+        const descBadge = descProm > 0
+            ? `<span class="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] ${_descColorCls(descProm)} bg-white/60 border border-current/20">${descProm.toFixed(1)}% prom.</span>`
+            : '';
         html += `<tr class="mod-header-row">
             <td class="px-2 py-1.5">
                 <input type="checkbox" id="chk-${modId}" checked
                        onchange="toggleModule(${mi}, this.checked)">
             </td>
             <td colspan="13" class="px-2 py-1.5">
-                <label for="chk-${modId}" class="cursor-pointer">${mod.nombre}</label>
+                <label for="chk-${modId}" class="cursor-pointer font-semibold">${mod.nombre}</label>
+                ${descBadge}
                 <span class="ml-2 text-[10px] text-amber-600 font-normal" id="sug-${mi}"></span>
             </td>
         </tr>`;
@@ -933,8 +1002,9 @@ function renderModulosRaw() {
             const _pack = MODULO_PACKS[it.ean];
             const esPack = !!_pack;
             const unidadesPorSlot = _pack ? it.cant * _pack.cantidad : it.cant;
-            const cantPedida = _pack ? (pedidoQty[_pack.ean_unidad] ?? 0) : (pedidoQty[it.ean] ?? 0);
-            const rot = pedidoRot[_pack ? _pack.ean_unidad : it.ean] || {};
+            const eanLookup = _pack ? _pack.ean_unidad : it.ean;
+            const cantPedida = pedidoQty[eanLookup] ?? 0;
+            const rot = pedidoRot[eanLookup] || {};
             const rotBadge = rotBadgeHtml(rot.rotacion, rot.avg);
             const packBadge = esPack
                 ? `<span class="text-emerald-600 font-bold" title="Pack: ${_pack.cantidad} unid./${it.cant}">✓</span>`
@@ -942,14 +1012,26 @@ function renderModulosRaw() {
             const unModCell = esPack
                 ? `<span class="font-semibold text-emerald-700">${unidadesPorSlot}</span>`
                 : `<span class="text-[#999]">${unidadesPorSlot}</span>`;
+            // Para packs, mostrar la equivalencia debajo del nombre del pack
+            // (el chart, cant.pedida y rot ya viven en el EAN unidad).
+            // Descripción: pedidoNom > _pack.desc_unidad (backend) > '(sin descripción)'.
+            // Código alfabeta de la unidad si está disponible.
+            let equivLine = '';
+            if (esPack) {
+                const _eu = _pack.ean_unidad;
+                const _descU = pedidoNom[_eu] || _pack.desc_unidad || '(sin descripción)';
+                const _alfaU = _pack.codigo_alfabeta_unidad
+                    ? `<span class="text-[10px] text-emerald-700 font-semibold ml-1">[${_pack.codigo_alfabeta_unidad}]</span>` : '';
+                equivLine = `<div class="text-[10px] text-[#888] mt-0.5 ml-1">↳ <span class="font-mono text-[10px] text-[#aaa]">${_eu}</span>${_alfaU} · ${_descU}</div>`;
+            }
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
-                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(it.ean)}${ALFA_BTN(it.descripcion)}${it.descripcion}</td>
+                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(eanLookup)}${ALFA_BTN(it.descripcion)}${it.descripcion}${equivLine}</td>
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
                 <td class="px-2 text-right">${unModCell}</td>
-                <td class="px-2 text-right text-[#999]">${it.desc_pct}%</td>
+                <td class="px-2 text-right ${_descColorCls(it.desc_pct || 0)}">${it.desc_pct}%</td>
                 <td class="px-2 text-right font-medium text-amber-700" id="cp-${mi}-${ii}">${cantPedida > 0 ? cantPedida : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right" id="rot-${mi}-${ii}">${rotBadge}</td>
                 <td class="px-2 text-right font-bold text-brand" id="cc-${mi}-${ii}">—</td>
@@ -961,7 +1043,7 @@ function renderModulosRaw() {
         });
         html += `<tr class="mod-footer-row" id="mod-footer-${mi}">
             <td></td>
-            <td colspan="10" class="px-2 py-2 text-right text-[11px]">
+            <td colspan="9" class="px-2 py-2 text-right text-[11px]">
                 <span class="text-[#888]">Módulos que soporta cada ítem:</span>
                 <span class="ml-1 font-semibold text-amber-700" id="sug-${mi}">—</span>
                 <span class="ml-3 text-[#888]">·</span>
@@ -973,6 +1055,9 @@ function renderModulosRaw() {
                        oninput="recalcModuloAll(${mi})"
                        style="width:64px;font-weight:700;color:#EAB308;font-size:13px">
             </td>
+            <td class="px-2 py-2 text-right text-[11px] text-emerald-700 font-semibold"
+                title="Ahorro estimado = Σ pvp × unidades cubiertas × desc%"
+                id="ahorro-${mi}">—</td>
         </tr>`;
     });
 
@@ -1016,7 +1101,39 @@ function procesarModulos() {
     show('btn-confirmar-modulos');
     show('btn-export-mod-pdf');
     show('btn-export-mod-xlsx');
+    show('lbl-hide-empty');
     document.getElementById('modulos-status').textContent = 'Procesado — revisá propuestas y confirmá';
+    aplicarOcultarVacios();
+}
+
+// Fase 2: oculta módulos donde todos los items tienen cant_calculada === 0.
+function aplicarOcultarVacios() {
+    const chk = document.getElementById('chk-hide-empty');
+    const ocultar = chk ? chk.checked : true;
+    let nOcultos = 0;
+    modulesData.forEach((mod, mi) => {
+        const vacio = mod.items.every(it => (it.cant_calculada ?? 0) === 0);
+        const display = (ocultar && vacio) ? 'none' : '';
+        if (ocultar && vacio) nOcultos++;
+        // Header del módulo, filas de items, footer con propuesta + ahorro.
+        const tbl = document.getElementById('tbl-modulos');
+        if (!tbl) return;
+        const headerChk = document.getElementById(`chk-mod-${mi}`);
+        if (headerChk) {
+            const headerRow = headerChk.closest('tr');
+            if (headerRow) headerRow.style.display = display;
+        }
+        mod.items.forEach((_, ii) => {
+            const row = document.getElementById(`row-${mi}-${ii}`);
+            if (row) row.style.display = display;
+        });
+        const footer = document.getElementById(`mod-footer-${mi}`);
+        if (footer) footer.style.display = display;
+    });
+    const status = document.getElementById('modulos-status');
+    if (status && ocultar && nOcultos > 0) {
+        status.textContent = `Procesado — ${nOcultos} vacíos ocultos · revisá y confirmá`;
+    }
 }
 
 function recalcModuloAll(mi) {
@@ -1028,6 +1145,15 @@ function recalcModuloAll(mi) {
         const _ups = it._unidadesPorSlot ?? it.cant;
         it.propuesta = prop;
         it.saldo = (it.cant_pedida ?? 0) - prop * _ups;
+    });
+    // Ahorro $ del módulo (Fase 1: visibilidad de descuento).
+    const ahorroEl = document.getElementById(`ahorro-${mi}`);
+    if (ahorroEl) {
+        const ah = _moduloAhorro(modulesData[mi], prop);
+        ahorroEl.innerHTML = ah > 0 ? _fmtPesos(ah) : '<span class="text-[#ccc]">—</span>';
+    }
+    modulesData[mi].items.forEach((it, ii) => {
+        const _ups = it._unidadesPorSlot ?? it.cant;
         const dispEl = document.getElementById(`prop-disp-${mi}-${ii}`);
         if (dispEl) {
             const unidCub = prop * _ups;
@@ -1071,12 +1197,17 @@ function renderResumenModulos() {
                     rot:         pedidoRot[ean] || {},
                     pvp:         pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0,
                     cubierto:    0,
+                    ahorro:      0,
                 };
             }
             byEan[ean].cubierto += cubierto;
+            // Ahorro estimado = pvp × unidades cubiertas × desc% (Fase 1).
+            byEan[ean].ahorro += byEan[ean].pvp * cubierto * ((it.desc_pct || 0) / 100);
         });
     });
-    const rows = Object.entries(byEan);
+    const rows = Object.entries(byEan).sort((a, b) =>
+        (a[1].descripcion || '').localeCompare(b[1].descripcion || '', 'es', {sensitivity: 'base'})
+    );
     if (rows.length === 0) { wrap.classList.add('hidden'); return; }
     const fmt = n => n.toLocaleString('es-AR', {maximumFractionDigits: 0});
     let html = '';
@@ -1095,6 +1226,7 @@ function renderResumenModulos() {
             <td class="px-2 py-1.5 text-right ${saldoCls}">${saldo}</td>
             <td class="px-2 py-1.5 text-right"><span class="${pctCls}">${pct}%</span></td>
             <td class="px-2 py-1.5 text-right text-rose-700 font-medium">${importe > 0 ? '$' + fmt(importe) : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right text-emerald-700 font-semibold">${d.ahorro > 0 ? '$' + fmt(d.ahorro) : '<span class="text-[#ccc]">—</span>'}</td>
         </tr>`;
     });
     tbody.innerHTML = html;
@@ -1220,6 +1352,10 @@ function procesarOfertas() {
             nodealResult.push(entry);
         }
     });
+    // A→Z por nombre (regla global del proyecto).
+    const _byName = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', {sensitivity: 'base'});
+    offResult.sort(_byName);
+    nodealResult.sort(_byName);
     renderOfertasTable();
     show('btn-export-off-pdf');
     show('btn-export-off-xlsx');
@@ -1806,6 +1942,13 @@ function procesarOfertasConMinimo() {
             });
             offMinEans.add(o.ean);
         });
+    });
+
+    // A→Z por nombre dentro de cada grupo (regla global del proyecto).
+    offMinResult.sort((a, b) => {
+        const ga = (a.grupo_id ?? 0), gb = (b.grupo_id ?? 0);
+        if (ga !== gb) return ga - gb;
+        return (a.nombre || '').localeCompare(b.nombre || '', 'es', {sensitivity: 'base'});
     });
 
     renderOfertasConMinimoTable();
