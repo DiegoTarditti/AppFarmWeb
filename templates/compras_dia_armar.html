@@ -2,141 +2,294 @@
 {% set nav_active = "compras_dia" %}
 {% set hide_sidebar = True %}
 {% block title %}Armar pedido{% if prov %} — {{ prov.razon_social }}{% endif %}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 
 {% block extra_head %}
 <style>
-    /* Zebra por JS — aplicarZebra() la recalcula tras cada filtro. */
-    tbody tr.producto-row.zebra-even { background-color: #EEF6F1; }
-    tbody tr.producto-row.zebra-even.bg-amber-50 { background-color: #FEF3C0; }
-    /* Forzar la cadena html→body→main column a altura fija para que el
-       .scroll-wrapper sea el único scroll y el sticky del gráfico se ancle
-       a su tope (sino el body scrollea y sticky deja de funcionar). */
+    /* === Estructura página === */
     html, body { height: 100%; overflow: hidden; }
     body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
-    /* Panel gráfico: por default scrollea con la página. Cuando hay un
-       producto seleccionado (clase .chart-active), pasa a sticky top:0
-       y el thead se corre debajo usando --chart-h. */
-    #panel-grafico { transition: max-height 0.18s ease-out; z-index: 30; }
-    #panel-grafico.chart-active { position: sticky; top: 0; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
+
+    /* === Panel gráfico sticky (cuando hay producto seleccionado) === */
+    #panel-grafico {
+        transition: max-height 0.18s ease-out; z-index: 30;
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+    }
+    #panel-grafico.chart-active {
+        position: sticky; top: 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
     #panel-grafico.colapsado #grafico-body { display: none; }
     #panel-grafico.colapsado { padding-top: 6px; padding-bottom: 6px; }
     table.tabla-armar thead { position: sticky; top: 0; z-index: 20; }
-    /* Cuando el panel está sticky (chart-active), el thead se ofsetea
-       debajo usando la variable --chart-h que setea _ajustarOffsetThead(). */
     .scroll-wrapper:has(#panel-grafico.chart-active) table.tabla-armar thead {
         top: var(--chart-h, 360px);
     }
-    /* En pantallas chicas, gráficos más bajos por default */
     @media (max-width: 1280px) {
         #dual-grafico-panel .chart-canvas-wrap,
         #dual-grafico-panel > div > div > div > div.relative { height: 180px !important; }
     }
-    /* El componente trae su propio título — ocultarlo (el nuestro está en #panel-grafico) */
     #dual-grafico-panel > .flex.items-center.justify-between { display: none; }
-    /* El componente trae su propia tarjeta exterior — aplanarla */
     #dual-grafico-panel { background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; margin: 0; }
+
+    /* === Top bar custom === */
+    .ar-topbar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 24px;
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .ar-topbar h1 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+    }
+    .ar-topbar .meta { font-size: 11px; color: var(--ds-text-mute); margin-left: auto; }
+    .ar-topbar .meta b { color: var(--ds-text-soft); }
+
+    /* Pill genérica de cierre / sync */
+    .ar-pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 10px; border-radius: var(--ds-r-sm);
+        font-size: 11px; border: 1px solid;
+    }
+    .ar-pill.ok { background: rgba(95,230,188,.08); border-color: rgba(95,230,188,.3); color: var(--ds-mint); }
+    .ar-pill.warn { background: rgba(245,158,11,.08); border-color: rgba(245,158,11,.3); color: var(--ds-warn); }
+    .ar-pill.danger { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.3); color: var(--ds-danger); }
+    .ar-pill .sync-btn {
+        margin-left: 4px; font-weight: 700; padding: 3px 10px;
+        background: rgba(0,0,0,.2); border: 1px solid currentColor;
+        border-radius: 4px; cursor: pointer; color: inherit;
+        transition: opacity .15s;
+    }
+    .ar-pill .sync-btn:hover { opacity: .75; }
+
+    /* === Banners de oferta-drog (3 condiciones) === */
+    .ar-banner {
+        padding: 10px 24px;
+        border-bottom: 2px solid;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .ar-banner.banner-mint { background: rgba(95,230,188,.08); border-bottom-color: rgba(95,230,188,.3); color: var(--ds-mint); }
+    .ar-banner.banner-warn { background: rgba(245,158,11,.08); border-bottom-color: rgba(245,158,11,.3); color: var(--ds-warn); }
+    .ar-banner.banner-danger { background: rgba(239,68,68,.08); border-bottom-color: rgba(239,68,68,.3); color: var(--ds-danger); }
+    .ar-banner.banner-mute { background: rgba(0,0,0,.18); border-bottom: 1px solid var(--ds-line); color: var(--ds-text-mute); padding: 8px 24px; font-size: 12px; }
+    .ar-banner .b-strong { font-weight: 700; }
+    .ar-banner .b-soft { color: var(--ds-text-soft); font-size: 12px; }
+
+    /* === Filter bar === */
+    .ar-filter-bar {
+        background: rgba(95,230,188,.05);
+        border-bottom: 1px solid var(--ds-line-2);
+        padding: 8px 24px;
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .ar-filter-bar input[type="text"], .ar-filter-bar select {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line-2);
+        color: var(--ds-text);
+        border-radius: 4px;
+        padding: 5px 10px;
+        font-size: 13px;
+        font-family: inherit;
+    }
+    .ar-filter-bar input[type="text"]:focus, .ar-filter-bar select:focus {
+        outline: none; border-color: var(--ds-mint);
+        box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+    }
+    .ar-filter-bar input[type="text"]::placeholder { color: var(--ds-text-mute); }
+    .ar-filter-bar label { color: var(--ds-text-soft); }
+    .ar-filter-bar .filt-count, .ar-filter-bar .sug-count { color: var(--ds-text-mute); font-size: 11px; }
+
+    /* === Panel gráfico header === */
+    .grafico-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 8px; gap: 8px;
+    }
+    .grafico-header .titulo {
+        font-size: 13px; font-weight: 600; color: var(--ds-text);
+        flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .grafico-toggle-btn {
+        font-size: 11px; padding: 4px 10px; border-radius: 4px;
+        background: rgba(255,255,255,.04);
+        border: 1px solid var(--ds-line-2); color: var(--ds-text-soft);
+        cursor: pointer; transition: all .15s; flex-shrink: 0;
+    }
+    .grafico-toggle-btn:hover { background: rgba(95,230,188,.08); color: var(--ds-mint); border-color: var(--ds-mint); }
+
+    /* === Tabla principal — estilo dark con celdas legibles === */
+    .ar-table-wrap {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        overflow: hidden;
+    }
+    .tabla-armar { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .tabla-armar thead {
+        background: rgba(0,0,0,.25) !important;
+    }
+    .tabla-armar thead th {
+        background: rgba(0,0,0,.25) !important;
+        padding: 8px 12px;
+        font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--ds-text-mute) !important;
+        border-color: var(--ds-line) !important;
+        text-align: left;
+    }
+    .tabla-armar tbody tr.producto-row {
+        border-top: 1px solid var(--ds-line);
+        color: var(--ds-text);
+        cursor: pointer;
+    }
+    .tabla-armar tbody tr.producto-row:hover { background: rgba(95,230,188,.06) !important; }
+    .tabla-armar tbody tr.producto-row td { padding: 6px 12px; }
+    /* Reescribimos los grises hardcoded para que sean legibles sobre dark */
+    .tabla-armar tbody td.text-\[\#666\],
+    .tabla-armar tbody td .text-\[\#666\] { color: var(--ds-text-soft) !important; }
+    .tabla-armar tbody td.text-\[\#888\],
+    .tabla-armar tbody td .text-\[\#888\] { color: var(--ds-text-mute) !important; }
+    .tabla-armar tbody td.text-\[\#999\],
+    .tabla-armar tbody td .text-\[\#999\] { color: var(--ds-text-mute) !important; }
+    .tabla-armar tbody td.text-\[\#bbb\],
+    .tabla-armar tbody td .text-\[\#bbb\] { color: var(--ds-text-mute) !important; opacity: .7; }
+    /* Filas con clase de estado (otra drog → amber background) */
+    .tabla-armar tbody tr.producto-row.bg-amber-50 {
+        background: rgba(245,158,11,.10) !important;
+    }
+    /* Zebra: filas pares ligeramente más claras (recalc en JS) */
+    .tabla-armar tbody tr.producto-row.zebra-even { background-color: rgba(95,230,188,.025); }
+    .tabla-armar tbody tr.producto-row.zebra-even.bg-amber-50 { background-color: rgba(245,158,11,.13) !important; }
+
+    /* Inputs editables de "A pedir" dentro de la tabla */
+    .tabla-armar input[type="number"] {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line-2);
+        color: var(--ds-text);
+        border-radius: 4px;
+        padding: 3px 6px;
+        font-size: 12px;
+        font-family: ui-monospace, Consolas, monospace;
+    }
+    .tabla-armar input[type="number"]:focus {
+        outline: none; border-color: var(--ds-mint);
+        box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+    }
+
+    /* Banner pendientes anteriores (NO_VINO) */
+    .ar-pendientes {
+        background: rgba(239,68,68,.08);
+        border-bottom: 1px solid rgba(239,68,68,.25);
+        padding: 10px 24px;
+    }
+    .ar-pendientes .titulo { font-size: 13px; font-weight: 700; color: var(--ds-danger); margin-bottom: 8px; }
+    .ar-pendientes .pend-btn {
+        font-size: 12px;
+        background: rgba(0,0,0,.18);
+        border: 1px solid rgba(239,68,68,.3);
+        color: var(--ds-danger);
+        padding: 4px 10px; border-radius: 4px;
+        cursor: pointer; transition: all .15s;
+    }
+    .ar-pendientes .pend-btn:hover { background: rgba(239,68,68,.12); }
+    .ar-pendientes .pend-btn span.lab { color: var(--ds-text-mute); }
 </style>
 {% endblock %}
 
 {% block main %}
-<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-4 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">📦 Armar pedido{% if prov %} — <span class="text-amber-700">{{ prov.razon_social }}</span>{% else %} — <span class="text-fuchsia-700">Multi-droguería</span>{% endif %}</h1>
+<div class="ar-topbar">
+    <h1>📦 Armar pedido{% if prov %} — <span style="color: var(--ds-warn);">{{ prov.razon_social }}</span>{% else %} — <span style="color: #F0ABFC;">Multi-droguería</span>{% endif %}</h1>
     {% if cierre %}
-    <span class="text-xs bg-emerald-50 border border-emerald-300 px-2 py-1 rounded">
-        Próximo cierre: <span class="font-bold">{{ cierre.hora_str }}</span> hs
+    <span class="ar-pill ok">
+        Próximo cierre: <span style="font-weight: 700;">{{ cierre.hora_str }}</span> hs
     </span>
     {% endif %}
 
     {# Último sync de stock + botón sincronizar ahora #}
-    <span id="last-sync-info" class="text-xs flex items-center gap-1.5
-        {% if last_sync_min is not none and last_sync_min < 90 %}bg-emerald-50 border-emerald-300 text-emerald-800
-        {% elif last_sync_min is not none and last_sync_min < 360 %}bg-amber-50 border-amber-300 text-amber-800
-        {% else %}bg-rose-50 border-rose-300 text-rose-800{% endif %}
-        border px-2 py-1 rounded"
+    <span id="last-sync-info"
+          class="ar-pill {% if last_sync_min is not none and last_sync_min < 90 %}ok{% elif last_sync_min is not none and last_sync_min < 360 %}warn{% else %}danger{% endif %}"
           title="{% if last_sync_stock %}Última sincronización exitosa de stock vs ObServer.{% else %}No hay sync registrado.{% endif %}">
         <span>🔄</span>
         {% if last_sync_stock %}
         <span>Sync stock: <b>{{ last_sync_stock.strftime('%d/%m %H:%M') }}</b>
-            <span class="text-[10px] opacity-70">(hace
+            <span style="font-size:10px; opacity: .75;">(hace
                 {% if last_sync_min < 60 %}{{ last_sync_min }} min
                 {% elif last_sync_min < 1440 %}{{ (last_sync_min // 60) }} h
                 {% else %}{{ (last_sync_min // 1440) }} d{% endif %})</span></span>
         {% else %}
         <span>Sin sync registrado</span>
         {% endif %}
-        <button type="button" onclick="sincronizarStockAhora(this)"
-                class="ml-1 text-sm bg-white border border-current font-bold px-3 py-1 rounded hover:opacity-70 transition-opacity"
+        <button type="button" onclick="sincronizarStockAhora(this)" class="sync-btn"
                 title="Sincronizar stock con ObServer ahora">
             Sincronizar ahora
         </button>
     </span>
 
-    <span class="text-xs text-[#6f6f6f] ml-auto">
+    <span class="meta">
         {% if prov %}
-        {{ total_items }} candidatos · <span class="text-emerald-700 font-semibold">{{ cubre }} cubiertos</span> · <span class="text-amber-700 font-semibold">{{ pendientes }} para otra drog</span>
+        {{ total_items }} candidatos · <b style="color: var(--ds-mint);">{{ cubre }} cubiertos</b> · <b style="color: var(--ds-warn);">{{ pendientes }} para otra drog</b>
         {% else %}
-        {{ total_items }} candidatos bajo mínimo · <span class="text-fuchsia-700 font-semibold">{{ cubre }} con drog</span> · <span class="text-gray-500 font-semibold">{{ pendientes }} libres</span>
+        {{ total_items }} candidatos bajo mínimo · <b style="color: #F0ABFC;">{{ cubre }} con drog</b> · <b style="color: var(--ds-text-mute);">{{ pendientes }} libres</b>
         {% endif %}
     </span>
-    <a href="{{ url_for('compras_dia') }}" class="text-xs bg-surface border border-surface-border text-[#555] hover:bg-gray-100 px-2.5 py-1 rounded font-medium">← Volver</a>
+    <a href="{{ url_for('compras_dia') }}" class="btn btn-ghost btn-sm">← Volver</a>
 </div>
 
 {# Estado oferta-drog: 3 banners distintos según usar_oferta #}
 {% if oferta_drog_n %}
 {# A. Filtro aplicado — usar_oferta='1' #}
-<div class="bg-emerald-50 border-b-2 border-emerald-300 px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
-    <span class="text-sm font-bold text-emerald-800">🎯 Filtrado por oferta de droguería</span>
-    <span class="text-xs text-emerald-700">
+<div class="ar-banner banner-mint">
+    <span class="b-strong">🎯 Filtrado por oferta de droguería</span>
+    <span class="b-soft">
         Mostrando solo los <b>{{ oferta_drog_n }} producto(s)</b> cargados
         en la oferta activa para <b>{{ oferta_drog_nombre or 'esta droguería' }}</b>.
     </span>
-    <a href="?prov={{ prov.id }}&usar_oferta=0" class="ml-auto text-xs bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100 font-semibold px-2.5 py-1 rounded">
+    <a href="?prov={{ prov.id }}&usar_oferta=0" class="ml-auto btn btn-ghost btn-sm" style="border-color: rgba(95,230,188,.3);">
         Ver todos los productos
     </a>
-    <a href="{{ url_for('ofertas_import_page') }}" class="text-xs text-emerald-700 hover:text-emerald-900 underline">Gestionar ofertas</a>
+    <a href="{{ url_for('ofertas_import_page') }}" style="font-size:12px; color: var(--ds-mint); text-decoration: underline;">Gestionar ofertas</a>
 </div>
 {% elif oferta_disponible_n and prov and not usar_oferta %}
 {# B. Hay oferta cargada pero no decidió todavía — preguntamos #}
-<div class="bg-amber-50 border-b-2 border-amber-300 px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
-    <span class="text-2xl">🎯</span>
+<div class="ar-banner banner-warn">
+    <span style="font-size: 22px;">🎯</span>
     <div class="flex-1 min-w-0">
-        <p class="text-sm font-bold text-amber-900">Esta droguería tiene una oferta activa cargada</p>
-        <p class="text-xs text-amber-800">
+        <p class="b-strong">Esta droguería tiene una oferta activa cargada</p>
+        <p class="b-soft" style="color: var(--ds-text-soft);">
             <b>{{ oferta_disponible_n }} producto(s)</b> en la oferta de
             <b>{{ oferta_nombre_drog or prov.razon_social }}</b>.
             ¿Querés filtrar el armado para ver solo esos productos, o ver el listado completo bajo mínimo?
         </p>
     </div>
-    <a href="?prov={{ prov.id }}&usar_oferta=1"
-       class="text-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded">
+    <a href="?prov={{ prov.id }}&usar_oferta=1" class="btn btn-mint btn-sm">
         ✓ Filtrar por oferta
     </a>
-    <a href="?prov={{ prov.id }}&usar_oferta=0"
-       class="text-sm bg-white border border-amber-400 text-amber-800 hover:bg-amber-100 font-semibold px-3 py-1.5 rounded">
+    <a href="?prov={{ prov.id }}&usar_oferta=0" class="btn btn-ghost btn-sm" style="border-color: rgba(245,158,11,.3); color: var(--ds-warn);">
         Ver todos
     </a>
 </div>
 {% elif oferta_disponible_n and prov and usar_oferta == '0' %}
 {# C. Decidió ver todos — ofrecer volver a filtrar #}
-<div class="bg-[#fafafa] border-b border-surface-border px-4 sm:px-6 py-1.5 flex items-center gap-3 flex-wrap text-xs">
-    <span class="text-[#666]">📋 Hay una oferta cargada con {{ oferta_disponible_n }} productos para esta drog.</span>
-    <a href="?prov={{ prov.id }}&usar_oferta=1" class="text-emerald-700 hover:text-emerald-900 underline font-semibold">
+<div class="ar-banner banner-mute">
+    <span>📋 Hay una oferta cargada con {{ oferta_disponible_n }} productos para esta drog.</span>
+    <a href="?prov={{ prov.id }}&usar_oferta=1" style="color: var(--ds-mint); text-decoration: underline; font-weight: 600;">
         Filtrar por oferta →
     </a>
 </div>
 {% endif %}
 
 {% if pendientes_anteriores %}
-<div class="bg-rose-50 border-b border-rose-200 px-4 sm:px-6 py-2">
-    <p class="text-sm font-bold text-rose-800 mb-2">🔁 {{ pendientes_anteriores | length }} pendientes de pedidos anteriores (NO_VINO)</p>
+<div class="ar-pendientes">
+    <p class="titulo">🔁 {{ pendientes_anteriores | length }} pendientes de pedidos anteriores (NO_VINO)</p>
     <div class="flex flex-wrap gap-2">
         {% for it in pendientes_anteriores %}
         <button type="button"
                 onclick='reagregarPendiente({{ it | tojson }})'
-                class="text-sm bg-white border border-rose-300 text-rose-800 hover:bg-rose-100 px-3 py-1 rounded"
+                class="pend-btn"
                 title="Pedido #{{ it.pedido_id }} — {{ it.pedido_fecha.strftime('%d/%m') }}">
-            <b>{{ it.pendiente }}u</b> · {{ it.desc | truncate(40) }} <span class="text-[#999]">({{ it.lab_nombre }})</span>
+            <b>{{ it.pendiente }}u</b> · {{ it.desc | truncate(40) }} <span class="lab">({{ it.lab_nombre }})</span>
         </button>
         {% endfor %}
     </div>
@@ -147,15 +300,12 @@
    en cada fila del armado (no como banner). Ver columna "Pendientes
    guardados" más abajo. #}
 
-<div class="bg-mint-soft border-b border-mint px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap">
-    <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…"
-           class="bg-white border border-mint rounded px-2 py-1 text-sm w-72">
-    <input type="text" id="filtro-lab" placeholder="Filtrar lab…"
-           class="bg-white border border-mint rounded px-2 py-1 text-sm w-56">
+<div class="ar-filter-bar">
+    <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…" style="width: 280px;">
+    <input type="text" id="filtro-lab" placeholder="Filtrar lab…" style="width: 220px;">
     {% if rubros_disponibles %}
     {# Filtro de rubro server-side: recarga la página con ?rubros=X. #}
-    <select id="filtro-rubro" onchange="cambiarRubro(this.value)"
-            class="bg-white border border-mint rounded px-2 py-1 text-sm">
+    <select id="filtro-rubro" onchange="cambiarRubro(this.value)">
         <option value="all" {% if not rubros_seleccionados %}selected{% endif %}>Todos los rubros</option>
         {% for r in rubros_disponibles %}
         <option value="{{ r.id }}"
@@ -165,11 +315,11 @@
         {% endfor %}
     </select>
     {% endif %}
-    <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
+    <label class="flex items-center gap-1.5 text-xs cursor-pointer">
         <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
         Solo venta libre
     </label>
-    <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer">
+    <label class="flex items-center gap-1.5 text-xs cursor-pointer">
         <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
         Solo con sugerencia (subir/bajar)
     </label>
@@ -177,14 +327,14 @@
     {# En modo single-drog, "otra drog" filtra los labs que NO cubre esta drog
        (van a la cola del próximo prov). En multi-drog ese concepto se reemplaza
        por el chip "Libre" debajo. #}
-    <label class="flex items-center gap-1.5 text-xs text-amber-700 cursor-pointer">
+    <label class="flex items-center gap-1.5 text-xs cursor-pointer" style="color: var(--ds-warn);">
         <input type="checkbox" id="filtro-otra-drog" class="w-3.5 h-3.5" {% if cubre == 0 %}checked{% endif %}>
         Mostrar ⚠ otra drog
     </label>
     {% endif %}
     {% if not prov and drog_label %}
     {% set _siglas_unicas = drog_label.values() | unique | list %}
-    <div class="flex items-start gap-4 text-[11px] text-[#3f6650] border-l border-mint pl-3 ml-1">
+    <div class="flex items-start gap-4 text-[11px]" style="border-left: 1px solid var(--ds-line-2); padding-left: 12px; margin-left: 4px; color: var(--ds-text-soft);">
         {# Columna 1: filtro Drog (checks vertical) #}
         <div class="flex flex-col gap-0.5">
             <span class="font-semibold mb-0.5">Drog:</span>
@@ -194,41 +344,45 @@
                 <span>{{ sig }}</span>
             </label>
             {% endfor %}
-            <label class="flex items-center gap-1 cursor-pointer text-[#888]">
+            <label class="flex items-center gap-1 cursor-pointer" style="color: var(--ds-text-mute);">
                 <input type="checkbox" id="filtro-drog-libre" class="w-3.5 h-3.5" checked>
                 <span>Libre</span>
             </label>
         </div>
-        {# Columna 2: bulk Libres a: (botones vertical, color por sigla) #}
-        {% set _bulk_colors = {
-            'Kel': 'bg-fuchsia-100 hover:bg-fuchsia-200 border-fuchsia-400 text-fuchsia-800',
-            '20J': 'bg-sky-100 hover:bg-sky-200 border-sky-400 text-sky-800',
+        {# Columna 2: bulk Libres a: (botones vertical, color por sigla) — estilos inline con tokens #}
+        {% set _bulk_styles = {
+            'Kel': 'background: rgba(217,70,239,.15); color: #F0ABFC; border: 2px solid rgba(217,70,239,.4);',
+            '20J': 'background: rgba(59,130,246,.15); color: #93C5FD; border: 2px solid rgba(59,130,246,.4);',
         } %}
+        {% set _bulk_default = 'background: rgba(139,92,246,.15); color: #C4B5FD; border: 2px solid rgba(139,92,246,.4);' %}
         <div class="flex flex-col gap-0.5" id="bulk-libres-bar">
             <span class="font-semibold mb-0.5">Libres a:</span>
             {% for drog_id, sig in drog_label.items() %}
             <button type="button"
                     onclick="asignarLibresA({{ drog_id }}, '{{ drog_nombre_full[drog_id] | e }}', '{{ sig }}')"
-                    class="text-[10px] {{ _bulk_colors.get(sig, 'bg-violet-100 hover:bg-violet-200 border-violet-400 text-violet-800') }} border-2 font-bold px-2 py-0.5 rounded text-left shadow-sm">
+                    class="font-bold px-2 py-0.5 rounded text-left"
+                    style="font-size: 10px; {{ _bulk_styles.get(sig, _bulk_default) }}">
                 → {{ sig }}
             </button>
             {% endfor %}
-            <span id="bulk-libres-count" class="text-[10px] text-[#888] mt-0.5"></span>
+            <span id="bulk-libres-count" class="filt-count mt-0.5"></span>
         </div>
     </div>
     {% endif %}
-    <span id="filtro-count" class="text-[11px] text-[#3f6650]"></span>
+    <span id="filtro-count" class="filt-count"></span>
     <span id="contador-sug" class="text-[11px] font-semibold"></span>
     <button type="button" id="btn-orden-sug" onclick="toggleOrdenSug()"
             title="Mover los productos con sugerencia 'subir mín.' arriba"
-            class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-700 hover:bg-rose-50 font-semibold">
+            class="font-semibold"
+            style="font-size: 10px; padding: 3px 10px; border-radius: 4px; background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3); color: var(--ds-danger); cursor: pointer;">
         ▲ Urgentes arriba
     </button>
 
     <div class="relative ml-auto">
         <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
-               class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-72">
-        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-40 w-[420px] max-h-80 overflow-auto"></div>
+               style="width: 280px; border-color: var(--ds-mint) !important; border-width: 2px;">
+        <div id="agregar-results" class="hidden absolute right-0 top-full mt-1 z-40"
+             style="background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: var(--ds-r-md); box-shadow: var(--ds-shadow-lg); width: 420px; max-height: 320px; overflow: auto;"></div>
     </div>
 </div>
 
@@ -236,13 +390,12 @@
 <div class="scroll-wrapper">
 
 <!-- Panel gráfico (scrollea con la página; el sticky es el thead de la tabla) -->
-<div id="panel-grafico" class="bg-white border-b border-surface-border px-4 sm:px-6 py-3 shadow-sm">
-    <div class="flex items-center justify-between mb-2 gap-2">
-        <p id="panel-chart-titulo" class="text-sm font-semibold text-[#1e1e1e] truncate flex-1 min-w-0">
+<div id="panel-grafico" class="px-4 sm:px-6 py-3">
+    <div class="grafico-header">
+        <p id="panel-chart-titulo" class="titulo">
             Seleccioná un producto de la lista para ver el gráfico
         </p>
-        <button type="button" id="btn-toggle-grafico" onclick="toggleGrafico()"
-                class="text-[11px] px-2 py-1 rounded border border-surface-border text-[#6f6f6f] hover:bg-[#f5f5f5] hover:text-[#1e1e1e] transition-colors flex-shrink-0"
+        <button type="button" id="btn-toggle-grafico" onclick="toggleGrafico()" class="grafico-toggle-btn"
                 title="Mostrar/ocultar gráficos para ganar espacio para la tabla">
             <span id="btn-toggle-grafico-label">▾ Ocultar gráfico</span>
         </button>
@@ -253,25 +406,25 @@
 </div>
 
 <div class="px-4 sm:px-6 py-4">
-    <div class="bg-surface rounded-xl border border-surface-border">
-        <table class="w-full text-sm tabla-armar">
-            <thead class="bg-[#f0f0f0]">
+    <div class="ar-table-wrap">
+        <table class="tabla-armar">
+            <thead>
                 <tr>
-                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Producto</th>
-                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">Lab</th>
-                    {% if not prov %}<th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-fuchsia-700">Drog</th>{% endif %}
-                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-[#6f6f6f]">EAN</th>
-                    <th class="px-3 py-2 text-left text-[11px] uppercase font-semibold text-emerald-700">Oferta</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Stock</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Mín</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Ayer</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">Semana</th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-rose-700" title="Productos pendientes en pedidos previos (NO_VINO)">Pend.</th>
-                    <th class="px-3 py-2 text-right text-[11px] uppercase font-semibold text-[#6f6f6f]">A pedir</th>
-                    <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f]">Acciones</th>
+                    <th>Producto</th>
+                    <th>Lab</th>
+                    {% if not prov %}<th style="text-align:center; color: #F0ABFC !important;">Drog</th>{% endif %}
+                    <th>EAN</th>
+                    <th style="color: var(--ds-mint) !important;">Oferta</th>
+                    <th style="text-align:right;">Stock</th>
+                    <th style="text-align:right;">Mín</th>
+                    <th style="text-align:right;">Ayer</th>
+                    <th style="text-align:right;">Semana</th>
+                    <th style="text-align:center; color: #FCA5A5 !important;" title="Productos pendientes en pedidos previos (NO_VINO)">Pend.</th>
+                    <th style="text-align:right;">A pedir</th>
+                    <th style="text-align:center;">Acciones</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-surface-border">
+            <tbody>
                 {% for it in items %}
                 <tr class="{% if not it.cubre_lab %}bg-amber-50{% endif %} hover:bg-emerald-50/50 cursor-pointer producto-row"
                     data-pid="{{ it.pid }}" data-prod-id="{{ it.producto_id_local or '' }}"
