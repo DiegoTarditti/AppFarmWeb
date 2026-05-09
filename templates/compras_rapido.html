@@ -1,12 +1,32 @@
 {% extends "base.html" %}
+{% set nav_active = "compras" %}
 {% block title %}Compra rápida multi-droguería{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 {% block extra_head %}
 <style>
 .dto-cell { cursor: pointer; }
-.dto-cell:hover { background: rgba(124,58,237,0.05); }
+.dto-cell:hover { background: rgba(95,230,188,.06); }
 .opciones-row { display: none; }
 .opciones-row.show { display: table-row; }
-.row-edit-cant { width: 70px; text-align: right; }
+.row-edit-cant {
+    width: 70px; text-align: right;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+}
+.row-edit-cant:focus {
+    outline: none; border-color: var(--ds-mint);
+    box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+}
+/* Detalle "Atajos de teclado" — el dropdown queda dentro del topbar dark
+   gracias a los overrides globales (bg-white → ds-surface). Refinamos el
+   borde + sombra para que destaque sobre el bg dark. */
+details > summary { list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
 </style>
 {% endblock %}
 {% block main %}
