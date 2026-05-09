@@ -2,6 +2,7 @@
 {% set nav_active = "compras" %}
 
 {% block title %}Analizar pedido — {{ pedido.laboratorio }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 
 {% block aside_extra_class %}no-print{% endblock %}
 
@@ -11,27 +12,81 @@
     const PEDIDO_LABORATORIO = {{ pedido.laboratorio | tojson }};
 </script>
 <style>
-    .step-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; }
-    .step-header { background: #f8f8f8; border-bottom: 1px solid #e0e0e0;
-                   border-radius: 12px 12px 0 0; padding: 12px 16px;
-                   display: flex; align-items: center; gap: 10px; }
-    .step-badge { width: 22px; height: 22px; border-radius: 50%; background: #EAB308;
-                  color: #1a1100; font-size: 11px; font-weight: 700;
-                  display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-    .step-badge.done { background: #4ade80; color: #14532d; }
-    .step-badge.waiting { background: #e0e0e0; color: #888; }
-    .mod-header-row { background: #fef9c3; }
-    .mod-header-row td { font-weight: 600; color: #92400e; padding: 6px 8px; }
-    .mod-footer-row { background: #f0fdf4; }
-    .mod-footer-row td { font-size: 11px; color: #166534; padding: 4px 8px; }
-    .data-row td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid #f0f0f0; }
-    .data-row:hover td { background: rgba(0,0,0,0.02); }
-    .saldo-neg { color: #dc2626; font-weight: 600; }
-    .saldo-ok  { color: #16a34a; }
-    input.prop-input { width: 64px; background: #fff; border: 1px solid #d0d0d0;
-                       border-radius: 5px; padding: 2px 6px; text-align: right;
-                       font-size: 12px; color: #1e1e1e; }
-    input.prop-input:focus { outline: none; border-color: #EAB308; }
+    /* Step cards (3 pasos: módulos / ofertas / resumen) — theme-emerald */
+    .step-card {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        overflow: hidden;
+    }
+    .step-header {
+        background: rgba(0,0,0,.18);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 16px;
+        display: flex; align-items: center; gap: 10px;
+        color: var(--ds-text);
+    }
+    .step-badge {
+        width: 22px; height: 22px; border-radius: 50%;
+        background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);
+        color: #fff; font-size: 11px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        box-shadow: var(--ds-glow-orange);
+    }
+    .step-badge.done {
+        background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+        color: var(--ds-bg-deep);
+        box-shadow: 0 4px 12px rgba(16,185,129,.3);
+    }
+    .step-badge.waiting {
+        background: rgba(255,255,255,.08); color: var(--ds-text-mute);
+        box-shadow: none;
+    }
+
+    /* Filas de tablas dentro de los step-cards */
+    .mod-header-row { background: rgba(245,158,11,.10); }
+    .mod-header-row td { font-weight: 600; color: var(--ds-warn); padding: 6px 8px; }
+    .mod-footer-row { background: rgba(95,230,188,.06); }
+    .mod-footer-row td { font-size: 11px; color: var(--ds-mint); padding: 4px 8px; }
+    .data-row td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid var(--ds-line); color: var(--ds-text); }
+    .data-row:hover td { background: rgba(95,230,188,.04); }
+    .saldo-neg { color: var(--ds-danger); font-weight: 600; }
+    .saldo-ok  { color: var(--ds-mint); }
+
+    /* Inputs editables de propuesta — alineados al ds-input */
+    input.prop-input {
+        width: 64px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-sm);
+        padding: 2px 6px; text-align: right;
+        font-size: 12px; color: var(--ds-text);
+    }
+    input.prop-input:focus {
+        outline: none; border-color: var(--ds-mint);
+        box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+    }
+
+    /* Top bar custom de la pantalla — usa tokens, NO la global */
+    .order-topbar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 24px;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .order-topbar h1 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 16px; font-weight: 700; color: var(--ds-text);
+        margin: 0;
+    }
+    .order-topbar .meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px; }
+    .order-topbar .save-status { font-size: 11px; color: var(--ds-text-mute); font-style: italic; }
+    .order-topbar .back-link {
+        font-size: 12px; color: var(--ds-text-soft); text-decoration: none;
+        display: inline-flex; align-items: center; gap: 5px;
+        transition: color .15s;
+    }
+    .order-topbar .back-link:hover { color: var(--ds-mint); }
 </style>
 {% endblock %}
 
@@ -49,45 +104,42 @@
 {% endblock %}
 
 {% block main %}
-    <!-- Top bar -->
-    <div class="bg-surface border-b border-[#111827] px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-4 flex-wrap flex-shrink-0 no-print">
+    <!-- Top bar custom de la pantalla -->
+    <div class="order-topbar no-print">
         <div class="min-w-0 flex-1 sm:flex-initial">
-            <h1 class="text-base font-bold text-[#1e1e1e] truncate">{{ pedido.laboratorio }}</h1>
-            <p class="text-xs text-[#6f6f6f]">{{ pedido.periodo }} · {{ pedido.n_days }}d · {{ pedido.productos | length }} productos</p>
+            <h1 class="truncate">{{ pedido.laboratorio }}</h1>
+            <p class="meta">{{ pedido.periodo }} · {{ pedido.n_days }}d · {{ pedido.productos | length }} productos</p>
         </div>
         <div class="sm:ml-auto flex items-center gap-2 flex-wrap">
-            <span id="save-status" class="text-[11px] text-[#6f6f6f] italic"></span>
-            <button type="button" onclick="saveAnalysisState()"
-                    class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white font-medium px-3 py-1.5 rounded-lg transition-colors"
+            <span id="save-status" class="save-status"></span>
+            <button type="button" onclick="saveAnalysisState()" class="btn btn-mint btn-sm"
                     title="Guardar el estado actual del análisis en la base de datos">
                 💾 Guardar análisis
             </button>
-            <a href="{{ url_for('orders_list') }}"
-               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1 transition-colors">
+            <a href="{{ url_for('orders_list') }}" class="back-link">
                 ← Volver a pedidos
             </a>
         </div>
     </div>
 
     {% if pedido.analisis_json %}
-    <div id="restore-banner" class="bg-violet-50 border-l-4 border-violet-500 rounded-r-lg px-5 py-3 mx-4 mt-4 flex items-center gap-3 no-print">
-        <svg class="w-5 h-5 text-violet-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div id="restore-banner" class="card no-print" style="margin: 16px; padding: 12px 18px; border-color: rgba(139,92,246,.3); background: rgba(139,92,246,.08); display: flex; align-items: center; gap: 12px;">
+        <svg class="w-5 h-5 flex-shrink-0" style="color:#A78BFA;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <div class="flex-1">
-            <p class="text-sm font-semibold text-violet-900">
+            <p style="font-size: 13px; font-weight: 600; color: #C4B5FD;">
                 Hay un análisis guardado del {{ pedido.analisis_guardado_en }}
             </p>
-            <p class="text-xs text-violet-800">
+            <p style="font-size: 11px; color: var(--ds-text-soft); margin-top: 2px;">
                 Podés restaurarlo para seguir editando, o descartarlo y arrancar de cero.
             </p>
         </div>
-        <button type="button" onclick="restoreAnalysisState()"
-                class="text-xs bg-violet-700 hover:bg-violet-600 text-white font-medium px-3 py-1.5 rounded-lg transition-colors">
+        <button type="button" onclick="restoreAnalysisState()" class="btn btn-sm"
+                style="background: rgba(139,92,246,.2); color: #C4B5FD; border-color: rgba(139,92,246,.3);">
             Restaurar
         </button>
-        <button type="button" onclick="clearAnalysisState()"
-                class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-medium px-3 py-1.5 rounded-lg transition-colors">
+        <button type="button" onclick="clearAnalysisState()" class="btn btn-ghost btn-sm">
             Descartar
         </button>
     </div>
@@ -97,18 +149,19 @@
 
     {% if pedido.dias_desde_analisis is not none and pedido.dias_desde_analisis >= 2 %}
     <!-- Aviso de datos desactualizados -->
-    <div class="bg-amber-50 border-l-4 border-amber-500 rounded-r-lg px-5 py-3 flex items-start gap-3 no-print">
-        <svg class="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="card no-print" style="padding: 12px 18px; border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); display: flex; align-items: flex-start; gap: 12px;">
+        <svg class="w-6 h-6 flex-shrink-0" style="color: var(--ds-warn); margin-top: 2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
         </svg>
         <div class="flex-1">
-            <p class="text-sm font-bold text-amber-900">
+            <p style="font-size: 13px; font-weight: 700; color: var(--ds-warn);">
                 Atención: el análisis tiene {{ pedido.dias_desde_analisis }} día{{ 's' if pedido.dias_desde_analisis != 1 }} de antigüedad
             </p>
-            <p class="text-xs text-amber-800 mt-0.5">
+            <p style="font-size: 11px; color: var(--ds-text-soft); margin-top: 2px; line-height: 1.4;">
                 El stock y las ventas usadas para sugerir cantidades son del {{ pedido.creado_en }}. Desde entonces pudo haber ventas o compras que cambien la sugerencia.
-                Para datos actualizados, volvé a correr el análisis desde <a href="{{ url_for('purchase_suggest') }}" class="underline font-semibold hover:text-amber-900">Compras</a>.
+                Para datos actualizados, volvé a correr el análisis desde
+                <a href="{{ url_for('purchase_suggest') }}" style="color: var(--ds-warn); text-decoration: underline; font-weight: 600;">Compras</a>.
             </p>
         </div>
     </div>
