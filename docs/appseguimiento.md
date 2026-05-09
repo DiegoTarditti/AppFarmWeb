@@ -1,9 +1,85 @@
 # App Seguimiento — cómo sigo en casa
 
-Estado al **2026-05-08** al cerrar la sesión en la oficina. Esta nota es para
+Estado al **2026-05-09** al cerrar la sesión en casa. Esta nota es para
 arrancar la sesión siguiente sin volver a leer todo el chat.
 
-## Lo más reciente (sesión 2026-05-08)
+## Lo más reciente (sesión 2026-05-09)
+
+### Tirada larga de migración UX al theme-emerald
+
+Rama `feat/migracion-pantallas-emerald` pusheada con 17 commits.
+PR pendiente cuando quiera mergear:
+https://github.com/DiegoTarditti/AppFarmWeb/pull/new/feat/migracion-pantallas-emerald
+
+**Pantallas migradas** (17 + base.html):
+- Closure flujo factura/proveedor: `provider_invoices`, `provider_mappings`,
+  `invoice_items`, `pick_fields` (commit `ff77da2`).
+- Home pulido en 5 iteraciones: shapes integradas, Personalizar movido,
+  sidebar sin emojis duplicados, icon-tile en línea con título de entity
+  cards, page-header + hero en la misma fila (gana ~100px above-fold),
+  shapes eliminadas, hero con pattern líneas + dots fade.
+- order_detail Etapa 1 (estructural — top-bar, step-cards, banners,
+  prop-input) en `305a00d`. Etapa 2 (tablas internas) resuelta pasivamente
+  por los overrides globales.
+- Compras flow 100% migrado: `compras_dia` (`23cc2ba`),
+  `compras_dia_armar` (`4678d09`), `compras_rapido` (`145070c`),
+  `compras_transfers` (`f0486b3`).
+- `productos.html` (`1867447`).
+
+**El truco**: commit `31900a7` agregó overrides en `body.theme-emerald`
+dentro de `base.html` que reasignan TODAS las clases Tailwind viejas
+(`text-[#1e1e1e]`, `bg-white`, `bg-amber-50`, etc.) a tokens DS
+equivalentes. Pantallas con miles de líneas de Tailwind hardcoded se
+migran agregando solo `body_class theme-emerald` y heredan dark theme
+sin tocar HTML interno. Extendido en `f18611f` (bg pasteles cremas) y
+`1867447` (`bg-surface-input`/`bg-surface-head` named).
+
+**Mock comparativo del hero**:
+[docs/mocks/04_hero_decoration_options.html](mocks/04_hero_decoration_options.html)
+con 7 variantes (A-G). Diego eligió B+C combinadas.
+
+**Limpieza**:
+- 2 mocks viejos borrados (`mock_pedidos_nuevo`, `mock_stock_excedente`)
+  + sus rutas en `routes/admin.py` y link en `pedidos_nuevo.html`
+  (commit `0e831f4`, -545 L).
+- `docs/docker_wsl_fix.md` actualizado con paso 2 del fix
+  (`wsl --import-in-place` post-BIOS, commit `56ee2ef`).
+- `docs/mejoras_pendientes.md` con sección "🎨 Migración UX emerald"
+  documentando estado y pendientes (commit `ec810c5`).
+
+**Lección clave (PR #23)**:
+No quitar funcionalidad por estética. El rediseño inicial del home dejó
+solo 6 cards de "Acciones frecuentes", quitando informes/BI/productos/
+clientes/OS. Hubo que restaurarlas. Regla: en migraciones visuales,
+**conservar todos los entry points** del menú.
+
+**Pendiente para próxima sesión**:
+- order_detail Etapa 3 (botones internos `bg-emerald-600/700`,
+  `bg-red-600/700` → `btn btn-mint/primary/danger`; modales match manual
+  + chart histórico).
+- compras_dia_armar Etapa 2 (cells de tabla con badges de drog,
+  ofertas, sugerencias — ~150 condicionales).
+- `purchase_suggest` (519L), `purchase_results` (764L), `purchase_batch`
+  (92L), `purchase_processed` (74L), `purchase_analysis` (171L).
+- Resto del sistema (~108 templates): catálogo (vademecum, estadisticas
+  drogas), labs, informes (9 sub-pantallas), OS/Clientes (13 templates),
+  admin (10 templates).
+
+Inventario detallado por flujo en
+[docs/mejoras_pendientes.md](mejoras_pendientes.md) sección "🎨 Migración
+UX al theme-emerald".
+
+### Bonus — Docker reparado (mañana)
+
+Causa final descubierta: tras habilitar virtualización en BIOS (paso 1 del
+[docs/docker_wsl_fix.md](docker_wsl_fix.md)), faltaba **registrar la distro
+docker-desktop en WSL**. El VHD existía pero WSL no la veía. Solución:
+`wsl --import-in-place docker-desktop "<ext4.vhdx>"`. Después
+`docker ps` responde en ~5s.
+
+---
+
+## Sesión 2026-05-08
 
 ### Motor de búsqueda / matching de productos — ampliado y optimizado
 
