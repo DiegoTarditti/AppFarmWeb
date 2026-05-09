@@ -4,6 +4,61 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🎨 Migración UX al theme-emerald (en curso, 2026-05-08+)
+
+Rediseño visual unificado iniciado en commit `d0243e4` (home + design system).
+Patrón: cada pantalla extiende `base.html` con `{% block body_class %}theme-emerald{% endblock %}`,
+usa `page-header`, `card`, `btn-{primary,secondary,ghost,mint,danger}`, `badge-{mint,orange,danger,warn,info,mute}`,
+`icon-tile`, `section-label`, `glow-text`, `ds-input/select/textarea`, tokens `--ds-*`.
+
+### ✅ Hechas (12 pantallas + base + sidebar)
+- 2026-05-07: index, login, base.html (sidebar/topbar/DS tokens) — commit `d64b04c`
+- 2026-05-07: compare, results, claim, claims_list, providers — commit `d64b04c`
+- 2026-05-08: orders_list — commit `33b7355`
+- 2026-05-09: provider_invoices, provider_mappings, invoice_items, pick_fields (closure
+  flujo factura) — commit `ff77da2`
+- 2026-05-09: order_detail Etapa 1 (top-bar + step-card + banners + .prop-input) —
+  commit `305a00d`
+- 2026-05-09: compras_dia.html (completo) — commit `23cc2ba`
+
+### ⏳ Pendiente — order_detail Etapas 2-3
+- **Etapa 2 (tablas internas)**: ~150 ocurrencias de `bg-emerald-50/amber-50/sky-100/violet-100`
+  en filas de tablas de los 3 step-cards (módulos / ofertas / resumen). Reemplazar por
+  fondos `rgba(token,.X)` con tokens del DS.
+- **Etapa 3 (botones e inputs internos)**: ~30 botones `bg-emerald-600/700`, `bg-red-600/700`,
+  `bg-fuchsia-600` → `btn btn-mint/primary/danger`. Inputs varios faltantes (`prop-input`
+  ya migrado).
+- **Modales**: 2 (match manual + chart histórico) — heredan estilos del DS pero hay que
+  pasar background custom al theme-emerald.
+
+### ⏳ Pendiente — Resto del flujo Compras
+Por orden sugerido (más usado primero):
+- `compras_dia_armar.html` (1448L, mediano-alto esfuerzo) — pantalla operativa diaria
+  con grilla por droguería, transfers, sugerencias.
+- `compras_rapido.html` (743L) — armado rápido sin análisis previo.
+- `purchase_suggest.html` (519L) — sugerencias automáticas.
+- `purchase_results.html` (764L) — resultados del análisis.
+- `compras_transfers.html` (201L), `purchase_analysis.html` (171L),
+  `purchase_batch.html` (92L), `purchase_processed.html` (74L) — más chicos, rápidos.
+
+### ⏳ Pendiente — Resto del sistema (~108 templates)
+Inventario completo con priorización por flujo está en el chat de la sesión 2026-05-09.
+Top próximos por flujo:
+- **Catálogo**: productos, producto_detalle, vademecum, estadisticas_drogas, obs_productos.
+- **Laboratorios**: laboratorios, lab_equivalencias, lab_ofertas_minimo, ofertas_import,
+  modulo_packs, modulos_import, plantilla_editor.
+- **Informes**: informes_index + 8 sub-pantallas.
+- **OS/Clientes**: os_* (9), clientes_* (4), recetas_scan, obras_sociales_catalogo.
+- **Admin**: admin_* (10).
+
+### Lección aprendida (PR #23)
+**No quitar funcionalidad por estética.** El rediseño inicial del home dejó solo 6 cards
+de "Acciones frecuentes", quitando informes/BI/productos/clientes/OS. Hubo que restaurarlas
+en `fix/home-cards-restore`. Regla: en migraciones visuales, **conservar todos los entry
+points** del menú aunque visualmente se reorganicen.
+
+---
+
 ## 🆕 Pendiente — Chequeo recetas PAMI/OS para liquidación (2026-05-06)
 
 Cruce de 3 fuentes para la liquidación mensual de PAMI y otras OS:
