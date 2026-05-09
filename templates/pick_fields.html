@@ -1,159 +1,190 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Mapear campos — Factura {{ invoice.numero_factura }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0', head: '#f0f0f0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-        #pdf-text {
-            white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
-            font-size: 0.78rem;
-            line-height: 1.6;
-            user-select: text;
-            cursor: text;
-        }
-        #pdf-text ::selection { background: rgba(234,179,8,0.35); }
-        .field-btn {
-            transition: all 0.15s;
-        }
-        .field-btn:active { transform: scale(0.96); }
-        .field-filled { border-color: rgba(234,179,8,0.5) !important; }
-    </style>
-</head>
-<body class="min-h-screen font-sans">
+{% extends "base.html" %}
+{% set nav_active = "proveedores" %}
 
-<header class="bg-surface border-b border-surface-border px-6 py-4">
-    <div class="max-w-6xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
-                </svg>
+{% block title %}Mapear campos — Factura {{ invoice.numero_factura or '—' }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    #pdf-text {
+        white-space: pre-wrap;
+        font-family: ui-monospace, 'Courier New', Consolas, monospace;
+        font-size: 12px; line-height: 1.6;
+        color: var(--ds-text);
+        user-select: text; cursor: text;
+    }
+    #pdf-text ::selection { background: rgba(95,230,188,.4); color: var(--ds-bg-deep); }
+
+    .pick-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+    }
+    @media (max-width: 900px) {
+        .pick-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel-head {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--ds-line);
+    }
+    .panel-head .title { font-weight: 600; color: var(--ds-text); font-size: 13px; }
+    .panel-head .hint { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px; }
+
+    .pdf-panel { padding: 0; overflow: hidden; }
+    .pdf-panel .body {
+        padding: 16px;
+        max-height: 600px;
+        overflow-y: auto;
+    }
+
+    .form-panel { padding: 0; overflow: hidden; }
+    .form-panel form { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+    .field-row {
+        display: flex; flex-direction: column; gap: 6px;
+    }
+    .field-row .head {
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .field-row label {
+        font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+        color: var(--ds-text-mute);
+    }
+
+    .paste-btn {
+        font-size: 11px;
+        padding: 4px 10px;
+        background: rgba(95,230,188,.08);
+        border: 1px solid var(--ds-line-2);
+        color: var(--ds-mint);
+        border-radius: var(--ds-r-sm);
+        cursor: pointer;
+        display: inline-flex; align-items: center; gap: 5px;
+        transition: all .15s;
+    }
+    .paste-btn:hover { background: rgba(95,230,188,.18); border-color: var(--ds-mint); }
+    .paste-btn:active { transform: scale(0.97); }
+
+    .field-input {
+        width: 100%;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-md);
+        padding: 9px 12px; font-size: 13px;
+        color: var(--ds-text);
+        font-family: inherit;
+        transition: all .15s;
+    }
+    .field-input:focus {
+        outline: none; border-color: var(--ds-mint);
+        box-shadow: 0 0 0 3px rgba(95,230,188,.15);
+    }
+    .field-input::placeholder { color: var(--ds-text-mute); }
+    .field-input.field-filled { border-color: var(--ds-mint); }
+
+    .help-card {
+        background: rgba(59,130,246,.08);
+        border-color: rgba(59,130,246,.25) !important;
+        color: var(--ds-text-soft);
+        font-size: 13px; line-height: 1.6;
+    }
+    .help-card strong { color: var(--ds-info); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto py-6 px-6">
+    <div class="max-w-6xl mx-auto">
+
+        <header class="page-header">
+            <div class="page-header__left">
+                <span class="section-label">Factura · Encabezado</span>
+                <h1 class="page-header__title">
+                    Mapear <span class="glow-text">campos</span>
+                </h1>
+                <p class="page-header__subtitle">Factura {{ invoice.numero_factura or '—' }}</p>
             </div>
-            <span class="font-bold text-sm text-[#1e1e1e]">Mapear campos del encabezado</span>
+            <div class="page-header__actions">
+                <a href="{{ url_for('show_results', invoice_id=invoice.id) }}" class="btn btn-ghost btn-sm">
+                    ← Resultados
+                </a>
+            </div>
+        </header>
+
+        <div class="card help-card" style="margin-bottom: 18px;">
+            <strong>Cómo usar:</strong>
+            seleccioná el texto del PDF con el mouse y luego presioná el botón del campo al que querés asignarlo.
+            El texto seleccionado se copiará automáticamente. Podés editar el campo después si es necesario.
         </div>
-        <div class="flex items-center gap-3">
-            <a href="{{ url_for('index') }}" title="Inicio"
-               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-                </svg>
-            </a>
-            <a href="{{ url_for('show_results', invoice_id=invoice.id) }}"
-               class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                </svg>
-                Volver a resultados
-            </a>
-        </div>
-    </div>
-</header>
 
-<main class="max-w-6xl mx-auto px-6 py-8">
+        <div class="pick-grid">
 
-    <!-- Instrucción -->
-    <div class="bg-surface border border-[#d0d0d0] rounded-xl px-5 py-3 text-sm text-[#555] leading-relaxed mb-6">
-        <strong class="text-[#1e1e1e]">Cómo usar:</strong>
-        seleccioná el texto del PDF con el mouse y luego presioná el botón del campo al que querés asignarlo.
-        El texto seleccionado se copiará automáticamente. Podés editar el campo después si es necesario.
-    </div>
-
-    <div class="grid grid-cols-2 gap-6">
-
-        <!-- Panel izquierdo: texto del PDF -->
-        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden flex flex-col">
-            <div class="px-5 py-3 border-b border-surface-border flex-shrink-0">
-                <p class="font-semibold text-[#1e1e1e] text-sm">Texto extraído del PDF</p>
-                <p class="text-xs text-[#888] mt-0.5">Seleccioná con el mouse el fragmento que querés asignar</p>
-            </div>
-            <div class="p-5 overflow-y-auto max-h-[600px]">
-                {% if pdf_text %}
-                <div id="pdf-text" class="text-[#444]">{{ pdf_text }}</div>
-                {% else %}
-                <p class="text-[#999] text-sm italic">No se pudo extraer el texto del PDF. El archivo puede no estar disponible.</p>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Panel derecho: campos -->
-        <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
-            <div class="px-5 py-3 border-b border-surface-border">
-                <p class="font-semibold text-[#1e1e1e] text-sm">Campos del encabezado</p>
-                <p class="text-xs text-[#888] mt-0.5">Completá o corregí cada campo</p>
+            <!-- Panel izquierdo: texto del PDF -->
+            <div class="card pdf-panel">
+                <div class="panel-head">
+                    <div class="title">Texto extraído del PDF</div>
+                    <div class="hint">Seleccioná con el mouse el fragmento que querés asignar</div>
+                </div>
+                <div class="body">
+                    {% if pdf_text %}
+                    <div id="pdf-text">{{ pdf_text }}</div>
+                    {% else %}
+                    <p style="color: var(--ds-text-mute); font-style: italic; font-size: 13px;">
+                        No se pudo extraer el texto del PDF. El archivo puede no estar disponible.
+                    </p>
+                    {% endif %}
+                </div>
             </div>
 
-            <form method="POST" action="{{ url_for('pick_fields_save', invoice_id=invoice.id) }}"
-                  class="p-5 space-y-4">
+            <!-- Panel derecho: campos -->
+            <div class="card form-panel">
+                <div class="panel-head">
+                    <div class="title">Campos del encabezado</div>
+                    <div class="hint">Completá o corregí cada campo</div>
+                </div>
 
-                {% set fields = [
-                    ('numero_factura', 'Número de factura', invoice.numero_factura if invoice.numero_factura not in ('SIN_NUMERO', None) else ''),
-                    ('proveedor_razon', 'Proveedor (razón social)', invoice.proveedor_razon or ''),
-                    ('proveedor_cuit', 'CUIT del proveedor', invoice.proveedor_cuit or ''),
-                    ('fecha', 'Fecha', invoice.fecha|string if invoice.fecha else ''),
-                    ('total', 'Total', invoice.total|string if invoice.total else ''),
-                ] %}
+                <form method="POST" action="{{ url_for('pick_fields_save', invoice_id=invoice.id) }}">
+                    {% set fields = [
+                        ('numero_factura', 'Número de factura', invoice.numero_factura if invoice.numero_factura not in ('SIN_NUMERO', None) else ''),
+                        ('proveedor_razon', 'Proveedor (razón social)', invoice.proveedor_razon or ''),
+                        ('proveedor_cuit', 'CUIT del proveedor', invoice.proveedor_cuit or ''),
+                        ('fecha', 'Fecha', invoice.fecha|string if invoice.fecha else ''),
+                        ('total', 'Total', invoice.total|string if invoice.total else ''),
+                    ] %}
 
-                {% for name, label, current in fields %}
-                <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                        <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">{{ label }}</label>
-                        <button type="button"
-                                onclick="pasteSelection('{{ name }}')"
-                                class="field-btn text-xs bg-[#f0f0f0] hover:bg-[#e0e0e0] text-brand border border-[#d0d0d0] hover:border-brand/40 px-2.5 py-1 rounded-lg flex items-center gap-1.5">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/>
-                            </svg>
-                            Pegar selección
+                    {% for name, label, current in fields %}
+                    <div class="field-row">
+                        <div class="head">
+                            <label>{{ label }}</label>
+                            <button type="button" onclick="pasteSelection('{{ name }}')" class="paste-btn">
+                                📋 Pegar selección
+                            </button>
+                        </div>
+                        <input type="text"
+                               id="field-{{ name }}"
+                               name="{{ name }}"
+                               value="{{ current }}"
+                               placeholder="Seleccioná texto del PDF y presioná el botón"
+                               class="field-input">
+                    </div>
+                    {% endfor %}
+
+                    <div style="display: flex; justify-content: flex-end; padding-top: 4px;">
+                        <button type="submit" class="btn btn-primary">
+                            Confirmar campos
                         </button>
                     </div>
-                    <input type="text"
-                           id="field-{{ name }}"
-                           name="{{ name }}"
-                           value="{{ current }}"
-                           placeholder="Seleccioná texto del PDF y presioná el botón"
-                           class="w-full bg-[#f5f5f5] border border-[#d0d0d0] text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand placeholder-[#aaa] transition-colors">
-                </div>
-                {% endfor %}
+                </form>
+            </div>
 
-                <div class="pt-2 flex justify-end">
-                    <button type="submit"
-                        class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-6 py-2.5 rounded-lg text-sm transition-colors">
-                        Confirmar campos
-                    </button>
-                </div>
-            </form>
         </div>
-
     </div>
-</main>
+</div>
 
 <script>
 let lastSelection = '';
 
-// Capturar la selección mientras el usuario selecciona en el panel del PDF
 document.getElementById('pdf-text')?.addEventListener('mouseup', () => {
     const sel = window.getSelection().toString().trim();
     if (sel) lastSelection = sel;
@@ -163,7 +194,6 @@ function pasteSelection(fieldName) {
     const sel = window.getSelection().toString().trim();
     const text = sel || lastSelection;
     if (!text) {
-        // Nada seleccionado
         const input = document.getElementById('field-' + fieldName);
         input.focus();
         input.placeholder = '⚠ Seleccioná texto del PDF primero';
@@ -178,6 +208,4 @@ function pasteSelection(fieldName) {
     window.getSelection().removeAllRanges();
 }
 </script>
-
-</body>
-</html>
+{% endblock %}

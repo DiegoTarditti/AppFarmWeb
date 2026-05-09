@@ -1,162 +1,143 @@
-<!doctype html>
-<html lang="es">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Equivalencias — {{ provider.razon_social }}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                    colors: {
-                        surface: { DEFAULT: '#ffffff', input: '#f5f5f5', border: '#e0e0e0', head: '#f0f0f0' },
-                        brand: { DEFAULT: '#EAB308', hover: '#CA8A04', dark: '#1a1100' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { background-color: #f3f3f3; color: #1e1e1e; }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
-    </style>
-</head>
-<body class="min-h-screen font-sans">
+{% extends "base.html" %}
+{% set nav_active = "proveedores" %}
 
-<header class="bg-surface border-b border-surface-border px-6 py-4">
-    <div class="max-w-5xl mx-auto flex items-center justify-between">
-        <div class="flex items-center gap-3">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                </svg>
-            </div>
-            <div>
-                <span class="font-bold text-sm text-[#1e1e1e]">Equivalencias de códigos</span>
-                <span class="text-xs text-[#6f6f6f] ml-2">{{ provider.razon_social }}</span>
-            </div>
-        </div>
-        <div class="flex items-center gap-3">
-            <a href="{{ url_for('index') }}" title="Inicio"
-               class="w-8 h-8 flex items-center justify-center rounded-lg text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
-                </svg>
-            </a>
-            <a href="{{ url_for('providers_list') }}"
-               class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] flex items-center gap-1.5 transition-colors">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-                </svg>
-                Proveedores
-            </a>
-        </div>
-    </div>
-</header>
+{% block title %}Equivalencias — {{ provider.razon_social }}{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 
-<main class="max-w-5xl mx-auto px-6 py-8">
+{% block extra_head %}
+<style>
+    .map-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .map-table th, .map-table td { padding: 11px 14px; text-align: left; vertical-align: top; }
+    .map-table thead th {
+        font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+        position: sticky; top: 0; z-index: 1;
+    }
+    .map-table tbody tr { border-top: 1px solid var(--ds-line); transition: background .15s; }
+    .map-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .map-table .num { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    .map-table .num-fac { color: var(--ds-mint); }
+    .map-table .num-erp { color: var(--ds-text-soft); }
+    .map-table .desc { max-width: 220px; }
+    .map-table .desc span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .map-table .arrow { text-align: center; color: var(--ds-text-mute); }
+    .map-table .muted { color: var(--ds-text-soft); }
+    .map-table .when { font-size: 11px; color: var(--ds-text-mute); }
 
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <div class="flex items-start gap-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-xl px-4 py-3 mb-6 text-sm">
-            {{ messages[0] }}
-        </div>
-        {% endif %}
-    {% endwith %}
+    .action-link {
+        display: inline-flex; align-items: center; gap: 5px;
+        padding: 5px 10px; border-radius: var(--ds-r-sm);
+        font-size: 12px; font-weight: 500;
+        color: var(--ds-text-soft); background: transparent;
+        border: 1px solid transparent; cursor: pointer;
+        transition: all .15s; text-decoration: none;
+    }
+    .action-link.danger:hover { background: rgba(239,68,68,.1); color: var(--ds-danger); border-color: rgba(239,68,68,.2); }
 
-    <div class="bg-surface rounded-xl border border-surface-border overflow-hidden">
-        <div class="px-6 py-4 border-b border-surface-border flex items-center justify-between">
-            <div>
-                <p class="font-semibold text-[#1e1e1e]">Tabla de equivalencias</p>
-                <p class="text-xs text-[#6f6f6f] mt-0.5">
-                    Correspondencias aprendidas de cruces manuales. Se usan automáticamente en futuras facturas.
+    .empty-state {
+        padding: 56px 24px; text-align: center;
+        color: var(--ds-text-soft); font-size: 14px;
+    }
+    .empty-state .hint { color: var(--ds-text-mute); font-size: 12px; margin-top: 6px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto py-6 px-6">
+    <div class="max-w-6xl mx-auto">
+
+        <header class="page-header">
+            <div class="page-header__left">
+                <span class="section-label">Proveedor · Equivalencias</span>
+                <h1 class="page-header__title">
+                    Códigos <span class="glow-text">factura ↔ ERP</span>
+                </h1>
+                <p class="page-header__subtitle">
+                    {{ provider.razon_social }} ·
+                    <span id="map-count">{{ mappings|length }}</span>
+                    equivalencia<span id="map-plural">{{ 's' if mappings|length != 1 }}</span>
+                    aprendida<span>{{ 's' if mappings|length != 1 }}</span> de cruces manuales
                 </p>
             </div>
-            <div class="flex items-center gap-3">
-                <span class="bg-brand/20 text-brand text-xs font-semibold px-2.5 py-0.5 rounded-full border border-brand/20">
-                    {{ mappings|length }} equivalencia{{ 's' if mappings|length != 1 }}
-                </span>
+            <div class="page-header__actions">
+                <a href="{{ url_for('provider_invoices', provider_id=provider.id) }}" class="btn btn-ghost btn-sm">
+                    📄 Facturas
+                </a>
+                <a href="{{ url_for('providers_list') }}" class="btn btn-ghost btn-sm">
+                    ← Proveedores
+                </a>
                 {% if mappings %}
-                <button onclick="confirmDeleteAll()"
-                    class="text-xs text-[#999] hover:text-red-600 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-900/20 border border-[#e0e0e0] hover:border-red-900/40 flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                    </svg>
-                    Eliminar todas
+                <button onclick="confirmDeleteAll()" class="btn btn-ghost btn-sm" type="button"
+                        style="color: var(--ds-danger); border-color: rgba(239,68,68,.3);">
+                    🗑 Eliminar todas
                 </button>
                 <form id="form-delete-all" method="post"
                       action="{{ url_for('delete_all_mappings', provider_id=provider.id) }}"
                       class="hidden"></form>
                 {% endif %}
             </div>
-        </div>
+        </header>
 
-        {% if mappings %}
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-surface-head border-b border-surface-border">
-                    <tr>
-                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código factura</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción factura</th>
-                        <th class="px-5 py-3 text-center text-xs font-semibold text-brand uppercase tracking-wide">→</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Código ERP</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Descripción ERP</th>
-                        <th class="px-5 py-3 text-left text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide">Creado</th>
-                        <th class="px-5 py-3"></th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-surface-border">
-                    {% for m in mappings %}
-                    <tr class="hover:bg-black/[0.04] transition-colors">
-                        <td class="px-5 py-3 font-mono text-xs text-brand">{{ m.codigo_barra_factura }}</td>
-                        <td class="px-5 py-3 text-[#1e1e1e] max-w-[180px]">
-                            <span class="block truncate" title="{{ m.descripcion_factura }}">{{ m.descripcion_factura or '—' }}</span>
-                        </td>
-                        <td class="px-5 py-3 text-center text-[#bbb]">
-                            <svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
-                            </svg>
-                        </td>
-                        <td class="px-5 py-3 font-mono text-xs text-[#6f6f6f]">{{ m.codigo_barra_erp }}</td>
-                        <td class="px-5 py-3 text-[#6f6f6f] max-w-[180px]">
-                            <span class="block truncate" title="{{ m.descripcion_erp }}">{{ m.descripcion_erp or '—' }}</span>
-                        </td>
-                        <td class="px-5 py-3 text-xs text-[#999]">
-                            {{ m.creado_en.strftime('%d/%m/%Y') if m.creado_en else '—' }}
-                        </td>
-                        <td class="px-5 py-3 text-right">
-                            <button onclick="confirmDeleteMapping({{ m.id }}, '{{ m.codigo_barra_factura }}')"
-                                class="text-xs text-[#999] hover:text-red-600 transition-colors px-2 py-1 rounded-lg hover:bg-red-900/20 flex items-center gap-1 ml-auto">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                                </svg>
-                                Eliminar
-                            </button>
-                            <form id="del-map-{{ m.id }}" method="post"
-                                  action="{{ url_for('delete_mapping', provider_id=provider.id, mapping_id=m.id) }}"
-                                  class="hidden"></form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+            <div class="card" style="border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.06); color: var(--ds-warn); margin-bottom: 18px;">
+                {{ messages[0] }}
+            </div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="card" style="padding: 0; overflow: hidden;">
+            {% if mappings %}
+            <div style="overflow-x: auto;">
+                <table class="map-table">
+                    <thead>
+                        <tr>
+                            <th>Código factura</th>
+                            <th>Descripción factura</th>
+                            <th class="arrow">→</th>
+                            <th>Código ERP</th>
+                            <th>Descripción ERP</th>
+                            <th>Creado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in mappings %}
+                        <tr>
+                            <td class="num num-fac">{{ m.codigo_barra_factura }}</td>
+                            <td class="desc">
+                                <span title="{{ m.descripcion_factura }}">{{ m.descripcion_factura or '—' }}</span>
+                            </td>
+                            <td class="arrow">→</td>
+                            <td class="num num-erp">{{ m.codigo_barra_erp }}</td>
+                            <td class="desc muted">
+                                <span title="{{ m.descripcion_erp }}">{{ m.descripcion_erp or '—' }}</span>
+                            </td>
+                            <td class="when">
+                                {{ m.creado_en.strftime('%d/%m/%Y') if m.creado_en else '—' }}
+                            </td>
+                            <td style="text-align: right;">
+                                <button onclick="confirmDeleteMapping({{ m.id }}, '{{ m.codigo_barra_factura }}')"
+                                    class="action-link danger" type="button">
+                                    🗑
+                                </button>
+                                <form id="del-map-{{ m.id }}" method="post"
+                                      action="{{ url_for('delete_mapping', provider_id=provider.id, mapping_id=m.id) }}"
+                                      class="hidden"></form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                No hay equivalencias registradas para este proveedor.
+                <div class="hint">Se generan automáticamente cuando hacés un cruce manual en la página de comparación.</div>
+            </div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="px-6 py-12 text-center space-y-2">
-            <p class="text-[#6f6f6f] text-sm">No hay equivalencias registradas para este proveedor.</p>
-            <p class="text-[#999] text-xs">Se generan automáticamente cuando hacés un cruce manual en la página de comparación.</p>
-        </div>
-        {% endif %}
     </div>
-</main>
+</div>
 
 <script>
 function confirmDeleteAll() {
@@ -171,5 +152,4 @@ function confirmDeleteMapping(id, codigo) {
     }
 }
 </script>
-</body>
-</html>
+{% endblock %}
