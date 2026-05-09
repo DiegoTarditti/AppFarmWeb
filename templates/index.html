@@ -14,7 +14,7 @@
         .home-container { max-width: 1400px; padding: 18px 22px; }
         @media (max-width: 1280px) { .home-container { padding: 16px 18px; } }
 
-        /* Hero pedido reposición — compacto, shapes anclados arriba-derecha */
+        /* Hero pedido reposición — compacto, shapes como decoración integrada */
         .home-hero {
             position: relative;
             background: linear-gradient(135deg, var(--ds-bg) 0%, var(--ds-surface) 60%, var(--ds-surface-2) 100%);
@@ -28,31 +28,33 @@
         .home-hero::before {
             content:''; position:absolute; inset:0;
             background:
-              radial-gradient(circle at 90% 0%, rgba(95,230,188,.18), transparent 45%),
-              radial-gradient(circle at 110% 110%, rgba(16,185,129,.10), transparent 50%);
+              radial-gradient(circle at 92% 50%, rgba(95,230,188,.22), transparent 38%),
+              radial-gradient(circle at 105% 110%, rgba(16,185,129,.10), transparent 50%);
             pointer-events:none;
         }
+        /* Decoración: 3 formas absolute integradas en el degradé, sutiles */
+        .home-hero__deco {
+            position: absolute; top: 50%; right: 28px;
+            transform: translateY(-50%);
+            display: flex; gap: 8px; pointer-events: none;
+            opacity: .55;
+        }
+        .home-hero__deco .geo {
+            width: 28px; height: 28px; border-radius: 7px;
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+        }
+        .home-hero__deco .geo:nth-child(1) { transform: rotate(12deg); }
+        .home-hero__deco .geo:nth-child(2) { transform: rotate(-8deg) translateY(-6px); border-radius: 50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
+        .home-hero__deco .geo:nth-child(3) { transform: rotate(18deg) translateY(4px); }
+        @media (max-width: 1100px) { .home-hero__deco { display: none; } }
         .home-hero__body { position: relative; z-index: 1; flex: 1; min-width: 0; }
         .home-hero__title { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
         .home-hero__desc { font-size: 12px; color: var(--ds-text-soft); margin-top: 3px; line-height: 1.4; }
-        .home-hero__cta { position: relative; z-index: 1; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-        .home-hero__shapes {
-            position: relative; z-index: 1;
-            display: flex; gap: 6px; flex-shrink: 0;
-            margin-right: -6px;
-        }
-        .home-hero__shapes .geo {
-            width: 36px; height: 36px; border-radius: 9px;
-            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
-            box-shadow: 0 6px 16px rgba(16,185,129,.35);
-        }
-        .home-hero__shapes .geo:nth-child(1) { transform: rotate(12deg); }
-        .home-hero__shapes .geo:nth-child(2) { transform: rotate(-8deg) translateY(-8px); border-radius: 50%; background: linear-gradient(135deg, var(--ds-mint-bright) 0%, var(--ds-mint) 100%); }
-        .home-hero__shapes .geo:nth-child(3) { transform: rotate(18deg) translateY(6px); }
-        @media (max-width: 1100px) { .home-hero__shapes { display: none; } }
+        .home-hero__cta { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; flex-shrink: 0; padding-right: 120px; }
+        @media (max-width: 1100px) { .home-hero__cta { padding-right: 0; } }
         @media (max-width: 720px) {
             .home-hero { flex-direction: column; align-items: flex-start; }
-            .home-hero__cta { width: 100%; }
+            .home-hero__cta { width: 100%; padding-right: 0; }
         }
 
         /* Entity cards — más compactas */
@@ -83,11 +85,6 @@
                     <h1 class="page-header__title">{{ config.farmacia_nombre }}<span class="glow-text">.</span></h1>
                     <p class="page-header__subtitle">Elegí por dónde trabajar hoy.</p>
                 </div>
-                <div class="page-header__actions">
-                    <a href="{{ url_for('personalizar_home') }}" class="btn btn-ghost btn-sm" title="Personalizar acciones frecuentes">
-                        ⚙ Personalizar
-                    </a>
-                </div>
             </header>
 
             <!-- HERO: Pedido de reposición (compacto, en fila) -->
@@ -105,7 +102,7 @@
                         Ver pendientes →
                     </a>
                 </div>
-                <div class="home-hero__shapes">
+                <div class="home-hero__deco" aria-hidden="true">
                     <div class="geo"></div>
                     <div class="geo"></div>
                     <div class="geo"></div>
@@ -162,6 +159,11 @@
             <!-- ACCIONES FRECUENTES -->
             <div class="flex items-center justify-between mb-2">
                 <div class="section-label">Acciones frecuentes</div>
+                <a href="{{ url_for('personalizar_home') }}"
+                   class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);"
+                   title="Personalizar acciones frecuentes">
+                    ⚙ Personalizar
+                </a>
             </div>
             <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3">
                 {% for card in acciones %}
