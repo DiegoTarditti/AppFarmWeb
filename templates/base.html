@@ -158,6 +158,132 @@
             border-color: var(--ds-line) !important;
         }
 
+        /* ─── Overrides de contraste: pantallas migradas heredan estilos
+           Tailwind viejos hardcoded (text-[#1e1e1e], text-[#999], bg-white,
+           etc.) que sobre fondo dark son ilegibles. Reasigno cada uno al
+           token DS más cercano. Pantalla NO migrada (sin theme-emerald) se
+           ve como antes. ─────────────────────────────────────────────────── */
+        /* Textos oscuros → texto claro principal */
+        body.theme-emerald .text-\[\#1e1e1e\],
+        body.theme-emerald .text-\[\#1f2937\],
+        body.theme-emerald .text-black,
+        body.theme-emerald .text-gray-900 { color: var(--ds-text) !important; }
+        /* Grises medios → texto soft */
+        body.theme-emerald .text-\[\#3f6650\],
+        body.theme-emerald .text-\[\#444\],
+        body.theme-emerald .text-\[\#555\],
+        body.theme-emerald .text-\[\#666\],
+        body.theme-emerald .text-\[\#6f6f6f\],
+        body.theme-emerald .text-gray-600,
+        body.theme-emerald .text-gray-700,
+        body.theme-emerald .text-gray-800 { color: var(--ds-text-soft) !important; }
+        /* Grises débiles → texto mute */
+        body.theme-emerald .text-\[\#777\],
+        body.theme-emerald .text-\[\#888\],
+        body.theme-emerald .text-\[\#999\],
+        body.theme-emerald .text-\[\#aaa\],
+        body.theme-emerald .text-gray-400,
+        body.theme-emerald .text-gray-500 { color: var(--ds-text-mute) !important; }
+        /* Grises ultra-claros (placeholders/dim) → text-mute con opacidad */
+        body.theme-emerald .text-\[\#bbb\],
+        body.theme-emerald .text-\[\#ccc\],
+        body.theme-emerald .text-\[\#ddd\],
+        body.theme-emerald .text-gray-300,
+        body.theme-emerald .text-gray-200 { color: var(--ds-text-mute) !important; opacity: .65; }
+
+        /* Estados con saturación adecuada para dark */
+        body.theme-emerald .text-emerald-600,
+        body.theme-emerald .text-emerald-700,
+        body.theme-emerald .text-emerald-800,
+        body.theme-emerald .text-green-600,
+        body.theme-emerald .text-green-700 { color: var(--ds-mint-bright) !important; }
+        body.theme-emerald .text-amber-600,
+        body.theme-emerald .text-amber-700,
+        body.theme-emerald .text-amber-800,
+        body.theme-emerald .text-amber-900,
+        body.theme-emerald .text-yellow-700 { color: #FBBF24 !important; }
+        body.theme-emerald .text-rose-500,
+        body.theme-emerald .text-rose-600,
+        body.theme-emerald .text-rose-700,
+        body.theme-emerald .text-rose-800,
+        body.theme-emerald .text-red-600,
+        body.theme-emerald .text-red-700 { color: #FCA5A5 !important; }
+        body.theme-emerald .text-violet-700,
+        body.theme-emerald .text-violet-800,
+        body.theme-emerald .text-purple-700,
+        body.theme-emerald .text-fuchsia-700 { color: #C4B5FD !important; }
+        body.theme-emerald .text-sky-600,
+        body.theme-emerald .text-sky-700,
+        body.theme-emerald .text-sky-800,
+        body.theme-emerald .text-blue-700 { color: #7DD3FC !important; }
+        body.theme-emerald .text-brand,
+        body.theme-emerald .text-brand-dark { color: var(--ds-mint) !important; }
+
+        /* Fondos claros → fondos dark equivalentes (con !important para superar Tailwind) */
+        body.theme-emerald .bg-white,
+        body.theme-emerald .bg-surface,
+        body.theme-emerald .bg-\[\#fafafa\],
+        body.theme-emerald .bg-\[\#f8f8f8\],
+        body.theme-emerald .bg-\[\#f5f5f5\],
+        body.theme-emerald .bg-\[\#f3f3f3\],
+        body.theme-emerald .bg-\[\#f0f0f0\],
+        body.theme-emerald .bg-\[\#ececec\],
+        body.theme-emerald .bg-\[\#e8e8e8\],
+        body.theme-emerald .bg-gray-50,
+        body.theme-emerald .bg-gray-100 {
+            background-color: var(--ds-surface) !important;
+            color: var(--ds-text);
+        }
+        /* Borders claros → borde dark */
+        body.theme-emerald .border-surface-border,
+        body.theme-emerald .border-\[\#e0e0e0\],
+        body.theme-emerald .border-\[\#d0d0d0\],
+        body.theme-emerald .border-\[\#ccc\],
+        body.theme-emerald .border-gray-200,
+        body.theme-emerald .border-gray-300 { border-color: var(--ds-line) !important; }
+
+        /* Inputs/selects con bg-white quedan ilegibles — los pasamos a dark */
+        body.theme-emerald input.bg-white,
+        body.theme-emerald select.bg-white,
+        body.theme-emerald textarea.bg-white {
+            background-color: var(--ds-surface) !important;
+            color: var(--ds-text) !important;
+            border-color: var(--ds-line) !important;
+        }
+        body.theme-emerald input::placeholder,
+        body.theme-emerald textarea::placeholder { color: var(--ds-text-mute) !important; }
+
+        /* Banners pastel (bg-amber-50, bg-emerald-50, etc.) — bajamos saturación
+           a versiones translúcidas que respeten el fondo dark */
+        body.theme-emerald .bg-yellow-50,
+        body.theme-emerald .bg-amber-50 { background-color: rgba(245,158,11,.10) !important; }
+        body.theme-emerald .bg-emerald-50 { background-color: rgba(95,230,188,.08) !important; }
+        body.theme-emerald .bg-green-50 { background-color: rgba(16,185,129,.08) !important; }
+        body.theme-emerald .bg-rose-50,
+        body.theme-emerald .bg-red-50 { background-color: rgba(239,68,68,.08) !important; }
+        body.theme-emerald .bg-sky-50,
+        body.theme-emerald .bg-blue-50 { background-color: rgba(56,189,248,.08) !important; }
+        body.theme-emerald .bg-violet-50,
+        body.theme-emerald .bg-purple-50 { background-color: rgba(139,92,246,.08) !important; }
+        body.theme-emerald .bg-fuchsia-50 { background-color: rgba(217,70,239,.08) !important; }
+        body.theme-emerald .bg-indigo-50 { background-color: rgba(99,102,241,.08) !important; }
+
+        /* Pastels de hover y badge backgrounds (-100/-200) — más translúcidos */
+        body.theme-emerald .bg-amber-100 { background-color: rgba(245,158,11,.16) !important; }
+        body.theme-emerald .bg-emerald-100 { background-color: rgba(95,230,188,.16) !important; }
+        body.theme-emerald .bg-green-100 { background-color: rgba(16,185,129,.16) !important; }
+        body.theme-emerald .bg-rose-100,
+        body.theme-emerald .bg-red-100 { background-color: rgba(239,68,68,.16) !important; }
+        body.theme-emerald .bg-sky-100,
+        body.theme-emerald .bg-blue-100 { background-color: rgba(56,189,248,.16) !important; }
+        body.theme-emerald .bg-violet-100,
+        body.theme-emerald .bg-purple-100 { background-color: rgba(139,92,246,.16) !important; }
+        body.theme-emerald .bg-fuchsia-100 { background-color: rgba(217,70,239,.16) !important; }
+        body.theme-emerald .bg-indigo-100 { background-color: rgba(99,102,241,.16) !important; }
+        body.theme-emerald .bg-gray-200,
+        body.theme-emerald .bg-\[\#eee\],
+        body.theme-emerald .bg-\[\#e0e0e0\] { background-color: rgba(255,255,255,.06) !important; }
+
         /* ── Tipografía display ───────────────────────────────────────────── */
         .display { font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif; letter-spacing: -.02em; }
         .glow-text {
