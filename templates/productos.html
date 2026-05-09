@@ -2,17 +2,31 @@
 {% set nav_active = "productos" %}
 
 {% block title %}Productos — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
 
 {% block extra_head %}
 <style>
-    .alt-badge { display: inline-block; font-family: monospace; font-size: 10px;
-                 background: #f0f0f0; border: 1px solid #e0e0e0; border-radius: 4px;
-                 padding: 1px 5px; color: #555; }
+    .alt-badge {
+        display: inline-block;
+        font-family: ui-monospace, Consolas, monospace; font-size: 10px;
+        background: rgba(0,0,0,.18);
+        border: 1px solid var(--ds-line);
+        border-radius: 4px;
+        padding: 1px 5px;
+        color: var(--ds-text-soft);
+    }
     .editable-cell { cursor: pointer; }
-    .editable-cell:hover { background: rgba(234,179,8,0.07); }
-    .editable-cell input { border: 1px solid #EAB308; border-radius: 4px; padding: 1px 4px;
-                           font-size: inherit; font-family: inherit; width: 100%;
-                           background: #fff; outline: none; }
+    .editable-cell:hover { background: rgba(95,230,188,.06); }
+    .editable-cell input {
+        border: 1px solid var(--ds-mint);
+        border-radius: 4px;
+        padding: 1px 4px;
+        font-size: inherit; font-family: inherit; width: 100%;
+        background: var(--ds-surface);
+        color: var(--ds-text);
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+    }
     .editable-cell.saving { opacity: 0.5; }
 </style>
 {% endblock %}
