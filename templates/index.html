@@ -57,10 +57,22 @@
             .home-hero__cta { width: 100%; padding-right: 0; }
         }
 
-        /* Entity cards — más compactas */
-        .entity-card { padding: 16px 18px; }
-        .entity-card .entity-num { font-size: 10px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; color: var(--ds-text-mute); }
-        .entity-card .entity-title { font-family:'Space Grotesk',sans-serif; font-weight: 700; font-size: 18px; line-height: 1.15; }
+        /* Entity cards — más compactas, icon + título en línea */
+        .entity-card { padding: 16px 18px; position: relative; }
+        .entity-card .entity-num {
+            position: absolute; top: 12px; right: 16px;
+            font-size: 10px; font-weight: 700; letter-spacing: .18em;
+            text-transform: uppercase; color: var(--ds-text-mute);
+        }
+        .entity-card .entity-head {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 4px;
+            padding-right: 28px; /* deja lugar al número */
+        }
+        .entity-card .entity-title {
+            font-family:'Space Grotesk',sans-serif; font-weight: 700;
+            font-size: 18px; line-height: 1.15;
+        }
 
         /* Action card grid */
         .action-content { display: flex; align-items: flex-start; gap: 12px; }
@@ -114,12 +126,12 @@
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
 
                 <div class="card entity-card">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="icon-tile">🧪</div>
-                        <span class="entity-num">01</span>
+                    <span class="entity-num">01</span>
+                    <div class="entity-head">
+                        <div class="icon-tile icon-tile-sm">🧪</div>
+                        <div class="entity-title">Laboratorios</div>
                     </div>
-                    <div class="entity-title">Laboratorios</div>
-                    <div class="text-xs mt-1 mb-3" style="color:var(--ds-text-soft);">Módulos, ofertas y análisis</div>
+                    <div class="text-xs mb-3" style="color:var(--ds-text-soft);">Módulos, ofertas y análisis</div>
                     <div class="flex flex-wrap gap-1.5">
                         <a href="{{ url_for('laboratorios_list') }}" class="btn btn-secondary btn-sm">Ver →</a>
                         <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-ghost btn-sm">Procesos</a>
@@ -128,12 +140,12 @@
                 </div>
 
                 <div class="card entity-card">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="icon-tile">💊</div>
-                        <span class="entity-num">02</span>
+                    <span class="entity-num">02</span>
+                    <div class="entity-head">
+                        <div class="icon-tile icon-tile-sm">💊</div>
+                        <div class="entity-title">Droguerías</div>
                     </div>
-                    <div class="entity-title">Droguerías</div>
-                    <div class="text-xs mt-1 mb-3" style="color:var(--ds-text-soft);">Facturas, ctas. corrientes y reclamos</div>
+                    <div class="text-xs mb-3" style="color:var(--ds-text-soft);">Facturas, ctas. corrientes y reclamos</div>
                     <div class="flex flex-wrap gap-1.5">
                         <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm">Ver →</a>
                         <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-ghost btn-sm">Procesos</a>
@@ -142,12 +154,12 @@
                 </div>
 
                 <div class="card entity-card">
-                    <div class="flex items-start justify-between mb-3">
-                        <div class="icon-tile">🏢</div>
-                        <span class="entity-num">03</span>
+                    <span class="entity-num">03</span>
+                    <div class="entity-head">
+                        <div class="icon-tile icon-tile-sm">🏢</div>
+                        <div class="entity-title">Otros</div>
                     </div>
-                    <div class="entity-title">Otros</div>
-                    <div class="text-xs mt-1 mb-3" style="color:var(--ds-text-soft);">Proveedores no droguería ni lab</div>
+                    <div class="text-xs mb-3" style="color:var(--ds-text-soft);">Proveedores no droguería ni lab</div>
                     <div class="flex flex-wrap gap-1.5">
                         <a href="{{ url_for('providers_list') }}?tipo=otro" class="btn btn-secondary btn-sm">Ver →</a>
                         <a href="{{ url_for('procesos_list') }}?tipo=otro" class="btn btn-ghost btn-sm">Procesos</a>
