@@ -464,12 +464,14 @@ def init_app(app):
                     if usar_oferta == '1':
                         oferta_pids = pids_oferta_full
 
+            from database import ObsNombreDroga
             base_q = (session.query(
                 ObsProducto.observer_id.label('pid'),
                 ObsProducto.descripcion.label('desc'),
                 ObsProducto.id_tipo_venta_control.label('tvc'),
                 ObsLaboratorio.observer_id.label('lab_obs_id'),
                 ObsLaboratorio.descripcion.label('lab_nombre'),
+                ObsNombreDroga.descripcion.label('droga_nombre'),
                 stock_q.c.stock,
                 stock_q.c.minimo,
                 func.coalesce(v12_q.c.u12m, 0).label('u12m'),
@@ -477,6 +479,8 @@ def init_app(app):
             .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
             .outerjoin(ObsLaboratorio,
                        ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+            .outerjoin(ObsNombreDroga,
+                       ObsNombreDroga.observer_id == ObsProducto.nombre_droga_observer)
             .outerjoin(v12_q, v12_q.c.pid == ObsProducto.observer_id)
             .filter(ObsProducto.fecha_baja.is_(None))
             .filter(ObsProducto.subrubro_observer.isnot(None)))
@@ -702,6 +706,7 @@ def init_app(app):
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
                     'desc': r.desc,
+                    'droga_nombre': r.droga_nombre or '',
                     'lab_nombre': r.lab_nombre or '—',
                     'lab_local_id': lab_local_id,
                     'urgente': urgente,

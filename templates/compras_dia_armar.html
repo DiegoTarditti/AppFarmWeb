@@ -265,7 +265,10 @@
         {{ total_items }} candidatos bajo mínimo · <b style="color: #F0ABFC;">{{ cubre }} con drog</b> · <b style="color: var(--ds-text-mute);">{{ pendientes }} libres</b>
         {% endif %}
     </span>
-    <a href="{{ url_for('compras_dia') }}" class="btn btn-ghost btn-sm">← Volver</a>
+    <a href="{{ url_for('compras_dia') }}" class="btn-volver" title="Volver al pedido del día">
+        <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Volver
+    </a>
 </div>
 
 {# Estado oferta-drog: 3 banners distintos según usar_oferta #}
@@ -337,7 +340,7 @@
         <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…" style="width: 240px;">
         <input type="text" id="filtro-lab" placeholder="Filtrar lab…" style="width: 240px;">
     </div>
-    {# Col 2: Filtrar rubro arriba + checks (vta libre / sugerencia) abajo #}
+    {# Col 2: Filtrar rubro arriba + Filtrar droga abajo #}
     <div class="flex flex-col gap-1">
         {% if rubros_disponibles %}
         {# Filtro de rubro server-side: recarga la página con ?rubros=X. #}
@@ -351,16 +354,7 @@
             {% endfor %}
         </select>
         {% endif %}
-        <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-xs cursor-pointer">
-                <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
-                Solo venta libre
-            </label>
-            <label class="flex items-center gap-1.5 text-xs cursor-pointer">
-                <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
-                Solo con sugerencia (subir/bajar)
-            </label>
-        </div>
+        <input type="text" id="filtro-droga" placeholder="Filtrar droga (monodroga)…" style="width: 240px;">
     </div>
     {% if prov %}
     {# En modo single-drog, "otra drog" filtra los labs que NO cubre esta drog
@@ -408,6 +402,17 @@
         </div>
     </div>
     {% endif %}
+    {# Checks (vta libre / sugerencia) — apilados, visibles en single y multi-drog mode #}
+    <div class="flex flex-col gap-1 text-xs">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
+            Solo venta libre
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
+            Solo con sugerencia (subir/bajar)
+        </label>
+    </div>
     <span id="filtro-count" class="filt-count"></span>
     <span id="contador-sug" class="text-[11px] font-semibold"></span>
     <button type="button" id="btn-orden-sug" onclick="toggleOrdenSug()"
@@ -469,6 +474,7 @@
                     data-pid="{{ it.pid }}" data-prod-id="{{ it.producto_id_local or '' }}"
                     data-nombre="{{ it.desc | e }}"
                     data-lab="{{ (it.lab_nombre or '') | e }}"
+                    data-droga="{{ (it.droga_nombre or '') | e }}"
                     data-cubre="{{ 'y' if it.cubre_lab else 'n' }}"
                     data-tvc="{{ it.tvc or '' }}"
                     data-sug="{{ it.min_sugerencia or '' }}"
@@ -711,9 +717,10 @@ function seleccionarProducto(row) {
     cargarGraficoDual(_selectedPid, row.dataset.nombre);
 }
 
-// Filtros tokenizados (producto + lab, AND)
-const _filtroProd = document.getElementById('filtro-prod');
-const _filtroLab  = document.getElementById('filtro-lab');
+// Filtros tokenizados (producto + lab + droga, AND)
+const _filtroProd  = document.getElementById('filtro-prod');
+const _filtroLab   = document.getElementById('filtro-lab');
+const _filtroDroga = document.getElementById('filtro-droga');
 const _filtroCount = document.getElementById('filtro-count');
 const _totalRows = document.querySelectorAll('.producto-row').length;
 
@@ -727,6 +734,7 @@ const _contadorSug = document.getElementById('contador-sug');
 function aplicarFiltros() {
     const fnProd      = window.MultiTokenFilter.build(_filtroProd.value);
     const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
+    const fnDroga     = window.MultiTokenFilter.build(_filtroDroga.value);
     const soloLibre   = _filtroLibre.checked;
     const soloSug     = _filtroSug.checked;
     // En multi-drog no existe el checkbox "otra drog" → asumimos true (mostrar).
@@ -743,8 +751,13 @@ function aplicarFiltros() {
         const drogOk = !drogFilterActivo
             || (drogs.length === 0 ? aceptaLibre
                                    : drogs.some(d => drogChecked.has(d)));
+        // Droga permisivo: productos sin droga linkeada siempre pasan el filtro,
+        // así no se esconden los ~58% que no están sincronizados con Observer.
+        const drogaVal = row.dataset.droga || '';
+        const drogaOk = !drogaVal || fnDroga(drogaVal);
         const ok = fnProd(row.dataset.nombre)
             && fnLab(row.dataset.lab || '')
+            && drogaOk
             && (!soloLibre || row.dataset.tvc === 'L')
             && (!soloSug || sug === 'up' || sug === 'down')
             && (mostraOtra || row.dataset.cubre !== 'n')
@@ -779,6 +792,7 @@ function aplicarZebra() {
 }
 _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
+_filtroDroga.addEventListener('input', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
 if (_filtroOtraDrog) _filtroOtraDrog.addEventListener('change', aplicarFiltros);
