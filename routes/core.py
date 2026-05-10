@@ -28,13 +28,31 @@ def init_app(app):
                     .filter(database.DocumentoPendiente.estado == 'PENDIENTE').count(),
                 'procesos_abiertos': session.query(database.ProcesoCompra)
                     .filter(database.ProcesoCompra.estado != 'COMPLETADO').count(),
+                'productos_pendientes_revision': session.query(database.ProductoPendienteRevision)
+                    .filter(database.ProductoPendienteRevision.estado == 'pendiente').count(),
             }
         cards = [c for c in cards if not c.get('oculto')]
         # Inyectar badge_count en cada card según su badge_key
         for c in cards:
             key = c.get('badge_key')
             c['badge_count'] = badges.get(key) if key else None
-        return render_template('index.html', config=get_config(), acciones=cards)
+        # Agrupar cards por categoría preservando el orden auto/fijo dentro
+        # de cada grupo. CATEGORIAS_HOME dicta el orden de los grupos.
+        from collections import OrderedDict
+        cards_por_cat = OrderedDict((k, []) for k, _label in hc.CATEGORIAS_HOME)
+        for c in cards:
+            cat = c.get('categoria') or 'operativo'
+            cards_por_cat.setdefault(cat, []).append(c)
+        # Lista [(key, label, [cards])] saltando categorías vacías.
+        cat_labels = dict(hc.CATEGORIAS_HOME)
+        grupos_acciones = [
+            (k, cat_labels.get(k, k), cs)
+            for k, cs in cards_por_cat.items() if cs
+        ]
+        return render_template('index.html',
+                               config=get_config(),
+                               acciones=cards,
+                               grupos_acciones=grupos_acciones)
 
     @app.route('/ingresos')
     def ingresos():

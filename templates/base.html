@@ -393,6 +393,54 @@
             background: rgba(16,185,129,.08); color: var(--ds-mint-deep);
         }
 
+        /* ── Botón "Inicio" (volver al home — usar siempre este) ─────────── */
+        .btn-inicio {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: var(--ds-r-md);
+            background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+            color: var(--ds-bg-deep);
+            border: 1px solid transparent;
+            font-weight: 700; font-size: 12px; line-height: 1.2;
+            text-decoration: none; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(16,185,129,.25);
+            transition: all .15s;
+        }
+        .btn-inicio:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 22px rgba(16,185,129,.4);
+            color: var(--ds-bg-deep);
+        }
+        .btn-inicio svg { width: 14px; height: 14px; }
+
+        /* ── Botón "Volver" (navegación incremental — usar siempre este) ── */
+        .btn-volver {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; border-radius: var(--ds-r-md);
+            background: rgba(95,230,188,.06);
+            border: 1px solid var(--ds-line-2);
+            color: var(--ds-text-soft);
+            font-weight: 500; font-size: 12px; line-height: 1.2;
+            text-decoration: none; cursor: pointer;
+            transition: all .15s;
+        }
+        .btn-volver:hover {
+            background: rgba(95,230,188,.14);
+            border-color: var(--ds-mint);
+            color: var(--ds-mint);
+            transform: translateX(-1px);
+        }
+        .btn-volver svg { width: 12px; height: 12px; }
+        body:not(.theme-emerald) .btn-volver {
+            background: transparent;
+            border-color: rgba(16,185,129,.25);
+            color: var(--ds-text-mute-on-light);
+        }
+        body:not(.theme-emerald) .btn-volver:hover {
+            background: rgba(16,185,129,.06);
+            border-color: var(--ds-mint-deep);
+            color: var(--ds-mint-deep);
+        }
+
         /* ── Cards ───────────────────────────────────────────────────────── */
         .card {
             background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);

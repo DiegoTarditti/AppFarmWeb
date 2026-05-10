@@ -193,9 +193,53 @@ ACCIONES_HOME = [
         'bg_default': '#F3F4F6',
         'fg_default': '#6b7280',
     },
+    {
+        'id': 'productos_pendientes',
+        'titulo': 'Productos pendientes',
+        'desc': 'Items de imports sin match — revisar y resolver',
+        'endpoint': 'productos_pendientes_revision',
+        'emoji': '📋',
+        'tone': 'warn',
+        'badge_key': 'productos_pendientes_revision',
+        'icono_path': 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
+        'bg_default': '#FEF3C7',
+        'fg_default': '#B45309',
+    },
 ]
 
 ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
+
+
+# Categorías para agrupar las cards en el home (Diego pidió organización
+# 2026-05-09: 15 cards en flat list = no encuentra nada).
+# El orden de las claves dicta el orden de los grupos en pantalla.
+CATEGORIAS_HOME = [
+    ('operativo',  '🔄 Operativo diario'),
+    ('analisis',   '📊 Análisis e informes'),
+    ('catalogo',   '📚 Catálogo'),
+    ('datos',      '⚙ Datos y configuración'),
+    ('pendientes', '⏳ Pendientes'),
+]
+# Mapa card_id → categoria_key. Si una card no aparece, va a 'operativo' por default.
+CARD_CATEGORIA = {
+    'pedidos':              'operativo',
+    'ingresos':             'operativo',
+    'procesos':             'operativo',
+    'reclamos':             'operativo',
+    'informes':             'analisis',
+    'bi':                   'analisis',
+    'compras_recurrentes':  'analisis',
+    'obras_sociales':       'analisis',
+    'productos':            'catalogo',
+    'vademecum':            'catalogo',
+    'clientes':             'catalogo',
+    'ofertas_import':       'datos',
+    'config':               'datos',
+    # Pendientes (al fondo)
+    'productos_pendientes': 'pendientes',
+    'recetas_scan':         'pendientes',
+    'cuentas':              'pendientes',
+}
 
 
 def resolve_cards_para_usuario(session, usuario_id, clicks_desde_dias=30):
@@ -261,5 +305,6 @@ def resolve_cards_para_usuario(session, usuario_id, clicks_desde_dias=30):
         c['fg'] = c['fg_default']
         c['clicks_30d'] = clicks_map.get(cid, 0)
         c['oculto'] = cid in ocultos
+        c['categoria'] = CARD_CATEGORIA.get(cid, 'operativo')
         out.append(c)
     return out, modo

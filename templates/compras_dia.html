@@ -145,7 +145,10 @@
         </a>
         {% if current_user.rol != 'pedidos' %}
         <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-primary btn-sm">🔗 Matriz lab × drog</a>
-        <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">← Inicio</a>
+        <a href="{{ url_for('index') }}" class="btn-inicio" title="Volver al inicio">
+            <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+            Inicio
+        </a>
         {% endif %}
     </div>
 </div>
@@ -191,9 +194,9 @@
                 </a>
                 <button type="button"
                         onclick="abrirModalPedidos({{ prov.id }}, '{{ prov.nombre }}')"
-                        class="btn btn-sm{% if prov.pedidos_activos %} btn-secondary{% else %} btn-ghost{% endif %}"
+                        class="btn btn-secondary btn-sm"
                         {% if prov.pedidos_activos %}style="border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); color: var(--ds-warn);"{% endif %}>
-                    📋 Pedidos{% if prov.pedidos_activos %}
+                    📋 Ver Pedidos{% if prov.pedidos_activos %}
                         <span class="badge badge-warn badge-pill" style="margin-left:4px;">{{ prov.pedidos_activos }}</span>
                     {% endif %}
                 </button>

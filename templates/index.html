@@ -11,13 +11,13 @@
         ::-webkit-scrollbar-thumb:hover { background: var(--ds-mint); }
 
         /* Container compacto para pantallas chicas (1366x768 ok) */
-        .home-container { max-width: 1400px; padding: 18px 22px; }
-        @media (max-width: 1280px) { .home-container { padding: 16px 18px; } }
+        .home-container { max-width: 1400px; padding: 6px 22px 18px; }
+        @media (max-width: 1280px) { .home-container { padding: 6px 18px 16px; } }
 
         /* Top row: page-header (izq, compacto) + hero (der, en línea) */
         .home-toprow {
             display: flex; align-items: stretch; gap: 18px;
-            margin-bottom: 16px;
+            margin-bottom: 6px;
         }
         .home-toprow .home-page-header {
             flex: 0 0 auto;
@@ -143,8 +143,8 @@
             </div>
 
             <!-- 3 ENTIDADES -->
-            <div class="section-label" style="margin-bottom:8px;">Entidades</div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+            <div class="section-label" style="margin-bottom:4px;">Entidades</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
 
                 <div class="card entity-card">
                     <span class="entity-num">01</span>
@@ -189,23 +189,32 @@
                 </div>
             </div>
 
-            <!-- ACCIONES FRECUENTES -->
-            <div class="flex items-center justify-between mb-2">
+            <!-- ACCIONES FRECUENTES — agrupadas por categoría + buscador live -->
+            <div class="flex items-center justify-between mb-1 flex-wrap gap-3">
                 <div class="section-label">Acciones frecuentes</div>
-                <a href="{{ url_for('personalizar_home') }}"
-                   class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);"
-                   title="Personalizar acciones frecuentes">
-                    ⚙ Personalizar
-                </a>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <input type="text" id="home-card-buscador"
+                           placeholder="Filtrar acción…  (ej: pedido, oferta, cliente)"
+                           autocomplete="off"
+                           style="background:var(--ds-surface); border:1px solid var(--ds-line);
+                                  color:var(--ds-text); border-radius:var(--ds-r-sm);
+                                  padding:5px 10px; font-size:12px; width:280px;">
+                    <a href="{{ url_for('personalizar_home') }}"
+                       class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);"
+                       title="Personalizar acciones frecuentes">
+                        ⚙ Personalizar
+                    </a>
+                </div>
             </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3">
-                {% for card in acciones %}
+
+            {% macro render_card(card) %}
                 {% set tone_cls = '' %}
                 {% if card.tone == 'warn' %}{% set tone_cls = 'icon-tile-warn' %}
                 {% elif card.tone == 'danger' %}{% set tone_cls = 'icon-tile-danger' %}
                 {% elif card.tone == 'info' %}{% set tone_cls = 'icon-tile-info' %}
                 {% endif %}
-                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="card card-action">
+                <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="card card-action home-card"
+                   data-card-text="{{ (card.titulo ~ ' ' ~ (card.desc or '')) | lower | e }}">
                     <div class="action-content">
                         <div class="icon-tile {{ tone_cls }}">{{ card.emoji or '◆' }}</div>
                         <div class="action-content__body">
@@ -225,8 +234,81 @@
                         </div>
                     </div>
                 </a>
-                {% endfor %}
+            {% endmacro %}
+
+            {% for cat_key, cat_label, cards in grupos_acciones %}
+            <div class="cat-group" data-cat="{{ cat_key }}" style="margin-bottom: 14px;">
+                <div class="section-label" style="margin: 8px 0 6px; font-size: 10px;">{{ cat_label }}</div>
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3">
+                    {% if cat_key == 'operativo' %}
+                    {# Card especial: Armar pedido (2 modos). Movido desde BI tablero
+                       2026-05-10 — Diego pidió consolidar entry points de compra. #}
+                    <div class="card home-card" data-card-text="armar pedido por laboratorio por productos compra rapida multi-drogueria">
+                        <div class="action-content">
+                            <div class="icon-tile">📦</div>
+                            <div class="action-content__body">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="action-content__title">Armar pedido</span>
+                                </div>
+                                <div class="action-content__desc">Iniciar el flujo de compra</div>
+                                <div class="flex gap-2 flex-wrap" style="margin-top:8px;">
+                                    <a href="{{ url_for('informe_pedido_auto') }}" class="btn btn-primary btn-sm">Por laboratorio</a>
+                                    <a href="{{ url_for('compras_rapido') }}" class="btn btn-secondary btn-sm">Compra rápida</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% for c in cards %}{{ render_card(c) }}{% endfor %}
+                </div>
             </div>
+            {% endfor %}
+
+            <p id="home-card-vacio" class="hidden text-center text-xs italic mt-4" style="color: var(--ds-text-mute);">
+                Sin coincidencias para "<span id="home-card-q"></span>".
+            </p>
+
+            <script>
+            (function() {
+                const inp = document.getElementById('home-card-buscador');
+                if (!inp) return;
+                const cards = document.querySelectorAll('.home-card');
+                const grupos = document.querySelectorAll('.cat-group');
+                const vacioMsg = document.getElementById('home-card-vacio');
+                const qSpan = document.getElementById('home-card-q');
+                const norm = s => (s || '').toString().toLowerCase()
+                    .normalize('NFD').replace(/[̀-ͯ]/g, '');
+                inp.addEventListener('input', e => {
+                    const q = norm(e.target.value.trim());
+                    let totalVisible = 0;
+                    cards.forEach(c => {
+                        const txt = c.dataset.cardText || '';
+                        const visible = !q || txt.includes(q);
+                        c.style.display = visible ? '' : 'none';
+                        if (visible) totalVisible++;
+                    });
+                    // Ocultar grupos que quedaron vacíos
+                    grupos.forEach(g => {
+                        const hay = Array.from(g.querySelectorAll('.home-card'))
+                            .some(c => c.style.display !== 'none');
+                        g.style.display = hay ? '' : 'none';
+                    });
+                    if (q && totalVisible === 0) {
+                        qSpan.textContent = e.target.value;
+                        vacioMsg.classList.remove('hidden');
+                    } else {
+                        vacioMsg.classList.add('hidden');
+                    }
+                });
+                // Atajo: '/' enfoca el buscador
+                document.addEventListener('keydown', e => {
+                    if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
+                        e.preventDefault();
+                        inp.focus();
+                    }
+                });
+            })();
+            </script>
         </div>
     </div>
 {% endblock %}
