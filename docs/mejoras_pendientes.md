@@ -21,6 +21,185 @@ usa `page-header`, `card`, `btn-{primary,secondary,ghost,mint,danger}`, `badge-{
   commit `305a00d`
 - 2026-05-09: compras_dia.html (completo) — commit `23cc2ba`
 
+### ⏳ Pendiente — Desempate matcher por forma farmacéutica (2026-05-10)
+Caso DEXALERGIN: source "DEXALERGIN C 10 mg cáps. x 10" tiene tokens
+{dexalergin, c10, 10}. Catálogo tiene 3 candidatos con tokens IDÉNTICOS:
+- DEXALERGIN C 10 mg CAP x 10 → match real (cáps = CAP)
+- DEXALERGIN C 10 mg COM x 10 → no es
+- DEXALERGIN C 10 mg COM x 20 → no es
+
+`match_productos_bulk` Phase 2 detecta empate (2+ candidates al 100%) →
+`empate=True` → no auto-match → va a queue.
+
+**Fix**: cuando hay empate en Phase 2, leer la **forma farmacéutica** del raw
+text del source (cap/cáps/comp/com/tab/etc) y preferir el candidate con la
+misma forma. Sigue siendo string match pero más rico.
+
+Esfuerzo: 2-3 horas. Necesita helper `_detectar_forma(desc)` que extrae
+la forma del texto crudo, y un tiebreaker en el score de Phase 2.
+
+### ⏳ Pendiente — Agente IA para matching de pendientes (2026-05-10)
+
+**Contexto**: el matcher Python (Jaccard + Levenshtein + brand bonus) resuelve
+~70% de los items bien, pero le falta comprensión semántica:
+- "ENSURE PLUS Frutilla LIQ" = "ENSURE PLUS FRUTILLA x 220 ml" (ok jaccard alto)
+- "DERMAGLOS cr" = "DERMAGLOS CRE" pero ≠ "DERMAGLOS EMU" (necesita saber cr=crema)
+- "MAXIMA MD ≠ MAXIMA" pero "MAXIMA MD = MAXIMA MD (21+7 PLAC)" (matiz)
+- Detectar ruido: header "PRODUCTOS" del Excel debería descartarse, no encolarse.
+
+Diego propuso (2026-05-10) sumar un agente Claude que analice los pendientes
+del queue (no todos los items del Excel — solo los que ya fallaron el matcher).
+
+**Diseño aprobado** (Opción A — on-demand button):
+
+1. **Modelo**: agregar a `ProductoPendienteRevision`:
+   - `llm_analizado_en` (timestamp)
+   - `llm_pick_observer_id` / `llm_pick_producto_id` (FK al match elegido)
+   - `llm_confidence` (float 0-1)
+   - `llm_reasoning` (text breve)
+   - `llm_action` ('vincular' | 'crear_nuevo' | 'descartar' | 'ambiguo')
+
+2. **Helper**: `services/llm_matcher.py` con `analizar_pendiente(item, candidatos)`.
+   Prompt estructurado en español:
+   > Source: "{descripcion_supplier}"
+   > Candidatos del catálogo:
+   > 1. {desc} (Alfa: {alf})
+   > ...
+   > ¿Cuál es el match correcto? Devolver JSON {pick_idx, confidence, reasoning, action}.
+
+3. **Endpoint**: `POST /productos/pendientes-revision/analizar-ia`. Itera
+   pendientes con `llm_analizado_en IS NULL`, batch a Claude, persiste resultado.
+
+4. **UI**:
+   - Botón **"🤖 Analizar con IA (N pendientes)"** arriba de la lista.
+   - En cada fila con análisis: badge **"🤖 IA sugiere: X (95%)"** + botón
+     "Aplicar sugerencia IA" (1-click → vincula + aplica oferta).
+   - Bulk: "✅ Aplicar todas las sugerencias IA con confidence >= 90%".
+
+5. **Modelo Claude**: **Haiku 4.5** (`claude-haiku-4-5-20251001`) — ~$0.35
+   por import de 230 items. Suficiente para matching de descripciones.
+
+6. **Setup en Render**:
+   - Diego crea cuenta en console.anthropic.com.
+   - Genera API key, carga ~USD 10 en créditos.
+   - Setea `ANTHROPIC_API_KEY` en Render env vars.
+   - Setear spending limit USD 5/mes (corta automático).
+   - **Mañana 2026-05-11**: armar setup + implementar.
+
+**Costos estimados** (por import de 230 items):
+- Haiku 4.5: ~$0.35
+- Sonnet 4.6: ~$1.05
+- Opus 4.7: ~$5.25
+
+**Modo seguro**: dry-run mode antes del primer uso real para validar costo.
+
+**Esfuerzo estimado**: 1 día (modelo + helper + endpoint + UI + dry-run mode).
+
+### ⏳ Pendiente — `compras_rapido` vs `compras_dia_armar` multi-drog (2026-05-10)
+Diego confirmó (2026-05-10) que `compras_rapido` "se reemplazó por el hero" pero
+**NO deprecar todavía** — antes hay que portar features valiosas a
+`compras_dia_armar`.
+
+**Lo que `compras_rapido` tiene y `compras_dia_armar` NO**:
+1. **Selector de ámbito (labs)** — tildar labs específicos a procesar; útil para
+   enfocar ofertas concretas.
+2. **"Mejor descuento" auto-elegido** — sistema decide la drog óptima por
+   producto (en `compras_dia_armar` el user elige manual con toggle Drog: + Libres a:).
+3. **Alert "Conflicto"** — marca si el user cambió la drog elegida a una
+   sub-óptima (oportunidad perdida monetariamente).
+4. **Auditoría de descuentos aplicados** — panel desmarcable mostrando qué
+   descuentos sumó el sistema, recalcula al desmarcar.
+5. Atajos de teclado documentados (Alt+1..9, Esc, etc.).
+
+**Lo que `compras_dia_armar` tiene y `compras_rapido` NO**:
+- Filtros tokenizados (prod/lab/droga/rubro)
+- Sync stock ObServer en vivo
+- Panel chart dual sticky (AÑO + MES) por producto
+- Toggle Drog filter + "Libres a:" bulk
+- Emisión real (no solo guardar pedido)
+- Pendientes anteriores (NO_VINO)
+
+**Plan de unificación**:
+1. Portar a `compras_dia_armar` las features 🟢 #2 (mejor desc auto), #3
+   (conflicto alert), #4 (auditoría descuentos). Estas dos son las más
+   valiosas — la lógica de cálculo del mejor descuento ya existe en
+   `compras_rapido`.
+2. Validar UX en producción 1-2 semanas.
+3. Recién ahí deprecar `compras_rapido` y redirigir su URL al hero.
+
+Esfuerzo estimado: 1 día (portar #2 y #3 son lo difícil).
+
+### ⏳ Pendiente — Unificar `informe_pedido_auto` ↔ `compras_dia_armar` (2026-05-10)
+Las 2 pantallas hacen lo mismo (sugerir pedido) pero con distintos enfoques
+y feature sets. NO son redundantes pero sí tienen overlap revisable.
+
+**`informe_pedido_auto`** (eje laboratorio): único en mostrar
+- Pérdida estimada $/mes total + por producto.
+- Charts top 10 pérdida en unidades + valorizada.
+- Diagnóstico textual ("Bajo — cubre ~9d, sugerido ≥19").
+- Comparar drogs por producto (botón ⇄).
+
+**`compras_dia_armar`** (eje droguería): único en
+- Asignación drog (matriz lab × drog + Libres a: bulk).
+- Ofertas con %off, mín, plazo.
+- Sync ObServer stock.
+- Emisión real del pedido (no solo planificación).
+- Panel dual chart (AÑO + MES) sticky.
+
+**Plan sugerido**:
+- Portar a `compras_dia_armar` el **diagnóstico textual** ("Bajo — cubre Xd") y el
+  **valor de pérdida $/mes** (señal ROI).
+- Mantener `informe_pedido_auto` como vista de planificación/diagnóstico (eje lab).
+- Revisar BI tablero — quitar entry points duplicados (movimos los botones
+  "Armar pedido por lab/productos" al home en commit 2026-05-10).
+
+Esfuerzo: 1-2 horas (portar diagnóstico + valor) + auditoría BI tablero (½ día).
+
+### ⏳ Pendiente — Queue de productos sin match (2026-05-09)
+Para imports (ofertas, módulos, facturas) que devuelven items sin candidatos
+o donde el usuario hace "Skip", desviarlos a una **queue de revisión** en lugar
+de obligar a decidir en caliente.
+
+**Modelo nuevo `productos_pendientes_revision`**:
+- descripcion_supplier, supplier_id, archivo_origen, fecha
+- veces_aparecido (counter — re-aparece en otros imports → suma)
+- score_top_candidato + top_candidatos_json (snapshot del análisis)
+- estado: `pendiente` | `agregado` | `vinculado` | `descartado`
+- producto_creado_id / producto_vinculado_id, usuario_resuelve, fecha_resolucion
+
+**Ruta nueva `/productos/pendientes-revision`**:
+- Tabla con filtros (lab, supplier, fecha, "veces aparecido > 1").
+- Por fila: dropdown buscador catálogo + [Crear nuevo] [Vincular] [Descartar].
+- Reuso del modal "+ Crear nuevo" que ya existe en `ofertas_import`.
+
+**Hooks en imports**: items con 0 candidatos o Skip → al queue, toast al final
+"N items pasaron a revisión".
+
+**Beneficios**: no bloquea import, concentra decisiones, ve patrones (1 producto
+× 5 imports = alta prioridad), audit trail.
+
+Esfuerzo: ~½ día (modelo + ruta + UI + hooks en 2-3 imports).
+
+### ⏳ Pendiente — Refinamiento de candidatos en match manual (2026-05-09)
+Cuando el matcher devuelve top-N candidatos (todos por debajo de threshold),
+hoy se muestran tal cual con el score Jaccard del bulk pass. Idea: agregar
+una **segunda pasada** sobre ese subset chico (5-10 items) con análisis costoso
+que no escala a 122k items:
+- Levenshtein full string (premia parecido textual: "cr" más cerca de "cre"
+  que de "emu").
+- Prefix match de tokens huérfanos: source "cr" + candidate "crema" → bonus.
+- N-gram overlap (bigrams/trigrams).
+- Análisis estructural: parsear en {producto, forma, dosis, cantidad, lab}
+  y matchear campo-por-campo.
+
+**API propuesta**: `refinar_candidatos(source_desc, candidatos: list[(score, prod)]) → list[(score, prod)]`.
+Llamado por la UI de match manual antes de renderizar.
+
+**Beneficio**: resuelve casos como DERMAGLOS cr ↔ CRE vs EMU sin canonicalizar
+formas (lo cual rompería matches con suppliers que omiten la forma).
+
+Esfuerzo: 2-3 horas si solo Levenshtein + prefix; medio día si full estructural.
+
 ### ⏳ Pendiente — compras_dia_armar header layout (2026-05-09)
 Reorganizar la barra de filtros del encabezado en 2 columnas:
 - **Col 1**: `Filtrar producto` + `Filtrar lab` (stacked verticalmente).
