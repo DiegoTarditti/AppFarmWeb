@@ -916,6 +916,77 @@ def init_app(app):
 
             validados.append(entry)
 
+        # Encolar items not_found al queue de revisión (decisión diferida).
+        # Cada item lleva snapshot de su oferta_data + top candidatos del bulk
+        # pass. Al resolver el queue, la oferta se aplica como OfertaMinimo
+        # sobre el producto creado/vinculado (cierra el loop import → queue
+        # → oferta). No bloquea el flujo: si falla, la validación sigue OK.
+        try:
+            from routes.productos_pendientes import enqueue_pendiente
+            from database import Laboratorio as _Lab, get_db as _get_db
+            supplier_nombre = None
+            if lab_id:
+                with _get_db() as _s:
+                    _l = _s.get(_Lab, lab_id)
+                    if _l:
+                        supplier_nombre = _l.descripcion or _l.razon_social
+
+            # Pre-fetch candidatos para los not_found (un solo bulk call). Sin
+            # esto, el queue queda con top_candidatos vacíos. Como el frontend
+            # YA hace prefetchCandidatosBulk independiente, podríamos
+            # deduplicar — pero ese costo es chico vs. el beneficio de tener
+            # data útil al revisar la queue después.
+            not_found_items = [(i, e) for i, e in enumerate(validados)
+                               if e.get('_status') == 'not_found' and
+                               (e.get('_descripcion_original') or e.get('descripcion'))]
+            cands_por_idx = {}
+            if not_found_items:
+                items_for_search = [
+                    {'idx': i, 'descripcion': e.get('_descripcion_original') or e.get('descripcion'),
+                     'ean': e.get('ean'), 'codigo': e.get('codigo')}
+                    for i, e in not_found_items
+                ]
+                with database.get_db() as _s_search:
+                    cands_por_idx = pm.buscar_candidatos_bulk(
+                        items_for_search, laboratorio_id=lab_id, top=5,
+                        session=_s_search,
+                    )
+
+            with database.get_db() as _s2:
+                for i, entry in not_found_items:
+                    desc = entry.get('_descripcion_original') or entry.get('descripcion') or ''
+                    raw_cands = cands_por_idx.get(i, [])
+                    cands_payload = [
+                        {'producto_id': c.get('producto_id'),
+                         'observer_id': c.get('observer_id'),
+                         'descripcion': c.get('descripcion') or '',
+                         'codigo_alfabeta': c.get('codigo_alfabeta') or '',
+                         'score': round(float(c.get('score') or 0), 3)}
+                        for c in (raw_cands[:5] if isinstance(raw_cands, list) else [])
+                    ]
+                    score_top = cands_payload[0]['score'] if cands_payload else None
+                    oferta_data = {
+                        'laboratorio_id': lab_id,
+                        'descuento_psl': entry.get('descuento_psl'),
+                        'unidades_minima': entry.get('unidades_minima'),
+                        'plazo_pago': entry.get('plazo_pago'),
+                        'rentabilidad': entry.get('rentabilidad'),
+                    }
+                    enqueue_pendiente(_s2,
+                        descripcion=desc,
+                        supplier_id=lab_id,
+                        supplier_nombre=supplier_nombre,
+                        archivo_origen='ofertas_import',
+                        score_top=score_top,
+                        top_candidatos=cands_payload,
+                        oferta_data=oferta_data,
+                    )
+                _s2.commit()
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                'enqueue_pendiente falló (no bloquea el flujo): %s', _e)
+
         return jsonify({
             'items': validados,
             'stats': stats,

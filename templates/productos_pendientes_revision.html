@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Productos pendientes de revisión{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.pend-row { transition: background .15s; }
+.pend-row:hover { background: rgba(95,230,188,.04); }
+.cand-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; margin: 2px 4px 2px 0;
+    background: rgba(139,92,246,.12); color: #C4B5FD;
+    border: 1px solid rgba(139,92,246,.25); border-radius: 6px;
+    font-size: 10px; font-weight: 600;
+}
+.cand-chip .score { color: var(--ds-text-mute); margin-left: 4px; }
+.score-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 700;
+}
+.score-good { background: rgba(95,230,188,.15); color: var(--ds-mint); }
+.score-mid { background: rgba(245,158,11,.15); color: var(--ds-warn); }
+.score-low { background: rgba(239,68,68,.15); color: var(--ds-danger); }
+.score-none { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+.veces-badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 7px; border-radius: 999px;
+    background: rgba(95,230,188,.12); color: var(--ds-mint);
+    font-size: 10px; font-weight: 700;
+}
+.modal-backdrop {
+    position: fixed; inset: 0; z-index: 60;
+    background: rgba(0,0,0,.6); backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+}
+.modal-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line-2); border-radius: 14px;
+    padding: 20px 22px; max-width: 540px; width: 92vw;
+    box-shadow: var(--ds-shadow-lg);
+}
+.modal-card h3 { margin: 0 0 12px; font-size: 15px; font-weight: 700; color: var(--ds-text); font-family: 'Space Grotesk', sans-serif; }
+.modal-card label { font-size: 11px; font-weight: 600; color: var(--ds-text-soft); display: block; margin-top: 10px; }
+.modal-card .ds-input {
+    width: 100%; margin-top: 4px;
+    background: var(--ds-surface-2); border: 1px solid var(--ds-line);
+    color: var(--ds-text); border-radius: 6px; padding: 8px 10px; font-size: 13px;
+}
+.modal-card .ds-input:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 2px rgba(95,230,188,.15); }
+.cat-result {
+    padding: 6px 10px; cursor: pointer; border-bottom: 1px solid var(--ds-line);
+    font-size: 12px; color: var(--ds-text);
+    display: flex; align-items: center; gap: 8px;
+}
+.cat-result:hover { background: rgba(95,230,188,.08); }
+.cat-result .ean { font-family: ui-monospace, Consolas, monospace; font-size: 10px; color: var(--ds-text-mute); }
+.cat-result .origen-badge {
+    font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .04em; flex-shrink: 0;
+}
+.origen-local { background: rgba(95,230,188,.15); color: var(--ds-mint); }
+.origen-observer { background: rgba(139,92,246,.15); color: #C4B5FD; }
+</style>
+{% endblock %}
+
+{% block main %}
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📋 Productos pendientes de revisión</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ items | length }} items mostrados</span>
+    <a href="{{ url_for('index') }}" class="btn-inicio ml-auto" title="Volver al inicio">
+        <svg fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+        Inicio
+    </a>
+</div>
+
+<!-- Bulk acciones -->
+{% set _items_100 = items | selectattr('score_top_candidato', 'defined') | rejectattr('score_top_candidato', 'none') | selectattr('score_top_candidato', '>=', 1.0) | list %}
+{% set _items_90 = items | selectattr('score_top_candidato', 'defined') | rejectattr('score_top_candidato', 'none') | selectattr('score_top_candidato', '>=', 0.9) | list %}
+{% if _items_100 or _items_90 %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap text-xs">
+    <span class="font-semibold" style="color:var(--ds-mint);">⚡ Acciones bulk:</span>
+    {% if _items_100 %}
+    <form method="POST" action="{{ url_for('pendiente_bulk_vincular') }}" style="display:inline"
+          onsubmit="return confirm('Vincular automáticamente {{ _items_100 | length }} items con match al 100%? Cada uno crea/actualiza su OfertaMinimo correspondiente.')">
+        <input type="hidden" name="min_score" value="1.0">
+        <button type="submit" class="btn btn-primary btn-sm">
+            🎯 Aceptar {{ _items_100 | length }} matches al 100%
+        </button>
+    </form>
+    {% endif %}
+    {% if _items_90 and _items_90 | length > _items_100 | length %}
+    <form method="POST" action="{{ url_for('pendiente_bulk_vincular') }}" style="display:inline"
+          onsubmit="return confirm('Vincular automáticamente {{ _items_90 | length }} items con match >= 90%? Esto incluye los del 100% y algunos casi-perfectos. Verificar después que estén OK.')">
+        <input type="hidden" name="min_score" value="0.9">
+        <button type="submit" class="btn btn-secondary btn-sm">
+            ⚡ Aceptar {{ _items_90 | length }} matches >= 90%
+        </button>
+    </form>
+    {% endif %}
+    <span class="text-[#888]">— el resto se resuelve manualmente</span>
+</div>
+{% endif %}
+
+<!-- Filtros -->
+<form method="get" class="bg-surface border-b border-surface-border px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap text-xs">
+    <span class="font-semibold text-[#6f6f6f]">Estado:</span>
+    {% for est, label in [('pendiente', 'Pendientes'), ('agregado', 'Agregados'), ('vinculado', 'Vinculados'), ('descartado', 'Descartados'), ('todos', 'Todos')] %}
+    <a href="?{% if filtro_archivo %}archivo={{ filtro_archivo }}&{% endif %}{% if filtro_q %}q={{ filtro_q }}&{% endif %}estado={{ est }}"
+       class="px-3 py-1 rounded-md font-medium transition-colors
+              {% if filtro_estado == est %}text-white shadow-sm{% else %}text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06]{% endif %}"
+       {% if filtro_estado == est %}style="background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);"{% endif %}>
+        {{ label }}
+        {% if est in counts %}
+        <span class="ml-1 text-[10px] opacity-75">({{ counts[est] }})</span>
+        {% endif %}
+    </a>
+    {% endfor %}
+
+    {% if archivos %}
+    <span class="font-semibold text-[#6f6f6f] ml-3">Origen:</span>
+    <select name="archivo" onchange="this.form.submit()"
+            class="bg-surface-input border border-surface-border rounded-md px-2 py-1 text-xs">
+        <option value="">Todos</option>
+        {% for arc in archivos %}
+        <option value="{{ arc }}" {% if filtro_archivo == arc %}selected{% endif %}>{{ arc }}</option>
+        {% endfor %}
+    </select>
+    {% endif %}
+
+    <input type="hidden" name="estado" value="{{ filtro_estado }}">
+    <input type="text" name="q" value="{{ filtro_q }}" placeholder="Buscar descripción / supplier…"
+           class="bg-surface-input border border-surface-border rounded-md px-2 py-1 text-xs ml-auto w-64"
+           autocomplete="off">
+    <button type="submit" class="btn btn-secondary btn-sm">Filtrar</button>
+</form>
+
+<!-- Tabla -->
+<div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
+{% if items %}
+<div class="bg-surface border border-surface-border rounded-xl overflow-hidden">
+    <table class="w-full text-xs">
+        <thead>
+            <tr>
+                <th class="text-left px-3 py-2">Descripción supplier</th>
+                <th class="text-left px-3 py-2 w-32">Supplier</th>
+                <th class="text-left px-3 py-2 w-24">Origen</th>
+                <th class="text-center px-3 py-2 w-12" title="Cuántas veces apareció en imports">×</th>
+                <th class="text-center px-3 py-2 w-16" title="Mejor score del bulk match">Score</th>
+                <th class="text-left px-3 py-2 w-72">Top candidatos</th>
+                <th class="text-right px-3 py-2 w-64">Acciones</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-surface-border">
+        {% for it in items %}
+        <tr class="pend-row">
+            <td class="px-3 py-2">
+                <p class="font-semibold text-[#1e1e1e]">{{ it.descripcion_supplier }}</p>
+                {% if it.estado != 'pendiente' %}
+                <p class="text-[10px] text-[#888] mt-0.5">
+                    {{ it.estado }} por {{ it.usuario_resuelve or '—' }} · {{ it.fecha_resolucion.strftime('%d/%m %H:%M') if it.fecha_resolucion else '—' }}
+                </p>
+                {% endif %}
+            </td>
+            <td class="px-3 py-2 text-[#555]">{{ it.supplier_nombre }}</td>
+            <td class="px-3 py-2"><span class="badge badge-mute">{{ it.archivo_origen }}</span></td>
+            <td class="px-3 py-2 text-center">
+                {% if it.veces_aparecido > 1 %}
+                <span class="veces-badge" title="Apareció en {{ it.veces_aparecido }} imports — alta prioridad">{{ it.veces_aparecido }}</span>
+                {% else %}
+                <span class="text-[#999]">1</span>
+                {% endif %}
+            </td>
+            <td class="px-3 py-2 text-center">
+                {% if it.score_top_candidato is none %}
+                <span class="score-pill score-none">—</span>
+                {% elif it.score_top_candidato >= 0.6 %}
+                <span class="score-pill score-good">{{ '%.0f'|format(it.score_top_candidato * 100) }}%</span>
+                {% elif it.score_top_candidato >= 0.4 %}
+                <span class="score-pill score-mid">{{ '%.0f'|format(it.score_top_candidato * 100) }}%</span>
+                {% else %}
+                <span class="score-pill score-low">{{ '%.0f'|format(it.score_top_candidato * 100) }}%</span>
+                {% endif %}
+            </td>
+            <td class="px-3 py-2">
+                {% if it.top_candidatos %}
+                    {% for c in it.top_candidatos[:3] %}
+                    <span class="cand-chip" title="ID {{ c.producto_id }}">
+                        {{ c.descripcion | truncate(40) }}
+                        <span class="score">{{ '%.0f'|format((c.score or 0) * 100) }}%</span>
+                    </span>
+                    {% endfor %}
+                    {% if it.top_candidatos | length > 3 %}
+                    <span class="text-[10px] text-[#999]">+ {{ it.top_candidatos | length - 3 }}</span>
+                    {% endif %}
+                {% else %}
+                <span class="text-[10px] text-[#999] italic">sin candidatos</span>
+                {% endif %}
+            </td>
+            <td class="px-3 py-2 text-right">
+                {% if it.estado == 'pendiente' %}
+                <button type="button" class="btn btn-secondary btn-sm"
+                        onclick='abrirVincular({{ it.id }}, {{ it.descripcion_supplier|tojson }})'>
+                    🔗 Vincular
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm"
+                        onclick='abrirCrearNuevo({{ it.id }}, {{ it.descripcion_supplier|tojson }})'>
+                    + Crear nuevo
+                </button>
+                <form method="POST" action="{{ url_for('pendiente_descartar', item_id=it.id) }}" style="display:inline"
+                      onsubmit="return confirm('¿Descartar este item? Se ignorará en futuros imports hasta que vuelva a aparecer.')">
+                    <button type="submit" class="btn-icon btn-icon-danger" title="Descartar">
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                    </button>
+                </form>
+                {% else %}
+                <span class="text-[10px] text-[#999]">resuelto</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="bg-surface border border-surface-border rounded-xl p-10 text-center">
+    <p class="text-sm text-[#6f6f6f]">No hay items en este filtro.</p>
+    <p class="text-xs text-[#999] mt-2">Cuando un import (ofertas, módulos, etc.) no encuentre match para algún producto, va a aparecer acá para que decidas qué hacer.</p>
+</div>
+{% endif %}
+</div>
+
+<!-- Modal Crear nuevo -->
+<div id="modal-crear" class="hidden modal-backdrop" onclick="if(event.target===this) cerrarModales()">
+    <form class="modal-card" method="POST" id="form-crear">
+        <h3>+ Crear producto nuevo</h3>
+        <p class="text-xs text-[#888]" id="crear-source-desc"></p>
+        <label>Descripción <span style="color:var(--ds-danger)">*</span></label>
+        <input class="ds-input" name="descripcion" id="crear-descripcion" required>
+        <label>Código de barras (EAN) <span style="color:var(--ds-danger)">*</span></label>
+        <input class="ds-input" name="codigo_barra" placeholder="ej. 7791234567890" required
+               pattern="[0-9]+" title="Solo dígitos">
+        <label>Precio PVP (opcional)</label>
+        <input class="ds-input" name="precio_pvp" type="number" step="0.01" min="0">
+        <div class="flex items-center gap-2 mt-4">
+            <button type="submit" class="btn btn-primary btn-sm">Crear y resolver</button>
+            <button type="button" onclick="cerrarModales()" class="btn-volver">Cancelar</button>
+        </div>
+    </form>
+</div>
+
+<!-- Modal Vincular -->
+<div id="modal-vincular" class="hidden modal-backdrop" onclick="if(event.target===this) cerrarModales()">
+    <form class="modal-card" method="POST" id="form-vincular">
+        <h3>🔗 Vincular a producto existente</h3>
+        <p class="text-xs text-[#888]" id="vincular-source-desc"></p>
+        <label>Buscar en catálogo</label>
+        <input class="ds-input" id="vincular-q" placeholder="Tipear descripción…" autocomplete="off">
+        <input type="hidden" name="origen" id="vincular-origen">
+        <input type="hidden" name="id_local" id="vincular-id-local">
+        <input type="hidden" name="observer_id" id="vincular-observer-id">
+        <div id="vincular-resultados" class="mt-2 max-h-64 overflow-y-auto border border-surface-border rounded"></div>
+        <p id="vincular-elegido" class="text-xs text-[var(--ds-mint)] mt-2 hidden">
+            ✓ Elegido: <span id="vincular-elegido-desc"></span>
+        </p>
+        <div class="flex items-center gap-2 mt-4">
+            <button type="submit" class="btn btn-primary btn-sm" id="btn-vincular-submit" disabled>Vincular</button>
+            <button type="button" onclick="cerrarModales()" class="btn-volver">Cancelar</button>
+        </div>
+    </form>
+</div>
+
+<script>
+let _itemActual = null;
+
+function abrirCrearNuevo(itemId, sourceDesc) {
+    _itemActual = itemId;
+    document.getElementById('crear-source-desc').textContent = `Origen: "${sourceDesc}"`;
+    document.getElementById('crear-descripcion').value = sourceDesc;
+    document.getElementById('form-crear').action = `/productos/pendientes-revision/${itemId}/crear-nuevo`;
+    document.getElementById('modal-crear').classList.remove('hidden');
+    setTimeout(() => document.getElementById('crear-descripcion').focus(), 50);
+}
+
+function abrirVincular(itemId, sourceDesc) {
+    _itemActual = itemId;
+    document.getElementById('vincular-source-desc').textContent = `Origen: "${sourceDesc}"`;
+    document.getElementById('form-vincular').action = `/productos/pendientes-revision/${itemId}/vincular`;
+    document.getElementById('vincular-q').value = '';
+    document.getElementById('vincular-origen').value = '';
+    document.getElementById('vincular-id-local').value = '';
+    document.getElementById('vincular-observer-id').value = '';
+    document.getElementById('vincular-resultados').innerHTML = '';
+    document.getElementById('vincular-elegido').classList.add('hidden');
+    document.getElementById('btn-vincular-submit').disabled = true;
+    document.getElementById('modal-vincular').classList.remove('hidden');
+    setTimeout(() => {
+        document.getElementById('vincular-q').focus();
+        document.getElementById('vincular-q').value = sourceDesc;
+        buscarCatalogo(sourceDesc);
+    }, 50);
+}
+
+function cerrarModales() {
+    document.getElementById('modal-crear').classList.add('hidden');
+    document.getElementById('modal-vincular').classList.add('hidden');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModales(); });
+
+let _busquedaTimer = null;
+async function buscarCatalogo(q) {
+    const cont = document.getElementById('vincular-resultados');
+    if (!q || q.length < 2) { cont.innerHTML = ''; return; }
+    try {
+        const r = await fetch('/api/productos/pendientes-revision/buscar-catalogo?q=' + encodeURIComponent(q));
+        const d = await r.json();
+        if (!d.ok || !d.productos.length) {
+            cont.innerHTML = '<p class="text-xs text-[#888] p-3">Sin resultados.</p>';
+            return;
+        }
+        cont.innerHTML = d.productos.map(p => {
+            const origen = p.origen || 'local';
+            const idArg = origen === 'local' ? p.id_local : p.observer_id;
+            const refStr = p.codigo_barra ? p.codigo_barra
+                : (p.codigo_alfabeta ? `Alfa ${p.codigo_alfabeta}` : '—');
+            return `
+                <div class="cat-result" onclick='elegirCandidato(${JSON.stringify(origen)}, ${idArg}, ${JSON.stringify(p.descripcion)})'>
+                    <span class="origen-badge origen-${origen}">${origen}</span>
+                    <span class="flex-1 font-medium">${escapeHtml(p.descripcion || '')}</span>
+                    <span class="ean">${refStr}</span>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        cont.innerHTML = '<p class="text-xs text-rose-500 p-3">Error de red.</p>';
+    }
+}
+
+function elegirCandidato(origen, id, desc) {
+    document.getElementById('vincular-origen').value = origen;
+    if (origen === 'local') {
+        document.getElementById('vincular-id-local').value = id;
+        document.getElementById('vincular-observer-id').value = '';
+    } else {
+        document.getElementById('vincular-observer-id').value = id;
+        document.getElementById('vincular-id-local').value = '';
+    }
+    document.getElementById('vincular-elegido-desc').textContent = `[${origen}] ${desc}`;
+    document.getElementById('vincular-elegido').classList.remove('hidden');
+    document.getElementById('btn-vincular-submit').disabled = false;
+}
+
+document.getElementById('vincular-q').addEventListener('input', e => {
+    clearTimeout(_busquedaTimer);
+    _busquedaTimer = setTimeout(() => buscarCatalogo(e.target.value.trim()), 250);
+});
+
+function escapeHtml(s) {
+    return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+
+{% endblock %}

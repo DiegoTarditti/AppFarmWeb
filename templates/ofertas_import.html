@@ -435,12 +435,17 @@
     <div id="panel-done" class="hidden bg-emerald-50 border border-emerald-300 rounded-xl p-5">
         <h2 class="text-sm font-semibold text-emerald-900 mb-2">✓ Importación completa</h2>
         <p id="result-msg" class="text-xs text-emerald-800"></p>
+        <p id="result-pendientes" class="hidden text-xs text-amber-800 mt-1"></p>
         <div class="mt-3 flex gap-2 flex-wrap">
             <a id="link-lab" href="#" class="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-1.5 rounded-lg text-xs">
                 Ver ofertas del lab →
             </a>
             <a id="link-equiv" href="#" class="bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-50 font-semibold px-3 py-1.5 rounded-lg text-xs">
                 Ver equivalencias →
+            </a>
+            <a href="{{ url_for('productos_pendientes_revision') }}"
+               class="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1.5 rounded-lg text-xs">
+                📋 Ver pendientes de revisión →
             </a>
             <button type="button" onclick="location.reload()" class="bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg text-xs">
                 Importar otro archivo
@@ -1870,8 +1875,18 @@ async function _confirmarEImportar() {
         }
         document.getElementById('panel-4').classList.add('hidden');
         document.getElementById('panel-done').classList.remove('hidden');
+        const labName = data.laboratorio || data.lab_nombre || '';
+        const ins = data.insertados ?? 0, act = data.actualizados ?? 0, salt = data.saltados ?? 0;
+        const prefijo = labName ? `${labName}: ` : '';
         document.getElementById('result-msg').textContent =
-            `${data.laboratorio}: ${data.insertados} insertados, ${data.actualizados} actualizados, ${data.saltados} saltados.`;
+            `${prefijo}${ins} insertados, ${act} actualizados, ${salt} saltados.`;
+        // Si quedaron items en queue de revisión, avisar.
+        const notFound = (window._items || []).filter(it => it._status === 'not_found').length;
+        if (notFound > 0) {
+            const pendEl = document.getElementById('result-pendientes');
+            pendEl.textContent = `⏳ ${notFound} ítem(s) sin match quedaron en la queue de pendientes para revisar.`;
+            pendEl.classList.remove('hidden');
+        }
         document.getElementById('link-lab').href = `/laboratorio/${labId}/ofertas-minimo`;
         document.getElementById('link-equiv').href = `/laboratorio/${labId}/equivalencias`;
     } catch (err) {

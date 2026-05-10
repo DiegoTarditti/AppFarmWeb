@@ -7,6 +7,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -436,6 +437,44 @@ class PanelComando(Base):
     duracion_ms = Column(Integer, nullable=True)
     resultado = Column(Text, nullable=True)
     origen = Column(String(40), nullable=True)
+
+
+class ProductoPendienteRevision(Base):
+    """Queue de items de import sin match en catálogo (o donde el user hizo Skip).
+
+    Concentra decisiones diferidas de imports (ofertas, módulos, facturas, etc.)
+    en una sola tabla revisable, en lugar de obligar a decidir "crear nuevo /
+    descartar / vincular" en caliente durante el wizard.
+
+    Estados:
+      - pendiente: aún no resuelto.
+      - agregado: se creó un Producto nuevo (FK en producto_creado_id).
+      - vinculado: se vinculó a un Producto existente (FK en producto_vinculado_id).
+      - descartado: el operador decidió no catalogarlo.
+
+    Si re-aparece la misma descripcion_supplier desde el mismo lab/supplier,
+    sumar al counter `veces_aparecido` en lugar de duplicar la fila.
+    """
+    __tablename__ = 'productos_pendientes_revision'
+    id = Column(Integer, primary_key=True)
+    descripcion_supplier = Column(String(300), nullable=False, index=True)
+    supplier_id = Column(Integer, nullable=True, index=True)         # laboratorio/proveedor (sin FK estricto: puede venir de Producto.laboratorio_id, Provider.id, etc.)
+    supplier_nombre = Column(String(200), nullable=True)
+    archivo_origen = Column(String(60), nullable=True)               # 'ofertas_import' | 'modulos_import' | 'factura' | etc.
+    fecha_creacion = Column(DateTime, default=now_ar, nullable=False, index=True)
+    veces_aparecido = Column(Integer, nullable=False, default=1)
+    score_top_candidato = Column(Float, nullable=True)               # 0.0-1.0; None si bulk no devolvió ningún candidato
+    top_candidatos_json = Column(Text, nullable=True)                # snapshot JSON: [{producto_id, descripcion, score}, ...]
+    oferta_data_json = Column(Text, nullable=True)                   # snapshot JSON de la oferta original que disparó el queue:
+                                                                      # {descuento_psl, unidades_minima, plazo_pago, rentabilidad,
+                                                                      #  vigencia_hasta, drogueria_id, observacion, archivo_origen,
+                                                                      #  laboratorio_id}. Al resolver, se aplica a OfertaMinimo del
+                                                                      # producto creado/vinculado para cerrar el loop import → queue → oferta.
+    estado = Column(String(20), nullable=False, default='pendiente', index=True)  # pendiente / agregado / vinculado / descartado
+    producto_creado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
+    producto_vinculado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
+    usuario_resuelve = Column(String(80), nullable=True)
+    fecha_resolucion = Column(DateTime, nullable=True)
 
 
 class Farmacia(Base):
@@ -1349,7 +1388,8 @@ def init_db(database_url=None):
                         'equivalencias_proveedor',
                         'pack_equivalencias', 'cliente_os_inferida',
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
-                        'alarmas_notificadas', 'sync_lock')
+                        'alarmas_notificadas', 'sync_lock',
+                        'productos_pendientes_revision')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -1447,6 +1487,43 @@ def init_db(database_url=None):
                 conn.execute(text(
                     "CREATE INDEX IF NOT EXISTS idx_horarios_prov "
                     "ON proveedor_horarios_reparto (proveedor_id)"
+                ))
+                # Queue de items de import sin match en catálogo.
+                # Mismo motivo que panel_comandos: tabla nueva crítica usada
+                # por imports y por una pantalla de revisión, no debe depender
+                # del path de _pg_add_columns (que solo agrega columns a tablas
+                # existentes, no crea tablas).
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS productos_pendientes_revision (
+                        id SERIAL PRIMARY KEY,
+                        descripcion_supplier VARCHAR(300) NOT NULL,
+                        supplier_id INTEGER,
+                        supplier_nombre VARCHAR(200),
+                        archivo_origen VARCHAR(60),
+                        fecha_creacion TIMESTAMP NOT NULL DEFAULT NOW(),
+                        veces_aparecido INTEGER NOT NULL DEFAULT 1,
+                        score_top_candidato DOUBLE PRECISION,
+                        top_candidatos_json TEXT,
+                        oferta_data_json TEXT,
+                        estado VARCHAR(20) NOT NULL DEFAULT 'pendiente',
+                        producto_creado_id INTEGER,
+                        producto_vinculado_id INTEGER,
+                        usuario_resuelve VARCHAR(80),
+                        fecha_resolucion TIMESTAMP
+                    )
+                """))
+                # Migración para tablas existentes (creadas antes del campo)
+                conn.execute(text(
+                    "ALTER TABLE productos_pendientes_revision "
+                    "ADD COLUMN IF NOT EXISTS oferta_data_json TEXT"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_pend_rev_estado "
+                    "ON productos_pendientes_revision(estado, fecha_creacion)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_pend_rev_supplier "
+                    "ON productos_pendientes_revision(supplier_id)"
                 ))
                 # Lock singleton para coordinar el sync ObServer entre workers.
                 conn.execute(text("""
