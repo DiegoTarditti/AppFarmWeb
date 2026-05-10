@@ -144,7 +144,7 @@
             📦 Armar pedido (todas las drogs) →
         </a>
         {% if current_user.rol != 'pedidos' %}
-        <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-ghost btn-sm">🔗 Matriz lab × drog</a>
+        <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-primary btn-sm">🔗 Matriz lab × drog</a>
         <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">← Inicio</a>
         {% endif %}
     </div>

@@ -59,11 +59,42 @@
     .ar-pill.danger { background: rgba(239,68,68,.08); border-color: rgba(239,68,68,.3); color: var(--ds-danger); }
     .ar-pill .sync-btn {
         margin-left: 4px; font-weight: 700; padding: 3px 10px;
-        background: rgba(0,0,0,.2); border: 1px solid currentColor;
-        border-radius: 4px; cursor: pointer; color: inherit;
-        transition: opacity .15s;
+        background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);
+        border: 1px solid var(--ds-orange-deep);
+        border-radius: 4px; cursor: pointer;
+        color: #fff;
+        transition: all .15s;
     }
-    .ar-pill .sync-btn:hover { opacity: .75; }
+    .ar-pill .sync-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(234,88,12,.4); }
+
+    /* Toggle buttons (filtro Drog: / Libres a:) */
+    .toggle-drog {
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 4px 12px; border-radius: var(--ds-r-sm);
+        font-size: 11px; font-weight: 600; line-height: 1.4;
+        border: 1px solid var(--ds-line-2);
+        background: rgba(0,0,0,.2);
+        color: var(--ds-text-mute);
+        cursor: pointer; user-select: none;
+        transition: all .15s; min-width: 56px;
+    }
+    .toggle-drog input[type="checkbox"] {
+        position: absolute; opacity: 0; pointer-events: none;
+        width: 0; height: 0;
+    }
+    .toggle-drog:has(input:checked) {
+        background: rgba(95,230,188,.15);
+        color: var(--ds-mint);
+        border-color: var(--ds-mint);
+    }
+    .toggle-drog:hover { border-color: var(--ds-mint); }
+
+    /* Badge "Libre" en filas (producto sin drog asignada) — contraste visible */
+    .libre-base {
+        background: rgba(95,230,188,.12) !important;
+        color: var(--ds-mint) !important;
+        border-color: rgba(95,230,188,.4) !important;
+    }
 
     /* === Banners de oferta-drog (3 condiciones) === */
     .ar-banner {
@@ -154,7 +185,7 @@
     .tabla-armar tbody td.text-\[\#999\],
     .tabla-armar tbody td .text-\[\#999\] { color: var(--ds-text-mute) !important; }
     .tabla-armar tbody td.text-\[\#bbb\],
-    .tabla-armar tbody td .text-\[\#bbb\] { color: var(--ds-text-mute) !important; opacity: .7; }
+    .tabla-armar tbody td .text-\[\#bbb\] { color: var(--ds-text-mute) !important; }
     /* Filas con clase de estado (otra drog → amber background) */
     .tabla-armar tbody tr.producto-row.bg-amber-50 {
         background: rgba(245,158,11,.10) !important;
@@ -301,28 +332,36 @@
    guardados" más abajo. #}
 
 <div class="ar-filter-bar">
-    <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…" style="width: 280px;">
-    <input type="text" id="filtro-lab" placeholder="Filtrar lab…" style="width: 220px;">
-    {% if rubros_disponibles %}
-    {# Filtro de rubro server-side: recarga la página con ?rubros=X. #}
-    <select id="filtro-rubro" onchange="cambiarRubro(this.value)">
-        <option value="all" {% if not rubros_seleccionados %}selected{% endif %}>Todos los rubros</option>
-        {% for r in rubros_disponibles %}
-        <option value="{{ r.id }}"
-                {% if rubros_seleccionados and r.id in rubros_seleccionados and rubros_seleccionados | length == 1 %}selected{% endif %}>
-            {{ r.nombre }}
-        </option>
-        {% endfor %}
-    </select>
-    {% endif %}
-    <label class="flex items-center gap-1.5 text-xs cursor-pointer">
-        <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
-        Solo venta libre
-    </label>
-    <label class="flex items-center gap-1.5 text-xs cursor-pointer">
-        <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
-        Solo con sugerencia (subir/bajar)
-    </label>
+    {# Col 1: Filtrar producto + Filtrar lab stacked #}
+    <div class="flex flex-col gap-1">
+        <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…" style="width: 240px;">
+        <input type="text" id="filtro-lab" placeholder="Filtrar lab…" style="width: 240px;">
+    </div>
+    {# Col 2: Filtrar rubro arriba + checks (vta libre / sugerencia) abajo #}
+    <div class="flex flex-col gap-1">
+        {% if rubros_disponibles %}
+        {# Filtro de rubro server-side: recarga la página con ?rubros=X. #}
+        <select id="filtro-rubro" onchange="cambiarRubro(this.value)" style="width: 240px;">
+            <option value="all" {% if not rubros_seleccionados %}selected{% endif %}>Todos los rubros</option>
+            {% for r in rubros_disponibles %}
+            <option value="{{ r.id }}"
+                    {% if rubros_seleccionados and r.id in rubros_seleccionados and rubros_seleccionados | length == 1 %}selected{% endif %}>
+                {{ r.nombre }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+        <div class="flex items-center gap-3">
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input type="checkbox" id="filtro-libre" class="w-3.5 h-3.5">
+                Solo venta libre
+            </label>
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input type="checkbox" id="filtro-sug" class="w-3.5 h-3.5">
+                Solo con sugerencia (subir/bajar)
+            </label>
+        </div>
+    </div>
     {% if prov %}
     {# En modo single-drog, "otra drog" filtra los labs que NO cubre esta drog
        (van a la cola del próximo prov). En multi-drog ese concepto se reemplaza
@@ -335,33 +374,33 @@
     {% if not prov and drog_label %}
     {% set _siglas_unicas = drog_label.values() | unique | list %}
     <div class="flex items-start gap-4 text-[11px]" style="border-left: 1px solid var(--ds-line-2); padding-left: 12px; margin-left: 4px; color: var(--ds-text-soft);">
-        {# Columna 1: filtro Drog (checks vertical) #}
-        <div class="flex flex-col gap-0.5">
+        {# Columna 1: filtro Drog (toggle buttons vertical) #}
+        <div class="flex flex-col gap-1">
             <span class="font-semibold mb-0.5">Drog:</span>
             {% for sig in _siglas_unicas %}
-            <label class="flex items-center gap-1 cursor-pointer">
-                <input type="checkbox" class="filtro-drog-chk w-3.5 h-3.5" data-sig="{{ sig }}" checked>
+            <label class="toggle-drog">
+                <input type="checkbox" class="filtro-drog-chk" data-sig="{{ sig }}" checked>
                 <span>{{ sig }}</span>
             </label>
             {% endfor %}
-            <label class="flex items-center gap-1 cursor-pointer" style="color: var(--ds-text-mute);">
-                <input type="checkbox" id="filtro-drog-libre" class="w-3.5 h-3.5" checked>
+            <label class="toggle-drog">
+                <input type="checkbox" id="filtro-drog-libre" checked>
                 <span>Libre</span>
             </label>
         </div>
-        {# Columna 2: bulk Libres a: (botones vertical, color por sigla) — estilos inline con tokens #}
-        {% set _bulk_styles = {
-            'Kel': 'background: rgba(217,70,239,.15); color: #F0ABFC; border: 2px solid rgba(217,70,239,.4);',
-            '20J': 'background: rgba(59,130,246,.15); color: #93C5FD; border: 2px solid rgba(59,130,246,.4);',
-        } %}
-        {% set _bulk_default = 'background: rgba(139,92,246,.15); color: #C4B5FD; border: 2px solid rgba(139,92,246,.4);' %}
-        <div class="flex flex-col gap-0.5" id="bulk-libres-bar">
+        {# Columna 2: bulk Libres a: (botones vertical, naranja unificado) #}
+        <div class="flex flex-col gap-1" id="bulk-libres-bar">
             <span class="font-semibold mb-0.5">Libres a:</span>
             {% for drog_id, sig in drog_label.items() %}
             <button type="button"
                     onclick="asignarLibresA({{ drog_id }}, '{{ drog_nombre_full[drog_id] | e }}', '{{ sig }}')"
-                    class="font-bold px-2 py-0.5 rounded text-left"
-                    style="font-size: 10px; {{ _bulk_styles.get(sig, _bulk_default) }}">
+                    class="font-bold rounded text-center"
+                    style="font-size: 11px; padding: 4px 12px; min-width: 56px;
+                           background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);
+                           color: #fff; border: 1px solid var(--ds-orange-deep);
+                           cursor: pointer; transition: all .15s;"
+                    onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 12px rgba(234,88,12,.4)'"
+                    onmouseout="this.style.transform='';this.style.boxShadow=''">
                 → {{ sig }}
             </button>
             {% endfor %}
@@ -795,7 +834,7 @@ function _repintarDrogCell(row) {
     const esLibre = drogsMatriz.length === 0;
     const partes = [];
     if (esLibre) {
-        partes.push(`<span class="text-[10px] bg-gray-100 text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded font-medium">Libre</span>`);
+        partes.push(`<span class="text-[10px] bg-gray-100 text-gray-500 border border-gray-200 px-1.5 py-0.5 rounded font-medium libre-base">Libre</span>`);
         if (elegida) {
             partes.push(`<span class="text-[10px] text-[#bbb] mx-0.5">→</span>`);
             partes.push(`<span class="text-[10px] ${_drogClass(elegida)} border px-1.5 py-0.5 rounded font-bold">${elegida}</span>`);
@@ -1567,7 +1606,7 @@ document.addEventListener('keydown', e => {
         <div id="modal-op-lista" class="mb-3 max-h-48 overflow-y-auto"></div>
         <div class="flex gap-2 border-t border-surface-border pt-3">
             <input id="modal-op-inp" type="text" placeholder="Agregar operador…"
-                   class="flex-1 border border-surface-border rounded px-2 py-1.5 text-sm">
+                   class="flex-1 bg-white border border-surface-border rounded px-2 py-1.5 text-sm">
             <button id="modal-op-agregar"
                     class="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold">+</button>
         </div>

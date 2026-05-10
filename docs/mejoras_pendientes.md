@@ -21,6 +21,14 @@ usa `page-header`, `card`, `btn-{primary,secondary,ghost,mint,danger}`, `badge-{
   commit `305a00d`
 - 2026-05-09: compras_dia.html (completo) — commit `23cc2ba`
 
+### ⏳ Pendiente — compras_dia_armar header layout (2026-05-09)
+Reorganizar la barra de filtros del encabezado en 2 columnas:
+- **Col 1**: `Filtrar producto` + `Filtrar lab` (stacked verticalmente).
+- **Col 2**: `Filtrar rubro` arriba, debajo los checks `Solo venta libre` + `Solo con sugerencia (subir/bajar)`.
+
+Hoy van todos en una fila horizontal larga que en pantallas medianas wrappea feo.
+Ver captura sesión 2026-05-09.
+
 ### ⏳ Pendiente — order_detail Etapas 2-3
 - **Etapa 2 (tablas internas)**: ~150 ocurrencias de `bg-emerald-50/amber-50/sky-100/violet-100`
   en filas de tablas de los 3 step-cards (módulos / ofertas / resumen). Reemplazar por
