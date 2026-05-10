@@ -182,6 +182,8 @@
         body.theme-emerald .text-\[\#888\],
         body.theme-emerald .text-\[\#999\],
         body.theme-emerald .text-\[\#aaa\],
+        body.theme-emerald .text-\[\#9ca3af\],
+        body.theme-emerald .text-\[\#6b7280\],
         body.theme-emerald .text-gray-400,
         body.theme-emerald .text-gray-500 { color: var(--ds-text-mute) !important; }
         /* Grises ultra-claros (placeholders/dim) → text-mute con opacidad */
@@ -363,6 +365,33 @@
             color: var(--ds-bg-deep); box-shadow: 0 4px 14px rgba(16,185,129,.3);
         }
         .btn-mint:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(16,185,129,.4); }
+
+        /* ── Icon-only buttons (XLSX/PDF/trash en filas densas) ──────────── */
+        .btn-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 30px; height: 30px;
+            border-radius: var(--ds-r-sm);
+            background: transparent;
+            border: 1px solid var(--ds-line);
+            color: var(--ds-text-mute);
+            transition: all .15s; cursor: pointer;
+            flex-shrink: 0; text-decoration: none;
+        }
+        .btn-icon:hover {
+            background: rgba(95,230,188,.08);
+            color: var(--ds-mint); border-color: var(--ds-line-2);
+        }
+        .btn-icon-danger:hover {
+            background: rgba(239,68,68,.08);
+            color: var(--ds-danger); border-color: rgba(239,68,68,.3);
+        }
+        .btn-icon svg { width: 16px; height: 16px; }
+        body:not(.theme-emerald) .btn-icon {
+            border-color: var(--ds-line-light); color: var(--ds-text-mute-on-light);
+        }
+        body:not(.theme-emerald) .btn-icon:hover {
+            background: rgba(16,185,129,.08); color: var(--ds-mint-deep);
+        }
 
         /* ── Cards ───────────────────────────────────────────────────────── */
         .card {

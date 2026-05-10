@@ -246,7 +246,8 @@
                 </button>
                 <!-- Exports (hidden until processed) -->
                 <button id="btn-export-mod-pdf" onclick="printStep('modulos')"
-                        class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        class="hidden btn btn-secondary btn-sm" title="Exportar a PDF">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                     PDF
                 </button>
                 <form id="form-export-mod-xlsx" method="POST"
@@ -255,7 +256,8 @@
                     <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
                     <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
                     <button type="button" id="btn-export-mod-xlsx" onclick="exportModulos()"
-                            class="hidden flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                            class="hidden btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                         XLSX
                     </button>
                 </form>
@@ -350,7 +352,8 @@
                     Saltar →
                 </button>
                 <button id="btn-export-off-pdf" onclick="printStep('ofertas')"
-                        class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        class="hidden btn btn-secondary btn-sm" title="Exportar a PDF">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                     PDF
                 </button>
                 <form id="form-export-off-xlsx" method="POST"
@@ -359,7 +362,8 @@
                     <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
                     <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
                     <button type="button" id="btn-export-off-xlsx" onclick="exportOfertas()"
-                            class="hidden flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                            class="hidden btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                         XLSX
                     </button>
                 </form>
@@ -410,7 +414,8 @@
             <span id="canal-badge" class="ml-2 hidden text-[10px] font-semibold px-2 py-0.5 rounded"></span>
             <div class="ml-auto flex items-center gap-2 no-print">
                 <button id="btn-export-sum-pdf" onclick="printStep('resumen')"
-                        class="hidden flex items-center gap-1.5 bg-red-700 hover:bg-red-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                        class="hidden btn btn-secondary btn-sm" title="Exportar a PDF">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                     PDF
                 </button>
                 <form id="form-export-sum-xlsx" method="POST"
@@ -419,7 +424,8 @@
                     <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
                     <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
                     <button type="button" id="btn-export-sum-xlsx" onclick="exportResumen()"
-                            class="hidden flex items-center gap-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                            class="hidden btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                         XLSX
                     </button>
                 </form>
@@ -431,7 +437,8 @@
                 {% if plantillas_entidad %}
                 <div id="btn-export-plantillas-wrap" class="hidden relative">
                     <button type="button" onclick="togglePlantillasMenu(event)"
-                            class="flex items-center gap-1.5 bg-violet-700 hover:bg-violet-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+                            class="btn btn-secondary btn-sm" title="Exportar con plantilla del proveedor">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10M4 18h10"/></svg>
                         Plantilla ▾
                     </button>
                     <div id="plantillas-menu"

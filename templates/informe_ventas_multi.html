@@ -11,8 +11,9 @@
     <h1 class="text-base font-bold text-[#1e1e1e]">🔬 Ventas por droga / producto / médico / fecha</h1>
     <div class="ml-auto flex items-center gap-2">
         <a href="{{ url_for('informe_ventas_multi_export', desde=desde.isoformat(), hasta=hasta.isoformat(), droga_id=droga_id or '', producto_id=producto_id or '', medico_id=medico_id or '', group_by=group_by) }}"
-           class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded">
-            📊 Exportar XLSX
+           class="btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            XLSX
         </a>
         <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline ml-1">← Mis Informes</a>
     </div>

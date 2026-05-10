@@ -44,7 +44,10 @@ tr:hover .row-delete-btn { opacity: 1; }
                 <p class="font-semibold text-sm">{{ source }}</p>
                 <p class="text-xs text-[#6f6f6f]"><span id="row-count">{{ rows|length }}</span> filas visibles de {{ rows|length }} · Revisalas antes de exportar</p>
             </div>
-            <button onclick="exportXLSX()" class="px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">Exportar XLSX ↓</button>
+            <button onclick="exportXLSX()" class="btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                XLSX
+            </button>
         </div>
 
         <!-- Filtros -->

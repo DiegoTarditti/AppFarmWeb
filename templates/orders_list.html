@@ -364,21 +364,21 @@
                     </div>
 
                     <!-- Acciones: row completa abajo en mobile -->
-                    <div class="order-4 md:order-none w-full md:w-auto flex items-center gap-1.5 md:gap-1 flex-wrap">
+                    <div class="order-4 md:order-none w-full md:w-auto flex items-center gap-1.5 flex-wrap">
                         <button type="button" title="Indicadores: cobertura, riesgos, top, mix, estacionalidad"
                                 data-pedido-id="{{ p.id }}" data-pedido-lab="{{ p.laboratorio }}"
-                                class="btn-ind flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                                class="btn-ind btn btn-secondary btn-sm">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
                             Indicadores
                         </button>
                         <a href="{{ url_for('order_detail', pedido_id=p.id) }}" title="Analizar con módulos y ofertas"
                            onclick="event.stopPropagation()"
-                           class="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                           class="btn btn-primary btn-sm">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"/></svg>
                             Analizar
                         </a>
                         {% if p.estado == 'ENVIADO' %}
-                        <span class="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-medium px-2.5 py-1.5 rounded-lg">
+                        <span class="badge badge-mint" title="Pedido ya enviado a Procesos">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
                             En Procesos
                         </span>
@@ -387,7 +387,7 @@
                                 data-pedido-id="{{ p.id }}"
                                 data-pedido-lab="{{ p.laboratorio }}"
                                 onclick="event.stopPropagation(); event.preventDefault(); abrirModalProceso(this.dataset.pedidoId, this.dataset.pedidoLab); return false;"
-                                class="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                                class="btn btn-secondary btn-sm">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
                             Enviar a Procesos
                         </button>
@@ -396,28 +396,23 @@
                                 title="Mostrar este pedido como sugerencia en 'Pedido Reposición' hasta una fecha"
                                 onclick="event.stopPropagation(); event.preventDefault(); abrirMostrarHasta({{ p.id }}, '{{ p.mostrar_hasta }}', this); return false;"
                                 data-pedido-id="{{ p.id }}"
-                                class="btn-mostrar-hasta flex-1 md:flex-none flex items-center justify-center gap-1.5 {% if p.mostrar_hasta %}bg-indigo-100 border-indigo-400 text-indigo-800{% else %}bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-700{% endif %} border text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
+                                class="btn-mostrar-hasta btn {% if p.mostrar_hasta %}btn-mint{% else %}btn-secondary{% endif %} btn-sm">
                             📌 <span class="lbl-mostrar-hasta">
                                 {% if p.mostrar_hasta_label %}Reposición hasta {{ p.mostrar_hasta_label }}{% else %}En Reposición…{% endif %}
                             </span>
                         </button>
-                        <a href="{{ url_for('order_export_file', pedido_id=p.id, fmt='xlsx') }}" title="Exportar a Excel"
-                           onclick="event.stopPropagation()"
-                           class="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-green-50 hover:bg-green-100 border border-green-300 text-green-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                            XLSX
+                        <a href="{{ url_for('order_export_file', pedido_id=p.id, fmt='xlsx') }}" title="Exportar a Excel (XLSX)"
+                           onclick="event.stopPropagation()" class="btn-icon">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
                         </a>
                         <a href="{{ url_for('order_export_file', pedido_id=p.id, fmt='pdf') }}" title="Exportar a PDF"
-                           onclick="event.stopPropagation()"
-                           class="flex-1 md:flex-none flex items-center justify-center gap-1.5 bg-red-50 hover:bg-red-100 border border-red-300 text-red-800 text-[11px] font-medium px-2.5 py-1.5 rounded-lg transition-colors">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                            PDF
+                           onclick="event.stopPropagation()" class="btn-icon">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
                         </a>
                         <form method="POST" action="{{ url_for('order_delete', pedido_id=p.id) }}"
                               onsubmit="return confirm('¿Eliminar este pedido?')" class="flex-shrink-0">
-                            <button type="submit" title="Eliminar"
-                                class="w-8 h-8 md:w-7 md:h-7 flex items-center justify-center rounded-lg text-[#bbb] hover:text-red-500 hover:bg-red-50 transition-colors">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                            <button type="submit" title="Eliminar pedido" class="btn-icon btn-icon-danger">
+                                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                             </button>
                         </form>
                     </div>
@@ -694,12 +689,12 @@ async function abrirMostrarHasta(pedidoId, valorActual, btn) {
         const lbl = btn.querySelector('.lbl-mostrar-hasta');
         if (data.mostrar_hasta_label) {
             lbl.textContent = `Reposición hasta ${data.mostrar_hasta_label}`;
-            btn.classList.remove('bg-indigo-50', 'hover:bg-indigo-100', 'border-indigo-300', 'text-indigo-700');
-            btn.classList.add('bg-indigo-100', 'border-indigo-400', 'text-indigo-800');
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-mint');
         } else {
             lbl.textContent = 'En Reposición…';
-            btn.classList.add('bg-indigo-50', 'hover:bg-indigo-100', 'border-indigo-300', 'text-indigo-700');
-            btn.classList.remove('bg-indigo-100', 'border-indigo-400', 'text-indigo-800');
+            btn.classList.remove('btn-mint');
+            btn.classList.add('btn-secondary');
         }
         // Actualizar el data-* del botón para futuros clicks
         btn.dataset.mostrarHasta = data.mostrar_hasta;
@@ -990,13 +985,15 @@ let estadoActual = 'pendiente';
 
 function setEstado(estado) {
     estadoActual = estado;
-    // Actualizar estilos de botones
+    // Actualizar estilos de botones — activo en naranja CTA
     ['pendientes', 'procesados', 'todos'].forEach(s => {
         const btn = document.getElementById('btn-' + s);
         if (s === estado || (s === 'pendientes' && estado === 'pendiente') || (s === 'procesados' && estado === 'procesado')) {
-            btn.className = 'px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-[#1e1e1e] border border-surface-border transition-colors';
+            btn.className = 'px-3 py-1 rounded-md text-xs font-bold text-white shadow-sm transition-all';
+            btn.style.background = 'linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%)';
         } else {
-            btn.className = 'px-3 py-1 rounded-md text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] transition-colors';
+            btn.className = 'px-3 py-1 rounded-md text-xs font-medium text-[#6f6f6f] hover:text-[#1e1e1e] hover:bg-black/[0.06] transition-colors';
+            btn.style.background = '';
         }
     });
     aplicarFiltroEstado();
