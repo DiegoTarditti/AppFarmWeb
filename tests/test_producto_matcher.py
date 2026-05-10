@@ -451,3 +451,91 @@ class TestEdgeCasesReales:
         )
         assert res.producto is not None
         assert res.producto.codigo_alfabeta == 'AMX500-16'
+
+
+# ── Tests refinar_candidatos (Round 2 — Levenshtein + prefix) ──────────────
+
+class TestRefinarCandidatos:
+    def test_dermaglos_cre_gana_emu(self):
+        """Source 'cr' debe rankear CRE más alto que EMU.
+
+        Caso clásico que motiva el feature: tokens jaccardean igual ({dermaglos, 200}
+        en ambos) pero Levenshtein full-string premia CRE (lev=1) sobre EMU (lev=2).
+        """
+        candidatos = [
+            {'descripcion': 'DERMAGLOS EMU x 200', 'score': 0.67},
+            {'descripcion': 'DERMAGLOS CRE x 200', 'score': 0.67},
+        ]
+        refined = pm.refinar_candidatos('DERMAGLOS cr x 200 grs', candidatos)
+        # CRE debe quedar primero (mayor score post-refine)
+        assert refined[0]['descripcion'] == 'DERMAGLOS CRE x 200'
+        assert refined[1]['descripcion'] == 'DERMAGLOS EMU x 200'
+        assert refined[0]['score'] > refined[1]['score']
+
+    def test_devuelve_score_base_y_bonus_para_debug(self):
+        candidatos = [{'descripcion': 'TAFIROL 1 g COM x 50', 'score': 0.8}]
+        refined = pm.refinar_candidatos('TAFIROL 1 g COM x 50', candidatos)
+        assert '_score_base' in refined[0]
+        assert '_score_refine_bonus' in refined[0]
+        assert refined[0]['_score_base'] == 0.8
+        assert refined[0]['_score_refine_bonus'] >= 0
+
+    def test_match_perfecto_no_supera_1(self):
+        """Score base ya en 1.0 + bonus no debe superar 1.0."""
+        candidatos = [{'descripcion': 'IBUPIRAC 600 mg', 'score': 1.0}]
+        refined = pm.refinar_candidatos('IBUPIRAC 600 mg', candidatos)
+        assert refined[0]['score'] == 1.0
+
+    def test_lista_vacia_devuelve_vacia(self):
+        assert pm.refinar_candidatos('cualquier', []) == []
+
+    def test_source_vacio_devuelve_intacto(self):
+        candidatos = [{'descripcion': 'X', 'score': 0.5}]
+        # Sin source no se puede refinar — devuelve list igual.
+        result = pm.refinar_candidatos('', candidatos)
+        assert len(result) == 1
+
+    def test_top_keep_recorta(self):
+        candidatos = [{'descripcion': f'P{i}', 'score': 0.5 - i*0.01}
+                      for i in range(10)]
+        refined = pm.refinar_candidatos('algo', candidatos, top_keep=3)
+        assert len(refined) == 3
+
+    def test_prefix_match_da_bonus(self):
+        """Token 'cr' (3 chars o menos) que es prefijo de 'crema' suma bonus."""
+        c1 = [{'descripcion': 'PRODUCTO crema x 100', 'score': 0.5}]
+        c2 = [{'descripcion': 'PRODUCTO unguento x 100', 'score': 0.5}]
+        r1 = pm.refinar_candidatos('producto cr x 100', c1)
+        r2 = pm.refinar_candidatos('producto cr x 100', c2)
+        # El de "crema" (prefix de "cr") debe tener score más alto.
+        assert r1[0]['score'] > r2[0]['score']
+
+    def test_ordena_por_score_final(self):
+        """El bonus Levenshtein (max 0.15) reordena cuando la diferencia
+        de score base es chica.
+        """
+        candidatos = [
+            {'descripcion': 'COMPLETAMENTE DIFERENTE', 'score': 0.55},
+            {'descripcion': 'TAFIROL 1 g COM x 50', 'score': 0.50},
+        ]
+        refined = pm.refinar_candidatos('TAFIROL 1 g COM x 50', candidatos)
+        # 0.50 + 0.15 = 0.65 (idéntico) > 0.55 + bonus_chico (lev distinto)
+        assert refined[0]['descripcion'] == 'TAFIROL 1 g COM x 50'
+
+
+class TestLevenshtein:
+    def test_iguales(self):
+        assert pm._levenshtein('abc', 'abc') == 0
+
+    def test_uno_vacio(self):
+        assert pm._levenshtein('', 'abc') == 3
+        assert pm._levenshtein('abc', '') == 3
+
+    def test_substitucion(self):
+        assert pm._levenshtein('cat', 'bat') == 1
+
+    def test_insercion(self):
+        assert pm._levenshtein('cr', 'cre') == 1
+
+    def test_distintas_longitudes(self):
+        assert pm._levenshtein('cr', 'crema') == 3

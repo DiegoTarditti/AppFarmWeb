@@ -44,28 +44,25 @@ _STOPWORDS = {
     'cap', 'caps', 'capsula', 'capsulas',
     'tab', 'tableta', 'tabletas',
     'amp', 'ampolla', 'ampollas',
-    'jbe', 'jarabe', 'crema', 'cre', 'gel', 'pomada',
-    'ung', 'unguento', 'unguentos',
-    'sup', 'supositorio', 'supositorios',
-    'ovu', 'ovulo', 'ovulos',
-    'tampon', 'tampones',
-    'parche', 'parches',
-    'enj', 'enjuague',
-    'colirio',
+    'jbe', 'jarabe',
+    # NOTA: las formas tópicas (crema, gel, pomada, emulsion, ungüento, etc.)
+    # NO van como stopwords — son discriminantes (DERMAGLOS cr ≠ DERMAGLOS emu).
+    # Se canonicalizan via _FORM_SINONIMOS más abajo y quedan como tokens.
+    # supositorio/ovulo/parche/inhalador/colirio/tampon/enjuague: discriminantes
+    # → ver _FORM_SINONIMOS más abajo (canonicalizan, no filtran).
     'gts', 'gotas',
     'sol', 'solucion',
     'sus', 'susp', 'suspension',
-    'emul', 'emu', 'emulsion',
-    'lec', 'leche',  # leche limpiadora/tonificante
+    # 'lec'/'leche' tampoco — leches limpiadoras/tonificantes son productos distintos.
     # Variantes oftálmicas (col = colirio, oft = oftálmico)
-    'col', 'colir', 'colirios',
+    # 'col'/'colir'/'colirios' canonicalizan a 'colirio' (ver _FORM_SINONIMOS).
     'oft', 'oftal', 'oftalmico', 'oftalmica', 'oftalmicos', 'oftalmicas',
     # Otras formas comunes
     'nas', 'nasal', 'nasales',
     'aur', 'auricular', 'auriculares',
     'derm', 'dermat', 'dermatologico',
-    'inh', 'inhalador', 'inhalacion', 'aerosol',
-    'spray',
+    # 'inh'/'inhalador'/'inhalacion' canonicalizan a 'inhalador'.
+    # 'aerosol' y 'spray' canonicalizan a sus formas (ver _FORM_SINONIMOS).
     'sobre', 'sobres', 'frasco', 'frascos',
     'pol', 'polvo',
     'iny', 'inyectable',
@@ -102,6 +99,60 @@ _STOPWORDS = {
     'prell', 'prellenada', 'prellenadas', 'prellenado', 'prellenados',
     'env', 'envase', 'envases',
     'fco', 'fcos',
+}
+
+
+# Mapa de SINÓNIMOS de formas farmacéuticas: abreviaciones → canonical.
+# Se aplica DESPUÉS del split de tokens, ANTES del filtro de stopwords.
+# Resultado: distintas grafías (cr, cre, crma) se reducen a un único token
+# "crema" que SÍ es discriminante en el matching (cre vs emu vs gel ≠).
+#
+# Solo formas TÓPICAS y DERMATOLÓGICAS por ahora (donde la diferencia es
+# producto distinto: crema vs emulsion vs gel). Inyectables (sol/iny/amp/jga)
+# siguen siendo stopwords porque suelen referirse al MISMO producto en
+# distintas presentaciones del catálogo.
+_FORM_SINONIMOS = {
+    # Crema (incluye 'cr' que estaba fuera por la regla AP/AR/SR/CR/XR/LP;
+    # en lower-case 'cr' siempre = crema en farma argentina).
+    'cr': 'crema', 'cre': 'crema', 'crm': 'crema', 'crma': 'crema',
+    'crema': 'crema', 'cremas': 'crema',
+    # Emulsion
+    'emu': 'emulsion', 'emul': 'emulsion', 'emulsion': 'emulsion',
+    'emulsiones': 'emulsion',
+    # Gel
+    'gel': 'gel', 'geles': 'gel',
+    # Pomada
+    'pom': 'pomada', 'pomada': 'pomada', 'pomadas': 'pomada',
+    # Ungüento
+    'ung': 'unguento', 'unguento': 'unguento', 'unguentos': 'unguento',
+    # Leche (tópica, distinta de las otras)
+    'lec': 'leche', 'leche': 'leche', 'leches': 'leche',
+    # Loción
+    'loc': 'locion', 'locion': 'locion', 'lociones': 'locion',
+    # Spray (no es estrictamente tópico pero se usa diferenciado)
+    'spray': 'spray', 'sprays': 'spray',
+    # Aerosol
+    'aer': 'aerosol', 'aerosol': 'aerosol', 'aerosoles': 'aerosol',
+    # Champú (variantes ortográficas)
+    'sham': 'shampoo', 'shamp': 'shampoo', 'shampoo': 'shampoo',
+    'champu': 'shampoo', 'champues': 'shampoo',
+
+    # ── Formas con vía/uso CLARAMENTE distinto (no se omiten en práctica) ──
+    # Vaginal — óvulos
+    'ovu': 'ovulo', 'ovulo': 'ovulo', 'ovulos': 'ovulo',
+    # Rectal — supositorios
+    'sup': 'supositorio', 'supositorio': 'supositorio', 'supositorios': 'supositorio',
+    # Transdérmico — parches
+    'parche': 'parche', 'parches': 'parche',
+    # Respiratorio — inhaladores (distintos de aerosol nasal/spray cutáneo)
+    'inh': 'inhalador', 'inhalador': 'inhalador', 'inhaladores': 'inhalador',
+    'inhalacion': 'inhalador', 'inhalaciones': 'inhalador',
+    # Oftálmico — colirio
+    'col': 'colirio', 'colir': 'colirio', 'colirio': 'colirio', 'colirios': 'colirio',
+    # Higiene íntima — tampones
+    'tampon': 'tampon', 'tampones': 'tampon',
+    # Bucal — enjuague
+    'enj': 'enjuague', 'enjuague': 'enjuague', 'enjuagues': 'enjuague',
 }
 
 
@@ -152,6 +203,10 @@ def tokens_significativos(s) -> set:
     """
     out = set()
     for t in normalizar_texto(s).split():
+        # Canonicalizar formas farmacéuticas (cr→crema, emu→emulsion, etc.)
+        # antes de chequear stopwords, así "cr" y "cre" colisionan al mismo
+        # token discriminante "crema".
+        t = _FORM_SINONIMOS.get(t, t)
         if t in _STOPWORDS:
             continue
         # Solo filtrar tokens de 1 char si NO son dígitos (preservamos números
@@ -207,6 +262,118 @@ def _candidatos_via_inv(toks_input, inv, pool):
 def comparar_descripciones(a, b) -> float:
     """Score 0..1 entre dos descripciones. Útil para usar fuera del módulo."""
     return jaccard(tokens_significativos(a), tokens_significativos(b))
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Distancia Levenshtein iterativa.
+
+    O(len(a) * len(b)) en tiempo, O(min(len(a), len(b))) en memoria.
+    Pensado para el refinamiento sobre top-N candidatos (no escalable a 122k
+    items pero perfecto para 5-20).
+    """
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    # Asegurar a el más corto para minimizar memoria.
+    if len(a) > len(b):
+        a, b = b, a
+    prev = list(range(len(a) + 1))
+    for i, cb in enumerate(b, 1):
+        curr = [i]
+        for j, ca in enumerate(a, 1):
+            curr.append(min(
+                curr[-1] + 1,            # insertion
+                prev[j] + 1,             # deletion
+                prev[j - 1] + (ca != cb),  # substitution
+            ))
+        prev = curr
+    return prev[-1]
+
+
+def refinar_candidatos(source_desc: str, candidatos: list, top_keep: Optional[int] = None) -> list:
+    """Re-rankea candidatos del bulk pass con análisis profundo.
+
+    Aplicar SOLO sobre top-N (típico 5-20 items) — no escalable a 122k items.
+    Combina dos señales que escapan al Jaccard de tokens:
+
+    1. **Levenshtein full string normalizado**: premia parecido textual.
+       Caso clásico: "DERMAGLOS cr x 200 grs" vs "DERMAGLOS CRE x 200" tiene
+       distancia Levenshtein menor que vs "DERMAGLOS EMU x 200". Tokens
+       jaccardean igual, pero Levenshtein desempata.
+
+    2. **Prefix match de tokens cortos**: source con "cr" + candidate con
+       "crema"/"cre" → bonus. Cubre abreviaciones que no normalizamos como
+       sinónimos (porque ahí pierde info quien NO especifica la forma).
+
+    Args:
+      source_desc: descripción de origen (texto crudo del proveedor).
+      candidatos: lista de dicts con al menos 'descripcion' y 'score'.
+      top_keep: cantidad final a devolver (None = devuelve todos los recibidos).
+
+    Returns:
+      Lista re-ordenada por nuevo score, con campos extra '_score_base' y
+      '_score_refine_bonus' para debugging.
+    """
+    if not candidatos or not source_desc:
+        return list(candidatos)
+
+    src_norm = normalizar_texto(source_desc)
+    src_tokens_all = src_norm.split()
+    src_short_tokens = [t for t in src_tokens_all if 2 <= len(t) <= 3]
+    # Brand bonus se aplica en el BULK (buscar_candidatos_bulk) — no acá
+    # para evitar doble cuenta. Si el caller llamó refine sin pasar por bulk,
+    # los brand matches igual quedan beneficiados por el lev_sim alto.
+
+    refined = []
+    for c in candidatos:
+        cand_desc = c.get('descripcion') or ''
+        if not cand_desc:
+            refined.append(c)
+            continue
+
+        cand_norm = normalizar_texto(cand_desc)
+        base = float(c.get('score', 0) or 0)
+        bonus = 0.0
+
+        # 1. Levenshtein normalizado: max bonus 0.15 cuando dist=0.
+        max_len = max(len(src_norm), len(cand_norm), 1)
+        lev = _levenshtein(src_norm, cand_norm)
+        lev_sim = 1.0 - (lev / max_len)
+        bonus += lev_sim * 0.15
+
+        cand_tokens = cand_norm.split()
+        cand_tokens_set = set(cand_tokens)
+
+        # 2. Prefix match (abreviaciones cortas): cada token corto del source
+        #    que es prefijo de algún candidate token suma 0.05 (cap 3 = 0.15).
+        prefix_hits = 0
+        for st in src_short_tokens:
+            for ct in cand_tokens:
+                if ct.startswith(st) and len(ct) > len(st):
+                    prefix_hits += 1
+                    break
+        bonus += min(prefix_hits, 3) * 0.05
+
+        new_score = min(1.0, base + bonus)
+        c2 = dict(c)
+        c2['score'] = round(new_score, 3)
+        c2['_score_base'] = round(base, 3)
+        c2['_score_refine_bonus'] = round(bonus, 3)
+        refined.append(c2)
+
+    # Sort por (score, bonus) — cuando hay empate al 100% (ambos Jaccard=1),
+    # el bonus Levenshtein desempata. Sin esto, dos candidatos con tokens
+    # idénticos quedan tied y la UI no tiene cómo diferenciarlos.
+    refined.sort(key=lambda x: (
+        -float(x.get('score', 0)),
+        -float(x.get('_score_refine_bonus', 0)),
+    ))
+    if top_keep is not None:
+        return refined[:top_keep]
+    return refined
 
 
 def _extraer_cantidad_envase(descripcion) -> Optional[int]:
@@ -740,7 +907,11 @@ def match_producto(*,
                         'score': round(score, 3),
                     })
             scored.sort(key=lambda x: -x['score'])
-            result.candidatos_top = scored[:top_candidatos]
+            # Refinar top-N con Levenshtein + prefix bonus (segunda pasada
+            # sobre el subset chico, escapa al Jaccard de tokens).
+            result.candidatos_top = refinar_candidatos(
+                descripcion, scored[:top_candidatos],
+            )
 
         return result
     finally:
@@ -1196,12 +1367,26 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             for t in toks_in:
                 if t in prod_inv:
                     cand_prod_idxs.update(prod_inv[t])
+            # Threshold de COLECCIÓN: bajamos a 0.20 para no perder candidatos
+            # con Jaccard bajo pero brand match (DAMSELLA → DAMSELLA + PLACEBO,
+            # jaccard 0.20 pero coincide la marca). El filtro estricto al
+            # threshold_min (0.50 default) se aplica DESPUÉS de refinar.
+            collection_min = min(0.20, threshold_min)
+            # Brand tokens: palabras de 5+ chars que probablemente identifican
+            # marca/principio activo (DAMSELLA, ZOLTENK). Si el source tiene
+            # uno y aparece exacto en el candidate, sumamos +0.20 al score
+            # ANTES del sort/truncate. Sin esto, candidatos con jaccard bajo
+            # (por candidate con tokens extras) se hunden por debajo del top-N
+            # y nunca llegan al refine para que los priorice.
+            src_brand_toks = {t for t in toks_in if len(t) >= 5 and not t.isdigit()}
             for ci in cand_prod_idxs:
                 p, toks_p, is_lab = prod_index[ci]
                 s = jaccard(toks_in, toks_p)
-                if s < threshold_min:
+                if s < collection_min:
                     continue
                 boost = 0.05 if is_lab else 0.0
+                if src_brand_toks & toks_p:
+                    boost += 0.20
                 s_final = round(min(1.0, s + boost), 3)
                 key = ('prod', p.id)
                 if key in seen_keys:
@@ -1253,8 +1438,11 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             for ci in cand_obs_idxs:
                 obs, toks_o, alf_o = obs_index[ci]
                 s = jaccard(toks_in, toks_o)
-                if s < threshold_min:
+                if s < collection_min:
                     continue
+                # Brand bonus para obs (mismo criterio que prod arriba)
+                if src_brand_toks & toks_o:
+                    s = min(1.0, s + 0.20)
                 key = ('obs', obs.observer_id)
                 if key in seen_keys or obs.observer_id is None:
                     continue
@@ -1302,9 +1490,58 @@ def buscar_candidatos_bulk(items, laboratorio_id=None, top=8,
             cands.sort(key=lambda x: -x['score'])
             if cands:
                 top_score = cands[0]['score']
-                threshold_efectivo = max(threshold_min, top_score - 0.15)
-                cands = [c for c in cands if c['score'] >= threshold_efectivo]
-            result[idx] = cands[:top]
+                # Adaptive threshold solo se aplica si el top es razonable (>=0.50).
+                # Para sources cortos (1-2 tokens) o con typos/variantes, los matches
+                # relevantes pueden quedar bajo 0.50 — los queremos en el modal para
+                # que el refine los rankee con brand bonus, no filtrados acá.
+                if top_score >= 0.50:
+                    threshold_efectivo = max(threshold_min, top_score - 0.15)
+                    cands = [c for c in cands if c['score'] >= threshold_efectivo]
+                # else: NO filtrar — collection_min ya filtró el ruido extremo.
+                # Dejamos que el refine rankee con brand bonus / Levenshtein.
+
+            # FALLBACK: si quedó vacío después del threshold, bajamos a 0.20
+            # para incluir matches fuzzy (typos / variantes ortográficas tipo
+            # DAMSELLA vs DAMSEL). El refinar_candidatos después rankea por
+            # Levenshtein y deja arriba el más parecido textualmente.
+            if not cands and (cand_prod_idxs or cand_obs_idxs):
+                fallback_min = 0.20
+                fb = []
+                for ci in cand_prod_idxs:
+                    p, toks_p, _is_lab = prod_index[ci]
+                    s = jaccard(toks_in, toks_p)
+                    if s < fallback_min:
+                        continue
+                    fb.append({
+                        'producto_id': p.id,
+                        'observer_id': getattr(p, 'observer_id', None),
+                        'descripcion': p.descripcion or '',
+                        'codigo_barra': p.codigo_barra or '',
+                        'codigo_alfabeta': (p.codigo_alfabeta or ''),
+                        'precio_pvp': float(p.precio_pvp) if getattr(p, 'precio_pvp', None) else None,
+                        'score': round(s, 3),
+                        '_origen': 'producto',
+                    })
+                for ci in cand_obs_idxs:
+                    obs, toks_o, alf_o = obs_index[ci]
+                    s = jaccard(toks_in, toks_o)
+                    if s < fallback_min:
+                        continue
+                    fb.append({
+                        'producto_id': None,
+                        'observer_id': obs.observer_id,
+                        'descripcion': obs.descripcion or '',
+                        'codigo_barra': None,
+                        'codigo_alfabeta': alf_o or '',
+                        'precio_pvp': None,
+                        'score': round(s, 3),
+                        '_origen': 'observer',
+                    })
+                fb.sort(key=lambda x: -x['score'])
+                cands = fb
+
+            # Refinar top-N con Levenshtein + prefix bonus.
+            result[idx] = refinar_candidatos(desc, cands[:top])
 
         return result
 
