@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% from "components/partner_selector.html" import partner_selector %}
+{% set hide_sidebar = True %}
+{% block title %}Consulta de stock — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Mobile-first: hit targets grandes, padding generoso, sin overflow horizontal. */
+.cs-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
+.cs-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
+.cs-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.cs-banner { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+.cs-banner.ok { background: rgba(95,230,188,.12); color: var(--ds-mint); border: 1px solid rgba(95,230,188,.3); }
+.cs-banner.warn { background: rgba(245,158,11,.12); color: var(--ds-warn); border: 1px solid rgba(245,158,11,.35); }
+.cs-banner.err { background: rgba(239,68,68,.12); color: var(--ds-danger); border: 1px solid rgba(239,68,68,.35); }
+.cs-banner-actions { margin-top: 10px; }
+
+.cs-label { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+            text-transform: uppercase; letter-spacing: .06em;
+            margin-bottom: 6px; display: block; }
+.cs-group { margin-bottom: 18px; }
+
+/* Tipo: 3 botones tipo "segmented control" grandes para touch. */
+.cs-tipo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.cs-tipo-btn { padding: 14px 8px; text-align: center; font-size: 14px; font-weight: 600;
+               border: 1.5px solid var(--ds-line-2); border-radius: 12px;
+               background: var(--ds-surface); color: var(--ds-text-soft);
+               cursor: pointer; transition: all .15s; user-select: none; }
+.cs-tipo-btn:active { transform: scale(.97); }
+input[type=radio]:checked + .cs-tipo-btn {
+    background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+    border-color: var(--ds-mint-deep);
+    color: #0a3a2a; box-shadow: 0 2px 6px rgba(95,230,188,.3); }
+
+/* Inputs grandes, font 16px (evita zoom de iOS al focus). */
+.cs-input { width: 100%; background: var(--ds-surface-2);
+            border: 1.5px solid var(--ds-line); border-radius: 12px;
+            padding: 14px 14px; font-size: 16px; color: var(--ds-text);
+            font-family: inherit; transition: border-color .15s; }
+.cs-input:focus { outline: none; border-color: var(--ds-mint);
+                  box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+
+/* CTA sticky abajo. */
+.cs-cta-bar { position: sticky; bottom: 0; padding: 12px 0 16px;
+              background: linear-gradient(to top, var(--ds-bg) 60%, transparent);
+              margin-top: 16px; }
+.cs-cta { display: block; width: 100%; padding: 16px;
+          background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+          color: #0a3a2a; font-size: 16px; font-weight: 700;
+          border: none; border-radius: 14px; cursor: pointer;
+          box-shadow: 0 4px 12px rgba(95,230,188,.3);
+          transition: transform .15s, box-shadow .15s; }
+.cs-cta:active { transform: scale(.98); }
+.cs-cta:disabled { opacity: .5; cursor: not-allowed; }
+
+.cs-cancel { display: block; width: 100%; padding: 12px; text-align: center;
+             color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
+             text-decoration: none; }
+
+/* Override partner_selector para mobile: input grande tipo cs-input. */
+.partner-selector input[type=text] {
+    background: var(--ds-surface-2) !important;
+    border: 1.5px solid var(--ds-line) !important;
+    border-radius: 12px !important; padding: 14px 14px !important;
+    font-size: 16px !important; color: var(--ds-text) !important;
+}
+.partner-selector input[type=text]:focus {
+    border-color: var(--ds-mint) !important;
+    box-shadow: 0 0 0 3px rgba(95,230,188,.15) !important;
+}
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cs-screen">
+    <h1 class="cs-h1">📦 Consulta de stock</h1>
+    <p class="cs-sub">Análisis rápido de inventario por laboratorio, droguería o proveedor.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="cs-banner {{ 'err' if cat == 'error' else ('warn' if cat == 'warning' else 'ok') }}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    {# Banner de estado de ventas — replicado del wizard original #}
+    {% if estado_ventas.estado == 'nunca' %}
+    <div class="cs-banner err">
+        <p class="font-semibold">⚠ Sin estadísticas de ventas</p>
+        <p style="margin-top:4px;font-size:12px;opacity:.9;">{{ estado_ventas.mensaje }}</p>
+        {% if observer_disponible %}
+        <form method="post" action="{{ url_for('observer_sync_run', entidad='ventas_mensuales') }}" class="cs-banner-actions"
+              onsubmit="return confirm('Voy a traer las últimas ventas desde ObServer. Puede tardar unos minutos.\n¿Continuar?')">
+            <input type="hidden" name="next" value="{{ url_for('consulta_stock') }}">
+            <button type="submit" class="cs-cta" style="background:var(--ds-danger);color:#fff;box-shadow:none;">
+                Importar ventas ahora
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    {% elif estado_ventas.estado == 'viejo' %}
+    <div class="cs-banner warn">
+        <p class="font-semibold">⏰ Estadísticas desactualizadas</p>
+        <p style="margin-top:4px;font-size:12px;opacity:.9;">{{ estado_ventas.mensaje }}</p>
+    </div>
+    {% else %}
+    <div class="cs-banner ok">✓ Estadísticas al día · hace {{ estado_ventas.dias }} día{{ 's' if estado_ventas.dias != 1 }}.</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('proceso_crear') }}" id="form-consulta">
+        <div class="cs-group">
+            <label class="cs-label">Tipo</label>
+            <div class="cs-tipo-grid">
+                <label>
+                    <input type="radio" name="tipo" value="laboratorio" required class="hidden" onchange="onTipoChange()">
+                    <div class="cs-tipo-btn">🧪 Lab</div>
+                </label>
+                <label>
+                    <input type="radio" name="tipo" value="drogueria" required class="hidden" onchange="onTipoChange()">
+                    <div class="cs-tipo-btn">🏭 Drog</div>
+                </label>
+                <label>
+                    <input type="radio" name="tipo" value="proveedor" required class="hidden" onchange="onTipoChange()">
+                    <div class="cs-tipo-btn">📦 Prov</div>
+                </label>
+            </div>
+        </div>
+
+        <div id="wrap-lab" class="cs-group hidden">
+            <label class="cs-label">Laboratorio</label>
+            {{ partner_selector(tipo='laboratorio', name='partner_id',
+                                placeholder='Tocá para buscar…') }}
+        </div>
+
+        <div id="wrap-drog" class="cs-group hidden">
+            <label class="cs-label">Droguería</label>
+            {{ partner_selector(tipo='drogueria', name='partner_id',
+                                placeholder='Tocá para buscar…') }}
+        </div>
+
+        <div id="wrap-prov" class="cs-group hidden">
+            <label class="cs-label">Proveedor</label>
+            {{ partner_selector(tipo='proveedor', name='partner_id',
+                                placeholder='Tocá para buscar…') }}
+        </div>
+
+        <div class="cs-group">
+            <label class="cs-label">Periodo / etiqueta (opcional)</label>
+            <input type="text" name="periodo" class="cs-input"
+                   placeholder="ej. Abril 2026">
+        </div>
+
+        <div class="cs-cta-bar">
+            <button type="submit" id="btn-submit" class="cs-cta" disabled>
+                Consultar stock
+            </button>
+            <a href="{{ url_for('index') }}" class="cs-cancel">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script>
+function onTipoChange() {
+    const tipo = document.querySelector('input[name="tipo"]:checked').value;
+    document.getElementById('wrap-lab').classList.toggle('hidden', tipo !== 'laboratorio');
+    document.getElementById('wrap-drog').classList.toggle('hidden', tipo !== 'drogueria');
+    document.getElementById('wrap-prov').classList.toggle('hidden', tipo !== 'proveedor');
+
+    // Solo el selector visible manda partner_id — los otros deben tener su input deshabilitado.
+    document.querySelectorAll('.partner-selector').forEach(ps => {
+        const t = ps.dataset.tipo;
+        const enabled = (t === tipo);
+        ps.querySelectorAll('input[name="partner_id"]').forEach(i => {
+            i.disabled = !enabled;
+            i.required = enabled;
+        });
+    });
+    // Habilitar CTA solo si hay tipo + partner.
+    updateCtaState();
+}
+
+function updateCtaState() {
+    const tipo = document.querySelector('input[name="tipo"]:checked');
+    const btn = document.getElementById('btn-submit');
+    if (!tipo) { btn.disabled = true; return; }
+    const wrap = document.getElementById('wrap-' + (
+        tipo.value === 'laboratorio' ? 'lab' :
+        tipo.value === 'drogueria' ? 'drog' : 'prov'));
+    const idInput = wrap.querySelector('input[name="partner_id"]');
+    btn.disabled = !idInput || !idInput.value;
+}
+
+// Observar cambios en el partner_id (lo setea PartnerSel async).
+document.addEventListener('change', e => {
+    if (e.target.matches('input[name="partner_id"], input[name="tipo"]')) updateCtaState();
+});
+// Y polling chiquito (PartnerSel setea via JS sin disparar change event).
+setInterval(updateCtaState, 400);
+</script>
+{% endblock %}

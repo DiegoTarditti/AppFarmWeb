@@ -72,6 +72,10 @@ ACCIONES_HOME = [
         'icono_path': 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
         'bg_default': '#FEF3C7',
         'fg_default': '#B45309',
+        'secondary_action': {
+            'endpoint': 'informe_ofertas_activas',
+            'label': '📋 Ver ofertas vigentes',
+        },
     },
     {
         'id': 'cuentas',
@@ -233,7 +237,7 @@ CARD_CATEGORIA = {
     'productos':            'catalogo',
     'vademecum':            'catalogo',
     'clientes':             'catalogo',
-    'ofertas_import':       'datos',
+    'ofertas_import':       'operativo',
     'config':               'datos',
     # Pendientes (al fondo)
     'productos_pendientes': 'pendientes',

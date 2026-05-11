@@ -207,33 +207,52 @@
                 </div>
             </div>
 
+            {% macro card_inner(card, tone_cls) %}
+                <div class="action-content">
+                    <div class="icon-tile {{ tone_cls }}">{{ card.emoji or '◆' }}</div>
+                    <div class="action-content__body">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="action-content__title">{{ card.titulo }}</span>
+                            {% if card.badge_count and card.badge_count > 0 %}
+                                {% set badge_cls = 'badge-mute' %}
+                                {% if card.tone == 'warn' %}{% set badge_cls = 'badge-orange' %}
+                                {% elif card.tone == 'danger' %}{% set badge_cls = 'badge-danger' %}
+                                {% elif card.tone == 'info' %}{% set badge_cls = 'badge-info' %}
+                                {% else %}{% set badge_cls = 'badge-mint' %}
+                                {% endif %}
+                                <span class="badge {{ badge_cls }} badge-pill">{{ card.badge_count }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="action-content__desc">{{ card.desc }}</div>
+                    </div>
+                </div>
+            {% endmacro %}
             {% macro render_card(card) %}
                 {% set tone_cls = '' %}
                 {% if card.tone == 'warn' %}{% set tone_cls = 'icon-tile-warn' %}
                 {% elif card.tone == 'danger' %}{% set tone_cls = 'icon-tile-danger' %}
                 {% elif card.tone == 'info' %}{% set tone_cls = 'icon-tile-info' %}
                 {% endif %}
+                {% if card.secondary_action %}
+                <div class="card card-action home-card" style="display:flex;flex-direction:column;padding:0;"
+                     data-card-text="{{ (card.titulo ~ ' ' ~ (card.desc or '')) | lower | e }}">
+                    <a href="{{ url_for('home_card_go', card_id=card.id) }}"
+                       style="display:block;padding:14px;color:inherit;text-decoration:none;flex:1;">
+                        {{ card_inner(card, tone_cls) }}
+                    </a>
+                    <a href="{{ url_for(card.secondary_action.endpoint) }}"
+                       style="display:block;padding:8px 14px;border-top:1px solid var(--ds-line);background:rgba(245,158,11,.10);color:#B45309;font-size:11px;font-weight:600;text-decoration:none;text-align:center;transition:background .15s;"
+                       onmouseover="this.style.background='rgba(245,158,11,.20)'"
+                       onmouseout="this.style.background='rgba(245,158,11,.10)'">
+                        {{ card.secondary_action.label }}
+                    </a>
+                </div>
+                {% else %}
                 <a href="{{ url_for('home_card_go', card_id=card.id) }}" class="card card-action home-card"
                    data-card-text="{{ (card.titulo ~ ' ' ~ (card.desc or '')) | lower | e }}">
-                    <div class="action-content">
-                        <div class="icon-tile {{ tone_cls }}">{{ card.emoji or '◆' }}</div>
-                        <div class="action-content__body">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="action-content__title">{{ card.titulo }}</span>
-                                {% if card.badge_count and card.badge_count > 0 %}
-                                    {% set badge_cls = 'badge-mute' %}
-                                    {% if card.tone == 'warn' %}{% set badge_cls = 'badge-orange' %}
-                                    {% elif card.tone == 'danger' %}{% set badge_cls = 'badge-danger' %}
-                                    {% elif card.tone == 'info' %}{% set badge_cls = 'badge-info' %}
-                                    {% else %}{% set badge_cls = 'badge-mint' %}
-                                    {% endif %}
-                                    <span class="badge {{ badge_cls }} badge-pill">{{ card.badge_count }}</span>
-                                {% endif %}
-                            </div>
-                            <div class="action-content__desc">{{ card.desc }}</div>
-                        </div>
-                    </div>
+                    {{ card_inner(card, tone_cls) }}
                 </a>
+                {% endif %}
             {% endmacro %}
 
             {% for cat_key, cat_label, cards in grupos_acciones %}

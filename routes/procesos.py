@@ -125,6 +125,26 @@ def init_app(app):
                                estado_ventas=estado_ventas,
                                observer_disponible=observer_disponible)
 
+    @app.route('/consulta-stock')
+    def consulta_stock():
+        """Entry point móvil-first: elegir lab/drog/prov y arrancar análisis.
+
+        Misma lógica que el wizard 'Nuevo proceso de compra' (modal en
+        /procesos), pero con UI optimizada para celular (single-column,
+        touch-friendly, hit targets grandes, sin sidebar).
+
+        El POST sigue yendo a /procesos/crear, que para laboratorio redirige
+        a observer_analizar (todavía desktop). La fase 2 va a mobilizar la
+        pantalla de resultados.
+        """
+        import observer_source
+        with database.get_db() as session:
+            estado_ventas = observer_source.estado_ventas_mensuales(session)
+        observer_disponible = observer_source.observer_analisis_disponible()
+        return render_template('consulta_stock.html',
+                               estado_ventas=estado_ventas,
+                               observer_disponible=observer_disponible)
+
     @app.route('/procesos/crear', methods=['POST'])
     def proceso_crear():
         tipo = (request.form.get('tipo') or '').strip()
