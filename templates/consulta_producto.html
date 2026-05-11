@@ -140,9 +140,9 @@
 </div>
 
 <!-- ZXing fallback para iOS Safari y Firefox (no soportan BarcodeDetector).
-     Global expuesto: `window.ZXing` (UMD). Path correcto: /umd/zxing-browser.min.js
-     (NO /umd/index.min.js — esa daba 404 y rompía la cámara en iOS). -->
-<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.0/umd/zxing-browser.min.js"></script>
+     Hosteado localmente (en /static/js/) para evitar content blockers iOS,
+     CDNs bloqueados o latencia. Global expuesto: `window.ZXing` (UMD). -->
+<script src="{{ url_for('static', filename='js/zxing-browser.min.js') }}"></script>
 <script>
 (function () {
     const form = document.getElementById('cp-form');
