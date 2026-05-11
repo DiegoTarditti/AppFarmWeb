@@ -1,9 +1,84 @@
 # App Seguimiento — cómo sigo en casa
 
-Estado al **2026-05-09** al cerrar la sesión en casa. Esta nota es para
-arrancar la sesión siguiente sin volver a leer todo el chat.
+Estado al **2026-05-11** al cerrar la sesión en oficina.
 
-## Lo más reciente (sesión 2026-05-09)
+## Lo más reciente (sesión 2026-05-11)
+
+### Fixes UX consultas mobile
+
+- `fix(consulta-medico)`: consolidar IDs duplicados por matrícula
+  (PALADINO ANDREA tenía 7 entries con misma matrícula 16097 — POS Observer
+  crea variantes por cada lab que promociona). Helper nuevo
+  `medicos_observer_ids_compartidos(session, medico_id)` en `helpers.py`.
+- `fix(consulta-medico)`: descontar devoluciones tipo `D` y NC tipificadas
+  como V con cantidad negativa. Antes filtraba solo `V or NULL` → 62 unidades
+  de devoluciones a nivel sistema no se restaban.
+- `fix(consulta-producto)`: cámara en iOS Safari + Firefox. Fallback a ZXing
+  hosteado localmente en `/static/js/zxing-browser.min.js` (evita CDN
+  bloqueado por content blocker iOS). Cache-busting con `?v=2` + meta no-cache.
+- `feat(consulta-producto)`: búsqueda por descripción con autocomplete
+  multi-token AND (nuevo endpoint `/api/consulta-producto/buscar-desc`).
+- `fix(consulta-producto)`: fallback de monodroga via ObsProducto cuando
+  `Producto.monodroga` es NULL (caso típico — solo se popula con carga manual).
+- `feat(consulta-producto)`: chart rico con tendencia/proyección/stock/mínimo
+  (incluye `_grafico_dual_panel.html`, mismo de `/compras/armar`).
+
+### Visibilidad de ofertas multi-lab vigentes
+
+- `/compras/armar`: chip permanente en cabecera con drog + vigencia
+  hasta DD/MM/YYYY + N productos + flag "FILTRO ACTIVO" cuando
+  `usar_oferta=1`.
+- `/compras/rapido`: panel verde con un chip por cada drog con oferta
+  vigente + badge "🎯 DROG" en cada fila cuyo producto esté cubierto.
+  Backend pre-carga ofertas + map producto→drog_ids en bulk.
+
+### MP webhook — solo análisis, no implementado
+
+`docs/integracion_con_appfarmweb.md` en AppLabo tiene el análisis. Decisión:
+no integrar webhook MP por ahora — el flujo CSV manual diario alcanza si
+la conciliación es 1×día. Revisar después si el negocio necesita real-time.
+
+---
+
+## Pendientes para próxima sesión
+
+### Alta prioridad
+
+1. **Verificar `external_reference` en próximo CSV de MP**. Si viene con
+   el `IdOperacion` de Observer → matching automático destrabado. Si no,
+   coordinar con MP / AppCajas para que lo incluyan.
+2. **Probar `/consulta-producto` en iPhone real**: cámara con ZXing local
+   debería funcionar tras último deploy. Si falla, ver consola del
+   browser con Safari conectado a Mac.
+3. **Validar `/consulta-medico/<id>` para PALADINO ANDREA**: debe sumar
+   las 7 variantes y mostrar ~5000 prescripciones en 12m (no 700 como antes).
+
+### Media
+
+4. **Extender filtro de oferta a `/pedidos-nuevo` (multi-tenant)**. Hoy
+   solo `/compras/armar` filtra. `/compras/rapido` ya muestra info pero no
+   filtra (solo badge informativo).
+5. **Toggle switch en cabecera de `/compras/armar`** (sin recargar).
+   Actualmente "Filtrar por oferta" hace reload — sería más fluido con un
+   switch que filtre client-side.
+6. **Otros pivotes por médico** en `routes/informes.py` y `routes/obras_sociales.py`
+   tienen el mismo bug que arreglamos en `consulta_medico`: filtran por
+   `medico_observer == medico_id` en lugar de IN. Ubicaciones:
+   - `informes.py:817, 1114, 1286, 1302`
+   - `obras_sociales.py:2096, 2275, 2579, 2678`
+
+### Baja / nota
+
+7. **AppLabo integración** (`docs/integracion_con_appfarmweb.md` en repo
+   AppLabo): decidir si arrancamos con opción A (mismo Postgres, schemas
+   separados). Estimado 1-1.5h.
+8. **Tabla más grande de Render Postgres** sigue pendiente de identificar
+   con `pg_total_relation_size` desde la última caída por disco lleno
+   (10/05). No bloquea pero conviene saberlo.
+
+---
+
+## Sesión 2026-05-09
 
 ### Tirada larga de migración UX al theme-emerald
 
