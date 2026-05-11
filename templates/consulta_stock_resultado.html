@@ -57,17 +57,18 @@
                   font-size: 10px; color: var(--ds-text-mute);
                   margin-top: auto; padding-top: 8px; text-align: center; }
 
-/* Modo lista (default): chart inline + KPIs ocultos para densidad alta. */
+/* Modo lista (default): sparkline visible, chart Chart.js + KPIs ocultos. */
 .csr-card .csr-chart,
 .csr-card .csr-kpis { display: none; }
+.csr-card .csr-spark { display: flex; }
 
-/* Modo detalle: card a pantalla completa + chart + KPIs visibles. */
+/* Modo detalle: card a pantalla completa + chart full + KPIs. Sparkline oculto. */
 body.csr-detail-mode .csr-list { scroll-snap-type: y mandatory; }
 body.csr-detail-mode .csr-card { min-height: calc(100vh - 96px);
                                   scroll-snap-align: start;
                                   margin-bottom: 12px; padding: 14px; }
-body.csr-detail-mode .csr-card .csr-chart,
-body.csr-detail-mode .csr-card .csr-kpis { display: block; }
+body.csr-detail-mode .csr-card .csr-spark { display: none; }
+body.csr-detail-mode .csr-card .csr-chart { display: block; }
 body.csr-detail-mode .csr-card .csr-kpis { display: grid; }
 body.csr-detail-mode .csr-card-pager { display: block; }
 
@@ -92,7 +93,14 @@ body.csr-detail-mode .csr-card-pager { display: block; }
 .csr-ind-val.cov-mid { color: var(--ds-warn); }
 .csr-ind-val.cov-ok { color: var(--ds-mint); }
 
-/* Chart contenedor */
+/* Sparkline (modo LISTA) — barras CSS sin lib externa, denso y rápido. */
+.csr-spark { display: flex; align-items: flex-end; gap: 2px;
+             height: 36px; margin-top: 8px; padding: 0 2px; }
+.csr-spark-bar { flex: 1; background: rgba(95,230,188,.5);
+                  border-radius: 2px 2px 0 0; min-height: 2px; }
+.csr-spark-bar.zero { background: rgba(255,255,255,.08); }
+
+/* Chart Chart.js (modo DETALLE) — fullscreen card con anotaciones. */
 .csr-chart { height: 200px; margin-top: 10px; padding: 6px;
              background: rgba(255,255,255,.02); border-radius: 8px;
              position: relative; }
@@ -250,6 +258,16 @@ body.csr-detail-mode .csr-card-pager { display: block; }
             </div>
 
             {% if ventas %}
+            {# Sparkline siempre presente (visible solo en modo lista por CSS). #}
+            {% set max_v = (ventas | max) if ventas else 0 %}
+            <div class="csr-spark" title="Últimos 12 meses">
+                {% for v in ventas[:12] %}
+                <div class="csr-spark-bar {{ 'zero' if v == 0 else '' }}"
+                     style="{% if max_v > 0 and v > 0 %}height:{{ (v / max_v * 100) | int }}%{% endif %}"
+                     title="{{ month_es[loop.index0] if loop.index0 < month_es | length else '' }}: {{ v | int }}"></div>
+                {% endfor %}
+            </div>
+            {# Chart Chart.js (visible solo en modo detalle por CSS). #}
             <div class="csr-chart" data-chart-idx="{{ loop.index0 }}">
                 <div class="csr-chart-placeholder">📊 cargando…</div>
             </div>
@@ -337,9 +355,14 @@ const chartInstances = {};  // idx → Chart instance (para destroy si hace falt
 function renderChart(container, idx) {
     const data = CHART_DATA[idx];
     if (!data || container.dataset.rendered === '1') return;
+    if (typeof Chart === 'undefined') {
+        container.innerHTML = '<div class="csr-chart-placeholder">⚠ Chart.js no cargó. Refrescar página.</div>';
+        return;
+    }
     container.dataset.rendered = '1';
     container.innerHTML = '<canvas></canvas>';
     const ctx = container.querySelector('canvas').getContext('2d');
+    try {
 
     const ventas = data.ventas.slice(0, 12);
     const N = ventas.length;
@@ -416,6 +439,11 @@ function renderChart(container, idx) {
             },
         },
     });
+    } catch (err) {
+        console.error('renderChart idx=' + idx + ':', err);
+        container.innerHTML = '<div class="csr-chart-placeholder">⚠ ' + err.message + '</div>';
+        container.dataset.rendered = '0';  // permitir retry
+    }
 }
 
 const chartObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
@@ -449,13 +477,20 @@ function aplicarVista(modo) {
     document.getElementById('btn-toggle-vista').title = isDetail
         ? 'Modo detalle (con charts). Tap para ver lista compacta.'
         : 'Modo lista. Tap para ver detalle con charts.';
-    // Re-render de charts visibles si pasamos a detalle (no estaban renderizados).
+    // Al pasar a detalle, force-render los charts visibles ahora (el
+    // IntersectionObserver puede no disparar el callback de elementos que
+    // estaban display:none antes — depende del browser).
     if (isDetail) {
-        document.querySelectorAll('.csr-chart').forEach(c => {
-            const idx = parseInt(c.dataset.chartIdx, 10);
-            if (chartObserver) chartObserver.observe(c);
-            else renderChart(c, idx);
-        });
+        // Delay corto para que el CSS aplique el display:block antes de medir.
+        setTimeout(() => {
+            document.querySelectorAll('.csr-chart').forEach(c => {
+                const idx = parseInt(c.dataset.chartIdx, 10);
+                const rect = c.getBoundingClientRect();
+                const enView = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+                if (enView) renderChart(c, idx);
+                if (chartObserver) chartObserver.observe(c);
+            });
+        }, 50);
     }
 }
 const vistaGuardada = localStorage.getItem(VIEW_KEY) || 'lista';
