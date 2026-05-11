@@ -206,6 +206,12 @@ def init_app(app):
         hoy = _datetime.now()
         anio, mes = hoy.year, hoy.month
 
+        # Fecha del último sync de ventas (para mostrar "Datos al: ..." en la UI).
+        with database.get_db() as _s_est:
+            est_v = observer_source.estado_ventas_mensuales(_s_est)
+        ultimo_sync = est_v.get('ultimo_sync')
+        ultimo_sync_str = (ultimo_sync.strftime('%d/%m/%Y') if ultimo_sync else None)
+
         productos = observer_source.get_ventas_laboratorio(partner_nombre, anio, mes)
         if not productos:
             flash(f'Sin ventas de "{partner_nombre}" en {mes:02d}/{anio}.', 'warning')
@@ -245,6 +251,7 @@ def init_app(app):
             'rot_baja_tol': cfg['rot_baja_tol'],
             'products': results,
             'proceso_id': proc_id,
+            'datos_al': ultimo_sync_str,
         }
 
         with database.get_db() as session:
@@ -265,6 +272,116 @@ def init_app(app):
             _json.dump(data, jf, ensure_ascii=False)
 
         return redirect(url_for('consulta_stock_resultado', uid=uid))
+
+    @app.route('/consulta-stock/export-xls', methods=['POST'])
+    def consulta_stock_export_xls():
+        """Genera un XLS desde la consulta móvil. Si vienen items con qty>0,
+        exporta solo esos. Sino, exporta todos los productos del análisis.
+
+        Body JSON: { uid, laboratorio, items: [{idx, qty}] (opcional) }
+        Returns: archivo .xlsx con cols EAN, Producto, Stock, Prom/mes,
+                 Vendido 3m, Vendido 12m, Cobertura, Rotación, Sugerido, A pedir.
+        """
+        import io as _io
+        import json as _json
+        import os as _os
+        import re as _re
+
+        import openpyxl
+        from flask import send_file
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        from helpers import PURCHASE_FOLDER
+
+        data_req = request.get_json(silent=True) or {}
+        uid = (data_req.get('uid') or '').strip()
+        if not _re.match(r'^[0-9a-f-]{36}$', uid):
+            return jsonify({'ok': False, 'error': 'uid inválido'}), 400
+        json_path = _os.path.join(PURCHASE_FOLDER, f'{uid}.json')
+        if not _os.path.exists(json_path):
+            return jsonify({'ok': False, 'error': 'análisis expirado'}), 404
+        with open(json_path, encoding='utf-8') as jf:
+            data = _json.load(jf)
+
+        items_qty_map = {}  # idx → qty (si vienen items específicos)
+        for it in (data_req.get('items') or []):
+            try:
+                items_qty_map[int(it['idx'])] = int(it.get('qty') or 0)
+            except (ValueError, KeyError, TypeError):
+                continue
+        # Si vinieron items con qty > 0, filtrar solo esos. Sino, exportar todos.
+        only_marked = any(q > 0 for q in items_qty_map.values())
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Stock'
+
+        # Header
+        headers = ['EAN', 'Producto', 'Stock', 'Mín', 'Prom/mes', 'Vendido 3m',
+                   'Vendido 12m', 'Cobertura (d)', 'Rotación', 'Tendencia',
+                   'Sugerido', 'A pedir', 'Rubro']
+        header_fill = PatternFill('solid', fgColor='10B981')
+        header_font = Font(bold=True, color='FFFFFF', size=10)
+        for col, h in enumerate(headers, 1):
+            c = ws.cell(row=1, column=col, value=h)
+            c.fill = header_fill
+            c.font = header_font
+            c.alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[1].height = 22
+
+        # Filas
+        row = 2
+        for i, p in enumerate(data.get('products', [])):
+            qty_pedida = items_qty_map.get(i, 0)
+            if only_marked and qty_pedida <= 0:
+                continue
+            ventas = p.get('ventas') or []
+            v3m = sum(ventas[:3]) if len(ventas) >= 3 else sum(ventas)
+            v12m = p.get('total') or sum(ventas)
+            avg = p.get('avg_monthly') or 0
+            stock = p.get('stock') or 0
+            cov = ''
+            if avg > 0 and stock > 0:
+                cov = round(stock / (avg / 30.4))
+            elif stock <= 0:
+                cov = 0
+            slope = p.get('slope') or 0
+            tend = ('↑' if slope > 0 else ('↓' if slope < 0 else '→')) + f' {slope:.1f}/m'
+            ws.append([
+                p.get('codigo_barra') or '',
+                p.get('nombre') or '',
+                stock,
+                p.get('minimo') or 0,
+                int(avg),
+                int(v3m),
+                int(v12m),
+                cov,
+                p.get('rotacion') or '',
+                tend,
+                p.get('order_qty') or 0,
+                qty_pedida,
+                p.get('rubro') or '',
+            ])
+            row += 1
+
+        # Ajustar anchos
+        widths = [16, 38, 8, 8, 10, 11, 11, 13, 10, 12, 10, 9, 22]
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+        # Freeze header
+        ws.freeze_panes = 'A2'
+
+        bio = _io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        from datetime import datetime as _dt
+        lab_name = _re.sub(r'[^a-zA-Z0-9_\- ]', '', data.get('laboratorio', 'lab'))[:40]
+        fname = f'consulta_{lab_name}_{_dt.now().strftime("%Y%m%d_%H%M")}.xlsx'
+        return send_file(
+            bio, as_attachment=True, download_name=fname,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
 
     @app.route('/consulta-stock/armar-pedido', methods=['POST'])
     def consulta_stock_armar_pedido():

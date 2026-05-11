@@ -1183,6 +1183,33 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                       .filter(ObsStock.id_farmacia == id_farmacia,
                               ObsStock.producto_observer.in_(prod_ids)).all())
         mapa_stock = {s.producto_observer: int(s.stock_actual or 0) for s in stock_rows}
+        mapa_minimo = {s.producto_observer: int(s.minimo or 0)
+                       for s in stock_rows if s.minimo}
+        mapa_maximo = {s.producto_observer: int(s.maximo or 0)
+                       for s in stock_rows if s.maximo}
+
+        # Resolver rubro de cada producto vía subrubro → rubro. Una sola query
+        # con join para no hacer N+1.
+        from database import ObsRubro, ObsSubrubro
+        subrubro_ids = {p.subrubro_observer for p in productos if p.subrubro_observer}
+        mapa_rubro = {}  # subrubro_observer → 'Rubro · Subrubro'
+        if subrubro_ids:
+            rows_rub = (session.query(ObsSubrubro.observer_id,
+                                       ObsSubrubro.descripcion,
+                                       ObsRubro.descripcion)
+                        .outerjoin(ObsRubro,
+                                   ObsRubro.observer_id == ObsSubrubro.rubro_observer)
+                        .filter(ObsSubrubro.observer_id.in_(list(subrubro_ids)))
+                        .all())
+            for sub_id, sub_desc, rub_desc in rows_rub:
+                # Solo guardamos el rubro (no el subrubro) — el filtro es a
+                # nivel rubro. En ObServer muchos rubros tienen un único
+                # subrubro homónimo ("Medicamentos · Medicamentos") que
+                # ensuciaría el dropdown. Si no hay rubro, fallback al
+                # subrubro como mejor esfuerzo.
+                etiq = (rub_desc or sub_desc or '').strip()
+                if etiq:
+                    mapa_rubro[sub_id] = etiq
 
         # Puente EAN ↔ IdProducto: traer el codigo_barra real de la tabla
         # local `productos` cuando esté vinculada por observer_id.
@@ -1228,6 +1255,9 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                 # consume hoy. Si se necesita, calcular desde obs_ventas_mensuales.
                 'precio_pvp': 0,
                 'stock': mapa_stock.get(p.observer_id, 0),
+                'minimo': mapa_minimo.get(p.observer_id, 0),
+                'maximo': mapa_maximo.get(p.observer_id, 0),
+                'rubro': mapa_rubro.get(p.subrubro_observer, ''),
                 'ventas': ventas,
                 'tvc': tvc,
                 'es_libre': tvc == 'L',

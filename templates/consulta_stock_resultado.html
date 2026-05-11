@@ -4,6 +4,7 @@
 {% block body_class %}theme-emerald{% endblock %}
 
 {% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 .csr-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 90px; }
 
@@ -42,12 +43,120 @@
 .csr-search:focus { outline: none; border-color: var(--ds-mint);
                     box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
 
-/* Card por producto */
+/* Card por producto. Default = vista LISTA (cards compactas apiladas).
+   En vista DETALLE (body.csr-detail-mode), cada card ocupa 100vh con chart. */
 .csr-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
-            border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+            border-radius: 14px; padding: 12px 14px;
+            margin-bottom: 10px;
+            display: flex; flex-direction: column;
             transition: border-color .15s; }
 .csr-card.marked { border-color: var(--ds-mint); background: rgba(95,230,188,.05); }
 .csr-card.hidden-row { display: none; }
+.csr-card-body { flex: 1; display: flex; flex-direction: column; }
+.csr-card-pager { display: none;  /* solo visible en modo detalle */
+                  font-size: 10px; color: var(--ds-text-mute);
+                  margin-top: auto; padding-top: 8px; text-align: center; }
+
+/* Modo lista (default): sparkline visible, chart Chart.js + KPIs ocultos. */
+.csr-card .csr-chart,
+.csr-card .csr-kpis { display: none; }
+.csr-card .csr-spark { display: flex; }
+/* Modo lista pero card expandida (botón 📊 dentro): mostrar chart + KPIs. */
+.csr-card.expanded .csr-chart { display: block; }
+.csr-card.expanded .csr-kpis { display: grid; }
+.csr-card.expanded .csr-spark { display: none; }
+
+/* Botón expand inline (visible solo en modo lista) */
+.csr-expand-btn { background: transparent; border: 1px solid var(--ds-line);
+                  color: var(--ds-text-soft); border-radius: 8px;
+                  padding: 6px 10px; font-size: 11px; font-weight: 600;
+                  cursor: pointer; transition: all .15s;
+                  font-family: inherit; }
+.csr-expand-btn:active { background: var(--ds-surface-2); transform: scale(.96); }
+.csr-card.expanded .csr-expand-btn { background: var(--ds-mint);
+                                      color: #0a3a2a; border-color: var(--ds-mint-deep); }
+body.csr-detail-mode .csr-expand-btn,
+body.csr-tabla-mode .csr-expand-btn { display: none; }
+
+/* Modo detalle: card a pantalla completa + chart full + KPIs. Sparkline oculto. */
+body.csr-detail-mode .csr-list { scroll-snap-type: y mandatory; }
+body.csr-detail-mode .csr-card { min-height: calc(100vh - 96px);
+                                  scroll-snap-align: start;
+                                  margin-bottom: 12px; padding: 14px; }
+body.csr-detail-mode .csr-card .csr-spark { display: none; }
+body.csr-detail-mode .csr-card .csr-chart { display: block; }
+body.csr-detail-mode .csr-card .csr-kpis { display: grid; }
+body.csr-detail-mode .csr-card-pager { display: block; }
+
+/* Modo TABLA: 1 fila por producto, columnas, scroll horizontal en portrait,
+   se ve completo en landscape. Cards .csr-card se ocultan y mostramos
+   la tabla #csr-tabla. */
+body.csr-tabla-mode .csr-list .csr-card { display: none; }
+body.csr-tabla-mode #csr-tabla { display: block; }
+#csr-tabla { display: none; margin-top: 8px; overflow-x: auto;
+             -webkit-overflow-scrolling: touch;
+             background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+             border-radius: 10px; }
+#csr-tabla table { width: 100%; min-width: 640px; border-collapse: collapse;
+                    font-size: 12px; color: var(--ds-text); }
+#csr-tabla thead th { position: sticky; top: 0; z-index: 5;
+                      background: var(--ds-surface-2); color: var(--ds-text-mute);
+                      font-size: 9px; font-weight: 700; letter-spacing: .05em;
+                      text-transform: uppercase; text-align: center;
+                      padding: 8px 6px;
+                      border-bottom: 1px solid var(--ds-line-2); }
+#csr-tabla thead th:first-child { text-align: left; padding-left: 10px;
+                                   position: sticky; left: 0; z-index: 6;
+                                   background: var(--ds-surface-2); }
+#csr-tabla tbody td { padding: 6px;
+                       border-bottom: 1px solid var(--ds-line);
+                       text-align: center; vertical-align: middle; }
+#csr-tabla tbody td:first-child { text-align: left; padding-left: 10px;
+                                   position: sticky; left: 0;
+                                   background: var(--ds-surface); z-index: 1;
+                                   min-width: 200px; }
+#csr-tabla tbody tr.marked td { background: rgba(95,230,188,.08); }
+#csr-tabla tbody tr.marked td:first-child { background: rgba(95,230,188,.12); }
+#csr-tabla tbody tr.hidden-row { display: none; }
+#csr-tabla tbody tr.csr-tabla-row { cursor: pointer; }
+#csr-tabla tbody tr.csr-tabla-row:hover td { background: rgba(95,230,188,.04); }
+#csr-tabla tbody tr.csr-tabla-row.expanded td { background: rgba(95,230,188,.10); }
+#csr-tabla tbody tr.csr-tabla-row.expanded td:first-child { background: rgba(95,230,188,.14); }
+#csr-tabla tbody tr.csr-tabla-expand-row td { padding: 0; background: var(--ds-bg); }
+#csr-tabla tbody tr.csr-tabla-expand-row .csr-tabla-expand-wrap {
+    padding: 12px; background: var(--ds-bg);
+}
+#csr-tabla tbody tr.csr-tabla-expand-row .csr-chart { display: block; height: 220px; }
+#csr-tabla tbody tr.csr-tabla-expand-row .csr-kpis { display: grid; }
+#csr-tabla .csr-tabla-name { font-weight: 600; line-height: 1.2; }
+#csr-tabla .csr-tabla-ean { font-size: 9px; color: var(--ds-text-mute);
+                            font-family: ui-monospace, Consolas, monospace; }
+#csr-tabla .csr-tabla-num { font-weight: 700; font-size: 13px; }
+#csr-tabla .csr-tabla-num.low { color: var(--ds-danger); }
+#csr-tabla .csr-tabla-num.mid { color: var(--ds-warn); }
+#csr-tabla .csr-tabla-num.ok { color: var(--ds-mint); }
+#csr-tabla .csr-tabla-sug { background: rgba(95,230,188,.15); color: var(--ds-mint);
+                            border: 1px solid rgba(95,230,188,.3);
+                            border-radius: 6px; padding: 3px 8px;
+                            font-size: 11px; font-weight: 700;
+                            cursor: pointer; min-width: 40px; }
+#csr-tabla .csr-tabla-qty { width: 50px; height: 30px;
+                            text-align: center; font-size: 14px; font-weight: 700;
+                            background: var(--ds-surface-2);
+                            border: 1px solid var(--ds-line); border-radius: 6px;
+                            color: var(--ds-text); font-family: inherit; }
+#csr-tabla .csr-tabla-qty:focus { outline: none; border-color: var(--ds-mint); }
+
+/* Botones segmented control de vista */
+.csr-vista-seg { display: inline-flex; gap: 0; border: 1px solid var(--ds-line);
+                  border-radius: 8px; overflow: hidden; }
+.csr-vista-seg .csr-h-icon-btn { border: none; border-radius: 0;
+                                  border-right: 1px solid var(--ds-line);
+                                  width: 34px; height: 34px; font-size: 14px; }
+.csr-vista-seg .csr-h-icon-btn:last-child { border-right: none; }
+.csr-vista-seg .csr-h-icon-btn.active {
+    background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+    color: #0a3a2a; }
 
 .csr-name { font-size: 14px; font-weight: 600; color: var(--ds-text);
             line-height: 1.3; margin-bottom: 2px; }
@@ -70,13 +179,32 @@
 .csr-ind-val.cov-mid { color: var(--ds-warn); }
 .csr-ind-val.cov-ok { color: var(--ds-mint); }
 
-/* Mini-chart sparkline 12m */
+/* Sparkline (modo LISTA) — barras CSS sin lib externa, denso y rápido. */
 .csr-spark { display: flex; align-items: flex-end; gap: 2px;
-             height: 32px; margin-top: 6px; padding: 0 2px; }
+             height: 36px; margin-top: 8px; padding: 0 2px; }
 .csr-spark-bar { flex: 1; background: rgba(95,230,188,.5);
-                  border-radius: 2px 2px 0 0; min-height: 2px;
-                  transition: background .15s; }
+                  border-radius: 2px 2px 0 0; min-height: 2px; }
 .csr-spark-bar.zero { background: rgba(255,255,255,.08); }
+
+/* Chart Chart.js (modo DETALLE) — fullscreen card con anotaciones. */
+.csr-chart { height: 200px; margin-top: 10px; padding: 6px;
+             background: rgba(255,255,255,.02); border-radius: 8px;
+             position: relative; }
+.csr-chart canvas { width: 100% !important; height: 100% !important; }
+.csr-chart-placeholder { display: flex; align-items: center; justify-content: center;
+                         height: 100%; color: var(--ds-text-mute); font-size: 12px; }
+
+/* KPIs adicionales debajo del chart */
+.csr-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+             margin-top: 8px; padding-top: 8px;
+             border-top: 1px dashed var(--ds-line); }
+.csr-kpi { text-align: center; padding: 4px 2px; }
+.csr-kpi-label { font-size: 8px; font-weight: 700; letter-spacing: .04em;
+                  color: var(--ds-text-mute); text-transform: uppercase; }
+.csr-kpi-val { font-size: 13px; font-weight: 700; color: var(--ds-text); margin-top: 1px; }
+.csr-kpi-val.low { color: var(--ds-danger); }
+.csr-kpi-val.mid { color: var(--ds-warn); }
+.csr-kpi-val.ok { color: var(--ds-mint); }
 
 /* Input cantidad + acciones */
 .csr-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px;
@@ -92,7 +220,12 @@
                   border: 1px solid var(--ds-line); border-radius: 8px;
                   color: var(--ds-text); font-family: inherit; }
 .csr-qty-input:focus { outline: none; border-color: var(--ds-mint); }
-.csr-sugerido { font-size: 11px; color: var(--ds-mint); margin-left: auto; }
+.csr-sugerido { font-size: 12px; font-weight: 600; color: var(--ds-mint);
+                margin-left: auto; padding: 8px 12px; border-radius: 8px;
+                background: rgba(95,230,188,.10);
+                border: 1px solid rgba(95,230,188,.3);
+                cursor: pointer; transition: all .15s; }
+.csr-sugerido:active { transform: scale(.96); background: rgba(95,230,188,.25); }
 
 /* Tags producto */
 .csr-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
@@ -125,10 +258,18 @@
             <a href="{{ url_for('consulta_stock') }}" class="csr-h-icon-btn" title="Volver a elegir">←</a>
             <div class="csr-h-text">
                 <div class="csr-h1">📦 {{ laboratorio }}</div>
-                <div class="csr-meta">{{ products | length }} productos · {{ periodo }}</div>
+                <div class="csr-meta">
+                    {{ products | length }} productos
+                    {% if datos_al %} · Datos al: {{ datos_al }}{% endif %}
+                </div>
+            </div>
+            <div class="csr-vista-seg" title="Cambiar vista">
+                <button type="button" class="csr-h-icon-btn" data-vista="lista" title="Lista compacta">☰</button>
+                <button type="button" class="csr-h-icon-btn" data-vista="detalle" title="Detalle con gráfico">📊</button>
+                <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
             </div>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
-            <button type="button" class="csr-h-icon-btn" id="btn-share" title="Compartir resumen">📤</button>
+            <button type="button" class="csr-h-icon-btn" id="btn-share" title="Descargar XLS (marcados si hay, sino todo)">📥</button>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -143,6 +284,20 @@
 
         <div class="csr-h-expand" id="csr-h-expand">
             <input type="text" class="csr-search" id="csr-search" placeholder="🔍 Buscar producto…">
+            {% set _rubros_unicos = products | selectattr('rubro') | map(attribute='rubro') | unique | sort | list %}
+            {% if _rubros_unicos %}
+            <select id="csr-rubro-filter" class="csr-search" style="margin-top:6px;cursor:pointer;">
+                <option value="">— Todos los rubros —</option>
+                {# Detectar el rubro Medicamentos (el primer rubro que contiene 'Medicamento') para usarlo de default. #}
+                {% set _ns = namespace(med='') %}
+                {% for r in _rubros_unicos %}
+                    {% if 'medicament' in r | lower and not _ns.med %}{% set _ns.med = r %}{% endif %}
+                {% endfor %}
+                {% for r in _rubros_unicos %}
+                <option value="{{ r }}" {% if r == _ns.med %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
             <div class="csr-filters">
                 <button class="csr-chip active" data-filter="all">Todos</button>
                 <button class="csr-chip" data-filter="sugerido">Sugeridos</button>
@@ -153,10 +308,9 @@
         </div>
     </div>
 
-    <div id="csr-list">
+    <div id="csr-list" class="csr-list">
     {% for p in products %}
         {% set ventas = p.ventas or [] %}
-        {% set max_v = (ventas | max) if ventas else 0 %}
         {% set cov = p.dias_cobertura %}
         {% set bajo = (cov is not none and cov <= 15) %}
         <div class="csr-card"
@@ -164,8 +318,10 @@
              data-name="{{ p.nombre | lower }} {{ p.codigo_barra }}"
              data-sugerido="{{ 'true' if (p.order_qty or 0) > 0 else 'false' }}"
              data-bajo="{{ 'true' if bajo else 'false' }}"
-             data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}">
+             data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}"
+             data-rubro="{{ p.rubro or '' }}">
 
+            <div class="csr-card-body">
             <div class="csr-name">{{ p.nombre }}</div>
             <div class="csr-ean">{{ p.codigo_barra }}</div>
 
@@ -173,14 +329,15 @@
                 {% if p.es_pack %}<span class="csr-tag warn">PACK</span>{% endif %}
                 {% if p.tipo == 'C' %}<span class="csr-tag purple">CRÓNICO</span>{% endif %}
                 {% if p.sin_mov_60d %}<span class="csr-tag danger">SIN MOV 60d</span>{% endif %}
-                {% if (p.order_qty or 0) > 0 %}<span class="csr-tag mint">SUGERIDO</span>{% endif %}
             </div>
 
             <div class="csr-grid">
                 <div class="csr-ind">
                     <div class="csr-ind-label">Stock</div>
                     <div class="csr-ind-val">{{ p.stock | int }}</div>
-                    <div class="csr-ind-sub">${{ (p.precio_pvp or 0) | int }} c/u</div>
+                    {% if (p.precio_pvp or 0) > 0 %}
+                    <div class="csr-ind-sub">${{ p.precio_pvp | int }} c/u</div>
+                    {% endif %}
                 </div>
                 <div class="csr-ind">
                     <div class="csr-ind-label">Cobertura</div>
@@ -191,24 +348,23 @@
                     <div class="csr-ind-val {{ 'cov-low' if cov <= 15 else ('cov-mid' if cov <= 30 else 'cov-ok') }}">
                         {{ cov }}d
                     </div>
-                    <div class="csr-ind-sub">te alcanza</div>
                     {% endif %}
                 </div>
                 <div class="csr-ind">
                     <div class="csr-ind-label">Prom/mes</div>
                     <div class="csr-ind-val">{{ p.avg_monthly | int }}</div>
-                    <div class="csr-ind-sub">u/mes</div>
                 </div>
                 <div class="csr-ind">
-                    <div class="csr-ind-label">Vendido</div>
-                    <div class="csr-ind-val" style="font-size:13px;line-height:1.2;">
-                        {{ p.v3m | int }}<span style="font-size:10px;color:var(--ds-text-mute);">/3m</span><br>
-                        {{ p.v12m | int }}<span style="font-size:10px;color:var(--ds-text-mute);">/12m</span>
+                    <div class="csr-ind-label">Vendido 3m / 12m</div>
+                    <div class="csr-ind-val" style="font-size:15px;line-height:1.2;">
+                        {{ p.v3m | int }}<span style="font-size:11px;color:var(--ds-text-mute);"> / </span>{{ p.v12m | int }}
                     </div>
                 </div>
             </div>
 
             {% if ventas %}
+            {# Sparkline siempre presente (visible solo en modo lista por CSS). #}
+            {% set max_v = (ventas | max) if ventas else 0 %}
             <div class="csr-spark" title="Últimos 12 meses">
                 {% for v in ventas[:12] %}
                 <div class="csr-spark-bar {{ 'zero' if v == 0 else '' }}"
@@ -216,7 +372,32 @@
                      title="{{ month_es[loop.index0] if loop.index0 < month_es | length else '' }}: {{ v | int }}"></div>
                 {% endfor %}
             </div>
+            {# Chart Chart.js (visible solo en modo detalle por CSS). #}
+            <div class="csr-chart" data-chart-idx="{{ loop.index0 }}">
+                <div class="csr-chart-placeholder">📊 cargando…</div>
+            </div>
             {% endif %}
+
+            <div class="csr-kpis">
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Rotación</div>
+                    <div class="csr-kpi-val {% if p.rotacion == 'Alta' %}ok{% elif p.rotacion == 'Baja' %}low{% endif %}">
+                        {{ p.rotacion or '—' }}
+                    </div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Tendencia</div>
+                    <div class="csr-kpi-val {% if p.slope and p.slope > 0 %}ok{% elif p.slope and p.slope < 0 %}low{% endif %}">
+                        {% if p.slope is not none %}
+                            {{ '↑' if p.slope > 0 else ('↓' if p.slope < 0 else '→') }} {{ '%.1f'|format(p.slope or 0) }}/m
+                        {% else %}—{% endif %}
+                    </div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Mín.</div>
+                    <div class="csr-kpi-val">{{ (p.minimo or 0) | int }}</div>
+                </div>
+            </div>
 
             <div class="csr-actions">
                 <div class="csr-qty-wrap">
@@ -225,17 +406,89 @@
                            onchange="onQtyChange(this)" onfocus="this.select()">
                     <button type="button" class="csr-qty-btn" onclick="qtyAdjust(this, 1)">+</button>
                 </div>
+                {% if ventas %}
+                <button type="button" class="csr-expand-btn" onclick="toggleExpand(this)" title="Ver gráfico">
+                    📊
+                </button>
+                {% endif %}
                 {% if (p.order_qty or 0) > 0 %}
                 <button type="button" class="csr-sugerido" onclick="aplicarSug(this, {{ p.order_qty | int }})">
                     🎯 Sugiere {{ p.order_qty | int }}
                 </button>
                 {% endif %}
             </div>
+
+            <div class="csr-card-pager">{{ loop.index }} / {{ products | length }}</div>
+            </div>
         </div>
     {% endfor %}
     </div>
 
     <div class="csr-empty" id="csr-empty" style="display:none;">No hay productos que coincidan.</div>
+
+    <!-- Modo TABLA: 1 fila por producto, columnas. Mejor en landscape. -->
+    <div id="csr-tabla">
+        <table>
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>Stock</th>
+                    <th>Rot</th>
+                    <th>Prom/mes</th>
+                    <th>Cob.</th>
+                    <th>Sug.</th>
+                    <th>Pedir</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for p in products %}
+                {% set cov = p.dias_cobertura %}
+                <tr class="csr-tabla-row" data-idx="{{ loop.index0 }}"
+                    data-name="{{ p.nombre | lower }} {{ p.codigo_barra }}"
+                    data-sugerido="{{ 'true' if (p.order_qty or 0) > 0 else 'false' }}"
+                    data-bajo="{{ 'true' if (cov is not none and cov <= 15) else 'false' }}"
+                    data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}"
+                    data-rubro="{{ p.rubro or '' }}"
+                    data-has-ventas="{{ 'true' if p.ventas else 'false' }}">
+                    <td>
+                        <div class="csr-tabla-name">{{ p.nombre | truncate(34) }}</div>
+                        <div class="csr-tabla-ean">{{ p.codigo_barra }}</div>
+                    </td>
+                    <td><span class="csr-tabla-num">{{ p.stock | int }}</span></td>
+                    <td>
+                        <span class="csr-tabla-num {% if p.rotacion == 'Alta' %}ok{% elif p.rotacion == 'Baja' %}low{% endif %}">
+                            {{ (p.rotacion or '—')[:1] }}
+                        </span>
+                    </td>
+                    <td><span class="csr-tabla-num">{{ p.avg_monthly | int }}</span></td>
+                    <td>
+                        {% if cov is none %}
+                        <span class="csr-tabla-num">∞</span>
+                        {% else %}
+                        <span class="csr-tabla-num {{ 'low' if cov <= 15 else ('mid' if cov <= 30 else 'ok') }}">
+                            {{ cov }}d
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if (p.order_qty or 0) > 0 %}
+                        <button type="button" class="csr-tabla-sug"
+                                onclick="aplicarSugTabla(this, {{ p.order_qty | int }})">
+                            {{ p.order_qty | int }}
+                        </button>
+                        {% else %}
+                        <span style="color:var(--ds-text-mute);">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <input type="number" class="csr-tabla-qty" min="0" value="0"
+                               onchange="onQtyChangeTabla(this)" onfocus="this.select()">
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <button type="button" class="csr-fab hidden" id="csr-fab" onclick="armarPedido()">
@@ -255,45 +508,320 @@ const NOMBRES = {
 const EANS = {
 {% for p in products %}    {{ loop.index0 }}: {{ (p.codigo_barra or '') | tojson }}{{ ',' if not loop.last }}
 {% endfor %}};
+const CHART_DATA = {
+{% for p in products %}{% if p.ventas %}    {{ loop.index0 }}: {
+        ventas: {{ p.ventas | tojson }},
+        avg: {{ (p.avg_monthly or 0) | float }},
+        stock: {{ (p.stock or 0) | float }},
+        minimo: {{ (p.minimo or 0) | float }},
+        slope: {{ (p.slope or 0) | float }},
+    }{{ ',' if not loop.last }}
+{% endif %}{% endfor %}};
+const MONTH_ES = {{ month_es | tojson }};
 
 let pedido = {};  // idx → qty
+const chartInstances = {};  // idx → Chart instance (para destroy si hace falta)
+
+// ── Lazy render charts via IntersectionObserver ─────────────────────────────
+// Renderizamos solo los charts visibles (con margen) para no colgar la pagina
+// cuando hay 370 productos. Cuando una card entra al viewport, su chart se
+// dibuja; cuando sale lejos, se podría destruir (pero por ahora dejamos).
+function renderChart(container, idx) {
+    const data = CHART_DATA[idx];
+    if (!data || container.dataset.rendered === '1') return;
+    if (typeof Chart === 'undefined') {
+        container.innerHTML = '<div class="csr-chart-placeholder">⚠ Chart.js no cargó. Refrescar página.</div>';
+        return;
+    }
+    container.dataset.rendered = '1';
+    container.innerHTML = '<canvas></canvas>';
+    const ctx = container.querySelector('canvas').getContext('2d');
+    try {
+
+    const ventas = data.ventas.slice(0, 12);
+    const N = ventas.length;
+    const avg = data.avg || 0;
+    const slope = data.slope || 0;
+
+    // Línea de tendencia (clampeada al ±60% del prom para no fugar).
+    const meanX = (N - 1) / 2;
+    const meanY = ventas.reduce((a, b) => a + b, 0) / Math.max(N, 1);
+    const trendClamp = avg > 0 ? avg * 0.6 : Infinity;
+    const trend = Array.from({length: N}, (_, i) => {
+        const raw = meanY + slope * (i - meanX);
+        return Math.max(0, avg > 0 ? Math.min(Math.max(raw, avg - trendClamp), avg + trendClamp) : raw);
+    });
+
+    // Proyección 2 meses
+    const fcst = [];
+    for (let off = 0; off < 2; off++) {
+        const horizon = Math.min(N + off - meanX, 2.0);
+        fcst.push(Math.max(0, Math.round(avg + slope * horizon)));
+    }
+    const labels = (MONTH_ES.slice(0, N)).concat(['→', '→']);
+    const totalCols = N + 2;
+
+    // Datasets
+    const ventasDs = ventas.concat([null, null]);
+    const fcstDs = Array(N).fill(null).concat(fcst);
+    const trendExt = trend.concat([
+        Math.max(0, meanY + slope * (N - meanX)),
+        Math.max(0, meanY + slope * (N + 1 - meanX)),
+    ]);
+    const avgLine = Array(totalCols).fill(avg || null);
+    const stockLine = data.stock > 0 ? Array(totalCols).fill(data.stock) : null;
+    const minLine = data.minimo > 0 ? Array(totalCols).fill(data.minimo) : null;
+
+    const datasets = [
+        { type: 'bar', label: 'Ventas', data: ventasDs,
+          backgroundColor: 'rgba(95,230,188,.55)', borderRadius: 3 },
+        { type: 'bar', label: 'Proyección', data: fcstDs,
+          backgroundColor: 'rgba(16,185,129,.7)', borderRadius: 3 },
+        { type: 'line', label: 'Tendencia', data: trendExt,
+          borderColor: '#F59E0B', borderWidth: 2, pointRadius: 0, tension: .2, fill: false },
+        { type: 'line', label: 'Prom.', data: avgLine,
+          borderColor: '#EAB308', borderWidth: 1, borderDash: [4, 3],
+          pointRadius: 0, fill: false },
+    ];
+    if (stockLine) datasets.push({
+        type: 'line', label: 'Stock', data: stockLine,
+        borderColor: '#EF4444', borderWidth: 1, borderDash: [3, 3],
+        pointRadius: 0, fill: false,
+    });
+    if (minLine) datasets.push({
+        type: 'line', label: 'Mín.', data: minLine,
+        borderColor: '#94A3B8', borderWidth: 1, borderDash: [2, 4],
+        pointRadius: 0, fill: false,
+    });
+
+    chartInstances[idx] = new Chart(ctx, {
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 9 }, color: '#888' } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,.06)' },
+                     ticks: { font: { size: 9 }, color: '#888' } },
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,.85)',
+                    titleFont: { size: 11 }, bodyFont: { size: 11 },
+                },
+            },
+        },
+    });
+    } catch (err) {
+        console.error('renderChart idx=' + idx + ':', err);
+        container.innerHTML = '<div class="csr-chart-placeholder">⚠ ' + err.message + '</div>';
+        container.dataset.rendered = '0';  // permitir retry
+    }
+}
+
+const chartObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+        if (e.isIntersecting) {
+            const c = e.target;
+            const idx = parseInt(c.dataset.chartIdx, 10);
+            renderChart(c, idx);
+        }
+    });
+}, { rootMargin: '200px 0px' }) : null;
+
+document.querySelectorAll('.csr-chart').forEach(c => {
+    if (chartObserver) chartObserver.observe(c);
+    else renderChart(c, parseInt(c.dataset.chartIdx, 10));  // fallback sin IO
+});
+
 
 // Toggle expand del header (filtros + buscador)
 document.getElementById('btn-toggle-filtros').addEventListener('click', () => {
     document.getElementById('csr-h-expand').classList.toggle('open');
 });
 
-// Compartir resumen por WhatsApp (o share API del SO)
-document.getElementById('btn-share').addEventListener('click', () => {
-    const periodo = {{ periodo | tojson }};
-    const total_products = {{ products | length }};
-    const marcados = Object.entries(pedido);
-
-    let texto = `📦 *${LAB}*\n${periodo}\n${total_products} productos analizados\n`;
-
-    if (marcados.length) {
-        let total = 0;
-        texto += `\n🛒 *Marcados para pedir (${marcados.length}):*\n`;
-        marcados.forEach(([idx, qty]) => {
-            const sub = (PRECIOS[idx] || 0) * qty;
-            total += sub;
-            texto += `• ${NOMBRES[idx]} — ${qty}u · $${sub}\n`;
-        });
-        texto += `\n*Total: $${total}*`;
-    } else {
-        texto += `\nSin items marcados todavía.`;
+// Toggle vista: lista | detalle | tabla. Persiste en localStorage.
+const VIEW_KEY = 'consulta_stock_vista';
+function aplicarVista(modo) {
+    document.body.classList.remove('csr-detail-mode', 'csr-tabla-mode');
+    if (modo === 'detalle') document.body.classList.add('csr-detail-mode');
+    if (modo === 'tabla') document.body.classList.add('csr-tabla-mode');
+    // Highlight el botón activo del segmented control.
+    document.querySelectorAll('.csr-vista-seg [data-vista]').forEach(b => {
+        b.classList.toggle('active', b.dataset.vista === modo);
+    });
+    // Al pasar a detalle, force-render charts visibles.
+    if (modo === 'detalle') {
+        setTimeout(() => {
+            document.querySelectorAll('.csr-chart').forEach(c => {
+                const idx = parseInt(c.dataset.chartIdx, 10);
+                const rect = c.getBoundingClientRect();
+                const enView = rect.top < window.innerHeight + 200 && rect.bottom > -200;
+                if (enView) renderChart(c, idx);
+                if (chartObserver) chartObserver.observe(c);
+            });
+        }, 50);
     }
+    // Sincronizar valores qty entre cards y filas de tabla (por idx).
+    sincronizarQty();
+}
+function sincronizarQty() {
+    // pedido ya tiene el estado; reflejarlo en ambos modos.
+    document.querySelectorAll('.csr-card, #csr-tabla tbody tr').forEach(el => {
+        const idx = parseInt(el.dataset.idx, 10);
+        const q = pedido[idx] || 0;
+        const inputs = el.querySelectorAll('input[type=number]');
+        inputs.forEach(i => { i.value = q; });
+        el.classList.toggle('marked', q > 0);
+    });
+}
+const vistaGuardada = localStorage.getItem(VIEW_KEY) || 'lista';
+aplicarVista(vistaGuardada);
+document.querySelectorAll('.csr-vista-seg [data-vista]').forEach(b => {
+    b.addEventListener('click', () => {
+        const m = b.dataset.vista;
+        localStorage.setItem(VIEW_KEY, m);
+        aplicarVista(m);
+    });
+});
 
-    if (navigator.share) {
-        navigator.share({title: `Consulta ${LAB}`, text: texto})
-            .catch(() => fallbackWhatsApp(texto));
-    } else {
-        fallbackWhatsApp(texto);
+// Handlers de la tabla
+function onQtyChangeTabla(input) {
+    const tr = input.closest('tr');
+    const idx = parseInt(tr.dataset.idx, 10);
+    const qty = Math.max(0, parseInt(input.value, 10) || 0);
+    if (qty > 0) pedido[idx] = qty;
+    else delete pedido[idx];
+    tr.classList.toggle('marked', qty > 0);
+    // Reflejar en la card del mismo idx también.
+    const card = document.querySelector(`.csr-card[data-idx="${idx}"]`);
+    if (card) {
+        const ci = card.querySelector('.csr-qty-input');
+        if (ci) ci.value = qty;
+        card.classList.toggle('marked', qty > 0);
+    }
+    updateFab();
+    applyFilter();
+}
+function aplicarSugTabla(btn, sug) {
+    const input = btn.closest('tr').querySelector('.csr-tabla-qty');
+    input.value = sug;
+    onQtyChangeTabla(input);
+}
+
+// Click en fila de tabla → toggle sub-fila con chart Chart.js. Excluye
+// clicks en input/button (qty input, sugerido) para no romper edición.
+document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
+    tr.addEventListener('click', e => {
+        if (e.target.matches('input, button, .csr-tabla-sug')) return;
+        if (tr.dataset.hasVentas !== 'true') return;
+        const idx = parseInt(tr.dataset.idx, 10);
+        const yaExpandida = tr.classList.contains('expanded');
+        // Cerrar otra fila expandida (solo una a la vez para no saturar).
+        document.querySelectorAll('#csr-tabla tbody tr.expanded').forEach(o => {
+            if (o !== tr) {
+                o.classList.remove('expanded');
+                const next = o.nextElementSibling;
+                if (next && next.classList.contains('csr-tabla-expand-row')) next.remove();
+            }
+        });
+        if (yaExpandida) {
+            // Colapsar
+            tr.classList.remove('expanded');
+            const next = tr.nextElementSibling;
+            if (next && next.classList.contains('csr-tabla-expand-row')) next.remove();
+            return;
+        }
+        // Expandir: insertar sub-fila con chart + KPIs.
+        tr.classList.add('expanded');
+        const data = CHART_DATA[idx];
+        const extra = document.createElement('tr');
+        extra.className = 'csr-tabla-expand-row';
+        const colCount = tr.querySelectorAll('td').length;
+        const kpisHtml = `
+            <div class="csr-kpis" style="margin-top:8px;border-top:1px dashed var(--ds-line);padding-top:8px;">
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Rotación</div>
+                    <div class="csr-kpi-val">${tr.querySelector('td:nth-child(3) .csr-tabla-num').textContent.trim()}</div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Tendencia</div>
+                    <div class="csr-kpi-val">${data && data.slope !== undefined ?
+                        ((data.slope > 0 ? '↑' : (data.slope < 0 ? '↓' : '→')) + ' ' + (data.slope || 0).toFixed(1) + '/m')
+                        : '—'}</div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Mín.</div>
+                    <div class="csr-kpi-val">${data ? (data.minimo || 0) : '—'}</div>
+                </div>
+            </div>`;
+        extra.innerHTML = `<td colspan="${colCount}">
+            <div class="csr-tabla-expand-wrap">
+                <div class="csr-chart" data-chart-idx="${idx}">
+                    <div class="csr-chart-placeholder">📊 cargando…</div>
+                </div>
+                ${kpisHtml}
+            </div>
+        </td>`;
+        tr.parentNode.insertBefore(extra, tr.nextSibling);
+        // Render chart con delay para que CSS aplique medidas.
+        setTimeout(() => renderChart(extra.querySelector('.csr-chart'), idx), 30);
+    });
+});
+
+// Descargar XLS con los items (marcados si hay, sino todos los del análisis).
+document.getElementById('btn-share').addEventListener('click', async () => {
+    const marcados = Object.entries(pedido);
+    const items = marcados.map(([idx, qty]) => ({idx: parseInt(idx, 10), qty}));
+    const btn = document.getElementById('btn-share');
+    const original = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/consulta-stock/export-xls', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({uid: UID, laboratorio: LAB, items}),
+        });
+        if (!r.ok) throw new Error('export falló (' + r.status + ')');
+        const blob = await r.blob();
+        // Sacar filename del Content-Disposition si vino, sino default.
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const fname = m ? m[1] : `consulta_${Date.now()}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert('Error al exportar: ' + err.message);
+    } finally {
+        btn.textContent = original;
+        btn.disabled = false;
     }
 });
-function fallbackWhatsApp(texto) {
-    const url = 'https://wa.me/?text=' + encodeURIComponent(texto);
-    window.open(url, '_blank');
+
+// Expand inline del chart dentro de una card en modo lista. Lazy render.
+function toggleExpand(btn) {
+    const card = btn.closest('.csr-card');
+    const idx = parseInt(card.dataset.idx, 10);
+    const willExpand = !card.classList.contains('expanded');
+    card.classList.toggle('expanded', willExpand);
+    btn.textContent = willExpand ? '▲' : '📊';
+    btn.title = willExpand ? 'Ocultar gráfico' : 'Ver gráfico';
+    if (willExpand) {
+        const chartEl = card.querySelector('.csr-chart');
+        if (chartEl) {
+            // Force render. setTimeout para que el CSS aplique display:block antes.
+            setTimeout(() => renderChart(chartEl, idx), 30);
+        }
+    }
 }
 
 function qtyAdjust(btn, delta) {
@@ -308,6 +836,13 @@ function onQtyChange(input) {
     if (qty > 0) pedido[idx] = qty;
     else delete pedido[idx];
     card.classList.toggle('marked', qty > 0);
+    // Reflejar en la fila de tabla del mismo idx.
+    const tr = document.querySelector(`#csr-tabla tbody tr[data-idx="${idx}"]`);
+    if (tr) {
+        const ti = tr.querySelector('.csr-tabla-qty');
+        if (ti) ti.value = qty;
+        tr.classList.toggle('marked', qty > 0);
+    }
     updateFab();
     applyFilter();  // refrescar "Marcados" en vivo si está activo
 }
@@ -340,23 +875,43 @@ document.querySelectorAll('.csr-chip').forEach(c => {
 const search = document.getElementById('csr-search');
 search.addEventListener('input', applyFilter);
 
+const rubroFilter = document.getElementById('csr-rubro-filter');
+if (rubroFilter) rubroFilter.addEventListener('change', applyFilter);
+
 function applyFilter() {
+    // Multi-token: cada token debe aparecer en name+EAN, orden independiente.
     const q = search.value.toLowerCase().trim();
-    let visibles = 0;
+    const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
+    const rubroSel = rubroFilter ? rubroFilter.value : '';
+    const visibles = new Set();
+
     document.querySelectorAll('.csr-card').forEach(card => {
         const name = card.dataset.name;
         const idx = parseInt(card.dataset.idx, 10);
         let pasa = true;
-        if (q && !name.includes(q)) pasa = false;
+        if (tokens.length && !tokens.every(t => name.includes(t))) pasa = false;
+        if (pasa && rubroSel && card.dataset.rubro !== rubroSel) pasa = false;
         if (pasa && filtroActivo === 'sugerido' && card.dataset.sugerido !== 'true') pasa = false;
         if (pasa && filtroActivo === 'bajo' && card.dataset.bajo !== 'true') pasa = false;
         if (pasa && filtroActivo === 'sinmov' && card.dataset.sinmov !== 'true') pasa = false;
         if (pasa && filtroActivo === 'marked' && !pedido[idx]) pasa = false;
         card.classList.toggle('hidden-row', !pasa);
-        if (pasa) visibles++;
+        if (pasa) visibles.add(idx);
     });
-    document.getElementById('csr-empty').style.display = visibles === 0 ? 'block' : 'none';
+    // Replicar en filas de la tabla.
+    document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
+        const idx = parseInt(tr.dataset.idx, 10);
+        tr.classList.toggle('hidden-row', !visibles.has(idx));
+        // Si tiene una fila expand abierta, ocultarla también.
+        const next = tr.nextElementSibling;
+        if (next && next.classList.contains('csr-tabla-expand-row')) {
+            next.classList.toggle('hidden-row', !visibles.has(idx));
+        }
+    });
+    document.getElementById('csr-empty').style.display = visibles.size === 0 ? 'block' : 'none';
 }
+// Aplicar filtro inicial (en caso de que rubro 'Medicamentos' venga preseleccionado).
+applyFilter();
 
 function armarPedido() {
     const items = Object.entries(pedido).map(([idx, qty]) => ({
