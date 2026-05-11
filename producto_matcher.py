@@ -389,6 +389,65 @@ def _extraer_cantidad_envase(descripcion) -> Optional[int]:
     return None
 
 
+# Detección de forma farmacéutica desde el TEXTO CRUDO (pre-tokenización).
+# Necesario porque varias formas (cap, com, comp, jbe, gts, etc.) están en
+# _STOPWORDS y se filtran del set de tokens — perdemos el discriminante.
+# Las formas tópicas (cre, emu, gel, pom, ung, etc.) NO se filtran sino que
+# se canonicalizan via _FORM_SINONIMOS, así que también las cubrimos acá
+# para tener un solo helper de "forma" usable en el tiebreaker.
+#
+# Orden importa: regex más específicas primero. Cada par es (forma_canónica, regex).
+# Las regex usan \b en ambos lados para evitar matches dentro de marcas.
+_FORMA_PATTERNS_RAW = [
+    ('CAP', r'c[áa]ps(?:ulas?)?|caps|cap'),
+    ('COM', r'comp(?:rimidos?)?|cpr|tab(?:letas?)?|comp|com|tab|past(?:illas?)?'),
+    ('JBE', r'jarabes?|jbe'),
+    ('CRE', r'cremas?|crema|crm|cre|cr'),
+    ('EMU', r'emulsi[óo]n(?:es)?|emul|emu'),
+    ('GEL', r'geles|gel'),
+    ('UNG', r'ung[üu]entos?|unguento|ung'),
+    ('POM', r'pomadas?|pom'),
+    ('LIQ', r'soluci[óo]n(?:es)?|l[ií]qu?ido|sol|liq'),
+    ('GTS', r'gotas|gts'),
+    ('AMP', r'ampollas?|inyectables?|amp|iny'),
+    ('SUP', r'supositorios?|sup'),
+    ('OVU', r'[óo]vulos?|ovu'),
+    ('PARCHE', r'parches?'),
+    ('INH', r'inhaladores?|inhalaci[óo]n(?:es)?|inh'),
+    ('COL', r'colirios?|colir|col'),
+    ('SPRAY', r'sprays?|aerosoles?|aer'),
+    ('SHAMPOO', r'shampoo|shamp|sham|champ[uú]|champues'),
+    ('TAMPON', r'tampones?|tampon'),
+    ('ENJ', r'enjuagues?|enj'),
+    ('POL', r'polvos?|pol'),
+    ('LOC', r'lociones?|locion|loc'),
+]
+_FORMA_PATTERNS = [(forma, re.compile(rf'\b(?:{pat})\b', re.IGNORECASE))
+                   for forma, pat in _FORMA_PATTERNS_RAW]
+
+
+def _detectar_forma(descripcion) -> Optional[str]:
+    """Extrae la forma farmacéutica canónica del texto crudo.
+
+    Devuelve la primera forma que matchea (orden = prioridad). None si no se
+    detecta forma explícita.
+
+    Ejemplos:
+    - "DEXALERGIN C 10 mg cáps. x 10" → 'CAP'
+    - "DEXALERGIN C 10 mg COM x 10" → 'COM'
+    - "DERMAGLOS CRE x 100 GRS" → 'CRE'
+    - "DERMAGLOS EMU x 100 ML" → 'EMU'
+    - "RIVOTRIL 0,5 mg" → None  (sin forma explícita)
+    """
+    if not descripcion:
+        return None
+    s = str(descripcion)
+    for forma, pat in _FORMA_PATTERNS:
+        if pat.search(s):
+            return forma
+    return None
+
+
 # Patrones que indican "este item es un pack del proveedor" — no es un producto
 # normal del catálogo. Reusados desde pack_detector.py.
 _PACK_PATTERNS = [
@@ -507,11 +566,127 @@ _TARGETS = {
 
 # ── Función principal ──────────────────────────────────────────────────────
 
+def buscar_equivalencia(session, descripcion=None, codigo_supplier=None,
+                        laboratorio_id=None, drogueria_id=None):
+    """Lookup en EquivalenciaProveedor. Devuelve el Producto match o None.
+
+    Cascada:
+    1. Si `codigo_supplier` está + drog → match por (drog, codigo). Más fuerte.
+    2. Si `codigo_supplier` está + lab → match por (lab, codigo).
+    3. Si `descripcion` está + drog → match por (drog, desc_norm).
+    4. Si `descripcion` está + lab → match por (lab, desc_norm).
+    """
+    from database import EquivalenciaProveedor, Producto
+    if not session:
+        return None
+
+    code_clean = (codigo_supplier or '').strip()
+    if code_clean:
+        if drogueria_id:
+            eq = (session.query(EquivalenciaProveedor)
+                  .filter(EquivalenciaProveedor.drogueria_id == drogueria_id,
+                          EquivalenciaProveedor.codigo_proveedor == code_clean)
+                  .first())
+            if eq and eq.producto_id:
+                return session.get(Producto, eq.producto_id)
+        if laboratorio_id:
+            eq = (session.query(EquivalenciaProveedor)
+                  .filter(EquivalenciaProveedor.laboratorio_id == laboratorio_id,
+                          EquivalenciaProveedor.codigo_proveedor == code_clean)
+                  .first())
+            if eq and eq.producto_id:
+                return session.get(Producto, eq.producto_id)
+
+    if descripcion:
+        desc_norm = normalizar_texto(str(descripcion))[:200]
+        if desc_norm:
+            if drogueria_id:
+                eq = (session.query(EquivalenciaProveedor)
+                      .filter(EquivalenciaProveedor.drogueria_id == drogueria_id,
+                              EquivalenciaProveedor.descripcion_proveedor_norm == desc_norm)
+                      .first())
+                if eq and eq.producto_id:
+                    return session.get(Producto, eq.producto_id)
+            if laboratorio_id:
+                eq = (session.query(EquivalenciaProveedor)
+                      .filter(EquivalenciaProveedor.laboratorio_id == laboratorio_id,
+                              EquivalenciaProveedor.descripcion_proveedor_norm == desc_norm)
+                      .first())
+                if eq and eq.producto_id:
+                    return session.get(Producto, eq.producto_id)
+    return None
+
+
+def guardar_equivalencia(session, producto_id, descripcion=None,
+                         codigo_supplier=None, laboratorio_id=None,
+                         drogueria_id=None):
+    """Upserta una EquivalenciaProveedor. Idempotente.
+
+    Guarda hasta 2 filas si vienen ambos campos (code + desc) — porque cada
+    uno tiene su lookup dedicado. Si solo viene uno, una sola fila.
+
+    Necesita al menos uno de (laboratorio_id, drogueria_id). Si no, no-op.
+    """
+    from database import EquivalenciaProveedor
+    if not session or not producto_id:
+        return
+    if not laboratorio_id and not drogueria_id:
+        return
+
+    code_clean = (codigo_supplier or '').strip() or None
+    desc_clean = (str(descripcion).strip()[:200] if descripcion else None) or None
+    desc_norm = normalizar_texto(desc_clean)[:200] if desc_clean else None
+    if not code_clean and not desc_norm:
+        return
+
+    # Helper interno: busca o crea por una key específica.
+    def _upsert(by_code: bool, by_desc: bool):
+        q = session.query(EquivalenciaProveedor)
+        if drogueria_id:
+            q = q.filter(EquivalenciaProveedor.drogueria_id == drogueria_id)
+        else:
+            q = q.filter(EquivalenciaProveedor.laboratorio_id == laboratorio_id)
+        if by_code:
+            q = q.filter(EquivalenciaProveedor.codigo_proveedor == code_clean)
+        elif by_desc:
+            q = q.filter(EquivalenciaProveedor.descripcion_proveedor_norm == desc_norm)
+        existente = q.first()
+        if existente:
+            if existente.producto_id != producto_id:
+                existente.producto_id = producto_id
+            # Enriquece la fila con la otra dimensión si existe.
+            if by_code and desc_norm and not existente.descripcion_proveedor_norm:
+                existente.descripcion_proveedor = desc_clean
+                existente.descripcion_proveedor_norm = desc_norm
+            elif by_desc and code_clean and not existente.codigo_proveedor:
+                existente.codigo_proveedor = code_clean
+            return
+        nueva = EquivalenciaProveedor(
+            laboratorio_id=laboratorio_id,
+            drogueria_id=drogueria_id,
+            descripcion_proveedor=desc_clean,
+            descripcion_proveedor_norm=desc_norm,
+            codigo_proveedor=code_clean,
+            producto_id=producto_id,
+        )
+        session.add(nueva)
+
+    if code_clean:
+        _upsert(by_code=True, by_desc=False)
+    if desc_norm and not code_clean:
+        # Si vino solo desc, una sola fila.
+        _upsert(by_code=False, by_desc=True)
+    # Si vinieron ambos, ya se guardó la fila combinada en _upsert(by_code)
+    # arriba (incluye desc_norm en el enrich path).
+
+
 def match_producto(*,
                    ean=None,
                    codigo_alfabeta=None,
                    descripcion=None,
                    laboratorio_id=None,
+                   drogueria_id=None,
+                   codigo_supplier=None,
                    precio_referencia=None,
                    cantidad_envase=None,
                    monodroga=None,
@@ -573,6 +748,25 @@ def match_producto(*,
 
     try:
         result = MatchResult()
+
+        # Estrategia 0: equivalencia aprendida. El operador resolvió este item
+        # (o un import anterior lo confirmó) → lookup directo, score 1.0.
+        # Solo aplica al target Producto local (no a ObsProducto).
+        if (target == 'producto'
+                and (codigo_supplier or descripcion)
+                and (laboratorio_id or drogueria_id)):
+            prod_eq = buscar_equivalencia(
+                session,
+                descripcion=descripcion,
+                codigo_supplier=codigo_supplier,
+                laboratorio_id=laboratorio_id,
+                drogueria_id=drogueria_id,
+            )
+            if prod_eq:
+                result.producto = prod_eq
+                result.score = 1.0
+                result.estrategia = 'equivalencia_aprendida'
+                result.confianza = CONFIANZA_ALTA
 
         # Estrategia 1: EAN exacto (solo si el target tiene columnas de EAN)
         if ean and spec.ean_fields:
@@ -762,6 +956,14 @@ def match_producto(*,
                     toks_c = _toks_de_candidato(c)
                     if toks_c and toks_input.issubset(toks_c):
                         supersets.append(c)
+                # Tiebreaker por forma si hay > 1 superset.
+                if len(supersets) > 1:
+                    forma_input = _detectar_forma(descripcion)
+                    if forma_input:
+                        sup_same = [c for c in supersets
+                                    if _detectar_forma(c.descripcion) == forma_input]
+                        if len(sup_same) == 1:
+                            supersets = sup_same
                 if len(supersets) == 1:
                     result.producto = supersets[0]
                     result.score = 0.95
@@ -772,7 +974,7 @@ def match_producto(*,
             if not result.producto:
                 mejor = None
                 mejor_score = 0.0
-                empate = False
+                tied: list = []  # candidatos con score == mejor_score (incluye `mejor`)
                 skip_packs = contexto in ('modulo', 'pack')
                 for c in candidatos:
                     # En contexto módulo, saltear candidatos que también son packs:
@@ -787,9 +989,23 @@ def match_producto(*,
                     if score > mejor_score:
                         mejor = c
                         mejor_score = score
-                        empate = False
+                        tied = [c]
                     elif score == mejor_score and score > 0:
-                        empate = True
+                        tied.append(c)
+                empate = len(tied) > 1
+                # Tiebreaker por forma farmacéutica leída del raw text. Útil
+                # cuando varios candidatos comparten todos los tokens (ej. la
+                # forma está en stopwords y queda invisible al Jaccard) pero
+                # difieren en la forma original (cáps vs COM vs CAP).
+                if empate and mejor_score >= threshold:
+                    forma_input = _detectar_forma(descripcion)
+                    if forma_input:
+                        same_form = [c for c in tied
+                                     if _detectar_forma(c.descripcion) == forma_input]
+                        if len(same_form) == 1:
+                            mejor = same_form[0]
+                            empate = False
+                            result.warnings.append('tiebreak_forma')
                 if mejor and mejor_score >= threshold and not empate:
                     result.producto = mejor
                     result.score = mejor_score
@@ -815,7 +1031,7 @@ def match_producto(*,
                 global_candidatos = global_query.all()
                 mejor = None
                 mejor_score = 0.0
-                empate = False
+                tied = []
                 skip_packs = contexto in ('modulo', 'pack')
                 threshold_global = max(threshold, 0.85)
                 for c in global_candidatos:
@@ -828,9 +1044,19 @@ def match_producto(*,
                     if score > mejor_score:
                         mejor = c
                         mejor_score = score
-                        empate = False
+                        tied = [c]
                     elif score == mejor_score and score > 0:
-                        empate = True
+                        tied.append(c)
+                empate = len(tied) > 1
+                if empate and mejor_score >= threshold_global:
+                    forma_input = _detectar_forma(descripcion)
+                    if forma_input:
+                        same_form = [c for c in tied
+                                     if _detectar_forma(c.descripcion) == forma_input]
+                        if len(same_form) == 1:
+                            mejor = same_form[0]
+                            empate = False
+                            result.warnings.append('tiebreak_forma')
                 if mejor and mejor_score >= threshold_global and not empate:
                     result.producto = mejor
                     result.score = mejor_score - 0.05  # penalización
@@ -1046,7 +1272,8 @@ def buscar_candidatos(descripcion, laboratorio_id=None, top=8, target='producto'
 
 # ── Bulk: para cuando hay N items que matchear (ej. importar oferta) ────────
 
-def match_productos_bulk(items, laboratorio_id=None, target='producto', session=None):
+def match_productos_bulk(items, laboratorio_id=None, drogueria_id=None,
+                         target='producto', session=None):
     """Matchea N items reusando una sola precarga de catálogo.
 
     Para target='producto', hace el flujo en 2 fases:
@@ -1112,6 +1339,8 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                 codigo_alfabeta=it.get('codigo_alfabeta') or it.get('codigo'),
                 descripcion=it.get('descripcion'),
                 laboratorio_id=laboratorio_id,
+                drogueria_id=drogueria_id,
+                codigo_supplier=it.get('codigo'),
                 target=target,
                 incluir_observer=False,
                 incluir_candidatos=False,
@@ -1227,7 +1456,7 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                                     cand_idxs.update(obs_inv[t])
                             mejor = None
                             mejor_score = 0.0
-                            empate = False
+                            tied_obs: list = []
                             supersets = []
                             for ii in cand_idxs:
                                 obs, _norm, toks_o, _alf = obs_index[ii]
@@ -1239,9 +1468,28 @@ def match_productos_bulk(items, laboratorio_id=None, target='producto', session=
                                 if s > mejor_score:
                                     mejor = obs
                                     mejor_score = s
-                                    empate = False
+                                    tied_obs = [obs]
                                 elif s == mejor_score and s > 0:
-                                    empate = True
+                                    tied_obs.append(obs)
+                            empate = len(tied_obs) > 1
+                            # Tiebreaker por forma farmacéutica (raw text).
+                            if empate and mejor_score >= threshold_obs:
+                                forma_input = _detectar_forma(desc_in)
+                                if forma_input:
+                                    same_form = [o for o in tied_obs
+                                                 if _detectar_forma(o.descripcion) == forma_input]
+                                    if len(same_form) == 1:
+                                        mejor = same_form[0]
+                                        empate = False
+                            # Caso superset: si hay múltiples supersets, también
+                            # intentar discriminar por forma antes de descartar.
+                            if len(supersets) > 1:
+                                forma_input = _detectar_forma(desc_in)
+                                if forma_input:
+                                    sup_same = [o for o in supersets
+                                                if _detectar_forma(o.descripcion) == forma_input]
+                                    if len(sup_same) == 1:
+                                        supersets = sup_same  # colapsamos al único compatible
                             if len(supersets) == 1:
                                 encontrado = supersets[0]
                                 estrategia = 'tokens_superset'

@@ -244,23 +244,30 @@ def _normalizar_descripcion_proveedor(s):
     return limpio, cambios
 
 
-def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descripcion):
+def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto,
+                            descripcion, drog_id=None):
     """Persiste la equivalencia que resolvió un import.
 
-    Dos casos:
+    Dos efectos en paralelo:
     1. Si `codigo_interno` es un código corto (≤20 chars sin espacios) → lo
-       guarda como EAN alternativo del producto (`Producto.codigo_barra_alt*`).
-    2. Si `descripcion` está y NO hay código interno usable → guarda la
-       equivalencia `descripcion → producto` en `EquivalenciaProveedor`
-       (tabla nueva, lookup directo en próximas importaciones).
+       guarda como EAN alternativo del producto en `producto_codigos_barra`.
+    2. Guarda equivalencia (drog/lab, desc o codigo) → producto en
+       `EquivalenciaProveedor` para que el matcher la consulte en próximas
+       importaciones (estrategia 0 'equivalencia_aprendida').
+
+    Args:
+        lab_id: scope laboratorio. Mutuamente exclusivo con drog_id en
+            sentido del scope efectivo.
+        drog_id: scope droguería (modo "vía drogueria", multi-lab).
     """
     if not ean_resuelto:
         return
     ean = str(ean_resuelto).strip()
     cod = str(codigo_interno or '').strip()
 
-    from database import EquivalenciaProveedor, Producto
+    from database import Producto
     from helpers import _add_alt_barcode, _upsert_producto
+    from producto_matcher import guardar_equivalencia
 
     # Asegurar que el Producto local existe con el EAN principal.
     prod = session.query(Producto).filter_by(codigo_barra=ean).first()
@@ -269,45 +276,23 @@ def _persistir_equivalencia(session, lab_id, codigo_interno, ean_resuelto, descr
         session.flush()
         prod = session.query(Producto).filter_by(codigo_barra=ean).first()
 
-    # Caso 1: código corto provedor → EAN.
+    # Caso 1: código corto provedor → EAN alt (sigue siendo útil porque el
+    # próximo import puede no traer el código y el catálogo usa el principal).
     if cod and cod != ean and len(cod) <= 20 and ' ' not in cod:
         _add_alt_barcode(session, ean, cod)
 
-    # Caso 2: descripción del archivo → producto local. Solo si:
-    # - NO hay código corto usable (ese es más estable), Y
-    # - el EAN NO es un EAN real (7-14 dígitos) — si ya hay EAN, el próximo
-    #   import lo encuentra directo y la equiv. de descripción es ruido.
-    import re as _re
-    _ean_es_real = bool(_re.match(r'^\d{7,14}$', ean))
-    if not _ean_es_real and (not cod or len(cod) > 20 or ' ' in cod):
-        if prod and descripcion:
-            desc_orig = str(descripcion).strip()[:200]
-            if not desc_orig:
-                return
-            # Normalización igual que el matcher (lowercase + sin acentos + sin
-            # puntuación + colapsa espacios).
-            try:
-                from producto_matcher import normalizar_texto
-                desc_norm = normalizar_texto(desc_orig)[:200]
-            except Exception:
-                desc_norm = desc_orig.lower()
-            if not desc_norm:
-                return
-            existente = (session.query(EquivalenciaProveedor)
-                         .filter_by(laboratorio_id=lab_id,
-                                    descripcion_proveedor_norm=desc_norm)
-                         .first())
-            if existente:
-                # Actualiza si cambió el producto matcheado.
-                if existente.producto_id != prod.id:
-                    existente.producto_id = prod.id
-            else:
-                session.add(EquivalenciaProveedor(
-                    laboratorio_id=lab_id,
-                    descripcion_proveedor=desc_orig,
-                    descripcion_proveedor_norm=desc_norm,
-                    producto_id=prod.id,
-                ))
+    # Caso 2: equivalencia (codigo o desc) → producto en EquivalenciaProveedor.
+    # Lo hacemos SIEMPRE que tengamos un scope (lab o drog), para que el matcher
+    # lookupee directo la próxima vez. Idempotente vía guardar_equivalencia.
+    if prod and (lab_id or drog_id):
+        guardar_equivalencia(
+            session,
+            producto_id=prod.id,
+            descripcion=descripcion,
+            codigo_supplier=cod if cod else None,
+            laboratorio_id=lab_id,
+            drogueria_id=drog_id,
+        )
 
 
 def _previsualizar_pdf(path):
@@ -658,6 +643,14 @@ def init_app(app):
             lab_id = int(lab_id) if lab_id else None
         except (TypeError, ValueError):
             lab_id = None
+        # drog_id se usa al encolar al queue (oferta_data) para agruparlo por
+        # contexto en /productos/pendientes-revision. En modo 'lab' suele ser None;
+        # en modo 'drog' viene del wizard.
+        drog_id_validar = data.get('drogueria_id')
+        try:
+            drog_id_validar = int(drog_id_validar) if drog_id_validar else None
+        except (TypeError, ValueError):
+            drog_id_validar = None
         modo = (data.get('modo') or 'lab').strip().lower()
 
         if not items:
@@ -738,7 +731,8 @@ def init_app(app):
             # pools son globales pero solo se preloadan una vez por request.
             results = pm.match_productos_bulk(
                 items_para_match,
-                laboratorio_id=lab_id,  # None en modo drog → busca global
+                laboratorio_id=lab_id,           # None en modo drog → busca global
+                drogueria_id=drog_id_validar,    # para lookup en EquivalenciaProveedor
                 session=session,
             )
             print(f'[ofertas-validar] match_productos_bulk: {_t.time() - _t0:.2f}s', flush=True)
@@ -967,6 +961,8 @@ def init_app(app):
                     score_top = cands_payload[0]['score'] if cands_payload else None
                     oferta_data = {
                         'laboratorio_id': lab_id,
+                        'drogueria_id': drog_id_validar,
+                        'codigo_supplier': entry.get('codigo'),
                         'descuento_psl': entry.get('descuento_psl'),
                         'unidades_minima': entry.get('unidades_minima'),
                         'plazo_pago': entry.get('plazo_pago'),
@@ -1211,7 +1207,8 @@ def init_app(app):
                     actualizados += 1
                     if guardar_equiv:
                         _persistir_equivalencia(session, lab_id, codigo, ean,
-                                                 it.get('descripcion'))
+                                                 it.get('descripcion'),
+                                                 drog_id=drog_id)
                 else:
                     obs_item = (str(it.get('observacion') or '').strip()[:200]
                                 or observacion or None)
@@ -1236,7 +1233,8 @@ def init_app(app):
                     insertados += 1
                     if guardar_equiv:
                         _persistir_equivalencia(session, lab_id, codigo, ean,
-                                                 it.get('descripcion'))
+                                                 it.get('descripcion'),
+                                                 drog_id=drog_id)
 
             session.commit()
 

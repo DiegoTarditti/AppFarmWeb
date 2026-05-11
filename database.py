@@ -475,6 +475,17 @@ class ProductoPendienteRevision(Base):
     producto_vinculado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
     usuario_resuelve = Column(String(80), nullable=True)
     fecha_resolucion = Column(DateTime, nullable=True)
+    # Análisis IA — sugerencias del LLM (Claude Haiku 4.5 por default).
+    # Pobladas por POST /productos/pendientes-revision/analizar-ia.
+    # Action: 'vincular' (con confidence>=0.85) | 'ambiguo' | 'crear_nuevo' | 'descartar'.
+    # llm_pick_producto_id / llm_pick_observer_id apuntan al candidato elegido del top_candidatos_json.
+    llm_analizado_en = Column(DateTime, nullable=True)
+    llm_pick_producto_id = Column(Integer, nullable=True)
+    llm_pick_observer_id = Column(Integer, nullable=True)
+    llm_confidence = Column(Float, nullable=True)
+    llm_reasoning = Column(Text, nullable=True)
+    llm_action = Column(String(20), nullable=True)
+    llm_modelo_usado = Column(String(60), nullable=True)
 
 
 class Farmacia(Base):
@@ -879,28 +890,46 @@ class ClaimItem(Base):
 
 
 class EquivalenciaProveedor(Base):
-    """Mapea texto descriptivo del archivo de un proveedor → Producto local.
+    """Mapea (lab/drog + descripcion o codigo del proveedor) → Producto local.
 
     Distinto de BarcodeMapping (que mapea códigos cortos de factura → EAN).
-    Acá guardamos la equivalencia que el operador hace MANUAL en el wizard
-    de ofertas cuando la descripción del archivo no se parece exacto a la BD
-    (ej. "AXEPIN 5 ×30" → AXEPIN 5 mg Rec COM x 60).
+    Acá guardamos la equivalencia que el operador genera al resolver items
+    en el queue de pendientes (Vincular / Aplicar IA / chip click) o al
+    confirmar el wizard de ofertas. La próxima vez que entre el mismo Excel,
+    el matcher consulta esta tabla ANTES del fuzzy → 0% ambigüedad.
 
-    Lookup case-insensitive vía `descripcion_proveedor_norm` (lowercase + sin
-    acentos + sin puntuación).
+    Scope: lab_id O drogueria_id (al menos uno seteado). Para ofertas vía
+    droguería (Ciafarma multi-lab), se guarda con drogueria_id; para ofertas
+    directas de lab, con laboratorio_id.
+
+    Match keys (cada equivalencia puede tener una o las dos):
+    - `codigo_proveedor`: código interno corto del archivo (ej. "AX-123").
+      Match más confiable que descripción.
+    - `descripcion_proveedor_norm`: lowercase + sin acentos + sin puntuación.
+
+    Lookup en `producto_matcher`: primero codigo (si vino en el item nuevo),
+    después desc_norm. Si encuentra → estrategia='equivalencia_aprendida',
+    score=1.0.
     """
     __tablename__ = 'equivalencias_proveedor'
     id = Column(Integer, primary_key=True)
+    # Nullable: o lab o drog, al menos uno tiene que estar.
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id', ondelete='CASCADE'),
-                            nullable=False, index=True)
-    descripcion_proveedor = Column(String(200), nullable=False)
-    descripcion_proveedor_norm = Column(String(200), nullable=False, index=True)
+                            nullable=True, index=True)
+    drogueria_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
+                          nullable=True, index=True)
+    descripcion_proveedor = Column(String(200), nullable=True)
+    descripcion_proveedor_norm = Column(String(200), nullable=True, index=True)
+    codigo_proveedor = Column(String(50), nullable=True, index=True)
     producto_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'),
                          nullable=True, index=True)
     creado_en = Column(DateTime, default=now_ar)
     laboratorio = relationship('Laboratorio')
     producto = relationship('Producto')
     __table_args__ = (
+        # UC legacy (solo aplica cuando lab está seteado). En drogueria_id,
+        # se chequea uniqueness vía helper guardar_equivalencia (SELECT-then-
+        # insert) — los partial unique indexes se crean inline en init_db.
         UniqueConstraint('laboratorio_id', 'descripcion_proveedor_norm',
                          name='uq_equiv_lab_desc'),
     )
@@ -1517,6 +1546,27 @@ def init_db(database_url=None):
                     "ALTER TABLE productos_pendientes_revision "
                     "ADD COLUMN IF NOT EXISTS oferta_data_json TEXT"
                 ))
+                # Análisis IA (Claude Haiku 4.5) — agregadas 2026-05-11
+                for col_def in (
+                    "llm_analizado_en TIMESTAMP",
+                    "llm_pick_producto_id INTEGER",
+                    "llm_pick_observer_id INTEGER",
+                    "llm_confidence DOUBLE PRECISION",
+                    "llm_reasoning TEXT",
+                    "llm_action VARCHAR(20)",
+                    "llm_modelo_usado VARCHAR(60)",
+                ):
+                    col_name = col_def.split()[0]
+                    conn.execute(text(
+                        f"ALTER TABLE productos_pendientes_revision "
+                        f"ADD COLUMN IF NOT EXISTS {col_def}"
+                    ))
+                    _ = col_name  # silenciar lint
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_pend_rev_llm "
+                    "ON productos_pendientes_revision(llm_analizado_en) "
+                    "WHERE llm_analizado_en IS NULL"
+                ))
                 conn.execute(text(
                     "CREATE INDEX IF NOT EXISTS idx_pend_rev_estado "
                     "ON productos_pendientes_revision(estado, fecha_creacion)"
@@ -2069,6 +2119,56 @@ def _pg_add_columns(conn):
         pass  # ya era nullable
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ofertas_drog ON ofertas_minimo(drogueria_id)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ofertas_vig  ON ofertas_minimo(vigencia_hasta)"))
+    # ── EquivalenciaProveedor: extensión 2026-05-11 ──
+    # Soporte para equivalencias vía droguería + código del proveedor.
+    try:
+        conn.execute(text(
+            "ALTER TABLE equivalencias_proveedor ALTER COLUMN laboratorio_id DROP NOT NULL"
+        ))
+    except Exception:
+        pass
+    conn.execute(text(
+        "ALTER TABLE equivalencias_proveedor "
+        "ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id) ON DELETE CASCADE"
+    ))
+    conn.execute(text(
+        "ALTER TABLE equivalencias_proveedor "
+        "ADD COLUMN IF NOT EXISTS codigo_proveedor VARCHAR(50)"
+    ))
+    try:
+        conn.execute(text(
+            "ALTER TABLE equivalencias_proveedor "
+            "ALTER COLUMN descripcion_proveedor DROP NOT NULL"
+        ))
+    except Exception:
+        pass
+    try:
+        conn.execute(text(
+            "ALTER TABLE equivalencias_proveedor "
+            "ALTER COLUMN descripcion_proveedor_norm DROP NOT NULL"
+        ))
+    except Exception:
+        pass
+    # Cada CREATE INDEX wrapped en try/except: si quedó un índice zombie de
+    # un deploy anterior (pg_class entry sin definición usable), `IF NOT EXISTS`
+    # no es suficiente — PG arroja UniqueViolation en pg_class_relname_nsp_index.
+    for ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_equiv_drog ON equivalencias_proveedor(drogueria_id)",
+        "CREATE INDEX IF NOT EXISTS idx_equiv_codigo ON equivalencias_proveedor(codigo_proveedor)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_equiv_drog_desc "
+        "ON equivalencias_proveedor (drogueria_id, descripcion_proveedor_norm) "
+        "WHERE drogueria_id IS NOT NULL AND descripcion_proveedor_norm IS NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_equiv_drog_codigo "
+        "ON equivalencias_proveedor (drogueria_id, codigo_proveedor) "
+        "WHERE drogueria_id IS NOT NULL AND codigo_proveedor IS NOT NULL",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_equiv_lab_codigo "
+        "ON equivalencias_proveedor (laboratorio_id, codigo_proveedor) "
+        "WHERE laboratorio_id IS NOT NULL AND codigo_proveedor IS NOT NULL",
+    ):
+        try:
+            conn.execute(text(ddl))
+        except Exception:
+            pass
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS obs_stock (
             id_farmacia INTEGER NOT NULL,

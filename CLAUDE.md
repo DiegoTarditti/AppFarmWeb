@@ -284,3 +284,23 @@ Fixes críticos históricos:
 ## Deploy Render — fix pg_type stale
 
 Antes de `Base.metadata.create_all(engine)` en `init_db` limpiamos tipos huérfanos en `pg_type` para tablas nuevas agregadas recientemente (lista whitelist en database.py). Esto evita `UniqueViolation` cuando un deploy anterior falló mid-stream con `CREATE TABLE`. Al agregar un modelo nuevo, sumá su `__tablename__` a esa lista.
+
+## LLM matcher (queue de pendientes)
+
+`services/llm_matcher.py` llama a Claude Haiku 4.5 para sugerir match en items que el matcher Python no resolvió. UI on-demand en `/productos/pendientes-revision` (botón "🤖 Analizar con IA").
+
+**Setup:**
+- Env var `ANTHROPIC_API_KEY` (en Render → Environment). Sin la var seteada el botón se deshabilita y la API tira `RuntimeError` claro.
+- API key generada en console.anthropic.com (clave actual: `xls-converter-farm`). Spending limit USD 5/mes.
+
+**Costo:** ~$0.0015/item (Haiku 4.5: $1 input / $5 output por 1M toks). Batch de 230 items ≈ $0.35. El system prompt está cacheado (`cache_control: ephemeral`) pero por debajo del mínimo de Haiku 4.5 (4096 toks) el caché silenciosamente no se activa — por ahora pagamos input completo cada llamada. Se puede engordar el prompt con más ejemplos si vale la pena.
+
+**Endpoints:**
+- `POST /productos/pendientes-revision/analizar-ia` — body `limit` (default 5), `forzar_reanalisis` (default false). Itera items con `llm_analizado_en IS NULL`, persiste sugerencia en columnas `llm_*`.
+- `GET /productos/pendientes-revision/estimar-costo-ia?limit=N` — pre-flight, devuelve costo USD sin llamar API.
+- `POST /productos/pendientes-revision/<id>/aplicar-ia` — aplica sugerencia (vincular/descartar). 'crear_nuevo'/'ambiguo' redirigen al flujo manual.
+- `POST /productos/pendientes-revision/aplicar-ia-bulk` — aplica todas las sugerencias con `confidence ≥ min_conf` (form, default 0.9) y action vincular/descartar.
+
+**Columnas en `productos_pendientes_revision`:** `llm_analizado_en`, `llm_pick_producto_id`, `llm_pick_observer_id`, `llm_confidence`, `llm_reasoning`, `llm_action` ('vincular'|'crear_nuevo'|'descartar'|'ambiguo'), `llm_modelo_usado`. Migración inline en `init_db()` con ALTER TABLE IF NOT EXISTS por columna.
+
+**Operador:** las acciones disparadas por IA se loggean como `usuario_resuelve='IA→<usuario_actual>'` para audit trail.

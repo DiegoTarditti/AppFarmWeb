@@ -13,8 +13,19 @@
     background: rgba(139,92,246,.12); color: #C4B5FD;
     border: 1px solid rgba(139,92,246,.25); border-radius: 6px;
     font-size: 10px; font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all .15s;
+    text-align: left;
+}
+.cand-chip:hover {
+    background: rgba(139,92,246,.25);
+    border-color: rgba(139,92,246,.55);
+    color: #DDD6FE;
+    transform: translateY(-1px);
 }
 .cand-chip .score { color: var(--ds-text-mute); margin-left: 4px; }
+button.cand-chip { line-height: 1.3; }
 .score-pill {
     display: inline-block; padding: 2px 8px; border-radius: 999px;
     font-size: 10px; font-weight: 700;
@@ -61,6 +72,20 @@
 }
 .origen-local { background: rgba(95,230,188,.15); color: var(--ds-mint); }
 .origen-observer { background: rgba(139,92,246,.15); color: #C4B5FD; }
+.ia-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 10px; font-weight: 700;
+    cursor: help;
+}
+.ia-vincular { background: rgba(95,230,188,.18); color: var(--ds-mint); border: 1px solid rgba(95,230,188,.3); }
+.ia-descartar { background: rgba(239,68,68,.15); color: var(--ds-danger); border: 1px solid rgba(239,68,68,.3); }
+.ia-crear_nuevo { background: rgba(56,189,248,.18); color: #7DD3FC; border: 1px solid rgba(56,189,248,.3); }
+.ia-ambiguo { background: rgba(245,158,11,.18); color: var(--ds-warn); border: 1px solid rgba(245,158,11,.3); }
+.ia-bar {
+    background: linear-gradient(90deg, rgba(139,92,246,.08), rgba(95,230,188,.06));
+    border-bottom: 1px solid rgba(139,92,246,.18);
+}
 </style>
 {% endblock %}
 
@@ -75,6 +100,122 @@
     </a>
 </div>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="px-4 sm:px-6 py-3 space-y-2">
+    {% for cat, msg in messages %}
+    <div class="rounded-lg px-4 py-3 text-sm border
+        {% if cat == 'error' %}bg-red-50 text-red-800 border-red-200
+        {% elif cat == 'success' %}bg-emerald-50 text-emerald-800 border-emerald-200
+        {% elif cat == 'warning' %}bg-amber-50 text-amber-800 border-amber-200
+        {% else %}bg-sky-50 text-sky-800 border-sky-200{% endif %}">{{ msg }}</div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
+<!-- Contexto de oferta — agrupa items pendientes por (drogueria, fecha de import) -->
+{% if contextos %}
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
+    <form method="get" class="flex items-center gap-3 flex-wrap text-sm">
+        <span class="font-semibold" style="color:var(--ds-mint);">📦 Procesando oferta:</span>
+        <input type="hidden" name="estado" value="{{ filtro_estado }}">
+        <select name="contexto" onchange="this.form.submit()"
+                class="bg-surface-input border border-surface-border rounded-md px-3 py-1 text-xs min-w-[300px]">
+            <option value="">— Todos los contextos ({{ items | length }} items mostrados) —</option>
+            {% for c in contextos %}
+            <option value="{{ c.token }}" {% if contexto_activo and contexto_activo.token == c.token %}selected{% endif %}>
+                {{ c.drogueria_nombre or 'Sin droguería' }} · {{ c.fecha_dia }} · {{ c.count }} items
+                {% if c.count_sin_analizar %}({{ c.count_sin_analizar }} sin analizar){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        {% if contexto_activo %}
+        <span class="text-xs text-[#aaa]">
+            <strong style="color:var(--ds-mint);">{{ contexto_activo.drogueria_nombre or '—' }}</strong>
+            · {{ contexto_activo.fecha_dia }}
+            {% if contexto_activo.sample_od.descuento_psl %}· descuento {{ contexto_activo.sample_od.descuento_psl }}%{% endif %}
+            {% if contexto_activo.sample_od.plazo_pago %}· plazo {{ contexto_activo.sample_od.plazo_pago }}d{% endif %}
+            {% if contexto_activo.sample_od.unidades_minima %}· min {{ contexto_activo.sample_od.unidades_minima }}u{% endif %}
+            · {{ contexto_activo.count }} items
+        </span>
+        <a href="?estado={{ filtro_estado }}" class="text-xs text-[#888] hover:text-[var(--ds-mint)]" title="Quitar filtro de contexto">✖ Quitar</a>
+        {% endif %}
+    </form>
+    {% if contexto_activo and not contexto_activo.drogueria_id and droguerias_disponibles %}
+    <form method="POST" action="{{ url_for('pendiente_asignar_contexto') }}"
+          class="flex items-center gap-2 flex-wrap text-xs mt-2 pt-2 border-t border-surface-border"
+          onsubmit="return confirm('Asignar drogueria a los {{ contexto_activo.count }} items de este contexto? Esto los moverá fuera de \'Sin droguería\' y permitirá agruparlos cuando se cree la oferta.')">
+        <span class="text-[#aaa]">⚠️ Items sin drogueria asignada. Asignarles:</span>
+        <input type="hidden" name="contexto_actual" value="{{ contexto_activo.token }}">
+        <select name="drogueria_id" required
+                class="bg-surface-input border border-surface-border rounded-md px-2 py-1 text-xs">
+            <option value="">— Elegir drogueria —</option>
+            {% for did, dnombre in droguerias_disponibles %}
+            <option value="{{ did }}">{{ dnombre }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-secondary btn-sm">
+            📦 Asignar drogueria a {{ contexto_activo.count }} items
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Barra IA (Claude Haiku 4.5) -->
+{% set _items_ia_vincular = items | selectattr('llm_action', 'equalto', 'vincular') | selectattr('llm_confidence', 'defined') | rejectattr('llm_confidence', 'none') | selectattr('llm_confidence', '>=', 0.9) | list %}
+{% set _items_ia_descartar = items | selectattr('llm_action', 'equalto', 'descartar') | selectattr('llm_confidence', 'defined') | rejectattr('llm_confidence', 'none') | selectattr('llm_confidence', '>=', 0.9) | list %}
+<div class="ia-bar px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap text-xs">
+    <span class="font-semibold" style="color:#C4B5FD;">🤖 Análisis IA:</span>
+    {% if not llm_disponible %}
+    <span class="text-[#888] italic">ANTHROPIC_API_KEY no seteada — configurar en Render → Environment</span>
+    {% else %}
+        {% if llm_sin_analizar > 0 %}
+        <form method="POST" action="{{ url_for('pendiente_analizar_ia') }}" id="form-analizar-ia" style="display:inline-flex;align-items:center;gap:6px;"
+              onsubmit="return confirmarAnalisisIA(event, this)">
+            {% if contexto_activo %}<input type="hidden" name="contexto" value="{{ contexto_activo.token }}">{% endif %}
+            <label class="text-[#888]">Analizar próximos:</label>
+            <select name="limit" class="bg-surface-input border border-surface-border rounded-md px-2 py-1 text-xs">
+                <option value="5">5 (test)</option>
+                <option value="20">20</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="{{ llm_sin_analizar }}">Todos ({{ llm_sin_analizar }})</option>
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm" style="background:linear-gradient(135deg,#8B5CF6,#5FE6BC);">
+                🤖 Analizar con IA
+            </button>
+        </form>
+        <span class="text-[#888]">· {{ llm_sin_analizar }} sin analizar</span>
+        {% else %}
+        <span class="text-[#888]">Todos los pendientes ya fueron analizados</span>
+        {% endif %}
+        {% if _items_ia_vincular %}
+        <form method="POST" action="{{ url_for('pendiente_aplicar_ia_bulk') }}" style="display:inline"
+              onsubmit="return confirm('Vincular {{ _items_ia_vincular | length }} items según la sugerencia IA (conf ≥ 90%)? Cada uno aplica su oferta.')">
+            <input type="hidden" name="min_conf" value="0.9">
+            {% if contexto_activo %}<input type="hidden" name="contexto" value="{{ contexto_activo.token }}">{% endif %}
+            <button type="submit" class="btn btn-mint btn-sm">
+                ✅ Aplicar {{ _items_ia_vincular | length }} sugerencias IA (≥90%)
+            </button>
+        </form>
+        {% endif %}
+        {% if _items_ia_descartar %}
+        <span class="text-[#888]" title="Descartes sugeridos por IA con conf ≥ 90% — incluidos en el botón de arriba">
+            · {{ _items_ia_descartar | length }} descartes sugeridos
+        </span>
+        {% endif %}
+        <form method="POST" action="{{ url_for('pendiente_reaplicar_ofertas') }}" style="display:inline"
+              onsubmit="return confirm('Re-aplicar ofertas sobre los items ya vinculados/agregados que tengan oferta_data guardado. Idempotente (si ya existe la oferta, la refresca). ¿Proceder?')"
+              title="Para items que ya están vinculados pero su oferta no se aplicó (típicamente por falta de laboratorio_id antes del fix). Re-procesa todos.">
+            <button type="submit" class="btn btn-ghost btn-sm" style="border:1px solid rgba(245,158,11,.4);color:var(--ds-warn);">
+                ♻️ Re-aplicar ofertas faltantes
+            </button>
+        </form>
+    {% endif %}
+</div>
+
 <!-- Bulk acciones -->
 {% set _items_100 = items | selectattr('score_top_candidato', 'defined') | rejectattr('score_top_candidato', 'none') | selectattr('score_top_candidato', '>=', 1.0) | list %}
 {% set _items_90 = items | selectattr('score_top_candidato', 'defined') | rejectattr('score_top_candidato', 'none') | selectattr('score_top_candidato', '>=', 0.9) | list %}
@@ -85,6 +226,7 @@
     <form method="POST" action="{{ url_for('pendiente_bulk_vincular') }}" style="display:inline"
           onsubmit="return confirm('Vincular automáticamente {{ _items_100 | length }} items con match al 100%? Cada uno crea/actualiza su OfertaMinimo correspondiente.')">
         <input type="hidden" name="min_score" value="1.0">
+        {% if contexto_activo %}<input type="hidden" name="contexto" value="{{ contexto_activo.token }}">{% endif %}
         <button type="submit" class="btn btn-primary btn-sm">
             🎯 Aceptar {{ _items_100 | length }} matches al 100%
         </button>
@@ -94,6 +236,7 @@
     <form method="POST" action="{{ url_for('pendiente_bulk_vincular') }}" style="display:inline"
           onsubmit="return confirm('Vincular automáticamente {{ _items_90 | length }} items con match >= 90%? Esto incluye los del 100% y algunos casi-perfectos. Verificar después que estén OK.')">
         <input type="hidden" name="min_score" value="0.9">
+        {% if contexto_activo %}<input type="hidden" name="contexto" value="{{ contexto_activo.token }}">{% endif %}
         <button type="submit" class="btn btn-secondary btn-sm">
             ⚡ Aceptar {{ _items_90 | length }} matches >= 90%
         </button>
@@ -136,6 +279,26 @@
     <button type="submit" class="btn btn-secondary btn-sm">Filtrar</button>
 </form>
 
+<!-- Bulk selection action bar — visible solo cuando hay items seleccionados -->
+<div id="bulk-sel-bar" class="px-4 sm:px-6 py-2 flex items-center gap-3 flex-wrap text-xs"
+     style="display:none;background:rgba(239,68,68,.08);border-bottom:1px solid rgba(239,68,68,.2);">
+    <span class="font-semibold" style="color:var(--ds-danger);">
+        🎯 <span id="bulk-sel-count">0</span> seleccionados
+    </span>
+    <span class="text-[#aaa]">de {{ items | length }} visibles (filtros + contexto aplicados)</span>
+    <button type="button" onclick="confirmarBorrarSeleccionados()" class="btn btn-danger btn-sm ml-auto">
+        🗑 Borrar seleccionados
+    </button>
+    <button type="button" onclick="seleccionarTodos(false)" class="btn-volver btn-sm">
+        Limpiar selección
+    </button>
+</div>
+
+<!-- Form oculto para POST bulk delete -->
+<form id="bulk-delete-form" method="POST" action="{{ url_for('pendiente_borrar_seleccionados') }}" style="display:none;">
+    {% if contexto_activo %}<input type="hidden" name="contexto" value="{{ contexto_activo.token }}">{% endif %}
+</form>
+
 <!-- Tabla -->
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4">
 {% if items %}
@@ -143,6 +306,9 @@
     <table class="w-full text-xs">
         <thead>
             <tr>
+                <th class="text-center px-2 py-2 w-8">
+                    <input type="checkbox" id="select-all" onchange="seleccionarTodos(this.checked)" title="Seleccionar todos los visibles">
+                </th>
                 <th class="text-left px-3 py-2">Descripción supplier</th>
                 <th class="text-left px-3 py-2 w-32">Supplier</th>
                 <th class="text-left px-3 py-2 w-24">Origen</th>
@@ -155,6 +321,9 @@
         <tbody class="divide-y divide-surface-border">
         {% for it in items %}
         <tr class="pend-row">
+            <td class="px-2 py-2 text-center">
+                <input type="checkbox" class="row-cb" data-item-id="{{ it.id }}" onchange="actualizarSelCount()">
+            </td>
             <td class="px-3 py-2">
                 <p class="font-semibold text-[#1e1e1e]">{{ it.descripcion_supplier }}</p>
                 {% if it.estado != 'pendiente' %}
@@ -186,10 +355,27 @@
             <td class="px-3 py-2">
                 {% if it.top_candidatos %}
                     {% for c in it.top_candidatos[:3] %}
-                    <span class="cand-chip" title="ID {{ c.producto_id }}">
+                    {% if it.estado == 'pendiente' and (c.producto_id or c.observer_id) %}
+                    <form method="POST" action="{{ url_for('pendiente_vincular', item_id=it.id) }}" style="display:inline;">
+                        {% if c.producto_id %}
+                        <input type="hidden" name="origen" value="local">
+                        <input type="hidden" name="id_local" value="{{ c.producto_id }}">
+                        {% else %}
+                        <input type="hidden" name="origen" value="observer">
+                        <input type="hidden" name="observer_id" value="{{ c.observer_id }}">
+                        {% endif %}
+                        <button type="submit" class="cand-chip"
+                                title="Click para vincular directo (sin abrir modal). Score {{ '%.0f'|format((c.score or 0) * 100) }}%">
+                            {{ c.descripcion | truncate(40) }}
+                            <span class="score">{{ '%.0f'|format((c.score or 0) * 100) }}%</span>
+                        </button>
+                    </form>
+                    {% else %}
+                    <span class="cand-chip" style="cursor:default;" title="ID {{ c.producto_id }}">
                         {{ c.descripcion | truncate(40) }}
                         <span class="score">{{ '%.0f'|format((c.score or 0) * 100) }}%</span>
                     </span>
+                    {% endif %}
                     {% endfor %}
                     {% if it.top_candidatos | length > 3 %}
                     <span class="text-[10px] text-[#999]">+ {{ it.top_candidatos | length - 3 }}</span>
@@ -200,6 +386,20 @@
             </td>
             <td class="px-3 py-2 text-right">
                 {% if it.estado == 'pendiente' %}
+                {% if it.llm_action %}
+                <div style="margin-bottom:4px;">
+                    <span class="ia-badge ia-{{ it.llm_action }}" title="{{ it.llm_reasoning }}">
+                        🤖 {{ it.llm_action }} · {{ '%.0f'|format(it.llm_confidence * 100) }}%
+                    </span>
+                    {% if it.llm_action in ['vincular', 'descartar'] %}
+                    <form method="POST" action="{{ url_for('pendiente_aplicar_ia', item_id=it.id) }}" style="display:inline">
+                        <button type="submit" class="btn btn-mint btn-sm" title="Aplicar la sugerencia de la IA">
+                            ✅ Aplicar IA
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
                 <button type="button" class="btn btn-secondary btn-sm"
                         onclick='abrirVincular({{ it.id }}, {{ it.descripcion_supplier|tojson }})'>
                     🔗 Vincular
@@ -295,10 +495,13 @@ function abrirVincular(itemId, sourceDesc) {
     document.getElementById('vincular-elegido').classList.add('hidden');
     document.getElementById('btn-vincular-submit').disabled = true;
     document.getElementById('modal-vincular').classList.remove('hidden');
+    // Pre-llenar con la PRIMERA palabra (marca) — el query completo casi nunca
+    // matchea porque incluye dosis/forma/"x N" con puntuación rara.
+    const primeraPalabra = (sourceDesc || '').trim().split(/\s+/)[0] || sourceDesc;
     setTimeout(() => {
         document.getElementById('vincular-q').focus();
-        document.getElementById('vincular-q').value = sourceDesc;
-        buscarCatalogo(sourceDesc);
+        document.getElementById('vincular-q').value = primeraPalabra;
+        buscarCatalogo(primeraPalabra);
     }, 50);
 }
 
@@ -359,6 +562,85 @@ document.getElementById('vincular-q').addEventListener('input', e => {
 
 function escapeHtml(s) {
     return String(s).replace(/[<>&"']/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── Selección múltiple + borrado bulk ────────────────────────────────────
+function seleccionarTodos(checked) {
+    document.querySelectorAll('.row-cb').forEach(cb => { cb.checked = checked; });
+    const all = document.getElementById('select-all');
+    if (all) all.checked = checked;
+    actualizarSelCount();
+}
+function actualizarSelCount() {
+    const checked = document.querySelectorAll('.row-cb:checked');
+    const total = document.querySelectorAll('.row-cb').length;
+    const count = checked.length;
+    const el = document.getElementById('bulk-sel-count');
+    if (el) el.textContent = count;
+    const bar = document.getElementById('bulk-sel-bar');
+    if (bar) bar.style.display = count > 0 ? 'flex' : 'none';
+    const all = document.getElementById('select-all');
+    if (all) {
+        all.checked = count > 0 && count === total;
+        all.indeterminate = count > 0 && count < total;
+    }
+}
+function confirmarBorrarSeleccionados() {
+    const checked = Array.from(document.querySelectorAll('.row-cb:checked'));
+    if (!checked.length) return;
+    const msg = `¿Borrar ${checked.length} items PERMANENTEMENTE?\n\n` +
+                `Esto NO se puede deshacer. Los items van a desaparecer ` +
+                `de la base. Si vienen del mismo import en el futuro, ` +
+                `volverán a encolarse.\n\n¿Confirmar?`;
+    if (!confirm(msg)) return;
+    const form = document.getElementById('bulk-delete-form');
+    // Limpiar inputs previos (excepto el contexto)
+    Array.from(form.querySelectorAll('input[name="item_ids"]')).forEach(i => i.remove());
+    checked.forEach(cb => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'item_ids';
+        inp.value = cb.dataset.itemId;
+        form.appendChild(inp);
+    });
+    form.submit();
+}
+
+async function confirmarAnalisisIA(event, form) {
+    event.preventDefault();
+    const limit = parseInt(form.querySelector('select[name=limit]').value, 10);
+    const ctxInput = form.querySelector('input[name=contexto]');
+    const ctx = ctxInput ? ctxInput.value : '';
+    const btn = form.querySelector('button[type=submit]');
+    const txtOriginal = btn.textContent;
+    btn.textContent = '⏳ Estimando…';
+    btn.disabled = true;
+    try {
+        const qs = `limit=${limit}` + (ctx ? `&contexto=${encodeURIComponent(ctx)}` : '');
+        const r = await fetch(`/productos/pendientes-revision/estimar-costo-ia?${qs}`);
+        const d = await r.json();
+        if (!d.ok) throw new Error('estimación falló');
+        const msg = `Analizar ${d.a_procesar} items con Claude Haiku 4.5.\n\n` +
+                    `Costo estimado: $${d.total_usd.toFixed(4)} USD\n` +
+                    `Modelo: ${d.modelo}\n` +
+                    `Caché aprovechado: ${d.cache_aprovechado ? 'sí' : 'no (prompt < 4096 tok)'}\n\n` +
+                    `¿Proceder?`;
+        if (!confirm(msg)) {
+            btn.textContent = txtOriginal;
+            btn.disabled = false;
+            return false;
+        }
+        btn.textContent = '⏳ Procesando…';
+        form.submit();
+    } catch (e) {
+        if (confirm(`No pude estimar el costo (${e.message}). ¿Proceder igual?`)) {
+            form.submit();
+        } else {
+            btn.textContent = txtOriginal;
+            btn.disabled = false;
+        }
+    }
+    return false;
 }
 </script>
 

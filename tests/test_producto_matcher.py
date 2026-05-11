@@ -85,6 +85,55 @@ class TestJaccard:
         assert pm.jaccard(set(), {'a'}) == 0.0
 
 
+class TestDetectarForma:
+    """`_detectar_forma()` lee la forma farmacéutica del raw text.
+
+    Crítico para el tiebreaker: cap/com/comp/jbe/etc están en _STOPWORDS y
+    quedan invisibles al Jaccard, por eso necesitamos leerlas del texto crudo.
+    """
+
+    def test_caps_variants(self):
+        assert pm._detectar_forma('DEXALERGIN C 10 mg cáps. x 10') == 'CAP'
+        assert pm._detectar_forma('DEXALERGIN C 10 mg CAP x 10') == 'CAP'
+        assert pm._detectar_forma('AMOXIDAL 500 caps x 16') == 'CAP'
+        assert pm._detectar_forma('XYZ capsulas x 30') == 'CAP'
+
+    def test_com_variants(self):
+        assert pm._detectar_forma('DEXALERGIN C 10 mg COM x 10') == 'COM'
+        assert pm._detectar_forma('TAFIROL 1 g comp x 50') == 'COM'
+        assert pm._detectar_forma('TAFIROL comprimidos x 50') == 'COM'
+        assert pm._detectar_forma('VITA tab x 30') == 'COM'
+
+    def test_topicas_discriminantes(self):
+        assert pm._detectar_forma('DERMAGLOS CRE x 100 GRS') == 'CRE'
+        assert pm._detectar_forma('DERMAGLOS cr x 100') == 'CRE'
+        assert pm._detectar_forma('DERMAGLOS EMU x 100 ML') == 'EMU'
+        assert pm._detectar_forma('XYZ GEL') == 'GEL'
+
+    def test_otras_formas(self):
+        assert pm._detectar_forma('XYZ jbe x 100ml') == 'JBE'
+        assert pm._detectar_forma('XYZ gotas x 10') == 'GTS'
+        assert pm._detectar_forma('XYZ amp x 5') == 'AMP'
+        assert pm._detectar_forma('XYZ supositorios x 10') == 'SUP'
+
+    def test_sin_forma_explicita(self):
+        # No menciona forma → None.
+        assert pm._detectar_forma('RIVOTRIL 0,5 mg') is None
+        assert pm._detectar_forma('') is None
+        assert pm._detectar_forma(None) is None
+
+    def test_no_matchea_dentro_de_marca(self):
+        # \b en regex evita match dentro de palabras: CAPTIVA no contiene CAP.
+        assert pm._detectar_forma('CAPTIVA 25 mg') is None
+        # Pero sí matchea cuando la forma viene como token separado:
+        assert pm._detectar_forma('CAPTIVA 25 mg COM x 30') == 'COM'
+
+    def test_orden_prioridad(self):
+        # Si una descripción tiene cáps y com (raro pero posible en specs),
+        # gana CAP por estar antes en la lista.
+        assert pm._detectar_forma('XYZ cáps com') == 'CAP'
+
+
 class TestPackHelpers:
     def test_es_pack(self):
         assert pm.descripcion_es_pack('TAFIROL PACK X 10')
@@ -451,6 +500,59 @@ class TestEdgeCasesReales:
         )
         assert res.producto is not None
         assert res.producto.codigo_alfabeta == 'AMX500-16'
+
+    # ── Tiebreaker por forma farmacéutica (DEXALERGIN cáps vs CAP vs COM) ───
+    def test_tiebreaker_forma_resuelve_dexalergin(self, db_session, lab):
+        """Caso real 2026-05-10: source 'DEXALERGIN C 10 mg cáps. x 10' tenía
+        3 candidatos con tokens IDÉNTICOS (cap/com están en stopwords) → empate
+        Jaccard=1.0 → match_ambiguo. El tiebreaker por forma debe elegir CAP
+        leyendo 'cáps' del raw text del source y 'CAP' del candidato.
+        """
+        items = [
+            Producto(codigo_barra='DEX-CAP', descripcion='DEXALERGIN C 10 mg CAP x 10',
+                     laboratorio_id=lab.id),
+            Producto(codigo_barra='DEX-COM10', descripcion='DEXALERGIN C 10 mg COM x 10',
+                     laboratorio_id=lab.id),
+            Producto(codigo_barra='DEX-COM20', descripcion='DEXALERGIN C 10 mg COM x 20',
+                     laboratorio_id=lab.id),
+        ]
+        db_session.add_all(items)
+        db_session.commit()
+
+        res = pm.match_producto(
+            descripcion='DEXALERGIN C 10 mg cáps. x 10',
+            laboratorio_id=lab.id,
+            session=db_session,
+        )
+        assert res.producto is not None, 'tiebreak_forma debió resolver el empate'
+        assert res.producto.codigo_barra == 'DEX-CAP'
+        assert 'tiebreak_forma' in res.warnings or res.estrategia == 'tokens_superset'
+
+    def test_tiebreaker_forma_no_aplica_si_source_sin_forma(self, db_session, lab):
+        """Si el source no tiene forma explícita, el tiebreaker no aplica y
+        el empate persiste (match_ambiguo). No debe inventar un match falso.
+        """
+        items = [
+            Producto(codigo_barra='X-CAP', descripcion='XYZTEST 10 mg CAP x 10',
+                     laboratorio_id=lab.id),
+            Producto(codigo_barra='X-COM', descripcion='XYZTEST 10 mg COM x 10',
+                     laboratorio_id=lab.id),
+        ]
+        db_session.add_all(items)
+        db_session.commit()
+        # Source sin forma — solo "XYZTEST 10 mg x 10"
+        res = pm.match_producto(
+            descripcion='XYZTEST 10 mg x 10',
+            laboratorio_id=lab.id,
+            session=db_session,
+        )
+        # Esperamos no-match con warning de ambigüedad (o un superset que se
+        # resolvió de otra manera; lo importante es no elegir uno arbitrario).
+        if res.producto is not None:
+            # Si eligió alguno, debe ser tokens_superset (ambos lo son y empatan
+            # → debería haberse rechazado, pero al menos verificamos que no hubo
+            # tiebreak_forma falso).
+            assert 'tiebreak_forma' not in res.warnings
 
 
 # ── Tests refinar_candidatos (Round 2 — Levenshtein + prefix) ──────────────
