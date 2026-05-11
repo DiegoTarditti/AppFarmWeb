@@ -12,6 +12,7 @@
 .csr-header { position: sticky; top: 0; z-index: 30; background: var(--ds-bg);
               padding: 8px 0 6px; border-bottom: 1px solid var(--ds-line); }
 .csr-h-top { display: flex; align-items: center; gap: 8px; }
+.csr-h-actions-row { display: flex; align-items: center; gap: 8px; }
 .csr-h-icon-btn { width: 36px; height: 36px; display: flex; align-items: center;
                    justify-content: center; background: var(--ds-surface);
                    border: 1px solid var(--ds-line); border-radius: 8px;
@@ -264,6 +265,21 @@ body.csr-tabla-mode #csr-tabla { display: block; }
     #csr-tabla tbody td { padding: 4px; }
 }
 
+/* Portrait estrecho: apilar header en 2 filas para que la botonera no
+   compita con el nombre del proveedor (sino los botones quedan apretados
+   o se salen del viewport). Fila 1: ← + texto. Fila 2: botones, derecha. */
+@media (orientation: portrait) and (max-width: 640px) {
+    .csr-h-top { flex-wrap: wrap; }
+    .csr-h-text { flex: 1 1 calc(100% - 50px); }
+    .csr-h-actions-row {
+        flex: 1 1 100%;
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+        margin-top: 6px;
+    }
+}
+
 /* Bulk sugeridos: chip especial en la barra de filtros */
 .csr-bulk-sug { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
                  background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
@@ -286,14 +302,16 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                     {% if datos_al %} · Datos al: {{ datos_al }}{% endif %}
                 </div>
             </div>
-            <div class="csr-vista-seg" title="Cambiar vista">
-                <button type="button" class="csr-h-icon-btn" data-vista="lista" title="Lista compacta">☰</button>
-                <button type="button" class="csr-h-icon-btn" data-vista="detalle" title="Detalle con gráfico">📊</button>
-                <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
+            <div class="csr-h-actions-row">
+                <div class="csr-vista-seg" title="Cambiar vista">
+                    <button type="button" class="csr-h-icon-btn" data-vista="lista" title="Lista compacta">☰</button>
+                    <button type="button" class="csr-h-icon-btn" data-vista="detalle" title="Detalle con gráfico">📊</button>
+                    <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
+                </div>
+                <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
+                <button type="button" class="csr-h-icon-btn" id="btn-sync-stock" title="Sincronizar stock con ObServer (encola en la PC de la farmacia)">🔄</button>
+                <button type="button" class="csr-h-icon-btn" id="btn-share" title="Descargar XLS (marcados si hay, sino todo)">📥</button>
             </div>
-            <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
-            <button type="button" class="csr-h-icon-btn" id="btn-sync-stock" title="Sincronizar stock con ObServer (encola en la PC de la farmacia)">🔄</button>
-            <button type="button" class="csr-h-icon-btn" id="btn-share" title="Descargar XLS (marcados si hay, sino todo)">📥</button>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}

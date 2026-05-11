@@ -32,6 +32,26 @@
             .home-toprow .home-page-header { max-width: none; align-self: flex-start; }
         }
 
+        /* Atajo a UX móvil — botón vertical compacto al lado del Hero. Temporal. */
+        .home-mobile-cta {
+            flex: 0 0 auto;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 6px; padding: 14px 18px;
+            background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-surface-2) 100%);
+            border: 1.5px dashed var(--ds-mint);
+            border-radius: 16px;
+            color: var(--ds-text); text-decoration: none;
+            transition: all .15s; min-width: 110px;
+        }
+        .home-mobile-cta:hover {
+            background: linear-gradient(135deg, var(--ds-surface-2) 0%, rgba(95,230,188,.08) 100%);
+            border-style: solid;
+            transform: translateY(-1px);
+        }
+        .home-mobile-cta__icon { font-size: 28px; line-height: 1; }
+        .home-mobile-cta__title { font-size: 13px; font-weight: 700; color: var(--ds-mint); }
+        .home-mobile-cta__desc { font-size: 10px; color: var(--ds-text-mute); margin-top: 2px; }
+
         /* Hero pedido reposición — compacto, shapes como decoración integrada */
         .home-hero {
             position: relative;
@@ -124,7 +144,7 @@
                     </div>
                 </header>
 
-                <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
+                <a href="{{ url_for('compras_dia') }}?abrir=todos" class="home-hero hover:no-underline">
                     <span class="home-hero__dots" aria-hidden="true"></span>
                     <div class="home-hero__body">
                         <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
@@ -138,6 +158,16 @@
                            class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);">
                             Ver pendientes →
                         </a>
+                    </div>
+                </a>
+
+                {# Atajo temporal: acceso directo a la UX móvil desde el home
+                   mientras la estamos puliendo. Quitar cuando salga estable. #}
+                <a href="{{ url_for('consulta_stock') }}" class="home-mobile-cta hover:no-underline" title="Probar el flujo móvil (consulta de stock + consulta de medicamento)">
+                    <div class="home-mobile-cta__icon">📱</div>
+                    <div class="home-mobile-cta__text">
+                        <div class="home-mobile-cta__title">UX móvil</div>
+                        <div class="home-mobile-cta__desc">Probar flujo nuevo</div>
                     </div>
                 </a>
             </div>

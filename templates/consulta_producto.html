@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}Consultar medicamento — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cp-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
+.cp-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
+.cp-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.cp-banner { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+.cp-banner.err { background: rgba(239,68,68,.12); color: var(--ds-danger); border: 1px solid rgba(239,68,68,.35); }
+.cp-banner.info { background: rgba(56,189,248,.10); color: var(--ds-info); border: 1px solid rgba(56,189,248,.3); }
+
+.cp-input-wrap { display: flex; gap: 8px; }
+.cp-input { flex: 1; background: var(--ds-surface-2);
+            border: 1.5px solid var(--ds-line); border-radius: 12px;
+            padding: 16px 16px; font-size: 18px; color: var(--ds-text);
+            font-family: ui-monospace, Consolas, monospace;
+            letter-spacing: .04em; }
+.cp-input:focus { outline: none; border-color: var(--ds-mint);
+                  box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+
+.cp-cam-btn { width: 60px; height: 60px; border-radius: 12px;
+              background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+              border: none; color: #0a3a2a; font-size: 24px; cursor: pointer;
+              box-shadow: 0 2px 6px rgba(95,230,188,.3); transition: transform .15s; }
+.cp-cam-btn:active { transform: scale(.94); }
+.cp-cam-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.cp-submit { width: 100%; padding: 16px;
+             background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+             color: #0a3a2a; font-size: 16px; font-weight: 700;
+             border: none; border-radius: 14px; cursor: pointer;
+             box-shadow: 0 4px 12px rgba(95,230,188,.3);
+             margin-top: 16px; }
+.cp-submit:active { transform: scale(.98); }
+.cp-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+.cp-cancel { display: block; width: 100%; padding: 12px; text-align: center;
+             color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
+             text-decoration: none; }
+
+/* Modal cámara */
+.cp-cam-modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                background: rgba(0,0,0,.92); z-index: 100;
+                flex-direction: column; align-items: center; justify-content: center; }
+.cp-cam-modal.open { display: flex; }
+.cp-cam-video { width: 100%; max-width: 480px; max-height: 60vh;
+                border-radius: 12px; background: #000; }
+.cp-cam-hint { color: #fff; font-size: 13px; margin-top: 12px; opacity: .8; text-align: center; padding: 0 16px; }
+.cp-cam-close { position: absolute; top: 16px; right: 16px;
+                width: 44px; height: 44px; border-radius: 50%;
+                background: rgba(255,255,255,.15); border: none; color: #fff;
+                font-size: 24px; cursor: pointer; }
+.cp-cam-error { color: var(--ds-danger); font-size: 13px; margin-top: 12px; text-align: center; padding: 0 16px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cp-screen">
+    <h1 class="cp-h1">🔍 Consultar medicamento</h1>
+    <p class="cp-sub">Escaneá el troquel con la cámara o tipeá el código de barras.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="cp-banner {{ 'err' if cat == 'error' else 'info' }}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('consulta_producto_buscar') }}" id="cp-form">
+        <div class="cp-input-wrap">
+            <input type="text" name="ean" id="cp-ean"
+                   class="cp-input"
+                   placeholder="EAN 13 dígitos"
+                   inputmode="numeric"
+                   pattern="\d{8,14}"
+                   autocomplete="off"
+                   autofocus
+                   required>
+            <button type="button" class="cp-cam-btn" id="btn-cam" title="Escanear con cámara">
+                📷
+            </button>
+        </div>
+        <button type="submit" class="cp-submit" id="btn-submit">
+            Consultar
+        </button>
+        <a href="{{ url_for('index') }}" class="cp-cancel">Cancelar</a>
+    </form>
+</div>
+
+<!-- Modal cámara para escaneo. -->
+<div class="cp-cam-modal" id="cp-cam-modal">
+    <button type="button" class="cp-cam-close" id="cp-cam-close" title="Cerrar">✕</button>
+    <video class="cp-cam-video" id="cp-cam-video" autoplay muted playsinline></video>
+    <p class="cp-cam-hint">Apuntá al código de barras del troquel.</p>
+    <p class="cp-cam-error" id="cp-cam-error" style="display:none;"></p>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('cp-form');
+    const eanInput = document.getElementById('cp-ean');
+    const submitBtn = document.getElementById('btn-submit');
+    const camBtn = document.getElementById('btn-cam');
+    const modal = document.getElementById('cp-cam-modal');
+    const video = document.getElementById('cp-cam-video');
+    const closeBtn = document.getElementById('cp-cam-close');
+    const errBox = document.getElementById('cp-cam-error');
+
+    let stream = null;
+    let detector = null;
+    let scanLoopId = null;
+
+    // BarcodeDetector está en Chrome/Edge Android y Chrome Desktop. iOS/Firefox no.
+    const supportsBarcode = ('BarcodeDetector' in window);
+    if (!supportsBarcode) {
+        camBtn.disabled = true;
+        camBtn.title = 'Tu navegador no soporta escaneo con cámara. Tipeá el código a mano.';
+    }
+
+    // Loading state al submit (evita doble click).
+    form.addEventListener('submit', () => {
+        submitBtn.disabled = true;
+        submitBtn.textContent = '⏳ Buscando…';
+    });
+
+    camBtn.addEventListener('click', startCamera);
+    closeBtn.addEventListener('click', stopCamera);
+
+    async function startCamera() {
+        if (!supportsBarcode) return;
+        errBox.style.display = 'none';
+        modal.classList.add('open');
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: 'environment' } }, audio: false
+            });
+            video.srcObject = stream;
+            detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e'] });
+            scanLoop();
+        } catch (e) {
+            errBox.textContent = 'No pude abrir la cámara: ' + e.message;
+            errBox.style.display = 'block';
+        }
+    }
+
+    async function scanLoop() {
+        if (!stream || !detector) return;
+        try {
+            const codes = await detector.detect(video);
+            if (codes && codes.length) {
+                const raw = String(codes[0].rawValue || '').trim();
+                if (/^\d{8,14}$/.test(raw)) {
+                    eanInput.value = raw;
+                    stopCamera();
+                    form.submit();
+                    return;
+                }
+            }
+        } catch (_) { /* ignorar frames con error */ }
+        scanLoopId = setTimeout(scanLoop, 250);
+    }
+
+    function stopCamera() {
+        modal.classList.remove('open');
+        if (scanLoopId) { clearTimeout(scanLoopId); scanLoopId = null; }
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+            stream = null;
+        }
+    }
+
+    // Cerrar modal con Escape.
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape' && modal.classList.contains('open')) stopCamera();
+    });
+})();
+</script>
+{% endblock %}

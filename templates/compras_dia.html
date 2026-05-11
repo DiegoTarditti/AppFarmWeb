@@ -605,6 +605,15 @@ async function borrarPedido(id, btn) {
     }
 }
 
+// Auto-disparo del modal "Pedidos emitidos · Todas" cuando se llega con
+// ?abrir=todos (lo usa el botón Hero del home).
+(function _autoAbrirModal() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('abrir') === 'todos') {
+        // Esperamos a que el DOM termine; abrirModalPedidos ignora los args.
+        setTimeout(() => { if (typeof abrirModalPedidos === 'function') abrirModalPedidos(null, ''); }, 50);
+    }
+})();
 </script>
 
 <!-- Modal pedidos por droguería -->

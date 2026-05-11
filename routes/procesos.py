@@ -201,8 +201,11 @@ def init_app(app):
             flash('Sin datos de ventas. Sync ObServer pendiente.', 'error')
             return redirect(url_for('consulta_stock'))
 
-        # Defaults: 35 días, mes/año actual.
-        n_days = 35
+        # n_days viene del slider mobile (7-120, default 35). mes/año actual.
+        try:
+            n_days = max(7, min(120, int(request.form.get('n_days', 35))))
+        except (ValueError, TypeError):
+            n_days = 35
         hoy = _datetime.now()
         anio, mes = hoy.year, hoy.month
 
