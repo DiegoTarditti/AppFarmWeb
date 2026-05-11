@@ -92,7 +92,12 @@
                   border: 1px solid var(--ds-line); border-radius: 8px;
                   color: var(--ds-text); font-family: inherit; }
 .csr-qty-input:focus { outline: none; border-color: var(--ds-mint); }
-.csr-sugerido { font-size: 11px; color: var(--ds-mint); margin-left: auto; }
+.csr-sugerido { font-size: 12px; font-weight: 600; color: var(--ds-mint);
+                margin-left: auto; padding: 8px 12px; border-radius: 8px;
+                background: rgba(95,230,188,.10);
+                border: 1px solid rgba(95,230,188,.3);
+                cursor: pointer; transition: all .15s; }
+.csr-sugerido:active { transform: scale(.96); background: rgba(95,230,188,.25); }
 
 /* Tags producto */
 .csr-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
@@ -173,14 +178,15 @@
                 {% if p.es_pack %}<span class="csr-tag warn">PACK</span>{% endif %}
                 {% if p.tipo == 'C' %}<span class="csr-tag purple">CRÓNICO</span>{% endif %}
                 {% if p.sin_mov_60d %}<span class="csr-tag danger">SIN MOV 60d</span>{% endif %}
-                {% if (p.order_qty or 0) > 0 %}<span class="csr-tag mint">SUGERIDO</span>{% endif %}
             </div>
 
             <div class="csr-grid">
                 <div class="csr-ind">
                     <div class="csr-ind-label">Stock</div>
                     <div class="csr-ind-val">{{ p.stock | int }}</div>
-                    <div class="csr-ind-sub">${{ (p.precio_pvp or 0) | int }} c/u</div>
+                    {% if (p.precio_pvp or 0) > 0 %}
+                    <div class="csr-ind-sub">${{ p.precio_pvp | int }} c/u</div>
+                    {% endif %}
                 </div>
                 <div class="csr-ind">
                     <div class="csr-ind-label">Cobertura</div>
@@ -191,19 +197,16 @@
                     <div class="csr-ind-val {{ 'cov-low' if cov <= 15 else ('cov-mid' if cov <= 30 else 'cov-ok') }}">
                         {{ cov }}d
                     </div>
-                    <div class="csr-ind-sub">te alcanza</div>
                     {% endif %}
                 </div>
                 <div class="csr-ind">
                     <div class="csr-ind-label">Prom/mes</div>
                     <div class="csr-ind-val">{{ p.avg_monthly | int }}</div>
-                    <div class="csr-ind-sub">u/mes</div>
                 </div>
                 <div class="csr-ind">
-                    <div class="csr-ind-label">Vendido</div>
-                    <div class="csr-ind-val" style="font-size:13px;line-height:1.2;">
-                        {{ p.v3m | int }}<span style="font-size:10px;color:var(--ds-text-mute);">/3m</span><br>
-                        {{ p.v12m | int }}<span style="font-size:10px;color:var(--ds-text-mute);">/12m</span>
+                    <div class="csr-ind-label">Vendido 3m / 12m</div>
+                    <div class="csr-ind-val" style="font-size:15px;line-height:1.2;">
+                        {{ p.v3m | int }}<span style="font-size:11px;color:var(--ds-text-mute);"> / </span>{{ p.v12m | int }}
                     </div>
                 </div>
             </div>
