@@ -273,6 +273,34 @@ def init_app(app):
 
         return redirect(url_for('consulta_stock_resultado', uid=uid))
 
+    @app.route('/consulta-stock/sync-stock', methods=['POST'])
+    def consulta_stock_sync_stock():
+        """Encola un comando 'sync_now' en panel_comandos para que el
+        DockerPanel local lo levante en el próximo polling y refresque
+        stock + ventas desde ObServer.
+
+        Retorna JSON con el id del comando + ETA típico (~30s polling +
+        ~1-2min de sync, según volumen).
+        """
+        from database import PanelComando
+        username = getattr(current_user, 'username', None) or 'usuario_movil'
+        with database.get_db() as session:
+            cmd = PanelComando(
+                comando='sync_now',
+                estado='pendiente',
+                solicitado_por=f'{username} (móvil)',
+            )
+            session.add(cmd)
+            session.commit()
+            cmd_id = cmd.id
+        return jsonify({
+            'ok': True,
+            'id': cmd_id,
+            'mensaje': ('Sync encolado. La PC de la farmacia lo levanta en ~30s '
+                        'y tarda 1-2 min en completar. Re-ejecutá la consulta '
+                        'después para ver el stock actualizado.'),
+        })
+
     @app.route('/consulta-stock/export-xls', methods=['POST'])
     def consulta_stock_export_xls():
         """Genera un XLS desde la consulta móvil. Si vienen items con qty>0,
@@ -400,13 +428,20 @@ def init_app(app):
         if not laboratorio:
             return jsonify({'ok': False, 'error': 'sin laboratorio'}), 400
 
+        from datetime import date as _date_d
+        fecha_str = _date_d.today().strftime('%Y-%m-%d')
         with database.get_db() as session:
             pedido = Pedido(
                 laboratorio=laboratorio,
                 farmacia=getattr(current_user, 'nombre_completo', None) or 'Farmacia',
-                periodo=f'Consulta móvil · {uid[:8]}',
+                # Formato pedido: "📱 móvil · {prov/lab} · YYYY-MM-DD"
+                # Aparece en /orders junto a los demás pedidos. El emoji 📱
+                # lo distingue visualmente como creado desde móvil.
+                periodo=f'📱 móvil · {laboratorio} · {fecha_str}',
                 n_days=35,
+                canal='laboratorio',
                 estado='PENDIENTE',
+                analizado_en=now_ar(),
             )
             session.add(pedido)
             session.flush()
@@ -474,6 +509,15 @@ def init_app(app):
         month_es = [_mes_jan[(sm - 1 + i) % 12] for i in range(12)]
         analizado_en = _datetime.fromtimestamp(
             _os.path.getmtime(json_path)).strftime('%d/%m/%Y')
+
+        # Orden alfabético por nombre (case-insensitive). Aplica en los 3
+        # modos del template (lista / detalle / tabla) — ambos consumen
+        # el mismo array data['products'] y los dicts JS (PRECIOS/NOMBRES/
+        # CHART_DATA) se generan con el orden post-sort.
+        data['products'] = sorted(
+            data.get('products', []) or [],
+            key=lambda p: (p.get('nombre') or '').upper(),
+        )
 
         # Pre-cómputo por producto para que el template sea liviano:
         # - vendido 3m (suma de los últimos 3 meses) + 12m (total).

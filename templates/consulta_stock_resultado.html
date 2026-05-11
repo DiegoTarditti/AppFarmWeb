@@ -248,6 +248,29 @@ body.csr-tabla-mode #csr-tabla { display: block; }
 .csr-fab.hidden { display: none; }
 
 .csr-empty { text-align: center; padding: 40px 20px; color: var(--ds-text-mute); font-size: 13px; }
+
+/* Compactación en landscape (altura chica): cada pixel de vertical vale,
+   especialmente en modo tabla donde queremos ver muchas filas. */
+@media (orientation: landscape) and (max-height: 600px) {
+    .csr-screen { padding: 6px 8px; padding-bottom: 70px; }
+    .csr-header { padding: 4px 0 4px; }
+    .csr-h-icon-btn { width: 30px; height: 30px; font-size: 14px; }
+    .csr-vista-seg .csr-h-icon-btn { width: 28px; height: 28px; font-size: 12px; }
+    .csr-h1 { font-size: 14px; }
+    .csr-meta { font-size: 9px; }
+    .csr-search { padding: 8px 10px; font-size: 14px; margin-top: 6px; }
+    .csr-card { padding: 8px 10px; margin-bottom: 6px; }
+    #csr-tabla thead th { padding: 5px 4px; font-size: 8px; }
+    #csr-tabla tbody td { padding: 4px; }
+}
+
+/* Bulk sugeridos: chip especial en la barra de filtros */
+.csr-bulk-sug { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+                 background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+                 color: #0a3a2a; border: none; cursor: pointer; transition: all .15s;
+                 margin-left: auto; }
+.csr-bulk-sug:active { transform: scale(.96); }
+.csr-bulk-sug.hidden { display: none; }
 </style>
 {% endblock %}
 
@@ -269,6 +292,7 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                 <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
             </div>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
+            <button type="button" class="csr-h-icon-btn" id="btn-sync-stock" title="Sincronizar stock con ObServer (encola en la PC de la farmacia)">🔄</button>
             <button type="button" class="csr-h-icon-btn" id="btn-share" title="Descargar XLS (marcados si hay, sino todo)">📥</button>
         </div>
 
@@ -304,6 +328,13 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                 <button class="csr-chip" data-filter="bajo">Bajo stock</button>
                 <button class="csr-chip" data-filter="sinmov">Sin mov 60d</button>
                 <button class="csr-chip" data-filter="marked">Marcados</button>
+                {% set _n_sug = products | selectattr('order_qty') | list | length %}
+                {% if _n_sug %}
+                <button type="button" class="csr-bulk-sug" id="btn-bulk-sug"
+                        title="Aplicar la cantidad sugerida a todos los productos visibles">
+                    🎯 Aplicar sugeridos ({{ _n_sug }})
+                </button>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -507,6 +538,9 @@ const NOMBRES = {
 {% endfor %}};
 const EANS = {
 {% for p in products %}    {{ loop.index0 }}: {{ (p.codigo_barra or '') | tojson }}{{ ',' if not loop.last }}
+{% endfor %}};
+const ORDER_QTY = {
+{% for p in products %}    {{ loop.index0 }}: {{ (p.order_qty or 0) | int }}{{ ',' if not loop.last }}
 {% endfor %}};
 const CHART_DATA = {
 {% for p in products %}{% if p.ventas %}    {{ loop.index0 }}: {
@@ -770,6 +804,31 @@ document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
     });
 });
 
+// Sincronizar stock — encola un comando sync_now en panel_comandos de
+// Render para que el DockerPanel local lo levante en su próximo poll.
+document.getElementById('btn-sync-stock').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sync-stock');
+    if (!confirm('¿Sincronizar stock con ObServer?\n\nVa a encolar un comando que la PC de la farmacia levanta en ~30s y tarda 1-2 min en completar.\n\nDespués re-ejecutá la consulta para ver datos actualizados.')) return;
+    const original = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/consulta-stock/sync-stock', {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'sync falló');
+        alert('✅ Sync encolado (#' + d.id + ').\n\n' + d.mensaje);
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 60000);
+    } catch (err) {
+        alert('❌ Error: ' + err.message);
+        btn.textContent = original;
+        btn.disabled = false;
+    }
+});
+
 // Descargar XLS con los items (marcados si hay, sino todos los del análisis).
 document.getElementById('btn-share').addEventListener('click', async () => {
     const marcados = Object.entries(pedido);
@@ -912,6 +971,45 @@ function applyFilter() {
 }
 // Aplicar filtro inicial (en caso de que rubro 'Medicamentos' venga preseleccionado).
 applyFilter();
+
+// Bulk "Aplicar sugeridos" — fill qty con order_qty para items VISIBLES
+// (que pasaron los filtros actuales) y que tienen sugerencia.
+const btnBulkSug = document.getElementById('btn-bulk-sug');
+if (btnBulkSug) {
+    btnBulkSug.addEventListener('click', () => {
+        // ORDER_QTY se construye junto con NOMBRES/PRECIOS abajo.
+        let aplicados = 0;
+        document.querySelectorAll('.csr-card').forEach(card => {
+            if (card.classList.contains('hidden-row')) return;
+            const idx = parseInt(card.dataset.idx, 10);
+            const sug = ORDER_QTY[idx] || 0;
+            if (sug > 0) {
+                const input = card.querySelector('.csr-qty-input');
+                if (input) {
+                    input.value = sug;
+                    onQtyChange(input);
+                    aplicados++;
+                }
+            }
+        });
+        if (aplicados === 0) {
+            // Si no hay cards visibles (estamos en modo tabla), usar las filas.
+            document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
+                if (tr.classList.contains('hidden-row')) return;
+                const idx = parseInt(tr.dataset.idx, 10);
+                const sug = ORDER_QTY[idx] || 0;
+                if (sug > 0) {
+                    const input = tr.querySelector('.csr-tabla-qty');
+                    if (input) {
+                        input.value = sug;
+                        onQtyChangeTabla(input);
+                        aplicados++;
+                    }
+                }
+            });
+        }
+    });
+}
 
 function armarPedido() {
     const items = Object.entries(pedido).map(([idx, qty]) => ({
