@@ -52,6 +52,17 @@ def init_app(app):
             prod = _find_producto(session, ean)
             if prod:
                 # Producto local encontrado.
+                monodroga = prod.monodroga or ''
+                # Fallback: si el Producto local no tiene monodroga cargada pero
+                # tiene bridge a ObServer, resolvemos via obs_productos →
+                # obs_nombres_drogas. Esto es lo más típico — el Producto local
+                # casi siempre queda con monodroga NULL salvo carga manual.
+                if not monodroga and prod.observer_id:
+                    op = session.get(database.ObsProducto, prod.observer_id)
+                    if op and op.nombre_droga_observer:
+                        nd = session.get(database.ObsNombreDroga, op.nombre_droga_observer)
+                        if nd and nd.descripcion:
+                            monodroga = nd.descripcion
                 info.update({
                     'encontrado': True,
                     'producto_id': prod.id,
@@ -59,7 +70,7 @@ def init_app(app):
                     'descripcion': prod.descripcion or '',
                     'codigo_barra': prod.codigo_barra,
                     'precio_pvp': float(prod.precio_pvp) if prod.precio_pvp else None,
-                    'monodroga': prod.monodroga or '',
+                    'monodroga': monodroga,
                     'presentacion': prod.presentacion or '',
                     'laboratorio_id': prod.laboratorio_id,
                     'no_pedir': bool(prod.no_pedir),
@@ -90,6 +101,13 @@ def init_app(app):
                 if obs_id:
                     op = session.get(database.ObsProducto, obs_id)
                     if op:
+                        # Monodroga via obs_nombres_drogas.
+                        mono_obs = ''
+                        if op.nombre_droga_observer:
+                            nd = session.get(database.ObsNombreDroga,
+                                             op.nombre_droga_observer)
+                            if nd and nd.descripcion:
+                                mono_obs = nd.descripcion
                         info.update({
                             'encontrado': True,
                             'fuente_observer_only': True,
@@ -97,7 +115,7 @@ def init_app(app):
                             'descripcion': op.descripcion or '',
                             'codigo_barra': ean,
                             'precio_pvp': None,
-                            'monodroga': '',
+                            'monodroga': mono_obs,
                             'presentacion': '',
                             'no_pedir': False,
                         })
