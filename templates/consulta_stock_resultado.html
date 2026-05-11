@@ -284,6 +284,20 @@ body.csr-tabla-mode #csr-tabla { display: block; }
 
         <div class="csr-h-expand" id="csr-h-expand">
             <input type="text" class="csr-search" id="csr-search" placeholder="🔍 Buscar producto…">
+            {% set _rubros_unicos = products | selectattr('rubro') | map(attribute='rubro') | unique | sort | list %}
+            {% if _rubros_unicos %}
+            <select id="csr-rubro-filter" class="csr-search" style="margin-top:6px;cursor:pointer;">
+                <option value="">— Todos los rubros —</option>
+                {# Detectar el rubro Medicamentos (el primer rubro que contiene 'Medicamento') para usarlo de default. #}
+                {% set _ns = namespace(med='') %}
+                {% for r in _rubros_unicos %}
+                    {% if 'medicament' in r | lower and not _ns.med %}{% set _ns.med = r %}{% endif %}
+                {% endfor %}
+                {% for r in _rubros_unicos %}
+                <option value="{{ r }}" {% if r == _ns.med %}selected{% endif %}>{{ r }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
             <div class="csr-filters">
                 <button class="csr-chip active" data-filter="all">Todos</button>
                 <button class="csr-chip" data-filter="sugerido">Sugeridos</button>
@@ -304,7 +318,8 @@ body.csr-tabla-mode #csr-tabla { display: block; }
              data-name="{{ p.nombre | lower }} {{ p.codigo_barra }}"
              data-sugerido="{{ 'true' if (p.order_qty or 0) > 0 else 'false' }}"
              data-bajo="{{ 'true' if bajo else 'false' }}"
-             data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}">
+             data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}"
+             data-rubro="{{ p.rubro or '' }}">
 
             <div class="csr-card-body">
             <div class="csr-name">{{ p.nombre }}</div>
@@ -433,6 +448,7 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                     data-sugerido="{{ 'true' if (p.order_qty or 0) > 0 else 'false' }}"
                     data-bajo="{{ 'true' if (cov is not none and cov <= 15) else 'false' }}"
                     data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}"
+                    data-rubro="{{ p.rubro or '' }}"
                     data-has-ventas="{{ 'true' if p.ventas else 'false' }}">
                     <td>
                         <div class="csr-tabla-name">{{ p.nombre | truncate(34) }}</div>
@@ -855,17 +871,22 @@ document.querySelectorAll('.csr-chip').forEach(c => {
 const search = document.getElementById('csr-search');
 search.addEventListener('input', applyFilter);
 
+const rubroFilter = document.getElementById('csr-rubro-filter');
+if (rubroFilter) rubroFilter.addEventListener('change', applyFilter);
+
 function applyFilter() {
     // Multi-token: cada token debe aparecer en name+EAN, orden independiente.
     const q = search.value.toLowerCase().trim();
     const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
-    const visibles = new Set();  // idx que pasan los filtros
+    const rubroSel = rubroFilter ? rubroFilter.value : '';
+    const visibles = new Set();
 
     document.querySelectorAll('.csr-card').forEach(card => {
         const name = card.dataset.name;
         const idx = parseInt(card.dataset.idx, 10);
         let pasa = true;
         if (tokens.length && !tokens.every(t => name.includes(t))) pasa = false;
+        if (pasa && rubroSel && card.dataset.rubro !== rubroSel) pasa = false;
         if (pasa && filtroActivo === 'sugerido' && card.dataset.sugerido !== 'true') pasa = false;
         if (pasa && filtroActivo === 'bajo' && card.dataset.bajo !== 'true') pasa = false;
         if (pasa && filtroActivo === 'sinmov' && card.dataset.sinmov !== 'true') pasa = false;
@@ -874,12 +895,19 @@ function applyFilter() {
         if (pasa) visibles.add(idx);
     });
     // Replicar en filas de la tabla.
-    document.querySelectorAll('#csr-tabla tbody tr').forEach(tr => {
+    document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
         const idx = parseInt(tr.dataset.idx, 10);
         tr.classList.toggle('hidden-row', !visibles.has(idx));
+        // Si tiene una fila expand abierta, ocultarla también.
+        const next = tr.nextElementSibling;
+        if (next && next.classList.contains('csr-tabla-expand-row')) {
+            next.classList.toggle('hidden-row', !visibles.has(idx));
+        }
     });
     document.getElementById('csr-empty').style.display = visibles.size === 0 ? 'block' : 'none';
 }
+// Aplicar filtro inicial (en caso de que rubro 'Medicamentos' venga preseleccionado).
+applyFilter();
 
 function armarPedido() {
     const items = Object.entries(pedido).map(([idx, qty]) => ({
