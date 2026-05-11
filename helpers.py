@@ -897,3 +897,46 @@ def _build_item_pattern(example_line, selections):
             base_fields.append(b)
 
     return pattern, fields, base_fields, _base
+
+
+def medicos_observer_ids_compartidos(session, medico_id):
+    """Devuelve todos los obs_medicos.observer_id que comparten al menos una
+    matrícula con el médico dado.
+
+    Caso de uso: en Observer, el POS crea un médico nuevo cada vez que se
+    vende un producto promocionado por un laboratorio, etiquetándolo con
+    el nombre del lab + nombre del médico. Ej:
+
+        5968 | PALADINO, ANDREA BEATRIZ  | matrícula 16097
+       86964 | BERNABO PALADINO          | matrícula 16097
+       88185 | BONO BALIARDA PALADINO    | matrícula 16097
+
+    Las tres son la misma médica para fines clínicos pero el sistema las
+    contabiliza separadas. Esta función agrupa por matrícula así los
+    informes y consultas pueden agregarlas correctamente.
+
+    Args:
+        session: SQLAlchemy session.
+        medico_id: observer_id del médico base.
+
+    Returns:
+        Lista de observer_ids (incluye el medico_id original). Si el médico
+        no tiene matrícula, devuelve [medico_id] (no hay forma de agrupar).
+    """
+    import database
+
+    matriculas = (session.query(database.ObsMedicoMatricula.matricula)
+                  .filter(database.ObsMedicoMatricula.medico_observer == medico_id,
+                          database.ObsMedicoMatricula.fecha_baja.is_(None))
+                  .all())
+    matriculas_set = {m[0] for m in matriculas if m[0]}
+    if not matriculas_set:
+        return [medico_id]
+    relacionados = (session.query(database.ObsMedicoMatricula.medico_observer)
+                    .filter(database.ObsMedicoMatricula.matricula.in_(matriculas_set),
+                            database.ObsMedicoMatricula.fecha_baja.is_(None))
+                    .distinct()
+                    .all())
+    ids = {r[0] for r in relacionados}
+    ids.add(medico_id)
+    return sorted(ids)

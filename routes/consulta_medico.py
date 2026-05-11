@@ -11,9 +11,10 @@ Endpoints:
 from datetime import date, timedelta
 
 from flask import jsonify, render_template, request
-from sqlalchemy import desc, func, or_
+from sqlalchemy import desc, func
 
 import database
+from helpers import medicos_observer_ids_compartidos
 
 
 def init_app(app):
@@ -45,21 +46,31 @@ def init_app(app):
                           .all())
             matriculas_str = ', '.join([m[0] for m in matriculas if m[0]])
 
+            # Consolidar IDs por matrícula: el POS de Observer duplica al
+            # médico una vez por cada lab que promociona productos suyos
+            # ("BERNABO PALADINO", "BONO BERNABO PALADINO", etc.). Todos los
+            # observer_id que comparten matrícula son la MISMA persona.
+            medico_ids = medicos_observer_ids_compartidos(session, medico_id)
+
             info.update({
                 'encontrado': True,
                 'nombre': medico.nombre or '',
                 'cuit': medico.cuit or '',
                 'matriculas': matriculas_str,
                 'baja': bool(medico.fecha_baja),
+                'medico_ids_agrupados': medico_ids,
             })
 
-            # KPIs en el rango.
+            # KPIs en el rango. Filtros importantes:
+            # - medico_observer IN (todos los IDs que comparten matrícula).
+            # - SIN filtro por tipo_operacion: incluimos V (ventas), D
+            #   (devoluciones), NC (notas de crédito). El signo de `cantidad`
+            #   ya lleva el descuento (devoluciones vienen con cantidad < 0),
+            #   asi el sum() neto refleja ventas reales menos devueltas.
             base = (session.query(database.ObsVentaDetalle)
-                    .filter(database.ObsVentaDetalle.medico_observer == medico_id,
+                    .filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids),
                             database.ObsVentaDetalle.fecha_estadistica >= desde,
-                            database.ObsVentaDetalle.fecha_estadistica <= hasta,
-                            or_(database.ObsVentaDetalle.tipo_operacion == 'V',
-                                database.ObsVentaDetalle.tipo_operacion.is_(None))))
+                            database.ObsVentaDetalle.fecha_estadistica <= hasta))
 
             kpi_row = base.with_entities(
                 func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
@@ -141,11 +152,9 @@ def init_app(app):
             serie_rows = (session.query(
                               ym.label('ym'),
                               func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'))
-                          .filter(database.ObsVentaDetalle.medico_observer == medico_id,
+                          .filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids),
                                   database.ObsVentaDetalle.fecha_estadistica >= desde_serie,
-                                  database.ObsVentaDetalle.fecha_estadistica <= hasta,
-                                  or_(database.ObsVentaDetalle.tipo_operacion == 'V',
-                                      database.ObsVentaDetalle.tipo_operacion.is_(None)))
+                                  database.ObsVentaDetalle.fecha_estadistica <= hasta)
                           .group_by('ym')
                           .order_by('ym').all())
             info['serie'] = [{
