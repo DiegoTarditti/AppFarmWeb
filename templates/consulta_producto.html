@@ -160,15 +160,9 @@
     let zxingControls = null;    // controls del decodeFromStream para detenerlo
     let scanLoopId = null;
 
-    // Detector nativo: Chrome/Edge Android + Chrome Desktop.
-    // Fallback ZXing: iOS Safari + Firefox + cualquier otro.
-    const supportsNative = ('BarcodeDetector' in window);
-    const supportsZxing = (typeof ZXing !== 'undefined');
-    const supportsCamera = supportsNative || supportsZxing;
-    if (!supportsCamera) {
-        camBtn.disabled = true;
-        camBtn.title = 'Tu navegador no soporta escaneo con cámara. Tipeá el código a mano.';
-    }
+    // NO desabilitamos el boton al cargar. El soporte se verifica al CLICK
+    // — asi tolera que ZXing aun no haya terminado de cargar (CDN lento /
+    // content blocker / Safari ITP). Si falla, mostramos error inline.
 
     // Loading state al submit (evita doble click).
     form.addEventListener('submit', () => {
@@ -190,11 +184,36 @@
         return false;
     }
 
+    // Espera hasta `timeoutMs` a que ZXing se cargue (puede tardar en redes lentas).
+    function _esperarZXing(timeoutMs = 3000) {
+        return new Promise(resolve => {
+            if (typeof ZXing !== 'undefined') return resolve(true);
+            const start = Date.now();
+            const iv = setInterval(() => {
+                if (typeof ZXing !== 'undefined') {
+                    clearInterval(iv);
+                    resolve(true);
+                } else if (Date.now() - start > timeoutMs) {
+                    clearInterval(iv);
+                    resolve(false);
+                }
+            }, 100);
+        });
+    }
+
     async function startCamera() {
-        if (!supportsCamera) return;
         errBox.style.display = 'none';
         modal.classList.add('open');
         try {
+            // Camara requiere HTTPS (o localhost). En http:// iOS no abre.
+            if (!window.isSecureContext) {
+                throw new Error('La cámara solo funciona vía HTTPS. Abrí la app desde su dominio público.');
+            }
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                throw new Error('Tu navegador no expone navigator.mediaDevices. Actualizá Safari/Chrome o tipeá el código a mano.');
+            }
+
+            const supportsNative = ('BarcodeDetector' in window);
             if (supportsNative) {
                 // Path nativo: getUserMedia + BarcodeDetector en loop.
                 stream = await navigator.mediaDevices.getUserMedia({
@@ -205,17 +224,22 @@
                     formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e']
                 });
                 scanLoopNative();
-            } else {
-                // Path ZXing (iOS/Firefox). decodeFromVideoDevice maneja getUserMedia internamente.
-                zxingReader = new ZXing.BrowserMultiFormatReader();
-                zxingControls = await zxingReader.decodeFromVideoDevice(
-                    undefined,  // deviceId — undefined = default trasera si está disponible
-                    video,
-                    (result) => {
-                        if (result) onCodeDetected(result.getText());
-                    }
-                );
+                return;
             }
+
+            // Fallback ZXing (iOS/Firefox). Espera hasta 3s a que cargue desde CDN.
+            const zxingOk = await _esperarZXing(3000);
+            if (!zxingOk) {
+                throw new Error('No se pudo cargar el detector de códigos (red bloqueada?). Tipeá el código a mano.');
+            }
+            zxingReader = new ZXing.BrowserMultiFormatReader();
+            zxingControls = await zxingReader.decodeFromVideoDevice(
+                undefined,  // deviceId — undefined = default trasera si está disponible
+                video,
+                (result) => {
+                    if (result) onCodeDetected(result.getText());
+                }
+            );
         } catch (e) {
             errBox.textContent = 'No pude abrir la cámara: ' + (e.message || e);
             errBox.style.display = 'block';
