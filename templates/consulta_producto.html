@@ -139,8 +139,10 @@
     <p class="cp-cam-error" id="cp-cam-error" style="display:none;"></p>
 </div>
 
-<!-- ZXing fallback para iOS Safari y Firefox (no soportan BarcodeDetector). -->
-<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
+<!-- ZXing fallback para iOS Safari y Firefox (no soportan BarcodeDetector).
+     Global expuesto: `window.ZXing` (UMD). Path correcto: /umd/zxing-browser.min.js
+     (NO /umd/index.min.js — esa daba 404 y rompía la cámara en iOS). -->
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.2.0/umd/zxing-browser.min.js"></script>
 <script>
 (function () {
     const form = document.getElementById('cp-form');
@@ -161,7 +163,7 @@
     // Detector nativo: Chrome/Edge Android + Chrome Desktop.
     // Fallback ZXing: iOS Safari + Firefox + cualquier otro.
     const supportsNative = ('BarcodeDetector' in window);
-    const supportsZxing = (typeof ZXingBrowser !== 'undefined');
+    const supportsZxing = (typeof ZXing !== 'undefined');
     const supportsCamera = supportsNative || supportsZxing;
     if (!supportsCamera) {
         camBtn.disabled = true;
@@ -205,7 +207,7 @@
                 scanLoopNative();
             } else {
                 // Path ZXing (iOS/Firefox). decodeFromVideoDevice maneja getUserMedia internamente.
-                zxingReader = new ZXingBrowser.BrowserMultiFormatReader();
+                zxingReader = new ZXing.BrowserMultiFormatReader();
                 zxingControls = await zxingReader.decodeFromVideoDevice(
                     undefined,  // deviceId — undefined = default trasera si está disponible
                     video,
