@@ -108,7 +108,7 @@ input[type=radio]:checked + .cs-tipo-btn {
     <div class="cs-banner ok">✓ Estadísticas al día · hace {{ estado_ventas.dias }} día{{ 's' if estado_ventas.dias != 1 }}.</div>
     {% endif %}
 
-    <form method="post" action="{{ url_for('proceso_crear') }}" id="form-consulta">
+    <form method="post" action="{{ url_for('consulta_stock_iniciar') }}" id="form-consulta">
         <div class="cs-group">
             <label class="cs-label">Tipo</label>
             <div class="cs-tipo-grid">

@@ -5,6 +5,7 @@ import os
 from datetime import datetime
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask_login import current_user
 
 import database
 from database import AnalisisSesion, Claim, Invoice, Laboratorio, Pedido, ProcesoCompra, Provider
@@ -129,13 +130,9 @@ def init_app(app):
     def consulta_stock():
         """Entry point móvil-first: elegir lab/drog/prov y arrancar análisis.
 
-        Misma lógica que el wizard 'Nuevo proceso de compra' (modal en
-        /procesos), pero con UI optimizada para celular (single-column,
-        touch-friendly, hit targets grandes, sin sidebar).
-
-        El POST sigue yendo a /procesos/crear, que para laboratorio redirige
-        a observer_analizar (todavía desktop). La fase 2 va a mobilizar la
-        pantalla de resultados.
+        El POST va a /consulta-stock/iniciar, que para laboratorio ejecuta el
+        análisis con defaults (n_days=35, mes/año actual) y redirige al
+        template mobile-friendly /consulta-stock/resultado/<uid>.
         """
         import observer_source
         with database.get_db() as session:
@@ -144,6 +141,243 @@ def init_app(app):
         return render_template('consulta_stock.html',
                                estado_ventas=estado_ventas,
                                observer_disponible=observer_disponible)
+
+    @app.route('/consulta-stock/iniciar', methods=['POST'])
+    def consulta_stock_iniciar():
+        """Pipeline móvil: crea ProcesoCompra + ejecuta análisis con defaults
+        + redirige al template resultado móvil. Skip la pantalla intermedia
+        observer_analizar (no requiere ajustar n_days/año/mes en el cel).
+        """
+        import json as _json
+        import os as _os
+        import uuid as _uuid
+        from datetime import datetime as _datetime
+
+        import observer_source
+        from helpers import PURCHASE_FOLDER, get_config
+        from purchase_engine import analyze_purchase
+
+        tipo = (request.form.get('tipo') or '').strip()
+        partner_id = request.form.get('partner_id') or None
+        periodo = (request.form.get('periodo') or '').strip()
+
+        if tipo not in ('laboratorio', 'drogueria', 'proveedor'):
+            flash('Tipo inválido.', 'error')
+            return redirect(url_for('consulta_stock'))
+
+        partner_nombre = ''
+        with database.get_db() as session:
+            if partner_id:
+                if tipo == 'laboratorio':
+                    lab = session.get(Laboratorio, int(partner_id))
+                    partner_nombre = lab.nombre if lab else ''
+                else:
+                    prov = session.get(Provider, int(partner_id))
+                    partner_nombre = prov.razon_social if prov else ''
+        if not partner_nombre:
+            flash('Seleccioná un partner.', 'error')
+            return redirect(url_for('consulta_stock'))
+
+        # Crear ProcesoCompra (igual que el desktop).
+        with database.get_db() as session:
+            proc = ProcesoCompra(
+                tipo=tipo,
+                partner_id=int(partner_id) if partner_id else None,
+                partner_nombre=partner_nombre,
+                analisis_periodo=periodo or None,
+                estado='BORRADOR',
+            )
+            session.add(proc)
+            session.commit()
+            proc_id = proc.id
+
+        # Solo laboratorio tiene flujo de análisis. Drog/prov van al detail.
+        if tipo != 'laboratorio':
+            flash(f'Proceso creado para {partner_nombre}. Análisis móvil de '
+                  f'{tipo} todavía no implementado — desktop por ahora.', 'info')
+            return redirect(url_for('proceso_detail', proceso_id=proc_id))
+
+        if not observer_source.observer_analisis_disponible():
+            flash('Sin datos de ventas. Sync ObServer pendiente.', 'error')
+            return redirect(url_for('consulta_stock'))
+
+        # Defaults: 35 días, mes/año actual.
+        n_days = 35
+        hoy = _datetime.now()
+        anio, mes = hoy.year, hoy.month
+
+        productos = observer_source.get_ventas_laboratorio(partner_nombre, anio, mes)
+        if not productos:
+            flash(f'Sin ventas de "{partner_nombre}" en {mes:02d}/{anio}.', 'warning')
+            return redirect(url_for('consulta_stock'))
+
+        # Calcular start_month (12 meses atrás)
+        start_m = mes - 11
+        start_y = anio
+        while start_m <= 0:
+            start_m += 12
+            start_y -= 1
+
+        cfg = get_config()
+        results = analyze_purchase(
+            productos, n_days, start_m, mes,
+            umbral_pico=cfg['umbral_pico'],
+            umbral_baja=cfg['umbral_baja'],
+            umbral_tendencia=cfg['umbral_tendencia'],
+            rot_alta_min=cfg['rot_alta_min'],
+            rot_media_min=cfg['rot_media_min'],
+        )
+
+        uid = str(_uuid.uuid4())
+        periodo_str = f'{start_m:02d}/{start_y} - {mes:02d}/{anio}'
+        data = {
+            'uid': uid,
+            'farmacia': getattr(current_user, 'nombre_completo', None) or 'Farmacia',
+            'laboratorio': partner_nombre,
+            'periodo': periodo_str,
+            'start_month': start_m,
+            'n_days': n_days,
+            'umbral_tendencia': cfg['umbral_tendencia'],
+            'rot_alta_min': cfg['rot_alta_min'],
+            'rot_alta_tol': cfg['rot_alta_tol'],
+            'rot_media_min': cfg['rot_media_min'],
+            'rot_media_tol': cfg['rot_media_tol'],
+            'rot_baja_tol': cfg['rot_baja_tol'],
+            'products': results,
+            'proceso_id': proc_id,
+        }
+
+        with database.get_db() as session:
+            sesion = AnalisisSesion(
+                laboratorio_nombre=partner_nombre,
+                periodo=periodo_str,
+                farmacia=data['farmacia'],
+                n_days=n_days,
+                fuente='observer',
+                n_productos=len(results),
+            )
+            session.add(sesion)
+            session.commit()
+            data['sesion_id'] = sesion.id
+
+        json_path = _os.path.join(PURCHASE_FOLDER, f'{uid}.json')
+        with open(json_path, 'w', encoding='utf-8') as jf:
+            _json.dump(data, jf, ensure_ascii=False)
+
+        return redirect(url_for('consulta_stock_resultado', uid=uid))
+
+    @app.route('/consulta-stock/armar-pedido', methods=['POST'])
+    def consulta_stock_armar_pedido():
+        """Crea un Pedido borrador desde el cel con los items que el operador
+        marcó en /consulta-stock/resultado/<uid>. Devuelve JSON con redirect.
+        """
+        from database import Pedido, PedidoItem
+        data = request.get_json(silent=True) or {}
+        uid = (data.get('uid') or '').strip()
+        laboratorio = (data.get('laboratorio') or '').strip()
+        proceso_id = data.get('proceso_id')
+        items = data.get('items') or []
+
+        if not items:
+            return jsonify({'ok': False, 'error': 'sin items'}), 400
+        if not laboratorio:
+            return jsonify({'ok': False, 'error': 'sin laboratorio'}), 400
+
+        with database.get_db() as session:
+            pedido = Pedido(
+                laboratorio=laboratorio,
+                farmacia=getattr(current_user, 'nombre_completo', None) or 'Farmacia',
+                periodo=f'Consulta móvil · {uid[:8]}',
+                n_days=35,
+                estado='PENDIENTE',
+            )
+            session.add(pedido)
+            session.flush()
+            for it in items:
+                cantidad = int(it.get('cantidad') or 0)
+                if cantidad <= 0:
+                    continue
+                precio = float(it.get('precio_pvp') or 0)
+                session.add(PedidoItem(
+                    pedido_id=pedido.id,
+                    codigo_barra=str(it.get('codigo_barra') or '')[:20],
+                    nombre=str(it.get('nombre') or '')[:200],
+                    cantidad=cantidad,
+                    precio_pvp=precio,
+                    subtotal=cantidad * precio,
+                ))
+            # Vincular al ProcesoCompra si vino.
+            if proceso_id:
+                proc = session.get(ProcesoCompra, int(proceso_id))
+                if proc:
+                    proc.pedido_id = pedido.id
+                    if proc.estado == 'BORRADOR':
+                        proc.estado = 'PEDIDO'
+                    proc.pedido_hecho_en = now_ar()
+            session.commit()
+            pedido_id = pedido.id
+
+        return jsonify({
+            'ok': True,
+            'pedido_id': pedido_id,
+            'redirect': url_for('orders_list'),
+        })
+
+    @app.route('/consulta-stock/resultado/<uid>')
+    def consulta_stock_resultado(uid):
+        """Versión mobile-first de purchase_results: cards apiladas + 4 indicadores
+        (prom/mes, vendido 3m+12m, mini-chart 12m, cobertura días) + marcado de
+        items para armar pedido desde el cel.
+        """
+        import json as _json
+        import os as _os
+        import re as _re
+        from datetime import datetime as _datetime
+
+        from helpers import PURCHASE_FOLDER, get_config
+
+        if not _re.match(r'^[0-9a-f-]{36}$', uid):
+            flash('Sesión inválida.', 'error')
+            return redirect(url_for('consulta_stock'))
+        json_path = _os.path.join(PURCHASE_FOLDER, f'{uid}.json')
+        if not _os.path.exists(json_path):
+            flash('El análisis expiró. Hacelo de nuevo.', 'error')
+            return redirect(url_for('consulta_stock'))
+        with open(json_path, encoding='utf-8') as jf:
+            data = _json.load(jf)
+
+        cfg = get_config()
+        for k in ('umbral_tendencia', 'rot_alta_min', 'rot_alta_tol',
+                  'rot_media_min', 'rot_media_tol', 'rot_baja_tol'):
+            data.setdefault(k, cfg[k])
+
+        _mes_jan = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul',
+                    'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+        sm = data.get('start_month', 4)
+        month_es = [_mes_jan[(sm - 1 + i) % 12] for i in range(12)]
+        analizado_en = _datetime.fromtimestamp(
+            _os.path.getmtime(json_path)).strftime('%d/%m/%Y')
+
+        # Pre-cómputo por producto para que el template sea liviano:
+        # - vendido 3m (suma de los últimos 3 meses) + 12m (total).
+        # - dias de cobertura.
+        for p in data.get('products', []):
+            ventas = p.get('ventas') or []
+            avg = p.get('avg_monthly') or 0
+            stock = p.get('stock') or 0
+            p['v3m'] = sum(ventas[:3]) if len(ventas) >= 3 else sum(ventas)
+            p['v12m'] = p.get('total') or sum(ventas)
+            if avg > 0 and stock > 0:
+                p['dias_cobertura'] = round(stock / (avg / 30.4))
+            elif stock <= 0:
+                p['dias_cobertura'] = 0
+            else:
+                p['dias_cobertura'] = None  # sin ventas → infinito, no mostrar nº
+
+        return render_template('consulta_stock_resultado.html',
+                               month_es=month_es,
+                               analizado_en=analizado_en,
+                               **data)
 
     @app.route('/procesos/crear', methods=['POST'])
     def proceso_crear():
