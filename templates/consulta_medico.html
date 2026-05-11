@@ -87,7 +87,9 @@
         lastQ = q;
         box.innerHTML = '<div class="cm-loading">⏳ Buscando…</div>';
         try {
-            const r = await fetch(`/api/consulta-medico/buscar?q=${encodeURIComponent(q)}`);
+            const r = await fetch(`/api/consulta-medico/buscar?q=${encodeURIComponent(q)}`, {
+                credentials: 'same-origin'
+            });
             const d = await r.json();
             if (q !== input.value.trim()) return;  // input cambió mientras esperaba
             render(d.items || []);

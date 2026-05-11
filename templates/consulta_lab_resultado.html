@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ info.nombre or 'Lab no encontrado' }} — Estadísticas{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.clr-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 80px; }
+.clr-header { position: sticky; top: 0; z-index: 20;
+              background: var(--ds-bg); padding: 8px 0; border-bottom: 1px solid var(--ds-line);
+              display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.clr-back { width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--ds-surface); border: 1px solid var(--ds-line);
+            border-radius: 8px; color: var(--ds-text); cursor: pointer;
+            font-size: 18px; text-decoration: none; }
+.clr-title { flex: 1; min-width: 0; }
+.clr-h1 { font-size: 15px; font-weight: 700; color: var(--ds-text); line-height: 1.2;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.clr-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+            border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.clr-card-title { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+                  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+.clr-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 560px) { .clr-kpis { grid-template-columns: repeat(4, 1fr); } }
+.clr-kpi { background: var(--ds-surface-2); border-radius: 10px; padding: 10px;
+           border: 1px solid var(--ds-line); }
+.clr-kpi-label { font-size: 10px; color: var(--ds-text-mute); text-transform: uppercase;
+                 letter-spacing: .06em; margin-bottom: 4px; }
+.clr-kpi-value { font-size: 22px; font-weight: 700; color: var(--ds-mint); line-height: 1; }
+
+.clr-top { display: flex; flex-direction: column; gap: 6px; }
+.clr-top-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+               background: var(--ds-surface-2); border-radius: 8px; border: 1px solid var(--ds-line);
+               text-decoration: none; }
+.clr-top-name { flex: 1; min-width: 0; font-size: 13px; color: var(--ds-text);
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.clr-top-uds { font-size: 14px; font-weight: 700; color: var(--ds-mint);
+               font-family: ui-monospace, Consolas, monospace; }
+
+.clr-rango { padding: 6px 10px; background: var(--ds-surface-2);
+             border-radius: 8px; font-size: 11px; color: var(--ds-text-mute);
+             margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;
+             align-items: center; justify-content: space-between; }
+.clr-rango-btns { display: flex; gap: 6px; }
+.clr-rango-btn { padding: 4px 10px; background: var(--ds-surface);
+                 border: 1px solid var(--ds-line); border-radius: 6px;
+                 color: var(--ds-text-mute); font-size: 11px; text-decoration: none; }
+.clr-rango-btn.active { background: var(--ds-mint); color: #0a3a2a;
+                        border-color: var(--ds-mint-deep); font-weight: 700; }
+
+.clr-chart-wrap { position: relative; height: 200px; }
+.clr-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 12px; }
+
+.clr-warn { background: rgba(245,158,11,.12); color: var(--ds-warn);
+            border: 1px solid rgba(245,158,11,.3); padding: 10px 12px;
+            border-radius: 8px; font-size: 12px; margin-bottom: 12px; }
+
+.clr-back-link { display: inline-block; padding: 12px 24px;
+                 background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+                 color: #0a3a2a; font-size: 14px; font-weight: 700;
+                 border-radius: 10px; text-decoration: none; margin-top: 16px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="clr-screen">
+    <div class="clr-header">
+        <a href="{{ url_for('consulta_lab') }}" class="clr-back"
+           onclick="if (document.referrer && document.referrer.indexOf(location.host) >= 0) { history.back(); return false; }">←</a>
+        <a href="{{ url_for('consulta_stock') }}" class="clr-back" title="Home-móvil">🏠</a>
+        <div class="clr-title">
+            <div class="clr-h1">🧪 {{ info.nombre or 'No encontrado' }}</div>
+        </div>
+    </div>
+
+    {% if not info.encontrado %}
+    <div class="clr-card" style="text-align:center;">
+        <p style="font-size:14px;color:var(--ds-text-soft);">Laboratorio no encontrado.</p>
+        <a href="{{ url_for('consulta_lab') }}" class="clr-back-link">← Buscar otro</a>
+    </div>
+    {% else %}
+
+    {% if info.sin_bridge %}
+    <div class="clr-warn">
+        ⚠ Este laboratorio no está vinculado con ObServer. No se pueden calcular estadísticas de ventas.
+    </div>
+    {% endif %}
+
+    <div class="clr-rango">
+        <span>📅 Últimos <b>{{ info.n_days }}</b> días</span>
+        <div class="clr-rango-btns">
+            <a href="?dias=30"  class="clr-rango-btn {% if info.n_days == 30 %}active{% endif %}">30d</a>
+            <a href="?dias=90"  class="clr-rango-btn {% if info.n_days == 90 %}active{% endif %}">90d</a>
+            <a href="?dias=180" class="clr-rango-btn {% if info.n_days == 180 %}active{% endif %}">180d</a>
+            <a href="?dias=365" class="clr-rango-btn {% if info.n_days == 365 %}active{% endif %}">1a</a>
+        </div>
+    </div>
+
+    <div class="clr-card">
+        <div class="clr-card-title">Indicadores</div>
+        <div class="clr-kpis">
+            <div class="clr-kpi">
+                <div class="clr-kpi-label">Unidades</div>
+                <div class="clr-kpi-value">{{ '%.0f' | format(info.kpis.unidades) }}</div>
+            </div>
+            <div class="clr-kpi">
+                <div class="clr-kpi-label">Recetas</div>
+                <div class="clr-kpi-value">{{ info.kpis.ops }}</div>
+            </div>
+            <div class="clr-kpi">
+                <div class="clr-kpi-label">Productos</div>
+                <div class="clr-kpi-value">{{ info.kpis.productos }}</div>
+            </div>
+            <div class="clr-kpi">
+                <div class="clr-kpi-label">Importe</div>
+                <div class="clr-kpi-value" style="font-size:16px;">$ {{ '%.0f' | format(info.kpis.importe) }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="clr-card">
+        <div class="clr-card-title">Top productos</div>
+        {% if info.top_productos %}
+        <div class="clr-top">
+            {% for p in info.top_productos %}
+            <a href="{{ url_for('consulta_producto_detalle', ean=p.observer_id) }}" class="clr-top-row">
+                <span class="clr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
+                <span class="clr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="clr-empty">Sin ventas en este rango.</div>
+        {% endif %}
+    </div>
+
+    {% if info.top_medicos %}
+    <div class="clr-card">
+        <div class="clr-card-title">Top médicos que recetan</div>
+        <div class="clr-top">
+            {% for m in info.top_medicos %}
+            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id) }}" class="clr-top-row">
+                <span class="clr-top-name">👨‍⚕️ {{ m.nombre }}</span>
+                <span class="clr-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if info.top_os %}
+    <div class="clr-card">
+        <div class="clr-card-title">Top obras sociales</div>
+        <div class="clr-top">
+            {% for o in info.top_os %}
+            <div class="clr-top-row">
+                <span class="clr-top-name">{{ o.nombre }}</span>
+                <span class="clr-top-uds">{{ '%.0f' | format(o.unidades) }}u</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if info.serie %}
+    <div class="clr-card">
+        <div class="clr-card-title">Evolución 12 meses</div>
+        <div class="clr-chart-wrap">
+            <canvas id="clr-chart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    {% endif %}
+</div>
+
+{% if info.encontrado and info.serie %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const serie = {{ info.serie | tojson }};
+    new Chart(document.getElementById('clr-chart'), {
+        type: 'bar',
+        data: {
+            labels: serie.map(s => `${String(s.mes).padStart(2,'0')}/${String(s.anio).slice(2)}`),
+            datasets: [{
+                label: 'Unidades', data: serie.map(s => s.unidades),
+                backgroundColor: 'rgba(95,230,188,.7)',
+                borderColor: 'rgba(45,180,140,1)', borderWidth: 1,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.1)' } },
+                x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+            }
+        }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

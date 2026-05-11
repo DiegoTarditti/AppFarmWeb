@@ -74,7 +74,9 @@
 {% block main %}
 <div class="cmr-screen">
     <div class="cmr-header">
-        <a href="{{ url_for('consulta_medico') }}" class="cmr-back" title="Buscar otro">←</a>
+        <a href="{{ url_for('consulta_medico') }}" class="cmr-back" title="Buscar otro"
+           onclick="if (document.referrer && document.referrer.indexOf(location.host) >= 0) { history.back(); return false; }">←</a>
+        <a href="{{ url_for('consulta_stock') }}" class="cmr-back" title="Home-móvil">🏠</a>
         <div class="cmr-title">
             <div class="cmr-h1">
                 👨‍⚕️ {{ info.nombre or 'No encontrado' }}
@@ -82,9 +84,9 @@
             </div>
             {% if info.encontrado %}
             <div class="cmr-meta">
-                {% if info.matricula_provincial %}MP {{ info.matricula_provincial }}{% endif %}
-                {% if info.matricula_nacional %} · MN {{ info.matricula_nacional }}{% endif %}
-                {% if info.cuit %} · CUIT {{ info.cuit }}{% endif %}
+                {% if info.matriculas %}MP {{ info.matriculas }}{% endif %}
+                {% if info.matriculas and info.cuit %} · {% endif %}
+                {% if info.cuit %}CUIT {{ info.cuit }}{% endif %}
             </div>
             {% endif %}
         </div>
@@ -140,11 +142,18 @@
         {% if info.top_productos %}
         <div class="cmr-top">
             {% for p in info.top_productos %}
-            <a href="{{ url_for('consulta_producto_detalle', ean=p.observer_id) if p.observer_id else '#' }}"
+            {% if p.codigo_barra %}
+            <a href="{{ url_for('consulta_producto_detalle', ean=p.codigo_barra) }}"
                class="cmr-top-row" style="text-decoration:none;">
                 <span class="cmr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
                 <span class="cmr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
             </a>
+            {% else %}
+            <div class="cmr-top-row" title="Sin código de barras vinculado">
+                <span class="cmr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
+                <span class="cmr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
+            </div>
+            {% endif %}
             {% endfor %}
         </div>
         {% else %}
@@ -178,6 +187,16 @@
         <div class="cmr-empty">Sin historial.</div>
         {% endif %}
     </div>
+
+    {# Chart de dona — distribución del top de productos recetados #}
+    {% if info.top_productos %}
+    <div class="cmr-card">
+        <div class="cmr-card-title">Distribución de productos recetados</div>
+        <div class="cmr-chart-wrap" style="height: 260px;">
+            <canvas id="cmr-donut"></canvas>
+        </div>
+    </div>
+    {% endif %}
     {% endif %}
 </div>
 
@@ -210,6 +229,43 @@
             }
         }
     });
+
+    // Chart de dona: distribución del top de productos recetados.
+    const topProds = {{ info.top_productos | tojson }};
+    const donutCanvas = document.getElementById('cmr-donut');
+    if (donutCanvas && topProds && topProds.length) {
+        const palette = [
+            '#5FE6BC', '#3B82F6', '#F59E0B', '#EF4444', '#A78BFA',
+            '#10B981', '#F472B6', '#06B6D4', '#FBBF24', '#8B5CF6',
+        ];
+        new Chart(donutCanvas, {
+            type: 'doughnut',
+            data: {
+                labels: topProds.map(p => p.nombre.length > 35 ? p.nombre.slice(0,32)+'…' : p.nombre),
+                datasets: [{
+                    data: topProds.map(p => p.unidades),
+                    backgroundColor: topProds.map((_, i) => palette[i % palette.length]),
+                    borderColor: 'rgba(0,0,0,.2)',
+                    borderWidth: 1,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 6 }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}u`
+                        }
+                    }
+                }
+            }
+        });
+    }
 })();
 </script>
 {% endif %}

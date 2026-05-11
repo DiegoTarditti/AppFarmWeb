@@ -50,7 +50,7 @@ def init_app(app):
         with database.get_db() as session:
             prod = _find_producto(session, ean)
             if prod:
-                # Acceder a los atributos AHORA antes de cerrar la sesión.
+                # Producto local encontrado.
                 info.update({
                     'encontrado': True,
                     'producto_id': prod.id,
@@ -63,10 +63,46 @@ def init_app(app):
                     'laboratorio_id': prod.laboratorio_id,
                     'no_pedir': bool(prod.no_pedir),
                 })
-                # Nombre del laboratorio (resuelto en mismo session).
                 if prod.laboratorio_id:
                     lab = session.get(database.Laboratorio, prod.laboratorio_id)
                     info['laboratorio'] = lab.nombre if lab else ''
                 else:
                     info['laboratorio'] = ''
+            else:
+                # Fallback Observer: el producto puede estar en obs_productos
+                # sin bridge a productos local. Resolvemos por EAN en
+                # obs_codigos_barras → obs_productos. La info es read-only y
+                # /api/product/<ean>/chart maneja igual el caso.
+                obs_id = None
+                if ean.isdigit():
+                    try: obs_id = int(ean)
+                    except (ValueError, TypeError): pass
+                if obs_id is not None and not session.get(database.ObsProducto, obs_id):
+                    obs_id = None
+                if obs_id is None:
+                    row = (session.query(database.ObsCodigoBarras.producto_observer)
+                           .filter(database.ObsCodigoBarras.codigo_barras == ean,
+                                   database.ObsCodigoBarras.fecha_baja.is_(None))
+                           .first())
+                    if row:
+                        obs_id = row[0]
+                if obs_id:
+                    op = session.get(database.ObsProducto, obs_id)
+                    if op:
+                        info.update({
+                            'encontrado': True,
+                            'fuente_observer_only': True,
+                            'observer_id': op.observer_id,
+                            'descripcion': op.descripcion or '',
+                            'codigo_barra': ean,
+                            'precio_pvp': None,
+                            'monodroga': '',
+                            'presentacion': '',
+                            'no_pedir': False,
+                        })
+                        # Nombre del lab si está en obs_laboratorios.
+                        info['laboratorio'] = ''
+                        if op.laboratorio_observer:
+                            ol = session.get(database.ObsLaboratorio, op.laboratorio_observer)
+                            if ol: info['laboratorio'] = ol.descripcion or ''
         return render_template('consulta_producto_resultado.html', info=info)

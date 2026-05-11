@@ -116,19 +116,9 @@ input[type=radio]:checked + .cs-tipo-btn {
     {% endfor %}
     {% endwith %}
 
-    {# Botón sync stock: dispara la sync con ObServer (encola comando en
-       panel_comandos). Antes vivía en el header de la pantalla resultado
-       pero molestaba la botonera; tiene más sentido acá (entry), antes de
-       consultar. #}
-    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
-        <button type="button" id="btn-sync-stock"
-                class="cs-cta--alt" style="margin:0;width:auto;padding:8px 14px;font-size:13px;"
-                title="Sincroniza stock con ObServer. La PC de la farmacia lo levanta en ~30s.">
-            🔄 Sincronizar stock con ObServer
-        </button>
-    </div>
-
-    {# Banner de estado de ventas — granularidad fina: al día / reciente / vieja / nunca. #}
+    {# Banner de estado de ventas (inline, izquierda) + botón Sync (derecha).
+       Casos de error/sin datos siguen como banner full-width para que el
+       texto largo sea legible. #}
     {% if estado_ventas.estado == 'nunca' %}
     <div class="cs-banner err">
         <p class="font-semibold">⚠ Sin estadísticas de ventas</p>
@@ -144,16 +134,27 @@ input[type=radio]:checked + .cs-tipo-btn {
         {% endif %}
     </div>
     {% elif estado_ventas.estado == 'viejo' %}
-    <div class="cs-banner warn">
-        <p class="font-semibold">⏰ Estadísticas desactualizadas</p>
-        <p style="margin-top:4px;font-size:12px;opacity:.9;">{{ estado_ventas.mensaje }}</p>
-    </div>
-    {% elif estado_ventas.dias is defined and estado_ventas.dias > 1 %}
-    <div class="cs-banner info">
-        ℹ Estadísticas de hace {{ estado_ventas.dias }} días.
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <div class="cs-banner warn" style="flex:1;margin-bottom:0;">
+            ⏰ {{ estado_ventas.mensaje }}
+        </div>
+        <button type="button" id="btn-sync-stock" class="cs-cta--alt"
+                style="margin:0;width:auto;padding:10px 14px;font-size:13px;"
+                title="Sincroniza stock con ObServer.">🔄 Sync</button>
     </div>
     {% else %}
-    <div class="cs-banner ok">✓ Estadísticas al día.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+        <div class="cs-banner {{ 'info' if (estado_ventas.dias is defined and estado_ventas.dias > 1) else 'ok' }}" style="flex:1;margin-bottom:0;">
+            {% if estado_ventas.dias is defined and estado_ventas.dias > 1 %}
+                ℹ Estadísticas de hace {{ estado_ventas.dias }} días
+            {% else %}
+                ✓ Estadísticas al día
+            {% endif %}
+        </div>
+        <button type="button" id="btn-sync-stock" class="cs-cta--alt"
+                style="margin:0;width:auto;padding:10px 14px;font-size:13px;"
+                title="Sincroniza stock con ObServer.">🔄 Sync</button>
+    </div>
     {% endif %}
 
     <form method="post" action="{{ url_for('consulta_stock_iniciar') }}" id="form-consulta">
@@ -206,13 +207,16 @@ input[type=radio]:checked + .cs-tipo-btn {
                 <span id="btn-label">Consultar stock</span>
             </button>
 
-            {# Atajos a otras consultas mobile — sin pasar por lab/drog.
-               Fuera del <form> para no ser submit. #}
-            <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">
-                🔍 Consultar producto
-            </a>
+            {# Atajos a otras consultas mobile — médico, lab, y producto al
+               final (uso menos frecuente, escaneo de troquel). #}
             <a href="{{ url_for('consulta_medico') }}" class="cs-cta cs-cta--alt">
                 👨‍⚕️ Consultar médico
+            </a>
+            <a href="{{ url_for('consulta_lab') }}" class="cs-cta cs-cta--alt">
+                🧪 Consultar laboratorio
+            </a>
+            <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">
+                🔍 Consultar producto
             </a>
 
             <a href="{{ url_for('index') }}" class="cs-cancel">Cancelar</a>
