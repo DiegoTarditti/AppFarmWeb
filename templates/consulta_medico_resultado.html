@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ info.nombre or 'Médico no encontrado' }} — Estadísticas{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cmr-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 80px; }
+.cmr-header { position: sticky; top: 0; z-index: 20;
+              background: var(--ds-bg); padding: 8px 0; border-bottom: 1px solid var(--ds-line);
+              display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.cmr-back { width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--ds-surface); border: 1px solid var(--ds-line);
+            border-radius: 8px; color: var(--ds-text); cursor: pointer;
+            font-size: 18px; text-decoration: none; }
+.cmr-title { flex: 1; min-width: 0; }
+.cmr-h1 { font-size: 15px; font-weight: 700; color: var(--ds-text); line-height: 1.2;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmr-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 1px;
+            font-family: ui-monospace, Consolas, monospace; }
+
+.cmr-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+            border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.cmr-card-title { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+                  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px;
+                  display: flex; align-items: center; justify-content: space-between; }
+
+.cmr-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 560px) { .cmr-kpis { grid-template-columns: repeat(4, 1fr); } }
+.cmr-kpi { background: var(--ds-surface-2); border-radius: 10px; padding: 10px;
+           border: 1px solid var(--ds-line); }
+.cmr-kpi-label { font-size: 10px; color: var(--ds-text-mute); text-transform: uppercase;
+                 letter-spacing: .06em; margin-bottom: 4px; }
+.cmr-kpi-value { font-size: 22px; font-weight: 700; color: var(--ds-mint); line-height: 1; }
+
+.cmr-top { display: flex; flex-direction: column; gap: 6px; }
+.cmr-top-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+               background: var(--ds-surface-2); border-radius: 8px; border: 1px solid var(--ds-line); }
+.cmr-top-name { flex: 1; min-width: 0; font-size: 13px; color: var(--ds-text);
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmr-top-uds { font-size: 14px; font-weight: 700; color: var(--ds-mint);
+               font-family: ui-monospace, Consolas, monospace; }
+
+.cmr-rango { padding: 6px 10px; background: var(--ds-surface-2);
+             border-radius: 8px; font-size: 11px; color: var(--ds-text-mute);
+             margin-bottom: 12px; display: flex; gap: 8px; flex-wrap: wrap;
+             align-items: center; justify-content: space-between; }
+.cmr-rango-btns { display: flex; gap: 6px; }
+.cmr-rango-btn { padding: 4px 10px; background: var(--ds-surface);
+                 border: 1px solid var(--ds-line); border-radius: 6px;
+                 color: var(--ds-text-mute); font-size: 11px; text-decoration: none;
+                 cursor: pointer; }
+.cmr-rango-btn.active { background: var(--ds-mint); color: #0a3a2a; border-color: var(--ds-mint-deep); font-weight: 700; }
+
+.cmr-chart-wrap { position: relative; height: 200px; }
+
+.cmr-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 12px; }
+
+.cmr-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+             font-size: 10px; font-weight: 700; text-transform: uppercase;
+             letter-spacing: .04em; }
+.cmr-badge.warn { background: rgba(245,158,11,.15); color: var(--ds-warn); }
+
+.cmr-notfound { text-align: center; padding: 32px 16px; }
+.cmr-notfound-icon { font-size: 48px; margin-bottom: 8px; }
+.cmr-back-link { display: inline-block; padding: 12px 24px;
+                 background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+                 color: #0a3a2a; font-size: 14px; font-weight: 700;
+                 border-radius: 10px; text-decoration: none; margin-top: 16px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cmr-screen">
+    <div class="cmr-header">
+        <a href="{{ url_for('consulta_medico') }}" class="cmr-back" title="Buscar otro">←</a>
+        <div class="cmr-title">
+            <div class="cmr-h1">
+                👨‍⚕️ {{ info.nombre or 'No encontrado' }}
+                {% if info.baja %}<span class="cmr-badge warn">Baja</span>{% endif %}
+            </div>
+            {% if info.encontrado %}
+            <div class="cmr-meta">
+                {% if info.matricula_provincial %}MP {{ info.matricula_provincial }}{% endif %}
+                {% if info.matricula_nacional %} · MN {{ info.matricula_nacional }}{% endif %}
+                {% if info.cuit %} · CUIT {{ info.cuit }}{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not info.encontrado %}
+    <div class="cmr-card">
+        <div class="cmr-notfound">
+            <div class="cmr-notfound-icon">🔍</div>
+            <p style="font-size:14px;color:var(--ds-text-soft);">Médico no encontrado.</p>
+            <a href="{{ url_for('consulta_medico') }}" class="cmr-back-link">← Buscar otro</a>
+        </div>
+    </div>
+    {% else %}
+
+    {# Selector rango #}
+    <div class="cmr-rango">
+        <span>📅 Últimos <b>{{ info.n_days }}</b> días</span>
+        <div class="cmr-rango-btns">
+            <a href="?dias=30"  class="cmr-rango-btn {% if info.n_days == 30 %}active{% endif %}">30d</a>
+            <a href="?dias=90"  class="cmr-rango-btn {% if info.n_days == 90 %}active{% endif %}">90d</a>
+            <a href="?dias=180" class="cmr-rango-btn {% if info.n_days == 180 %}active{% endif %}">180d</a>
+            <a href="?dias=365" class="cmr-rango-btn {% if info.n_days == 365 %}active{% endif %}">1a</a>
+        </div>
+    </div>
+
+    {# KPIs #}
+    <div class="cmr-card">
+        <div class="cmr-card-title">Indicadores</div>
+        <div class="cmr-kpis">
+            <div class="cmr-kpi">
+                <div class="cmr-kpi-label">Unidades</div>
+                <div class="cmr-kpi-value">{{ '%.0f' | format(info.kpis.unidades) }}</div>
+            </div>
+            <div class="cmr-kpi">
+                <div class="cmr-kpi-label">Recetas</div>
+                <div class="cmr-kpi-value">{{ info.kpis.ops }}</div>
+            </div>
+            <div class="cmr-kpi">
+                <div class="cmr-kpi-label">Pacientes</div>
+                <div class="cmr-kpi-value">{{ info.kpis.clientes }}</div>
+            </div>
+            <div class="cmr-kpi">
+                <div class="cmr-kpi-label">Importe</div>
+                <div class="cmr-kpi-value" style="font-size:16px;">$ {{ '%.0f' | format(info.kpis.importe) }}</div>
+            </div>
+        </div>
+    </div>
+
+    {# Top productos recetados #}
+    <div class="cmr-card">
+        <div class="cmr-card-title">Top productos recetados</div>
+        {% if info.top_productos %}
+        <div class="cmr-top">
+            {% for p in info.top_productos %}
+            <a href="{{ url_for('consulta_producto_detalle', ean=p.observer_id) if p.observer_id else '#' }}"
+               class="cmr-top-row" style="text-decoration:none;">
+                <span class="cmr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
+                <span class="cmr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="cmr-empty">Sin recetas en este rango.</div>
+        {% endif %}
+    </div>
+
+    {# Top OS #}
+    {% if info.top_os %}
+    <div class="cmr-card">
+        <div class="cmr-card-title">Top obras sociales</div>
+        <div class="cmr-top">
+            {% for o in info.top_os %}
+            <div class="cmr-top-row">
+                <span class="cmr-top-name">{{ o.nombre }}</span>
+                <span class="cmr-top-uds">{{ '%.0f' | format(o.unidades) }}u</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# Chart histórico 12 meses #}
+    <div class="cmr-card">
+        <div class="cmr-card-title">Evolución 12 meses</div>
+        {% if info.serie %}
+        <div class="cmr-chart-wrap">
+            <canvas id="cmr-chart"></canvas>
+        </div>
+        {% else %}
+        <div class="cmr-empty">Sin historial.</div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if info.encontrado and info.serie %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const serie = {{ info.serie | tojson }};
+    const labels = serie.map(s => `${String(s.mes).padStart(2,'0')}/${String(s.anio).slice(2)}`);
+    const unidades = serie.map(s => s.unidades);
+    new Chart(document.getElementById('cmr-chart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Unidades',
+                data: unidades,
+                backgroundColor: 'rgba(95,230,188,.7)',
+                borderColor: 'rgba(45,180,140,1)',
+                borderWidth: 1,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.1)' } },
+                x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+            }
+        }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}
