@@ -49,7 +49,7 @@
                 <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">
                     Cubrir pedido por <span id="n-days-display" class="text-brand">{{ n_days_default }}</span> días
                 </label>
-                <input type="range" name="n_days" min="7" max="120" value="{{ n_days_default }}"
+                <input type="range" id="n-days" name="n_days" min="7" max="120" value="{{ n_days_default }}"
                        oninput="document.getElementById('n-days-display').textContent = this.value"
                        class="w-full">
                 <div class="flex justify-between text-[10px] text-[#999] mt-1">
@@ -59,6 +59,15 @@
                     ¿Cuántos días querés que cubra el stock que vas a comprar? El sistema lo calcula
                     multiplicando esto por el promedio diario de ventas.
                 </p>
+            </div>
+
+            <div>
+                <label class="text-xs font-semibold text-[#6f6f6f] uppercase tracking-wide block mb-1">
+                    Nombre del análisis (opcional)
+                </label>
+                <input type="text" name="periodo" id="input-periodo"
+                       placeholder="DD-MM -> NN días (se autocompleta)"
+                       class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand">
             </div>
 
             <details class="text-xs text-[#6f6f6f]">
@@ -94,4 +103,24 @@
         </form>
     </div>
 </div>
+
+<script>
+// Prellenar "Nombre del análisis" con `DD-MM -> NN días`. Reajusta cuando se
+// mueve el slider, salvo que el user haya editado a mano.
+(function _autoPeriodo() {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const input = document.getElementById('input-periodo');
+    const nDays = document.getElementById('n-days');
+    if (!input || !nDays) return;
+    const buildPropuesta = () => `${dd}-${mm} -> ${nDays.value} días`;
+    let esPropuesta = true;
+    input.value = buildPropuesta();
+    input.addEventListener('input', () => { esPropuesta = false; });
+    nDays.addEventListener('input', () => {
+        if (esPropuesta) input.value = buildPropuesta();
+    });
+})();
+</script>
 {% endblock %}

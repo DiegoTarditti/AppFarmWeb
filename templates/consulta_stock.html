@@ -15,6 +15,7 @@
 .cs-banner.ok { background: rgba(95,230,188,.12); color: var(--ds-mint); border: 1px solid rgba(95,230,188,.3); }
 .cs-banner.warn { background: rgba(245,158,11,.12); color: var(--ds-warn); border: 1px solid rgba(245,158,11,.35); }
 .cs-banner.err { background: rgba(239,68,68,.12); color: var(--ds-danger); border: 1px solid rgba(239,68,68,.35); }
+.cs-banner.info { background: rgba(56,189,248,.10); color: var(--ds-info); border: 1px solid rgba(56,189,248,.3); }
 .cs-banner-actions { margin-top: 10px; }
 
 .cs-label { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
@@ -22,8 +23,8 @@
             margin-bottom: 6px; display: block; }
 .cs-group { margin-bottom: 18px; }
 
-/* Tipo: 3 botones tipo "segmented control" grandes para touch. */
-.cs-tipo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+/* Tipo: 2 botones tipo "segmented control" grandes para touch (Prov se removió: sin flujo). */
+.cs-tipo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .cs-tipo-btn { padding: 14px 8px; text-align: center; font-size: 14px; font-weight: 600;
                border: 1.5px solid var(--ds-line-2); border-radius: 12px;
                background: var(--ds-surface); color: var(--ds-text-soft);
@@ -59,6 +60,25 @@ input[type=radio]:checked + .cs-tipo-btn {
              color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
              text-decoration: none; }
 
+/* Slider mobile-first: track ancho, thumb grande para touch. */
+.cs-range { width: 100%; -webkit-appearance: none; appearance: none;
+            height: 32px; background: transparent; cursor: pointer; }
+.cs-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
+            background: var(--ds-line-2); }
+.cs-range::-moz-range-track { height: 6px; border-radius: 3px;
+            background: var(--ds-line-2); }
+.cs-range::-webkit-slider-thumb { -webkit-appearance: none;
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--ds-mint); border: 3px solid var(--ds-mint-deep);
+            margin-top: -10px; box-shadow: 0 2px 6px rgba(95,230,188,.4); }
+.cs-range::-moz-range-thumb {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--ds-mint); border: 3px solid var(--ds-mint-deep);
+            box-shadow: 0 2px 6px rgba(95,230,188,.4); }
+.cs-range-marks { display: flex; justify-content: space-between;
+                  font-size: 10px; color: var(--ds-text-mute); margin-top: 2px; }
+.cs-range-value { color: var(--ds-mint); font-weight: 700; }
+
 /* Override partner_selector para mobile: input grande tipo cs-input. */
 .partner-selector input[type=text] {
     background: var(--ds-surface-2) !important;
@@ -84,7 +104,7 @@ input[type=radio]:checked + .cs-tipo-btn {
     {% endfor %}
     {% endwith %}
 
-    {# Banner de estado de ventas — replicado del wizard original #}
+    {# Banner de estado de ventas — granularidad fina: al día / reciente / vieja / nunca. #}
     {% if estado_ventas.estado == 'nunca' %}
     <div class="cs-banner err">
         <p class="font-semibold">⚠ Sin estadísticas de ventas</p>
@@ -104,8 +124,12 @@ input[type=radio]:checked + .cs-tipo-btn {
         <p class="font-semibold">⏰ Estadísticas desactualizadas</p>
         <p style="margin-top:4px;font-size:12px;opacity:.9;">{{ estado_ventas.mensaje }}</p>
     </div>
+    {% elif estado_ventas.dias is defined and estado_ventas.dias > 1 %}
+    <div class="cs-banner info">
+        ℹ Estadísticas de hace {{ estado_ventas.dias }} días.
+    </div>
     {% else %}
-    <div class="cs-banner ok">✓ Estadísticas al día · hace {{ estado_ventas.dias }} día{{ 's' if estado_ventas.dias != 1 }}.</div>
+    <div class="cs-banner ok">✓ Estadísticas al día.</div>
     {% endif %}
 
     <form method="post" action="{{ url_for('consulta_stock_iniciar') }}" id="form-consulta">
@@ -114,15 +138,11 @@ input[type=radio]:checked + .cs-tipo-btn {
             <div class="cs-tipo-grid">
                 <label>
                     <input type="radio" name="tipo" value="laboratorio" required class="hidden" onchange="onTipoChange()">
-                    <div class="cs-tipo-btn">🧪 Lab</div>
+                    <div class="cs-tipo-btn">🧪 Laboratorio</div>
                 </label>
                 <label>
                     <input type="radio" name="tipo" value="drogueria" required class="hidden" onchange="onTipoChange()">
-                    <div class="cs-tipo-btn">🏭 Drog</div>
-                </label>
-                <label>
-                    <input type="radio" name="tipo" value="proveedor" required class="hidden" onchange="onTipoChange()">
-                    <div class="cs-tipo-btn">📦 Prov</div>
+                    <div class="cs-tipo-btn">🏭 Droguería</div>
                 </label>
             </div>
         </div>
@@ -139,21 +159,27 @@ input[type=radio]:checked + .cs-tipo-btn {
                                 placeholder='Tocá para buscar…') }}
         </div>
 
-        <div id="wrap-prov" class="cs-group hidden">
-            <label class="cs-label">Proveedor</label>
-            {{ partner_selector(tipo='proveedor', name='partner_id',
-                                placeholder='Tocá para buscar…') }}
+        <div class="cs-group">
+            <label class="cs-label">Nombre del análisis (opcional)</label>
+            <input type="text" name="periodo" id="input-periodo" class="cs-input"
+                   placeholder="DD-MM (se autocompleta con hoy)">
         </div>
 
         <div class="cs-group">
-            <label class="cs-label">Periodo / etiqueta (opcional)</label>
-            <input type="text" name="periodo" class="cs-input"
-                   placeholder="ej. Abril 2026">
+            <label class="cs-label" for="n-days">
+                Cubrir por <span id="n-days-display" class="cs-range-value">35</span> días
+            </label>
+            <input type="range" id="n-days" name="n_days" min="7" max="120" value="35" step="1"
+                   class="cs-range"
+                   oninput="document.getElementById('n-days-display').textContent = this.value">
+            <div class="cs-range-marks">
+                <span>7</span><span>30</span><span>60</span><span>90</span><span>120</span>
+            </div>
         </div>
 
         <div class="cs-cta-bar">
             <button type="submit" id="btn-submit" class="cs-cta" disabled>
-                Consultar stock
+                <span id="btn-label">Consultar stock</span>
             </button>
             <a href="{{ url_for('index') }}" class="cs-cancel">Cancelar</a>
         </div>
@@ -165,7 +191,6 @@ function onTipoChange() {
     const tipo = document.querySelector('input[name="tipo"]:checked').value;
     document.getElementById('wrap-lab').classList.toggle('hidden', tipo !== 'laboratorio');
     document.getElementById('wrap-drog').classList.toggle('hidden', tipo !== 'drogueria');
-    document.getElementById('wrap-prov').classList.toggle('hidden', tipo !== 'proveedor');
 
     // Solo el selector visible manda partner_id — los otros deben tener su input deshabilitado.
     document.querySelectorAll('.partner-selector').forEach(ps => {
@@ -176,7 +201,6 @@ function onTipoChange() {
             i.required = enabled;
         });
     });
-    // Habilitar CTA solo si hay tipo + partner.
     updateCtaState();
 }
 
@@ -184,18 +208,44 @@ function updateCtaState() {
     const tipo = document.querySelector('input[name="tipo"]:checked');
     const btn = document.getElementById('btn-submit');
     if (!tipo) { btn.disabled = true; return; }
-    const wrap = document.getElementById('wrap-' + (
-        tipo.value === 'laboratorio' ? 'lab' :
-        tipo.value === 'drogueria' ? 'drog' : 'prov'));
+    const wrap = document.getElementById('wrap-' + (tipo.value === 'laboratorio' ? 'lab' : 'drog'));
     const idInput = wrap.querySelector('input[name="partner_id"]');
     btn.disabled = !idInput || !idInput.value;
 }
 
-// Observar cambios en el partner_id (lo setea PartnerSel async).
+// Cambio explícito de tipo (radio).
 document.addEventListener('change', e => {
-    if (e.target.matches('input[name="partner_id"], input[name="tipo"]')) updateCtaState();
+    if (e.target.matches('input[name="tipo"]')) updateCtaState();
 });
-// Y polling chiquito (PartnerSel setea via JS sin disparar change event).
-setInterval(updateCtaState, 400);
+
+// CustomEvents del partner_selector (mejor que polling).
+document.addEventListener('partner-pick', updateCtaState);
+document.addEventListener('partner-clear', updateCtaState);
+
+// Loading state al submit: cambiar texto + disabled para evitar doble click.
+document.getElementById('form-consulta').addEventListener('submit', () => {
+    const btn = document.getElementById('btn-submit');
+    document.getElementById('btn-label').textContent = '⏳ Analizando…';
+    btn.disabled = true;
+});
+
+// Prellenar "Nombre del análisis" con `DD-MM -> NN días`. Se reajusta cuando
+// se mueve el slider, salvo que el user haya editado el campo a mano.
+(function _autoPeriodo() {
+    const d = new Date();
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const input = document.getElementById('input-periodo');
+    const nDays = document.getElementById('n-days');
+    const buildPropuesta = () => `${dd}-${mm} -> ${nDays.value} días`;
+
+    // Estado: el campo "es propuesta automática" hasta que el user lo cambie.
+    let esPropuesta = true;
+    input.value = buildPropuesta();
+    input.addEventListener('input', () => { esPropuesta = false; });
+    nDays.addEventListener('input', () => {
+        if (esPropuesta) input.value = buildPropuesta();
+    });
+})();
 </script>
 {% endblock %}

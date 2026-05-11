@@ -1009,7 +1009,10 @@ def init_app(app):
         )
 
         uid = str(uuid.uuid4())
-        periodo_str = f'{start_m:02d}/{start_y} - {end_m:02d}/{anio}'
+        # Si el user ingresó/aceptó la propuesta DD-MM -> NN días en el form,
+        # usar eso; sino, el periodo autogenerado MM/YYYY - MM/YYYY.
+        periodo_user = (request.form.get('periodo') or '').strip()
+        periodo_str = periodo_user or f'{start_m:02d}/{start_y} - {end_m:02d}/{anio}'
         data = {
             'uid': uid,
             'farmacia': current_user.nombre_completo or 'Farmacia',
