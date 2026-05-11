@@ -116,6 +116,18 @@ input[type=radio]:checked + .cs-tipo-btn {
     {% endfor %}
     {% endwith %}
 
+    {# Botón sync stock: dispara la sync con ObServer (encola comando en
+       panel_comandos). Antes vivía en el header de la pantalla resultado
+       pero molestaba la botonera; tiene más sentido acá (entry), antes de
+       consultar. #}
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+        <button type="button" id="btn-sync-stock"
+                class="cs-cta--alt" style="margin:0;width:auto;padding:8px 14px;font-size:13px;"
+                title="Sincroniza stock con ObServer. La PC de la farmacia lo levanta en ~30s.">
+            🔄 Sincronizar stock con ObServer
+        </button>
+    </div>
+
     {# Banner de estado de ventas — granularidad fina: al día / reciente / vieja / nunca. #}
     {% if estado_ventas.estado == 'nunca' %}
     <div class="cs-banner err">
@@ -194,10 +206,13 @@ input[type=radio]:checked + .cs-tipo-btn {
                 <span id="btn-label">Consultar stock</span>
             </button>
 
-            {# Atajo a consulta de un medicamento por troquel — sin pasar
-               por lab/drog. Fuera del <form> para no ser submit. #}
+            {# Atajos a otras consultas mobile — sin pasar por lab/drog.
+               Fuera del <form> para no ser submit. #}
             <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">
                 🔍 Consultar producto
+            </a>
+            <a href="{{ url_for('consulta_medico') }}" class="cs-cta cs-cta--alt">
+                👨‍⚕️ Consultar médico
             </a>
 
             <a href="{{ url_for('index') }}" class="cs-cancel">Cancelar</a>
@@ -266,5 +281,29 @@ document.getElementById('form-consulta').addEventListener('submit', () => {
         if (esPropuesta) input.value = buildPropuesta();
     });
 })();
+
+// Sync stock con ObServer — encola comando en panel_comandos de Render.
+// La PC de la farmacia (DockerPanel) lo levanta en ~30s y procesa 1-2 min.
+document.getElementById('btn-sync-stock').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sync-stock');
+    if (!confirm('¿Sincronizar stock con ObServer?\n\nLa PC de la farmacia levanta el comando en ~30s y tarda 1-2 min en completar.')) return;
+    const original = btn.textContent;
+    btn.textContent = '⏳ Encolando…';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/consulta-stock/sync-stock', {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'sync falló');
+        alert('✅ Sync encolado (#' + d.id + ').\n\n' + d.mensaje);
+        btn.textContent = '✓ Encolado';
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 60000);
+    } catch (err) {
+        alert('❌ Error: ' + err.message);
+        btn.textContent = original;
+        btn.disabled = false;
+    }
+});
 </script>
 {% endblock %}

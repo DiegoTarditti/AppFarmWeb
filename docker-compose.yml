@@ -61,6 +61,10 @@ services:
       OBSERVER_ID_FARMACIA: ${OBSERVER_ID_FARMACIA:-10525}
       # External URL del Postgres de Render. Usada por el job que replica obs_*.
       RENDER_DATABASE_URL: ${RENDER_DATABASE_URL:-}
+      # Sync/pull ofertas local ↔ Render. PANEL_REMOTO_TOKEN es el mismo
+      # que ya usa el DockerPanel para hablar con Render (X-Panel-Token).
+      RENDER_BASE_URL: ${RENDER_BASE_URL:-}
+      PANEL_REMOTO_TOKEN: ${PANEL_REMOTO_TOKEN:-}
     ports:
       - "${WEB_PORT:-5000}:5000"
     # Si no tenés .env, el default es 5000.

@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}Consultar médico — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cm-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
+.cm-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
+.cm-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.cm-input { width: 100%; background: var(--ds-surface-2);
+            border: 1.5px solid var(--ds-line); border-radius: 12px;
+            padding: 14px 14px; font-size: 16px; color: var(--ds-text);
+            font-family: inherit; }
+.cm-input:focus { outline: none; border-color: var(--ds-mint);
+                  box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+
+.cm-results { margin-top: 10px; background: var(--ds-surface);
+              border: 1px solid var(--ds-line); border-radius: 12px;
+              overflow: hidden; }
+.cm-result-item { padding: 12px 14px; border-bottom: 1px solid var(--ds-line);
+                  cursor: pointer; text-decoration: none; display: block;
+                  color: var(--ds-text); transition: background .15s; }
+.cm-result-item:last-child { border-bottom: none; }
+.cm-result-item:active { background: rgba(95,230,188,.08); }
+.cm-result-nombre { font-size: 14px; font-weight: 600; }
+.cm-result-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px;
+                  font-family: ui-monospace, Consolas, monospace; }
+
+.cm-loading { text-align: center; padding: 12px; color: var(--ds-text-mute); font-size: 12px; }
+.cm-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 13px; }
+
+.cm-cancel { display: block; width: 100%; padding: 12px; text-align: center;
+             color: var(--ds-text-mute); font-size: 13px; margin-top: 16px;
+             text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cm-screen">
+    <h1 class="cm-h1">👨‍⚕️ Consultar médico</h1>
+    <p class="cm-sub">Buscá por nombre. Mínimo 2 letras.</p>
+
+    <input type="text" id="cm-q" class="cm-input"
+           placeholder="Nombre del médico..."
+           autocomplete="off" autofocus>
+
+    <div id="cm-results"></div>
+
+    <a href="{{ url_for('index') }}" class="cm-cancel">Cancelar</a>
+</div>
+
+<script>
+(function () {
+    const input = document.getElementById('cm-q');
+    const box = document.getElementById('cm-results');
+    let debounceId = null;
+    let lastQ = '';
+
+    function render(items) {
+        if (!items.length) {
+            box.innerHTML = '<div class="cm-empty">Sin resultados.</div>';
+            return;
+        }
+        box.innerHTML = '<div class="cm-results">' + items.map(m =>
+            `<a href="/consulta-medico/${m.id}" class="cm-result-item">
+                <div class="cm-result-nombre">${escapeHtml(m.nombre)}</div>
+                <div class="cm-result-meta">
+                    ${m.matricula ? 'MP ' + escapeHtml(m.matricula) : ''}
+                    ${m.matricula && m.cuit ? ' · ' : ''}
+                    ${m.cuit ? 'CUIT ' + escapeHtml(m.cuit) : ''}
+                </div>
+            </a>`
+        ).join('') + '</div>';
+    }
+
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+    }
+
+    async function buscar(q) {
+        if (q.length < 2) { box.innerHTML = ''; return; }
+        if (q === lastQ) return;
+        lastQ = q;
+        box.innerHTML = '<div class="cm-loading">⏳ Buscando…</div>';
+        try {
+            const r = await fetch(`/api/consulta-medico/buscar?q=${encodeURIComponent(q)}`);
+            const d = await r.json();
+            if (q !== input.value.trim()) return;  // input cambió mientras esperaba
+            render(d.items || []);
+        } catch (e) {
+            box.innerHTML = '<div class="cm-empty">Error: ' + e.message + '</div>';
+        }
+    }
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceId);
+        const q = input.value.trim();
+        debounceId = setTimeout(() => buscar(q), 250);
+    });
+})();
+</script>
+{% endblock %}
