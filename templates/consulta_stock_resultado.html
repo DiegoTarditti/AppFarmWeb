@@ -118,6 +118,16 @@ body.csr-tabla-mode #csr-tabla { display: block; }
 #csr-tabla tbody tr.marked td { background: rgba(95,230,188,.08); }
 #csr-tabla tbody tr.marked td:first-child { background: rgba(95,230,188,.12); }
 #csr-tabla tbody tr.hidden-row { display: none; }
+#csr-tabla tbody tr.csr-tabla-row { cursor: pointer; }
+#csr-tabla tbody tr.csr-tabla-row:hover td { background: rgba(95,230,188,.04); }
+#csr-tabla tbody tr.csr-tabla-row.expanded td { background: rgba(95,230,188,.10); }
+#csr-tabla tbody tr.csr-tabla-row.expanded td:first-child { background: rgba(95,230,188,.14); }
+#csr-tabla tbody tr.csr-tabla-expand-row td { padding: 0; background: var(--ds-bg); }
+#csr-tabla tbody tr.csr-tabla-expand-row .csr-tabla-expand-wrap {
+    padding: 12px; background: var(--ds-bg);
+}
+#csr-tabla tbody tr.csr-tabla-expand-row .csr-chart { display: block; height: 220px; }
+#csr-tabla tbody tr.csr-tabla-expand-row .csr-kpis { display: grid; }
 #csr-tabla .csr-tabla-name { font-weight: 600; line-height: 1.2; }
 #csr-tabla .csr-tabla-ean { font-size: 9px; color: var(--ds-text-mute);
                             font-family: ui-monospace, Consolas, monospace; }
@@ -418,11 +428,12 @@ body.csr-tabla-mode #csr-tabla { display: block; }
             <tbody>
             {% for p in products %}
                 {% set cov = p.dias_cobertura %}
-                <tr data-idx="{{ loop.index0 }}"
+                <tr class="csr-tabla-row" data-idx="{{ loop.index0 }}"
                     data-name="{{ p.nombre | lower }} {{ p.codigo_barra }}"
                     data-sugerido="{{ 'true' if (p.order_qty or 0) > 0 else 'false' }}"
                     data-bajo="{{ 'true' if (cov is not none and cov <= 15) else 'false' }}"
-                    data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}">
+                    data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}"
+                    data-has-ventas="{{ 'true' if p.ventas else 'false' }}">
                     <td>
                         <div class="csr-tabla-name">{{ p.nombre | truncate(34) }}</div>
                         <div class="csr-tabla-ean">{{ p.codigo_barra }}</div>
@@ -682,6 +693,66 @@ function aplicarSugTabla(btn, sug) {
     input.value = sug;
     onQtyChangeTabla(input);
 }
+
+// Click en fila de tabla → toggle sub-fila con chart Chart.js. Excluye
+// clicks en input/button (qty input, sugerido) para no romper edición.
+document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
+    tr.addEventListener('click', e => {
+        if (e.target.matches('input, button, .csr-tabla-sug')) return;
+        if (tr.dataset.hasVentas !== 'true') return;
+        const idx = parseInt(tr.dataset.idx, 10);
+        const yaExpandida = tr.classList.contains('expanded');
+        // Cerrar otra fila expandida (solo una a la vez para no saturar).
+        document.querySelectorAll('#csr-tabla tbody tr.expanded').forEach(o => {
+            if (o !== tr) {
+                o.classList.remove('expanded');
+                const next = o.nextElementSibling;
+                if (next && next.classList.contains('csr-tabla-expand-row')) next.remove();
+            }
+        });
+        if (yaExpandida) {
+            // Colapsar
+            tr.classList.remove('expanded');
+            const next = tr.nextElementSibling;
+            if (next && next.classList.contains('csr-tabla-expand-row')) next.remove();
+            return;
+        }
+        // Expandir: insertar sub-fila con chart + KPIs.
+        tr.classList.add('expanded');
+        const data = CHART_DATA[idx];
+        const extra = document.createElement('tr');
+        extra.className = 'csr-tabla-expand-row';
+        const colCount = tr.querySelectorAll('td').length;
+        const kpisHtml = `
+            <div class="csr-kpis" style="margin-top:8px;border-top:1px dashed var(--ds-line);padding-top:8px;">
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Rotación</div>
+                    <div class="csr-kpi-val">${tr.querySelector('td:nth-child(3) .csr-tabla-num').textContent.trim()}</div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Tendencia</div>
+                    <div class="csr-kpi-val">${data && data.slope !== undefined ?
+                        ((data.slope > 0 ? '↑' : (data.slope < 0 ? '↓' : '→')) + ' ' + (data.slope || 0).toFixed(1) + '/m')
+                        : '—'}</div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Mín.</div>
+                    <div class="csr-kpi-val">${data ? (data.minimo || 0) : '—'}</div>
+                </div>
+            </div>`;
+        extra.innerHTML = `<td colspan="${colCount}">
+            <div class="csr-tabla-expand-wrap">
+                <div class="csr-chart" data-chart-idx="${idx}">
+                    <div class="csr-chart-placeholder">📊 cargando…</div>
+                </div>
+                ${kpisHtml}
+            </div>
+        </td>`;
+        tr.parentNode.insertBefore(extra, tr.nextSibling);
+        // Render chart con delay para que CSS aplique medidas.
+        setTimeout(() => renderChart(extra.querySelector('.csr-chart'), idx), 30);
+    });
+});
 
 // Compartir resumen por WhatsApp (o share API del SO)
 document.getElementById('btn-share').addEventListener('click', () => {
