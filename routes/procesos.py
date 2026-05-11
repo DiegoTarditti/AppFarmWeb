@@ -400,13 +400,20 @@ def init_app(app):
         if not laboratorio:
             return jsonify({'ok': False, 'error': 'sin laboratorio'}), 400
 
+        from datetime import date as _date_d
+        fecha_str = _date_d.today().strftime('%Y-%m-%d')
         with database.get_db() as session:
             pedido = Pedido(
                 laboratorio=laboratorio,
                 farmacia=getattr(current_user, 'nombre_completo', None) or 'Farmacia',
-                periodo=f'Consulta móvil · {uid[:8]}',
+                # Formato pedido: "📱 móvil · {prov/lab} · YYYY-MM-DD"
+                # Aparece en /orders junto a los demás pedidos. El emoji 📱
+                # lo distingue visualmente como creado desde móvil.
+                periodo=f'📱 móvil · {laboratorio} · {fecha_str}',
                 n_days=35,
+                canal='laboratorio',
                 estado='PENDIENTE',
+                analizado_en=now_ar(),
             )
             session.add(pedido)
             session.flush()
