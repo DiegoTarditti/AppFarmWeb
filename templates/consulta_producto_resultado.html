@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ info.descripcion or info.ean }} — Consulta{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cpr-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 80px; }
+.cpr-header { position: sticky; top: 0; z-index: 20;
+              background: var(--ds-bg); padding: 8px 0; border-bottom: 1px solid var(--ds-line);
+              display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.cpr-back { width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--ds-surface); border: 1px solid var(--ds-line);
+            border-radius: 8px; color: var(--ds-text); cursor: pointer;
+            font-size: 18px; text-decoration: none; }
+.cpr-back:active { transform: scale(.92); background: var(--ds-mint); color: #0a3a2a; }
+.cpr-title { flex: 1; min-width: 0; }
+.cpr-h1 { font-size: 15px; font-weight: 700; color: var(--ds-text); line-height: 1.2;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cpr-ean { font-size: 11px; color: var(--ds-text-mute);
+           font-family: ui-monospace, Consolas, monospace; margin-top: 1px; }
+
+.cpr-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+            border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.cpr-card-title { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+                  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+/* KPIs grid 2x2 mobile, 4 cols desktop */
+.cpr-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 560px) { .cpr-kpis { grid-template-columns: repeat(4, 1fr); } }
+.cpr-kpi { background: var(--ds-surface-2); border-radius: 10px; padding: 10px;
+           border: 1px solid var(--ds-line); }
+.cpr-kpi-label { font-size: 10px; color: var(--ds-text-mute); text-transform: uppercase;
+                 letter-spacing: .06em; margin-bottom: 4px; }
+.cpr-kpi-value { font-size: 22px; font-weight: 700; color: var(--ds-text); line-height: 1; }
+.cpr-kpi-sub { font-size: 10px; color: var(--ds-text-mute); margin-top: 2px; }
+.cpr-kpi-value.mint { color: var(--ds-mint); }
+.cpr-kpi-value.warn { color: var(--ds-warn); }
+.cpr-kpi-value.danger { color: var(--ds-danger); }
+.cpr-kpi-value.info { color: var(--ds-info); }
+
+.cpr-meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px;
+                 font-size: 12px; }
+.cpr-meta-label { color: var(--ds-text-mute); font-size: 10px;
+                  text-transform: uppercase; letter-spacing: .06em; }
+.cpr-meta-value { color: var(--ds-text); font-weight: 600; margin-top: 1px; }
+
+.cpr-chart-wrap { position: relative; height: 240px; }
+
+.cpr-notfound { text-align: center; padding: 32px 16px; }
+.cpr-notfound-icon { font-size: 48px; margin-bottom: 8px; }
+.cpr-notfound-msg { font-size: 14px; color: var(--ds-text-soft); margin-bottom: 16px; }
+.cpr-notfound-ean { font-family: ui-monospace, Consolas, monospace; font-size: 13px;
+                    color: var(--ds-text); padding: 4px 10px; background: var(--ds-surface-2);
+                    border-radius: 6px; display: inline-block; }
+
+.cpr-back-link { display: inline-block; padding: 12px 24px;
+                 background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+                 color: #0a3a2a; font-size: 14px; font-weight: 700;
+                 border-radius: 10px; text-decoration: none; margin-top: 16px; }
+
+.cpr-loading { text-align: center; padding: 20px; color: var(--ds-text-mute); font-size: 12px; }
+.cpr-error-chart { text-align: center; padding: 20px; color: var(--ds-text-mute); font-size: 12px; }
+
+.cpr-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+             font-size: 10px; font-weight: 700; text-transform: uppercase;
+             letter-spacing: .04em; }
+.cpr-badge.baja { background: rgba(239,68,68,.15); color: var(--ds-danger); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cpr-screen">
+    <div class="cpr-header">
+        <a href="{{ url_for('consulta_producto') }}" class="cpr-back" title="Volver a buscar">←</a>
+        <div class="cpr-title">
+            <div class="cpr-h1">
+                {% if info.encontrado %}
+                    {{ info.descripcion or 'Sin descripción' }}
+                    {% if info.fecha_baja %}<span class="cpr-badge baja">Baja</span>{% endif %}
+                {% else %}
+                    No encontrado
+                {% endif %}
+            </div>
+            <div class="cpr-ean">{{ info.ean }}</div>
+        </div>
+    </div>
+
+    {% if not info.encontrado %}
+    <div class="cpr-card">
+        <div class="cpr-notfound">
+            <div class="cpr-notfound-icon">🔍</div>
+            <p class="cpr-notfound-msg">
+                No encontramos ningún producto con código <span class="cpr-notfound-ean">{{ info.ean }}</span>.
+            </p>
+            <p class="cpr-notfound-msg">Verificá el código o intentá de nuevo.</p>
+            <a href="{{ url_for('consulta_producto') }}" class="cpr-back-link">← Buscar otro</a>
+        </div>
+    </div>
+    {% else %}
+
+    <!-- KPIs -->
+    <div class="cpr-card">
+        <div class="cpr-card-title">Indicadores</div>
+        <div class="cpr-kpis">
+            <div class="cpr-kpi">
+                <div class="cpr-kpi-label">Stock</div>
+                <div class="cpr-kpi-value" id="kpi-stock">—</div>
+                <div class="cpr-kpi-sub" id="kpi-stock-sub"></div>
+            </div>
+            <div class="cpr-kpi">
+                <div class="cpr-kpi-label">Mínimo</div>
+                <div class="cpr-kpi-value" id="kpi-minimo">—</div>
+            </div>
+            <div class="cpr-kpi">
+                <div class="cpr-kpi-label">Prom/mes</div>
+                <div class="cpr-kpi-value mint" id="kpi-avg">—</div>
+            </div>
+            <div class="cpr-kpi">
+                <div class="cpr-kpi-label">Cobertura</div>
+                <div class="cpr-kpi-value" id="kpi-cob">—</div>
+                <div class="cpr-kpi-sub" id="kpi-cob-sub"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Datos del producto -->
+    <div class="cpr-card">
+        <div class="cpr-card-title">Producto</div>
+        <div class="cpr-meta-grid">
+            <div>
+                <div class="cpr-meta-label">Laboratorio</div>
+                <div class="cpr-meta-value">{{ info.laboratorio or '—' }}</div>
+            </div>
+            <div>
+                <div class="cpr-meta-label">Monodroga</div>
+                <div class="cpr-meta-value">{{ info.monodroga or '—' }}</div>
+            </div>
+            <div>
+                <div class="cpr-meta-label">Presentación</div>
+                <div class="cpr-meta-value">{{ info.presentacion or '—' }}</div>
+            </div>
+            <div>
+                <div class="cpr-meta-label">PVP</div>
+                <div class="cpr-meta-value">
+                    {% if info.precio_pvp %}${{ '{:,.2f}'.format(info.precio_pvp).replace(',', 'X').replace('.', ',').replace('X', '.') }}{% else %}—{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="cpr-meta-label">Rotación</div>
+                <div class="cpr-meta-value" id="meta-rotacion">—</div>
+            </div>
+            <div>
+                <div class="cpr-meta-label">Tipo</div>
+                <div class="cpr-meta-value" id="meta-tipo">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gráfico histórico -->
+    <div class="cpr-card">
+        <div class="cpr-card-title">Ventas últimos 12 meses</div>
+        <div class="cpr-chart-wrap">
+            <canvas id="cpr-chart"></canvas>
+            <div class="cpr-loading" id="cpr-chart-loading">Cargando histórico…</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if info.encontrado %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(async function () {
+    const ean = {{ info.ean | tojson }};
+    const canvas = document.getElementById('cpr-chart');
+    const loading = document.getElementById('cpr-chart-loading');
+
+    function fmtNum(n) {
+        if (n == null || isNaN(n)) return '—';
+        return Math.round(n).toLocaleString('es-AR');
+    }
+
+    try {
+        const r = await fetch(`/api/product/${encodeURIComponent(ean)}/chart`);
+        const d = await r.json();
+        if (!d.ok) {
+            loading.textContent = 'Sin datos históricos para este producto.';
+            return;
+        }
+
+        // KPIs
+        document.getElementById('kpi-stock').textContent = fmtNum(d.stock);
+        document.getElementById('kpi-minimo').textContent = fmtNum(d.minimo);
+        document.getElementById('kpi-avg').textContent = fmtNum(d.avg_monthly);
+
+        // Cobertura: stock / (avg_monthly / 30)
+        let cob = null;
+        if (d.avg_monthly > 0) {
+            cob = (d.stock || 0) / (d.avg_monthly / 30);
+            const cobEl = document.getElementById('kpi-cob');
+            cobEl.textContent = Math.round(cob) + 'd';
+            if (cob < 7) cobEl.classList.add('danger');
+            else if (cob < 15) cobEl.classList.add('warn');
+            else if (cob > 90) cobEl.classList.add('info');
+            else cobEl.classList.add('mint');
+        } else {
+            document.getElementById('kpi-cob').textContent = '—';
+        }
+
+        // Stock vs mínimo (badge en sub)
+        if (d.minimo > 0 && d.stock != null) {
+            const ratio = d.stock / d.minimo;
+            const sub = document.getElementById('kpi-stock-sub');
+            if (ratio < 1) {
+                sub.textContent = '⚠ debajo mínimo';
+                document.getElementById('kpi-stock').classList.add('danger');
+            } else if (ratio < 1.5) {
+                sub.textContent = 'cerca del mínimo';
+                document.getElementById('kpi-stock').classList.add('warn');
+            }
+        }
+
+        document.getElementById('meta-rotacion').textContent = d.rotacion || '—';
+        document.getElementById('meta-tipo').textContent = d.tipo || '—';
+
+        // Chart histórico
+        const ventas = d.ventas || [];
+        if (!ventas.length) {
+            loading.textContent = 'Sin ventas registradas en los últimos 12 meses.';
+            return;
+        }
+        loading.style.display = 'none';
+
+        const labels = ventas.map(v => `${String(v.mes).padStart(2,'0')}/${String(v.anio).slice(2)}`);
+        const unidades = ventas.map(v => v.unidades);
+        new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Unidades',
+                    data: unidades,
+                    backgroundColor: 'rgba(95,230,188,.7)',
+                    borderColor: 'rgba(45,180,140,1)',
+                    borderWidth: 1,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.1)' } },
+                    x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+                }
+            }
+        });
+    } catch (e) {
+        loading.textContent = 'Error cargando datos: ' + e.message;
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}
