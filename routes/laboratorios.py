@@ -11,6 +11,7 @@ from flask_login import login_required
 
 import database
 from database import ExportTemplate, Laboratorio, OfertaMinimo, Producto
+from helpers import now_ar
 
 EXPORT_FIELDS = [
     ('ean',           'Código de Barra'),
@@ -556,6 +557,350 @@ def init_app(app):
                 ))
             session.commit()
             return jsonify({'ok': True, 'guardados': len(items)})
+
+    # ─── Sync local → Render ──────────────────────────────────────────────
+    #
+    # Flujo C: procesás ofertas en local con el wizard normal, validás
+    # contra tus EANs reales, y al final "empujás" el resultado limpio a
+    # Render con un click — sin re-correr el wizard ahí. Render recibe via
+    # `POST /api/ofertas/sync-from-local` (más abajo) protegido por token.
+    #
+    # Config:
+    #   Local (donde corre el push):
+    #     RENDER_BASE_URL=https://farmacia-web-rj1z.onrender.com
+    #     PANEL_REMOTO_TOKEN=<random-secret-largo>
+    #   Render (donde recibe):
+    #     PANEL_REMOTO_TOKEN=<el mismo>
+
+    @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/sync-render', methods=['POST'])
+    def lab_ofertas_minimo_sync_render(lab_id):
+        """Empuja las OfertaMinimo de este lab a Render via API."""
+        import requests
+        render_url = os.environ.get('RENDER_BASE_URL', '').rstrip('/')
+        token = os.environ.get('PANEL_REMOTO_TOKEN', '')
+        if not render_url or not token:
+            return jsonify({
+                'ok': False,
+                'error': 'Sync no configurado. Setear RENDER_BASE_URL y PANEL_REMOTO_TOKEN en env local.'
+            }), 400
+
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
+            rows = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).all()
+            if not rows:
+                return jsonify({'ok': False, 'error': 'No hay ofertas para sincronizar'}), 400
+            payload = {
+                'laboratorio_nombre': lab.nombre,
+                'ofertas': [{
+                    'ean':             r.ean,
+                    'codigo':          r.codigo,
+                    'descripcion':     r.descripcion,
+                    'unidades_minima': r.unidades_minima,
+                    'descuento_psl':   float(r.descuento_psl) if r.descuento_psl is not None else None,
+                    'rentabilidad':    float(r.rentabilidad)  if r.rentabilidad  is not None else None,
+                    'plazo_pago':      r.plazo_pago,
+                    'grupo_id':        r.grupo_id,
+                    'tipo_descuento':  r.tipo_descuento,
+                    'drogueria_id':    r.drogueria_id,  # cuidado: id local — Render hace lookup por nombre o lo ignora
+                    'vigencia_desde':  r.vigencia_desde.isoformat() if r.vigencia_desde else None,
+                    'vigencia_hasta':  r.vigencia_hasta.isoformat() if r.vigencia_hasta else None,
+                    'observacion':     r.observacion,
+                } for r in rows],
+            }
+
+        try:
+            r = requests.post(
+                f'{render_url}/api/ofertas/sync-from-local',
+                json=payload,
+                headers={'X-Panel-Token': token},
+                timeout=60,
+            )
+        except requests.exceptions.RequestException as e:
+            return jsonify({'ok': False, 'error': f'No pude conectar con Render: {e}'}), 502
+
+        if r.status_code != 200:
+            return jsonify({
+                'ok': False,
+                'error': f'Render devolvió {r.status_code}: {r.text[:300]}',
+            }), 502
+        return jsonify(r.json())
+
+    @app.route('/api/ofertas/sync-from-local', methods=['POST'])
+    def api_ofertas_sync_from_local():
+        """Recibe el payload del push local y upsertea las ofertas.
+
+        Validación: X-Panel-Token debe coincidir con env PANEL_REMOTO_TOKEN.
+        Upsert por (laboratorio_id, ean, drogueria_id, grupo_id):
+        si existe actualiza el resto, sino crea.
+        """
+        token_esperado = os.environ.get('PANEL_REMOTO_TOKEN', '')
+        if not token_esperado:
+            return jsonify({'ok': False, 'error': 'Sync deshabilitado en este server'}), 403
+        if request.headers.get('X-Panel-Token', '') != token_esperado:
+            return jsonify({'ok': False, 'error': 'Token inválido'}), 401
+
+        body = request.get_json(silent=True) or {}
+        lab_nombre = (body.get('laboratorio_nombre') or '').strip()
+        ofertas = body.get('ofertas') or []
+        if not lab_nombre or not ofertas:
+            return jsonify({'ok': False, 'error': 'Faltan laboratorio_nombre u ofertas'}), 400
+
+        from helpers import _normalizar_nombre_entidad
+        creadas = 0
+        actualizadas = 0
+        skip_sin_ean = 0
+        errores = []
+
+        with database.get_db() as session:
+            # Resolver laboratorio por nombre (normalizado). Si no existe, crearlo.
+            norm = _normalizar_nombre_entidad(lab_nombre)
+            lab = None
+            for c in session.query(Laboratorio).all():
+                if _normalizar_nombre_entidad(c.nombre) == norm:
+                    lab = c
+                    break
+            if lab is None:
+                lab = Laboratorio(nombre=lab_nombre, activo=True)
+                session.add(lab)
+                session.flush()
+
+            for o in ofertas:
+                ean = (o.get('ean') or '').strip()
+                if not ean:
+                    skip_sin_ean += 1
+                    continue
+                key = {
+                    'laboratorio_id': lab.id,
+                    'ean':            ean,
+                    'grupo_id':       o.get('grupo_id'),
+                    'drogueria_id':   o.get('drogueria_id'),
+                }
+                existente = session.query(OfertaMinimo).filter_by(**key).first()
+
+                # Fechas vienen como ISO string ('YYYY-MM-DD') o None.
+                vd = vh = None
+                try:
+                    if o.get('vigencia_desde'): vd = datetime.date.fromisoformat(o['vigencia_desde'])
+                    if o.get('vigencia_hasta'): vh = datetime.date.fromisoformat(o['vigencia_hasta'])
+                except (ValueError, TypeError) as e:
+                    errores.append(f'Fechas inválidas en EAN {ean}: {e}')
+
+                if existente:
+                    existente.descripcion     = o.get('descripcion')
+                    existente.codigo          = o.get('codigo')
+                    existente.unidades_minima = o.get('unidades_minima')
+                    existente.descuento_psl   = o.get('descuento_psl')
+                    existente.rentabilidad    = o.get('rentabilidad')
+                    existente.plazo_pago      = o.get('plazo_pago')
+                    existente.tipo_descuento  = o.get('tipo_descuento')
+                    existente.vigencia_desde  = vd
+                    existente.vigencia_hasta  = vh
+                    existente.observacion     = o.get('observacion')
+                    existente.actualizado_en  = now_ar()
+                    actualizadas += 1
+                else:
+                    session.add(OfertaMinimo(
+                        laboratorio_id  = lab.id,
+                        ean             = ean,
+                        descripcion     = o.get('descripcion'),
+                        codigo          = o.get('codigo'),
+                        unidades_minima = o.get('unidades_minima'),
+                        descuento_psl   = o.get('descuento_psl'),
+                        rentabilidad    = o.get('rentabilidad'),
+                        plazo_pago      = o.get('plazo_pago'),
+                        grupo_id        = o.get('grupo_id'),
+                        tipo_descuento  = o.get('tipo_descuento'),
+                        drogueria_id    = o.get('drogueria_id'),
+                        vigencia_desde  = vd,
+                        vigencia_hasta  = vh,
+                        observacion     = o.get('observacion'),
+                    ))
+                    creadas += 1
+            session.commit()
+
+        return jsonify({
+            'ok': True,
+            'laboratorio': lab_nombre,
+            'creadas': creadas,
+            'actualizadas': actualizadas,
+            'skip_sin_ean': skip_sin_ean,
+            'errores': errores,
+        })
+
+    # ─── Pull Render → local ──────────────────────────────────────────────
+    #
+    # Inverso al sync local→Render. Sirve cuando Render es el source of
+    # truth (otro user importó ahi) y querés bajar la data a localhost
+    # para verla/usarla. Mismo token PANEL_REMOTO_TOKEN.
+
+    @app.route('/api/ofertas/from-server', methods=['GET'])
+    def api_ofertas_from_server():
+        """Devuelve las OfertaMinimo de este server. Filtrable por lab.
+
+        Auth: X-Panel-Token contra env PANEL_REMOTO_TOKEN.
+        Query params:
+            laboratorio_id (int, opcional): filtrar a un lab.
+            laboratorio_nombre (str, opcional): si lab_id no se da,
+                resuelve por nombre (normalizado).
+        """
+        token_esperado = os.environ.get('PANEL_REMOTO_TOKEN', '')
+        if not token_esperado:
+            return jsonify({'ok': False, 'error': 'Sync deshabilitado en este server'}), 403
+        if request.headers.get('X-Panel-Token', '') != token_esperado:
+            return jsonify({'ok': False, 'error': 'Token inválido'}), 401
+
+        lab_id = request.args.get('laboratorio_id', type=int)
+        lab_nombre_q = (request.args.get('laboratorio_nombre') or '').strip()
+
+        with database.get_db() as session:
+            q = session.query(OfertaMinimo)
+            lab = None
+            if lab_id:
+                lab = session.get(Laboratorio, lab_id)
+                if not lab:
+                    return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
+                q = q.filter_by(laboratorio_id=lab.id)
+            elif lab_nombre_q:
+                from helpers import _normalizar_nombre_entidad
+                norm = _normalizar_nombre_entidad(lab_nombre_q)
+                for c in session.query(Laboratorio).all():
+                    if _normalizar_nombre_entidad(c.nombre) == norm:
+                        lab = c
+                        break
+                if not lab:
+                    return jsonify({'ok': False, 'error': f'Laboratorio "{lab_nombre_q}" no encontrado'}), 404
+                q = q.filter_by(laboratorio_id=lab.id)
+
+            rows = q.all()
+            return jsonify({
+                'ok': True,
+                'laboratorio_id': lab.id if lab else None,
+                'laboratorio_nombre': lab.nombre if lab else None,
+                'count': len(rows),
+                'ofertas': [{
+                    'ean':             r.ean,
+                    'codigo':          r.codigo,
+                    'descripcion':     r.descripcion,
+                    'unidades_minima': r.unidades_minima,
+                    'descuento_psl':   float(r.descuento_psl) if r.descuento_psl is not None else None,
+                    'rentabilidad':    float(r.rentabilidad)  if r.rentabilidad  is not None else None,
+                    'plazo_pago':      r.plazo_pago,
+                    'grupo_id':        r.grupo_id,
+                    'tipo_descuento':  r.tipo_descuento,
+                    'drogueria_id':    r.drogueria_id,
+                    'vigencia_desde':  r.vigencia_desde.isoformat() if r.vigencia_desde else None,
+                    'vigencia_hasta':  r.vigencia_hasta.isoformat() if r.vigencia_hasta else None,
+                    'observacion':     r.observacion,
+                } for r in rows],
+            })
+
+    @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/pull-render', methods=['POST'])
+    def lab_ofertas_minimo_pull_render(lab_id):
+        """Trae las ofertas de Render para este lab (por nombre) y las upsertea
+        localmente. Inverso al sync. Mismo upsert key: (lab, ean, grupo, drog).
+        """
+        import datetime as _dt
+
+        import requests
+        render_url = os.environ.get('RENDER_BASE_URL', '').rstrip('/')
+        token = os.environ.get('PANEL_REMOTO_TOKEN', '')
+        if not render_url or not token:
+            return jsonify({
+                'ok': False,
+                'error': 'Sync no configurado. Setear RENDER_BASE_URL y PANEL_REMOTO_TOKEN en env local.'
+            }), 400
+
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio no encontrado localmente'}), 404
+            lab_nombre = lab.nombre
+
+        # GET a Render filtrando por nombre del lab (los IDs no necesariamente
+        # coinciden entre local y Render).
+        try:
+            r = requests.get(
+                f'{render_url}/api/ofertas/from-server',
+                params={'laboratorio_nombre': lab_nombre},
+                headers={'X-Panel-Token': token},
+                timeout=60,
+            )
+        except requests.exceptions.RequestException as e:
+            return jsonify({'ok': False, 'error': f'No pude conectar con Render: {e}'}), 502
+
+        if r.status_code != 200:
+            return jsonify({
+                'ok': False,
+                'error': f'Render devolvió {r.status_code}: {r.text[:300]}',
+            }), 502
+        data = r.json()
+        ofertas_remote = data.get('ofertas') or []
+
+        creadas = 0
+        actualizadas = 0
+        errores = []
+        with database.get_db() as session:
+            for o in ofertas_remote:
+                ean = (o.get('ean') or '').strip()
+                if not ean:
+                    continue
+                key = {
+                    'laboratorio_id': lab_id,
+                    'ean':            ean,
+                    'grupo_id':       o.get('grupo_id'),
+                    'drogueria_id':   o.get('drogueria_id'),
+                }
+                existente = session.query(OfertaMinimo).filter_by(**key).first()
+                vd = vh = None
+                try:
+                    if o.get('vigencia_desde'): vd = _dt.date.fromisoformat(o['vigencia_desde'])
+                    if o.get('vigencia_hasta'): vh = _dt.date.fromisoformat(o['vigencia_hasta'])
+                except (ValueError, TypeError) as e:
+                    errores.append(f'Fechas inválidas en EAN {ean}: {e}')
+
+                if existente:
+                    existente.descripcion     = o.get('descripcion')
+                    existente.codigo          = o.get('codigo')
+                    existente.unidades_minima = o.get('unidades_minima')
+                    existente.descuento_psl   = o.get('descuento_psl')
+                    existente.rentabilidad    = o.get('rentabilidad')
+                    existente.plazo_pago      = o.get('plazo_pago')
+                    existente.tipo_descuento  = o.get('tipo_descuento')
+                    existente.vigencia_desde  = vd
+                    existente.vigencia_hasta  = vh
+                    existente.observacion     = o.get('observacion')
+                    existente.actualizado_en  = now_ar()
+                    actualizadas += 1
+                else:
+                    session.add(OfertaMinimo(
+                        laboratorio_id  = lab_id,
+                        ean             = ean,
+                        descripcion     = o.get('descripcion'),
+                        codigo          = o.get('codigo'),
+                        unidades_minima = o.get('unidades_minima'),
+                        descuento_psl   = o.get('descuento_psl'),
+                        rentabilidad    = o.get('rentabilidad'),
+                        plazo_pago      = o.get('plazo_pago'),
+                        grupo_id        = o.get('grupo_id'),
+                        tipo_descuento  = o.get('tipo_descuento'),
+                        drogueria_id    = o.get('drogueria_id'),
+                        vigencia_desde  = vd,
+                        vigencia_hasta  = vh,
+                        observacion     = o.get('observacion'),
+                    ))
+                    creadas += 1
+            session.commit()
+
+        return jsonify({
+            'ok': True,
+            'laboratorio': lab_nombre,
+            'fetched': len(ofertas_remote),
+            'creadas': creadas,
+            'actualizadas': actualizadas,
+            'errores': errores,
+        })
 
     @app.route('/laboratorio/<int:lab_id>/export-template', methods=['GET', 'POST'])
     def laboratorio_export_template(lab_id):

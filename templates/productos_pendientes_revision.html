@@ -320,7 +320,7 @@ button.cand-chip { line-height: 1.3; }
         </thead>
         <tbody class="divide-y divide-surface-border">
         {% for it in items %}
-        <tr class="pend-row">
+        <tr class="pend-row" data-item-id="{{ it.id }}">
             <td class="px-2 py-2 text-center">
                 <input type="checkbox" class="row-cb" data-item-id="{{ it.id }}" onchange="actualizarSelCount()">
             </td>
@@ -642,6 +642,36 @@ async function confirmarAnalisisIA(event, form) {
     }
     return false;
 }
+
+// ── Mantener scroll position al "Aplicar IA" / acciones de fila ─────────
+// Cuando el user clickea Aplicar IA en una fila lejos del top, después
+// del POST + redirect el browser vuelve al top y tiene que re-scrollear.
+// Guardamos el item-id justo antes del submit y al cargar la página
+// hacemos scrollIntoView al item siguiente (porque el actual desaparece).
+document.querySelectorAll('form[action*="/aplicar-ia"]').forEach(f => {
+    f.addEventListener('submit', () => {
+        const row = f.closest('tr.pend-row');
+        if (row && row.dataset.itemId) {
+            sessionStorage.setItem('lastAplicarIaId', row.dataset.itemId);
+        }
+    });
+});
+
+(function _restaurarScroll() {
+    const lastId = sessionStorage.getItem('lastAplicarIaId');
+    if (!lastId) return;
+    sessionStorage.removeItem('lastAplicarIaId');
+    // El item con ese id puede haber desaparecido (estado != pendiente). Si
+    // así es, scrollamos al SIGUIENTE item por id.
+    let row = document.querySelector(`tr.pend-row[data-item-id="${lastId}"]`);
+    if (!row) {
+        const allRows = [...document.querySelectorAll('tr.pend-row[data-item-id]')];
+        const target = parseInt(lastId, 10);
+        row = allRows.find(r => parseInt(r.dataset.itemId, 10) > target)
+              || (allRows.length ? allRows[allRows.length - 1] : null);
+    }
+    if (row) row.scrollIntoView({behavior: 'smooth', block: 'center'});
+})();
 </script>
 
 {% endblock %}

@@ -2165,6 +2165,237 @@ def init_app(app):
         return render_template('informe_ofertas_activas.html',
                                grupos=grupos, modulos=modulos, resumen=resumen)
 
+    # ─── Sync/pull bulk de TODAS las ofertas con Render ──────────────────
+    # Versiones "bulk" del sync/pull por-lab que están en routes/laboratorios.py.
+    # Más cómodo cuando las ofertas entran por droguería (no por lab) y querés
+    # mover todo de una.
+
+    @app.route('/informes/ofertas-activas/sync-render-bulk', methods=['POST'])
+    @login_required
+    def informe_sync_render_bulk():
+        """Push TODAS las ofertas locales a Render, agrupadas por lab.
+
+        Itera Laboratorio.id, llama a /api/ofertas/sync-from-local de Render
+        una vez por lab (Render se encarga de upsertear allá). Devuelve el
+        total agregado.
+        """
+        import os as _os
+
+        import requests
+
+        from database import Laboratorio, OfertaMinimo
+        render_url = _os.environ.get('RENDER_BASE_URL', '').rstrip('/')
+        token = _os.environ.get('PANEL_REMOTO_TOKEN', '')
+        if not render_url or not token:
+            return jsonify({
+                'ok': False,
+                'error': 'Sync no configurado. Setear RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env.'
+            }), 400
+
+        with database.get_db() as session:
+            # Pre-agrupar ofertas por lab para no hacer N queries.
+            from sqlalchemy.orm import joinedload  # noqa: F401
+            labs_con_ofertas = (session.query(Laboratorio)
+                                .join(OfertaMinimo, OfertaMinimo.laboratorio_id == Laboratorio.id)
+                                .distinct().all())
+            payloads = []
+            for lab in labs_con_ofertas:
+                rows = session.query(OfertaMinimo).filter_by(laboratorio_id=lab.id).all()
+                payloads.append({
+                    'laboratorio_nombre': lab.nombre,
+                    'ofertas': [{
+                        'ean':             r.ean,
+                        'codigo':          r.codigo,
+                        'descripcion':     r.descripcion,
+                        'unidades_minima': r.unidades_minima,
+                        'descuento_psl':   float(r.descuento_psl) if r.descuento_psl is not None else None,
+                        'rentabilidad':    float(r.rentabilidad)  if r.rentabilidad  is not None else None,
+                        'plazo_pago':      r.plazo_pago,
+                        'grupo_id':        r.grupo_id,
+                        'tipo_descuento':  r.tipo_descuento,
+                        'drogueria_id':    r.drogueria_id,
+                        'vigencia_desde':  r.vigencia_desde.isoformat() if r.vigencia_desde else None,
+                        'vigencia_hasta':  r.vigencia_hasta.isoformat() if r.vigencia_hasta else None,
+                        'observacion':     r.observacion,
+                    } for r in rows],
+                })
+
+        total_creadas = 0
+        total_actualizadas = 0
+        errores = []
+        for p in payloads:
+            try:
+                r = requests.post(
+                    f'{render_url}/api/ofertas/sync-from-local',
+                    json=p,
+                    headers={'X-Panel-Token': token},
+                    timeout=60,
+                )
+            except requests.exceptions.RequestException as e:
+                errores.append(f'{p["laboratorio_nombre"]}: conexión: {e}')
+                continue
+            if r.status_code != 200:
+                errores.append(f'{p["laboratorio_nombre"]}: HTTP {r.status_code}: {r.text[:120]}')
+                continue
+            d = r.json()
+            total_creadas += d.get('creadas') or 0
+            total_actualizadas += d.get('actualizadas') or 0
+            for e in d.get('errores') or []:
+                errores.append(f'{p["laboratorio_nombre"]}: {e}')
+
+        return jsonify({
+            'ok': True,
+            'labs': len(payloads),
+            'creadas': total_creadas,
+            'actualizadas': total_actualizadas,
+            'errores': errores,
+        })
+
+    @app.route('/informes/ofertas-activas/pull-render-bulk', methods=['POST'])
+    @login_required
+    def informe_pull_render_bulk():
+        """Pull TODAS las ofertas de Render → upsert local.
+
+        GET a /api/ofertas/from-server sin filtro → devuelve todas. Cada
+        oferta tiene `laboratorio_id` (id de Render, no necesariamente
+        igual al local). Resolvemos lab por nombre o creamos uno nuevo.
+        """
+        import datetime as _dt
+        import os as _os
+
+        import requests
+
+        from database import Laboratorio, OfertaMinimo
+        from helpers import _normalizar_nombre_entidad
+        render_url = _os.environ.get('RENDER_BASE_URL', '').rstrip('/')
+        token = _os.environ.get('PANEL_REMOTO_TOKEN', '')
+        if not render_url or not token:
+            return jsonify({
+                'ok': False,
+                'error': 'Pull no configurado. Setear RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env.'
+            }), 400
+
+        # 1. Listar todos los labs de Render con ofertas (un GET por lab no
+        # escala bien si hay muchos). Como `from-server` sin filtro devuelve
+        # TODAS las ofertas (con sus laboratorio_id de Render), igual sirve;
+        # pero el endpoint actual no incluye el nombre del lab. Para resolver
+        # ese lookup, hacemos primero una lista de labs locales y mappeamos
+        # por nombre normalizado. Si un lab de Render NO existe local, lo
+        # creamos.
+        try:
+            r = requests.get(
+                f'{render_url}/api/ofertas/from-server',
+                headers={'X-Panel-Token': token},
+                timeout=120,
+            )
+        except requests.exceptions.RequestException as e:
+            return jsonify({'ok': False, 'error': f'No pude conectar con Render: {e}'}), 502
+
+        if r.status_code != 200:
+            return jsonify({
+                'ok': False,
+                'error': f'Render devolvió {r.status_code}: {r.text[:300]}',
+            }), 502
+        data = r.json()
+        ofertas_remote = data.get('ofertas') or []
+
+        # Sin nombre del lab por fila → necesitamos un segundo lookup por lab_id
+        # remoto. Para simplificar: hacemos N GET por nombre. Pero como el
+        # endpoint actual no expone "listar labs", optamos por una estrategia
+        # diferente: cuando Render devuelve `laboratorio_id` y `laboratorio_nombre`
+        # solo en el meta del response (no por fila), trabajamos con esos.
+        # Si el endpoint no devuelve un nombre por fila, mejor pedimos por
+        # cada lab local.
+
+        # Estrategia alternativa: iteramos los labs LOCALES y para cada uno
+        # pullea desde Render (ya tenemos endpoint por lab). Más simple y
+        # consistente con el flujo del botón individual.
+        creadas = 0
+        actualizadas = 0
+        fetched = 0
+        labs_creados = 0
+        errores = []
+        with database.get_db() as session:
+            labs_locales = session.query(Laboratorio).all()
+
+        for lab in labs_locales:
+            try:
+                rr = requests.get(
+                    f'{render_url}/api/ofertas/from-server',
+                    params={'laboratorio_nombre': lab.nombre},
+                    headers={'X-Panel-Token': token},
+                    timeout=60,
+                )
+            except requests.exceptions.RequestException as e:
+                errores.append(f'{lab.nombre}: conexión: {e}')
+                continue
+            if rr.status_code == 404:
+                continue  # ese lab no existe en Render — saltear
+            if rr.status_code != 200:
+                errores.append(f'{lab.nombre}: HTTP {rr.status_code}')
+                continue
+            payload = rr.json()
+            for o in payload.get('ofertas') or []:
+                ean = (o.get('ean') or '').strip()
+                if not ean:
+                    continue
+                fetched += 1
+                key = {
+                    'laboratorio_id': lab.id,
+                    'ean':            ean,
+                    'grupo_id':       o.get('grupo_id'),
+                    'drogueria_id':   o.get('drogueria_id'),
+                }
+                vd = vh = None
+                try:
+                    if o.get('vigencia_desde'): vd = _dt.date.fromisoformat(o['vigencia_desde'])
+                    if o.get('vigencia_hasta'): vh = _dt.date.fromisoformat(o['vigencia_hasta'])
+                except (ValueError, TypeError) as e:
+                    errores.append(f'{lab.nombre} EAN {ean}: fecha: {e}')
+                with database.get_db() as session:
+                    existente = session.query(OfertaMinimo).filter_by(**key).first()
+                    if existente:
+                        existente.descripcion     = o.get('descripcion')
+                        existente.codigo          = o.get('codigo')
+                        existente.unidades_minima = o.get('unidades_minima')
+                        existente.descuento_psl   = o.get('descuento_psl')
+                        existente.rentabilidad    = o.get('rentabilidad')
+                        existente.plazo_pago      = o.get('plazo_pago')
+                        existente.tipo_descuento  = o.get('tipo_descuento')
+                        existente.vigencia_desde  = vd
+                        existente.vigencia_hasta  = vh
+                        existente.observacion     = o.get('observacion')
+                        actualizadas += 1
+                    else:
+                        session.add(OfertaMinimo(
+                            laboratorio_id  = lab.id,
+                            ean             = ean,
+                            descripcion     = o.get('descripcion'),
+                            codigo          = o.get('codigo'),
+                            unidades_minima = o.get('unidades_minima'),
+                            descuento_psl   = o.get('descuento_psl'),
+                            rentabilidad    = o.get('rentabilidad'),
+                            plazo_pago      = o.get('plazo_pago'),
+                            grupo_id        = o.get('grupo_id'),
+                            tipo_descuento  = o.get('tipo_descuento'),
+                            drogueria_id    = o.get('drogueria_id'),
+                            vigencia_desde  = vd,
+                            vigencia_hasta  = vh,
+                            observacion     = o.get('observacion'),
+                        ))
+                        creadas += 1
+                    session.commit()
+
+        _ = _normalizar_nombre_entidad  # ruff: usado por endpoints relacionados
+        return jsonify({
+            'ok': True,
+            'fetched': fetched,
+            'creadas': creadas,
+            'actualizadas': actualizadas,
+            'labs_creados': labs_creados,
+            'errores': errores,
+        })
+
     @app.route('/informes/ofertas-activas/borrar-grupo', methods=['POST'])
     @login_required
     def informe_grupo_borrar():
