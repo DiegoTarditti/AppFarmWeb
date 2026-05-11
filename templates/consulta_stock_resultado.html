@@ -61,6 +61,22 @@
 .csr-card .csr-chart,
 .csr-card .csr-kpis { display: none; }
 .csr-card .csr-spark { display: flex; }
+/* Modo lista pero card expandida (botón 📊 dentro): mostrar chart + KPIs. */
+.csr-card.expanded .csr-chart { display: block; }
+.csr-card.expanded .csr-kpis { display: grid; }
+.csr-card.expanded .csr-spark { display: none; }
+
+/* Botón expand inline (visible solo en modo lista) */
+.csr-expand-btn { background: transparent; border: 1px solid var(--ds-line);
+                  color: var(--ds-text-soft); border-radius: 8px;
+                  padding: 6px 10px; font-size: 11px; font-weight: 600;
+                  cursor: pointer; transition: all .15s;
+                  font-family: inherit; }
+.csr-expand-btn:active { background: var(--ds-surface-2); transform: scale(.96); }
+.csr-card.expanded .csr-expand-btn { background: var(--ds-mint);
+                                      color: #0a3a2a; border-color: var(--ds-mint-deep); }
+body.csr-detail-mode .csr-expand-btn,
+body.csr-tabla-mode .csr-expand-btn { display: none; }
 
 /* Modo detalle: card a pantalla completa + chart full + KPIs. Sparkline oculto. */
 body.csr-detail-mode .csr-list { scroll-snap-type: y mandatory; }
@@ -365,6 +381,11 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                            onchange="onQtyChange(this)" onfocus="this.select()">
                     <button type="button" class="csr-qty-btn" onclick="qtyAdjust(this, 1)">+</button>
                 </div>
+                {% if ventas %}
+                <button type="button" class="csr-expand-btn" onclick="toggleExpand(this)" title="Ver gráfico">
+                    📊
+                </button>
+                {% endif %}
                 {% if (p.order_qty or 0) > 0 %}
                 <button type="button" class="csr-sugerido" onclick="aplicarSug(this, {{ p.order_qty | int }})">
                     🎯 Sugiere {{ p.order_qty | int }}
@@ -693,6 +714,23 @@ document.getElementById('btn-share').addEventListener('click', () => {
 function fallbackWhatsApp(texto) {
     const url = 'https://wa.me/?text=' + encodeURIComponent(texto);
     window.open(url, '_blank');
+}
+
+// Expand inline del chart dentro de una card en modo lista. Lazy render.
+function toggleExpand(btn) {
+    const card = btn.closest('.csr-card');
+    const idx = parseInt(card.dataset.idx, 10);
+    const willExpand = !card.classList.contains('expanded');
+    card.classList.toggle('expanded', willExpand);
+    btn.textContent = willExpand ? '▲' : '📊';
+    btn.title = willExpand ? 'Ocultar gráfico' : 'Ver gráfico';
+    if (willExpand) {
+        const chartEl = card.querySelector('.csr-chart');
+        if (chartEl) {
+            // Force render. setTimeout para que el CSS aplique display:block antes.
+            setTimeout(() => renderChart(chartEl, idx), 30);
+        }
+    }
 }
 
 function qtyAdjust(btn, delta) {
