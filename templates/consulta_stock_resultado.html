@@ -72,6 +72,66 @@ body.csr-detail-mode .csr-card .csr-chart { display: block; }
 body.csr-detail-mode .csr-card .csr-kpis { display: grid; }
 body.csr-detail-mode .csr-card-pager { display: block; }
 
+/* Modo TABLA: 1 fila por producto, columnas, scroll horizontal en portrait,
+   se ve completo en landscape. Cards .csr-card se ocultan y mostramos
+   la tabla #csr-tabla. */
+body.csr-tabla-mode .csr-list .csr-card { display: none; }
+body.csr-tabla-mode #csr-tabla { display: block; }
+#csr-tabla { display: none; margin-top: 8px; overflow-x: auto;
+             -webkit-overflow-scrolling: touch;
+             background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+             border-radius: 10px; }
+#csr-tabla table { width: 100%; min-width: 640px; border-collapse: collapse;
+                    font-size: 12px; color: var(--ds-text); }
+#csr-tabla thead th { position: sticky; top: 0; z-index: 5;
+                      background: var(--ds-surface-2); color: var(--ds-text-mute);
+                      font-size: 9px; font-weight: 700; letter-spacing: .05em;
+                      text-transform: uppercase; text-align: center;
+                      padding: 8px 6px;
+                      border-bottom: 1px solid var(--ds-line-2); }
+#csr-tabla thead th:first-child { text-align: left; padding-left: 10px;
+                                   position: sticky; left: 0; z-index: 6;
+                                   background: var(--ds-surface-2); }
+#csr-tabla tbody td { padding: 6px;
+                       border-bottom: 1px solid var(--ds-line);
+                       text-align: center; vertical-align: middle; }
+#csr-tabla tbody td:first-child { text-align: left; padding-left: 10px;
+                                   position: sticky; left: 0;
+                                   background: var(--ds-surface); z-index: 1;
+                                   min-width: 200px; }
+#csr-tabla tbody tr.marked td { background: rgba(95,230,188,.08); }
+#csr-tabla tbody tr.marked td:first-child { background: rgba(95,230,188,.12); }
+#csr-tabla tbody tr.hidden-row { display: none; }
+#csr-tabla .csr-tabla-name { font-weight: 600; line-height: 1.2; }
+#csr-tabla .csr-tabla-ean { font-size: 9px; color: var(--ds-text-mute);
+                            font-family: ui-monospace, Consolas, monospace; }
+#csr-tabla .csr-tabla-num { font-weight: 700; font-size: 13px; }
+#csr-tabla .csr-tabla-num.low { color: var(--ds-danger); }
+#csr-tabla .csr-tabla-num.mid { color: var(--ds-warn); }
+#csr-tabla .csr-tabla-num.ok { color: var(--ds-mint); }
+#csr-tabla .csr-tabla-sug { background: rgba(95,230,188,.15); color: var(--ds-mint);
+                            border: 1px solid rgba(95,230,188,.3);
+                            border-radius: 6px; padding: 3px 8px;
+                            font-size: 11px; font-weight: 700;
+                            cursor: pointer; min-width: 40px; }
+#csr-tabla .csr-tabla-qty { width: 50px; height: 30px;
+                            text-align: center; font-size: 14px; font-weight: 700;
+                            background: var(--ds-surface-2);
+                            border: 1px solid var(--ds-line); border-radius: 6px;
+                            color: var(--ds-text); font-family: inherit; }
+#csr-tabla .csr-tabla-qty:focus { outline: none; border-color: var(--ds-mint); }
+
+/* Botones segmented control de vista */
+.csr-vista-seg { display: inline-flex; gap: 0; border: 1px solid var(--ds-line);
+                  border-radius: 8px; overflow: hidden; }
+.csr-vista-seg .csr-h-icon-btn { border: none; border-radius: 0;
+                                  border-right: 1px solid var(--ds-line);
+                                  width: 34px; height: 34px; font-size: 14px; }
+.csr-vista-seg .csr-h-icon-btn:last-child { border-right: none; }
+.csr-vista-seg .csr-h-icon-btn.active {
+    background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+    color: #0a3a2a; }
+
 .csr-name { font-size: 14px; font-weight: 600; color: var(--ds-text);
             line-height: 1.3; margin-bottom: 2px; }
 .csr-ean { font-size: 10px; color: var(--ds-text-mute);
@@ -177,7 +237,11 @@ body.csr-detail-mode .csr-card-pager { display: block; }
                     {% if datos_al %} · Datos al: {{ datos_al }}{% endif %}
                 </div>
             </div>
-            <button type="button" class="csr-h-icon-btn" id="btn-toggle-vista" title="Ver detalle con gráfico">📊</button>
+            <div class="csr-vista-seg" title="Cambiar vista">
+                <button type="button" class="csr-h-icon-btn" data-vista="lista" title="Lista compacta">☰</button>
+                <button type="button" class="csr-h-icon-btn" data-vista="detalle" title="Detalle con gráfico">📊</button>
+                <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
+            </div>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
             <button type="button" class="csr-h-icon-btn" id="btn-share" title="Compartir resumen">📤</button>
         </div>
@@ -315,6 +379,68 @@ body.csr-detail-mode .csr-card-pager { display: block; }
     </div>
 
     <div class="csr-empty" id="csr-empty" style="display:none;">No hay productos que coincidan.</div>
+
+    <!-- Modo TABLA: 1 fila por producto, columnas. Mejor en landscape. -->
+    <div id="csr-tabla">
+        <table>
+            <thead>
+                <tr>
+                    <th>Producto</th>
+                    <th>Stock</th>
+                    <th>Rot</th>
+                    <th>Prom/mes</th>
+                    <th>Cob.</th>
+                    <th>Sug.</th>
+                    <th>Pedir</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for p in products %}
+                {% set cov = p.dias_cobertura %}
+                <tr data-idx="{{ loop.index0 }}"
+                    data-name="{{ p.nombre | lower }} {{ p.codigo_barra }}"
+                    data-sugerido="{{ 'true' if (p.order_qty or 0) > 0 else 'false' }}"
+                    data-bajo="{{ 'true' if (cov is not none and cov <= 15) else 'false' }}"
+                    data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}">
+                    <td>
+                        <div class="csr-tabla-name">{{ p.nombre | truncate(34) }}</div>
+                        <div class="csr-tabla-ean">{{ p.codigo_barra }}</div>
+                    </td>
+                    <td><span class="csr-tabla-num">{{ p.stock | int }}</span></td>
+                    <td>
+                        <span class="csr-tabla-num {% if p.rotacion == 'Alta' %}ok{% elif p.rotacion == 'Baja' %}low{% endif %}">
+                            {{ (p.rotacion or '—')[:1] }}
+                        </span>
+                    </td>
+                    <td><span class="csr-tabla-num">{{ p.avg_monthly | int }}</span></td>
+                    <td>
+                        {% if cov is none %}
+                        <span class="csr-tabla-num">∞</span>
+                        {% else %}
+                        <span class="csr-tabla-num {{ 'low' if cov <= 15 else ('mid' if cov <= 30 else 'ok') }}">
+                            {{ cov }}d
+                        </span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if (p.order_qty or 0) > 0 %}
+                        <button type="button" class="csr-tabla-sug"
+                                onclick="aplicarSugTabla(this, {{ p.order_qty | int }})">
+                            {{ p.order_qty | int }}
+                        </button>
+                        {% else %}
+                        <span style="color:var(--ds-text-mute);">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <input type="number" class="csr-tabla-qty" min="0" value="0"
+                               onchange="onQtyChangeTabla(this)" onfocus="this.select()">
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 
 <button type="button" class="csr-fab hidden" id="csr-fab" onclick="armarPedido()">
@@ -467,23 +593,18 @@ document.getElementById('btn-toggle-filtros').addEventListener('click', () => {
     document.getElementById('csr-h-expand').classList.toggle('open');
 });
 
-// Toggle vista lista ↔ detalle. Persiste en localStorage para que el cel
-// recuerde el modo preferido entre visitas.
+// Toggle vista: lista | detalle | tabla. Persiste en localStorage.
 const VIEW_KEY = 'consulta_stock_vista';
 function aplicarVista(modo) {
-    const isDetail = modo === 'detalle';
-    document.body.classList.toggle('csr-detail-mode', isDetail);
-    // El icono muestra el modo AL QUE VAS si tocás. En detalle muestra ☰
-    // (lista), en lista muestra 📊 (chart/detalle). Patrón típico móvil.
-    document.getElementById('btn-toggle-vista').textContent = isDetail ? '☰' : '📊';
-    document.getElementById('btn-toggle-vista').title = isDetail
-        ? 'Ver como lista compacta'
-        : 'Ver detalle con gráfico';
-    // Al pasar a detalle, force-render los charts visibles ahora (el
-    // IntersectionObserver puede no disparar el callback de elementos que
-    // estaban display:none antes — depende del browser).
-    if (isDetail) {
-        // Delay corto para que el CSS aplique el display:block antes de medir.
+    document.body.classList.remove('csr-detail-mode', 'csr-tabla-mode');
+    if (modo === 'detalle') document.body.classList.add('csr-detail-mode');
+    if (modo === 'tabla') document.body.classList.add('csr-tabla-mode');
+    // Highlight el botón activo del segmented control.
+    document.querySelectorAll('.csr-vista-seg [data-vista]').forEach(b => {
+        b.classList.toggle('active', b.dataset.vista === modo);
+    });
+    // Al pasar a detalle, force-render charts visibles.
+    if (modo === 'detalle') {
         setTimeout(() => {
             document.querySelectorAll('.csr-chart').forEach(c => {
                 const idx = parseInt(c.dataset.chartIdx, 10);
@@ -494,14 +615,52 @@ function aplicarVista(modo) {
             });
         }, 50);
     }
+    // Sincronizar valores qty entre cards y filas de tabla (por idx).
+    sincronizarQty();
+}
+function sincronizarQty() {
+    // pedido ya tiene el estado; reflejarlo en ambos modos.
+    document.querySelectorAll('.csr-card, #csr-tabla tbody tr').forEach(el => {
+        const idx = parseInt(el.dataset.idx, 10);
+        const q = pedido[idx] || 0;
+        const inputs = el.querySelectorAll('input[type=number]');
+        inputs.forEach(i => { i.value = q; });
+        el.classList.toggle('marked', q > 0);
+    });
 }
 const vistaGuardada = localStorage.getItem(VIEW_KEY) || 'lista';
 aplicarVista(vistaGuardada);
-document.getElementById('btn-toggle-vista').addEventListener('click', () => {
-    const nueva = document.body.classList.contains('csr-detail-mode') ? 'lista' : 'detalle';
-    localStorage.setItem(VIEW_KEY, nueva);
-    aplicarVista(nueva);
+document.querySelectorAll('.csr-vista-seg [data-vista]').forEach(b => {
+    b.addEventListener('click', () => {
+        const m = b.dataset.vista;
+        localStorage.setItem(VIEW_KEY, m);
+        aplicarVista(m);
+    });
 });
+
+// Handlers de la tabla
+function onQtyChangeTabla(input) {
+    const tr = input.closest('tr');
+    const idx = parseInt(tr.dataset.idx, 10);
+    const qty = Math.max(0, parseInt(input.value, 10) || 0);
+    if (qty > 0) pedido[idx] = qty;
+    else delete pedido[idx];
+    tr.classList.toggle('marked', qty > 0);
+    // Reflejar en la card del mismo idx también.
+    const card = document.querySelector(`.csr-card[data-idx="${idx}"]`);
+    if (card) {
+        const ci = card.querySelector('.csr-qty-input');
+        if (ci) ci.value = qty;
+        card.classList.toggle('marked', qty > 0);
+    }
+    updateFab();
+    applyFilter();
+}
+function aplicarSugTabla(btn, sug) {
+    const input = btn.closest('tr').querySelector('.csr-tabla-qty');
+    input.value = sug;
+    onQtyChangeTabla(input);
+}
 
 // Compartir resumen por WhatsApp (o share API del SO)
 document.getElementById('btn-share').addEventListener('click', () => {
@@ -548,6 +707,13 @@ function onQtyChange(input) {
     if (qty > 0) pedido[idx] = qty;
     else delete pedido[idx];
     card.classList.toggle('marked', qty > 0);
+    // Reflejar en la fila de tabla del mismo idx.
+    const tr = document.querySelector(`#csr-tabla tbody tr[data-idx="${idx}"]`);
+    if (tr) {
+        const ti = tr.querySelector('.csr-tabla-qty');
+        if (ti) ti.value = qty;
+        tr.classList.toggle('marked', qty > 0);
+    }
     updateFab();
     applyFilter();  // refrescar "Marcados" en vivo si está activo
 }
@@ -581,12 +747,11 @@ const search = document.getElementById('csr-search');
 search.addEventListener('input', applyFilter);
 
 function applyFilter() {
-    // Multi-token: el query se separa por espacios y cada token tiene que
-    // aparecer en el name (orden independiente). Ej: "amox 500 com" matchea
-    // "AMOXIDAL 500 mg COM x 16" en cualquier orden de palabras.
+    // Multi-token: cada token debe aparecer en name+EAN, orden independiente.
     const q = search.value.toLowerCase().trim();
     const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
-    let visibles = 0;
+    const visibles = new Set();  // idx que pasan los filtros
+
     document.querySelectorAll('.csr-card').forEach(card => {
         const name = card.dataset.name;
         const idx = parseInt(card.dataset.idx, 10);
@@ -597,9 +762,14 @@ function applyFilter() {
         if (pasa && filtroActivo === 'sinmov' && card.dataset.sinmov !== 'true') pasa = false;
         if (pasa && filtroActivo === 'marked' && !pedido[idx]) pasa = false;
         card.classList.toggle('hidden-row', !pasa);
-        if (pasa) visibles++;
+        if (pasa) visibles.add(idx);
     });
-    document.getElementById('csr-empty').style.display = visibles === 0 ? 'block' : 'none';
+    // Replicar en filas de la tabla.
+    document.querySelectorAll('#csr-tabla tbody tr').forEach(tr => {
+        const idx = parseInt(tr.dataset.idx, 10);
+        tr.classList.toggle('hidden-row', !visibles.has(idx));
+    });
+    document.getElementById('csr-empty').style.display = visibles.size === 0 ? 'block' : 'none';
 }
 
 function armarPedido() {
