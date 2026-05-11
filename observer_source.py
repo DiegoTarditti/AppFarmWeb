@@ -1183,6 +1183,10 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                       .filter(ObsStock.id_farmacia == id_farmacia,
                               ObsStock.producto_observer.in_(prod_ids)).all())
         mapa_stock = {s.producto_observer: int(s.stock_actual or 0) for s in stock_rows}
+        mapa_minimo = {s.producto_observer: int(s.minimo or 0)
+                       for s in stock_rows if s.minimo}
+        mapa_maximo = {s.producto_observer: int(s.maximo or 0)
+                       for s in stock_rows if s.maximo}
 
         # Puente EAN ↔ IdProducto: traer el codigo_barra real de la tabla
         # local `productos` cuando esté vinculada por observer_id.
@@ -1228,6 +1232,8 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                 # consume hoy. Si se necesita, calcular desde obs_ventas_mensuales.
                 'precio_pvp': 0,
                 'stock': mapa_stock.get(p.observer_id, 0),
+                'minimo': mapa_minimo.get(p.observer_id, 0),
+                'maximo': mapa_maximo.get(p.observer_id, 0),
                 'ventas': ventas,
                 'tvc': tvc,
                 'es_libre': tvc == 'L',

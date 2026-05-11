@@ -206,6 +206,12 @@ def init_app(app):
         hoy = _datetime.now()
         anio, mes = hoy.year, hoy.month
 
+        # Fecha del último sync de ventas (para mostrar "Datos al: ..." en la UI).
+        with database.get_db() as _s_est:
+            est_v = observer_source.estado_ventas_mensuales(_s_est)
+        ultimo_sync = est_v.get('ultimo_sync')
+        ultimo_sync_str = (ultimo_sync.strftime('%d/%m/%Y') if ultimo_sync else None)
+
         productos = observer_source.get_ventas_laboratorio(partner_nombre, anio, mes)
         if not productos:
             flash(f'Sin ventas de "{partner_nombre}" en {mes:02d}/{anio}.', 'warning')
@@ -245,6 +251,7 @@ def init_app(app):
             'rot_baja_tol': cfg['rot_baja_tol'],
             'products': results,
             'proceso_id': proc_id,
+            'datos_al': ultimo_sync_str,
         }
 
         with database.get_db() as session:

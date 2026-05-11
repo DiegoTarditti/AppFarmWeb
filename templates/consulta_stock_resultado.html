@@ -42,12 +42,33 @@
 .csr-search:focus { outline: none; border-color: var(--ds-mint);
                     box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
 
-/* Card por producto */
+/* Card por producto. Default = vista LISTA (cards compactas apiladas).
+   En vista DETALLE (body.csr-detail-mode), cada card ocupa 100vh con chart. */
 .csr-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
-            border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+            border-radius: 14px; padding: 12px 14px;
+            margin-bottom: 10px;
+            display: flex; flex-direction: column;
             transition: border-color .15s; }
 .csr-card.marked { border-color: var(--ds-mint); background: rgba(95,230,188,.05); }
 .csr-card.hidden-row { display: none; }
+.csr-card-body { flex: 1; display: flex; flex-direction: column; }
+.csr-card-pager { display: none;  /* solo visible en modo detalle */
+                  font-size: 10px; color: var(--ds-text-mute);
+                  margin-top: auto; padding-top: 8px; text-align: center; }
+
+/* Modo lista (default): chart inline + KPIs ocultos para densidad alta. */
+.csr-card .csr-chart,
+.csr-card .csr-kpis { display: none; }
+
+/* Modo detalle: card a pantalla completa + chart + KPIs visibles. */
+body.csr-detail-mode .csr-list { scroll-snap-type: y mandatory; }
+body.csr-detail-mode .csr-card { min-height: calc(100vh - 96px);
+                                  scroll-snap-align: start;
+                                  margin-bottom: 12px; padding: 14px; }
+body.csr-detail-mode .csr-card .csr-chart,
+body.csr-detail-mode .csr-card .csr-kpis { display: block; }
+body.csr-detail-mode .csr-card .csr-kpis { display: grid; }
+body.csr-detail-mode .csr-card-pager { display: block; }
 
 .csr-name { font-size: 14px; font-weight: 600; color: var(--ds-text);
             line-height: 1.3; margin-bottom: 2px; }
@@ -70,13 +91,25 @@
 .csr-ind-val.cov-mid { color: var(--ds-warn); }
 .csr-ind-val.cov-ok { color: var(--ds-mint); }
 
-/* Mini-chart sparkline 12m */
-.csr-spark { display: flex; align-items: flex-end; gap: 2px;
-             height: 32px; margin-top: 6px; padding: 0 2px; }
-.csr-spark-bar { flex: 1; background: rgba(95,230,188,.5);
-                  border-radius: 2px 2px 0 0; min-height: 2px;
-                  transition: background .15s; }
-.csr-spark-bar.zero { background: rgba(255,255,255,.08); }
+/* Chart contenedor */
+.csr-chart { height: 200px; margin-top: 10px; padding: 6px;
+             background: rgba(255,255,255,.02); border-radius: 8px;
+             position: relative; }
+.csr-chart canvas { width: 100% !important; height: 100% !important; }
+.csr-chart-placeholder { display: flex; align-items: center; justify-content: center;
+                         height: 100%; color: var(--ds-text-mute); font-size: 12px; }
+
+/* KPIs adicionales debajo del chart */
+.csr-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+             margin-top: 8px; padding-top: 8px;
+             border-top: 1px dashed var(--ds-line); }
+.csr-kpi { text-align: center; padding: 4px 2px; }
+.csr-kpi-label { font-size: 8px; font-weight: 700; letter-spacing: .04em;
+                  color: var(--ds-text-mute); text-transform: uppercase; }
+.csr-kpi-val { font-size: 13px; font-weight: 700; color: var(--ds-text); margin-top: 1px; }
+.csr-kpi-val.low { color: var(--ds-danger); }
+.csr-kpi-val.mid { color: var(--ds-warn); }
+.csr-kpi-val.ok { color: var(--ds-mint); }
 
 /* Input cantidad + acciones */
 .csr-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px;
@@ -130,8 +163,12 @@
             <a href="{{ url_for('consulta_stock') }}" class="csr-h-icon-btn" title="Volver a elegir">←</a>
             <div class="csr-h-text">
                 <div class="csr-h1">📦 {{ laboratorio }}</div>
-                <div class="csr-meta">{{ products | length }} productos · {{ periodo }}</div>
+                <div class="csr-meta">
+                    {{ products | length }} productos
+                    {% if datos_al %} · Datos al: {{ datos_al }}{% endif %}
+                </div>
             </div>
+            <button type="button" class="csr-h-icon-btn" id="btn-toggle-vista" title="Cambiar vista (lista / detalle)">📋</button>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
             <button type="button" class="csr-h-icon-btn" id="btn-share" title="Compartir resumen">📤</button>
         </div>
@@ -158,10 +195,9 @@
         </div>
     </div>
 
-    <div id="csr-list">
+    <div id="csr-list" class="csr-list">
     {% for p in products %}
         {% set ventas = p.ventas or [] %}
-        {% set max_v = (ventas | max) if ventas else 0 %}
         {% set cov = p.dias_cobertura %}
         {% set bajo = (cov is not none and cov <= 15) %}
         <div class="csr-card"
@@ -171,6 +207,7 @@
              data-bajo="{{ 'true' if bajo else 'false' }}"
              data-sinmov="{{ 'true' if p.sin_mov_60d else 'false' }}">
 
+            <div class="csr-card-body">
             <div class="csr-name">{{ p.nombre }}</div>
             <div class="csr-ean">{{ p.codigo_barra }}</div>
 
@@ -212,14 +249,31 @@
             </div>
 
             {% if ventas %}
-            <div class="csr-spark" title="Últimos 12 meses">
-                {% for v in ventas[:12] %}
-                <div class="csr-spark-bar {{ 'zero' if v == 0 else '' }}"
-                     style="{% if max_v > 0 and v > 0 %}height:{{ (v / max_v * 100) | int }}%{% endif %}"
-                     title="{{ month_es[loop.index0] if loop.index0 < month_es | length else '' }}: {{ v | int }}"></div>
-                {% endfor %}
+            <div class="csr-chart" data-chart-idx="{{ loop.index0 }}">
+                <div class="csr-chart-placeholder">📊 cargando…</div>
             </div>
             {% endif %}
+
+            <div class="csr-kpis">
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Rotación</div>
+                    <div class="csr-kpi-val {% if p.rotacion == 'Alta' %}ok{% elif p.rotacion == 'Baja' %}low{% endif %}">
+                        {{ p.rotacion or '—' }}
+                    </div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Tendencia</div>
+                    <div class="csr-kpi-val {% if p.slope and p.slope > 0 %}ok{% elif p.slope and p.slope < 0 %}low{% endif %}">
+                        {% if p.slope is not none %}
+                            {{ '↑' if p.slope > 0 else ('↓' if p.slope < 0 else '→') }} {{ '%.1f'|format(p.slope or 0) }}/m
+                        {% else %}—{% endif %}
+                    </div>
+                </div>
+                <div class="csr-kpi">
+                    <div class="csr-kpi-label">Mín.</div>
+                    <div class="csr-kpi-val">{{ (p.minimo or 0) | int }}</div>
+                </div>
+            </div>
 
             <div class="csr-actions">
                 <div class="csr-qty-wrap">
@@ -233,6 +287,9 @@
                     🎯 Sugiere {{ p.order_qty | int }}
                 </button>
                 {% endif %}
+            </div>
+
+            <div class="csr-card-pager">{{ loop.index }} / {{ products | length }}</div>
             </div>
         </div>
     {% endfor %}
@@ -258,12 +315,154 @@ const NOMBRES = {
 const EANS = {
 {% for p in products %}    {{ loop.index0 }}: {{ (p.codigo_barra or '') | tojson }}{{ ',' if not loop.last }}
 {% endfor %}};
+const CHART_DATA = {
+{% for p in products %}{% if p.ventas %}    {{ loop.index0 }}: {
+        ventas: {{ p.ventas | tojson }},
+        avg: {{ (p.avg_monthly or 0) | float }},
+        stock: {{ (p.stock or 0) | float }},
+        minimo: {{ (p.minimo or 0) | float }},
+        slope: {{ (p.slope or 0) | float }},
+    }{{ ',' if not loop.last }}
+{% endif %}{% endfor %}};
+const MONTH_ES = {{ month_es | tojson }};
 
 let pedido = {};  // idx → qty
+const chartInstances = {};  // idx → Chart instance (para destroy si hace falta)
+
+// ── Lazy render charts via IntersectionObserver ─────────────────────────────
+// Renderizamos solo los charts visibles (con margen) para no colgar la pagina
+// cuando hay 370 productos. Cuando una card entra al viewport, su chart se
+// dibuja; cuando sale lejos, se podría destruir (pero por ahora dejamos).
+function renderChart(container, idx) {
+    const data = CHART_DATA[idx];
+    if (!data || container.dataset.rendered === '1') return;
+    container.dataset.rendered = '1';
+    container.innerHTML = '<canvas></canvas>';
+    const ctx = container.querySelector('canvas').getContext('2d');
+
+    const ventas = data.ventas.slice(0, 12);
+    const N = ventas.length;
+    const avg = data.avg || 0;
+    const slope = data.slope || 0;
+
+    // Línea de tendencia (clampeada al ±60% del prom para no fugar).
+    const meanX = (N - 1) / 2;
+    const meanY = ventas.reduce((a, b) => a + b, 0) / Math.max(N, 1);
+    const trendClamp = avg > 0 ? avg * 0.6 : Infinity;
+    const trend = Array.from({length: N}, (_, i) => {
+        const raw = meanY + slope * (i - meanX);
+        return Math.max(0, avg > 0 ? Math.min(Math.max(raw, avg - trendClamp), avg + trendClamp) : raw);
+    });
+
+    // Proyección 2 meses
+    const fcst = [];
+    for (let off = 0; off < 2; off++) {
+        const horizon = Math.min(N + off - meanX, 2.0);
+        fcst.push(Math.max(0, Math.round(avg + slope * horizon)));
+    }
+    const labels = (MONTH_ES.slice(0, N)).concat(['→', '→']);
+    const totalCols = N + 2;
+
+    // Datasets
+    const ventasDs = ventas.concat([null, null]);
+    const fcstDs = Array(N).fill(null).concat(fcst);
+    const trendExt = trend.concat([
+        Math.max(0, meanY + slope * (N - meanX)),
+        Math.max(0, meanY + slope * (N + 1 - meanX)),
+    ]);
+    const avgLine = Array(totalCols).fill(avg || null);
+    const stockLine = data.stock > 0 ? Array(totalCols).fill(data.stock) : null;
+    const minLine = data.minimo > 0 ? Array(totalCols).fill(data.minimo) : null;
+
+    const datasets = [
+        { type: 'bar', label: 'Ventas', data: ventasDs,
+          backgroundColor: 'rgba(95,230,188,.55)', borderRadius: 3 },
+        { type: 'bar', label: 'Proyección', data: fcstDs,
+          backgroundColor: 'rgba(16,185,129,.7)', borderRadius: 3 },
+        { type: 'line', label: 'Tendencia', data: trendExt,
+          borderColor: '#F59E0B', borderWidth: 2, pointRadius: 0, tension: .2, fill: false },
+        { type: 'line', label: 'Prom.', data: avgLine,
+          borderColor: '#EAB308', borderWidth: 1, borderDash: [4, 3],
+          pointRadius: 0, fill: false },
+    ];
+    if (stockLine) datasets.push({
+        type: 'line', label: 'Stock', data: stockLine,
+        borderColor: '#EF4444', borderWidth: 1, borderDash: [3, 3],
+        pointRadius: 0, fill: false,
+    });
+    if (minLine) datasets.push({
+        type: 'line', label: 'Mín.', data: minLine,
+        borderColor: '#94A3B8', borderWidth: 1, borderDash: [2, 4],
+        pointRadius: 0, fill: false,
+    });
+
+    chartInstances[idx] = new Chart(ctx, {
+        data: { labels, datasets },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { size: 9 }, color: '#888' } },
+                y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,.06)' },
+                     ticks: { font: { size: 9 }, color: '#888' } },
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(0,0,0,.85)',
+                    titleFont: { size: 11 }, bodyFont: { size: 11 },
+                },
+            },
+        },
+    });
+}
+
+const chartObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+        if (e.isIntersecting) {
+            const c = e.target;
+            const idx = parseInt(c.dataset.chartIdx, 10);
+            renderChart(c, idx);
+        }
+    });
+}, { rootMargin: '200px 0px' }) : null;
+
+document.querySelectorAll('.csr-chart').forEach(c => {
+    if (chartObserver) chartObserver.observe(c);
+    else renderChart(c, parseInt(c.dataset.chartIdx, 10));  // fallback sin IO
+});
+
 
 // Toggle expand del header (filtros + buscador)
 document.getElementById('btn-toggle-filtros').addEventListener('click', () => {
     document.getElementById('csr-h-expand').classList.toggle('open');
+});
+
+// Toggle vista lista ↔ detalle. Persiste en localStorage para que el cel
+// recuerde el modo preferido entre visitas.
+const VIEW_KEY = 'consulta_stock_vista';
+function aplicarVista(modo) {
+    const isDetail = modo === 'detalle';
+    document.body.classList.toggle('csr-detail-mode', isDetail);
+    document.getElementById('btn-toggle-vista').textContent = isDetail ? '📊' : '📋';
+    document.getElementById('btn-toggle-vista').title = isDetail
+        ? 'Modo detalle (con charts). Tap para ver lista compacta.'
+        : 'Modo lista. Tap para ver detalle con charts.';
+    // Re-render de charts visibles si pasamos a detalle (no estaban renderizados).
+    if (isDetail) {
+        document.querySelectorAll('.csr-chart').forEach(c => {
+            const idx = parseInt(c.dataset.chartIdx, 10);
+            if (chartObserver) chartObserver.observe(c);
+            else renderChart(c, idx);
+        });
+    }
+}
+const vistaGuardada = localStorage.getItem(VIEW_KEY) || 'lista';
+aplicarVista(vistaGuardada);
+document.getElementById('btn-toggle-vista').addEventListener('click', () => {
+    const nueva = document.body.classList.contains('csr-detail-mode') ? 'lista' : 'detalle';
+    localStorage.setItem(VIEW_KEY, nueva);
+    aplicarVista(nueva);
 });
 
 // Compartir resumen por WhatsApp (o share API del SO)
@@ -344,13 +543,17 @@ const search = document.getElementById('csr-search');
 search.addEventListener('input', applyFilter);
 
 function applyFilter() {
+    // Multi-token: el query se separa por espacios y cada token tiene que
+    // aparecer en el name (orden independiente). Ej: "amox 500 com" matchea
+    // "AMOXIDAL 500 mg COM x 16" en cualquier orden de palabras.
     const q = search.value.toLowerCase().trim();
+    const tokens = q ? q.split(/\s+/).filter(Boolean) : [];
     let visibles = 0;
     document.querySelectorAll('.csr-card').forEach(card => {
         const name = card.dataset.name;
         const idx = parseInt(card.dataset.idx, 10);
         let pasa = true;
-        if (q && !name.includes(q)) pasa = false;
+        if (tokens.length && !tokens.every(t => name.includes(t))) pasa = false;
         if (pasa && filtroActivo === 'sugerido' && card.dataset.sugerido !== 'true') pasa = false;
         if (pasa && filtroActivo === 'bajo' && card.dataset.bajo !== 'true') pasa = false;
         if (pasa && filtroActivo === 'sinmov' && card.dataset.sinmov !== 'true') pasa = false;
