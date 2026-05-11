@@ -73,7 +73,9 @@
 {% block main %}
 <div class="cpr-screen">
     <div class="cpr-header">
-        <a href="{{ url_for('consulta_producto') }}" class="cpr-back" title="Volver a buscar">←</a>
+        <a href="{{ url_for('consulta_producto') }}" class="cpr-back" title="Volver"
+           onclick="if (document.referrer && document.referrer.indexOf(location.host) >= 0) { history.back(); return false; }">←</a>
+        <a href="{{ url_for('consulta_stock') }}" class="cpr-back" title="Inicio mobile">🏠</a>
         <div class="cpr-title">
             <div class="cpr-h1">
                 {% if info.encontrado %}
@@ -95,7 +97,8 @@
                 No encontramos ningún producto con código <span class="cpr-notfound-ean">{{ info.ean }}</span>.
             </p>
             <p class="cpr-notfound-msg">Verificá el código o intentá de nuevo.</p>
-            <a href="{{ url_for('consulta_producto') }}" class="cpr-back-link">← Buscar otro</a>
+            <a href="{{ url_for('consulta_producto') }}" class="cpr-back-link"
+               onclick="if (document.referrer && document.referrer.indexOf(location.host) >= 0) { history.back(); return false; }">← Volver</a>
         </div>
     </div>
     {% else %}

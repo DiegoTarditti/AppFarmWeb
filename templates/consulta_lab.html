@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% from "components/partner_selector.html" import partner_selector %}
+{% set hide_sidebar = True %}
+{% block title %}Consultar laboratorio — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cl-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
+.cl-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
+.cl-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.cl-cta { display: block; width: 100%; padding: 16px; margin-top: 16px;
+          background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+          color: #0a3a2a; font-size: 16px; font-weight: 700;
+          border: none; border-radius: 14px; cursor: pointer;
+          box-shadow: 0 4px 12px rgba(95,230,188,.3); }
+.cl-cta:active { transform: scale(.98); }
+.cl-cta:disabled { opacity: .5; cursor: not-allowed; }
+.cl-cancel { display: block; width: 100%; padding: 12px; text-align: center;
+             color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
+             text-decoration: none; }
+.partner-selector input[type=text] {
+    background: var(--ds-surface-2) !important;
+    border: 1.5px solid var(--ds-line) !important;
+    border-radius: 12px !important; padding: 14px 14px !important;
+    font-size: 16px !important; color: var(--ds-text) !important;
+}
+.partner-selector input[type=text]:focus {
+    border-color: var(--ds-mint) !important;
+    box-shadow: 0 0 0 3px rgba(95,230,188,.15) !important;
+}
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cl-screen">
+    <h1 class="cl-h1">🧪 Consultar laboratorio</h1>
+    <p class="cl-sub">Estadísticas de ventas, top productos y médicos.</p>
+
+    <form method="post" action="{{ url_for('consulta_lab_buscar') }}" id="cl-form">
+        {{ partner_selector(tipo='laboratorio', name='partner_id',
+                            placeholder='Tocá para buscar laboratorio…') }}
+        <button type="submit" class="cl-cta" id="btn-submit" disabled>
+            <span id="btn-label">Consultar</span>
+        </button>
+        <a href="{{ url_for('index') }}" class="cl-cancel">Cancelar</a>
+    </form>
+</div>
+
+<script>
+function updateCta() {
+    const btn = document.getElementById('btn-submit');
+    const id = document.querySelector('input[name="partner_id"]')?.value || '';
+    btn.disabled = !id;
+}
+document.addEventListener('partner-pick', updateCta);
+document.addEventListener('partner-clear', updateCta);
+
+document.getElementById('cl-form').addEventListener('submit', () => {
+    document.getElementById('btn-label').textContent = '⏳ Cargando…';
+    document.getElementById('btn-submit').disabled = true;
+});
+</script>
+{% endblock %}

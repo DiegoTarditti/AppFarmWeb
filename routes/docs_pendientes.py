@@ -213,6 +213,15 @@ def init_app(app):
                 prod = _find_producto(session, barcode)
                 if prod and prod.observer_id:
                     obs_id = prod.observer_id
+            # Resolución directa via obs_codigos_barras: cubre el caso donde el
+            # EAN está en Observer pero NO hay Producto local con bridge.
+            if obs_id is None:
+                row = (session.query(database.ObsCodigoBarras.producto_observer)
+                       .filter(database.ObsCodigoBarras.codigo_barras == barcode,
+                               database.ObsCodigoBarras.fecha_baja.is_(None))
+                       .first())
+                if row:
+                    obs_id = row[0]
             # Último recurso: el barcode YA es un IdProducto numérico de Observer.
             if obs_id is None:
                 try:

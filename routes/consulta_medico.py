@@ -38,12 +38,18 @@ def init_app(app):
             if not medico:
                 return render_template('consulta_medico_resultado.html', info=info)
 
+            # Matrículas vienen de obs_medicos_matriculas (1-a-N).
+            matriculas = (session.query(database.ObsMedicoMatricula.matricula)
+                          .filter(database.ObsMedicoMatricula.medico_observer == medico_id,
+                                  database.ObsMedicoMatricula.fecha_baja.is_(None))
+                          .all())
+            matriculas_str = ', '.join([m[0] for m in matriculas if m[0]])
+
             info.update({
                 'encontrado': True,
                 'nombre': medico.nombre or '',
                 'cuit': medico.cuit or '',
-                'matricula_provincial': medico.matricula_provincial or '',
-                'matricula_nacional': medico.matricula_nacional or '',
+                'matriculas': matriculas_str,
                 'baja': bool(medico.fecha_baja),
             })
 
@@ -56,7 +62,7 @@ def init_app(app):
                                 database.ObsVentaDetalle.tipo_operacion.is_(None))))
 
             kpi_row = base.with_entities(
-                func.coalesce(func.sum(database.ObsVentaDetalle.cantidad_facturada), 0).label('uds'),
+                func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
                 func.coalesce(func.sum(database.ObsVentaDetalle.importe), 0).label('importe'),
                 func.count(database.ObsVentaDetalle.id_operacion.distinct()).label('ops'),
                 func.count(database.ObsVentaDetalle.cliente_observer.distinct()).label('clientes'),
@@ -71,7 +77,7 @@ def init_app(app):
             # Top 10 productos recetados (sum cantidad).
             top_rows = (base.with_entities(
                             database.ObsVentaDetalle.producto_observer,
-                            func.coalesce(func.sum(database.ObsVentaDetalle.cantidad_facturada), 0).label('uds'),
+                            func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
                             func.coalesce(func.sum(database.ObsVentaDetalle.importe), 0).label('imp'),
                         )
                         .group_by(database.ObsVentaDetalle.producto_observer)
@@ -79,12 +85,29 @@ def init_app(app):
                         .limit(10).all())
             prod_ids = [r[0] for r in top_rows if r[0]]
             prod_map = {}
+            prod_cb = {}
             if prod_ids:
                 for op in (session.query(database.ObsProducto)
                            .filter(database.ObsProducto.observer_id.in_(prod_ids)).all()):
                     prod_map[op.observer_id] = op.descripcion or ''
+                # Resolver codigo_barra: primero via productos local (bridge),
+                # fallback a obs_codigos_barras (orden=1).
+                for p in (session.query(database.Producto)
+                          .filter(database.Producto.observer_id.in_(prod_ids)).all()):
+                    if p.codigo_barra:
+                        prod_cb[p.observer_id] = p.codigo_barra
+                sin_cb = [pid for pid in prod_ids if pid not in prod_cb]
+                if sin_cb:
+                    for row in (session.query(database.ObsCodigoBarras.producto_observer,
+                                              database.ObsCodigoBarras.codigo_barras)
+                                .filter(database.ObsCodigoBarras.producto_observer.in_(sin_cb),
+                                        database.ObsCodigoBarras.fecha_baja.is_(None),
+                                        database.ObsCodigoBarras.orden == 1).all()):
+                        if row[1]:
+                            prod_cb[row[0]] = row[1].strip()
             info['top_productos'] = [{
                 'observer_id': r[0],
+                'codigo_barra': prod_cb.get(r[0]),
                 'nombre':      prod_map.get(r[0], f'#{r[0]}'),
                 'unidades':    float(r[1] or 0),
                 'importe':     float(r[2] or 0),
@@ -93,7 +116,7 @@ def init_app(app):
             # Top OS atendidas (saber para quién receta).
             os_rows = (base.with_entities(
                             database.ObsVentaDetalle.obra_social_observer,
-                            func.coalesce(func.sum(database.ObsVentaDetalle.cantidad_facturada), 0).label('uds'),
+                            func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
                        )
                        .group_by(database.ObsVentaDetalle.obra_social_observer)
                        .order_by(desc('uds'))
@@ -117,7 +140,7 @@ def init_app(app):
                   + func.extract('month', database.ObsVentaDetalle.fecha_estadistica))
             serie_rows = (session.query(
                               ym.label('ym'),
-                              func.coalesce(func.sum(database.ObsVentaDetalle.cantidad_facturada), 0).label('uds'))
+                              func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'))
                           .filter(database.ObsVentaDetalle.medico_observer == medico_id,
                                   database.ObsVentaDetalle.fecha_estadistica >= desde_serie,
                                   database.ObsVentaDetalle.fecha_estadistica <= hasta,
@@ -135,22 +158,36 @@ def init_app(app):
 
     @app.route('/api/consulta-medico/buscar')
     def api_consulta_medico_buscar():
-        """Wrapper de /api/informes/buscar-medico sin login_required para
-        que el componente mobile pueda buscar sin sesión admin completa.
-        Top 20 por nombre, case-insensitive, mínimo 2 chars.
+        """Búsqueda tokenizada por nombre de médico. Mínimo 2 chars totales.
+
+        Cada token (separado por espacio) debe matchear el nombre con ILIKE
+        (case-insensitive, sustring). AND entre tokens — orden y posición
+        libres. Top 20 alfabético.
         """
         q = (request.args.get('q') or '').strip()
         if len(q) < 2:
             return jsonify({'items': []})
+        tokens = [t for t in q.split() if t]
         with database.get_db() as session:
-            results = (session.query(database.ObsMedico)
-                       .filter(database.ObsMedico.fecha_baja.is_(None),
-                               database.ObsMedico.nombre.ilike(f'%{q}%'))
-                       .order_by(database.ObsMedico.nombre)
-                       .limit(20).all())
+            base = (session.query(database.ObsMedico)
+                    .filter(database.ObsMedico.fecha_baja.is_(None)))
+            for t in tokens:
+                base = base.filter(database.ObsMedico.nombre.ilike(f'%{t}%'))
+            results = base.order_by(database.ObsMedico.nombre).limit(20).all()
+            # Las matrículas viven en ObsMedicoMatricula (1-a-N). Las traemos
+            # en una sola query para mostrar la primera disponible.
+            ids = [m.observer_id for m in results]
+            mat_map = {}
+            if ids:
+                for row in (session.query(database.ObsMedicoMatricula.medico_observer,
+                                          database.ObsMedicoMatricula.matricula)
+                            .filter(database.ObsMedicoMatricula.medico_observer.in_(ids),
+                                    database.ObsMedicoMatricula.fecha_baja.is_(None))
+                            .all()):
+                    mat_map.setdefault(row[0], row[1])
             return jsonify({'items': [{
                 'id':       m.observer_id,
                 'nombre':   m.nombre,
                 'cuit':     m.cuit or '',
-                'matricula': m.matricula_provincial or m.matricula_nacional or '',
+                'matricula': mat_map.get(m.observer_id, '') or '',
             } for m in results]})
