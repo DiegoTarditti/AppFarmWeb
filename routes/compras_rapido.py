@@ -16,10 +16,12 @@ from sqlalchemy import func
 import database
 from database import (
     Laboratorio,
+    ObsCodigoBarras,
     ObsLaboratorio,
     ObsProducto,
     ObsStock,
     ObsVentaMensual,
+    OfertaMinimo,
     Pedido,
     PedidoItem,
     Provider,
@@ -81,6 +83,82 @@ def init_app(app):
         hasta_3m = meses_3[0][0] * 100 + meses_3[0][1]
 
         with database.get_db() as session:
+            # 0. Ofertas multi-lab vigentes por droguería.
+            #    Para que el operador SEPA, sin tener que adivinar, cuales
+            #    drogerias tienen oferta activa hoy + qué productos están
+            #    cubiertos. mejor_descuento ya las considera en el calculo
+            #    de descuento; lo nuevo es la VISIBILIDAD (cabecera + badge).
+            from datetime import date as _date_rapido
+            hoy_oferta = _date_rapido.today()
+            ofertas_rows = (session.query(
+                                OfertaMinimo.drogueria_id,
+                                OfertaMinimo.ean,
+                                OfertaMinimo.vigencia_hasta,
+                                OfertaMinimo.observacion,
+                            )
+                            .filter(OfertaMinimo.activo.is_(True),
+                                    OfertaMinimo.drogueria_id.isnot(None),
+                                    func.coalesce(OfertaMinimo.vigencia_hasta, _date_rapido(2099, 1, 1)) >= hoy_oferta)
+                            .all())
+            # Pre-cargar nombres de drog en bulk.
+            drog_ids_oferta = {r[0] for r in ofertas_rows}
+            drog_nombre_map = {}
+            if drog_ids_oferta:
+                for p in (session.query(Provider)
+                          .filter(Provider.id.in_(drog_ids_oferta)).all()):
+                    drog_nombre_map[p.id] = p.razon_social
+            # Agregar por drog: maxima vigencia + sample obs + set de EANs.
+            ofertas_por_drog = {}
+            eans_oferta_global = set()
+            for drog_id, ean, vig, obs in ofertas_rows:
+                d = ofertas_por_drog.setdefault(drog_id, {
+                    'drogueria_id': drog_id,
+                    'drogueria_nombre': drog_nombre_map.get(drog_id, f'#{drog_id}'),
+                    'vigencia_hasta': None,
+                    'observacion': None,
+                    'n_eans': 0,
+                    'eans': set(),
+                })
+                if ean:
+                    d['eans'].add(ean)
+                    eans_oferta_global.add(ean)
+                if vig and (d['vigencia_hasta'] is None or vig > d['vigencia_hasta']):
+                    d['vigencia_hasta'] = vig
+                if obs and not d['observacion']:
+                    d['observacion'] = obs.strip()[:120] or None
+            for d in ofertas_por_drog.values():
+                d['n_eans'] = len(d['eans'])
+            # Resolver EAN → observer_id para mapear ofertas a productos del listado.
+            ean_to_obs = {}
+            if eans_oferta_global:
+                for cb, pid_obs in (session.query(ObsCodigoBarras.codigo_barras,
+                                                  ObsCodigoBarras.producto_observer)
+                                    .filter(ObsCodigoBarras.codigo_barras.in_(eans_oferta_global),
+                                            ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                    if cb:
+                        ean_to_obs[cb] = pid_obs
+            # Map producto_observer_id → list[drogueria_id] con oferta vigente.
+            ofertas_de_producto = {}
+            for drog_id, ean, _vig, _obs in ofertas_rows:
+                if ean and ean in ean_to_obs:
+                    pid_obs = ean_to_obs[ean]
+                    ofertas_de_producto.setdefault(pid_obs, set()).add(drog_id)
+
+            # Lista para la cabecera del template (ordenada por vigencia más próxima).
+            ofertas_vigentes_resumen = sorted(
+                [
+                    {
+                        'drogueria_id': d['drogueria_id'],
+                        'drogueria_nombre': d['drogueria_nombre'],
+                        'vigencia_hasta': d['vigencia_hasta'],
+                        'n_eans': d['n_eans'],
+                        'observacion': d['observacion'],
+                    }
+                    for d in ofertas_por_drog.values()
+                ],
+                key=lambda d: (d['vigencia_hasta'] or _date_rapido(2099, 1, 1)),
+            )
+
             # 1. Productos bajo mínimo en stock
             stock_q = (session.query(
                             ObsStock.producto_observer.label('pid'),
@@ -213,6 +291,14 @@ def init_app(app):
                 # Mejor opción
                 mejor = opciones[0] if opciones else None
 
+                # Drogs que tienen oferta vigente para este producto.
+                drogs_con_oferta = ofertas_de_producto.get(r.pid, set())
+                en_oferta_de = sorted([
+                    {'drogueria_id': did,
+                     'drogueria_nombre': drog_nombre_map.get(did, f'#{did}')}
+                    for did in drogs_con_oferta
+                ], key=lambda d: d['drogueria_nombre'])
+
                 productos.append({
                     'observer_id':       r.pid,
                     'descripcion':       r.desc,
@@ -232,6 +318,7 @@ def init_app(app):
                     'mejor_drog_id':     mejor['drogueria_id'] if mejor else None,
                     'mejor_drog_nombre': mejor['drogueria_nombre'] if mejor else None,
                     'mejor_dto_pct':     mejor['descuento_total_pct'] if mejor else None,
+                    'en_oferta_de':      en_oferta_de,  # productos cubiertos por OfertaMinimo vigente
                 })
 
             # Stats globales
@@ -294,7 +381,8 @@ def init_app(app):
                                    solo_clavos=solo_clavos,
                                    labs_seleccionados=labs_seleccionados_data,
                                    labs_disponibles=labs_disponibles_data,
-                                   labs_con_descuento_count=len(labs_con_descuento_ids))
+                                   labs_con_descuento_count=len(labs_con_descuento_ids),
+                                   ofertas_vigentes=ofertas_vigentes_resumen)
 
     @app.route('/compras/rapido/crear-pedidos', methods=['POST'])
     @login_required
