@@ -1202,12 +1202,14 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                         .filter(ObsSubrubro.observer_id.in_(list(subrubro_ids)))
                         .all())
             for sub_id, sub_desc, rub_desc in rows_rub:
-                if rub_desc and sub_desc:
-                    mapa_rubro[sub_id] = f'{rub_desc.strip()} · {sub_desc.strip()}'
-                elif rub_desc:
-                    mapa_rubro[sub_id] = rub_desc.strip()
-                elif sub_desc:
-                    mapa_rubro[sub_id] = sub_desc.strip()
+                # Solo guardamos el rubro (no el subrubro) — el filtro es a
+                # nivel rubro. En ObServer muchos rubros tienen un único
+                # subrubro homónimo ("Medicamentos · Medicamentos") que
+                # ensuciaría el dropdown. Si no hay rubro, fallback al
+                # subrubro como mejor esfuerzo.
+                etiq = (rub_desc or sub_desc or '').strip()
+                if etiq:
+                    mapa_rubro[sub_id] = etiq
 
         # Puente EAN ↔ IdProducto: traer el codigo_barra real de la tabla
         # local `productos` cuando esté vinculada por observer_id.
