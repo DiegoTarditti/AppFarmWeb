@@ -61,7 +61,7 @@ def init_app(app):
                     'monodroga': prod.monodroga or '',
                     'presentacion': prod.presentacion or '',
                     'laboratorio_id': prod.laboratorio_id,
-                    'fecha_baja': prod.fecha_baja.isoformat() if prod.fecha_baja else None,
+                    'no_pedir': bool(prod.no_pedir),
                 })
                 # Nombre del laboratorio (resuelto en mismo session).
                 if prod.laboratorio_id:

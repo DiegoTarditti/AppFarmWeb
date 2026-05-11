@@ -56,6 +56,18 @@ input[type=radio]:checked + .cs-tipo-btn {
 .cs-cta:active { transform: scale(.98); }
 .cs-cta:disabled { opacity: .5; cursor: not-allowed; }
 
+/* Variante secundaria: misma altura/anchura, pero outline mint (no fill).
+   La usa el atajo "Consultar medicamento" debajo del CTA principal. */
+.cs-cta--alt {
+    display: block; text-align: center; text-decoration: none;
+    margin-top: 10px;
+    background: transparent;
+    color: var(--ds-mint);
+    border: 1.5px solid var(--ds-mint);
+    box-shadow: none;
+}
+.cs-cta--alt:active { background: rgba(95,230,188,.08); }
+
 .cs-cancel { display: block; width: 100%; padding: 12px; text-align: center;
              color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
              text-decoration: none; }
@@ -181,6 +193,13 @@ input[type=radio]:checked + .cs-tipo-btn {
             <button type="submit" id="btn-submit" class="cs-cta" disabled>
                 <span id="btn-label">Consultar stock</span>
             </button>
+
+            {# Atajo a consulta de un medicamento por troquel — sin pasar
+               por lab/drog. Fuera del <form> para no ser submit. #}
+            <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">
+                🔍 Consultar producto
+            </a>
+
             <a href="{{ url_for('index') }}" class="cs-cancel">Cancelar</a>
         </div>
     </form>

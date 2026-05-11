@@ -66,7 +66,7 @@
 .cpr-badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
              font-size: 10px; font-weight: 700; text-transform: uppercase;
              letter-spacing: .04em; }
-.cpr-badge.baja { background: rgba(239,68,68,.15); color: var(--ds-danger); }
+.cpr-badge.warn { background: rgba(245,158,11,.15); color: var(--ds-warn); }
 </style>
 {% endblock %}
 
@@ -78,7 +78,7 @@
             <div class="cpr-h1">
                 {% if info.encontrado %}
                     {{ info.descripcion or 'Sin descripción' }}
-                    {% if info.fecha_baja %}<span class="cpr-badge baja">Baja</span>{% endif %}
+                    {% if info.no_pedir %}<span class="cpr-badge warn">No pedir</span>{% endif %}
                 {% else %}
                     No encontrado
                 {% endif %}
@@ -227,14 +227,37 @@
 
         // Chart histórico
         const ventas = d.ventas || [];
-        if (!ventas.length) {
+        if (!ventas.length || ventas.every(v => (typeof v === 'number' ? v === 0 : (v.unidades || 0) === 0))) {
             loading.textContent = 'Sin ventas registradas en los últimos 12 meses.';
             return;
         }
         loading.style.display = 'none';
 
-        const labels = ventas.map(v => `${String(v.mes).padStart(2,'0')}/${String(v.anio).slice(2)}`);
-        const unidades = ventas.map(v => v.unidades);
+        // Endpoint devuelve `ventas` en 2 formatos:
+        //   - [{anio, mes, unidades}, ...]  (ProductAnalytics)
+        //   - [3.0, 5.0, ...]               (Observer fallback, solo números)
+        // Si es el segundo, generamos labels con start_month + index.
+        let labels, unidades;
+        if (ventas.length && typeof ventas[0] === 'object' && ventas[0] !== null && 'mes' in ventas[0]) {
+            labels = ventas.map(v => `${String(v.mes).padStart(2,'0')}/${String(v.anio).slice(2)}`);
+            unidades = ventas.map(v => v.unidades);
+        } else {
+            // Array de floats. Reconstruir meses desde start_month (mes del [0]) hacia adelante.
+            const startMonth = d.start_month || 1;
+            const hoy = new Date();
+            // Asumir que el array termina en el mes ACTUAL (o el último completo). Vamos
+            // hacia atrás len-1 meses desde hoy.
+            const len = ventas.length;
+            labels = [];
+            unidades = ventas;
+            let y = hoy.getFullYear(), m = hoy.getMonth() + 1;
+            const tmp = [];
+            for (let i = 0; i < len; i++) {
+                tmp.unshift({ y, m });
+                m--; if (m === 0) { m = 12; y--; }
+            }
+            labels = tmp.map(p => `${String(p.m).padStart(2,'0')}/${String(p.y).slice(2)}`);
+        }
         new Chart(canvas, {
             type: 'bar',
             data: {
