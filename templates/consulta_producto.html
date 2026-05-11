@@ -141,8 +141,12 @@
 
 <!-- ZXing fallback para iOS Safari y Firefox (no soportan BarcodeDetector).
      Hosteado localmente (en /static/js/) para evitar content blockers iOS,
-     CDNs bloqueados o latencia. Global expuesto: `window.ZXing` (UMD). -->
-<script src="{{ url_for('static', filename='js/zxing-browser.min.js') }}"></script>
+     CDNs bloqueados o latencia. Global expuesto: `window.ZXing` (UMD).
+     ?v=1 = cache-busting si necesitamos forzar refresh en el futuro. -->
+<script src="{{ url_for('static', filename='js/zxing-browser.min.js') }}?v=2"></script>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <script>
 (function () {
     const form = document.getElementById('cp-form');
