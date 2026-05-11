@@ -475,6 +475,15 @@ def init_app(app):
         analizado_en = _datetime.fromtimestamp(
             _os.path.getmtime(json_path)).strftime('%d/%m/%Y')
 
+        # Orden alfabético por nombre (case-insensitive). Aplica en los 3
+        # modos del template (lista / detalle / tabla) — ambos consumen
+        # el mismo array data['products'] y los dicts JS (PRECIOS/NOMBRES/
+        # CHART_DATA) se generan con el orden post-sort.
+        data['products'] = sorted(
+            data.get('products', []) or [],
+            key=lambda p: (p.get('nombre') or '').upper(),
+        )
+
         # Pre-cómputo por producto para que el template sea liviano:
         # - vendido 3m (suma de los últimos 3 meses) + 12m (total).
         # - dias de cobertura.
