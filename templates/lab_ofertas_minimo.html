@@ -16,9 +16,14 @@
         </a>
         {% if total > 0 %}
         <button type="button" id="btn-sync-render" onclick="syncARender({{ lab.id }}, '{{ lab.nombre | e }}')"
-                title="Empujar estas ofertas a Render (requiere RENDER_BASE_URL + OFERTAS_SYNC_TOKEN en env local)"
+                title="Empujar estas ofertas a Render (requiere RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env local)"
                 class="text-xs bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 font-semibold px-3 py-1.5 rounded-lg">
             🚀 Sync con Render
+        </button>
+        <button type="button" id="btn-pull-render" onclick="pullDeRender({{ lab.id }}, '{{ lab.nombre | e }}')"
+                title="Traer las ofertas de Render para este lab (las actualiza/crea en local)"
+                class="text-xs bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-3 py-1.5 rounded-lg">
+            ⬇ Pull de Render
         </button>
         <form method="POST" action="{{ url_for('lab_ofertas_minimo_borrar_todas', lab_id=lab.id) }}"
               onsubmit="return confirm('Eliminar TODAS las ofertas de {{ lab.nombre }}?')">
@@ -54,6 +59,32 @@ async function syncARender(labId, labNombre) {
     } finally {
         btn.disabled = false;
         btn.textContent = '🚀 Sync con Render';
+    }
+}
+
+async function pullDeRender(labId, labNombre) {
+    if (!confirm(`Traer de Render las ofertas de "${labNombre}"?\n\nCrea/actualiza las filas en local (clave: EAN + grupo + droguería). ¿Continuar?`)) return;
+    const btn = document.getElementById('btn-pull-render');
+    btn.disabled = true;
+    btn.textContent = '⏳ Bajando…';
+    try {
+        const r = await fetch(`/laboratorio/${labId}/ofertas-minimo/pull-render`, {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error: ' + (d.error || 'desconocido'));
+        } else {
+            alert(`✓ Bajado de Render.\n\nLab: ${d.laboratorio}\nTraídas: ${d.fetched}\nCreadas: ${d.creadas}\nActualizadas: ${d.actualizadas}` +
+                  (d.errores && d.errores.length ? `\n\n⚠ ${d.errores.length} errores:\n${d.errores.slice(0,3).join('\n')}` : ''));
+            window.location.reload();
+        }
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '⬇ Pull de Render';
     }
 }
 </script>
