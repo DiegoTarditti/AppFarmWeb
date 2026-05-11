@@ -177,7 +177,7 @@ body.csr-detail-mode .csr-card-pager { display: block; }
                     {% if datos_al %} · Datos al: {{ datos_al }}{% endif %}
                 </div>
             </div>
-            <button type="button" class="csr-h-icon-btn" id="btn-toggle-vista" title="Cambiar vista (lista / detalle)">📋</button>
+            <button type="button" class="csr-h-icon-btn" id="btn-toggle-vista" title="Ver detalle con gráfico">📊</button>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
             <button type="button" class="csr-h-icon-btn" id="btn-share" title="Compartir resumen">📤</button>
         </div>
@@ -473,10 +473,12 @@ const VIEW_KEY = 'consulta_stock_vista';
 function aplicarVista(modo) {
     const isDetail = modo === 'detalle';
     document.body.classList.toggle('csr-detail-mode', isDetail);
-    document.getElementById('btn-toggle-vista').textContent = isDetail ? '📊' : '📋';
+    // El icono muestra el modo AL QUE VAS si tocás. En detalle muestra ☰
+    // (lista), en lista muestra 📊 (chart/detalle). Patrón típico móvil.
+    document.getElementById('btn-toggle-vista').textContent = isDetail ? '☰' : '📊';
     document.getElementById('btn-toggle-vista').title = isDetail
-        ? 'Modo detalle (con charts). Tap para ver lista compacta.'
-        : 'Modo lista. Tap para ver detalle con charts.';
+        ? 'Ver como lista compacta'
+        : 'Ver detalle con gráfico';
     // Al pasar a detalle, force-render los charts visibles ahora (el
     // IntersectionObserver puede no disparar el callback de elementos que
     // estaban display:none antes — depende del browser).
