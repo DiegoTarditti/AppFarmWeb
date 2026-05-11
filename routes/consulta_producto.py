@@ -5,11 +5,12 @@ nombre, lab, stock, ventas, gráfico histórico. NO requiere elegir lab/drog
 previo — el EAN resuelve directo contra el catálogo local + bridge ObServer.
 
 Endpoints:
-  GET /consulta-producto           → form de entrada (input + cámara)
-  POST /consulta-producto/buscar   → recibe EAN, resuelve, redirect al detail
-  GET /consulta-producto/<ean>     → renderiza resultado con KPIs + chart
+  GET /consulta-producto                       → form de entrada (input + cámara + búsqueda descripción)
+  POST /consulta-producto/buscar               → recibe EAN, resuelve, redirect al detail
+  GET /consulta-producto/<ean>                 → renderiza resultado con KPIs + chart
+  GET /api/consulta-producto/buscar-desc?q=…   → autocomplete por descripción (multi-token AND)
 """
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, jsonify, redirect, render_template, request, url_for
 
 import database
 from helpers import _find_producto
@@ -106,3 +107,97 @@ def init_app(app):
                             ol = session.get(database.ObsLaboratorio, op.laboratorio_observer)
                             if ol: info['laboratorio'] = ol.descripcion or ''
         return render_template('consulta_producto_resultado.html', info=info)
+
+    @app.route('/api/consulta-producto/buscar-desc')
+    def api_consulta_producto_buscar_desc():
+        """Autocomplete por descripción tokenizada.
+
+        Query: ?q=amox 500
+        - Cada token (separado por espacio) debe matchear con ILIKE en
+          Producto.descripcion (AND lógico, orden libre — convención del proyecto).
+        - Mínimo 2 chars totales para evitar resultados gigantes.
+        - Devuelve top 20 con EAN, descripcion, laboratorio.
+        - Filtra productos sin EAN (no se pueden consultar después).
+        - Si no hay matches locales, hace fallback a ObsProducto.
+        """
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        tokens = [t for t in q.split() if t]
+        if not tokens:
+            return jsonify({'items': []})
+
+        with database.get_db() as session:
+            # 1. Productos locales (tienen EAN y bridge a Observer).
+            base = (session.query(database.Producto)
+                    .filter(database.Producto.codigo_barra.isnot(None),
+                            database.Producto.codigo_barra != ''))
+            for t in tokens:
+                base = base.filter(database.Producto.descripcion.ilike(f'%{t}%'))
+            results = base.order_by(database.Producto.descripcion).limit(20).all()
+
+            # Pre-cargar nombres de lab en una sola query.
+            lab_ids = {p.laboratorio_id for p in results if p.laboratorio_id}
+            lab_map = {}
+            if lab_ids:
+                for lab in (session.query(database.Laboratorio)
+                            .filter(database.Laboratorio.id.in_(lab_ids)).all()):
+                    lab_map[lab.id] = lab.nombre
+
+            items = [{
+                'ean':         p.codigo_barra,
+                'descripcion': p.descripcion or '',
+                'laboratorio': lab_map.get(p.laboratorio_id, '') if p.laboratorio_id else '',
+                'fuente':      'local',
+            } for p in results]
+
+            # 2. Fallback a ObsProducto si los locales son pocos.
+            # Usamos como "EAN" el observer_id (la ruta /consulta-producto/<ean>
+            # lo resuelve via int().
+            if len(items) < 10:
+                eans_locales = {it['ean'] for it in items}
+                obs_q = (session.query(database.ObsProducto)
+                         .filter(database.ObsProducto.fecha_baja.is_(None)))
+                for t in tokens:
+                    obs_q = obs_q.filter(database.ObsProducto.descripcion.ilike(f'%{t}%'))
+                obs_results = obs_q.order_by(database.ObsProducto.descripcion).limit(20).all()
+
+                # Pre-cargar nombres de lab observer.
+                lab_obs_ids = {o.laboratorio_observer for o in obs_results
+                               if o.laboratorio_observer}
+                lab_obs_map = {}
+                if lab_obs_ids:
+                    for ol in (session.query(database.ObsLaboratorio)
+                               .filter(database.ObsLaboratorio.observer_id.in_(lab_obs_ids)).all()):
+                        lab_obs_map[ol.observer_id] = ol.descripcion or ''
+
+                # Resolver EAN via obs_codigos_barras para los que tengan.
+                obs_ids_buscar = [o.observer_id for o in obs_results]
+                obs_to_ean = {}
+                if obs_ids_buscar:
+                    for row in (session.query(database.ObsCodigoBarras.producto_observer,
+                                              database.ObsCodigoBarras.codigo_barras)
+                                .filter(database.ObsCodigoBarras.producto_observer.in_(obs_ids_buscar),
+                                        database.ObsCodigoBarras.fecha_baja.is_(None),
+                                        database.ObsCodigoBarras.orden == 1).all()):
+                        if row[1] and row[1].strip():
+                            obs_to_ean[row[0]] = row[1].strip()
+
+                for o in obs_results:
+                    ean = obs_to_ean.get(o.observer_id)
+                    if not ean:
+                        # Sin EAN físico: usamos observer_id como pseudo-EAN.
+                        # La ruta detalle lo resuelve via int(ean).
+                        ean = str(o.observer_id)
+                    if ean in eans_locales:
+                        continue  # ya estaba en locales
+                    items.append({
+                        'ean':         ean,
+                        'descripcion': o.descripcion or '',
+                        'laboratorio': lab_obs_map.get(o.laboratorio_observer, ''),
+                        'fuente':      'observer',
+                    })
+                    if len(items) >= 30:
+                        break
+
+        return jsonify({'items': items[:30]})

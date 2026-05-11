@@ -55,6 +55,37 @@
                 background: rgba(255,255,255,.15); border: none; color: #fff;
                 font-size: 24px; cursor: pointer; }
 .cp-cam-error { color: var(--ds-danger); font-size: 13px; margin-top: 12px; text-align: center; padding: 0 16px; }
+
+/* Búsqueda por descripción */
+.cp-sep { display: flex; align-items: center; gap: 10px; margin: 16px 0 12px;
+          color: var(--ds-text-mute); font-size: 11px; text-transform: uppercase;
+          letter-spacing: .12em; }
+.cp-sep::before, .cp-sep::after { content: ''; flex: 1; height: 1px;
+          background: var(--ds-line); }
+.cp-desc-wrap { position: relative; }
+.cp-desc-input { width: 100%; background: var(--ds-surface-2);
+          border: 1.5px solid var(--ds-line); border-radius: 12px;
+          padding: 14px 14px; font-size: 15px; color: var(--ds-text);
+          font-family: inherit; }
+.cp-desc-input:focus { outline: none; border-color: var(--ds-mint);
+          box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+.cp-desc-results { position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+          background: var(--ds-surface-2);
+          border: 1px solid var(--ds-line); border-radius: 12px;
+          max-height: 60vh; overflow-y: auto; z-index: 20;
+          box-shadow: 0 8px 24px rgba(0,0,0,.4); display: none; }
+.cp-desc-results.open { display: block; }
+.cp-desc-item { padding: 12px 14px; border-bottom: 1px solid var(--ds-line);
+          cursor: pointer; color: var(--ds-text); }
+.cp-desc-item:last-child { border-bottom: none; }
+.cp-desc-item:hover, .cp-desc-item:focus { background: rgba(95,230,188,.08); }
+.cp-desc-item .cp-name { font-size: 14px; font-weight: 600; }
+.cp-desc-item .cp-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px;
+          display: flex; gap: 6px; flex-wrap: wrap; }
+.cp-desc-item .cp-meta .badge-obs { background: rgba(139,92,246,.2);
+          color: #c4b5fd; padding: 1px 6px; border-radius: 8px; }
+.cp-desc-empty { padding: 14px; color: var(--ds-text-mute); font-size: 13px;
+          text-align: center; }
 </style>
 {% endblock %}
 
@@ -86,8 +117,18 @@
         <button type="submit" class="cp-submit" id="btn-submit">
             Consultar
         </button>
-        <a href="{{ url_for('index') }}" class="cp-cancel">Cancelar</a>
     </form>
+
+    <div class="cp-sep">o buscar por descripción</div>
+
+    <div class="cp-desc-wrap">
+        <input type="text" id="cp-desc" class="cp-desc-input"
+               placeholder='Ej: "amox 500" — multi-token AND'
+               autocomplete="off">
+        <div id="cp-desc-results" class="cp-desc-results"></div>
+    </div>
+
+    <a href="{{ url_for('index') }}" class="cp-cancel" style="margin-top: 24px;">Cancelar</a>
 </div>
 
 <!-- Modal cámara para escaneo. -->
@@ -212,6 +253,88 @@
     // Cerrar modal con Escape.
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && modal.classList.contains('open')) stopCamera();
+    });
+
+    // ── Búsqueda por descripción con autocomplete ──────────────────────
+    const descInput = document.getElementById('cp-desc');
+    const descResults = document.getElementById('cp-desc-results');
+    let descDebounceId = null;
+    let descLastReq = 0;
+
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({
+            '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        })[c]);
+    }
+
+    async function buscarPorDescripcion(q) {
+        const reqId = ++descLastReq;
+        try {
+            const r = await fetch('/api/consulta-producto/buscar-desc?q=' + encodeURIComponent(q));
+            if (reqId !== descLastReq) return;  // request más nueva ya disparada
+            const data = await r.json();
+            renderDescResults(data.items || []);
+        } catch (_) {
+            // silencioso — no quemar la UI por un fetch fallido
+        }
+    }
+
+    function renderDescResults(items) {
+        if (!items.length) {
+            descResults.innerHTML = '<div class="cp-desc-empty">Sin resultados.</div>';
+            descResults.classList.add('open');
+            return;
+        }
+        descResults.innerHTML = items.map(it => {
+            const badge = it.fuente === 'observer'
+                ? '<span class="badge-obs">ObServer</span>' : '';
+            return `<div class="cp-desc-item" data-ean="${escapeHtml(it.ean)}" tabindex="0">
+                <div class="cp-name">${escapeHtml(it.descripcion)}</div>
+                <div class="cp-meta">
+                    <span>${escapeHtml(it.ean)}</span>
+                    ${it.laboratorio ? `<span>· ${escapeHtml(it.laboratorio)}</span>` : ''}
+                    ${badge}
+                </div>
+            </div>`;
+        }).join('');
+        descResults.classList.add('open');
+    }
+
+    descInput.addEventListener('input', () => {
+        const q = descInput.value.trim();
+        clearTimeout(descDebounceId);
+        if (q.length < 2) {
+            descResults.classList.remove('open');
+            return;
+        }
+        descDebounceId = setTimeout(() => buscarPorDescripcion(q), 200);
+    });
+
+    // Click en resultado → navega al detalle.
+    descResults.addEventListener('click', e => {
+        const item = e.target.closest('.cp-desc-item');
+        if (!item) return;
+        const ean = item.dataset.ean;
+        if (ean) window.location.href = '/consulta-producto/' + encodeURIComponent(ean);
+    });
+
+    // Cerrar dropdown al hacer click afuera.
+    document.addEventListener('click', e => {
+        if (!descInput.contains(e.target) && !descResults.contains(e.target)) {
+            descResults.classList.remove('open');
+        }
+    });
+
+    // Enter en el input → si hay un resultado visible, ir al primero.
+    descInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const first = descResults.querySelector('.cp-desc-item');
+            if (first) {
+                const ean = first.dataset.ean;
+                if (ean) window.location.href = '/consulta-producto/' + encodeURIComponent(ean);
+            }
+        }
     });
 })();
 </script>
