@@ -238,6 +238,28 @@
     </span>
     {% endif %}
 
+    {# Marcador permanente de oferta vigente para esta droguería.
+       Se muestra SIEMPRE que haya oferta vigente, independiente de si el
+       usuario eligió filtrar (usar_oferta=1) o no — así el operador sabe
+       que está armando un pedido sobre una drog con oferta activa. #}
+    {% if oferta_disponible_n and prov %}
+    <span class="ar-pill" style="background: rgba(95,230,188,.12); border-color: rgba(95,230,188,.35); color: var(--ds-mint);"
+          title="Oferta multi-lab cargada para {{ prov.razon_social }}{% if oferta_observacion %} · {{ oferta_observacion }}{% endif %}">
+        <span>🎯</span>
+        <span><b>Oferta {{ oferta_drog_nombre or prov.razon_social }}</b>
+            {% if oferta_vigencia_hasta %}
+            · vigente hasta <b>{{ oferta_vigencia_hasta.strftime('%d/%m/%Y') }}</b>
+            {% else %}
+            · sin fecha de vencimiento
+            {% endif %}
+            · {{ oferta_disponible_n }} producto(s)
+            {% if usar_oferta == '1' %}
+            · <b style="color: var(--ds-mint); text-transform: uppercase; font-size: 10px;">filtro activo</b>
+            {% endif %}
+        </span>
+    </span>
+    {% endif %}
+
     {# Último sync de stock + botón sincronizar ahora #}
     <span id="last-sync-info"
           class="ar-pill {% if last_sync_min is not none and last_sync_min < 90 %}ok{% elif last_sync_min is not none and last_sync_min < 360 %}warn{% else %}danger{% endif %}"
