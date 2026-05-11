@@ -7,13 +7,28 @@
 <style>
 .csr-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 90px; }
 
-/* Header */
+/* Header compacto */
 .csr-header { position: sticky; top: 0; z-index: 30; background: var(--ds-bg);
-              padding: 10px 0 8px; border-bottom: 1px solid var(--ds-line); }
-.csr-h1 { font-size: 18px; font-weight: 700; color: var(--ds-text); line-height: 1.2; }
-.csr-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px; }
+              padding: 8px 0 6px; border-bottom: 1px solid var(--ds-line); }
+.csr-h-top { display: flex; align-items: center; gap: 8px; }
+.csr-h-icon-btn { width: 36px; height: 36px; display: flex; align-items: center;
+                   justify-content: center; background: var(--ds-surface);
+                   border: 1px solid var(--ds-line); border-radius: 8px;
+                   color: var(--ds-text); cursor: pointer; flex-shrink: 0;
+                   font-size: 18px; transition: all .15s;
+                   text-decoration: none; }
+.csr-h-icon-btn:active { transform: scale(.92); background: var(--ds-mint); color: #0a3a2a; }
+.csr-h-text { flex: 1; min-width: 0; }
+.csr-h1 { font-size: 16px; font-weight: 700; color: var(--ds-text); line-height: 1.15;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.csr-meta { font-size: 10px; color: var(--ds-text-mute); margin-top: 1px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Filtros sticky */
+/* Toggle filtros — bloque expandible, colapsado por default */
+.csr-h-expand { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+.csr-h-expand.open { max-height: 200px; }
+
+/* Filtros */
 .csr-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .csr-chip { padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
             background: var(--ds-surface); border: 1px solid var(--ds-line-2);
@@ -106,12 +121,19 @@
 {% block main %}
 <div class="csr-screen">
     <div class="csr-header">
-        <div class="csr-h1">📦 {{ laboratorio }}</div>
-        <div class="csr-meta">{{ periodo }} · {{ products | length }} productos · analizado {{ analizado_en }}</div>
+        <div class="csr-h-top">
+            <a href="{{ url_for('consulta_stock') }}" class="csr-h-icon-btn" title="Volver a elegir">←</a>
+            <div class="csr-h-text">
+                <div class="csr-h1">📦 {{ laboratorio }}</div>
+                <div class="csr-meta">{{ products | length }} productos · {{ periodo }}</div>
+            </div>
+            <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
+            <button type="button" class="csr-h-icon-btn" id="btn-share" title="Compartir resumen">📤</button>
+        </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% for cat, msg in messages %}
-        <div style="margin-top:8px;padding:8px 10px;border-radius:8px;font-size:12px;
+        <div style="margin-top:6px;padding:6px 10px;border-radius:8px;font-size:12px;
                     background:{{ 'rgba(239,68,68,.15)' if cat == 'error' else 'rgba(95,230,188,.15)' }};
                     color:{{ 'var(--ds-danger)' if cat == 'error' else 'var(--ds-mint)' }};">
             {{ msg }}
@@ -119,14 +141,16 @@
         {% endfor %}
         {% endwith %}
 
-        <div class="csr-filters">
-            <button class="csr-chip active" data-filter="all">Todos</button>
-            <button class="csr-chip" data-filter="sugerido">Sugeridos</button>
-            <button class="csr-chip" data-filter="bajo">Bajo stock</button>
-            <button class="csr-chip" data-filter="sinmov">Sin mov 60d</button>
-            <button class="csr-chip" data-filter="marked">Marcados</button>
+        <div class="csr-h-expand" id="csr-h-expand">
+            <input type="text" class="csr-search" id="csr-search" placeholder="🔍 Buscar producto…">
+            <div class="csr-filters">
+                <button class="csr-chip active" data-filter="all">Todos</button>
+                <button class="csr-chip" data-filter="sugerido">Sugeridos</button>
+                <button class="csr-chip" data-filter="bajo">Bajo stock</button>
+                <button class="csr-chip" data-filter="sinmov">Sin mov 60d</button>
+                <button class="csr-chip" data-filter="marked">Marcados</button>
+            </div>
         </div>
-        <input type="text" class="csr-search" id="csr-search" placeholder="🔍 Buscar producto…">
     </div>
 
     <div id="csr-list">
@@ -233,6 +257,44 @@ const EANS = {
 {% endfor %}};
 
 let pedido = {};  // idx → qty
+
+// Toggle expand del header (filtros + buscador)
+document.getElementById('btn-toggle-filtros').addEventListener('click', () => {
+    document.getElementById('csr-h-expand').classList.toggle('open');
+});
+
+// Compartir resumen por WhatsApp (o share API del SO)
+document.getElementById('btn-share').addEventListener('click', () => {
+    const periodo = {{ periodo | tojson }};
+    const total_products = {{ products | length }};
+    const marcados = Object.entries(pedido);
+
+    let texto = `📦 *${LAB}*\n${periodo}\n${total_products} productos analizados\n`;
+
+    if (marcados.length) {
+        let total = 0;
+        texto += `\n🛒 *Marcados para pedir (${marcados.length}):*\n`;
+        marcados.forEach(([idx, qty]) => {
+            const sub = (PRECIOS[idx] || 0) * qty;
+            total += sub;
+            texto += `• ${NOMBRES[idx]} — ${qty}u · $${sub}\n`;
+        });
+        texto += `\n*Total: $${total}*`;
+    } else {
+        texto += `\nSin items marcados todavía.`;
+    }
+
+    if (navigator.share) {
+        navigator.share({title: `Consulta ${LAB}`, text: texto})
+            .catch(() => fallbackWhatsApp(texto));
+    } else {
+        fallbackWhatsApp(texto);
+    }
+});
+function fallbackWhatsApp(texto) {
+    const url = 'https://wa.me/?text=' + encodeURIComponent(texto);
+    window.open(url, '_blank');
+}
 
 function qtyAdjust(btn, delta) {
     const input = btn.parentElement.querySelector('.csr-qty-input');
