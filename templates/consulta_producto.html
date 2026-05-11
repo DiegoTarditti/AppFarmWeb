@@ -98,6 +98,8 @@
     <p class="cp-cam-error" id="cp-cam-error" style="display:none;"></p>
 </div>
 
+<!-- ZXing fallback para iOS Safari y Firefox (no soportan BarcodeDetector). -->
+<script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/index.min.js"></script>
 <script>
 (function () {
     const form = document.getElementById('cp-form');
@@ -110,12 +112,17 @@
     const errBox = document.getElementById('cp-cam-error');
 
     let stream = null;
-    let detector = null;
+    let nativeDetector = null;   // BarcodeDetector nativo (Android/Chrome)
+    let zxingReader = null;      // ZXing fallback (iOS/Firefox)
+    let zxingControls = null;    // controls del decodeFromStream para detenerlo
     let scanLoopId = null;
 
-    // BarcodeDetector está en Chrome/Edge Android y Chrome Desktop. iOS/Firefox no.
-    const supportsBarcode = ('BarcodeDetector' in window);
-    if (!supportsBarcode) {
+    // Detector nativo: Chrome/Edge Android + Chrome Desktop.
+    // Fallback ZXing: iOS Safari + Firefox + cualquier otro.
+    const supportsNative = ('BarcodeDetector' in window);
+    const supportsZxing = (typeof ZXingBrowser !== 'undefined');
+    const supportsCamera = supportsNative || supportsZxing;
+    if (!supportsCamera) {
         camBtn.disabled = true;
         camBtn.title = 'Tu navegador no soporta escaneo con cámara. Tipeá el código a mano.';
     }
@@ -129,46 +136,76 @@
     camBtn.addEventListener('click', startCamera);
     closeBtn.addEventListener('click', stopCamera);
 
+    function onCodeDetected(raw) {
+        const clean = String(raw || '').trim();
+        if (/^\d{8,14}$/.test(clean)) {
+            eanInput.value = clean;
+            stopCamera();
+            form.submit();
+            return true;
+        }
+        return false;
+    }
+
     async function startCamera() {
-        if (!supportsBarcode) return;
+        if (!supportsCamera) return;
         errBox.style.display = 'none';
         modal.classList.add('open');
         try {
-            stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: { ideal: 'environment' } }, audio: false
-            });
-            video.srcObject = stream;
-            detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e'] });
-            scanLoop();
+            if (supportsNative) {
+                // Path nativo: getUserMedia + BarcodeDetector en loop.
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } }, audio: false
+                });
+                video.srcObject = stream;
+                nativeDetector = new BarcodeDetector({
+                    formats: ['ean_13', 'ean_8', 'code_128', 'upc_a', 'upc_e']
+                });
+                scanLoopNative();
+            } else {
+                // Path ZXing (iOS/Firefox). decodeFromVideoDevice maneja getUserMedia internamente.
+                zxingReader = new ZXingBrowser.BrowserMultiFormatReader();
+                zxingControls = await zxingReader.decodeFromVideoDevice(
+                    undefined,  // deviceId — undefined = default trasera si está disponible
+                    video,
+                    (result) => {
+                        if (result) onCodeDetected(result.getText());
+                    }
+                );
+            }
         } catch (e) {
-            errBox.textContent = 'No pude abrir la cámara: ' + e.message;
+            errBox.textContent = 'No pude abrir la cámara: ' + (e.message || e);
             errBox.style.display = 'block';
         }
     }
 
-    async function scanLoop() {
-        if (!stream || !detector) return;
+    async function scanLoopNative() {
+        if (!stream || !nativeDetector) return;
         try {
-            const codes = await detector.detect(video);
-            if (codes && codes.length) {
-                const raw = String(codes[0].rawValue || '').trim();
-                if (/^\d{8,14}$/.test(raw)) {
-                    eanInput.value = raw;
-                    stopCamera();
-                    form.submit();
-                    return;
-                }
+            const codes = await nativeDetector.detect(video);
+            if (codes && codes.length && onCodeDetected(codes[0].rawValue)) {
+                return;  // ya frenamos en onCodeDetected → stopCamera
             }
         } catch (_) { /* ignorar frames con error */ }
-        scanLoopId = setTimeout(scanLoop, 250);
+        scanLoopId = setTimeout(scanLoopNative, 250);
     }
 
     function stopCamera() {
         modal.classList.remove('open');
         if (scanLoopId) { clearTimeout(scanLoopId); scanLoopId = null; }
+        if (zxingControls) {
+            try { zxingControls.stop(); } catch (_) {}
+            zxingControls = null;
+        }
+        zxingReader = null;
+        nativeDetector = null;
         if (stream) {
             stream.getTracks().forEach(t => t.stop());
             stream = null;
+        }
+        if (video.srcObject) {
+            try { video.srcObject.getTracks?.().forEach(t => t.stop()); } catch (_) {}
+            video.srcObject = null;
         }
     }
 
