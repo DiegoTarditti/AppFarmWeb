@@ -269,7 +269,7 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                 <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
             </div>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
-            <button type="button" class="csr-h-icon-btn" id="btn-share" title="Compartir resumen">📤</button>
+            <button type="button" class="csr-h-icon-btn" id="btn-share" title="Descargar XLS (marcados si hay, sino todo)">📥</button>
         </div>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -770,38 +770,42 @@ document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
     });
 });
 
-// Compartir resumen por WhatsApp (o share API del SO)
-document.getElementById('btn-share').addEventListener('click', () => {
-    const periodo = {{ periodo | tojson }};
-    const total_products = {{ products | length }};
+// Descargar XLS con los items (marcados si hay, sino todos los del análisis).
+document.getElementById('btn-share').addEventListener('click', async () => {
     const marcados = Object.entries(pedido);
-
-    let texto = `📦 *${LAB}*\n${periodo}\n${total_products} productos analizados\n`;
-
-    if (marcados.length) {
-        let total = 0;
-        texto += `\n🛒 *Marcados para pedir (${marcados.length}):*\n`;
-        marcados.forEach(([idx, qty]) => {
-            const sub = (PRECIOS[idx] || 0) * qty;
-            total += sub;
-            texto += `• ${NOMBRES[idx]} — ${qty}u · $${sub}\n`;
+    const items = marcados.map(([idx, qty]) => ({idx: parseInt(idx, 10), qty}));
+    const btn = document.getElementById('btn-share');
+    const original = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/consulta-stock/export-xls', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            credentials: 'same-origin',
+            body: JSON.stringify({uid: UID, laboratorio: LAB, items}),
         });
-        texto += `\n*Total: $${total}*`;
-    } else {
-        texto += `\nSin items marcados todavía.`;
-    }
-
-    if (navigator.share) {
-        navigator.share({title: `Consulta ${LAB}`, text: texto})
-            .catch(() => fallbackWhatsApp(texto));
-    } else {
-        fallbackWhatsApp(texto);
+        if (!r.ok) throw new Error('export falló (' + r.status + ')');
+        const blob = await r.blob();
+        // Sacar filename del Content-Disposition si vino, sino default.
+        const cd = r.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^"]+)"?/);
+        const fname = m ? m[1] : `consulta_${Date.now()}.xlsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fname;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert('Error al exportar: ' + err.message);
+    } finally {
+        btn.textContent = original;
+        btn.disabled = false;
     }
 });
-function fallbackWhatsApp(texto) {
-    const url = 'https://wa.me/?text=' + encodeURIComponent(texto);
-    window.open(url, '_blank');
-}
 
 // Expand inline del chart dentro de una card en modo lista. Lazy render.
 function toggleExpand(btn) {
