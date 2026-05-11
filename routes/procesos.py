@@ -273,6 +273,34 @@ def init_app(app):
 
         return redirect(url_for('consulta_stock_resultado', uid=uid))
 
+    @app.route('/consulta-stock/sync-stock', methods=['POST'])
+    def consulta_stock_sync_stock():
+        """Encola un comando 'sync_now' en panel_comandos para que el
+        DockerPanel local lo levante en el próximo polling y refresque
+        stock + ventas desde ObServer.
+
+        Retorna JSON con el id del comando + ETA típico (~30s polling +
+        ~1-2min de sync, según volumen).
+        """
+        from database import PanelComando
+        username = getattr(current_user, 'username', None) or 'usuario_movil'
+        with database.get_db() as session:
+            cmd = PanelComando(
+                comando='sync_now',
+                estado='pendiente',
+                solicitado_por=f'{username} (móvil)',
+            )
+            session.add(cmd)
+            session.commit()
+            cmd_id = cmd.id
+        return jsonify({
+            'ok': True,
+            'id': cmd_id,
+            'mensaje': ('Sync encolado. La PC de la farmacia lo levanta en ~30s '
+                        'y tarda 1-2 min en completar. Re-ejecutá la consulta '
+                        'después para ver el stock actualizado.'),
+        })
+
     @app.route('/consulta-stock/export-xls', methods=['POST'])
     def consulta_stock_export_xls():
         """Genera un XLS desde la consulta móvil. Si vienen items con qty>0,

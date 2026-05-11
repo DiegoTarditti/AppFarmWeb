@@ -292,6 +292,7 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                 <button type="button" class="csr-h-icon-btn" data-vista="tabla" title="Tabla (mejor en apaisado)">▦</button>
             </div>
             <button type="button" class="csr-h-icon-btn" id="btn-toggle-filtros" title="Filtros">🔍</button>
+            <button type="button" class="csr-h-icon-btn" id="btn-sync-stock" title="Sincronizar stock con ObServer (encola en la PC de la farmacia)">🔄</button>
             <button type="button" class="csr-h-icon-btn" id="btn-share" title="Descargar XLS (marcados si hay, sino todo)">📥</button>
         </div>
 
@@ -801,6 +802,31 @@ document.querySelectorAll('#csr-tabla tbody tr.csr-tabla-row').forEach(tr => {
         // Render chart con delay para que CSS aplique medidas.
         setTimeout(() => renderChart(extra.querySelector('.csr-chart'), idx), 30);
     });
+});
+
+// Sincronizar stock — encola un comando sync_now en panel_comandos de
+// Render para que el DockerPanel local lo levante en su próximo poll.
+document.getElementById('btn-sync-stock').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sync-stock');
+    if (!confirm('¿Sincronizar stock con ObServer?\n\nVa a encolar un comando que la PC de la farmacia levanta en ~30s y tarda 1-2 min en completar.\n\nDespués re-ejecutá la consulta para ver datos actualizados.')) return;
+    const original = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    try {
+        const r = await fetch('/consulta-stock/sync-stock', {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'sync falló');
+        alert('✅ Sync encolado (#' + d.id + ').\n\n' + d.mensaje);
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 60000);
+    } catch (err) {
+        alert('❌ Error: ' + err.message);
+        btn.textContent = original;
+        btn.disabled = false;
+    }
 });
 
 // Descargar XLS con los items (marcados si hay, sino todos los del análisis).
