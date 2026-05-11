@@ -445,14 +445,31 @@ def init_app(app):
             oferta_pids = set()
             oferta_disponible_n = 0
             oferta_nombre_drog = None
+            oferta_vigencia_hasta = None
+            oferta_observacion = None
             if prov_id:
                 hoy_o = _date.today()
-                eans_oferta = [r[0] for r in (session.query(_OM_drog.ean)
+                # Traemos ean + vigencia + observacion en una sola pasada para
+                # poder mostrar info de la oferta en cabecera (vigencia + nombre).
+                rows_oferta = (session.query(_OM_drog.ean,
+                                              _OM_drog.vigencia_hasta,
+                                              _OM_drog.observacion)
                                .filter(_OM_drog.drogueria_id == prov_id,
                                        _OM_drog.activo.is_(True),
                                        or_(_OM_drog.vigencia_hasta.is_(None),
                                            _OM_drog.vigencia_hasta >= hoy_o))
-                               .distinct().all()) if r[0]]
+                               .all())
+                eans_oferta = list({r[0] for r in rows_oferta if r[0]})
+                if rows_oferta:
+                    # Tomar la vigencia mas LEJANA (la oferta vigente "mas larga")
+                    # y la primera observacion no vacia.
+                    vigs = [r[1] for r in rows_oferta if r[1]]
+                    if vigs:
+                        oferta_vigencia_hasta = max(vigs)
+                    for r in rows_oferta:
+                        if r[2] and r[2].strip():
+                            oferta_observacion = r[2].strip()[:120]
+                            break
                 if eans_oferta:
                     pids_oferta_full = {r[0] for r in (session.query(_OCB.producto_observer)
                                         .filter(_OCB.codigo_barras.in_(eans_oferta),
@@ -878,6 +895,8 @@ def init_app(app):
                                    oferta_drog_n=len(oferta_pids) if oferta_pids else 0,
                                    oferta_drog_nombre=oferta_nombre_drog,
                                    oferta_disponible_n=oferta_disponible_n,
+                                   oferta_vigencia_hasta=oferta_vigencia_hasta,
+                                   oferta_observacion=oferta_observacion,
                                    usar_oferta=usar_oferta)
 
     @app.route('/compras/armar/exportar-minimos')
