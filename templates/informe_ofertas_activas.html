@@ -8,8 +8,67 @@
         <h1 class="text-base font-bold text-[#1e1e1e]">Ofertas activas</h1>
         <p class="text-xs text-[#888] mt-0.5">Todas las ofertas cargadas en el sistema — por lab, droguería y módulos.</p>
     </div>
-    <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline">← Informes</a>
+    <div class="flex items-center gap-2 flex-wrap">
+        <button type="button" id="btn-sync-all-render" onclick="syncAllRender()"
+                title="Empujar TODAS las ofertas a Render. Requiere RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env."
+                class="text-xs bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 font-semibold px-3 py-1.5 rounded-lg">
+            🚀 Sync TODAS a Render
+        </button>
+        <button type="button" id="btn-pull-all-render" onclick="pullAllRender()"
+                title="Traer TODAS las ofertas de Render (upsert local)."
+                class="text-xs bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-3 py-1.5 rounded-lg">
+            ⬇ Pull TODAS de Render
+        </button>
+        <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline">← Informes</a>
+    </div>
 </div>
+
+<script>
+async function syncAllRender() {
+    if (!confirm('Empujar TODAS las ofertas (de todos los labs) a Render?\n\nEsto puede tardar varios segundos. ¿Continuar?')) return;
+    const btn = document.getElementById('btn-sync-all-render');
+    btn.disabled = true; btn.textContent = '⏳ Sincronizando…';
+    try {
+        const r = await fetch('/informes/ofertas-activas/sync-render-bulk', {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error: ' + (d.error || 'desconocido'));
+        } else {
+            alert(`✓ Sincronizado.\n\nLabs procesados: ${d.labs}\nCreadas: ${d.creadas}\nActualizadas: ${d.actualizadas}` +
+                  (d.errores && d.errores.length ? `\n\n⚠ ${d.errores.length} errores:\n${d.errores.slice(0,3).join('\n')}` : ''));
+        }
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = '🚀 Sync TODAS a Render';
+    }
+}
+async function pullAllRender() {
+    if (!confirm('Traer TODAS las ofertas de Render (upsert local)?\n\nVa a crear/actualizar filas locales. ¿Continuar?')) return;
+    const btn = document.getElementById('btn-pull-all-render');
+    btn.disabled = true; btn.textContent = '⏳ Bajando…';
+    try {
+        const r = await fetch('/informes/ofertas-activas/pull-render-bulk', {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error: ' + (d.error || 'desconocido'));
+        } else {
+            alert(`✓ Bajado.\n\nTraídas: ${d.fetched}\nCreadas: ${d.creadas}\nActualizadas: ${d.actualizadas}` +
+                  (d.labs_creados ? `\nLabs creados localmente: ${d.labs_creados}` : '') +
+                  (d.errores && d.errores.length ? `\n\n⚠ ${d.errores.length} errores:\n${d.errores.slice(0,3).join('\n')}` : ''));
+            window.location.reload();
+        }
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = '⬇ Pull TODAS de Render';
+    }
+}
+</script>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
 
