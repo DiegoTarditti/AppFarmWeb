@@ -916,8 +916,9 @@ def init_app(app):
         # sobre el producto creado/vinculado (cierra el loop import → queue
         # → oferta). No bloquea el flujo: si falla, la validación sigue OK.
         try:
+            from database import Laboratorio as _Lab
+            from database import get_db as _get_db
             from routes.productos_pendientes import enqueue_pendiente
-            from database import Laboratorio as _Lab, get_db as _get_db
             supplier_nombre = None
             if lab_id:
                 with _get_db() as _s:
