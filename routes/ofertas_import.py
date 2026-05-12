@@ -924,7 +924,7 @@ def init_app(app):
                 with _get_db() as _s:
                     _l = _s.get(_Lab, lab_id)
                     if _l:
-                        supplier_nombre = _l.descripcion or _l.razon_social
+                        supplier_nombre = _l.nombre
 
             # Pre-fetch candidatos para los not_found (un solo bulk call). Sin
             # esto, el queue queda con top_candidatos vacíos. Como el frontend
