@@ -814,7 +814,9 @@ def init_app(app):
                 if op:
                     producto_desc = op.descripcion
             if medico_id:
-                base = base.filter(ObsVentaDetalle.medico_observer == medico_id)
+                from helpers import medicos_observer_ids_compartidos
+                ids_med = medicos_observer_ids_compartidos(session, medico_id)
+                base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
                 m = session.get(ObsMedico, medico_id)
                 if m:
                     medico_nombre = m.nombre
@@ -1111,7 +1113,9 @@ def init_app(app):
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
-                base = base.filter(ObsVentaDetalle.medico_observer == medico_id)
+                from helpers import medicos_observer_ids_compartidos
+                ids_med = medicos_observer_ids_compartidos(session, medico_id)
+                base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
             ya_joined_obs = False
             if droga_id:
                 base = base.join(
@@ -1283,7 +1287,9 @@ def init_app(app):
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
-                base = base.filter(ObsVentaDetalle.medico_observer == medico_id)
+                from helpers import medicos_observer_ids_compartidos
+                ids_med = medicos_observer_ids_compartidos(session, medico_id)
+                base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
             ya_joined_obs = False
             if droga_id:
                 base = base.join(
@@ -1299,7 +1305,9 @@ def init_app(app):
                 except ValueError:
                     mid = None
                 if mid is not None:
-                    base = base.filter(ObsVentaDetalle.medico_observer == mid)
+                    from helpers import medicos_observer_ids_compartidos
+                    ids_med = medicos_observer_ids_compartidos(session, mid)
+                    base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
                 else:
                     base = base.filter(ObsVentaDetalle.medico_observer.is_(None))
             elif drill_dim == 'producto':
