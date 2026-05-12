@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% block title %}Compras multi-lab — Pedido por oferta de droguería{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.ml-screen { max-width: 900px; margin: 0 auto; padding: 16px; }
+.ml-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.ml-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+           border-radius: 12px; padding: 14px 16px; margin-bottom: 10px;
+           display: flex; align-items: center; gap: 14px;
+           transition: background .15s, border-color .15s;
+           text-decoration: none; color: var(--ds-text); }
+.ml-card:hover { background: var(--ds-surface-2); border-color: var(--ds-mint); }
+
+.ml-icon { width: 48px; height: 48px; flex-shrink: 0;
+           background: linear-gradient(135deg, rgba(95,230,188,.15), rgba(95,230,188,.05));
+           border: 1px solid var(--ds-line); border-radius: 10px;
+           display: flex; align-items: center; justify-content: center;
+           font-size: 24px; }
+
+.ml-body { flex: 1; min-width: 0; }
+.ml-name { font-size: 15px; font-weight: 700; color: var(--ds-text); }
+.ml-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px;
+           display: flex; gap: 10px; flex-wrap: wrap; }
+.ml-meta strong { color: var(--ds-mint); }
+
+.ml-arrow { font-size: 18px; color: var(--ds-text-mute); flex-shrink: 0; }
+
+.ml-empty { text-align: center; padding: 40px 16px; color: var(--ds-text-mute);
+            background: var(--ds-surface); border: 1px dashed var(--ds-line);
+            border-radius: 12px; }
+.ml-empty-icon { font-size: 48px; margin-bottom: 8px; opacity: .5; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="ml-screen">
+    <header class="page-header" style="margin-bottom: 16px;">
+        <div class="page-header__left">
+            <span class="section-label">Compras · Multi-lab</span>
+            <h1 class="page-header__title">Pedido por <span class="glow-text">oferta de droguería</span></h1>
+            <p class="page-header__subtitle">Drogs con oferta vigente multi-lab. Tocá para armar el pedido filtrado por su oferta.</p>
+        </div>
+    </header>
+
+    {% if drogs %}
+        {% for d in drogs %}
+        <a href="{{ url_for('compras_dia_armar', prov=d.id, usar_oferta=1) }}" class="ml-card">
+            <div class="ml-icon">🏭</div>
+            <div class="ml-body">
+                <div class="ml-name">{{ d.nombre }}</div>
+                <div class="ml-meta">
+                    <span><strong>{{ d.n_items }}</strong> productos en oferta</span>
+                    {% if d.vigencia_hasta %}
+                    <span>· vigente hasta <strong>{{ d.vigencia_hasta }}</strong></span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="ml-arrow">→</div>
+        </a>
+        {% endfor %}
+    {% else %}
+        <div class="ml-empty">
+            <div class="ml-empty-icon">📭</div>
+            <p>No hay droguerías con oferta multi-lab vigente.</p>
+            <p style="font-size: 12px; margin-top: 8px;">Cargá una oferta desde <a href="{{ url_for('ofertas_import_page') }}" style="color: var(--ds-mint);">/ofertas/import</a> en modo "Por droguería".</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -199,6 +199,15 @@ CAMPOS = {
                      'valido_hasta', 'valid_hasta', 'oferta_hasta', 'expira'],
         'ejemplos': ['31/05/2026', '30/06/2026'],
     },
+    'observacion': {
+        'label': 'Observación',
+        'descripcion': 'Etiqueta libre por ítem (ej. TR Lanzamiento, OTC, etc.)',
+        'tipo': 'text',
+        'nucleo': False,
+        'keywords': ['observacion', 'observaciones', 'obs', 'nota', 'notas',
+                     'comentario', 'comentarios', 'detalle', 'etiqueta', 'tag'],
+        'ejemplos': ['TR Lanzamiento', 'OTC', 'Promo abril'],
+    },
 }
 
 

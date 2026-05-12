@@ -12,6 +12,7 @@ Endpoints:
 from datetime import date, timedelta
 
 from flask import flash, redirect, render_template, request, url_for
+from flask_login import login_required
 from sqlalchemy import desc, func, or_
 
 import database
@@ -20,10 +21,12 @@ import database
 def init_app(app):
 
     @app.route('/consulta-lab')
+    @login_required
     def consulta_lab():
         return render_template('consulta_lab.html')
 
     @app.route('/consulta-lab/buscar', methods=['POST'])
+    @login_required
     def consulta_lab_buscar():
         lab_id = request.form.get('partner_id', type=int)
         if not lab_id:
@@ -32,6 +35,7 @@ def init_app(app):
         return redirect(url_for('consulta_lab_detalle', lab_id=lab_id))
 
     @app.route('/consulta-lab/<int:lab_id>')
+    @login_required
     def consulta_lab_detalle(lab_id):
         try:
             n_days = max(7, min(365, int(request.args.get('dias', 90))))

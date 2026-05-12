@@ -11,6 +11,7 @@ Endpoints:
 from datetime import date, timedelta
 
 from flask import jsonify, render_template, request
+from flask_login import login_required
 from sqlalchemy import desc, func
 
 import database
@@ -20,10 +21,12 @@ from helpers import medicos_observer_ids_compartidos
 def init_app(app):
 
     @app.route('/consulta-medico')
+    @login_required
     def consulta_medico():
         return render_template('consulta_medico.html')
 
     @app.route('/consulta-medico/<int:medico_id>')
+    @login_required
     def consulta_medico_detalle(medico_id):
         """KPIs y top productos del médico en los últimos N días."""
         try:
@@ -166,6 +169,7 @@ def init_app(app):
         return render_template('consulta_medico_resultado.html', info=info)
 
     @app.route('/api/consulta-medico/buscar')
+    @login_required
     def api_consulta_medico_buscar():
         """Búsqueda tokenizada por nombre de médico. Mínimo 2 chars totales.
 

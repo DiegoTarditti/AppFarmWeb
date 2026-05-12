@@ -670,6 +670,11 @@ def guardar_equivalencia(session, producto_id, descripcion=None,
             producto_id=producto_id,
         )
         session.add(nueva)
+        # autoflush=False en este proyecto -> el SELECT del próximo item
+        # no ve este add hasta flush. Sin esto, items con misma desc_norm
+        # (ej. "KLARICID 500 MG" repetida en el Excel) tiran UniqueViolation
+        # contra uq_equiv_lab_desc al hacer el commit batched.
+        session.flush()
 
     if code_clean:
         _upsert(by_code=True, by_desc=False)

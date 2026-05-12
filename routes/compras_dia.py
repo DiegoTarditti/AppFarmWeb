@@ -899,6 +899,51 @@ def init_app(app):
                                    oferta_observacion=oferta_observacion,
                                    usar_oferta=usar_oferta)
 
+    @app.route('/compras/multi-lab')
+    @login_required
+    def compras_multi_lab():
+        """Listado de droguerías que tienen oferta vigente multi-lab cargada.
+
+        Cada fila lleva al armado de pedido filtrado por esa oferta
+        (`/compras/armar?prov=<id>&usar_oferta=1`). Útil para el flujo
+        Ciafarma: una oferta con productos de varios labs, se elige la drog
+        y se arma el pedido directo de los productos de la oferta.
+        """
+        from datetime import date as _date
+
+        from sqlalchemy import func as _func
+
+        from database import OfertaMinimo, Provider
+        hoy = _date.today()
+        with get_db() as session:
+            # Drogs con al menos 1 OfertaMinimo vigente (vigencia_hasta >= hoy o NULL).
+            sub = (session.query(OfertaMinimo.drogueria_id,
+                                  _func.count(OfertaMinimo.id).label('n'),
+                                  _func.min(OfertaMinimo.vigencia_desde).label('vd'),
+                                  _func.max(OfertaMinimo.vigencia_hasta).label('vh'))
+                   .filter(OfertaMinimo.drogueria_id.isnot(None),
+                           or_(OfertaMinimo.vigencia_hasta.is_(None),
+                               OfertaMinimo.vigencia_hasta >= hoy))
+                   .group_by(OfertaMinimo.drogueria_id)
+                   .all())
+            drog_ids = [r[0] for r in sub if r[0]]
+            prov_map = {}
+            if drog_ids:
+                for p in (session.query(Provider)
+                          .filter(Provider.id.in_(drog_ids)).all()):
+                    prov_map[p.id] = p.razon_social or f'#{p.id}'
+            drogs = sorted(
+                [{
+                    'id':       r[0],
+                    'nombre':   prov_map.get(r[0], f'#{r[0]}'),
+                    'n_items':  int(r[1]),
+                    'vigencia_desde': r[2].strftime('%d/%m/%Y') if r[2] else None,
+                    'vigencia_hasta': r[3].strftime('%d/%m/%Y') if r[3] else None,
+                } for r in sub if r[0]],
+                key=lambda x: -x['n_items'],
+            )
+        return render_template('compras_multi_lab.html', drogs=drogs)
+
     @app.route('/compras/armar/exportar-minimos')
     @login_required
     def compras_armar_exportar_minimos():

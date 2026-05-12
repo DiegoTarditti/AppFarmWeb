@@ -1,6 +1,7 @@
 """Laboratorio CRUD routes."""
 
 import datetime
+import hmac
 import json
 import os
 import statistics
@@ -638,7 +639,7 @@ def init_app(app):
         token_esperado = os.environ.get('PANEL_REMOTO_TOKEN', '')
         if not token_esperado:
             return jsonify({'ok': False, 'error': 'Sync deshabilitado en este server'}), 403
-        if request.headers.get('X-Panel-Token', '') != token_esperado:
+        if not hmac.compare_digest(request.headers.get('X-Panel-Token', ''), token_esperado):
             return jsonify({'ok': False, 'error': 'Token inválido'}), 401
 
         body = request.get_json(silent=True) or {}
@@ -748,7 +749,7 @@ def init_app(app):
         token_esperado = os.environ.get('PANEL_REMOTO_TOKEN', '')
         if not token_esperado:
             return jsonify({'ok': False, 'error': 'Sync deshabilitado en este server'}), 403
-        if request.headers.get('X-Panel-Token', '') != token_esperado:
+        if not hmac.compare_digest(request.headers.get('X-Panel-Token', ''), token_esperado):
             return jsonify({'ok': False, 'error': 'Token inválido'}), 401
 
         lab_id = request.args.get('laboratorio_id', type=int)
