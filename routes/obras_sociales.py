@@ -2093,7 +2093,9 @@ def init_app(app):
             recetas_q = recetas_q.having(
                 func.min(ObsVentaDetalle.obra_social_observer) == os_filter_id)
         if med_filter_id:
-            recetas_q = recetas_q.filter(ObsVentaDetalle.medico_observer == med_filter_id)
+            from helpers import medicos_observer_ids_compartidos
+            ids_med = medicos_observer_ids_compartidos(session, med_filter_id)
+            recetas_q = recetas_q.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
         if prod_filter_id:
             # Solo recetas que tengan AL MENOS UN item con ese producto.
             sub_op = (session.query(ObsVentaDetalle.id_operacion)
@@ -2574,9 +2576,11 @@ def init_app(app):
                 flash('Médico no encontrado.', 'error')
                 return redirect(url_for('os_dashboard'))
 
+            from helpers import medicos_observer_ids_compartidos
+            ids_med = medicos_observer_ids_compartidos(session, medico_id)
             base_filters = [
                 ObsVentaDetalle.id_farmacia == id_farmacia,
-                ObsVentaDetalle.medico_observer == medico_id,
+                ObsVentaDetalle.medico_observer.in_(ids_med),
                 ObsVentaDetalle.fecha_estadistica >= desde,
                 ObsVentaDetalle.fecha_estadistica <= hasta,
             ]
@@ -2675,7 +2679,7 @@ def init_app(app):
                        .join(ObsVentaDetalle,
                              ObsVentaDetalle.obra_social_observer == ObsObraSocial.observer_id)
                        .filter(ObsVentaDetalle.id_farmacia == id_farmacia,
-                               ObsVentaDetalle.medico_observer == medico_id,
+                               ObsVentaDetalle.medico_observer.in_(ids_med),
                                ObsVentaDetalle.fecha_estadistica >= desde,
                                ObsVentaDetalle.fecha_estadistica <= hasta)
                        .group_by(ObsObraSocial.observer_id, ObsObraSocial.descripcion)
