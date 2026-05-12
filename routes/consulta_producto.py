@@ -11,6 +11,7 @@ Endpoints:
   GET /api/consulta-producto/buscar-desc?q=…   → autocomplete por descripción (multi-token AND)
 """
 from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask_login import login_required
 
 import database
 from helpers import _find_producto
@@ -19,11 +20,13 @@ from helpers import _find_producto
 def init_app(app):
 
     @app.route('/consulta-producto')
+    @login_required
     def consulta_producto():
         """Pantalla entrada: input grande + botón cámara para escanear EAN."""
         return render_template('consulta_producto.html')
 
     @app.route('/consulta-producto/buscar', methods=['POST'])
+    @login_required
     def consulta_producto_buscar():
         """Recibe el EAN del form (input manual o cámara), resuelve contra
         catálogo local + bridge ObServer, redirige al detalle si encuentra.
@@ -41,6 +44,7 @@ def init_app(app):
         return redirect(url_for('consulta_producto_detalle', ean=ean))
 
     @app.route('/consulta-producto/<ean>')
+    @login_required
     def consulta_producto_detalle(ean):
         """Resultado: resuelve EAN → producto + observer_id, pasa contexto al
         template. El chart histórico se llena vía fetch a /api/product/<ean>/chart
@@ -127,6 +131,7 @@ def init_app(app):
         return render_template('consulta_producto_resultado.html', info=info)
 
     @app.route('/api/consulta-producto/buscar-desc')
+    @login_required
     def api_consulta_producto_buscar_desc():
         """Autocomplete por descripción tokenizada.
 
