@@ -137,9 +137,23 @@ class TestEdgeCases:
 
     def test_inputs_none_no_revientan(self):
         m = calcular_metricas_pedido_auto(stock=None, minimo=None, maximo=None, u12m=None, m12m=None)
-        assert m['sugerido'] == 1
+        # Sin ventas: no se propone compra.
+        assert m['sugerido'] == 0
+        assert m['base_sugerido'] == 'sin_ventas'
         assert m['perdida_mensual'] == 0.0
         assert m['min_diag'] == 'sin_ventas'
+
+    def test_sin_ventas_sugerido_cero(self):
+        # Aunque haya stock<minimo, si no hay ventas en 12m no proponemos compra.
+        m = calcular_metricas_pedido_auto(stock=0, minimo=10, maximo=None, u12m=0, m12m=0)
+        assert m['sugerido'] == 0
+        assert m['base_sugerido'] == 'sin_ventas'
+
+    def test_sin_ventas_con_maximo_sugerido_cero(self):
+        # Idem aunque haya máximo configurado.
+        m = calcular_metricas_pedido_auto(stock=0, minimo=10, maximo=50, u12m=0, m12m=0)
+        assert m['sugerido'] == 0
+        assert m['base_sugerido'] == 'sin_ventas'
 
     def test_sugerido_es_int(self):
         m = calcular_metricas_pedido_auto(stock=0, minimo=10, maximo=None, u12m=120, m12m=12000)

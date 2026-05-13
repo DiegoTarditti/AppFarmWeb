@@ -260,6 +260,15 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.getElementById('modal-crear').classList.add('hidden');
 });
 
+// Auto-abrir el modal si la URL viene con ?nuevo=1 (shortcut desde el home).
+(function() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('nuevo') === '1') {
+        const m = document.getElementById('modal-crear');
+        if (m) m.classList.remove('hidden');
+    }
+})();
+
 // Overlay "procesando" cuando se dispara el sync de ventas desde el modal
 (function() {
     const overlay = document.createElement('div');

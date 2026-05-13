@@ -83,13 +83,19 @@ def init_app(app):
         """Dashboard de sync: cuenta de filas por entidad + última corrida."""
         with database.get_db() as session:
             cuentas = {
-                'laboratorios': session.query(database.ObsLaboratorio).count(),
-                'rubros':       session.query(database.ObsRubro).count(),
-                'subrubros':    session.query(database.ObsSubrubro).count(),
-                'nombres_drogas': session.query(database.ObsNombreDroga).count(),
-                'productos':    session.query(database.ObsProducto).count(),
-                'stock':        session.query(database.ObsStock).count(),
-                'ventas_mensuales': session.query(database.ObsVentaMensual).count(),
+                'laboratorios':       session.query(database.ObsLaboratorio).count(),
+                'rubros':             session.query(database.ObsRubro).count(),
+                'subrubros':          session.query(database.ObsSubrubro).count(),
+                'nombres_drogas':     session.query(database.ObsNombreDroga).count(),
+                'productos':          session.query(database.ObsProducto).count(),
+                'stock':              session.query(database.ObsStock).count(),
+                'ventas_mensuales':   session.query(database.ObsVentaMensual).count(),
+                'obras_sociales':     session.query(database.ObsObraSocial).count(),
+                'convenios':          session.query(database.ObsConvenio).count(),
+                'planes':             session.query(database.ObsPlan).count(),
+                'colegios_medicos':   session.query(database.ObsColegioMedico).count(),
+                'medicos':            session.query(database.ObsMedico).count(),
+                'medicos_matriculas': session.query(database.ObsMedicoMatricula).count(),
             }
             # Última ejecución por entidad
             ultimos = {}

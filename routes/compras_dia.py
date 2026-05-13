@@ -164,10 +164,49 @@ def init_app(app):
             )
             sin_horarios = [{'id': p.id, 'nombre': p.razon_social}
                             for p in drogerias_sin_horarios]
+
+            # Labs con al menos 1 producto bajo mínimo (para el dropdown
+            # "🧪 Laboratorio" del top bar). Mismo set que muestra
+            # informe_pedido_auto en su pantalla de selección, así no
+            # presentamos labs vacíos al usuario.
+            from sqlalchemy import distinct as _distinct
+            from sqlalchemy import func as _func2
+
+            from database import ObsLaboratorio, ObsProducto, ObsStock
+            _stock_lab = (
+                session.query(
+                    ObsStock.producto_observer.label('pid'),
+                    _func2.sum(ObsStock.stock_actual).label('stock'),
+                    _func2.sum(ObsStock.minimo).label('minimo'),
+                )
+                .filter(ObsStock.minimo.isnot(None),
+                        ObsStock.minimo > 0)
+                .group_by(ObsStock.producto_observer)
+                .subquery()
+            )
+            _labs_alertas_q = (
+                session.query(
+                    ObsLaboratorio.observer_id,
+                    ObsLaboratorio.descripcion,
+                    _func2.count(_distinct(ObsProducto.observer_id)).label('n'),
+                )
+                .join(ObsProducto,
+                      ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+                .join(_stock_lab, _stock_lab.c.pid == ObsProducto.observer_id)
+                .filter(ObsProducto.fecha_baja.is_(None))
+                .filter(_stock_lab.c.stock < _stock_lab.c.minimo)
+                .group_by(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
+                .order_by(ObsLaboratorio.descripcion.asc())
+            )
+            labs_con_alertas = [
+                {'lab_id': r[0], 'nombre': r[1], 'n': int(r[2])}
+                for r in _labs_alertas_q.all()
+            ]
         return render_template('compras_dia.html',
                                proveedores=proveedores,
                                sin_horarios=sin_horarios,
-                               dias=DIAS_LABELS)
+                               dias=DIAS_LABELS,
+                               labs_con_alertas=labs_con_alertas)
 
     @app.route('/api/drogueria/<int:prov_id>/pedidos-emitidos')
     @login_required
@@ -355,6 +394,10 @@ def init_app(app):
         # prov ahora es OPCIONAL. Si no viene → modo "todas las drogs activas
         # con horarios cargados". Mostramos badge por droguería en cada fila.
         prov_id = request.args.get('prov', type=int)
+        # lab_id: cuando viene del dropdown "🧪 Laboratorio" de /pedidos/dia.
+        # Filtra el universo a productos del lab y desactiva la matriz lab×drog
+        # (el user eligió un solo lab, no hace falta resolver qué drog cubre).
+        lab_id = request.args.get('lab_id', type=int)
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
@@ -384,6 +427,20 @@ def init_app(app):
                 if not prov:
                     return redirect(url_for('compras_dia'))
 
+            # Lab pre-seleccionado (flujo "🧪 Laboratorio"). Resolvemos el
+            # observer_id del lab, su nombre y su Laboratorio LOCAL (para
+            # poder traer ofertas cargadas por lab_id local).
+            lab_obs = None
+            lab_nombre = None
+            lab_local = None
+            if lab_id:
+                lab_obs = session.get(ObsLaboratorio, lab_id)
+                if not lab_obs:
+                    return redirect(url_for('compras_dia'))
+                lab_nombre = lab_obs.descripcion
+                lab_local = (session.query(Laboratorio)
+                             .filter(Laboratorio.observer_id == lab_id).first())
+
             # Universo: bajo mínimo en obs_stock + rubro Medicamentos (12).
             stock_q = (session.query(
                 ObsStock.producto_observer.label('pid'),
@@ -394,9 +451,11 @@ def init_app(app):
               .group_by(ObsStock.producto_observer).subquery())
 
             # Ventas 12m por producto (agregado para tabla).
+            # Incluye monto para derivar PVP estimado = m12m / u12m.
             v12_q = (session.query(
                 ObsVentaMensual.producto_observer.label('pid'),
                 func.sum(ObsVentaMensual.unidades).label('u12m'),
+                func.sum(ObsVentaMensual.monto).label('m12m'),
             ).group_by(ObsVentaMensual.producto_observer).subquery())
 
             # Ventas ayer y última semana por producto.
@@ -492,6 +551,7 @@ def init_app(app):
                 stock_q.c.stock,
                 stock_q.c.minimo,
                 func.coalesce(v12_q.c.u12m, 0).label('u12m'),
+                func.coalesce(v12_q.c.m12m, 0).label('m12m'),
             )
             .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
             .outerjoin(ObsLaboratorio,
@@ -514,6 +574,12 @@ def init_app(app):
                     stock_q.c.stock * 365 < target_dias *
                         func.coalesce(v12_q.c.u12m, 0),
                 ))
+
+            # Filtro por lab pre-seleccionado: descartamos la lógica multi-drog
+            # y solo mostramos productos de ESE lab. Cubre el flujo
+            # /pedidos/dia → 🧪 Laboratorio → elegir lab.
+            if lab_id:
+                base_q = base_q.filter(ObsProducto.laboratorio_observer == lab_id)
             base = base_q.all()
 
             # Filtro rubro=Medicamentos (12). Lo aplicamos en Python por simplicidad
@@ -645,6 +711,10 @@ def init_app(app):
                                 or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, ''))
                 cubre_lab = lab_local_id in labs_cubiertos
                 u12m_int = int(r.u12m or 0)
+                m12m_val = float(r.m12m or 0)
+                # PVP estimado = monto/unidades sobre 12 meses. Aproxima el
+                # precio efectivo de venta. 0 si nunca se vendió.
+                pvp_est  = (m12m_val / u12m_int) if u12m_int else 0.0
                 u24h_val = int(v24h_rows.get(r.pid, 0) or 0)
                 u7d_val  = int(v7d_rows.get(r.pid, 0) or 0)
                 min_actual = int(r.minimo or 0)
@@ -739,6 +809,7 @@ def init_app(app):
                     'u24h': u24h_val,
                     'u7d': u7d_val,
                     'u12m': u12m_int,
+                    'pvp': round(pvp_est, 2),
                     'sin_mov_60d': bool(sin_mov),
                     'a_pedir': a_pedir,
                     'avg_diario': round(avg_diario, 3),
@@ -878,6 +949,44 @@ def init_app(app):
             if last_sync_stock:
                 last_sync_min = int((now_ar() - last_sync_stock).total_seconds() // 60)
 
+            # Ofertas del lab pre-seleccionado: OfertaMinimo activas+vigentes
+            # del lab_local. Aprovechamos que ya tenemos el lab para mostrar
+            # un resumen en el header con: total, por drog/directo, vigencia,
+            # mejor descuento.
+            lab_ofertas = []
+            if lab_id and lab_local:
+                from datetime import date as _date_lo
+                hoy_lo = _date_lo.today()
+                rows_lo = (session.query(_OM_drog)
+                           .filter(_OM_drog.laboratorio_id == lab_local.id,
+                                   _OM_drog.activo.is_(True),
+                                   or_(_OM_drog.vigencia_hasta.is_(None),
+                                       _OM_drog.vigencia_hasta >= hoy_lo))
+                           .all())
+                # Map drogueria_id → razon_social para etiquetar.
+                drog_ids_of = {o.drogueria_id for o in rows_lo if o.drogueria_id}
+                drog_nombres_of = {}
+                if drog_ids_of:
+                    for p_of in (session.query(Provider)
+                                 .filter(Provider.id.in_(drog_ids_of)).all()):
+                        drog_nombres_of[p_of.id] = p_of.razon_social
+                for o in rows_lo:
+                    lab_ofertas.append({
+                        'id': o.id,
+                        'ean': o.ean,
+                        'descripcion': o.descripcion or '',
+                        'descuento_psl': float(o.descuento_psl or 0),
+                        'unidades_minima': int(o.unidades_minima) if o.unidades_minima else None,
+                        'tipo_descuento': o.tipo_descuento or 'simple',
+                        'drogueria_id': o.drogueria_id,
+                        'drogueria_nombre': drog_nombres_of.get(o.drogueria_id) if o.drogueria_id else None,
+                        'vigencia_hasta': o.vigencia_hasta,
+                        'observacion': (o.observacion or '').strip()[:120] if o.observacion else None,
+                    })
+                # Orden: descuento DESC, después por droguería.
+                lab_ofertas.sort(key=lambda x: (-x['descuento_psl'],
+                                                x['drogueria_nombre'] or ''))
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
@@ -897,7 +1006,10 @@ def init_app(app):
                                    oferta_disponible_n=oferta_disponible_n,
                                    oferta_vigencia_hasta=oferta_vigencia_hasta,
                                    oferta_observacion=oferta_observacion,
-                                   usar_oferta=usar_oferta)
+                                   usar_oferta=usar_oferta,
+                                   lab_id=lab_id,
+                                   lab_nombre=lab_nombre,
+                                   lab_ofertas=lab_ofertas if lab_id else [])
 
     @app.route('/compras/multi-lab')
     @login_required
@@ -1911,17 +2023,78 @@ def init_app(app):
             from database import CAMPOS_SISTEMA as _CAMPOS
             _CAMPO_LABEL = dict(_CAMPOS)
 
+            # Encabezado libre del usuario (config.advanced.header_*).
+            # Se renderiza arriba de los headers de columnas. El texto es por
+            # columna: dict {field: valor} en header_por_columna. Las columnas
+            # vacías quedan en blanco. Backward compat: si viene header_texto
+            # legacy (multilínea libre), se usa esa.
+            _adv = cfg.get('advanced') or {}
+            _header_on  = bool(_adv.get('header_incluir'))
+            _header_por_col = _adv.get('header_por_columna') or {}
+            _header_legacy_txt = str(_adv.get('header_texto') or '').strip('\r\n')
+
             if plant.formato == 'xlsx':
                 import openpyxl
                 wb = openpyxl.Workbook()
                 ws = wb.active
+                # Formato Excel por defecto por campo. Se aplica a cada celda
+                # de datos. Los headers + encabezado libre quedan en General.
+                _FORMAT_BY_FIELD = {
+                    'codigo_barra':     '0',       # EAN: entero sin decimales
+                    'precio':           '0.00',    # PVP: 2 decimales
+                    'avg_monthly':      '0.0',     # Promedio mensual: 1 decimal
+                }
+                # Labels cortos para el header del XLSX. Las drogs esperan
+                # "CodigoBarra" / "Cantidad", no el label largo de CAMPOS_SISTEMA
+                # ("Código de barra (EAN)" / "Cantidad total (mod+oferta+sin deal)").
+                _HEADER_LABEL = {
+                    'codigo_barra':     'CodigoBarra',
+                    'descripcion':      'Descripcion',
+                    'cantidad':         'Cantidad',
+                    'cant_modulo':      'CantModulo',
+                    'cant_oferta':      'CantOferta',
+                    'cant_oferta_min':  'CantOfertaMin',
+                    'cant_nodeal':      'CantSinDeal',
+                    'precio':           'Precio',
+                    'erp_qty':          'StockERP',
+                    'rotacion':         'Rotacion',
+                    'avg_monthly':      'PromedioMensual',
+                    'espacio':          '',
+                }
                 cols = [c if isinstance(c, str) else c.get('field', '') for c in cfg.get('columnas', [])]
                 if not cols:
                     cols = ['codigo_barra', 'descripcion', 'cantidad']
-                headers = [_CAMPO_LABEL.get(c, c) for c in cols]
+
+                # Encabezado: fila con valor por columna desde header_por_columna.
+                # Si no hay valores per-col pero hay texto legacy (multilínea),
+                # respetamos ese fallback.
+                if _header_on:
+                    if _header_por_col:
+                        ws.append([str(_header_por_col.get(c, '') or '') for c in cols])
+                    elif _header_legacy_txt:
+                        for line in _header_legacy_txt.splitlines():
+                            ws.append([line])
+                # Headers cortos por droguería (CodigoBarra, Cantidad, …).
+                headers = [_HEADER_LABEL.get(c, _CAMPO_LABEL.get(c, c)) for c in cols]
                 ws.append(headers)
+                # Filas de datos + formato de celda por columna.
                 for row in rows:
-                    ws.append([row.get(_FIELD_ALIAS.get(c, c), '') for c in cols])
+                    row_vals = []
+                    for field in cols:
+                        v = row.get(_FIELD_ALIAS.get(field, field), '')
+                        # EAN: convertir a int para que Excel lo trate numérico.
+                        if field == 'codigo_barra' and v not in (None, ''):
+                            try:
+                                v = int(str(v).strip())
+                            except (ValueError, TypeError):
+                                pass  # dejar string si no es numérico
+                        row_vals.append(v)
+                    ws.append(row_vals)
+                    # Aplicar formato a la fila recién agregada.
+                    for col_idx, field in enumerate(cols, start=1):
+                        fmt = _FORMAT_BY_FIELD.get(field)
+                        if fmt:
+                            ws.cell(row=ws.max_row, column=col_idx).number_format = fmt
                 buf = BytesIO()
                 wb.save(buf)
                 buf.seek(0)
@@ -1935,6 +2108,22 @@ def init_app(app):
                 return jsonify({'ok': False, 'error': 'Plantilla sin campos'}), 400
             line_len = max(c['col_inicio'] + c['longitud'] for c in campos)
             lines = []
+            # Encabezado: una línea concatenando los valores por columna en
+            # el mismo orden que las columnas activas (TXT/CSV). Si solo hay
+            # header_texto legacy, se respeta ese fallback (multilínea).
+            if _header_on:
+                if _header_por_col:
+                    # Para TXT no tenemos columnas (es flat). Lo aproximamos
+                    # uniendo los valores con un espacio.
+                    vals_hdr = [str(_header_por_col.get(c, '') or '')
+                                for c in (cfg.get('columnas') or [])
+                                if isinstance(c, str)]
+                    line_hdr = ' '.join(v for v in vals_hdr if v).strip()
+                    if line_hdr:
+                        lines.append(line_hdr)
+                elif _header_legacy_txt:
+                    for hl in _header_legacy_txt.splitlines():
+                        lines.append(hl)
             for row in rows:
                 line = bytearray(b' ' * line_len)
                 for c in campos:

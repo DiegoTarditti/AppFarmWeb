@@ -23,6 +23,12 @@
     {% else %}
     <span class="ml-auto"></span>
     {% endif %}
+    {# Regenerar plantilla: re-descarga el XLSX/TXT con la plantilla default de la drog. #}
+    <a href="{{ url_for('api_pedido_emitido_export_plantilla', pedido_id=pedido.id) }}"
+       class="text-[11px] border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded font-semibold"
+       title="Re-descargar el archivo (XLSX/TXT) con la plantilla cargada de la droguería">
+        ↻ Regenerar plantilla
+    </a>
     <a href="{{ url_for('pedidos_emitidos_list') }}" class="text-xs text-sky-600 hover:underline">← Lista</a>
 </div>
 

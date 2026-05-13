@@ -1349,6 +1349,71 @@ class Plantilla(Base):
     actualizada_en = Column(DateTime, default=now_ar, onupdate=now_ar)
 
 
+# ──────────────────────────────────────────────────────────────────────────
+# Devoluciones de recetas (OS rechaza recetas presentadas — tracking interno)
+# ──────────────────────────────────────────────────────────────────────────
+
+class MotivoDevolucion(Base):
+    """Catálogo de motivos por los que se devuelve una receta (falta firma,
+    diagnóstico ilegible, fuera de vademécum, etc.). ABM desde la app."""
+    __tablename__ = 'motivo_devolucion'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(150), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
+class DestinoDevolucion(Base):
+    """A quién/qué área se le devuelve (vendedor original, cobranzas,
+    auditoría, etc.). ABM desde la app."""
+    __tablename__ = 'destino_devolucion'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(150), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+
+
+class DevolucionReceta(Base):
+    """Registro de una receta devuelta. Apunta a una operación de venta en
+    ObServer vía `id_operacion_observer` pero los datos clave se snapshot-ean
+    al momento de registrar para que el reporte sobreviva cambios en ObServer."""
+    __tablename__ = 'devolucion_receta'
+    id = Column(Integer, primary_key=True)
+    nro_presentacion = Column(String(50), nullable=True, index=True)
+    # Vendedor (Observer)
+    vendedor_observer_id = Column(String(36), nullable=True)   # UUID DW.OperadoresVenta
+    vendedor_nombre = Column(String(100), nullable=True)
+    # Receta (Observer)
+    id_operacion_observer = Column(Integer, nullable=False, index=True)
+    fecha_operacion = Column(DateTime, nullable=True)
+    obra_social_nombre = Column(String(200), nullable=True)
+    importe_total = Column(DECIMAL(12, 2), nullable=True)
+    importe_a_cargo_os = Column(DECIMAL(12, 2), nullable=True)
+    # Devolución
+    motivo_id = Column(Integer, ForeignKey('motivo_devolucion.id'), nullable=True)
+    destino_id = Column(Integer, ForeignKey('destino_devolucion.id'), nullable=True)  # legacy
+    # Destino = vendedor de ObServer (a quién se devuelve la receta para corregir)
+    destino_vendedor_observer_id = Column(String(36), nullable=True)
+    destino_vendedor_nombre = Column(String(100), nullable=True)
+    observaciones = Column(Text, nullable=True)
+    creado_en = Column(DateTime, default=now_ar, index=True)
+    creado_por = Column(String(100), nullable=True)            # email del user
+    # Cierre del ciclo
+    estado = Column(String(20), nullable=False, default='pendiente', index=True)
+                                                               # pendiente | resuelta | descartada
+    nota_cierre = Column(Text, nullable=True)
+    cerrada_en = Column(DateTime, nullable=True)
+    cerrada_por = Column(String(100), nullable=True)
+
+    motivo = relationship('MotivoDevolucion')
+    destino = relationship('DestinoDevolucion')
+
+    __table_args__ = (
+        UniqueConstraint('id_operacion_observer', 'creado_en',
+                         name='uq_devolucion_op_creado'),
+    )
+
+
 CAMPOS_SISTEMA = [
     ('fijo',            'Valor fijo / constante'),
     ('codigo_barra',    'Código de barra (EAN)'),
@@ -1418,7 +1483,9 @@ def init_db(database_url=None):
                         'pack_equivalencias', 'cliente_os_inferida',
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
                         'alarmas_notificadas', 'sync_lock',
-                        'productos_pendientes_revision')
+                        'productos_pendientes_revision',
+                        'motivo_devolucion', 'destino_devolucion',
+                        'devolucion_receta')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

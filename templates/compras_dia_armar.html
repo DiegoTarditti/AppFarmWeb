@@ -11,22 +11,19 @@
     body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-    /* === Panel gráfico sticky (cuando hay producto seleccionado) === */
+    /* === Panel gráfico (scrollea junto con el resto) === */
+    /* El sticky se desactivó: --chart-h era inestable y producía dos bugs
+       (thead "flotante" y thead invisible detrás del panel). El usuario
+       puede colapsar/expandir el panel con el botón si quiere más espacio
+       para la tabla. El thead sí queda sticky al tope del scroll-wrapper. */
     #panel-grafico {
-        transition: max-height 0.18s ease-out; z-index: 30;
+        transition: max-height 0.18s ease-out; z-index: 5;
         background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
         border-bottom: 1px solid var(--ds-line);
-    }
-    #panel-grafico.chart-active {
-        position: sticky; top: 0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.4);
     }
     #panel-grafico.colapsado #grafico-body { display: none; }
     #panel-grafico.colapsado { padding-top: 6px; padding-bottom: 6px; }
     table.tabla-armar thead { position: sticky; top: 0; z-index: 20; }
-    .scroll-wrapper:has(#panel-grafico.chart-active) table.tabla-armar thead {
-        top: var(--chart-h, 360px);
-    }
     @media (max-width: 1280px) {
         #dual-grafico-panel .chart-canvas-wrap,
         #dual-grafico-panel > div > div > div > div.relative { height: 180px !important; }
@@ -231,10 +228,30 @@
 
 {% block main %}
 <div class="ar-topbar">
-    <h1>📦 Armar pedido{% if prov %} — <span style="color: var(--ds-warn);">{{ prov.razon_social }}</span>{% else %} — <span style="color: #F0ABFC;">Multi-droguería</span>{% endif %}</h1>
+    <h1>📦 Armar pedido{% if prov %} — <span style="color: var(--ds-warn);">{{ prov.razon_social }}</span>{% elif lab_nombre %} — <span style="color: #93C5FD;">🧪 {{ lab_nombre }}</span>{% else %} — <span style="color: #F0ABFC;">Multi-droguería</span>{% endif %}</h1>
     {% if cierre %}
     <span class="ar-pill ok">
         Próximo cierre: <span style="font-weight: 700;">{{ cierre.hora_str }}</span> hs
+    </span>
+    {% endif %}
+
+    {# Banner ofertas del lab (flujo /pedidos/dia → 🧪 Laboratorio).
+       Aprovecha que ya tenemos lab_id para listar todas las OfertaMinimo
+       activas+vigentes cargadas para ese lab — directas + por droguería. #}
+    {% if lab_id and lab_ofertas %}
+    {% set _drogs_uniq = lab_ofertas | map(attribute='drogueria_nombre') | reject('none') | unique | list %}
+    {% set _max_dto = (lab_ofertas | map(attribute='descuento_psl') | max) %}
+    <span class="ar-pill" style="background: rgba(95,230,188,.12); border-color: rgba(95,230,188,.35); color: var(--ds-mint);"
+          title="Click para ver el detalle de descuentos cargados del lab">
+        <span>🎯</span>
+        <span><b>{{ lab_ofertas|length }} oferta{{ 's' if lab_ofertas|length != 1 }}</b>
+            del lab · mejor <b>{{ _max_dto | round(1) }}%</b>
+            {% if _drogs_uniq %} · drog: {{ _drogs_uniq | join(', ') }}{% endif %}
+            <button type="button" onclick="document.getElementById('modal-lab-ofertas').classList.toggle('hidden')"
+                    style="margin-left:6px; padding:2px 8px; border-radius:4px; background: rgba(95,230,188,.2); border: 1px solid rgba(95,230,188,.4); color: var(--ds-mint); font-size:10px; cursor:pointer;">
+                Ver detalle
+            </button>
+        </span>
     </span>
     {% endif %}
 
@@ -480,6 +497,7 @@
                     <th>Lab</th>
                     {% if not prov %}<th style="text-align:center; color: #F0ABFC !important;">Drog</th>{% endif %}
                     <th>EAN</th>
+                    <th style="text-align:right;" title="Precio Venta Público estimado (m12m / u12m)">PVP</th>
                     <th style="color: var(--ds-mint) !important;">Oferta</th>
                     <th style="text-align:right;">Stock</th>
                     <th style="text-align:right;">Mín</th>
@@ -540,6 +558,13 @@
                     </td>
                     {% endif %}
                     <td class="px-3 py-1 font-mono text-xs text-[#888]">{{ it.ean or '—' }}</td>
+                    <td class="px-3 py-1 text-right font-mono tabular-nums text-xs">
+                        {% if it.pvp and it.pvp > 0 %}
+                            ${{ '{:,.0f}'.format(it.pvp).replace(',', '.') }}
+                        {% else %}
+                            <span class="text-[#bbb]">—</span>
+                        {% endif %}
+                    </td>
                     <td class="px-3 py-1 whitespace-nowrap" onclick="event.stopPropagation()">
                         {% if it.oferta_dto %}
                         <span class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">
@@ -727,13 +752,6 @@ function seleccionarProducto(row) {
         r.classList.remove('ring-2', 'ring-emerald-500', 'ring-inset'));
     row.classList.add('ring-2', 'ring-emerald-500', 'ring-inset');
     _selectedPid = row.dataset.pid;
-    // Activar sticky del panel gráfico una vez que hay selección.
-    const panel = document.getElementById('panel-grafico');
-    if (panel) {
-        panel.classList.add('chart-active');
-        // Recalcular --chart-h para que el thead se corra debajo.
-        if (typeof _ajustarOffsetThead === 'function') _ajustarOffsetThead();
-    }
     const titulo = document.getElementById('panel-chart-titulo');
     if (titulo) titulo.textContent = row.dataset.nombre;
     cargarGraficoDual(_selectedPid, row.dataset.nombre);
@@ -1036,15 +1054,7 @@ aplicarFiltros();
     if (rows.length) seleccionarProducto(rows[0]);
 })();
 
-// Mide el alto real del panel del gráfico y lo usa de offset del thead sticky.
-function _ajustarOffsetThead() {
-    const panel = document.getElementById('panel-grafico');
-    if (!panel) return;
-    document.documentElement.style.setProperty('--chart-h', panel.offsetHeight + 'px');
-}
-_ajustarOffsetThead();
-window.addEventListener('resize', _ajustarOffsetThead);
-new ResizeObserver(_ajustarOffsetThead).observe(document.getElementById('panel-grafico'));
+// _ajustarOffsetThead se removió junto con el sticky condicional del panel.
 
 // ── Toggle gráfico colapsable (persiste en localStorage) ────────────────
 const _GRAFICO_LS_KEY = 'compras_dia_grafico_collapsed';
@@ -1248,6 +1258,9 @@ function agregarFila(it) {
             ${it.cubre_lab ? '' : '<span class="text-[10px] text-amber-700 font-bold ml-1">⚠ otra drog</span>'}
         </td>
         <td class="px-3 py-1 font-mono text-xs text-[#888]">${it.ean || '—'}</td>
+        <td class="px-3 py-1 text-right font-mono tabular-nums text-xs">
+            ${(it.pvp && it.pvp > 0) ? '$' + Math.round(it.pvp).toLocaleString('es-AR') : '<span class="text-[#bbb]">—</span>'}
+        </td>
         <td class="px-3 py-1 whitespace-nowrap" onclick="event.stopPropagation()">
             ${it.oferta_dto ? (() => {
                 const badge = `<span class="text-xs bg-emerald-100 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded font-bold">${Math.round(it.oferta_dto)}%${(it.oferta_min > 1) ? ' · mín ' + it.oferta_min : ''}</span>`;
@@ -1673,4 +1686,64 @@ document.addEventListener('keydown', e => {
         </div>
     </div>
 </div>
+
+{# Modal detalle de ofertas del lab (solo en flujo /pedidos/dia → 🧪 Laboratorio). #}
+{% if lab_id and lab_ofertas %}
+<div id="modal-lab-ofertas" class="hidden fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"
+     onclick="if(event.target===this) this.classList.add('hidden')">
+    <div class="bg-[#1c2025] border border-[var(--ds-mint)] rounded-xl max-w-3xl w-full p-5 shadow-2xl max-h-[85vh] overflow-y-auto"
+         style="color: var(--ds-text);">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-base font-bold">
+                🎯 Ofertas vigentes — <span style="color: #93C5FD;">{{ lab_nombre }}</span>
+                <span class="text-xs opacity-70 ml-2">{{ lab_ofertas|length }} cargada{{ 's' if lab_ofertas|length != 1 }}</span>
+            </h2>
+            <button type="button"
+                    onclick="document.getElementById('modal-lab-ofertas').classList.add('hidden')"
+                    class="text-xs opacity-70 hover:opacity-100 px-2 py-1">✕ Cerrar</button>
+        </div>
+        <table class="w-full text-xs" style="border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 1px solid rgba(255,255,255,.15); text-align:left;">
+                    <th class="px-2 py-1.5 font-semibold uppercase tracking-wide" style="font-size:10px; opacity:.7;">Producto / EAN</th>
+                    <th class="px-2 py-1.5 font-semibold uppercase tracking-wide text-right" style="font-size:10px; opacity:.7;">%Dto</th>
+                    <th class="px-2 py-1.5 font-semibold uppercase tracking-wide text-right" style="font-size:10px; opacity:.7;">Mín</th>
+                    <th class="px-2 py-1.5 font-semibold uppercase tracking-wide" style="font-size:10px; opacity:.7;">Vía</th>
+                    <th class="px-2 py-1.5 font-semibold uppercase tracking-wide" style="font-size:10px; opacity:.7;">Vigencia</th>
+                    <th class="px-2 py-1.5 font-semibold uppercase tracking-wide" style="font-size:10px; opacity:.7;">Observación</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for o in lab_ofertas %}
+                <tr style="border-bottom: 1px solid rgba(255,255,255,.05);">
+                    <td class="px-2 py-1.5">
+                        <div class="truncate" style="max-width: 280px;">{{ o.descripcion or '—' }}</div>
+                        <div class="font-mono" style="font-size:10px; opacity:.5;">{{ o.ean }}</div>
+                    </td>
+                    <td class="px-2 py-1.5 text-right">
+                        <span style="color: var(--ds-mint); font-weight: 700;">{{ o.descuento_psl | round(1) }}%</span>
+                    </td>
+                    <td class="px-2 py-1.5 text-right font-mono">
+                        {% if o.unidades_minima and o.unidades_minima > 1 %}{{ o.unidades_minima }}{% else %}<span style="opacity:.4;">—</span>{% endif %}
+                    </td>
+                    <td class="px-2 py-1.5">
+                        {% if o.drogueria_nombre %}
+                            <span style="opacity:.85;">{{ o.drogueria_nombre }}</span>
+                        {% else %}
+                            <span style="opacity:.6;">directo</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-2 py-1.5 font-mono" style="font-size:10px;">
+                        {% if o.vigencia_hasta %}{{ o.vigencia_hasta.strftime('%d/%m/%Y') }}{% else %}<span style="opacity:.4;">—</span>{% endif %}
+                    </td>
+                    <td class="px-2 py-1.5 truncate" style="font-size:10px; opacity:.7; max-width: 180px;">
+                        {{ o.observacion or '' }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
 {% endblock %}

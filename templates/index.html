@@ -144,7 +144,7 @@
                     </div>
                 </header>
 
-                <a href="{{ url_for('compras_dia') }}?abrir=todos" class="home-hero hover:no-underline">
+                <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
                     <span class="home-hero__dots" aria-hidden="true"></span>
                     <div class="home-hero__body">
                         <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
@@ -303,13 +303,31 @@
                                 <div class="flex gap-2 flex-wrap" style="margin-top:8px;">
                                     <a href="{{ url_for('informe_pedido_auto') }}" class="btn btn-primary btn-sm">Por laboratorio</a>
                                     <a href="{{ url_for('compras_multi_lab') }}" class="btn btn-secondary btn-sm">Multi-lab</a>
-                                    <a href="{{ url_for('compras_rapido') }}" class="btn btn-ghost btn-sm">Compra rápida</a>
                                 </div>
                             </div>
                         </div>
                     </div>
                     {% endif %}
-                    {% for c in cards %}{{ render_card(c) }}{% endfor %}
+                    {% if cat_key == 'analisis' %}
+                    {# Card especial: Obras Sociales con acción rápida a chequeo
+                       de recetas (2026-05-13). #}
+                    <div class="card home-card" data-card-text="obras sociales analisis financiero medicos pacientes catalogo chequeo recetas">
+                        <div class="action-content">
+                            <div class="icon-tile">🏥</div>
+                            <div class="action-content__body">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="action-content__title">Obras Sociales</span>
+                                </div>
+                                <div class="action-content__desc">Análisis financiero, médicos, pacientes, catálogo y más</div>
+                                <div class="flex gap-2 flex-wrap" style="margin-top:8px;">
+                                    <a href="{{ url_for('os_index') }}" class="btn btn-primary btn-sm">Entrar</a>
+                                    <a href="{{ url_for('devoluciones_list') }}" class="btn btn-mint btn-sm" title="Revisión y devolución de recetas">📋 Chequeo de recetas</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% for c in cards %}{% if c.id != 'obras_sociales' %}{{ render_card(c) }}{% endif %}{% endfor %}
                 </div>
             </div>
             {% endfor %}

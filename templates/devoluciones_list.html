@@ -1,0 +1,164 @@
+{% extends 'base.html' %}
+{% block title %}Devoluciones de Recetas{% endblock %}
+{% block main %}
+<div class="max-w-7xl mx-auto p-4 space-y-4">
+  <div class="flex items-center justify-between flex-wrap gap-2">
+    <h1 class="text-2xl font-bold">Devoluciones de recetas</h1>
+    <div class="flex gap-2">
+      <a href="{{ url_for('devoluciones_buscar') }}"
+         class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">
+        + Nueva búsqueda
+      </a>
+      <a href="{{ url_for('devoluciones_motivos') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Motivos</a>
+      <a href="{{ url_for('devoluciones_destinos') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Destinos</a>
+    </div>
+  </div>
+
+  {# Chips de estado #}
+  <div class="flex flex-wrap gap-2">
+    {% set estados = [('', 'Todas', None), ('pendiente', 'Pendientes', 'bg-yellow-100 text-yellow-800'),
+                       ('resuelta', 'Resueltas', 'bg-green-100 text-green-800'),
+                       ('descartada', 'Descartadas', 'bg-gray-200 text-gray-700')] %}
+    {% for val, label, cls in estados %}
+    <a href="{{ url_for('devoluciones_list', estado=val, presentacion=q_presentacion, vendedor=q_vendedor) }}"
+       class="px-3 py-1 rounded-full text-xs font-semibold border
+              {% if q_estado == val %}border-brand text-brand bg-white{% else %}border-gray-300 text-gray-600 bg-white hover:border-brand{% endif %}">
+      {{ label }}
+      {% if val %}({{ cuentas_estado.get(val, 0) }}){% else %}({{ cuentas_estado.values()|sum }}){% endif %}
+    </a>
+    {% endfor %}
+  </div>
+
+  <form method="get" class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 flex flex-wrap gap-3 items-end">
+    <input type="hidden" name="estado" value="{{ q_estado }}">
+    <div>
+      <label class="block text-xs uppercase text-gray-500 mb-1">Nro. rendición</label>
+      <input name="presentacion" value="{{ q_presentacion }}"
+             type="number" min="0" step="1" inputmode="numeric"
+             class="border border-gray-300 rounded px-2 py-1.5 text-sm w-56" />
+    </div>
+    <div>
+      <label class="block text-xs uppercase text-gray-500 mb-1">Vendedor</label>
+      <input name="vendedor" value="{{ q_vendedor }}"
+             class="border border-gray-300 rounded px-2 py-1.5 text-sm w-44" />
+    </div>
+    <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm">Filtrar</button>
+    {% if q_presentacion or q_vendedor or q_estado %}
+    <a href="{{ url_for('devoluciones_list') }}" class="px-3 py-1.5 rounded border border-gray-300 text-sm">Limpiar</a>
+    {% endif %}
+    <span class="ml-auto text-xs text-gray-500 self-center">{{ total }} registro(s)</span>
+  </form>
+
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr>
+          <th class="px-2 py-2 text-left">Estado</th>
+          <th class="px-2 py-2 text-left">Fecha registro</th>
+          <th class="px-2 py-2 text-left">Rendición</th>
+          <th class="px-2 py-2 text-left">Vendedor</th>
+          <th class="px-2 py-2 text-left">Op#</th>
+          <th class="px-2 py-2 text-left">Fecha receta</th>
+          <th class="px-2 py-2 text-left">Obra Social</th>
+          <th class="px-2 py-2 text-right">A cargo OS</th>
+          <th class="px-2 py-2 text-left">Motivo</th>
+          <th class="px-2 py-2 text-left">Destino</th>
+          <th class="px-2 py-2 text-left">Obs.</th>
+          <th class="px-2 py-2 text-left">Acciones</th>
+          <th class="px-2 py-2 w-10"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for d in devoluciones %}
+        <tr class="hover:bg-gray-50 {% if d.estado == 'descartada' %}opacity-60{% endif %}">
+          <td class="px-2 py-1.5">
+            {% if d.estado == 'pendiente' %}
+              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">PENDIENTE</span>
+            {% elif d.estado == 'resuelta' %}
+              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800">RESUELTA</span>
+            {% else %}
+              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-200 text-gray-700">DESCARTADA</span>
+            {% endif %}
+            {% if d.cerrada_en %}
+            <div class="text-[10px] text-gray-400 mt-0.5">{{ d.cerrada_en.strftime('%d/%m/%y') }} · {{ d.cerrada_por or '' }}</div>
+            {% endif %}
+            {% if d.nota_cierre %}
+            <div class="text-[10px] text-gray-500 italic truncate max-w-[140px]" title="{{ d.nota_cierre }}">{{ d.nota_cierre }}</div>
+            {% endif %}
+          </td>
+          <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.creado_en.strftime('%d/%m/%y %H:%M') if d.creado_en else '' }}</td>
+          <td class="px-2 py-1.5 text-xs font-mono">{{ d.nro_presentacion or '—' }}</td>
+          <td class="px-2 py-1.5 text-xs">{{ d.vendedor_nombre or '—' }}</td>
+          <td class="px-2 py-1.5 text-xs font-mono">{{ d.id_operacion_observer }}</td>
+          <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.fecha_operacion.strftime('%d/%m/%y') if d.fecha_operacion else '—' }}</td>
+          <td class="px-2 py-1.5 text-xs">{{ d.obra_social_nombre or '—' }}</td>
+          <td class="px-2 py-1.5 text-xs text-right font-mono">{{ '%.2f'|format(d.importe_a_cargo_os) if d.importe_a_cargo_os else '—' }}</td>
+          <td class="px-2 py-1.5 text-xs">{{ d.motivo.nombre if d.motivo else '—' }}</td>
+          <td class="px-2 py-1.5 text-xs">{{ d.destino_vendedor_nombre or (d.destino.nombre if d.destino else '—') }}</td>
+          <td class="px-2 py-1.5 text-xs max-w-xs truncate" title="{{ d.observaciones or '' }}">{{ d.observaciones or '' }}</td>
+          <td class="px-2 py-1.5">
+            {% if d.estado == 'pendiente' %}
+              <button type="button" onclick="abrirCierre({{ d.id }}, 'resuelta')"
+                      class="text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2 py-0.5 rounded font-semibold">✓ Resolver</button>
+              <button type="button" onclick="abrirCierre({{ d.id }}, 'descartada')"
+                      class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded font-semibold ml-1">Descartar</button>
+            {% else %}
+              <form method="post" action="{{ url_for('devolucion_cambiar_estado', id=d.id) }}" class="inline">
+                <input type="hidden" name="estado" value="pendiente">
+                <button type="submit" class="text-xs text-gray-500 hover:text-brand underline">Reabrir</button>
+              </form>
+            {% endif %}
+          </td>
+          <td class="px-2 py-1.5">
+            <form method="post" action="{{ url_for('devolucion_eliminar', id=d.id) }}"
+                  onsubmit="return confirm('¿Eliminar devolución #{{ d.id }}?')">
+              <button type="submit" class="text-red-500 hover:text-red-700 text-xs">✕</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="13" class="px-4 py-8 text-center text-gray-500 text-sm">Sin devoluciones registradas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Modal de cierre #}
+  <div id="modal-cierre" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+    <form id="form-cierre" method="post" class="bg-white rounded-lg p-5 max-w-md w-full mx-4">
+      <h3 class="font-semibold mb-3" id="modal-titulo">Cambiar estado</h3>
+      <input type="hidden" name="estado" id="modal-estado">
+      <label class="block text-xs uppercase text-gray-500 mb-1">Nota de cierre (opcional)</label>
+      <textarea name="nota_cierre" rows="3" placeholder="Qué se hizo / por qué se descarta..."
+                class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"></textarea>
+      <div class="flex justify-end gap-2 mt-4">
+        <button type="button" onclick="document.getElementById('modal-cierre').classList.add('hidden')"
+                class="px-3 py-1.5 rounded border border-gray-300 text-sm">Cancelar</button>
+        <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-4 py-1.5 rounded text-sm font-semibold">
+          Confirmar
+        </button>
+      </div>
+    </form>
+  </div>
+  <script>
+    function abrirCierre(devId, estado) {
+      const form = document.getElementById('form-cierre');
+      form.action = '/devoluciones/' + devId + '/estado';
+      document.getElementById('modal-estado').value = estado;
+      document.getElementById('modal-titulo').textContent =
+          estado === 'resuelta' ? 'Marcar como resuelta' : 'Descartar devolución';
+      document.getElementById('modal-cierre').classList.remove('hidden');
+    }
+  </script>
+
+  {% if last_page > 1 %}
+  <div class="flex items-center gap-2 text-sm">
+    {% if page > 1 %}<a href="?page={{ page-1 }}&presentacion={{ q_presentacion }}&vendedor={{ q_vendedor }}" class="px-3 py-1 border border-gray-300 rounded">← Ant</a>{% endif %}
+    <span class="text-gray-500">Pág {{ page }} / {{ last_page }}</span>
+    {% if page < last_page %}<a href="?page={{ page+1 }}&presentacion={{ q_presentacion }}&vendedor={{ q_vendedor }}" class="px-3 py-1 border border-gray-300 rounded">Sig →</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
