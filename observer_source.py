@@ -1110,6 +1110,385 @@ def estado_ventas_mensuales(session, dias_fresco=7):
             'mensaje': f'Estadísticas desactualizadas — última sincronización hace {delta} día(s).'}
 
 
+def listar_obras_sociales_con_ventas(id_farmacia=None, meses_atras=12):
+    """Devuelve OS que tuvieron al menos 1 venta a cargo OS en los últimos N meses.
+
+    Returns: [{'id_obra_social': int, 'nombre': str, 'n_recetas': int}]
+    """
+    from datetime import date, timedelta
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+    desde = date.today() - timedelta(days=meses_atras * 31)
+
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    out = []
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("""
+                SELECT
+                    os.IdObraSocial AS Id,
+                    os.Descripcion  AS Nombre,
+                    COUNT(DISTINCT pv.IdOperacion) AS NRecetas
+                FROM DW.ObrasSociales os
+                JOIN DW.ProductosVendidos pv
+                  ON pv.IdObraSocialPrincipal = os.IdObraSocial
+                WHERE pv.IdFarmacia = %d
+                  AND pv.FechaDeOperacion >= %s
+                  AND pv.IdTipoOperacion = 'V'
+                  AND pv.ImporteACargoOS > 0
+                  AND os.FechaBaja IS NULL
+                GROUP BY os.IdObraSocial, os.Descripcion
+                HAVING COUNT(DISTINCT pv.IdOperacion) > 0
+                ORDER BY os.Descripcion
+            """, (int(id_farmacia), desde))
+            for r in cur.fetchall():
+                out.append({
+                    'id_obra_social': int(r['Id']),
+                    'nombre': (r['Nombre'] or '').strip(),
+                    'n_recetas': int(r['NRecetas']),
+                })
+    finally:
+        conn.close()
+    return out
+
+
+def buscar_recetas_os(obra_social_id, desde, hasta, id_farmacia=None,
+                      vendedor_uuid=None):
+    """Busca recetas a una OS específica en un rango (rendición).
+
+    Args:
+        obra_social_id: int — IdObraSocial.
+        desde, hasta: date.
+        id_farmacia: int (default OBSERVER_ID_FARMACIA).
+        vendedor_uuid: opcional, si se quiere filtrar también por operador.
+
+    Returns: igual formato que buscar_recetas_vendedor.
+    """
+    from datetime import datetime, time, timedelta
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+
+    if hasattr(hasta, 'date'):
+        hasta_dt = hasta
+    else:
+        hasta_dt = datetime.combine(hasta, time(0, 0)) + timedelta(days=1)
+    if hasattr(desde, 'date'):
+        desde_dt = desde
+    else:
+        desde_dt = datetime.combine(desde, time(0, 0))
+
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            extra_filter = ""
+            params = [int(obra_social_id), int(id_farmacia), desde_dt, hasta_dt]
+            if vendedor_uuid:
+                extra_filter = " AND pv.IdOperador = %s"
+                params.append(vendedor_uuid)
+            cur.execute(f"""
+                SELECT
+                    pv.IdOperacion,
+                    pv.IdProductoVendido,
+                    pv.NumeroRenglon,
+                    pv.FechaDeOperacion,
+                    pv.Cantidad,
+                    pv.Importe,
+                    pv.ImporteACargoOS,
+                    pv.Comprobante_IdFormularioAFIP AS TipoComp,
+                    pv.Comprobante_PuntoDeVenta     AS PV,
+                    pv.Comprobante_Numero           AS NroComp,
+                    pv.IdOperador                   AS IdOperador,
+                    ov.Vendedor                     AS OperadorNombre,
+                    pr.Producto                     AS Producto,
+                    os.Descripcion                  AS ObraSocial
+                FROM DW.ProductosVendidos pv
+                LEFT JOIN DW.Productos       pr ON pr.IdProducto = pv.IdProducto
+                LEFT JOIN DW.ObrasSociales   os ON os.IdObraSocial = pv.IdObraSocialPrincipal
+                LEFT JOIN DW.OperadoresVenta ov ON ov.IdUsuario = pv.IdOperador
+                WHERE pv.IdObraSocialPrincipal = %d
+                  AND pv.IdFarmacia = %d
+                  AND pv.FechaDeOperacion >= %s
+                  AND pv.FechaDeOperacion < %s
+                  AND pv.IdTipoOperacion = 'V'
+                  AND pv.ImporteACargoOS > 0
+                  {extra_filter}
+                ORDER BY pv.FechaDeOperacion, pv.IdOperacion, pv.NumeroRenglon
+            """, tuple(params))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    ops = {}
+    for r in rows:
+        op_id = int(r['IdOperacion'])
+        if op_id not in ops:
+            tipo = (r['TipoComp'] or '').strip() or None
+            pv = r['PV']
+            nro = r['NroComp']
+            comp = None
+            if tipo and pv is not None and nro is not None:
+                comp = f'{tipo} {pv:04d}-{nro:08d}'
+            ops[op_id] = {
+                'id_operacion':       op_id,
+                'fecha_operacion':    r['FechaDeOperacion'],
+                'obra_social':        (r['ObraSocial'] or '').strip() or '—',
+                'operador_nombre':    (r['OperadorNombre'] or '').strip() or '—',
+                'importe_total':      0.0,
+                'importe_a_cargo_os': 0.0,
+                'comprobante':        comp,
+                'items':              [],
+            }
+        ops[op_id]['importe_total']      += float(r['Importe'] or 0)
+        ops[op_id]['importe_a_cargo_os'] += float(r['ImporteACargoOS'] or 0)
+        ops[op_id]['items'].append({
+            'producto': (r['Producto'] or '').strip() or f"prod#{r['IdProductoVendido']}",
+            'cantidad': float(r['Cantidad'] or 0),
+        })
+
+    return sorted(ops.values(), key=lambda x: x['fecha_operacion'] or datetime.min)
+
+
+def buscar_recetas(vendedor_uuid=None, obra_social_id=None,
+                    desde=None, hasta=None, id_farmacia=None,
+                    solo_a_cargo_os=False):
+    """Búsqueda flexible de recetas para rendición.
+
+    Args:
+        vendedor_uuid: UUID de operador (opcional pero recomendado).
+        obra_social_id: filtro adicional por OS (opcional).
+        desde, hasta: rango de fechas (obligatorio).
+        id_farmacia: default OBSERVER_ID_FARMACIA.
+        solo_a_cargo_os: si True filtra ImporteACargoOS > 0. Si False trae todas
+            las ventas a OS (incluyendo descuentos parciales con 0 a cargo).
+    """
+    from datetime import datetime, time, timedelta
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+    if desde is None or hasta is None:
+        raise ValueError('desde y hasta son obligatorios')
+
+    hasta_dt = (hasta if hasattr(hasta, 'date')
+                else datetime.combine(hasta, time(0, 0)) + timedelta(days=1))
+    desde_dt = (desde if hasattr(desde, 'date')
+                else datetime.combine(desde, time(0, 0)))
+
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            extra = []
+            params = [int(id_farmacia), desde_dt, hasta_dt]
+            if vendedor_uuid:
+                extra.append(" AND pv.IdOperador = %s")
+                params.append(vendedor_uuid)
+            if obra_social_id:
+                extra.append(" AND pv.IdObraSocialPrincipal = %d")
+                params.append(int(obra_social_id))
+            if solo_a_cargo_os:
+                extra.append(" AND pv.ImporteACargoOS > 0")
+            else:
+                # Cualquier venta NO particular (a OS, aunque a_cargo_os sea 0)
+                extra.append(" AND pv.IdObraSocialPrincipal IS NOT NULL")
+            cur.execute(f"""
+                SELECT
+                    pv.IdOperacion,
+                    pv.IdProductoVendido,
+                    pv.NumeroRenglon,
+                    pv.FechaDeOperacion,
+                    pv.Cantidad,
+                    pv.Importe,
+                    pv.ImporteACargoOS,
+                    pv.Comprobante_IdFormularioAFIP AS TipoComp,
+                    pv.Comprobante_PuntoDeVenta     AS PV,
+                    pv.Comprobante_Numero           AS NroComp,
+                    pv.IdOperador                   AS IdOperador,
+                    ov.Vendedor                     AS OperadorNombre,
+                    pr.Producto                     AS Producto,
+                    os.Descripcion                  AS ObraSocial
+                FROM DW.ProductosVendidos pv
+                LEFT JOIN DW.Productos       pr ON pr.IdProducto = pv.IdProducto
+                LEFT JOIN DW.ObrasSociales   os ON os.IdObraSocial = pv.IdObraSocialPrincipal
+                LEFT JOIN DW.OperadoresVenta ov ON ov.IdUsuario = pv.IdOperador
+                WHERE pv.IdFarmacia = %d
+                  AND pv.FechaDeOperacion >= %s
+                  AND pv.FechaDeOperacion < %s
+                  AND pv.IdTipoOperacion = 'V'
+                  {''.join(extra)}
+                ORDER BY pv.FechaDeOperacion, pv.IdOperacion, pv.NumeroRenglon
+            """, tuple(params))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    ops = {}
+    for r in rows:
+        op_id = int(r['IdOperacion'])
+        if op_id not in ops:
+            tipo = (r['TipoComp'] or '').strip() or None
+            pv = r['PV']
+            nro = r['NroComp']
+            comp = None
+            if tipo and pv is not None and nro is not None:
+                comp = f'{tipo} {pv:04d}-{nro:08d}'
+            ops[op_id] = {
+                'id_operacion':       op_id,
+                'fecha_operacion':    r['FechaDeOperacion'],
+                'obra_social':        (r['ObraSocial'] or '').strip() or '—',
+                'operador_id':        str(r['IdOperador']) if r['IdOperador'] else None,
+                'operador_nombre':    (r['OperadorNombre'] or '').strip() or '—',
+                'importe_total':      0.0,
+                'importe_a_cargo_os': 0.0,
+                'comprobante':        comp,
+                'items':              [],
+            }
+        ops[op_id]['importe_total']      += float(r['Importe'] or 0)
+        ops[op_id]['importe_a_cargo_os'] += float(r['ImporteACargoOS'] or 0)
+        ops[op_id]['items'].append({
+            'producto': (r['Producto'] or '').strip() or f"prod#{r['IdProductoVendido']}",
+            'cantidad': float(r['Cantidad'] or 0),
+        })
+
+    return sorted(ops.values(), key=lambda x: (x['obra_social'], x['fecha_operacion'] or datetime.min))
+
+
+def buscar_recetas_vendedor(vendedor_uuid, desde, hasta, id_farmacia=None,
+                             solo_os=True):
+    """Busca recetas vendidas por un vendedor en un rango de fechas.
+
+    Devuelve operaciones agregadas (1 receta = 1 IdOperacion), con la lista
+    de ítems incluida. Pensado para la pantalla de devoluciones.
+
+    Args:
+        vendedor_uuid: str — UUID de DW.OperadoresVenta.IdUsuario.
+        desde, hasta: date — rango (inclusivo en `hasta` hasta 23:59).
+        id_farmacia: int — si None usa OBSERVER_ID_FARMACIA del env.
+        solo_os: si True, solo recetas con ImporteACargoOS > 0.
+
+    Returns: [{
+        'id_operacion', 'fecha_operacion', 'obra_social',
+        'importe_total', 'importe_a_cargo_os', 'comprobante',
+        'items': [{'producto', 'cantidad'}, ...]
+    }]
+    """
+    from datetime import datetime, time, timedelta
+    cfg = _config()
+    if not cfg:
+        raise RuntimeError('ObServer no configurado')
+    if id_farmacia is None:
+        id_farmacia = cfg['id_farmacia']
+
+    # hasta exclusive (sumar 1 día y usar <)
+    if hasattr(hasta, 'date'):
+        hasta_dt = hasta
+    else:
+        hasta_dt = datetime.combine(hasta, time(0, 0)) + timedelta(days=1)
+    if hasattr(desde, 'date'):
+        desde_dt = desde
+    else:
+        desde_dt = datetime.combine(desde, time(0, 0))
+
+    conn = _connect(timeout=60)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            extra_filter = " AND pv.ImporteACargoOS > 0" if solo_os else ""
+            cur.execute(f"""
+                SELECT
+                    pv.IdOperacion,
+                    pv.IdProductoVendido,
+                    pv.NumeroRenglon,
+                    pv.FechaDeOperacion,
+                    pv.Cantidad,
+                    pv.Importe,
+                    pv.ImporteACargoOS,
+                    pv.Comprobante_IdFormularioAFIP AS TipoComp,
+                    pv.Comprobante_PuntoDeVenta     AS PV,
+                    pv.Comprobante_Numero           AS NroComp,
+                    pr.Producto                     AS Producto,
+                    os.Descripcion                  AS ObraSocial
+                FROM DW.ProductosVendidos pv
+                LEFT JOIN DW.Productos      pr ON pr.IdProducto = pv.IdProducto
+                LEFT JOIN DW.ObrasSociales  os ON os.IdObraSocial = pv.IdObraSocialPrincipal
+                WHERE pv.IdOperador = %s
+                  AND pv.IdFarmacia = %d
+                  AND pv.FechaDeOperacion >= %s
+                  AND pv.FechaDeOperacion < %s
+                  AND pv.IdTipoOperacion = 'V'
+                  {extra_filter}
+                ORDER BY pv.FechaDeOperacion, pv.IdOperacion, pv.NumeroRenglon
+            """, (vendedor_uuid, int(id_farmacia), desde_dt, hasta_dt))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    # Agrupar por IdOperacion
+    ops = {}
+    for r in rows:
+        op_id = int(r['IdOperacion'])
+        if op_id not in ops:
+            tipo = (r['TipoComp'] or '').strip() or None
+            pv = r['PV']
+            nro = r['NroComp']
+            comp = None
+            if tipo and pv is not None and nro is not None:
+                comp = f'{tipo} {pv:04d}-{nro:08d}'
+            ops[op_id] = {
+                'id_operacion':       op_id,
+                'fecha_operacion':    r['FechaDeOperacion'],
+                'obra_social':        (r['ObraSocial'] or '').strip() or '—',
+                'importe_total':      0.0,
+                'importe_a_cargo_os': 0.0,
+                'comprobante':        comp,
+                'items':              [],
+            }
+        ops[op_id]['importe_total']      += float(r['Importe'] or 0)
+        ops[op_id]['importe_a_cargo_os'] += float(r['ImporteACargoOS'] or 0)
+        ops[op_id]['items'].append({
+            'producto': (r['Producto'] or '').strip() or f"prod#{r['IdProductoVendido']}",
+            'cantidad': float(r['Cantidad'] or 0),
+        })
+
+    return sorted(ops.values(), key=lambda x: x['fecha_operacion'] or datetime.min)
+
+
+def listar_vendedores(solo_habilitados=True):
+    """Devuelve [{'id_usuario': uuid_str, 'nombre': str}] de DW.OperadoresVenta."""
+    conn = _connect(timeout=30)
+    if conn is None:
+        raise RuntimeError('ObServer no disponible')
+    out = []
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            sql = "SELECT IdUsuario, Vendedor, Habilitado, FechaBaja FROM DW.OperadoresVenta"
+            if solo_habilitados:
+                sql += " WHERE Habilitado = 1 AND FechaBaja IS NULL"
+            sql += " ORDER BY Vendedor"
+            cur.execute(sql)
+            for r in cur.fetchall():
+                out.append({
+                    'id_usuario': str(r['IdUsuario']),
+                    'nombre': r['Vendedor'],
+                })
+    finally:
+        conn.close()
+    return out
+
+
 def _pick(cols, candidates, required=True):
     """Devuelve la primera columna de candidates que exista en cols (case-insensitive).
     Si required=True y no hay match, raises; si required=False devuelve None."""
@@ -1176,8 +1555,17 @@ def get_ventas_laboratorio(laboratorio, anio_hasta, mes_hasta):
                                ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta_key)
                        .all())
         mapa_ventas = {}
+        # PVP estimado por producto = sum(monto) / sum(unidades) de los 12 meses
+        # disponibles. Es el precio promedio efectivo de venta — para muchas
+        # vistas alcanza, pero no captura aumentos recientes con precisión.
+        # Si en el futuro tenemos PVP "actual" (DW.Productos) se reemplaza acá.
+        agg_pvp = {}  # producto_observer → [monto_total, unidades_total]
         for v in ventas_rows:
             mapa_ventas.setdefault(v.producto_observer, {})[(v.anio, v.mes)] = float(v.unidades or 0)
+            a = agg_pvp.setdefault(v.producto_observer, [0.0, 0.0])
+            a[0] += float(v.monto or 0)
+            a[1] += float(v.unidades or 0)
+        mapa_pvp = {pid: (m / u) for pid, (m, u) in agg_pvp.items() if u > 0}
 
         stock_rows = (session.query(ObsStock)
                       .filter(ObsStock.id_farmacia == id_farmacia,

@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% block title %}Buscar recetas — Devoluciones{% endblock %}
+{% block main %}
+<div class="max-w-7xl mx-auto p-4 space-y-4">
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold">Buscar recetas para devolver</h1>
+      <p class="text-sm text-gray-600">Filtros: vendedor y/o obra social + rango de fechas. El nro de rendición se guarda como etiqueta.</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('devoluciones_list') }}" class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">← Listado</a>
+      <a href="{{ url_for('devoluciones_motivos') }}" class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Motivos</a>
+      <a href="{{ url_for('devoluciones_destinos') }}" class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Destinos</a>
+    </div>
+  </div>
+
+  {% if not observer_ok %}
+  <div class="bg-yellow-100 border border-yellow-300 text-yellow-900 px-3 py-2 rounded text-sm">
+    ObServer no responde. La lista de vendedores está vacía — usá solo OS si es necesario.
+  </div>
+  {% endif %}
+
+  {# ── Form de búsqueda ── #}
+  <form method="post" action="{{ url_for('devoluciones_buscar') }}"
+        class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 grid grid-cols-1 md:grid-cols-6 gap-3">
+    <div class="md:col-span-3">
+      <label class="block text-xs uppercase text-gray-500 mb-1">Vendedor</label>
+      <select name="vendedor_id"
+              class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+        <option value="">— Todos —</option>
+        {% for v in vendedores %}
+        <option value="{{ v.id_usuario }}" {% if vendedor_id == v.id_usuario %}selected{% endif %}>{{ v.nombre }}</option>
+        {% endfor %}
+      </select>
+      <p class="text-[10px] text-gray-400 mt-0.5">Live de ObServer ({{ vendedores|length }}).</p>
+    </div>
+    <div class="md:col-span-3">
+      <label class="block text-xs uppercase text-gray-500 mb-1">Obra social</label>
+      <select name="obra_social_id"
+              class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm">
+        <option value="">— Todas —</option>
+        {% for o in obras_sociales %}
+        <option value="{{ o.id_obra_social }}" {% if obra_social_id == o.id_obra_social %}selected{% endif %}>
+          {{ o.nombre }}
+        </option>
+        {% endfor %}
+      </select>
+      <p class="text-[10px] text-gray-400 mt-0.5">Desde DB local ({{ obras_sociales|length }} sincronizadas).</p>
+    </div>
+    <div>
+      <label class="block text-xs uppercase text-gray-500 mb-1">Desde</label>
+      <input type="date" name="desde" value="{{ desde }}" required
+             class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+    </div>
+    <div>
+      <label class="block text-xs uppercase text-gray-500 mb-1">Hasta</label>
+      <input type="date" name="hasta" value="{{ hasta }}" required
+             class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+    </div>
+    <div>
+      <label class="block text-xs uppercase text-gray-500 mb-1">Nro. rendición</label>
+      <input name="nro_presentacion" value="{{ nro_presentacion }}"
+             type="number" min="0" step="1" inputmode="numeric"
+             placeholder="Ej: 35224"
+             class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+    </div>
+    <div class="flex items-end">
+      <button type="submit" class="w-full bg-brand hover:bg-brand-hover text-white px-5 py-1.5 rounded text-sm font-semibold">
+        Buscar
+      </button>
+    </div>
+    <div class="md:col-span-6 flex items-center gap-2 pt-1 text-xs text-gray-600">
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="solo_a_cargo_os" value="1" {% if solo_a_cargo_os %}checked{% endif %}>
+        Solo recetas con importe a cargo de OS &gt; 0 (excluye convenios sin coseguro)
+      </label>
+    </div>
+  </form>
+
+  {# ── Resultados ── #}
+  {% if resultados is not none %}
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200">
+    <div class="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+      <div>
+        <h2 class="font-semibold">{{ resultados|length }} receta(s) encontrada(s)</h2>
+        <p class="text-xs text-gray-500">
+          {% if vendedor_nombre %}Vendedor: <strong>{{ vendedor_nombre }}</strong> · {% endif %}
+          {% if os_nombre %}OS: <strong>{{ os_nombre }}</strong> · {% endif %}
+          Período {{ desde }} → {{ hasta }}
+        </p>
+      </div>
+      {% if not motivos %}
+      <a href="{{ url_for('devoluciones_motivos') }}" class="text-xs text-red-600 hover:underline">
+        ⚠ No hay motivos cargados — creá al menos uno
+      </a>
+      {% endif %}
+    </div>
+
+    {% if resultados %}
+    <form method="post" action="{{ url_for('devoluciones_guardar') }}">
+      <input type="hidden" name="vendedor_id" value="{{ vendedor_id }}">
+      <input type="hidden" name="vendedor_nombre" value="{{ vendedor_nombre or '' }}">
+      <input type="hidden" name="nro_presentacion" value="{{ nro_presentacion }}">
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr>
+              <th class="px-2 py-2 w-10"><input type="checkbox" id="check-all" /></th>
+              <th class="px-2 py-2 text-left">Fecha</th>
+              <th class="px-2 py-2 text-left">Operador</th>
+              <th class="px-2 py-2 text-left">Comprobante</th>
+              <th class="px-2 py-2 text-left">Obra Social</th>
+              <th class="px-2 py-2 text-left">Productos</th>
+              <th class="px-2 py-2 text-right">A cargo OS</th>
+              <th class="px-2 py-2 text-right">Total</th>
+              <th class="px-2 py-2 text-left w-48">Motivo</th>
+              <th class="px-2 py-2 text-left w-44">Devolver a (vendedor)</th>
+              <th class="px-2 py-2 text-left">Observaciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for r in resultados %}
+            {% set ya = r.id_operacion in ya_devueltas %}
+            <tr class="{% if ya %}bg-gray-50 opacity-70{% else %}hover:bg-gray-50{% endif %}">
+              <td class="px-2 py-2 align-top">
+                {% if ya %}
+                <span class="text-xs text-gray-500" title="Ya devuelta">●</span>
+                {% else %}
+                <input type="checkbox" name="marcar" value="{{ r.id_operacion }}" class="row-check" />
+                {% endif %}
+                <input type="hidden" name="fop_{{ r.id_operacion }}" value="{{ r.fecha_operacion.isoformat() if r.fecha_operacion else '' }}">
+                <input type="hidden" name="os_{{ r.id_operacion }}" value="{{ r.obra_social }}">
+                <input type="hidden" name="imp_{{ r.id_operacion }}" value="{{ '%.2f'|format(r.importe_total) }}">
+                <input type="hidden" name="imp_os_{{ r.id_operacion }}" value="{{ '%.2f'|format(r.importe_a_cargo_os) }}">
+              </td>
+              <td class="px-2 py-2 align-top text-xs whitespace-nowrap">
+                {{ r.fecha_operacion.strftime('%d/%m/%y %H:%M') if r.fecha_operacion else '—' }}
+              </td>
+              <td class="px-2 py-2 align-top text-xs">{{ r.operador_nombre or '—' }}</td>
+              <td class="px-2 py-2 align-top text-xs font-mono">{{ r.comprobante or '—' }}</td>
+              <td class="px-2 py-2 align-top text-xs">{{ r.obra_social }}</td>
+              <td class="px-2 py-2 align-top text-xs">
+                <ul class="space-y-0.5">
+                  {% for it in r['items'] %}
+                  <li>{{ '%g' % it.cantidad }} × {{ it.producto }}</li>
+                  {% endfor %}
+                </ul>
+              </td>
+              <td class="px-2 py-2 align-top text-right font-mono text-xs">{{ '%.2f'|format(r.importe_a_cargo_os) }}</td>
+              <td class="px-2 py-2 align-top text-right font-mono text-xs">{{ '%.2f'|format(r.importe_total) }}</td>
+              <td class="px-2 py-2 align-top">
+                {% if ya %}
+                <span class="text-xs text-gray-400 italic">ya devuelta</span>
+                {% else %}
+                <select name="motivo_{{ r.id_operacion }}" class="w-full border border-gray-300 rounded px-1 py-1 text-xs">
+                  <option value="">—</option>
+                  {% for m in motivos %}
+                  <option value="{{ m.id }}">{{ m.nombre }}</option>
+                  {% endfor %}
+                </select>
+                {% endif %}
+              </td>
+              <td class="px-2 py-2 align-top">
+                {% if not ya %}
+                <select name="destino_vendedor_{{ r.id_operacion }}" class="w-full border border-gray-300 rounded px-1 py-1 text-xs">
+                  <option value="">—</option>
+                  {% for v in vendedores %}
+                  <option value="{{ v.id_usuario }}" {% if v.id_usuario == r.operador_id %}selected{% endif %}>{{ v.nombre }}</option>
+                  {% endfor %}
+                </select>
+                {% endif %}
+              </td>
+              <td class="px-2 py-2 align-top">
+                {% if not ya %}
+                <input name="obs_{{ r.id_operacion }}" placeholder="..." class="w-full border border-gray-300 rounded px-1 py-1 text-xs" />
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+        <p class="text-xs text-gray-500">Marcá las recetas que querés devolver. Motivo es obligatorio.</p>
+        <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-4 py-1.5 rounded text-sm font-semibold">
+          Registrar devoluciones
+        </button>
+      </div>
+    </form>
+    {% else %}
+    <div class="px-4 py-8 text-center text-gray-500 text-sm">Sin resultados para los filtros indicados.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+document.getElementById('check-all')?.addEventListener('change', function () {
+  document.querySelectorAll('.row-check').forEach(c => { c.checked = this.checked; });
+});
+
+// Auto-marcar la fila al elegir motivo / destino / escribir observación
+function autoMark(el) {
+  const row = el.closest('tr');
+  const cb = row && row.querySelector('.row-check');
+  if (!cb) return;
+  // Marca si hay valor; si limpian motivo a "—", no desmarca (puede ser por error).
+  if (el.value && el.value.trim() !== '') cb.checked = true;
+}
+document.querySelectorAll('select[name^="motivo_"], select[name^="destino_vendedor_"]')
+  .forEach(sel => sel.addEventListener('change', () => autoMark(sel)));
+document.querySelectorAll('input[name^="obs_"]')
+  .forEach(inp => inp.addEventListener('input', () => autoMark(inp)));
+</script>
+{% endblock %}

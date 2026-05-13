@@ -262,6 +262,7 @@
                             <thead class="bg-[#fafafa]">
                                 <tr>
                                     <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Producto</th>
+                                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide" title="Precio Venta Público estimado (m12m / u12m)">PVP</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Stock</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Mín</th>
                                     <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide">Máx</th>
@@ -283,6 +284,13 @@
                                         <input type="hidden" name="pid_{{ loop.index0 }}" value="{{ r.producto_id }}">
                                         <input type="hidden" name="nombre_{{ loop.index0 }}" value="{{ r.descripcion }}">
                                         <input type="hidden" name="ean_{{ loop.index0 }}" value="{{ r.ean or '' }}">
+                                    </td>
+                                    <td class="px-3 py-2 text-right font-mono tabular-nums">
+                                        {% if r.precio_unit and r.precio_unit > 0 %}
+                                            ${{ '{:,.0f}'.format(r.precio_unit).replace(',', '.') }}
+                                        {% else %}
+                                            <span class="text-[#bbb]">—</span>
+                                        {% endif %}
                                     </td>
                                     <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.stock }}</td>
                                     <td class="px-3 py-2 text-right font-mono tabular-nums">{{ r.minimo }}</td>

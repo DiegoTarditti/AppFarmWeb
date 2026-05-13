@@ -210,18 +210,6 @@ ACCIONES_HOME = [
         'fg_default': '#065F46',
     },
     {
-        'id': 'recetas_scan',
-        'titulo': 'Scan recetas',
-        'desc': 'Lectura OCR + cruce contra Observer',
-        'endpoint': 'recetas_scan',
-        'emoji': '📋',
-        'tone': 'info',
-        'badge_key': None,
-        'icono_path': 'M3 4v6h6M21 20v-6h-6M3 4l4 4 4-4M21 20l-4-4-4 4',
-        'bg_default': '#FCE7F3',
-        'fg_default': '#BE185D',
-    },
-    {
         'id': 'compras_recurrentes',
         'titulo': 'Compras recurrentes',
         'desc': 'Patrones de compra cliente × producto',
@@ -289,7 +277,6 @@ CARD_CATEGORIA = {
     'config':               'datos',
     # Pendientes (al fondo)
     'productos_pendientes': 'pendientes',
-    'recetas_scan':         'pendientes',
     'cuentas':              'pendientes',
 }
 

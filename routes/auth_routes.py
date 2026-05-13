@@ -15,6 +15,7 @@ from auth import (
     requiere_permiso,
     seed_admin_si_falta,
     seed_pedidos_si_falta,
+    seed_rendicion_si_falta,
     verificar_password,
 )
 from database import Usuario
@@ -25,6 +26,7 @@ def init_app(app):
     # Garantizar admin inicial + user 'pedidos' al arranque
     seed_admin_si_falta()
     seed_pedidos_si_falta()
+    seed_rendicion_si_falta()
 
     # ── Guard global para rol 'pedidos' ─────────────────────────────────
     # Sólo puede navegar a /compras/* y a las APIs que use ese flujo.
@@ -55,6 +57,26 @@ def init_app(app):
             return None
         return redirect(url_for('compras_dia'))
 
+    # Rol 'rendicion': solo accede a /devoluciones/* y /rend.
+    _RENDICION_PATHS_OK = ('/devoluciones/', '/static/')
+    _RENDICION_PATHS_OK_EXACT = {
+        '/devoluciones', '/rend',
+        '/login', '/logout', '/cambiar-password', '/health',
+    }
+
+    @app.before_request
+    def _restrict_rol_rendicion():
+        if not current_user.is_authenticated:
+            return None
+        if getattr(current_user, 'rol', None) != 'rendicion':
+            return None
+        p = request.path or '/'
+        if p in _RENDICION_PATHS_OK_EXACT:
+            return None
+        if any(p.startswith(pref) for pref in _RENDICION_PATHS_OK):
+            return None
+        return redirect(url_for('devoluciones_buscar'))
+
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
         if current_user.is_authenticated:
@@ -79,6 +101,8 @@ def init_app(app):
             # Rol 'pedidos' tiene una sola pantalla — saltearse el index.
             if user.rol == 'pedidos':
                 return redirect(request.args.get('next') or url_for('compras_dia'))
+            if user.rol == 'rendicion':
+                return redirect(request.args.get('next') or url_for('devoluciones_buscar'))
             return redirect(request.args.get('next') or url_for('index'))
         return render_template('login.html')
 
@@ -112,6 +136,8 @@ def init_app(app):
             flash('Contraseña actualizada.', 'success')
             if current_user.rol == 'pedidos':
                 return redirect(url_for('compras_dia'))
+            if current_user.rol == 'rendicion':
+                return redirect(url_for('devoluciones_buscar'))
             return redirect(url_for('index'))
         return render_template('cambiar_password.html')
 

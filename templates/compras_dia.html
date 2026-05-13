@@ -143,6 +143,45 @@
         <a href="{{ url_for('compras_dia_armar') }}" class="btn btn-primary btn-sm">
             📦 Armar pedido (todas las drogs) →
         </a>
+        {# Botón "Laboratorio": revela un dropdown con labs que tienen
+           productos bajo mínimo. Al elegir, va a informe_pedido_auto?lab_id=N
+           (eje-lab con alertas por producto, sin matriz lab/drog). #}
+        <div class="relative" id="cd-lab-wrap">
+            <button type="button" id="cd-lab-btn"
+                    class="btn btn-primary btn-sm"
+                    title="Armar pedido eligiendo un laboratorio (saltea la matriz drog)">
+                🧪 Laboratorio
+            </button>
+            <div id="cd-lab-dropdown"
+                 class="hidden absolute right-0 mt-1 w-80 max-h-96 overflow-y-auto bg-surface border border-surface-border rounded-lg shadow-lg z-50"
+                 style="top: 100%;">
+                <div class="p-2 border-b border-surface-border bg-surface-input">
+                    <input type="text" id="cd-lab-filter" placeholder="Buscar laboratorio…"
+                           class="ds-input w-full" style="font-size:12px; padding:6px 10px;">
+                </div>
+                {% if labs_con_alertas %}
+                <ul class="py-1 text-xs" id="cd-lab-list">
+                    {% for l in labs_con_alertas %}
+                    <li>
+                        <a href="{{ url_for('compras_dia_armar', lab_id=l.lab_id) }}"
+                           data-nombre="{{ l.nombre|lower }}"
+                           class="cd-lab-item flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-[var(--ds-surface-input)] transition-colors">
+                            <span class="truncate">{{ l.nombre }}</span>
+                            <span class="text-[10px] text-rose-300 font-semibold flex-shrink-0">{{ l.n }}</span>
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <p class="text-[10px] text-[var(--ds-text-mute)] px-3 py-2 border-t border-surface-border">
+                    {{ labs_con_alertas|length }} laboratorio{{ 's' if labs_con_alertas|length != 1 }} con alertas
+                </p>
+                {% else %}
+                <p class="px-3 py-3 text-xs text-[var(--ds-text-mute)] italic">
+                    Sin laboratorios con productos bajo mínimo.
+                </p>
+                {% endif %}
+            </div>
+        </div>
         {% if current_user.rol != 'pedidos' %}
         <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-primary btn-sm">🔗 Matriz lab × drog</a>
         <a href="{{ url_for('index') }}" class="btn-inicio" title="Volver al inicio">
@@ -278,6 +317,38 @@
 </div>
 
 <script>
+// Dropdown "🧪 Laboratorio" — toggle + filtro client-side.
+(function() {
+    const btn = document.getElementById('cd-lab-btn');
+    const wrap = document.getElementById('cd-lab-wrap');
+    const dd  = document.getElementById('cd-lab-dropdown');
+    const inp = document.getElementById('cd-lab-filter');
+    const list = document.getElementById('cd-lab-list');
+    if (!btn || !dd) return;
+    btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const hidden = dd.classList.toggle('hidden');
+        if (!hidden && inp) { inp.value = ''; if (list) list.querySelectorAll('a.cd-lab-item').forEach(a => a.style.display = ''); inp.focus(); }
+    });
+    document.addEventListener('click', e => {
+        if (!wrap.contains(e.target)) dd.classList.add('hidden');
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') dd.classList.add('hidden');
+    });
+    if (inp && list) {
+        inp.addEventListener('input', () => {
+            const q = inp.value.trim().toLowerCase()
+                .normalize('NFD').replace(/[̀-ͯ]/g, '');
+            const tokens = q.split(/\s+/).filter(Boolean);
+            list.querySelectorAll('a.cd-lab-item').forEach(a => {
+                const n = (a.dataset.nombre || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+                a.style.display = tokens.every(t => n.includes(t)) ? '' : 'none';
+            });
+        });
+    }
+})();
+
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 let _provActual = null;
 
@@ -605,15 +676,6 @@ async function borrarPedido(id, btn) {
     }
 }
 
-// Auto-disparo del modal "Pedidos emitidos · Todas" cuando se llega con
-// ?abrir=todos (lo usa el botón Hero del home).
-(function _autoAbrirModal() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('abrir') === 'todos') {
-        // Esperamos a que el DOM termine; abrirModalPedidos ignora los args.
-        setTimeout(() => { if (typeof abrirModalPedidos === 'function') abrirModalPedidos(null, ''); }, 50);
-    }
-})();
 </script>
 
 <!-- Modal pedidos por droguería -->

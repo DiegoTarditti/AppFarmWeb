@@ -18,6 +18,7 @@ from routes import (
     cuentas,
     dashboard,
     descuentos_base,
+    devoluciones,
     docs_pendientes,
     home_cards,
     inferencia,
@@ -38,7 +39,6 @@ from routes import (
     productos_pendientes,
     providers,
     purchase,
-    recetas_scan,
     vademecum,
 )
 from routes import help as help_module
@@ -74,6 +74,7 @@ _modules = [
     consulta_medico,
     consulta_producto,
     descuentos_base,
+    devoluciones,
     procesos,
     productos_pendientes,
     partners,
@@ -83,7 +84,6 @@ _modules = [
     inferencia,
     informes,
     bi,
-    recetas_scan,
 ]
 
 

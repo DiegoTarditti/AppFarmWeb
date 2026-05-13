@@ -22,6 +22,7 @@ MODULOS = [
     'facturas', 'stock', 'cta_cte', 'config', 'pedidos',
     'procesos', 'productos', 'analisis', 'reclamos', 'usuarios',
     'laboratorios', 'proveedores', 'obras_sociales', 'dashboard',
+    'devoluciones',
 ]
 
 NIVELES = ['ver', 'editar', 'admin']
@@ -42,6 +43,10 @@ PERMISOS_POR_ROL = {
     # Rol acotado a /compras/dia (armado de pedidos a droguerías).
     'pedidos': {
         'pedidos': 'editar',
+    },
+    # Rol acotado a /devoluciones/* (registro de devoluciones por rendición).
+    'rendicion': {
+        'devoluciones': 'editar',
     },
 }
 
@@ -129,6 +134,32 @@ def seed_admin_si_falta():
             session.commit()
         except IntegrityError:
             # Otro worker ganó la carrera — el admin ya existe.
+            session.rollback()
+
+
+def seed_rendicion_si_falta():
+    """Crea usuario `rendicion` (pass `rendicion123`, debe cambiar) si no existe.
+    Rol acotado: solo /devoluciones/*. Para operadores que solo registran
+    devoluciones de rendiciones."""
+    from sqlalchemy.exc import IntegrityError
+    with database.get_db() as session:
+        ya = session.query(Usuario).filter_by(username='rendicion').first()
+        if ya:
+            return
+        u = Usuario(
+            username='rendicion',
+            email=None,
+            password_hash=hash_password('rendicion123'),
+            nombre_completo='Operador de rendiciones',
+            rol='rendicion',
+            permisos_json=json.dumps(permisos_default_rol('rendicion')),
+            activo=True,
+            debe_cambiar_password=True,
+        )
+        session.add(u)
+        try:
+            session.commit()
+        except IntegrityError:
             session.rollback()
 
 

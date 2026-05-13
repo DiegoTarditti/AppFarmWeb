@@ -135,7 +135,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock', 'ventas_mensuales'] %}
+                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas'] %}
                 <tr class="border-t border-surface-border">
                     <td class="px-4 py-3 font-semibold">{{ ent }}</td>
                     <td class="px-4 py-3 text-right font-mono">{{ '{:,}'.format(cuentas[ent]) }}</td>

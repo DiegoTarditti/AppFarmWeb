@@ -171,6 +171,23 @@
             <div class="text-xs text-[#5f6c64]">Una fila con la suma total de unidades y monto.</div>
           </div>
         </label>
+
+        <div class="p-3 border border-surface-border rounded-lg hover:bg-[#f7fbf8] mb-2">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" class="mt-1" id="adv-header-incluir" onchange="toggleHeader()">
+            <div class="flex-1">
+              <div class="font-semibold text-sm text-[#1F5D40]">Incluir fila de encabezado</div>
+              <div class="text-xs text-[#5f6c64]">Agrega una fila extra al principio del archivo. Podés escribir un valor por columna (CUIT, código de cliente, etiqueta libre, etc.). Las columnas vacías quedan en blanco.</div>
+            </div>
+          </label>
+          <div id="adv-header-wrap" class="hidden mt-3 ml-7">
+            <label class="text-[11px] font-bold text-[#1F5D40] uppercase tracking-wide block mb-2">Texto por columna</label>
+            <div id="adv-header-cols" class="flex flex-wrap gap-3"></div>
+            <p class="text-[10px] text-[#5f6c64] mt-2">
+              Se aplica en el mismo orden que las columnas activas de arriba. Si cambiás de orden o quitás una columna, ajustá acá.
+            </p>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -217,6 +234,9 @@
   state.advanced = {
     excl_ceros: !!(CONFIG.advanced && CONFIG.advanced.excl_ceros),
     totales:    !!(CONFIG.advanced && CONFIG.advanced.totales),
+    header_incluir: !!(CONFIG.advanced && CONFIG.advanced.header_incluir),
+    // Mapa field → valor del encabezado para esa columna.
+    header_por_columna: (CONFIG.advanced && CONFIG.advanced.header_por_columna) || {},
   };
 
   function renderCols() {
@@ -231,9 +251,26 @@
       .filter(f => !state.columnas.includes(f.key))
       .map(f => `<div class="col-pill col-avail" onclick="addCol('${f.key}')">+ ${f.label}</div>`)
       .join('');
+    renderHeaderInputs();
   }
   function addCol(k) { state.columnas.push(k); renderCols(); }
   function removeCol(i) { state.columnas.splice(i,1); renderCols(); }
+
+  // Render de inputs del encabezado por columna (uno por columna activa).
+  function renderHeaderInputs() {
+    const cont = document.getElementById('adv-header-cols');
+    if (!cont) return;
+    cont.innerHTML = state.columnas.map((k, i) => {
+      const lbl = FIELD_LABEL[k] || k;
+      const val = state.advanced.header_por_columna[k] || '';
+      return `<div style="min-width:180px;">
+        <label style="font-size:10px; font-weight:700; color:#1F5D40; text-transform:uppercase; letter-spacing:.04em; display:block; margin-bottom:3px;">${lbl}</label>
+        <input type="text" value="${val.replace(/"/g, '&quot;')}"
+               oninput="state.advanced.header_por_columna['${k}']=this.value"
+               style="width:100%; background:#eef6f1; border:1px solid #cfe3d6; border-radius:6px; padding:5px 8px; font-size:12px;">
+      </div>`;
+    }).join('') || '<span class="text-xs text-[#999]">Agregá columnas primero.</span>';
+  }
 
   function renderTxt() {
     const tb = document.getElementById('txt-campos');
@@ -276,9 +313,16 @@
     setTimeout(() => t.className = 'save-toast', 2500);
   }
 
+  function toggleHeader() {
+    const on = document.getElementById('adv-header-incluir').checked;
+    document.getElementById('adv-header-wrap').classList.toggle('hidden', !on);
+  }
+
   async function guardar() {
     state.advanced.excl_ceros = document.getElementById('adv-excl-ceros').checked;
     state.advanced.totales    = document.getElementById('adv-totales').checked;
+    state.advanced.header_incluir = document.getElementById('adv-header-incluir').checked;
+    // header_por_columna ya se va actualizando via oninput de cada input.
     const body = {
       nombre: document.getElementById('meta-nombre').value,
       tipo_doc: document.getElementById('meta-tipo-doc').value,
@@ -301,6 +345,9 @@
 
   document.getElementById('adv-excl-ceros').checked = state.advanced.excl_ceros;
   document.getElementById('adv-totales').checked    = state.advanced.totales;
+  document.getElementById('adv-header-incluir').checked = state.advanced.header_incluir;
+  toggleHeader();
+  renderHeaderInputs();
 
   if (FORMATO === 'xlsx' || FORMATO === 'csv') renderCols();
   else renderTxt();
