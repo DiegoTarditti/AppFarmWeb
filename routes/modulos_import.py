@@ -387,6 +387,62 @@ def init_app(app):
                     entry['_es_pack'] = False
                 validados.append(entry)
 
+        # Encolar items not_found al queue de revisión (decisión diferida).
+        # Mismo patrón que ofertas_import: pre-fetch top candidatos por item y
+        # snapshot del dato del módulo. No bloquea el flujo si falla.
+        try:
+            from routes.productos_pendientes import enqueue_pendiente
+            supplier_nombre = None
+            if lab_id:
+                with database.get_db() as _s:
+                    _l = _s.get(Laboratorio, lab_id)
+                    if _l:
+                        supplier_nombre = _l.descripcion or _l.razon_social
+
+            not_found_items = [(i, e) for i, e in enumerate(validados)
+                               if e.get('_status') == 'not_found' and
+                               (e.get('descripcion') or e.get('nombre_modulo'))]
+            cands_por_idx = {}
+            if not_found_items:
+                items_for_search = [
+                    {'idx': i, 'descripcion': e.get('descripcion') or e.get('nombre_modulo'),
+                     'ean': e.get('ean'), 'codigo': e.get('codigo')}
+                    for i, e in not_found_items
+                ]
+                with database.get_db() as _s_search:
+                    cands_por_idx = pm.buscar_candidatos_bulk(
+                        items_for_search, laboratorio_id=lab_id, top=5,
+                        session=_s_search,
+                    )
+
+            if not_found_items:
+                with database.get_db() as _s2:
+                    for i, entry in not_found_items:
+                        desc = entry.get('descripcion') or entry.get('nombre_modulo') or ''
+                        raw_cands = cands_por_idx.get(i, [])
+                        cands_payload = [
+                            {'producto_id': c.get('producto_id'),
+                             'observer_id': c.get('observer_id'),
+                             'descripcion': c.get('descripcion') or '',
+                             'codigo_alfabeta': c.get('codigo_alfabeta') or '',
+                             'score': round(float(c.get('score') or 0), 3)}
+                            for c in (raw_cands[:5] if isinstance(raw_cands, list) else [])
+                        ]
+                        score_top = cands_payload[0]['score'] if cands_payload else None
+                        enqueue_pendiente(_s2,
+                            descripcion=desc,
+                            supplier_id=lab_id,
+                            supplier_nombre=supplier_nombre,
+                            archivo_origen='modulos_import',
+                            score_top=score_top,
+                            top_candidatos=cands_payload,
+                        )
+                    _s2.commit()
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                'enqueue_pendiente (modulos) falló: %s', _e)
+
         return jsonify({'items': validados, 'stats': stats, 'total': len(validados)})
 
     @app.route('/api/modulos/import-guardar', methods=['POST'])

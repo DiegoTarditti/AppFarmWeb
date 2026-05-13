@@ -74,7 +74,8 @@ def sugerir_drogueria_para_lab(session, lab_nombre):
     }
 
 
-def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m):
+def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m,
+                                  dias_cobertura=None):
     """Calcula las métricas de un producto bajo mínimo para el pedido automático.
 
     Función pura, sin DB. Testeable.
@@ -85,13 +86,19 @@ def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m):
         maximo: int o None, máximo configurado.
         u12m: int, unidades vendidas en los últimos 12 meses.
         m12m: float, monto vendido en los últimos 12 meses.
+        dias_cobertura: int o None. Si se especifica, calcula `sugerido` para
+            cubrir esa cantidad de días de venta proyectada (en base a u12m),
+            ignorando mínimo/máximo configurados.
 
     Returns:
         dict con: sugerido, base_sugerido, perdida_mensual, perdida_pesos,
                   precio_unit, min_diag (sin_ventas|bajo|ok|alto), min_diag_label.
 
     Reglas:
-      - sugerido = max(1, maximo - stock) si hay máximo > stock; sino max(1, minimo - stock).
+      - Si u12m=0 → sugerido=0 (no proponer compra de productos sin movimiento).
+      - Si dias_cobertura → sugerido = ceil(u12m/365 * dias) - stock, clip ≥ 0.
+      - Si hay máximo > stock → sugerido = maximo - stock.
+      - Si no → sugerido = max(1, minimo - stock).
       - avg_mensual = u12m / 12.
       - precio_unit = m12m / u12m (0 si no hay ventas).
       - factor_falta = clamp((minimo - stock) / minimo, 0, 1).
@@ -104,13 +111,22 @@ def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m):
           - >2   → alto (cubre >2 meses)
           - sino → ok
     """
+    import math
     stock = int(stock or 0)
     minimo = int(minimo or 0)
     maximo = int(maximo) if maximo is not None else None
     u12m = int(u12m or 0)
     m12m = float(m12m or 0)
+    dias_cobertura = int(dias_cobertura) if dias_cobertura else None
 
-    if maximo and maximo > stock:
+    if u12m <= 0:
+        sugerido = 0
+        base_sugerido = 'sin_ventas'
+    elif dias_cobertura and dias_cobertura > 0:
+        target = math.ceil(u12m / 365.0 * dias_cobertura)
+        sugerido = max(0, target - stock)
+        base_sugerido = f'dias-{dias_cobertura}'
+    elif maximo and maximo > stock:
         sugerido = maximo - stock
         base_sugerido = 'max-stock'
     else:
@@ -139,7 +155,7 @@ def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m):
             min_diag_label = f'OK — cubre ~{int(ratio * 30)}d'
 
     return {
-        'sugerido': max(1, sugerido),
+        'sugerido': sugerido,
         'base_sugerido': base_sugerido,
         'avg_mensual': round(avg_mensual, 2),
         'precio_unit': round(precio_unit, 2),
