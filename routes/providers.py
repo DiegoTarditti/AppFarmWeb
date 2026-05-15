@@ -20,6 +20,28 @@ from helpers import (
 
 def init_app(app):
 
+    @app.route('/api/provider/<int:provider_id>/descuento-sin-transfer', methods=['PATCH'])
+    @login_required
+    def api_provider_descuento_sin_transfer(provider_id):
+        """Edita Provider.descuento_sin_transfer. Body JSON {descuento_base: 0..100|null}."""
+        data = request.get_json(silent=True) or {}
+        raw = data.get('descuento_base')
+        dto = None
+        if raw not in (None, ''):
+            try:
+                dto = float(raw)
+                if dto < 0 or dto > 100:
+                    return jsonify({'ok': False, 'error': 'Debe estar entre 0 y 100'}), 400
+            except (TypeError, ValueError):
+                return jsonify({'ok': False, 'error': 'Valor inválido'}), 400
+        with database.get_db() as session:
+            prov = session.get(database.Provider, provider_id)
+            if not prov:
+                return jsonify({'ok': False, 'error': 'Proveedor no encontrado'}), 404
+            prov.descuento_sin_transfer = dto
+            session.commit()
+        return jsonify({'ok': True, 'descuento_base': dto})
+
     @app.route('/api/provider/<int:provider_id>/invoices')
     def api_provider_invoices(provider_id):
         with database.get_db() as session:

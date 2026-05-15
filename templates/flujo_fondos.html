@@ -1,0 +1,1226 @@
+{% extends "base.html" %}
+{% set nav_active = "flujo_fondos" %}
+{% block title %}Flujo de fondos — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.ff-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.ff-topbar h1 { font-family: 'Space Grotesk', sans-serif;
+                font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.ff-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+
+.ff-hero {
+    padding: 22px 24px;
+    background: radial-gradient(circle at top right, rgba(95,230,188,.06) 0%, transparent 60%);
+    border-bottom: 1px solid var(--ds-line);
+}
+.ff-hero-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 24px; }
+.ff-kpi .lbl {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text-mute); font-weight: 600;
+}
+.ff-kpi .val {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 32px; font-weight: 700; color: var(--ds-text);
+    line-height: 1.1; margin-top: 2px;
+}
+.ff-kpi .val.mint { color: var(--ds-mint); }
+.ff-kpi .val.warn { color: var(--ds-warn); }
+.ff-kpi .val.danger { color: var(--ds-danger); }
+.ff-kpi .sub { font-size: 11px; color: var(--ds-text-mute); margin-top: 4px; }
+
+.ff-content { padding: 18px 24px; }
+
+/* Strip de semanas (compacto, todas iguales en predicción plana) */
+.ff-weeks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 24px;
+}
+.ff-week {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 10px 12px;
+    font-size: 12px;
+}
+.ff-week.actual {
+    border-color: var(--ds-mint);
+    box-shadow: 0 0 0 1px rgba(95,230,188,.3);
+}
+.ff-week .lbl-week {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px; font-weight: 700; color: var(--ds-text);
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+}
+.ff-week .badge-actual {
+    font-size: 8px; font-weight: 700;
+    padding: 1px 5px; border-radius: 999px;
+    background: rgba(95,230,188,.18); color: var(--ds-mint);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.ff-week .ww-row {
+    display: flex; justify-content: space-between;
+    font-family: ui-monospace, Consolas, monospace;
+    padding: 1px 0;
+}
+.ff-week .ww-row .k { color: var(--ds-text-mute); font-size: 11px; }
+.ff-week .ww-row .v { color: var(--ds-text); font-weight: 700; font-size: 12px; }
+.ff-week .ww-row .v.mint { color: var(--ds-mint); }
+.ff-week .ww-row .v.warn { color: var(--ds-warn); }
+.ff-week .ww-row .v.danger { color: var(--ds-danger); }
+.ff-week .ww-row.saldo {
+    border-top: 1px solid var(--ds-line);
+    margin-top: 4px; padding-top: 4px;
+}
+
+/* Tabla de partners */
+.ff-section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px; font-weight: 700; color: var(--ds-text);
+    text-transform: uppercase; letter-spacing: .06em;
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 10px;
+}
+.ff-section-title .count {
+    font-size: 11px; color: var(--ds-text-mute); font-weight: 500;
+    text-transform: none; letter-spacing: 0;
+}
+
+.ff-partners {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    overflow: hidden;
+}
+.ff-partners table { width: 100%; border-collapse: collapse; }
+.ff-partners thead th {
+    background: rgba(0,0,0,.25);
+    color: var(--ds-text-mute);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 10px 12px;
+    text-align: right;
+    border-bottom: 1px solid var(--ds-line);
+}
+.ff-partners thead th:first-child,
+.ff-partners thead th.left { text-align: left; }
+.ff-partners tbody td {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    font-size: 12px;
+    font-family: ui-monospace, Consolas, monospace;
+    text-align: right;
+    color: var(--ds-text);
+}
+.ff-partners tbody tr:hover { background: rgba(95,230,188,.04); }
+.ff-partners tbody tr:last-child td { border-bottom: none; }
+.ff-partners tbody td.left { text-align: left; font-family: inherit; }
+.ff-partners tbody td .pill {
+    display: inline-block;
+    font-size: 8px; font-weight: 700;
+    padding: 2px 6px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .04em;
+    margin-right: 6px;
+}
+.ff-partners tbody td .pill.lab  { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+.ff-partners tbody td .pill.drog { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.ff-partners tbody td .nombre {
+    color: var(--ds-text); font-weight: 600;
+}
+.ff-partners tbody td.dto-zero { color: var(--ds-text-mute); font-weight: 400; }
+.ff-partners tbody td.dto-val { color: var(--ds-info); font-weight: 600; }
+.ff-partners tbody td.dto-editable {
+    cursor: pointer; position: relative;
+    transition: background .12s, box-shadow .12s;
+}
+.ff-partners tbody td.dto-editable:hover {
+    background: rgba(95,230,188,.08);
+    box-shadow: inset 0 0 0 1px var(--ds-mint);
+}
+.ff-partners tbody td.dto-editable::after {
+    content: '✎'; position: absolute; right: 4px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 10px; color: var(--ds-text-mute);
+    opacity: 0; transition: opacity .12s;
+}
+.ff-partners tbody td.dto-editable:hover::after { opacity: 1; }
+.dto-input {
+    background: rgba(0,0,0,.4);
+    border: 1px solid var(--ds-mint);
+    color: var(--ds-text);
+    width: 60px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: right;
+    outline: none;
+}
+.dto-input::-webkit-outer-spin-button,
+.dto-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.ff-toast {
+    position: fixed; top: 16px; right: 16px; z-index: 9999;
+    padding: 8px 16px; border-radius: var(--ds-r-md);
+    font-size: 13px; font-weight: 700;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    pointer-events: none;
+    transition: opacity .2s;
+}
+
+/* ─── Filtros tabla partners ─────────────────────────────── */
+.ff-filters {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 10px; align-items: center;
+}
+.ff-filters input, .ff-filters select {
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 12px;
+    outline: none;
+}
+.ff-filters input { min-width: 220px; }
+.ff-filters input:focus, .ff-filters select:focus {
+    border-color: var(--ds-mint);
+}
+.ff-filters .filter-count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--ds-text-mute);
+}
+.ff-filters .clear-btn {
+    background: transparent;
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-mute);
+    border-radius: 4px;
+    padding: 4px 9px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.ff-filters .clear-btn:hover {
+    border-color: var(--ds-mint);
+    color: var(--ds-mint);
+}
+
+/* ─── Acciones globales ──────────────────────────────────── */
+.ff-actions {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin-top: 14px; margin-bottom: 8px;
+}
+.ff-action-btn {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-soft);
+    border-radius: var(--ds-r-md);
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all .15s;
+}
+.ff-action-btn:hover {
+    border-color: var(--ds-mint);
+    color: var(--ds-mint);
+}
+.ff-action-btn.primary {
+    background: rgba(95,230,188,.12);
+    border-color: var(--ds-mint);
+    color: var(--ds-mint);
+}
+
+/* ─── Capacidad real (override de ingreso) ───────────────── */
+.ff-capacidad-row {
+    margin-top: 16px; padding: 14px 18px;
+    background: linear-gradient(135deg, rgba(56,189,248,.08), transparent);
+    border: 1px solid rgba(56,189,248,.25);
+    border-radius: var(--ds-r-md);
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+}
+.ff-capacidad-row .cap-lbl {
+    font-size: 12px; color: var(--ds-text-soft);
+    font-weight: 600;
+}
+.ff-capacidad-row .cap-lbl .hint { color: var(--ds-text-mute); font-weight: 400; font-size: 11px; }
+.ff-capacidad-row .cap-input {
+    background: rgba(0,0,0,.4);
+    border: 1px solid var(--ds-info);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 14px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 700;
+    width: 160px;
+    outline: none;
+}
+.ff-capacidad-row .cap-input:focus { border-color: var(--ds-mint); }
+.ff-capacidad-row .cap-help {
+    font-size: 11px; color: var(--ds-text-mute);
+    flex: 1; min-width: 200px;
+}
+.ff-capacidad-row .cap-clear {
+    background: transparent;
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-mute);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.ff-capacidad-row .cap-clear:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.ff-partners tbody td.bruto { color: var(--ds-text-mute); }
+.ff-partners tbody td.neto { color: var(--ds-text); font-weight: 700; }
+.ff-partners tbody td.pct { color: var(--ds-text-mute); }
+.ff-partners tbody td.pct.alto { color: var(--ds-warn); font-weight: 700; }
+
+.ff-partners tfoot td {
+    padding: 11px 12px;
+    background: rgba(0,0,0,.18);
+    border-top: 1px solid var(--ds-line);
+    font-size: 12px; font-weight: 700;
+    font-family: ui-monospace, Consolas, monospace;
+    text-align: right;
+    color: var(--ds-text);
+}
+.ff-partners tfoot td.left { text-align: left; font-family: inherit; color: var(--ds-text-mute); }
+.ff-partners tfoot td.warn { color: var(--ds-warn); }
+
+.ff-disclaimer {
+    margin-top: 18px;
+    padding: 12px 16px;
+    background: rgba(56,189,248,.08);
+    border: 1px solid rgba(56,189,248,.25);
+    border-radius: var(--ds-r-md);
+    font-size: 11px; color: var(--ds-text-soft); line-height: 1.5;
+}
+.ff-disclaimer b { color: var(--ds-info); }
+
+/* ─── Toggles de semanas por partner ─────────────────────── */
+.ff-partners thead th.toggles-col {
+    text-align: center;
+    min-width: 220px;
+}
+.ff-partners tbody td.toggles-cell {
+    padding: 6px 10px;
+    text-align: center;
+}
+.wk-toggles {
+    display: inline-flex; gap: 3px; align-items: center;
+}
+.wk-btn {
+    width: 22px; height: 22px;
+    border: 1px solid var(--ds-line);
+    background: rgba(0,0,0,.3);
+    color: var(--ds-text-mute);
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 10px; font-weight: 700;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, color .12s;
+    padding: 0; line-height: 1;
+}
+.wk-btn:hover {
+    border-color: var(--ds-mint);
+    color: var(--ds-text);
+}
+.wk-btn.active {
+    background: rgba(95,230,188,.22);
+    border-color: var(--ds-mint);
+    color: var(--ds-mint);
+}
+.ff-reset-btn {
+    margin-left: 14px;
+    font-size: 11px;
+    padding: 4px 10px;
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--ds-line);
+    border-radius: 4px;
+    color: var(--ds-text-soft);
+    cursor: pointer;
+    transition: all .15s;
+}
+.ff-reset-btn:hover {
+    border-color: var(--ds-mint);
+    color: var(--ds-mint);
+}
+.ff-saldo-warn {
+    margin-left: 10px;
+    font-size: 10px;
+    color: var(--ds-text-mute);
+}
+
+/* ─── Click en card de semana → detalle inline ─────────── */
+.ff-week { cursor: pointer; }
+.ff-week.selected {
+    border-color: var(--ds-info);
+    box-shadow: 0 0 0 2px rgba(56,189,248,.3);
+}
+.ff-week-detail {
+    display: none;
+    margin-top: 14px;
+    margin-bottom: 24px;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-info);
+    border-radius: var(--ds-r-lg);
+    padding: 16px 18px;
+}
+.ff-week-detail.open { display: block; }
+.ff-wd-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid var(--ds-line);
+    padding-bottom: 10px; margin-bottom: 10px;
+}
+.ff-wd-head .titulo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700; font-size: 15px; color: var(--ds-text);
+}
+.ff-wd-head .sub { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px; }
+.ff-wd-head .tot {
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 700; font-size: 15px; color: var(--ds-warn);
+}
+.ff-wd-head .saldo {
+    display: block;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px; margin-top: 4px; text-align: right;
+}
+.ff-wd-head .saldo.neg { color: var(--ds-danger); }
+.ff-wd-head .saldo.pos { color: var(--ds-mint); }
+.ff-wd-close {
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-mute);
+    width: 24px; height: 24px;
+    border-radius: 4px; cursor: pointer;
+    margin-left: 10px;
+}
+.ff-wd-close:hover { color: var(--ds-text); border-color: var(--ds-mint); }
+.ff-wd-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 4px 16px;
+    font-size: 12px;
+}
+.ff-wd-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.ff-wd-item .pname {
+    display: flex; align-items: center; gap: 6px;
+    min-width: 0; flex: 1;
+}
+.ff-wd-item .pname .pill-mini {
+    font-size: 8px; font-weight: 700;
+    padding: 1px 5px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .04em;
+    flex-shrink: 0;
+}
+.ff-wd-item .pname .pill-mini.lab { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+.ff-wd-item .pname .pill-mini.drog { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.ff-wd-item .pname .nombre {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: var(--ds-text);
+}
+.ff-wd-item .pmonto {
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 700; color: var(--ds-text);
+    flex-shrink: 0; margin-left: 8px;
+}
+.ff-wd-summary {
+    grid-column: 1 / -1;
+    margin-top: 8px; padding-top: 10px;
+    border-top: 1px dashed var(--ds-line);
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: var(--ds-text-mute);
+}
+.ff-wd-summary .pmonto {
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 700; color: var(--ds-text-soft);
+}
+.ff-wd-empty {
+    grid-column: 1 / -1;
+    text-align: center; padding: 12px 0;
+    color: var(--ds-text-mute); font-style: italic;
+}
+.ff-wd-hint {
+    font-size: 11px; color: var(--ds-text-mute);
+    margin-top: 8px; font-style: italic;
+}
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="ff-topbar">
+    <a href="{{ url_for('index') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[rgba(0,0,0,.25)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] text-[color:var(--ds-text-soft)] hover:text-[color:var(--ds-text)] transition inline-flex items-center gap-1.5">
+        ← Home
+    </a>
+    <h1>💰 Flujo de fondos</h1>
+    <span class="sub">predicción · {{ partners | length }} partners</span>
+    <div class="flex items-center gap-1 ml-2">
+        <span class="text-[10px]" style="color: var(--ds-text-mute); text-transform: uppercase; letter-spacing:.06em; margin-right:4px;">Horizonte</span>
+        {% for n in [4, 6, 8] %}
+        <a href="{{ url_for('flujo_fondos', n=n) }}"
+           class="text-[11px] font-bold px-2.5 py-1 rounded border transition {% if n_semanas == n %}border-[color:var(--ds-mint)] bg-[rgba(95,230,188,.14)] text-[color:var(--ds-mint)]{% else %}border-[color:var(--ds-line)] text-[color:var(--ds-text-soft)] hover:border-[color:var(--ds-mint)] hover:text-[color:var(--ds-text)]{% endif %}">
+            {{ n }} sem
+        </a>
+        {% endfor %}
+    </div>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('cronograma_list') }}"
+           class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+            📅 Agenda →
+        </a>
+        <a href="{{ url_for('pedidos_log') }}"
+           class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+            📜 Log →
+        </a>
+    </div>
+</div>
+
+<div class="ff-hero">
+    <div class="ff-hero-row">
+        <div class="ff-kpi">
+            <div class="lbl" data-kpi-lbl="ingreso">↑ Ingreso semanal (PVP)</div>
+            <div class="val mint" data-kpi="ingreso">${{ '{:,.0f}'.format(ingreso_semanal_base) | replace(',', '.') }}</div>
+            <div class="sub" data-kpi-sub="ingreso">SUM ventas 12m / 52</div>
+        </div>
+        <div class="ff-kpi">
+            <div class="lbl">↓ Egreso semanal bruto</div>
+            <div class="val warn" data-kpi="egreso-bruto">${{ '{:,.0f}'.format(egreso_bruto_sem) | replace(',', '.') }}</div>
+            <div class="sub">promedio sobre {{ n_semanas }} sem</div>
+        </div>
+        <div class="ff-kpi">
+            <div class="lbl">↓ Egreso semanal neto</div>
+            <div class="val warn" data-kpi="egreso-neto">${{ '{:,.0f}'.format(egreso_neto_sem) | replace(',', '.') }}</div>
+            <div class="sub">aplicando dto base</div>
+        </div>
+        <div class="ff-kpi">
+            <div class="lbl">≡ Saldo semanal</div>
+            <div class="val {{ 'danger' if saldo_sem < 0 else 'mint' }}" data-kpi="saldo">
+                {% if saldo_sem < 0 %}-{% endif %}${{ '{:,.0f}'.format(saldo_sem | abs) | replace(',', '.') }}
+            </div>
+            <div class="sub">ingreso − egreso neto</div>
+        </div>
+    </div>
+    <div class="ff-capacidad-row">
+        <div class="cap-lbl">
+            💰 Capacidad real /sem
+            <div class="hint">override del ingreso teórico</div>
+        </div>
+        <input type="number" id="ff-capacidad" class="cap-input"
+               placeholder="${{ '{:,.0f}'.format(ingreso_semanal_base) | replace(',', '.') }}"
+               step="100000" min="0">
+        <button type="button" id="ff-capacidad-clear" class="cap-clear" title="Volver a ingreso teórico">↺</button>
+        <div class="cap-help">
+            Ventas/52 ≠ caja real (clientes pagan a varios días). Cargá lo que efectivamente cobrás por semana
+            (efectivo + tarjetas + OS cobradas) y el saldo se recalcula contra eso. Persiste en el navegador.
+        </div>
+    </div>
+</div>
+
+<div class="ff-content">
+
+    <div class="ff-section-title">
+        Semanas
+        <span class="count">· click en una para ver detalle · prendé/apagá toggles por partner abajo</span>
+        <span id="ff-warn" class="ff-saldo-warn"></span>
+    </div>
+    <div class="ff-weeks">
+        {% for s in semanas %}
+        <div class="ff-week {% if s.es_actual %}actual{% endif %}" data-week-idx="{{ s.idx }}" role="button" tabindex="0" title="Click → ver partners de esta semana">
+            <div class="lbl-week">
+                Sem {{ s.idx + 1 }}
+                {% if s.es_actual %}<span class="badge-actual">hoy</span>{% endif %}
+            </div>
+            <div class="ww-row"><span class="k">{{ s.label }}</span></div>
+            <div class="ww-row"><span class="k">↑ ing</span><span class="v mint" data-field="ingreso">${{ '{:,.0f}'.format(s.ingreso_proy) | replace(',', '.') }}</span></div>
+            <div class="ww-row"><span class="k">↓ egr</span><span class="v warn" data-field="egreso">${{ '{:,.0f}'.format(s.egreso_neto) | replace(',', '.') }}</span></div>
+            <div class="ww-row saldo">
+                <span class="k">saldo</span>
+                <span class="v {{ 'danger' if s.saldo < 0 else 'mint' }}" data-field="saldo">
+                    {% if s.saldo < 0 %}-{% endif %}${{ '{:,.0f}'.format(s.saldo | abs) | replace(',', '.') }}
+                </span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div id="ff-week-detail" class="ff-week-detail">
+        <div class="ff-wd-head">
+            <div>
+                <div class="titulo" data-wd-titulo>Sem —</div>
+                <div class="sub" data-wd-sub>— · —</div>
+            </div>
+            <div style="text-align:right;">
+                <div class="tot" data-wd-total>$0</div>
+                <div class="saldo" data-wd-saldo>saldo $0</div>
+            </div>
+            <button type="button" class="ff-wd-close" title="Cerrar">✕</button>
+        </div>
+        <div class="ff-wd-items" data-wd-items></div>
+        <div class="ff-wd-hint">Solo se listan partners con distribución manual (algún botón apagado). Los demás aportan plano y se suman en la línea "default".</div>
+    </div>
+
+    <div class="ff-actions">
+        <button type="button" class="ff-action-btn primary" id="ff-apply-cron" title="Lee el cronograma activo y setea los toggles a las próximas fechas">
+            📅 Aplicar cronograma activo
+        </button>
+        <button type="button" class="ff-action-btn" id="ff-reset-toggles" title="Vuelve todos los partners a default (todas las semanas activas)">
+            ↺ Reset toggles
+        </button>
+    </div>
+
+    <div class="ff-section-title">
+        Egreso semanal estimado por partner
+        <span class="count">· {{ partners_lab | length }} labs + {{ partners_drog | length }} drogs · ranked por neto</span>
+    </div>
+    <div class="ff-filters">
+        <input type="text" id="ff-q" placeholder="🔍 Buscar partner por nombre…" autocomplete="off">
+        <select id="ff-tipo">
+            <option value="all">Todos</option>
+            <option value="laboratorio">Solo LAB</option>
+            <option value="drogueria">Solo DROG</option>
+        </select>
+        <select id="ff-min-neto">
+            <option value="0">Todos los montos</option>
+            <option value="10000000">Neto/sem &gt; $10M</option>
+            <option value="1000000">Neto/sem &gt; $1M</option>
+            <option value="500000">Neto/sem &gt; $500k</option>
+            <option value="100000">Neto/sem &gt; $100k</option>
+            <option value="10000">Neto/sem &gt; $10k</option>
+        </select>
+        <select id="ff-dto-state">
+            <option value="all">Todos los dto</option>
+            <option value="zero">Sin dto cargado (0%)</option>
+            <option value="set">Con dto cargado</option>
+        </select>
+        <button type="button" id="ff-clear-filters" class="clear-btn">Limpiar</button>
+        <span class="filter-count" id="ff-filter-count"></span>
+    </div>
+    <div class="ff-partners">
+        <table>
+            <thead>
+                <tr>
+                    <th class="left" style="width:28%;">Partner</th>
+                    <th>Ventas/Compras 12m</th>
+                    <th>Bruto / sem</th>
+                    <th>% Dto</th>
+                    <th>Neto / sem</th>
+                    <th>% del ingreso</th>
+                    <th class="toggles-col">Semanas activas</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in partners %}
+                {% set pct_ingreso = (p.neto_sem / ingreso_semanal_base * 100) if ingreso_semanal_base else 0 %}
+                <tr data-row-partner="{{ p.tipo }}-{{ p.id }}">
+                    <td class="left">
+                        <span class="pill {{ 'lab' if p.tipo == 'laboratorio' else 'drog' }}">
+                            {{ 'LAB' if p.tipo == 'laboratorio' else 'DROG' }}
+                        </span>
+                        <span class="nombre">{{ p.nombre }}</span>
+                    </td>
+                    <td class="bruto">${{ '{:,.0f}'.format(p.ventas_12m) | replace(',', '.') }}</td>
+                    <td class="bruto" data-bruto-sem="{{ p.bruto_sem }}">${{ '{:,.0f}'.format(p.bruto_sem) | replace(',', '.') }}</td>
+                    <td class="dto-editable {{ 'dto-val' if p.dto_pct else 'dto-zero' }}"
+                        data-partner-tipo="{{ p.tipo }}" data-partner-id="{{ p.id }}"
+                        data-dto="{{ p.dto_pct }}"
+                        title="Click para editar descuento base">
+                        <span class="dto-display">{{ '%.1f'|format(p.dto_pct) }}%</span>
+                    </td>
+                    <td class="neto" data-neto-sem>${{ '{:,.0f}'.format(p.neto_sem) | replace(',', '.') }}</td>
+                    <td class="pct {{ 'alto' if pct_ingreso > 10 else '' }}" data-pct-ingreso>
+                        {{ '%.1f'|format(pct_ingreso) }}%
+                    </td>
+                    <td class="toggles-cell">
+                        <div class="wk-toggles"
+                             data-partner="{{ p.tipo }}-{{ p.id }}"
+                             data-tipo="{{ p.tipo }}"
+                             data-nombre="{{ p.nombre }}"
+                             data-bruto="{{ p.bruto_sem }}"
+                             data-neto="{{ p.neto_sem }}">
+                            {% for w in range(n_semanas) %}
+                            <button type="button" class="wk-btn active" data-week="{{ w }}">{{ w + 1 }}</button>
+                            {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="left">TOTAL — {{ partners | length }} partners</td>
+                    <td></td>
+                    <td class="warn" data-foot-bruto>${{ '{:,.0f}'.format(egreso_bruto_sem) | replace(',', '.') }}</td>
+                    <td></td>
+                    <td class="warn" data-foot-neto>${{ '{:,.0f}'.format(egreso_neto_sem) | replace(',', '.') }}</td>
+                    <td data-foot-pct>{{ '%.1f'|format((egreso_neto_sem / ingreso_semanal_base * 100) if ingreso_semanal_base else 0) }}%</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+
+    <div class="ff-disclaimer">
+        <b>Distribuí el peso de compra por semana — apagá botones para concentrar pedidos.</b>
+        <ul style="margin-top:6px; margin-left:14px; list-style:disc;">
+            <li><b>Default</b>: todos los 8 botones activos = vista plana (cada semana paga lo mismo a ese partner).</li>
+            <li><b>Apagar botones</b>: el total del horizonte (8 semanas) se redistribuye solo entre las semanas que quedan activas. Si dejás 2 activas, cada una paga 4× más; si dejás 0, ese partner no aporta nada al horizonte.</li>
+            <li><b>Saldo en rojo</b> = esa semana gastás más de lo que entrás. Movés botones hasta que ninguna quede roja.</li>
+            <li>Los cambios se guardan en el navegador (localStorage). El botón <b>↺ reset</b> vuelve todo a activo.</li>
+        </ul>
+        <div style="margin-top:8px;">
+            <b>Fórmulas:</b> Ingreso = SUM(ventas 12m) / 52 (neto devol/NC). Lab bruto/sem = ventas 12m lab / 52. Drog bruto/sem = SUM(Invoice.total) 12m / 52. Neto = bruto × (1 − dto/100). Saldo = ingreso − egreso neto.
+        </div>
+        <div style="margin-top:6px;">
+            Próximo paso: precargar botones desde cronograma activo (lab con cron c/30 → solo botones sem 1, 5 vienen prendidos). Después: capacidad de pago cargable + plazos de pago por partner.
+        </div>
+    </div>
+</div>
+
+<script>
+(function(){
+    const N_WEEKS = {{ n_semanas }};
+    const INGRESO_TEORICO = {{ ingreso_semanal_base }};
+    const STORAGE_PREFIX = 'ff:weeks:';
+    const CAPACIDAD_KEY = 'ff:capacidad';
+    let INGRESO_SEM = INGRESO_TEORICO;
+    const savedCap = localStorage.getItem(CAPACIDAD_KEY);
+    if (savedCap) {
+        const v = parseFloat(savedCap);
+        if (!isNaN(v) && v > 0) INGRESO_SEM = v;
+    }
+
+    function fmt(n) {
+        const v = Math.round(Math.abs(n));
+        return '$' + v.toLocaleString('es-AR').replace(/,/g, '.');
+    }
+
+    function getActive(key) {
+        const saved = localStorage.getItem(STORAGE_PREFIX + key);
+        if (!saved) return new Array(N_WEEKS).fill(true);
+        try {
+            const arr = JSON.parse(saved);
+            if (Array.isArray(arr) && arr.length === N_WEEKS) return arr;
+        } catch(e) {}
+        return new Array(N_WEEKS).fill(true);
+    }
+
+    function setActive(key, arr) {
+        if (arr.every(Boolean)) {
+            localStorage.removeItem(STORAGE_PREFIX + key);
+        } else {
+            localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(arr));
+        }
+    }
+
+    let selectedWeek = null;  // índice 0..N_WEEKS-1 o null
+    // Para el detalle: solo partners modificados (con algún toggle off).
+    // Los partners default (todos activos) van a un bucket "default" por semana.
+    const SEMANA_LABELS = {{ semanas | map(attribute='label') | list | tojson }};
+    const SEMANA_ES_ACTUAL = {{ semanas | map(attribute='es_actual') | list | tojson }};
+
+    function recalc() {
+        const wkBruto = new Array(N_WEEKS).fill(0);
+        const wkNeto = new Array(N_WEEKS).fill(0);
+        const wkModif = Array.from({length: N_WEEKS}, () => []);
+        const wkDefaultMonto = new Array(N_WEEKS).fill(0);
+        let defaultCount = 0;
+
+        document.querySelectorAll('.wk-toggles').forEach(el => {
+            const key = el.dataset.partner;
+            const tipo = el.dataset.tipo;
+            const nombre = el.dataset.nombre || '?';
+            const bruto = parseFloat(el.dataset.bruto) || 0;
+            const neto = parseFloat(el.dataset.neto) || 0;
+            const active = getActive(key);
+            const nActive = active.filter(Boolean).length;
+            const modificado = nActive !== N_WEEKS;  // algún toggle off = modificado
+            if (modificado && nActive === 0) {
+                // partner totalmente apagado → no aporta a nada
+                return;
+            }
+            if (nActive === 0) return;
+            const cBruto = (bruto * N_WEEKS) / nActive;
+            const cNeto = (neto * N_WEEKS) / nActive;
+            if (!modificado) defaultCount++;
+            for (let i = 0; i < N_WEEKS; i++) {
+                if (active[i]) {
+                    wkBruto[i] += cBruto;
+                    wkNeto[i] += cNeto;
+                    if (modificado) {
+                        if (cNeto > 0) wkModif[i].push({tipo, nombre, monto: cNeto});
+                    } else {
+                        wkDefaultMonto[i] += cNeto;
+                    }
+                }
+            }
+        });
+
+        let totBruto = 0, totNeto = 0, semNeg = 0;
+        for (let i = 0; i < N_WEEKS; i++) {
+            totBruto += wkBruto[i];
+            totNeto += wkNeto[i];
+            const card = document.querySelector('.ff-week[data-week-idx="' + i + '"]');
+            if (!card) continue;
+            const iEl = card.querySelector('[data-field="ingreso"]');
+            const eEl = card.querySelector('[data-field="egreso"]');
+            const sEl = card.querySelector('[data-field="saldo"]');
+            const saldo = INGRESO_SEM - wkNeto[i];
+            if (saldo < 0) semNeg++;
+            if (iEl) iEl.textContent = fmt(INGRESO_SEM);
+            if (eEl) eEl.textContent = fmt(wkNeto[i]);
+            if (sEl) {
+                sEl.textContent = (saldo < 0 ? '-' : '') + fmt(saldo);
+                sEl.classList.toggle('danger', saldo < 0);
+                sEl.classList.toggle('mint', saldo >= 0);
+            }
+        }
+
+        const avgBruto = totBruto / N_WEEKS;
+        const avgNeto = totNeto / N_WEEKS;
+        const avgSaldo = INGRESO_SEM - avgNeto;
+
+        const eI = document.querySelector('[data-kpi="ingreso"]');
+        const eB = document.querySelector('[data-kpi="egreso-bruto"]');
+        const eN = document.querySelector('[data-kpi="egreso-neto"]');
+        const sK = document.querySelector('[data-kpi="saldo"]');
+        if (eI) eI.textContent = fmt(INGRESO_SEM);
+        if (eB) eB.textContent = fmt(avgBruto);
+        if (eN) eN.textContent = fmt(avgNeto);
+        if (sK) {
+            sK.textContent = (avgSaldo < 0 ? '-' : '') + fmt(avgSaldo);
+            sK.classList.toggle('danger', avgSaldo < 0);
+            sK.classList.toggle('mint', avgSaldo >= 0);
+        }
+        // Actualizar label/sub del KPI ingreso según si está override
+        const iLbl = document.querySelector('[data-kpi-lbl="ingreso"]');
+        const iSub = document.querySelector('[data-kpi-sub="ingreso"]');
+        const override = INGRESO_SEM !== INGRESO_TEORICO;
+        if (iLbl) iLbl.textContent = override ? '↑ Capacidad real /sem' : '↑ Ingreso semanal (PVP)';
+        if (iSub) iSub.textContent = override
+            ? 'override · teórico: ' + fmt(INGRESO_TEORICO)
+            : 'SUM ventas 12m / 52';
+
+        const warnEl = document.getElementById('ff-warn');
+        if (warnEl) {
+            warnEl.textContent = semNeg > 0 ? '⚠ ' + semNeg + ' sem en rojo' : '';
+            warnEl.style.color = semNeg > 0 ? 'var(--ds-danger)' : '';
+        }
+
+        // Detalle inline: solo render si hay semana seleccionada
+        renderWeekDetail(selectedWeek, wkModif, wkDefaultMonto, defaultCount, wkNeto);
+    }
+
+    function renderWeekDetail(i, wkModif, wkDefaultMonto, defaultCount, wkNeto) {
+        const pane = document.getElementById('ff-week-detail');
+        if (!pane) return;
+        if (i === null) {
+            pane.classList.remove('open');
+            return;
+        }
+        pane.classList.add('open');
+        const tituloEl = pane.querySelector('[data-wd-titulo]');
+        const subEl = pane.querySelector('[data-wd-sub]');
+        const totEl = pane.querySelector('[data-wd-total]');
+        const sEl = pane.querySelector('[data-wd-saldo]');
+        const itemsEl = pane.querySelector('[data-wd-items]');
+
+        if (tituloEl) tituloEl.textContent = 'Sem ' + (i+1) + (SEMANA_ES_ACTUAL[i] ? ' · hoy' : '');
+        if (subEl) subEl.textContent = SEMANA_LABELS[i] || '';
+        if (totEl) totEl.textContent = fmt(wkNeto[i]);
+        const saldoW = INGRESO_SEM - wkNeto[i];
+        if (sEl) {
+            sEl.textContent = 'saldo ' + (saldoW < 0 ? '-' : '') + fmt(saldoW);
+            sEl.classList.toggle('neg', saldoW < 0);
+            sEl.classList.toggle('pos', saldoW >= 0);
+        }
+        if (itemsEl) {
+            const list = wkModif[i].sort((a, b) => b.monto - a.monto);
+            let html = '';
+            if (list.length === 0) {
+                html += '<div class="ff-wd-empty">No hay partners distribuidos manualmente todavía. Apagá toggles en algún partner para verlos acá.</div>';
+            } else {
+                for (const p of list) {
+                    const pillCls = p.tipo === 'laboratorio' ? 'lab' : 'drog';
+                    const pillTxt = p.tipo === 'laboratorio' ? 'L' : 'D';
+                    html += '<div class="ff-wd-item">'
+                          + '<span class="pname"><span class="pill-mini ' + pillCls + '">' + pillTxt + '</span><span class="nombre">' + escapeHTML(p.nombre) + '</span></span>'
+                          + '<span class="pmonto">' + fmt(p.monto) + '</span>'
+                          + '</div>';
+                }
+            }
+            if (defaultCount > 0 && wkDefaultMonto[i] > 0) {
+                html += '<div class="ff-wd-summary">'
+                      + '<span>Default flat (sin distribuir) — ' + defaultCount + ' partners</span>'
+                      + '<span class="pmonto">' + fmt(wkDefaultMonto[i]) + '</span>'
+                      + '</div>';
+            }
+            itemsEl.innerHTML = html;
+        }
+    }
+
+    function escapeHTML(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    // Bind togglers
+    document.querySelectorAll('.wk-toggles').forEach(el => {
+        const key = el.dataset.partner;
+        const active = getActive(key);
+        el.querySelectorAll('.wk-btn').forEach(btn => {
+            const w = parseInt(btn.dataset.week, 10);
+            btn.classList.toggle('active', !!active[w]);
+            btn.addEventListener('click', () => {
+                const a = getActive(key);
+                a[w] = !a[w];
+                setActive(key, a);
+                btn.classList.toggle('active', a[w]);
+                recalc();
+            });
+        });
+    });
+
+    // Reset all toggles
+    const resetBtn = document.getElementById('ff-reset-toggles');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            if (!confirm('¿Resetear todos los toggles a default (todos activos)?')) return;
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && k.indexOf(STORAGE_PREFIX) === 0) keys.push(k);
+            }
+            keys.forEach(k => localStorage.removeItem(k));
+            document.querySelectorAll('.wk-btn').forEach(b => b.classList.add('active'));
+            recalc();
+            toast('✓ Reset aplicado', '#10b981');
+        });
+    }
+
+    // Aplicar cronograma activo
+    const applyCronBtn = document.getElementById('ff-apply-cron');
+    if (applyCronBtn) {
+        applyCronBtn.addEventListener('click', async () => {
+            if (!confirm('Aplicar cronograma activo:\n• Partners con cron programado: toggles se setean a las próximas fechas de cron.\n• Partners sin cron: quedan en default (todos activos).\n\n¿Continuar?')) return;
+            applyCronBtn.disabled = true;
+            applyCronBtn.textContent = '⏳ Aplicando…';
+            try {
+                const res = await fetch(`/api/flujo/cronograma-precarga?n=${N_WEEKS}`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Error');
+                // Limpiar todos los toggles previos
+                const keys = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const k = localStorage.key(i);
+                    if (k && k.indexOf(STORAGE_PREFIX) === 0) keys.push(k);
+                }
+                keys.forEach(k => localStorage.removeItem(k));
+                // Aplicar los recibidos
+                let aplicados = 0;
+                for (const [key, weeks] of Object.entries(data.result || {})) {
+                    if (Array.isArray(weeks) && weeks.length === N_WEEKS) {
+                        setActive(key, weeks);
+                        aplicados++;
+                    }
+                }
+                // Refrescar UI de todos los wk-btn
+                document.querySelectorAll('.wk-toggles').forEach(el => {
+                    const key = el.dataset.partner;
+                    const active = getActive(key);
+                    el.querySelectorAll('.wk-btn').forEach(btn => {
+                        const w = parseInt(btn.dataset.week, 10);
+                        btn.classList.toggle('active', !!active[w]);
+                    });
+                });
+                recalc();
+                toast('✓ Cronograma aplicado a ' + aplicados + ' partners', '#10b981');
+            } catch (err) {
+                toast('✕ ' + err.message, '#ef4444');
+            } finally {
+                applyCronBtn.disabled = false;
+                applyCronBtn.textContent = '📅 Aplicar cronograma activo';
+            }
+        });
+    }
+
+    // Capacidad real (override de ingreso teórico)
+    const capInput = document.getElementById('ff-capacidad');
+    const capClear = document.getElementById('ff-capacidad-clear');
+    if (capInput) {
+        if (INGRESO_SEM !== INGRESO_TEORICO) capInput.value = INGRESO_SEM;
+        const commitCap = () => {
+            const raw = capInput.value.trim();
+            if (raw === '') {
+                localStorage.removeItem(CAPACIDAD_KEY);
+                INGRESO_SEM = INGRESO_TEORICO;
+            } else {
+                const v = parseFloat(raw);
+                if (isNaN(v) || v < 0) {
+                    toast('✕ Valor inválido', '#ef4444');
+                    return;
+                }
+                localStorage.setItem(CAPACIDAD_KEY, String(v));
+                INGRESO_SEM = v;
+            }
+            recalc();
+        };
+        capInput.addEventListener('change', commitCap);
+        capInput.addEventListener('blur', commitCap);
+        capInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commitCap(); capInput.blur(); }
+        });
+    }
+    if (capClear) {
+        capClear.addEventListener('click', () => {
+            if (capInput) capInput.value = '';
+            localStorage.removeItem(CAPACIDAD_KEY);
+            INGRESO_SEM = INGRESO_TEORICO;
+            recalc();
+            toast('↺ Volvió a ingreso teórico', '#10b981');
+        });
+    }
+
+    // Filtros en la tabla de partners
+    const fQ = document.getElementById('ff-q');
+    const fTipo = document.getElementById('ff-tipo');
+    const fMinNeto = document.getElementById('ff-min-neto');
+    const fDtoState = document.getElementById('ff-dto-state');
+    const fClear = document.getElementById('ff-clear-filters');
+    const fCount = document.getElementById('ff-filter-count');
+
+    function applyFilters() {
+        const q = (fQ ? fQ.value : '').trim().toLowerCase();
+        const tipo = fTipo ? fTipo.value : 'all';
+        const minNeto = fMinNeto ? parseFloat(fMinNeto.value) || 0 : 0;
+        const dtoState = fDtoState ? fDtoState.value : 'all';
+        let shown = 0, total = 0;
+        document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            total++;
+            const key = tr.dataset.rowPartner || '';
+            const [rowTipo] = key.split('-');
+            const nombreEl = tr.querySelector('.nombre');
+            const nombre = (nombreEl ? nombreEl.textContent : '').toLowerCase();
+            const brutoCell = tr.querySelector('[data-bruto-sem]');
+            const bruto = brutoCell ? parseFloat(brutoCell.dataset.brutoSem) || 0 : 0;
+            const dtoCell = tr.querySelector('.dto-editable');
+            const dto = dtoCell ? parseFloat(dtoCell.dataset.dto) || 0 : 0;
+            const neto = bruto * (1 - dto / 100);
+            let ok = true;
+            if (q && !nombre.includes(q)) ok = false;
+            if (tipo !== 'all' && rowTipo !== tipo) ok = false;
+            if (neto < minNeto) ok = false;
+            if (dtoState === 'zero' && dto > 0) ok = false;
+            if (dtoState === 'set' && dto === 0) ok = false;
+            tr.style.display = ok ? '' : 'none';
+            if (ok) shown++;
+        });
+        if (fCount) fCount.textContent = (shown === total)
+            ? `${total} partners`
+            : `${shown} / ${total} partners visibles`;
+    }
+    [fQ, fTipo, fMinNeto, fDtoState].forEach(el => {
+        if (el) el.addEventListener('input', applyFilters);
+    });
+    if (fClear) {
+        fClear.addEventListener('click', () => {
+            if (fQ) fQ.value = '';
+            if (fTipo) fTipo.value = 'all';
+            if (fMinNeto) fMinNeto.value = '0';
+            if (fDtoState) fDtoState.value = 'all';
+            applyFilters();
+        });
+    }
+    applyFilters();
+
+    // ─── Editor inline de % dto base (lab + drog) ────────────
+    function toast(msg, color) {
+        const t = document.createElement('div');
+        t.className = 'ff-toast';
+        t.textContent = msg;
+        t.style.background = color;
+        t.style.color = '#fff';
+        document.body.appendChild(t);
+        setTimeout(() => { t.style.opacity = '0'; }, 1100);
+        setTimeout(() => t.remove(), 1400);
+    }
+
+    function recomputeTotals() {
+        let totBruto = 0, totNeto = 0;
+        document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            const brutoCell = tr.querySelector('[data-bruto-sem]');
+            const dtoCell = tr.querySelector('.dto-editable, td:nth-child(4)');
+            const bruto = brutoCell ? parseFloat(brutoCell.dataset.brutoSem) || 0 : 0;
+            const dto = dtoCell && dtoCell.dataset.dto !== undefined
+                      ? parseFloat(dtoCell.dataset.dto) || 0
+                      : 0;
+            const neto = bruto * (1 - dto / 100);
+            totBruto += bruto;
+            totNeto += neto;
+        });
+        const fb = document.querySelector('[data-foot-bruto]');
+        const fn = document.querySelector('[data-foot-neto]');
+        const fp = document.querySelector('[data-foot-pct]');
+        if (fb) fb.textContent = '$' + Math.round(totBruto).toLocaleString('es-AR').replace(/,/g, '.');
+        if (fn) fn.textContent = '$' + Math.round(totNeto).toLocaleString('es-AR').replace(/,/g, '.');
+        if (fp) {
+            const pct = INGRESO_SEM ? (totNeto / INGRESO_SEM * 100) : 0;
+            fp.textContent = pct.toFixed(1) + '%';
+        }
+    }
+
+    function openDtoEditor(cell) {
+        if (cell.querySelector('input')) return;
+        const display = cell.querySelector('.dto-display');
+        const tipo = cell.dataset.partnerTipo;
+        const id = cell.dataset.partnerId;
+        const current = parseFloat(cell.dataset.dto) || 0;
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.min = '0';
+        input.max = '100';
+        input.step = '0.5';
+        input.value = current ? current : '';
+        input.className = 'dto-input';
+        input.placeholder = '0';
+
+        if (display) display.style.display = 'none';
+        cell.appendChild(input);
+        input.focus();
+        input.select();
+
+        let done = false;
+        const finish = async (commit) => {
+            if (done) return;
+            done = true;
+            const raw = input.value.trim();
+            let newVal = null;
+            if (raw !== '') {
+                newVal = parseFloat(raw);
+                if (isNaN(newVal) || newVal < 0 || newVal > 100) {
+                    toast('✕ Valor inválido (0-100)', '#ef4444');
+                    if (display) display.style.display = '';
+                    input.remove();
+                    return;
+                }
+            }
+            const valForCompare = newVal === null ? 0 : newVal;
+            if (!commit || valForCompare === current) {
+                if (display) display.style.display = '';
+                input.remove();
+                return;
+            }
+            // Endpoint según tipo
+            const url = tipo === 'laboratorio'
+                ? `/api/laboratorio/${id}/descuento-base`
+                : `/api/provider/${id}/descuento-sin-transfer`;
+            try {
+                const res = await fetch(url, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({descuento_base: newVal}),
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Error');
+
+                // Update cell
+                cell.dataset.dto = valForCompare;
+                if (display) {
+                    display.textContent = valForCompare.toFixed(1) + '%';
+                    display.style.display = '';
+                }
+                cell.classList.toggle('dto-val', valForCompare > 0);
+                cell.classList.toggle('dto-zero', valForCompare === 0);
+                input.remove();
+
+                // Recompute row neto + % ingreso
+                const row = cell.closest('tr');
+                const brutoCell = row.querySelector('[data-bruto-sem]');
+                const bruto = brutoCell ? parseFloat(brutoCell.dataset.brutoSem) || 0 : 0;
+                const newNeto = bruto * (1 - valForCompare / 100);
+                const netoCell = row.querySelector('[data-neto-sem]');
+                if (netoCell) netoCell.textContent = '$' + Math.round(newNeto).toLocaleString('es-AR').replace(/,/g, '.');
+                const pctCell = row.querySelector('[data-pct-ingreso]');
+                if (pctCell) {
+                    const pct = INGRESO_SEM ? (newNeto / INGRESO_SEM * 100) : 0;
+                    pctCell.textContent = pct.toFixed(1) + '%';
+                    pctCell.classList.toggle('alto', pct > 10);
+                }
+                // Update wk-toggles data-neto para que el recalc de semanas lo tome
+                const togglesEl = row.querySelector('.wk-toggles');
+                if (togglesEl) togglesEl.dataset.neto = newNeto;
+
+                recomputeTotals();
+                recalc();
+                toast('✓ Guardado', '#10b981');
+            } catch (err) {
+                toast('✕ ' + err.message, '#ef4444');
+                if (display) display.style.display = '';
+                input.remove();
+            }
+        };
+
+        input.addEventListener('blur', () => finish(true));
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+            if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+        });
+    }
+
+    document.querySelectorAll('.dto-editable').forEach(cell => {
+        cell.addEventListener('click', () => openDtoEditor(cell));
+    });
+
+    // Click en card de semana → abrir/cerrar detalle inline
+    document.querySelectorAll('.ff-week').forEach(card => {
+        const idx = parseInt(card.dataset.weekIdx, 10);
+        const open = () => {
+            if (selectedWeek === idx) {
+                selectedWeek = null;
+                card.classList.remove('selected');
+            } else {
+                document.querySelectorAll('.ff-week.selected').forEach(c => c.classList.remove('selected'));
+                selectedWeek = idx;
+                card.classList.add('selected');
+            }
+            recalc();
+        };
+        card.addEventListener('click', open);
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                open();
+            }
+        });
+    });
+    // Cerrar el pane inline
+    const closeBtn = document.querySelector('#ff-week-detail .ff-wd-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            document.querySelectorAll('.ff-week.selected').forEach(c => c.classList.remove('selected'));
+            selectedWeek = null;
+            recalc();
+        });
+    }
+
+    recalc();
+})();
+</script>
+{% endblock %}

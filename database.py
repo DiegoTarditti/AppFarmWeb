@@ -73,6 +73,9 @@ class Laboratorio(Base):
     nombre = Column(String(150), nullable=False, unique=True)
     activo = Column(Boolean, nullable=False, default=True)
     observer_id = Column(Integer, nullable=True, unique=True)
+    # Descuento base de la compra directa al laboratorio (cuando no se compra
+    # vía droguería). Se aplica al monto estimado del flujo de fondos. NULL = 0.
+    descuento_base = Column(DECIMAL(5, 2), nullable=True)
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -2576,6 +2579,7 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS avg_monthly DECIMAL(10,2)"))
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_pack INTEGER NOT NULL DEFAULT 0"))
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS cantidad_reposicion_fija INTEGER"))
+    conn.execute(text("ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS descuento_base DECIMAL(5,2)"))
     # Cronograma: partner polimórfico (lab|drog) + canal_drog (vía droguería
     # cuando partner=lab, NULL=directo). Reemplaza el FK estricto a proveedores.
     # Cada DDL en su propio try/except: PG en algunos modos lanza UniqueViolation
