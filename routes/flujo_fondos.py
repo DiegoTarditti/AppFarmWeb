@@ -7,7 +7,8 @@ Modelo (Fase 3 — predicción sin cronograma):
 - Cada semana del horizonte muestra los mismos totales (predicción plana).
 - Estacionalidad/cronograma no se considera en esta vista.
 """
-from datetime import date as _date, timedelta
+from datetime import date as _date
+from datetime import timedelta
 
 from flask import jsonify, render_template, request
 from flask_login import login_required
