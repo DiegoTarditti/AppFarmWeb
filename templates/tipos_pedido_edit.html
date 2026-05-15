@@ -137,6 +137,58 @@
             </label>
         </div>
 
+        {% if tipo.categoria == 'flag' %}
+        {# ── Campos de flag ── #}
+        <div class="tp-card mt-4" style="margin-top: 14px;">
+            <h3>Comportamiento del flag</h3>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Ícono</label>
+                <input type="text" name="icono" value="{{ tipo.config.icono or '📝' }}" class="tp-input"
+                       style="max-width: 80px; font-size: 20px; text-align: center;">
+                <div class="tp-field-help">Emoji o símbolo que aparece en el badge del producto.</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Efecto en armado de pedido</label>
+                <select name="efecto_armado" class="tp-select">
+                    {% for opt, label in enums_flag.efecto_armado %}
+                    <option value="{{ opt }}" {% if tipo.config.efecto_armado == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="tp-field-help">Cómo afecta este flag al producto cuando aparece en el armado de un pedido.</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Color del badge</label>
+                <select name="color" class="tp-select">
+                    {% for opt, label in enums_flag.color %}
+                    <option value="{{ opt }}" {% if tipo.config.color == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-toggle">
+                    <input type="checkbox" name="permite_reemplazo" value="1"
+                           {% if tipo.config.permite_reemplazo %}checked{% endif %}>
+                    <span>Permite ingresar EAN de reemplazo</span>
+                </label>
+                <div class="tp-field-help">Al marcar un producto con este flag se puede indicar qué otro EAN lo reemplaza.</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-toggle">
+                    <input type="checkbox" name="permite_vigencia" value="1"
+                           {% if tipo.config.permite_vigencia %}checked{% endif %}>
+                    <span>Permite fecha de vigencia</span>
+                </label>
+                <div class="tp-field-help">Al asignar el flag se puede indicar hasta cuándo aplica (ej: SIN_DESCUENTO hasta fin de mes).</div>
+            </div>
+        </div>
+
+        {% else %}
+        {# ── Campos de tipo de pedido ── #}
         <div class="tp-card mt-4" style="margin-top: 14px;">
             <h3>Reglas de cálculo</h3>
 
@@ -205,6 +257,7 @@
                 </select>
             </div>
         </div>
+        {% endif %}
 
         <div class="tp-actions">
             <a href="{{ url_for('tipos_pedido_list') }}"
@@ -215,8 +268,9 @@
         </div>
     </div>
 
-    {# ── Columna derecha: simulador (sticky) ── #}
+    {# ── Columna derecha: simulador (solo para tipos de pedido) ── #}
     <div>
+    {% if tipo.categoria != 'flag' %}
         <div class="tp-card" style="position: sticky; top: 18px;">
             <h3>🧪 Simulador</h3>
             <p class="tp-field-help" style="margin-bottom: 12px;">
@@ -261,11 +315,13 @@
                 <div class="meta" id="sim-out-meta">Tocá un campo para simular</div>
             </div>
         </div>
+    {% endif %}
     </div>
 </div>
 </form>
 
 <script>
+{% if tipo.categoria != 'flag' %}
 const SLUG = '{{ tipo.slug }}';
 
 async function simular() {
@@ -309,5 +365,6 @@ async function simular() {
 }
 
 simular();  // dispará una vez al cargar
+{% endif %}
 </script>
 {% endblock %}
