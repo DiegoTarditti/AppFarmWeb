@@ -482,6 +482,28 @@ def init_app(app):
                 flash('Oferta eliminada.', 'success')
         return redirect(url_for('lab_ofertas_minimo', lab_id=lab_id))
 
+    @app.route('/api/laboratorio/<int:lab_id>/descuento-base', methods=['PATCH'])
+    @login_required
+    def api_lab_descuento_base(lab_id):
+        """Edita Laboratorio.descuento_base. Body JSON {descuento_base: 0..100|null}."""
+        data = request.get_json(silent=True) or {}
+        raw = data.get('descuento_base')
+        dto = None
+        if raw not in (None, ''):
+            try:
+                dto = float(raw)
+                if dto < 0 or dto > 100:
+                    return jsonify({'ok': False, 'error': 'Debe estar entre 0 y 100'}), 400
+            except (TypeError, ValueError):
+                return jsonify({'ok': False, 'error': 'Valor inválido'}), 400
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
+            lab.descuento_base = dto
+            session.commit()
+        return jsonify({'ok': True, 'descuento_base': dto})
+
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/<int:oferta_id>/editar', methods=['PATCH'])
     def lab_oferta_minima_editar(lab_id, oferta_id):
         """Edita campos EAN, unidades_minima, descuento_psl de una oferta."""
