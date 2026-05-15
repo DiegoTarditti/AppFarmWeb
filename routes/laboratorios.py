@@ -505,6 +505,7 @@ def init_app(app):
         return jsonify({'ok': True, 'descuento_base': dto})
 
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/<int:oferta_id>/editar', methods=['PATCH'])
+    @login_required
     def lab_oferta_minima_editar(lab_id, oferta_id):
         """Edita campos EAN, unidades_minima, descuento_psl de una oferta."""
         data = request.get_json(silent=True) or {}

@@ -64,9 +64,11 @@ def init_app(app):
             except (TypeError, ValueError):
                 total_anual = 0.0
             if total_anual <= 0:
-                # Fallback bruto si el detalle está vacío.
+                # Fallback bruto si el detalle está vacío — mismo filtro 12m.
                 total_bruto_q = session.query(func.coalesce(
-                    func.sum(ObsVentaMensual.monto), 0)).scalar()
+                    func.sum(ObsVentaMensual.monto), 0)).filter(
+                    (ObsVentaMensual.anio * 100 + ObsVentaMensual.mes).in_(keys_12m)
+                ).scalar()
                 try:
                     total_anual = float(total_bruto_q or 0)
                 except (TypeError, ValueError):
@@ -107,7 +109,9 @@ def init_app(app):
 
             # ─── Egreso por DROG (predicción) ────────────────────────────
             # compras_12m: sum Invoice.total FAC últimos 12 meses por proveedor.
-            hace_12m = hoy - timedelta(days=365)
+            # Usamos el mismo período que keys_12m (primer día del mes más antiguo).
+            oldest_key = min(keys_12m)
+            hace_12m = _date(oldest_key // 100, oldest_key % 100, 1)
             drogs_q = (session.query(
                         Provider.id,
                         Provider.razon_social,
@@ -130,7 +134,7 @@ def init_app(app):
             for d in drogs_q:
                 compras = float(d.compras_12m or 0)
                 bruto_sem = compras / 52.0
-                dto_raw = d.descuento_sin_transfer or d.descuento_con_transfer or 0
+                dto_raw = d.descuento_sin_transfer if d.descuento_sin_transfer is not None else (d.descuento_con_transfer or 0)
                 dto_pct = float(dto_raw) if dto_raw else 0.0
                 neto_sem = bruto_sem * (1.0 - dto_pct / 100.0)
                 partners_drog.append({
