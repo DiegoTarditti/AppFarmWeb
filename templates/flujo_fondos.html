@@ -695,7 +695,7 @@
 <script>
 (function(){
     const N_WEEKS = {{ n_semanas }};
-    const INGRESO_TEORICO = {{ ingreso_semanal_base }};
+    const INGRESO_TEORICO = {{ ingreso_semanal_base | tojson }};
     const STORAGE_PREFIX = 'ff:weeks:';
     const CAPACIDAD_KEY = 'ff:capacidad';
     let INGRESO_SEM = INGRESO_TEORICO;
