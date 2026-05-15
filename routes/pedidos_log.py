@@ -2,14 +2,14 @@
 + Pedido con canal_elegido (análisis lab/drog). Tabla cronológica plana,
 filtrable, con link al proceso o al pedido directo según corresponda.
 """
-from datetime import date as _date, datetime, timedelta
+from datetime import date as _date
+from datetime import datetime, timedelta
 
 from flask import render_template, request
 from flask_login import login_required
 from sqlalchemy import or_
 
-from database import (Laboratorio, Pedido, PedidoEmitido, ProcesoCompra,
-                      Provider, get_db)
+from database import Laboratorio, Pedido, PedidoEmitido, ProcesoCompra, Provider, get_db
 
 
 def _parse_fecha(s):

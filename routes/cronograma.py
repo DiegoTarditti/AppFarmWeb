@@ -15,15 +15,15 @@ Reglas del cruce planificado ↔ real:
 - Evento sin match y fecha esperada < hoy → atrasado.
 - Evento sin match y fecha esperada >= hoy → pendiente.
 """
-from datetime import date as _date, timedelta
+from datetime import date as _date
+from datetime import timedelta
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import login_required
 from sqlalchemy import or_
 
 import database
-from database import (Laboratorio, Pedido, PedidoEmitido, ProcesoCompra,
-                      ProveedorCronograma, Provider, get_db)
+from database import Laboratorio, Pedido, PedidoEmitido, ProcesoCompra, ProveedorCronograma, Provider, get_db
 
 _TIPOS_VALIDOS = ('programado',)
 _PARTNER_TIPOS_VALIDOS = ('laboratorio', 'drogueria')
