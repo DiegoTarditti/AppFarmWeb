@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% from "components/partner_selector.html" import partner_selector %}
+{% set nav_active = "cronograma" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ 'Editar' if cron else 'Nuevo' }} cronograma — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cs-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
+.cs-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
+.cs-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.cs-banner { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
+.cs-banner.info { background: rgba(56,189,248,.10); color: var(--ds-info); border: 1px solid rgba(56,189,248,.3); }
+.cs-banner.warn { background: rgba(245,158,11,.12); color: var(--ds-warn); border: 1px solid rgba(245,158,11,.35); }
+.cs-banner.ok   { background: rgba(95,230,188,.12); color: var(--ds-mint);   border: 1px solid rgba(95,230,188,.3); }
+.cs-banner.err  { background: rgba(239,68,68,.12); color: var(--ds-danger);  border: 1px solid rgba(239,68,68,.35); }
+
+.cs-label { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+            text-transform: uppercase; letter-spacing: .06em;
+            margin-bottom: 6px; display: block; }
+.cs-group { margin-bottom: 18px; }
+
+.cs-tipo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.cs-tipo-btn { padding: 14px 8px; text-align: center; font-size: 14px; font-weight: 600;
+               border: 1.5px solid var(--ds-line-2); border-radius: 12px;
+               background: var(--ds-surface); color: var(--ds-text-soft);
+               cursor: pointer; transition: all .15s; user-select: none; }
+.cs-tipo-btn:active { transform: scale(.97); }
+input[type=radio]:checked + .cs-tipo-btn {
+    background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+    border-color: var(--ds-mint-deep);
+    color: #0a3a2a; box-shadow: 0 2px 6px rgba(95,230,188,.3); }
+
+.cs-input { width: 100%; background: var(--ds-surface-2);
+            border: 1.5px solid var(--ds-line); border-radius: 12px;
+            padding: 14px 14px; font-size: 16px; color: var(--ds-text);
+            font-family: inherit; transition: border-color .15s; }
+.cs-input:focus { outline: none; border-color: var(--ds-mint);
+                  box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+.cs-input[readonly], .cs-input:disabled { opacity: .7; cursor: not-allowed; }
+
+.cs-cta-bar { position: sticky; bottom: 0; padding: 12px 0 16px;
+              background: linear-gradient(to top, var(--ds-bg) 60%, transparent);
+              margin-top: 16px; }
+.cs-cta { display: block; width: 100%; padding: 16px;
+          background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+          color: #0a3a2a; font-size: 16px; font-weight: 700;
+          border: none; border-radius: 14px; cursor: pointer;
+          box-shadow: 0 4px 12px rgba(95,230,188,.3);
+          transition: transform .15s, box-shadow .15s; }
+.cs-cta:active { transform: scale(.98); }
+.cs-cta:disabled { opacity: .5; cursor: not-allowed; }
+
+.cs-cancel { display: block; width: 100%; padding: 12px; text-align: center;
+             color: var(--ds-text-mute); font-size: 13px; margin-top: 8px;
+             text-decoration: none; }
+
+.cs-range { width: 100%; -webkit-appearance: none; appearance: none;
+            height: 32px; background: transparent; cursor: pointer; }
+.cs-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
+            background: var(--ds-line-2); }
+.cs-range::-moz-range-track { height: 6px; border-radius: 3px;
+            background: var(--ds-line-2); }
+.cs-range::-webkit-slider-thumb { -webkit-appearance: none;
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--ds-mint); border: 3px solid var(--ds-mint-deep);
+            margin-top: -10px; box-shadow: 0 2px 6px rgba(95,230,188,.4); }
+.cs-range::-moz-range-thumb {
+            width: 26px; height: 26px; border-radius: 50%;
+            background: var(--ds-mint); border: 3px solid var(--ds-mint-deep);
+            box-shadow: 0 2px 6px rgba(95,230,188,.4); }
+/* Marcas con posición ABSOLUTA al valor real del slider (no equidistantes).
+   Antes usaba flex space-between, lo que hacía que "15" quedara visualmente
+   donde estaba el thumb del 32 — visual contradictorio. */
+.cs-range-marks { position: relative; height: 14px; margin-top: 2px;
+                  font-size: 10px; color: var(--ds-text-mute); }
+.cs-range-marks span { position: absolute; transform: translateX(-50%); top: 0; }
+.cs-range-marks span:first-child { transform: translateX(0); }
+.cs-range-marks span:last-child  { transform: translateX(-100%); }
+.cs-range-value { color: var(--ds-mint); font-weight: 700; }
+
+.cs-pill-readonly {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 14px 16px; border-radius: 12px;
+    background: var(--ds-surface-2); border: 1.5px solid var(--ds-line);
+    color: var(--ds-text); font-size: 16px; font-weight: 600; width: 100%;
+}
+.cs-pill-readonly .badge {
+    font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+}
+.cs-pill-readonly .badge.lab  { background: rgba(95,230,188,.18); color: var(--ds-mint); }
+.cs-pill-readonly .badge.drog { background: rgba(56,189,248,.18); color: var(--ds-info); }
+.cs-pill-readonly .badge.rep  { background: rgba(56,189,248,.18); color: var(--ds-info); }
+.cs-pill-readonly .badge.prog { background: rgba(139,92,246,.18); color: #C4B5FD; }
+
+.partner-selector input[type=text] {
+    background: var(--ds-surface-2) !important;
+    border: 1.5px solid var(--ds-line) !important;
+    border-radius: 12px !important; padding: 14px 14px !important;
+    font-size: 16px !important; color: var(--ds-text) !important;
+}
+.partner-selector input[type=text]:focus {
+    border-color: var(--ds-mint) !important;
+    box-shadow: 0 0 0 3px rgba(95,230,188,.15) !important;
+}
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cs-screen">
+    <h1 class="cs-h1">📅 {{ 'Editar cronograma' if cron else 'Nuevo cronograma' }}</h1>
+    <p class="cs-sub">
+        {% if cron %}
+        Ajustá cadencia, fecha o notas. El proveedor y el tipo no se pueden cambiar; eliminá y volvé a crear si necesitás otro par.
+        {% else %}
+        Programá un pedido recurrente (reposición diaria) o periódico (cada N días) a un proveedor.
+        {% endif %}
+    </p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div class="cs-banner {{ 'err' if cat == 'error' else ('warn' if cat == 'warning' else 'ok') }}">{{ msg }}</div>
+    {% endfor %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('cronograma_save') }}" id="cron-form">
+        <input type="hidden" name="tipo_pedido" value="programado">
+        {% if cron %}
+        <input type="hidden" name="cron_id" value="{{ cron.id }}">
+        <input type="hidden" name="partner_tipo" value="{{ cron.partner_tipo }}">
+        <input type="hidden" name="prov_id" value="{{ cron.partner_id }}">
+
+        <div class="cs-group">
+            <label class="cs-label">{{ 'Laboratorio' if cron.partner_tipo == 'laboratorio' else 'Droguería' }}</label>
+            <div class="cs-pill-readonly">
+                <span class="badge {{ 'lab' if cron.partner_tipo == 'laboratorio' else 'drog' }}">
+                    {{ 'Lab' if cron.partner_tipo == 'laboratorio' else 'Drog' }}
+                </span>
+                <span>{{ cron.partner_nombre }}</span>
+            </div>
+        </div>
+
+        {% if cron.partner_tipo == 'laboratorio' %}
+        {# Canal de compra: editable también en edición. #}
+        <div class="cs-group">
+            <label class="cs-label">Canal de compra</label>
+            <p class="text-[11px]" style="color: var(--ds-text-mute); margin: -3px 0 8px 0;">
+                Compra directa al lab o vía una droguería intermediaria.
+            </p>
+            <div class="cs-tipo-grid">
+                <label>
+                    <input type="radio" name="canal_kind" value="directo" class="hidden"
+                           {% if not cron.canal_drog_id %}checked{% endif %}
+                           onchange="onCanalKindChange()">
+                    <div class="cs-tipo-btn">🎯 Directo al lab</div>
+                </label>
+                <label>
+                    <input type="radio" name="canal_kind" value="drogueria" class="hidden"
+                           {% if cron.canal_drog_id %}checked{% endif %}
+                           onchange="onCanalKindChange()">
+                    <div class="cs-tipo-btn">🏭 Vía droguería</div>
+                </label>
+            </div>
+            <select name="canal_drog_id" id="canal-drog-select"
+                    class="cs-input mt-2 {% if not cron.canal_drog_id %}hidden{% endif %}">
+                <option value="">— Elegí droguería —</option>
+                {% for d in droguerias %}
+                <option value="{{ d.id }}" {% if cron.canal_drog_id == d.id %}selected{% endif %}>{{ d.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="cs-group">
+            <label class="cs-label">Tipo de partner</label>
+            <div class="cs-tipo-grid">
+                <label>
+                    <input type="radio" name="partner_tipo" value="laboratorio" required class="hidden" onchange="onPartnerTipoChange()">
+                    <div class="cs-tipo-btn">🧪 Laboratorio</div>
+                </label>
+                <label>
+                    <input type="radio" name="partner_tipo" value="drogueria" required class="hidden" onchange="onPartnerTipoChange()">
+                    <div class="cs-tipo-btn">🏭 Droguería</div>
+                </label>
+            </div>
+        </div>
+
+        <div id="wrap-lab" class="cs-group hidden">
+            <label class="cs-label">Laboratorio</label>
+            {{ partner_selector(tipo='laboratorio', name='prov_id',
+                                placeholder='Tocá para buscar…') }}
+        </div>
+
+        <div id="wrap-drog" class="cs-group hidden">
+            <label class="cs-label">Droguería</label>
+            {{ partner_selector(tipo='drogueria', name='prov_id',
+                                placeholder='Tocá para buscar…') }}
+        </div>
+
+        {# Canal de compra: visible solo cuando partner_tipo='laboratorio'. #}
+        <div id="wrap-canal" class="cs-group hidden">
+            <label class="cs-label">Canal de compra</label>
+            <p class="text-[11px]" style="color: var(--ds-text-mute); margin: -3px 0 8px 0;">
+                ¿Comprás directo al lab o vía una droguería intermediaria?
+            </p>
+            <div class="cs-tipo-grid">
+                <label>
+                    <input type="radio" name="canal_kind" value="directo" checked class="hidden"
+                           onchange="onCanalKindChange()">
+                    <div class="cs-tipo-btn">🎯 Directo al lab</div>
+                </label>
+                <label>
+                    <input type="radio" name="canal_kind" value="drogueria" class="hidden"
+                           onchange="onCanalKindChange()">
+                    <div class="cs-tipo-btn">🏭 Vía droguería</div>
+                </label>
+            </div>
+            <select name="canal_drog_id" id="canal-drog-select" class="cs-input mt-2 hidden">
+                <option value="">— Elegí droguería —</option>
+                {% for d in droguerias %}
+                <option value="{{ d.id }}">{{ d.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <div class="cs-group">
+            <label class="cs-label" for="cad">
+                Cadencia: cada <span id="cad-display" class="cs-range-value">{{ cron.cadencia_dias if cron and cron.cadencia_dias else 15 }}</span> días
+                <span id="cad-fecha-preview" class="cs-range-value" style="margin-left: 6px; opacity: .8;"></span>
+            </label>
+            <input type="range" id="cad" name="cadencia_dias" min="1" max="90" step="1"
+                   value="{{ cron.cadencia_dias if cron and cron.cadencia_dias else 15 }}"
+                   class="cs-range"
+                   oninput="onCadenciaChange(this.value)">
+            <div class="cs-range-marks">
+                {# Posición % = (valor - 1) / 89 * 100. Coincide con el track lineal. #}
+                <span style="left: 0%">1</span>
+                <span style="left: 6.74%">7</span>
+                <span style="left: 15.73%">15</span>
+                <span style="left: 32.58%">30</span>
+                <span style="left: 66.29%">60</span>
+                <span style="left: 100%">90</span>
+            </div>
+        </div>
+
+        <div class="cs-group">
+            <label class="cs-label">Próxima fecha</label>
+            <input type="date" name="proxima_fecha" class="cs-input"
+                   value="{{ cron.proxima_fecha if cron and cron.proxima_fecha else hoy_iso }}">
+        </div>
+
+        <div class="cs-group">
+            <label class="cs-label">Notas (opcional)</label>
+            <textarea name="notas" rows="2" class="cs-input"
+                      placeholder="Ej. solo lunes y jueves, llamar antes de las 11hs…">{{ cron.notas if cron else '' }}</textarea>
+        </div>
+
+        <input type="hidden" name="activo" value="1">
+
+        <div class="cs-cta-bar">
+            <button type="submit" id="btn-submit" class="cs-cta" {% if not cron %}disabled{% endif %}>
+                <span id="btn-label">{{ 'Guardar cambios' if cron else 'Guardar cronograma' }}</span>
+            </button>
+            <a href="{{ url_for('cronograma_config') }}" class="cs-cancel">Cancelar</a>
+        </div>
+    </form>
+</div>
+
+<script>
+{% if not cron %}
+function onPartnerTipoChange() {
+    const tipo = document.querySelector('input[name="partner_tipo"]:checked').value;
+    document.getElementById('wrap-lab').classList.toggle('hidden', tipo !== 'laboratorio');
+    document.getElementById('wrap-drog').classList.toggle('hidden', tipo !== 'drogueria');
+    // El canal de compra solo aplica cuando el partner es un laboratorio.
+    const wrapCanal = document.getElementById('wrap-canal');
+    if (wrapCanal) wrapCanal.classList.toggle('hidden', tipo !== 'laboratorio');
+    document.querySelectorAll('.partner-selector').forEach(ps => {
+        const t = ps.dataset.tipo;
+        const enabled = (t === tipo);
+        ps.querySelectorAll('input[name="prov_id"]').forEach(i => {
+            i.disabled = !enabled;
+            i.required = enabled;
+        });
+    });
+    updateCtaState();
+}
+
+function updateCtaState() {
+    const partnerTipo = document.querySelector('input[name="partner_tipo"]:checked');
+    const btn = document.getElementById('btn-submit');
+    if (!partnerTipo) { btn.disabled = true; return; }
+    const wrap = document.getElementById('wrap-' + (partnerTipo.value === 'laboratorio' ? 'lab' : 'drog'));
+    const idInput = wrap.querySelector('input[name="prov_id"]');
+    btn.disabled = !idInput || !idInput.value;
+}
+
+document.addEventListener('change', e => {
+    if (e.target.matches('input[name="partner_tipo"]')) updateCtaState();
+});
+document.addEventListener('partner-pick', updateCtaState);
+document.addEventListener('partner-clear', updateCtaState);
+{% endif %}
+
+// Canal de compra (visible cuando partner=lab, tanto en nuevo como en edición).
+function onCanalKindChange() {
+    const kind = document.querySelector('input[name="canal_kind"]:checked')?.value;
+    const sel = document.getElementById('canal-drog-select');
+    if (!sel) return;
+    if (kind === 'drogueria') {
+        sel.classList.remove('hidden');
+        sel.required = true;
+    } else {
+        sel.classList.add('hidden');
+        sel.required = false;
+        sel.value = '';  // limpiar el id para que el backend lo trate como NULL
+    }
+}
+
+document.getElementById('cron-form').addEventListener('submit', () => {
+    const btn = document.getElementById('btn-submit');
+    document.getElementById('btn-label').textContent = '⏳ Guardando…';
+    btn.disabled = true;
+});
+
+// Cadencia ↔ próxima fecha: al mover el slider, recalculamos próxima como
+// hoy + cadencia (la 1ra entrega esperada). Si el user tocó la fecha a mano,
+// dejamos de auto-actualizar — su valor manda.
+(function _autoProxima() {
+    const cadInput = document.getElementById('cad');
+    const cadDisp  = document.getElementById('cad-display');
+    const fechaInp = document.querySelector('input[name="proxima_fecha"]');
+    if (!cadInput || !fechaInp) return;
+
+    let esPropuesta = {{ 'false' if cron else 'true' }};
+    fechaInp.addEventListener('input', () => { esPropuesta = false; });
+
+    const preview = document.getElementById('cad-fecha-preview');
+
+    window.onCadenciaChange = function(val) {
+        cadDisp.textContent = val;
+        const d = new Date();
+        d.setDate(d.getDate() + parseInt(val, 10));
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        // Preview siempre visible: "→ DD/MM/YYYY" para que el user vea la fecha.
+        if (preview) preview.textContent = '→ ' + dd + '/' + mm + '/' + yyyy;
+        // Solo pisamos el input de fecha mientras sea propuesta automática.
+        if (esPropuesta) fechaInp.value = yyyy + '-' + mm + '-' + dd;
+    };
+
+    // Disparar una vez al cargar: pinta el preview siempre, y en modo nuevo
+    // (esPropuesta=true) además pisa el input de fecha con hoy + cadencia.
+    onCadenciaChange(cadInput.value);
+})();
+</script>
+{% endblock %}

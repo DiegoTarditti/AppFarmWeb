@@ -15,6 +15,7 @@ from routes import (
     consulta_producto,
     converter,
     core,
+    cronograma,
     cuentas,
     dashboard,
     descuentos_base,
@@ -33,12 +34,14 @@ from routes import (
     observer_sync,
     ofertas_import,
     partners,
+    pedidos_log,
     plantillas,
     procesos,
     productos,
     productos_pendientes,
     providers,
     purchase,
+    tipos_pedido,
     vademecum,
 )
 from routes import help as help_module
@@ -70,6 +73,7 @@ _modules = [
     compras_dia,
     compras_rapido,
     compras_transfers,
+    cronograma,
     consulta_lab,
     consulta_medico,
     consulta_producto,
@@ -84,6 +88,8 @@ _modules = [
     inferencia,
     informes,
     bi,
+    tipos_pedido,
+    pedidos_log,
 ]
 
 

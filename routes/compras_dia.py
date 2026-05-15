@@ -19,7 +19,7 @@ import database
 from database import ProveedorHorarioReparto, Provider, get_db
 from purchase_engine import AVG_DAYS_PER_MONTH
 from purchase_helpers import calcular_min_sugerido, clasificar_min
-from services.horarios import horarios_por_dia, proximo_cierre
+from services.horarios import horarios_por_dia, proximo_cierre, urgencia_cierre
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
@@ -145,11 +145,13 @@ def init_app(app):
                 # ordenado por dia_semana
                 matriz_ordenada = [matriz.get(d, []) for d in range(7)]
                 cierre = proximo_cierre(session, p.id)
+                urgencia = urgencia_cierre(cierre['falta_segundos']) if cierre else None
                 proveedores.append({
                     'id': p.id,
                     'nombre': p.razon_social,
                     'horarios_por_dia': matriz_ordenada,
                     'proximo_cierre': cierre,
+                    'urgencia': urgencia,
                     'pedidos_activos': pedidos_activos.get(p.id, 0),
                     'plantilla': _plant_map.get(p.id),
                 })
@@ -306,6 +308,7 @@ def init_app(app):
                         'fecha': cierre['fecha'].isoformat(),
                         'falta_segundos': cierre['falta_segundos'],
                         'hora_str': cierre['hora_str'],
+                        'urgencia': urgencia_cierre(cierre['falta_segundos']),
                     }
         return jsonify({'ok': True, 'now': ahora.isoformat(), 'cierres': out})
 
@@ -401,6 +404,11 @@ def init_app(app):
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
+        # Modo lab: "cubrir N días" reemplaza min_efectivo como piso de ideal.
+        # Solo aplica cuando hay lab_id (compra grande directa al lab); si no,
+        # el cálculo REPO sigue usando min_efectivo (matriz lab/drog).
+        cubrir_dias = request.args.get('cubrir_dias', type=int) or 30
+        cubrir_dias = max(1, min(cubrir_dias, 120))
         # Ventana de meses para calcular tasa de rotación diaria. Default 3.
         # Nota: los 12 meses siguen usándose para estacionalidad/forecast en
         # purchase_engine; este parámetro solo afecta `target_unid` (cuánto pedir).
@@ -562,6 +570,10 @@ def init_app(app):
             .filter(ObsProducto.fecha_baja.is_(None))
             .filter(ObsProducto.subrubro_observer.isnot(None)))
 
+            # Excluir items que no son medicamentos (sellado de recetas, cupones, etc.).
+            from helpers import filtro_solo_medicamentos
+            base_q = filtro_solo_medicamentos(base_q, ObsProducto)
+
             if oferta_pids:
                 # Modo oferta: solo productos del archivo (sin importar stock/lab).
                 base_q = base_q.filter(ObsProducto.observer_id.in_(oferta_pids))
@@ -612,16 +624,19 @@ def init_app(app):
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid:
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
 
-            # Resolver Producto local + flags excluido / no_pedir.
+            # Resolver Producto local + flags excluido / no_pedir +
+            # cantidad_reposicion_fija (override del cálculo dinámico).
             local_por_obs = {}
             if obs_pids:
                 rows = (session.query(Producto.observer_id, Producto.id,
                                        Producto.excluido_armado_actual,
-                                       Producto.no_pedir, Producto.laboratorio_id)
+                                       Producto.no_pedir, Producto.laboratorio_id,
+                                       Producto.cantidad_reposicion_fija)
                         .filter(Producto.observer_id.in_(obs_pids)).all())
                 local_por_obs = {r[0]: {
                     'id': r[1], 'excluido': r[2], 'no_pedir': r[3],
                     'lab_local_id': r[4],
+                    'cantidad_reposicion_fija': r[5],
                 } for r in rows}
 
             # Modo multi-drog: necesitamos saber qué drog(s) cubre cada lab.
@@ -647,6 +662,22 @@ def init_app(app):
                              .order_by(Provider.razon_social).all())
             drog_label = {d.id: _sigla_drog(d.razon_social) for d in drogs_activas}
             drog_nombre_full = {d.id: d.razon_social for d in drogs_activas}
+            # Ponderación por horas hasta el próximo cierre de cada droguería.
+            # target_unid = ceil(daily_rate * factor_h). Piso 0.25 (cubre min 6h)
+            # para evitar pedir 0u con cierre inminente. Sin techo para que un
+            # cierre el lunes desde el viernes pida ~3 días (factor 3.0).
+            # Sin matriz de horarios → factor 1.0 (cobertura 1 día por default).
+            factor_h_por_drog = {}
+            horas_prox_por_drog = {}
+            for _d in drogs_activas:
+                _cierre = proximo_cierre(session, _d.id)
+                if _cierre:
+                    _h = _cierre['falta_segundos'] / 3600
+                    factor_h_por_drog[_d.id] = max(0.25, _h / 24)
+                    horas_prox_por_drog[_d.id] = round(_h, 1)
+                else:
+                    factor_h_por_drog[_d.id] = 1.0
+                    horas_prox_por_drog[_d.id] = None
             # Map lab observer → lab local id (por observer_id si está linkeado).
             lab_obs_to_local = dict(
                 session.query(Laboratorio.observer_id, Laboratorio.id)
@@ -754,22 +785,40 @@ def init_app(app):
                     min_efectivo = min_actual
                     min_corregido = False
 
-                # Sin ventas 12m o sin mov 60d → no sugerir pedir aunque
-                # esté bajo mínimo (no tiene sentido reponer lo que no rota).
-                if u12m_int == 0 or sin_mov:
-                    a_pedir = 0
-                else:
-                    # Sugerido = el mayor entre "llegar al mín efectivo" y "cubrir N días".
-                    # Tasa diaria desde u_rot (ventana corta) → más responsiva
-                    # que dividir u12m / 365.
-                    daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
-                    target_unid = math.ceil(daily_rate * target_dias)
-                    ideal = max(min_efectivo, target_unid)
-                    # max(0, ...) en vez de max(1, ...): no forzar a pedir 1 cuando
-                    # stock = mín y cobertura ya está cubierta (caso típico de
-                    # producto que entró al listado por estar EN el mín, no abajo).
-                    # El filtro a_pedir<=0 más adelante esconde estas filas.
-                    a_pedir = max(0, ideal - stock_actual)
+                # Multi-drog: prov_ids que cubren este lab. drog_principal =
+                # el filtro `prov_id` (modo single drog) o el primero de la lista.
+                # Se usa acá para ponderar el target_unid, y abajo se persiste al dict.
+                drogs_que_cubren = list(labs_a_drogs.get(lab_local_id, [])) if lab_local_id else []
+                drog_principal = (prov_id if prov_id in drogs_que_cubren
+                                  else (drogs_que_cubren[0] if drogs_que_cubren else None))
+                factor_h = factor_h_por_drog.get(drog_principal, 1.0)
+                horas_prox_item = horas_prox_por_drog.get(drog_principal)
+
+                # Override por producto: si el operador seteó cantidad_reposicion_fija
+                # en /productos, ese valor manda cuando el stock baja del mínimo —
+                # ignora ponderación por horas y forecast.
+                cant_fija = (local or {}).get('cantidad_reposicion_fija')
+
+                # Motor unificado de cálculo de cantidad. Selecciona tipo de pedido
+                # según contexto (COMPRA_LAB si viene lab_id, sino REPOSICION).
+                # La config completa (piso/target/buffer/override) vive en la tabla
+                # tipo_pedido_config — ver services/calculo_pedido.py.
+                daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
+                target_unid = math.ceil(daily_rate * factor_h)
+                from services.calculo_pedido import calcular_a_pedir, cargar_config
+                _tipo_slug = 'COMPRA_LAB' if lab_id else 'REPOSICION'
+                _cfg = cargar_config(_tipo_slug) or {}
+                _result = calcular_a_pedir(_cfg, {
+                    'daily_rate': daily_rate,
+                    'min_efectivo': min_efectivo,
+                    'factor_h': factor_h,
+                    'cubrir_dias': cubrir_dias,
+                    'stock_actual': stock_actual,
+                    'cantidad_reposicion_fija': cant_fija,
+                    'u12m': u12m_int,
+                    'sin_mov': sin_mov,
+                })
+                a_pedir = _result['a_pedir']
 
                 # Urgente = bajo o igual al mínimo. No urgente = entró sólo por
                 # cobertura insuficiente (stock arriba del mín pero rota rápido).
@@ -784,8 +833,6 @@ def init_app(app):
                 # ↻ Reactivar) para que se puedan rehabilitar desde acá.
                 if a_pedir <= 0 and not no_pedir_flag:
                     continue
-                # Multi-drog: lista de prov_ids que cubren este lab.
-                drogs_que_cubren = list(labs_a_drogs.get(lab_local_id, [])) if lab_local_id else []
                 drogs_siglas = [drog_label.get(d, '?') for d in drogs_que_cubren if d in drog_label]
 
                 items.append({
@@ -812,11 +859,16 @@ def init_app(app):
                     'pvp': round(pvp_est, 2),
                     'sin_mov_60d': bool(sin_mov),
                     'a_pedir': a_pedir,
+                    'factor_h': round(factor_h, 2),          # multiplicador aplicado
+                    'horas_prox': horas_prox_item,           # horas hasta próximo cierre del drog principal
+                    'target_unid': int(target_unid),         # cantidad para cubrir hasta el próximo cierre
+                    'daily_rate': round(daily_rate, 2),      # tasa diaria de venta (u_rot / dias_rotacion)
+                    'cant_reposicion_fija': int(cant_fija) if cant_fija else None,  # override por producto si seteado
                     'avg_diario': round(avg_diario, 3),
                     'cubre_lab': cubre_lab,
                     'drogs_ids': drogs_que_cubren,    # [prov_id, ...]
                     'drogs_siglas': drogs_siglas,     # ['Kel', '20J']
-                    'drog_principal': drogs_que_cubren[0] if drogs_que_cubren else None,
+                    'drog_principal': drog_principal,
                     'ean': eans_armar.get(r.pid, ''),
                     **(ofertas_por_ean.get(eans_armar.get(r.pid, ''), {'oferta_dto': None, 'oferta_min': None})),
                 })
@@ -994,6 +1046,7 @@ def init_app(app):
                                    pendientes=sum(1 for i in items if not i['cubre_lab']),
                                    cierre=cierre,
                                    target_dias=target_dias,
+                                   cubrir_dias=cubrir_dias,
                                    drog_label=drog_label,
                                    drog_nombre_full=drog_nombre_full,
                                    pendientes_anteriores=pendientes_anteriores,
@@ -1604,7 +1657,7 @@ def init_app(app):
         Body: {prov_id, items: [{observer_id, producto_id_local, descripcion,
                                   lab_nombre, cantidad}], observacion?}
         """
-        from database import PedidoEmitido, PedidoEmitidoItem, Producto
+        from database import PedidoEmitido, PedidoEmitidoItem, Producto, Provider
         data = request.get_json(silent=True) or {}
         try:
             prov_id = int(data.get('prov_id') or 0)
@@ -1625,6 +1678,8 @@ def init_app(app):
                                     .filter(Producto.id.in_(prod_ids),
                                             Producto.observer_id.isnot(None)).all()
                 }
+            tipo_prov = session.query(Provider.tipo).filter_by(id=prov_id).scalar() or 'drogueria'
+            origen = 'P.Dia.Lab' if tipo_prov == 'laboratorio' else 'P.Dia.Drog'
             ped = PedidoEmitido(
                 drogueria_id=prov_id,
                 usuario=getattr(current_user, 'username', None),
@@ -1632,6 +1687,7 @@ def init_app(app):
                 total_items=len(items),
                 total_unidades=sum(int(it.get('cantidad') or 0) for it in items),
                 observacion=(data.get('observacion') or None),
+                origen=origen,
             )
             session.add(ped)
             session.flush()
@@ -1696,6 +1752,7 @@ def init_app(app):
                     'total_items': p.total_items,
                     'total_unidades': p.total_unidades,
                     'estado': p.estado,
+                    'origen': p.origen or '—',
                     'usuario': p.usuario or '—',
                     'emitido_por': p.emitido_por or '—',
                     'recibido_por': p.recibido_por or None,

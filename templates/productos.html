@@ -181,6 +181,10 @@
                     <th class="text-right px-3 py-2" style="width:90px" title="Última fecha de compra (factura cargada)">Últ. compra</th>
                     <th class="text-left px-3 py-2"  style="width:80px" title="Tipo de venta: Libre · Receta · Controlado N (1-8)">T. venta</th>
                     <th class="text-right px-3 py-2" style="width:70px">P.PVP</th>
+                    <th class="text-right px-3 py-2" style="width:80px"
+                        title="Cantidad fija a pedir cuando el stock baja del mínimo. Override del cálculo dinámico de pedido/día. Vacío = cálculo normal.">
+                        Repo. fija ⓘ
+                    </th>
                     <th class="text-center px-3 py-2" style="width:52px"
                         title="Marcar si es un pack (ej: blíster x2, display x12). Si lo marcás, cargá en 'EAN alt. 1' el código de la unidad individual para que el auto-complete funcione en Módulos de descuento.">
                         Pack ⓘ
@@ -298,6 +302,10 @@ function buildRow(p) {
         <td class="px-3 py-2 text-[11px]">${tvcCell(p.tvc, p.tvc_label)}</td>
         <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
             ${p.precio_pvp ? '$' + parseInt(p.precio_pvp) : '<span class="text-[#ccc] placeholder">—</span>'}
+        </td>
+        <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="cantidad_reposicion_fija"
+            title="Cantidad fija a pedir al llegar al mínimo. Vacío = cálculo dinámico (default).">
+            ${p.cantidad_reposicion_fija ? p.cantidad_reposicion_fija + 'u' : '<span class="text-[#ccc] placeholder">—</span>'}
         </td>
         <td class="px-3 py-2 text-center">
             <input type="checkbox" ${p.es_pack ? 'checked' : ''}
@@ -464,12 +472,13 @@ function cellCurrentValue(td) {
     const inp = td.querySelector('input'); if (inp) return inp.value;
     const ph = td.querySelector('.placeholder'); if (ph) return '';
     const badge = td.querySelector('.alt-badge'); if (badge) return badge.textContent.trim();
-    return td.textContent.trim().replace(/^\$/, '');
+    return td.textContent.trim().replace(/^\$/, '').replace(/u$/, '');
 }
 function renderCell(td, value) {
     const field = td.dataset.field;
     if (!value) { td.innerHTML = '<span class="text-[#ccc] placeholder">—</span>'; return; }
     if (field === 'precio_pvp') { td.innerHTML = '$' + parseInt(value); }
+    else if (field === 'cantidad_reposicion_fija') { td.innerHTML = parseInt(value) + 'u'; }
     else if (field.startsWith('codigo_barra_alt')) { td.innerHTML = '<span class="alt-badge">' + escHtml(value) + '</span>'; }
     else { td.textContent = value; }
 }

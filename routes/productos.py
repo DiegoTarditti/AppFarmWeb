@@ -277,6 +277,7 @@ def init_app(app):
                     'actualizado_en': p.actualizado_en.strftime('%d/%m/%Y') if p.actualizado_en else '',
                     'ultima_compra': p.ultima_compra.strftime('%d/%m/%Y') if p.ultima_compra else '',
                     'es_pack': p.es_pack or 0,
+                    'cantidad_reposicion_fija': p.cantidad_reposicion_fija,
                     'tvc': tvc_map.get(p.observer_id, '') if p.observer_id else '',
                     'tvc_label': _tvc_label(tvc_map.get(p.observer_id, '') if p.observer_id else ''),
                     'droga_id': droga_map.get(p.observer_id) if p.observer_id else None,
@@ -305,7 +306,8 @@ def init_app(app):
         value = (data.get('value') or '').strip()
         # alt1/2/3 quitados — los alternativos ahora se editan vía
         # /producto/<id>/codigos (POST a producto_codigos_barra)
-        allowed = {'descripcion', 'codigo_barra', 'precio_pvp', 'es_pack'}
+        allowed = {'descripcion', 'codigo_barra', 'precio_pvp', 'es_pack',
+                   'cantidad_reposicion_fija'}
         if field not in allowed:
             return {'error': 'Campo no permitido'}, 400
         with database.get_db() as session:
@@ -319,6 +321,17 @@ def init_app(app):
                     return {'error': 'Precio inválido'}, 400
             elif field == 'es_pack':
                 prod.es_pack = 1 if value in ('1', 'true', 'True') else 0
+            elif field == 'cantidad_reposicion_fija':
+                if not value:
+                    prod.cantidad_reposicion_fija = None
+                else:
+                    try:
+                        n = int(value)
+                        if n < 0:
+                            return {'error': 'Debe ser >= 0'}, 400
+                        prod.cantidad_reposicion_fija = n if n > 0 else None
+                    except ValueError:
+                        return {'error': 'Cantidad inválida'}, 400
             else:
                 setattr(prod, field, value or None)
             from datetime import datetime as _dt

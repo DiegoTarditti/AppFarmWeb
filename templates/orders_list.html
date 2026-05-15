@@ -325,6 +325,13 @@
                                 ⊘ canal sin elegir
                             </span>
                             {% endif %}
+                            {% if p.origen %}
+                            <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0
+                                         {% if 'Lab' in p.origen %}bg-purple-100 text-purple-800{% else %}bg-teal-100 text-teal-800{% endif %}"
+                                  title="Origen del pedido">
+                                {{ p.origen }}
+                            </span>
+                            {% endif %}
                             {% if p.tiene_analisis_guardado %}
                             <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded-full flex-shrink-0"
                                   title="Análisis guardado el {{ p.analisis_guardado_en }}">

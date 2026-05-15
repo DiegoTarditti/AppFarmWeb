@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% set nav_active = "cronograma" %}
+{% block title %}Log de pedidos — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.pl-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.pl-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.pl-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+.pl-toolbar {
+    padding: 14px 24px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--ds-line);
+}
+.pl-toolbar label { display: flex; align-items: center; gap: 6px;
+                    font-size: 11px; color: var(--ds-text-mute); }
+.pl-input {
+    background: var(--ds-surface-2); border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm); padding: 6px 10px;
+    font-size: 12px; color: var(--ds-text);
+    font-family: inherit;
+}
+.pl-input:focus { outline: none; border-color: var(--ds-mint); }
+.pl-content { padding: 18px 24px; }
+.pl-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    overflow: hidden;
+}
+.pl-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.pl-table thead th {
+    padding: 10px 14px; text-align: left;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    font-weight: 600; color: var(--ds-text-mute);
+    background: rgba(0,0,0,.18);
+}
+.pl-table tbody tr { border-top: 1px solid var(--ds-line); transition: background .15s; }
+.pl-table tbody tr:hover { background: rgba(95,230,188,.04); }
+.pl-table tbody td { padding: 9px 14px; color: var(--ds-text); vertical-align: middle; }
+.pl-table tbody td.mono { font-family: ui-monospace, Consolas, monospace; }
+.pl-pill {
+    display: inline-flex; align-items: center;
+    font-size: 10px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px;
+    border: 1px solid; text-transform: uppercase; letter-spacing: .04em;
+}
+.pl-pill.repo  { background: rgba(125,211,252,.14); color: #7DD3FC; border-color: rgba(125,211,252,.35); }
+.pl-pill.lab   { background: rgba(95,230,188,.14); color: var(--ds-mint); border-color: rgba(95,230,188,.35); }
+.pl-pill.drog  { background: rgba(245,158,11,.14); color: var(--ds-warn); border-color: rgba(245,158,11,.35); }
+.pl-pill.fuente { background: rgba(196,181,253,.10); color: #C4B5FD; border-color: rgba(196,181,253,.25);
+                  font-size: 9px; padding: 1px 5px; }
+.pl-estado {
+    font-size: 10px; padding: 2px 7px; border-radius: 4px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+}
+.pl-estado.abierto        { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pl-estado.pendiente      { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pl-estado.recibido_parcial { background: rgba(125,211,252,.14); color: #7DD3FC; }
+.pl-estado.cerrado        { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+.pl-estado.completado     { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+.pl-estado.cancelado      { background: rgba(120,120,120,.18); color: var(--ds-text-mute); }
+.pl-empty { padding: 60px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+.pl-empty .big { font-size: 32px; margin-bottom: 8px; }
+.pl-summary {
+    font-size: 11px; color: var(--ds-text-mute); margin-bottom: 8px;
+}
+.pl-summary b { color: var(--ds-text); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="pl-topbar">
+    <h1>📜 Log de pedidos</h1>
+    <span class="sub">{{ registros | length }} registro{{ 's' if registros | length != 1 }} · todos los flujos</span>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('orders_list') }}"
+           class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-amber-400 transition"
+           title="Pedidos guardados desde análisis que todavía no tienen canal elegido (no emitidos)">
+            📝 Borradores →
+        </a>
+        <a href="{{ url_for('cronograma_list') }}"
+           class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+            ← Agenda
+        </a>
+    </div>
+</div>
+
+<form method="get" class="pl-toolbar">
+    <label>📅 Desde
+        <input type="date" name="desde" value="{{ desde }}" class="pl-input" onchange="this.form.submit()">
+    </label>
+    <label>Hasta
+        <input type="date" name="hasta" value="{{ hasta }}" class="pl-input" onchange="this.form.submit()">
+    </label>
+    <label>Tipo
+        <select name="tipo" class="pl-input" onchange="this.form.submit()">
+            <option value="">Todos</option>
+            <option value="REPOSICION"  {% if tipo_filtro == 'REPOSICION' %}selected{% endif %}>Reposición (matriz)</option>
+            <option value="COMPRA_LAB"  {% if tipo_filtro == 'COMPRA_LAB' %}selected{% endif %}>Compra lab</option>
+            <option value="COMPRA_DROG" {% if tipo_filtro == 'COMPRA_DROG' %}selected{% endif %}>Compra drog (análisis)</option>
+        </select>
+    </label>
+    <label>🧪 Laboratorio
+        <select name="lab_id" class="pl-input" onchange="this.form.submit()">
+            <option value="">Todos</option>
+            {% for l in laboratorios %}
+            <option value="{{ l.id }}" {% if lab_filtro == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>🏭 Droguería
+        <select name="drog_id" class="pl-input" onchange="this.form.submit()">
+            <option value="">Todas</option>
+            {% for d in droguerias %}
+            <option value="{{ d.id }}" {% if drog_filtro == d.id %}selected{% endif %}>{{ d.nombre }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    {% if tipo_filtro or lab_filtro or drog_filtro %}
+    <a href="{{ url_for('pedidos_log') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+        Limpiar
+    </a>
+    {% endif %}
+</form>
+
+<div class="pl-content">
+    {% if registros %}
+    {% set total_items = registros | sum(attribute='total_items') %}
+    {% set total_unidades = registros | sum(attribute='total_unidades') %}
+    <div class="pl-summary">
+        <b>{{ registros | length }}</b> pedidos ·
+        <b>{{ total_items }}</b> ítems ·
+        <b>{{ total_unidades }}</b> unidades
+    </div>
+
+    <div class="pl-card">
+        <table class="pl-table">
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Partner</th>
+                    <th>Origen</th>
+                    <th class="text-center">Emitido</th>
+                    <th class="text-center">Estado</th>
+                    <th class="text-right">Ítems</th>
+                    <th class="text-right">Unid.</th>
+                    <th>Operador</th>
+                    <th class="text-right">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in registros %}
+                {# href: PedidoEmitido → detalle. Pedido → proceso si existe, sino order_detail. #}
+                {% if r.fuente == 'PedidoEmitido' %}
+                    {% set _href = url_for('pedido_emitido_detalle', pedido_id=r.pedido_id) %}
+                    {% set _href_label = 'Ver pedido' %}
+                {% elif proceso_por_pedido.get(r.pedido_id) %}
+                    {% set _href = url_for('proceso_detail', proceso_id=proceso_por_pedido[r.pedido_id]) %}
+                    {% set _href_label = 'Ver proceso' %}
+                {% else %}
+                    {% set _href = url_for('order_detail', pedido_id=r.pedido_id) %}
+                    {% set _href_label = 'Ver pedido' %}
+                {% endif %}
+                <tr>
+                    <td>
+                        <span class="pl-pill {{ 'repo' if r.tipo == 'REPOSICION' else ('lab' if r.tipo == 'COMPRA_LAB' else 'drog') }}">
+                            {{ {'REPOSICION': '🔁 REPO', 'COMPRA_LAB': '🧪 LAB', 'COMPRA_DROG': '🏭 DROG'}[r.tipo] }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="font-medium">{{ r.partner_nombre }}</span>
+                    </td>
+                    <td>
+                        {% if r.origen %}
+                        <span class="pl-pill fuente">{{ r.origen }}</span>
+                        {% else %}
+                        <span class="text-[color:var(--ds-text-mute)]">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono text-center">{{ r.fecha_label }}</td>
+                    <td class="text-center">
+                        <span class="pl-estado {{ r.estado | lower }}">{{ r.estado }}</span>
+                    </td>
+                    <td class="mono text-right">{{ r.total_items }}</td>
+                    <td class="mono text-right">{{ r.total_unidades }}</td>
+                    <td class="text-xs text-[color:var(--ds-text-soft)]">{{ r.emitido_por or '—' }}</td>
+                    <td class="text-right whitespace-nowrap">
+                        <a href="{{ _href }}"
+                           class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition inline-block">
+                            {{ _href_label }} →
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="pl-card">
+        <div class="pl-empty">
+            <div class="big">📜</div>
+            <div>No hay pedidos emitidos en el rango seleccionado.</div>
+            <div class="mt-2 text-[11px]">Probá ampliar el rango de fechas o sacar filtros.</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

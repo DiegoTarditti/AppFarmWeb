@@ -754,6 +754,7 @@ def init_app(app):
                     n_days=data.get('n_days', 0),
                     analisis_sesion_id=data.get('sesion_id'),
                     items=items,
+                    origen='Analisis',
                 )
                 session.add(pedido)
                 _upsert_pedido_items(session, items, observer_bridge=True)
@@ -913,6 +914,7 @@ def init_app(app):
                     periodo='Sugerido',
                     n_days=0,
                     items=items,
+                    origen='Analisis',
                 )
                 session.add(pedido)
                 _upsert_pedido_items(session, items)
@@ -1031,6 +1033,7 @@ def init_app(app):
                     'mostrar_hasta_label': p.mostrar_hasta.strftime('%d/%m/%y') if p.mostrar_hasta else '',
                     'canal': p.canal,
                     'canal_partner_nombre': canal_partner_nombre,
+                    'origen': p.origen,
                     'n_productos': len(p.items),
                     'total_unidades': total_unidades,
                     'total_importe': total_importe,
