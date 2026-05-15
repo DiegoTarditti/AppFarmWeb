@@ -130,7 +130,7 @@ def init_app(app):
             for d in drogs_q:
                 compras = float(d.compras_12m or 0)
                 bruto_sem = compras / 52.0
-                dto_raw = d.descuento_sin_transfer or d.descuento_con_transfer or 0
+                dto_raw = d.descuento_sin_transfer if d.descuento_sin_transfer is not None else (d.descuento_con_transfer or 0)
                 dto_pct = float(dto_raw) if dto_raw else 0.0
                 neto_sem = bruto_sem * (1.0 - dto_pct / 100.0)
                 partners_drog.append({
