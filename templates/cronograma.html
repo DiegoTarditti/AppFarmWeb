@@ -213,6 +213,27 @@
     .ag-dot.pendiente { background: #7DD3FC; color: rgba(125,211,252,.5); }
     .ag-dot.atrasado { background: #FB7185; color: rgba(251,113,133,.5); }
     .ag-dot.ejec { background: #C4B5FD; color: rgba(196,181,253,.5); }
+    /* Chips compactos por evento en vista mes — más informativos que los dots. */
+    .ag-month-chips {
+        display: flex; flex-direction: column; gap: 2px;
+        margin-top: 4px; width: 100%;
+    }
+    .ag-chip {
+        display: block; width: 100%;
+        font-size: 10px; font-weight: 600;
+        padding: 2px 6px; border-radius: 4px;
+        border: 1px solid;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        line-height: 1.3;
+    }
+    .ag-chip.cumplido  { background: rgba(95,230,188,.14);  color: var(--ds-mint); border-color: rgba(95,230,188,.35); }
+    .ag-chip.pendiente { background: rgba(125,211,252,.14); color: #7DD3FC;        border-color: rgba(125,211,252,.35); }
+    .ag-chip.atrasado  { background: rgba(251,113,133,.14); color: #FB7185;        border-color: rgba(251,113,133,.35); }
+    .ag-chip.ejec      { background: rgba(196,181,253,.14); color: #C4B5FD;        border-color: rgba(196,181,253,.35); }
+    .ag-chip-more {
+        font-size: 9px; color: var(--ds-text-mute);
+        padding: 1px 4px; align-self: flex-start;
+    }
     .ag-month-weekday {
         text-align: center;
         font-size: 10px; text-transform: uppercase; letter-spacing: .1em;
@@ -293,27 +314,36 @@
 {% endblock %}
 
 {% block main %}
-{# Resumen para hero stats #}
-{% set total_eventos = 0 %}
-{% set total_cumplidos = 0 %}
-{% set total_atrasados = 0 %}
-{% set total_pendientes = 0 %}
-{% set total_ejec = 0 %}
-{% for d in dias %}
-    {% for ev in d.planificados %}
-        {% set total_eventos = total_eventos + 1 %}
-        {% if ev.estado == 'cumplido' %}{% set total_cumplidos = total_cumplidos + 1 %}{% endif %}
-        {% if ev.estado == 'atrasado' %}{% set total_atrasados = total_atrasados + 1 %}{% endif %}
-        {% if ev.estado == 'pendiente' %}{% set total_pendientes = total_pendientes + 1 %}{% endif %}
-    {% endfor %}
-    {% set total_ejec = total_ejec + d.ejecutados | length %}
-{% endfor %}
+{# Totales vienen calculados desde el backend (cronograma_list).
+   Antes esto se intentaba hacer con {% set %} dentro de loops, pero
+   Jinja no permite mutar variables fuera del scope del for: el contador
+   siempre quedaba en 0 → bug "0 planificados". #}
+
+{# Resuelve href de un pedido según fuente y si tiene proceso asociado.
+   - PedidoEmitido: siempre va al detalle del armado.
+   - Pedido: si hay ProcesoCompra, va al proceso (vista integral); si no, al order_detail. #}
+{% macro href_pedido(fuente, pedido_id) -%}
+    {%- if fuente == 'PedidoEmitido' -%}
+        {{ url_for('pedido_emitido_detalle', pedido_id=pedido_id) }}
+    {%- elif proceso_por_pedido.get(pedido_id) -%}
+        {{ url_for('proceso_detail', proceso_id=proceso_por_pedido[pedido_id]) }}
+    {%- else -%}
+        {{ url_for('order_detail', pedido_id=pedido_id) }}
+    {%- endif -%}
+{%- endmacro %}
 
 <div class="ag-hero">
     <div class="ag-hero-grid">
         <div>
-            <div class="ag-hero-sub uppercase tracking-widest" style="letter-spacing:.16em;">
-                {% if partner_filtro_nombre %}Proveedor focalizado{% else %}Cronograma general{% endif %}
+            <div class="flex items-center gap-3 mb-2">
+                <a href="{{ url_for('index') }}"
+                   class="text-[11px] px-2.5 py-1 rounded bg-[rgba(0,0,0,.25)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] text-[color:var(--ds-text-soft)] hover:text-[color:var(--ds-text)] transition inline-flex items-center gap-1.5"
+                   title="Volver al inicio">
+                    ← Home
+                </a>
+                <div class="ag-hero-sub uppercase tracking-widest" style="letter-spacing:.16em;">
+                    {% if partner_filtro_nombre %}Proveedor focalizado{% else %}Cronograma general{% endif %}
+                </div>
             </div>
             <h1 class="ag-hero-title">{{ partner_filtro_nombre or 'Agenda de pedidos' }}</h1>
             <div class="ag-hero-sub">{{ label }}</div>
@@ -384,6 +414,7 @@
         {% endfor %}
     </select>
 
+    <a href="{{ url_for('pedidos_log') }}" class="ag-nav-btn" title="Log de pedidos emitidos (todos los flujos)">📜 Log</a>
     <a href="{{ url_for('cronograma_config') }}" class="ag-nav-btn" title="Configurar cadencias">⚙ Config</a>
 </div>
 
@@ -429,7 +460,8 @@
         {% if d.planificados or d.ejecutados %}
         <div class="ag-day-body">
             {% for ev in d.planificados %}
-            <div class="ag-event-row">
+            {% set _href = href_pedido(ev.match_fuente, ev.match_pedido_id) if (ev.estado == 'cumplido' and ev.match_pedido_id) else url_for('cronograma_editar', cron_id=ev.cron_id) %}
+            <a href="{{ _href }}" class="ag-event-row" style="display:flex; text-decoration:none; color:inherit;">
                 <div class="ag-evt {{ ev.estado }}" style="min-width: 240px; flex: 1;">
                     <div class="prov">{{ ev.partner_nombre }}</div>
                     <div class="meta">
@@ -448,10 +480,10 @@
                         ◷ Pendiente
                     {% endif %}
                 </div>
-            </div>
+            </a>
             {% endfor %}
             {% for ev in d.ejecutados %}
-            <div class="ag-event-row">
+            <a href="{{ href_pedido(ev.fuente, ev.pedido_id) }}" class="ag-event-row" style="display:flex; text-decoration:none; color:inherit;">
                 <div class="ag-evt ejec" style="min-width: 240px; flex: 1;">
                     <div class="prov">{{ ev.partner_nombre }}</div>
                     <div class="meta">
@@ -462,7 +494,7 @@
                 <div class="text-xs text-[color:var(--ds-text-mute)]">
                     {{ ev.hora }} · #{{ ev.pedido_id }}
                 </div>
-            </div>
+            </a>
             {% endfor %}
         </div>
         {% endif %}
@@ -514,14 +546,42 @@
         {% for d in dias %}
         <div class="ag-month-cell {% if d.es_hoy %}es-hoy{% endif %}" title="{{ d.fecha_label }}">
             <div class="num">{{ d.fecha.day }}</div>
-            <div class="ag-month-dots">
-                {% for ev in d.planificados %}
-                <span class="ag-dot {{ ev.estado }}" title="{{ ev.partner_nombre }} — {{ ev.estado }}"></span>
+            {# Hasta 3 chips con nombre del partner. Si hay más, "+N" al final.
+               Más informativo que los dots y entra en la celda con ellipsis. #}
+            {% set _todos = d.planificados + d.ejecutados %}
+            {% set _max = 3 %}
+            {% if _todos %}
+            <div class="ag-month-chips">
+                {% for ev in d.planificados[:_max] %}
+                {# Cumplido → link al proceso si existe, sino al pedido directo.
+                   Pendiente/atrasado → editor del cronograma. #}
+                {% if ev.estado == 'cumplido' and ev.match_pedido_id %}
+                    <a href="{{ href_pedido(ev.match_fuente, ev.match_pedido_id) }}" class="ag-chip {{ ev.estado }}"
+                       title="{{ ev.partner_nombre }} — {{ ev.estado }}{% if ev.canal_nombre %} (vía {{ ev.canal_nombre }}){% endif %} · click para ver{% if ev.match_fuente == 'Pedido' and proceso_por_pedido.get(ev.match_pedido_id) %} el proceso{% else %} el pedido{% endif %}">
+                        {{ ev.partner_nombre }}
+                    </a>
+                {% else %}
+                    <a href="{{ url_for('cronograma_editar', cron_id=ev.cron_id) }}" class="ag-chip {{ ev.estado }}"
+                       title="{{ ev.partner_nombre }} — {{ ev.estado }}{% if ev.canal_nombre %} (vía {{ ev.canal_nombre }}){% endif %} · click para editar el cronograma">
+                        {{ ev.partner_nombre }}
+                    </a>
+                {% endif %}
                 {% endfor %}
-                {% for ev in d.ejecutados %}
-                <span class="ag-dot ejec" title="{{ ev.partner_nombre }} — ejecutado"></span>
+                {% set _restantes = _max - (d.planificados | length) %}
+                {% if _restantes > 0 %}
+                {% for ev in d.ejecutados[:_restantes] %}
+                    <a href="{{ href_pedido(ev.fuente, ev.pedido_id) }}" class="ag-chip ejec"
+                       title="{{ ev.partner_nombre }} — ejecutado · click para ver{% if ev.fuente == 'Pedido' and proceso_por_pedido.get(ev.pedido_id) %} el proceso{% else %} el pedido{% endif %}">
+                        ✓ {{ ev.partner_nombre }}
+                    </a>
                 {% endfor %}
+                {% endif %}
+                {% set _total = (d.planificados | length) + (d.ejecutados | length) %}
+                {% if _total > _max %}
+                <span class="ag-chip-more">+ {{ _total - _max }} más</span>
+                {% endif %}
             </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>

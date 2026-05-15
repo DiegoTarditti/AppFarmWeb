@@ -799,36 +799,26 @@ def init_app(app):
                 # ignora ponderación por horas y forecast.
                 cant_fija = (local or {}).get('cantidad_reposicion_fija')
 
-                # Sin ventas 12m o sin mov 60d → no sugerir pedir aunque
-                # esté bajo mínimo (no tiene sentido reponer lo que no rota).
-                if u12m_int == 0 or sin_mov:
-                    a_pedir = 0
-                    target_unid = 0
-                    daily_rate = 0
-                elif cant_fija is not None and cant_fija > 0 and stock_actual <= min_efectivo:
-                    # Override: cuando llega al punto de pedido, pedir la cantidad fija.
-                    a_pedir = int(cant_fija)
-                    target_unid = int(cant_fija)
-                    daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
-                else:
-                    # Tasa diaria desde u_rot (ventana corta) → más responsiva
-                    # que dividir u12m / 365.
-                    daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
-                    target_unid = math.ceil(daily_rate * factor_h)
-                    if lab_id:
-                        # Modo compra a lab: cubrir N días desde el slider.
-                        # min_efectivo NO aplica acá — esa es la decisión REPO.
-                        # Pedimos lo necesario para llegar a daily_rate * cubrir_dias.
-                        ideal = math.ceil(daily_rate * cubrir_dias)
-                    else:
-                        # Modo REPO matriz: el mayor entre llegar al mín efectivo
-                        # y cubrir hasta el próximo cierre (factor_h).
-                        ideal = max(min_efectivo, target_unid)
-                    # max(0, ...) en vez de max(1, ...): no forzar a pedir 1 cuando
-                    # stock = mín y cobertura ya está cubierta (caso típico de
-                    # producto que entró al listado por estar EN el mín, no abajo).
-                    # El filtro a_pedir<=0 más adelante esconde estas filas.
-                    a_pedir = max(0, ideal - stock_actual)
+                # Motor unificado de cálculo de cantidad. Selecciona tipo de pedido
+                # según contexto (COMPRA_LAB si viene lab_id, sino REPOSICION).
+                # La config completa (piso/target/buffer/override) vive en la tabla
+                # tipo_pedido_config — ver services/calculo_pedido.py.
+                daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
+                target_unid = math.ceil(daily_rate * factor_h)
+                from services.calculo_pedido import calcular_a_pedir, cargar_config
+                _tipo_slug = 'COMPRA_LAB' if lab_id else 'REPOSICION'
+                _cfg = cargar_config(_tipo_slug) or {}
+                _result = calcular_a_pedir(_cfg, {
+                    'daily_rate': daily_rate,
+                    'min_efectivo': min_efectivo,
+                    'factor_h': factor_h,
+                    'cubrir_dias': cubrir_dias,
+                    'stock_actual': stock_actual,
+                    'cantidad_reposicion_fija': cant_fija,
+                    'u12m': u12m_int,
+                    'sin_mov': sin_mov,
+                })
+                a_pedir = _result['a_pedir']
 
                 # Urgente = bajo o igual al mínimo. No urgente = entró sólo por
                 # cobertura insuficiente (stock arriba del mín pero rota rápido).
