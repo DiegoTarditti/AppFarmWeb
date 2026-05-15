@@ -673,6 +673,8 @@ class PedidoEmitido(Base):
     emitido_por     = Column(String(50), nullable=True)
     recibido_por    = Column(String(50), nullable=True)
     cargado_por     = Column(String(50), nullable=True)
+    # Sigla que identifica desde dónde se disparó el pedido (P.Dia.Drog, P.Dia.Lab, etc).
+    origen          = Column(String(20), nullable=True, index=True)
     drogueria       = relationship('Provider')
     items           = relationship('PedidoEmitidoItem', back_populates='pedido',
                                    cascade='all, delete-orphan')
@@ -747,6 +749,48 @@ class ProveedorHorarioReparto(Base):
     proveedor     = relationship('Provider')
     __table_args__ = (
         UniqueConstraint('proveedor_id', 'dia_semana', 'hora', name='uq_horario_prov_dia_hora'),
+    )
+
+
+class ProveedorCronograma(Base):
+    """Cronograma de pedidos por proveedor (lab/drog).
+
+    Permite registrar la cadencia esperada de pedidos por proveedor y tipo:
+    - tipo_pedido='reposicion': pedidos cortos diarios. `horas_entre_pedidos`
+      define el espaciamiento mínimo entre dos repos en el día (ajuste fino
+      de cantidades). `cadencia_dias` típicamente 1.
+    - tipo_pedido='programado': pedido grande con módulos / mejor descuento
+      (ej. Roemmers cada 15 días). `cadencia_dias` define el espaciamiento
+      base, `proxima_fecha` el override manual para mover una emisión puntual
+      sin romper la serie.
+
+    Un proveedor puede tener filas de ambos tipos (Roemmers como lab hace
+    programado, y como drog vía Kellerhoff hace reposición → 2 filas).
+    """
+    __tablename__ = 'proveedor_cronograma'
+    id                  = Column(Integer, primary_key=True)
+    # partner_tipo + proveedor_id forman partner polimórfico. Mismo patrón que
+    # Pedido.canal+partner_id (database.py:1124-1131): sin FK estricto a una
+    # tabla específica — id apunta a `laboratorios` o `proveedores` según tipo.
+    partner_tipo        = Column(String(12), nullable=False, default='drogueria',
+                                  index=True)
+    proveedor_id        = Column(Integer, nullable=False, index=True)
+    # Solo cuando partner_tipo='laboratorio': por qué droguería entra el pedido.
+    # NULL = compra directa al laboratorio (sin intermediario).
+    canal_drog_id       = Column(Integer, ForeignKey('proveedores.id', ondelete='SET NULL'),
+                                  nullable=True, index=True)
+    tipo_pedido         = Column(String(15), nullable=False)  # 'programado' por ahora
+    cadencia_dias       = Column(Integer, nullable=True)  # NULL = manual
+    proxima_fecha       = Column(Date, nullable=True, index=True)
+    horas_entre_pedidos = Column(Integer, nullable=True)  # legacy reposicion, no se usa
+    activo              = Column(Boolean, nullable=False, default=True)
+    notas               = Column(Text, nullable=True)
+    creado_en           = Column(DateTime, default=now_ar)
+    actualizado_en      = Column(DateTime, default=now_ar, onupdate=now_ar)
+    canal_drogueria     = relationship('Provider', foreign_keys=[canal_drog_id])
+    __table_args__ = (
+        UniqueConstraint('partner_tipo', 'proveedor_id', 'tipo_pedido',
+                         name='uq_cronograma_partner_tipo'),
     )
 
 
@@ -975,6 +1019,10 @@ class Producto(Base):
     # Compra rápida v2: exclusiones manuales del armado de pedido.
     excluido_armado_actual = Column(Boolean, nullable=False, default=False)
     no_pedir               = Column(Boolean, nullable=False, default=False)
+    # Cronograma de pedidos: cantidad fija a pedir cuando se llega al punto
+    # de pedido. NULL = cálculo dinámico (default). Útil para productos donde
+    # el operador ya sabe la dosis óptima de reposición.
+    cantidad_reposicion_fija = Column(Integer, nullable=True)
     codigos_barra = relationship('ProductoCodigoBarra',
                                  back_populates='producto',
                                  cascade='all, delete-orphan',
@@ -1095,6 +1143,9 @@ class Pedido(Base):
     estado = Column(String(20), nullable=False, default='PENDIENTE', index=True)
     analisis_json = Column(Text, nullable=True)
     analisis_guardado_en = Column(DateTime, nullable=True)
+    # Sigla que identifica desde dónde se disparó el pedido (Inf.Auto, Movil.Lab,
+    # Analisis, etc). Sirve para trazar el origen y filtrar en la lista.
+    origen = Column(String(20), nullable=True, index=True)
     # Hasta cuándo mostrar este pedido como candidato en "Pedido Reposición"
     # (compras_dia armado). NULL = no inyectar. Si fecha >= hoy, los productos
     # del pedido aparecen como sugerencia en el armado.
@@ -1485,7 +1536,8 @@ def init_db(database_url=None):
                         'alarmas_notificadas', 'sync_lock',
                         'productos_pendientes_revision',
                         'motivo_devolucion', 'destino_devolucion',
-                        'devolucion_receta')
+                        'devolucion_receta',
+                        'proveedor_cronograma')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2067,6 +2119,8 @@ def _pg_add_columns(conn):
         "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS emitido_por VARCHAR(50)",
         "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS recibido_por VARCHAR(50)",
         "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS cargado_por VARCHAR(50)",
+        "ALTER TABLE pedido_emitido ADD COLUMN IF NOT EXISTS origen VARCHAR(20)",
+        "CREATE INDEX IF NOT EXISTS ix_pedido_emitido_origen ON pedido_emitido(origen)",
     ):
         try:
             conn.execute(text(ddl))
@@ -2474,6 +2528,35 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS rotacion VARCHAR(1)"))
     conn.execute(text("ALTER TABLE pedido_items ADD COLUMN IF NOT EXISTS avg_monthly DECIMAL(10,2)"))
     conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS es_pack INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(text("ALTER TABLE productos ADD COLUMN IF NOT EXISTS cantidad_reposicion_fija INTEGER"))
+    # Cronograma: partner polimórfico (lab|drog) + canal_drog (vía droguería
+    # cuando partner=lab, NULL=directo). Reemplaza el FK estricto a proveedores.
+    # Cada DDL en su propio try/except: PG en algunos modos lanza UniqueViolation
+    # aunque uses IF NOT EXISTS (en pg_class), así que silenciamos esos casos.
+    for _ddl in (
+        "ALTER TABLE proveedor_cronograma DROP CONSTRAINT IF EXISTS proveedor_cronograma_proveedor_id_fkey",
+        "ALTER TABLE proveedor_cronograma ADD COLUMN IF NOT EXISTS partner_tipo VARCHAR(12) NOT NULL DEFAULT 'drogueria'",
+        "ALTER TABLE proveedor_cronograma ADD COLUMN IF NOT EXISTS canal_drog_id INTEGER REFERENCES proveedores(id) ON DELETE SET NULL",
+        "CREATE INDEX IF NOT EXISTS idx_cronograma_partner_tipo ON proveedor_cronograma (partner_tipo)",
+        "ALTER TABLE proveedor_cronograma DROP CONSTRAINT IF EXISTS uq_cronograma_prov_tipo",
+        """DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint WHERE conname = 'uq_cronograma_partner_tipo'
+            ) THEN
+                ALTER TABLE proveedor_cronograma
+                ADD CONSTRAINT uq_cronograma_partner_tipo
+                UNIQUE (partner_tipo, proveedor_id, tipo_pedido);
+            END IF;
+        END $$;""",
+    ):
+        try:
+            conn.execute(text(_ddl))
+        except Exception as _e:
+            # Si el objeto ya existe en pg_class/pg_constraint con el mismo nombre,
+            # asumimos idempotencia y seguimos.
+            if 'already exists' in str(_e) or 'duplicate key' in str(_e):
+                continue
+            raise
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW()"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
     for _col in ('monto_exento', 'monto_gravado', 'iva_105', 'iva_21', 'percepciones', 'otros'):
@@ -2498,6 +2581,11 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS partner_id INTEGER"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS canal_elegido_en TIMESTAMP"))
     conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS mostrar_hasta DATE"))
+    conn.execute(text("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS origen VARCHAR(20)"))
+    try:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_pedidos_origen ON pedidos(origen)"))
+    except Exception:
+        pass
     # CREATE INDEX IF NOT EXISTS puede tirar UniqueViolation si pg_class tiene
     # row huérfana (deploy previo abortó). Como corremos en AUTOCOMMIT, cada
     # DDL es su propia tx — absorbemos el error y seguimos. La data queda OK.

@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% set nav_active = "cronograma" %}
+{% set hide_sidebar = True %}
+{% block title %}Cronograma de pedidos — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cr-topbar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 24px;
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .cr-topbar h1 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+    }
+    .cr-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+    .cr-toolbar {
+        padding: 14px 24px;
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        border-bottom: 1px solid var(--ds-line);
+    }
+    .cr-content { padding: 18px 24px; }
+    .cr-card {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        overflow: hidden;
+    }
+    .cr-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .cr-table thead th {
+        padding: 10px 14px; text-align: left;
+        font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+        font-weight: 600; color: var(--ds-text-mute);
+        background: rgba(0,0,0,.18);
+    }
+    .cr-table tbody tr { border-top: 1px solid var(--ds-line); }
+    .cr-table tbody td { padding: 8px 14px; color: var(--ds-text); }
+    .cr-table tbody td.mono { font-family: ui-monospace, Consolas, monospace; }
+    .cr-pill-tipo {
+        display: inline-flex; align-items: center;
+        font-size: 11px; font-weight: 600;
+        padding: 2px 9px; border-radius: 999px;
+        border: 1px solid;
+    }
+    .cr-pill-tipo.rep { background: rgba(56,189,248,.14); color: #7DD3FC; border-color: rgba(56,189,248,.32); }
+    .cr-pill-tipo.prog { background: rgba(139,92,246,.14); color: #C4B5FD; border-color: rgba(139,92,246,.32); }
+    .cr-pill-prov {
+        display: inline-flex; align-items: center;
+        font-size: 10px; font-weight: 600;
+        padding: 1px 7px; border-radius: 6px;
+        border: 1px solid var(--ds-line);
+        color: var(--ds-text-mute);
+        text-transform: uppercase; letter-spacing: .04em;
+    }
+    .cr-pill-prov.lab { background: rgba(139,92,246,.06); color: #B8A8E8; }
+    .cr-pill-prov.drog { background: rgba(56,189,248,.06); color: #7DD3FC; }
+    .cr-input {
+        background: var(--ds-surface); border: 1px solid var(--ds-line);
+        color: var(--ds-text); border-radius: var(--ds-r-sm);
+        padding: 6px 10px; font-size: 12px; min-width: 0;
+    }
+    .cr-input:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+    .cr-input::placeholder { color: var(--ds-text-mute); }
+    .cr-input[type="number"] { width: 80px; text-align: center; }
+    .cr-input[type="date"] { font-family: ui-monospace, Consolas, monospace; }
+
+    /* Modal */
+    .cr-modal-back { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
+    .cr-modal-card {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        color: var(--ds-text);
+        max-width: 480px; width: 100%;
+    }
+    .cr-modal-head {
+        background: rgba(0,0,0,.18);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 14px 20px;
+        display: flex; align-items: center; justify-content: space-between;
+    }
+    .cr-modal-head h2 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 15px; font-weight: 700; margin: 0; color: var(--ds-text);
+    }
+    .cr-modal-body { padding: 18px 20px; display: grid; gap: 14px; }
+    .cr-modal-foot {
+        padding: 14px 20px;
+        border-top: 1px solid var(--ds-line);
+        display: flex; justify-content: flex-end; gap: 8px;
+    }
+    .cr-field-label { font-size: 11px; color: var(--ds-text-mute); margin-bottom: 4px; }
+    .cr-tipo-toggle { display: inline-flex; gap: 0;
+        background: rgba(0,0,0,.18); border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-md); padding: 2px;
+    }
+    .cr-tipo-toggle button {
+        padding: 6px 14px; font-size: 12px; font-weight: 500;
+        border-radius: var(--ds-r-sm);
+        background: transparent; color: var(--ds-text-soft);
+        border: 0; cursor: pointer; transition: all .15s;
+    }
+    .cr-tipo-toggle button:hover { color: var(--ds-text); }
+    .cr-tipo-toggle button.active {
+        background: var(--ds-mint); color: var(--ds-bg-deep);
+        font-weight: 600;
+    }
+    .cr-row-disabled { opacity: .45; }
+    .cr-empty {
+        padding: 60px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px;
+    }
+    .cr-empty .big { font-size: 32px; margin-bottom: 8px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cr-topbar">
+    <h1>📅 Cronograma de pedidos</h1>
+    <span class="sub">{{ rows | length }} {% if rows | length == 1 %}registro{% else %}registros{% endif %}</span>
+    <div class="ml-auto flex items-center gap-2">
+        <a href="{{ url_for('cronograma_nuevo') }}" class="btn btn-mint text-xs">+ Nuevo</a>
+    </div>
+</div>
+
+<div class="cr-toolbar">
+    <label class="text-xs text-[color:var(--ds-text-mute)] flex items-center gap-2">
+        🧪 Laboratorio
+        <select id="filtro-lab" class="cr-input" onchange="aplicarFiltro()">
+            <option value="">Todos</option>
+            {% for l in laboratorios %}
+            <option value="{{ l.id }}" {% if lab_filtro == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label class="text-xs text-[color:var(--ds-text-mute)] flex items-center gap-2">
+        🏭 Droguería
+        <select id="filtro-drog" class="cr-input" onchange="aplicarFiltro()">
+            <option value="">Todas</option>
+            {% for d in droguerias %}
+            <option value="{{ d.id }}" {% if drog_filtro == d.id %}selected{% endif %}>{{ d.nombre }}</option>
+            {% endfor %}
+        </select>
+    </label>
+    {% if lab_filtro or drog_filtro %}
+    <a href="{{ url_for('cronograma_config') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+        Limpiar filtros
+    </a>
+    {% endif %}
+</div>
+
+<div class="cr-content">
+    {% if rows %}
+    <div class="cr-card">
+        <table class="cr-table">
+            <thead>
+                <tr>
+                    <th>Partner</th>
+                    <th>Canal</th>
+                    <th class="text-center">Cadencia</th>
+                    <th class="text-center">Próxima</th>
+                    <th>Notas</th>
+                    <th class="text-right">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="{% if not r.activo %}cr-row-disabled{% endif %}">
+                    <td>
+                        <span class="font-medium">{{ r.partner_nombre }}</span>
+                        <span class="cr-pill-prov {{ 'lab' if r.partner_tipo == 'laboratorio' else 'drog' }} ml-2">
+                            {{ 'Lab' if r.partner_tipo == 'laboratorio' else 'Drog' }}
+                        </span>
+                    </td>
+                    <td class="text-xs">
+                        {% if r.partner_tipo == 'laboratorio' %}
+                            {% if r.canal_drog_nombre %}
+                                <span style="color: var(--ds-info);">vía {{ r.canal_drog_nombre }}</span>
+                            {% else %}
+                                <span style="color: var(--ds-mint);">directo</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-[color:var(--ds-text-mute)]">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="mono text-center">
+                        {% if r.cadencia_dias %}cada {{ r.cadencia_dias }}d{% else %}<span class="text-[color:var(--ds-text-mute)]">manual</span>{% endif %}
+                    </td>
+                    <td class="mono text-center">
+                        {% if r.proxima_fecha_label %}{{ r.proxima_fecha_label }}{% else %}<span class="text-[color:var(--ds-text-mute)]">—</span>{% endif %}
+                    </td>
+                    <td class="text-xs text-[color:var(--ds-text-soft)]">{{ r.notas or '—' }}</td>
+                    <td class="text-right whitespace-nowrap">
+                        <a href="{{ url_for('cronograma_editar', cron_id=r.id) }}"
+                           class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition inline-block">
+                            Editar
+                        </a>
+                        <button type="button" onclick="toggleActivo({{ r.id }})"
+                                class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-amber-400 transition">
+                            {{ 'Pausar' if r.activo else 'Activar' }}
+                        </button>
+                        <form method="POST" action="{{ url_for('cronograma_delete', cron_id=r.id) }}"
+                              style="display:inline" onsubmit="return confirm('¿Eliminar este cronograma?')">
+                            <button type="submit" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-rose-400 transition">
+                                Eliminar
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="cr-card">
+        <div class="cr-empty">
+            <div class="big">📅</div>
+            <div>Todavía no hay cronogramas cargados.</div>
+            <a href="{{ url_for('cronograma_nuevo') }}" class="btn btn-mint text-xs mt-3 inline-block">+ Cargar el primero</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function aplicarFiltro() {
+    const lab = document.getElementById('filtro-lab').value;
+    const drog = document.getElementById('filtro-drog').value;
+    const url = new URL(window.location.href);
+    if (lab) url.searchParams.set('lab_id', lab);
+    else url.searchParams.delete('lab_id');
+    if (drog) url.searchParams.set('drog_id', drog);
+    else url.searchParams.delete('drog_id');
+    window.location.href = url.toString();
+}
+
+async function toggleActivo(id) {
+    const r = await fetch(`/cronograma/${id}/toggle`, {method: 'POST'});
+    const data = await r.json();
+    if (!data.ok) { alert(data.error || 'Error'); return; }
+    window.location.reload();
+}
+</script>
+{% endblock %}

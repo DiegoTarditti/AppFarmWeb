@@ -543,7 +543,10 @@ def init_app(app):
             .outerjoin(v12_q, v12_q.c.pid == ObsProducto.observer_id)
             .filter(ObsProducto.fecha_baja.is_(None))
             .filter(ObsProducto.subrubro_observer.isnot(None))
-            ).all()
+            )
+            # Excluir items no-medicamento (sellado recetas, cupones, etc.)
+            from helpers import filtro_solo_medicamentos
+            base = filtro_solo_medicamentos(base, ObsProducto).all()
 
             subrubro_a_rubro = dict(
                 session.query(ObsSubrubro.observer_id, ObsSubrubro.rubro_observer).all())
@@ -1778,6 +1781,9 @@ def init_app(app):
                 partner_id = None
 
             from helpers import _upsert_pedido_items, now_ar
+            origen = ('Inf.Auto.Drog' if canal == 'drogueria'
+                      else 'Inf.Auto.Lab' if canal == 'laboratorio'
+                      else 'Inf.Auto')
             pedido = Pedido(
                 laboratorio=lab_nombre,
                 farmacia='',
@@ -1788,6 +1794,7 @@ def init_app(app):
                 canal=canal,
                 partner_id=partner_id,
                 canal_elegido_en=now_ar() if canal else None,
+                origen=origen,
             )
             session.add(pedido)
             # Sumar al catálogo master los productos del pedido (antes este flow lo omitía).

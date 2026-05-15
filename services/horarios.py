@@ -64,6 +64,34 @@ def proximo_cierre(session, proveedor_id, ahora=None):
     return None
 
 
+def urgencia_cierre(falta_segundos):
+    """Clasifica la urgencia hasta el próximo cierre en 3 niveles.
+
+    Usado para mostrar un badge en pedido/día y para ponderar la cantidad a
+    pedir (más horas → más unidades, ver _ponderar_target_dias en compras_dia).
+
+    - corto: < 8h    (mucha urgencia, factor < 0.33)
+    - medio: 8–24h   (cobertura normal de 1 día)
+    - largo: ≥ 24h   (fin de semana o feriado, hay que cargar más)
+
+    Devuelve dict {nivel, label, horas} o None si falta_segundos es None.
+    """
+    if falta_segundos is None:
+        return None
+    horas = falta_segundos / 3600
+    if horas < 8:
+        nivel = 'corto'
+    elif horas < 24:
+        nivel = 'medio'
+    else:
+        nivel = 'largo'
+    return {
+        'nivel': nivel,
+        'horas': round(horas, 1),
+        'label': nivel.capitalize(),
+    }
+
+
 def horarios_por_dia(session, proveedor_id):
     """Devuelve la matriz {dia_semana: [hora_str, ...]} ordenada por hora.
 

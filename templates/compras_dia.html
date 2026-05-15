@@ -46,6 +46,21 @@
     .cd-cierre-pill .hora { font-size: 13px; font-weight: 600; color: var(--ds-mint); margin-top: 1px; }
     .cd-cierre-pill .countdown-text { font-size: 11px; color: var(--ds-text); margin-top: 2px; }
     .cd-cierre-pill .countdown-text .num { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: var(--ds-text); }
+    /* Badge urgencia hasta próximo cierre — corto/medio/largo.
+       Define cuánto pedir: corto < 8h (factor ~0.25), medio 8-24h, largo 24h+.
+       El cálculo real vive en compras_dia.py:_ponderar_target_dias. */
+    .cd-urgencia {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .05em;
+        border: 1px solid;
+    }
+    .cd-urgencia .horas { font-family: ui-monospace, Consolas, monospace; font-weight: 600;
+                          opacity: .85; letter-spacing: 0; text-transform: none; }
+    .cd-urgencia.corto { background: rgba(239,68,68,.14); color: #FCA5A5; border-color: rgba(239,68,68,.35); }
+    .cd-urgencia.medio { background: rgba(245,158,11,.14); color: #FCD34D; border-color: rgba(245,158,11,.35); }
+    .cd-urgencia.largo { background: rgba(95,230,188,.14); color: var(--ds-mint); border-color: rgba(95,230,188,.35); }
     .cd-table { width: 100%; font-size: 13px; border-collapse: collapse; }
     .cd-table thead th {
         padding: 8px 12px; text-align: center;
@@ -217,6 +232,13 @@
                 </div>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
+                {% if prov.urgencia %}
+                <span class="cd-urgencia {{ prov.urgencia.nivel }}" data-urgencia
+                      title="Determina cuántas unidades pedir: con cierre cercano pedimos menos, con cierre lejano más.">
+                    <span data-urgencia-label>{{ prov.urgencia.label }}</span>
+                    <span class="horas" data-urgencia-horas>· {{ prov.urgencia.horas }}h</span>
+                </span>
+                {% endif %}
                 <div class="cd-cierre-pill">
                     {% if prov.proximo_cierre %}
                     <p class="label">Cierre próximo reparto</p>
@@ -568,9 +590,17 @@ async function refrescarCountdowns() {
     const ahora = Date.now();
     for (const [pid, info] of Object.entries(data.cierres)) {
         const target = new Date(info.fecha).getTime();
-        _cierres[pid] = {target, hora_str: info.hora_str};
+        _cierres[pid] = {target, hora_str: info.hora_str, urgencia: info.urgencia};
     }
     actualizarUI();
+}
+function _urgenciaDesdeSecs(secs) {
+    const horas = secs / 3600;
+    let nivel;
+    if (horas < 8) nivel = 'corto';
+    else if (horas < 24) nivel = 'medio';
+    else nivel = 'largo';
+    return {nivel, label: nivel.charAt(0).toUpperCase() + nivel.slice(1), horas: Math.round(horas * 10) / 10};
 }
 function actualizarUI() {
     const ahora = Date.now();
@@ -585,6 +615,19 @@ function actualizarUI() {
         if (hora) hora.textContent = info.hora_str + ' hs';
         if (secs <= 600) cd.style.color = 'var(--ds-danger)';
         else cd.style.color = '';
+
+        // Badge urgencia: recalcular nivel cliente-side para reaccionar al
+        // cruce de umbral entre pulls del API.
+        const badge = card.querySelector('[data-urgencia]');
+        if (badge) {
+            const u = _urgenciaDesdeSecs(secs);
+            badge.classList.remove('corto', 'medio', 'largo');
+            badge.classList.add(u.nivel);
+            const lbl = badge.querySelector('[data-urgencia-label]');
+            const hrs = badge.querySelector('[data-urgencia-horas]');
+            if (lbl) lbl.textContent = u.label;
+            if (hrs) hrs.textContent = '· ' + u.horas + 'h';
+        }
     });
 }
 refrescarCountdowns();

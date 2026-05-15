@@ -235,6 +235,26 @@
     </span>
     {% endif %}
 
+    {# Slider "Cubrir por N días" — solo en modo compra a lab. En modo REPO
+       (matriz drog) el piso es min_efectivo y no se ajusta acá. #}
+    {% if lab_id %}
+    <form method="get" id="cubrir-form" style="display: inline-flex; align-items: center; gap: 8px;">
+        {# Re-emitimos todos los query params para no perder filtros al cambiar el slider. #}
+        {% for k, v in request.args.items() if k != 'cubrir_dias' %}
+        <input type="hidden" name="{{ k }}" value="{{ v }}">
+        {% endfor %}
+        <label for="cubrir-dias" style="font-size: 11px; color: var(--ds-text-mute); white-space: nowrap;">
+            Cubrir por <b id="cubrir-dias-display" style="color: var(--ds-mint);">{{ cubrir_dias }}</b> días
+        </label>
+        <input type="range" id="cubrir-dias" name="cubrir_dias"
+               min="7" max="120" step="1" value="{{ cubrir_dias }}"
+               style="width: 180px; accent-color: var(--ds-mint);"
+               oninput="document.getElementById('cubrir-dias-display').textContent = this.value"
+               onchange="document.getElementById('cubrir-form').submit()">
+        <span style="font-size: 10px; color: var(--ds-text-mute);">(min de compra al lab)</span>
+    </form>
+    {% endif %}
+
     {# Banner ofertas del lab (flujo /pedidos/dia → 🧪 Laboratorio).
        Aprovecha que ya tenemos lab_id para listar todas las OfertaMinimo
        activas+vigentes cargadas para ese lab — directas + por droguería. #}
@@ -629,6 +649,9 @@
                     <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
                         <input type="number" min="0" value="{{ it.a_pedir }}"
                                {% if prov and not it.cubre_lab %}disabled{% endif %}
+                               {% if it.horas_prox is not none %}
+                               title="Tasa {{ it.daily_rate }}u/día × factor {{ it.factor_h }} (próx. cierre en {{ it.horas_prox }}h) = {{ it.target_unid }}u objetivo. Mín efectivo {{ it.min_efectivo }}u, stock {{ it.stock }}u."
+                               {% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
                     </td>
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
@@ -1297,6 +1320,7 @@ function agregarFila(it) {
         <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
             <input type="number" min="0" value="${it.a_pedir}"
                    ${it.cubre_lab ? '' : 'disabled'}
+                   ${it.horas_prox != null ? `title="Tasa ${it.daily_rate}u/día × factor ${it.factor_h} (próx. cierre en ${it.horas_prox}h) = ${it.target_unid}u objetivo. Mín efectivo ${it.min_efectivo}u, stock ${it.stock}u."` : ''}
                    class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
         </td>
         <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">

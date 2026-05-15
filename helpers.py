@@ -78,6 +78,28 @@ PARTNER_TIPOS = ('laboratorio', 'drogueria', 'proveedor')
 PLANTILLA_FORMATOS = ('xlsx', 'txt_fijo', 'csv')
 PLANTILLA_TIPOS_DOC = ('pedido', 'recepcion', 'descuento')
 
+# Patrones de descripcion de items que NO son medicamentos pero aparecen como
+# productos en Observer (servicios de farmacia: sellado de recetas, cupones, etc.).
+# Se excluyen del análisis de stock/pedido/forecast.
+NO_MEDICAMENTO_PATTERNS = (
+    '%sellado%receta%',     # "SELLADO DE RECETAS"
+    '%costo%receta%',       # "Costo Receta/Cupón"
+    'sellado',              # entry genérica id=1 de Observer (descripcion exacta)
+)
+
+
+def filtro_solo_medicamentos(query, ObsProducto):
+    """Aplica NOT LIKE para excluir items no-medicamento de una query SQLAlchemy.
+
+    Uso:
+        from helpers import filtro_solo_medicamentos
+        base_q = filtro_solo_medicamentos(base_q, ObsProducto)
+    """
+    from sqlalchemy import not_
+    for pat in NO_MEDICAMENTO_PATTERNS:
+        query = query.filter(not_(ObsProducto.descripcion.ilike(pat)))
+    return query
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(CONVERTER_DIR, exist_ok=True)
 os.makedirs(PURCHASE_FOLDER, exist_ok=True)

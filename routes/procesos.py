@@ -445,6 +445,7 @@ def init_app(app):
                 canal='laboratorio',
                 estado='PENDIENTE',
                 analizado_en=now_ar(),
+                origen='Movil.Lab',
             )
             session.add(pedido)
             session.flush()
