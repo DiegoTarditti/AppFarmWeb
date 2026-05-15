@@ -7,15 +7,22 @@ Modelo (Fase 3 — predicción sin cronograma):
 - Cada semana del horizonte muestra los mismos totales (predicción plana).
 - Estacionalidad/cronograma no se considera en esta vista.
 """
-from datetime import date as _date
-from datetime import timedelta
+from datetime import date as _date, timedelta
 
 from flask import jsonify, render_template, request
 from flask_login import login_required
 from sqlalchemy import func, or_
 
-from database import (Invoice, Laboratorio, ObsProducto, ObsVentaDetalle,
-                      ObsVentaMensual, ProveedorCronograma, Provider, get_db)
+from database import (
+    Invoice,
+    Laboratorio,
+    ObsProducto,
+    ObsVentaDetalle,
+    ObsVentaMensual,
+    ProveedorCronograma,
+    Provider,
+    get_db,
+)
 
 
 def _lunes_de(d):
