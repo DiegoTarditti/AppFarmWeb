@@ -2594,9 +2594,9 @@ def _pg_add_columns(conn):
     import json as _json
     _seed_tipos = [
         ('REPOSICION', 'Reposición (matriz lab/drog)',
-         'Pedido corto y rutinario por droguería. Piso = mínimo efectivo del producto. '
-         'Target = cubrir hasta el próximo cierre del drog (factor_h).',
-         {'piso_ideal': 'min_efectivo', 'target_horizonte': 'factor_h',
+         'Pedido corto y rutinario por droguería. Piso = tasa diaria × días a cubrir (slider). '
+         'Sin target adicional — pide lo mínimo necesario para cubrir el período.',
+         {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
           'buffer_pct': 0, 'universo': 'bajo_min_o_cobertura',
           'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil'}),
         ('COMPRA_LAB', 'Compra directa al laboratorio',

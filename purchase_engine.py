@@ -64,7 +64,7 @@ def _seasonality_index(ventas, past_idx, avg):
     if avg <= 0:
         return 1.0
     if past_idx < FULL_MONTHS:
-        return ventas[past_idx] / avg if ventas[past_idx] > 0 else 1.0
+        return min(ventas[past_idx] / avg, 3.0) if ventas[past_idx] > 0 else 1.0
     if past_idx == 11 and ventas[11] > 0:
         prorated = ventas[11] * 31.0 / 6.0
         return min(prorated / avg, 3.0)

@@ -9,6 +9,10 @@
     <div class="ml-auto flex items-center gap-3">
         <input type="text" id="filtro" placeholder="Filtrar laboratorio…"
                class="bg-white border border-surface-border rounded px-2 py-1 text-sm w-56">
+        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none whitespace-nowrap">
+            <input type="checkbox" id="solo-asignados" class="w-3.5 h-3.5 cursor-pointer">
+            Solo con drog
+        </label>
         <form action="{{ url_for('laboratorio_create') }}" method="post" class="flex items-center gap-1.5">
             <input type="text" name="nombre" placeholder="+ Nuevo laboratorio…" required
                    class="bg-white border-2 border-mint-deep rounded px-2 py-1 text-sm w-52">
@@ -144,12 +148,19 @@ async function toggleMatch(cb) {
 
 // Filtro client-side
 const filtro = document.getElementById('filtro');
-filtro.addEventListener('input', () => {
+const soloAsignadosChk = document.getElementById('solo-asignados');
+
+function applyFiltros() {
     const fn = window.MultiTokenFilter.build(filtro.value);
+    const soloAsig = soloAsignadosChk.checked;
     document.querySelectorAll('.lab-row').forEach(row => {
-        row.style.display = fn(row.dataset.nombre) ? '' : 'none';
+        const matchTexto = fn(row.dataset.nombre);
+        const tieneAsig = !soloAsig || Array.from(row.querySelectorAll('input[type=checkbox]')).some(cb => cb.checked);
+        row.style.display = (matchTexto && tieneAsig) ? '' : 'none';
     });
-});
+}
+filtro.addEventListener('input', applyFiltros);
+soloAsignadosChk.addEventListener('change', applyFiltros);
 
 // ── Config de columnas — solo controla matriz_visible y orden ─────────────────
 let _configItems = [];
