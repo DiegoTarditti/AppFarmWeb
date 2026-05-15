@@ -94,13 +94,16 @@ def init_app(app):
 
             if request.method == 'POST':
                 cfg_actual = _parse_cfg(row)
+                _dias_fijo_raw = request.form.get('dias_cobertura_fijo', '').strip()
+                _dias_fijo = int(_dias_fijo_raw) if _dias_fijo_raw.isdigit() else None
                 cfg_nuevo = {
-                    'piso_ideal':         request.form.get('piso_ideal') or cfg_actual.get('piso_ideal', 'min_efectivo'),
-                    'target_horizonte':   request.form.get('target_horizonte') or cfg_actual.get('target_horizonte', 'factor_h'),
-                    'buffer_pct':         max(0, min(100, int(request.form.get('buffer_pct') or 0))),
-                    'universo':           request.form.get('universo') or cfg_actual.get('universo', 'bajo_min_o_cobertura'),
-                    'override_producto':  request.form.get('override_producto') or cfg_actual.get('override_producto', 'none'),
-                    'redondeo':           request.form.get('redondeo') or cfg_actual.get('redondeo', 'ceil'),
+                    'piso_ideal':          request.form.get('piso_ideal') or cfg_actual.get('piso_ideal', 'min_efectivo'),
+                    'target_horizonte':    request.form.get('target_horizonte') or cfg_actual.get('target_horizonte', 'factor_h'),
+                    'buffer_pct':          max(0, min(100, int(request.form.get('buffer_pct') or 0))),
+                    'universo':            request.form.get('universo') or cfg_actual.get('universo', 'bajo_min_o_cobertura'),
+                    'override_producto':   request.form.get('override_producto') or cfg_actual.get('override_producto', 'none'),
+                    'redondeo':            request.form.get('redondeo') or cfg_actual.get('redondeo', 'ceil'),
+                    'dias_cobertura_fijo': _dias_fijo,
                 }
                 # Validar enums
                 for k, v in cfg_nuevo.items():

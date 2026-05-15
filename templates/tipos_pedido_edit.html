@@ -161,6 +161,14 @@
             </div>
 
             <div class="tp-field">
+                <label class="tp-field-label">Días de cobertura fijos (piso)</label>
+                <input type="number" name="dias_cobertura_fijo" min="1" max="365"
+                       value="{{ tipo.config.dias_cobertura_fijo or '' }}" class="tp-input"
+                       placeholder="Vacío = usa slider" oninput="simular()">
+                <div class="tp-field-help">Solo aplica cuando piso = tasa diaria × días. Reemplaza el slider del armado. Dejá vacío para que el slider controle.</div>
+            </div>
+
+            <div class="tp-field">
                 <label class="tp-field-label">Buffer (% sobre ideal)</label>
                 <input type="number" name="buffer_pct" min="0" max="100"
                        value="{{ tipo.config.buffer_pct or 0 }}" class="tp-input"
