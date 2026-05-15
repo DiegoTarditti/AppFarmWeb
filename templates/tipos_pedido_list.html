@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% set nav_active = "tipos_pedido" %}
+{% block title %}Tipos de pedido — Config{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.tp-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.tp-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.tp-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+.tp-content { padding: 18px 24px; }
+.tp-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+.tp-card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--ds-line);
+    background: rgba(0,0,0,.12);
+}
+.tp-card-head .slug {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(95,230,188,.14); color: var(--ds-mint);
+    border: 1px solid rgba(95,230,188,.3);
+}
+.tp-card-head .slug.off {
+    background: rgba(120,120,120,.14); color: var(--ds-text-mute);
+    border-color: rgba(120,120,120,.3);
+}
+.tp-card-head h2 {
+    font-size: 14px; font-weight: 600; color: var(--ds-text); margin: 0;
+}
+.tp-card.disabled { opacity: .55; }
+.tp-card-body { padding: 14px 18px; }
+.tp-desc { font-size: 12px; color: var(--ds-text-soft); margin-bottom: 12px; }
+.tp-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.tp-cell {
+    background: rgba(0,0,0,.18);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 8px 12px;
+}
+.tp-cell .lbl {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text-mute); margin-bottom: 2px;
+}
+.tp-cell .val {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px; color: var(--ds-text); font-weight: 600;
+}
+.tp-actions { display: flex; gap: 6px; }
+.tp-empty { padding: 60px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+.tp-empty .big { font-size: 32px; margin-bottom: 8px; }
+.tp-help {
+    background: rgba(56,189,248,.10);
+    border: 1px solid rgba(56,189,248,.3);
+    border-radius: var(--ds-r-md);
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 12px; color: var(--ds-text-soft);
+}
+.tp-help b { color: var(--ds-info); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="tp-topbar">
+    <h1>⚙ Tipos de pedido</h1>
+    <span class="sub">{{ tipos | length }} {% if tipos | length == 1 %}configuración{% else %}configuraciones{% endif %} · matriz de cálculo</span>
+</div>
+
+<div class="tp-content">
+    <div class="tp-help">
+        Cada fila define <b>cómo se calcula la cantidad a pedir</b> según el contexto (REPO matriz, compra a lab, módulo, etc.).
+        El motor en <code>services/calculo_pedido.py</code> lee la fila activa según el flujo y aplica las reglas.
+        Cambios acá se aplican <b>inmediatamente</b> (sin restart) — el caché interno se invalida en el guardar.
+    </div>
+
+    {% if tipos %}
+    {% for t in tipos %}
+    <div class="tp-card {% if not t.activo %}disabled{% endif %}">
+        <div class="tp-card-head">
+            <div class="flex items-center gap-3">
+                <span class="slug {% if not t.activo %}off{% endif %}">{{ t.slug }}</span>
+                <h2>{{ t.nombre }}</h2>
+            </div>
+            <div class="tp-actions">
+                <a href="{{ url_for('tipos_pedido_edit', slug=t.slug) }}"
+                   class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+                    Editar
+                </a>
+                <button type="button" onclick="toggleActivo('{{ t.slug }}')"
+                        class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-amber-400 transition">
+                    {{ 'Pausar' if t.activo else 'Activar' }}
+                </button>
+            </div>
+        </div>
+        <div class="tp-card-body">
+            {% if t.descripcion %}
+            <p class="tp-desc">{{ t.descripcion }}</p>
+            {% endif %}
+            <div class="tp-grid">
+                <div class="tp-cell">
+                    <div class="lbl">Piso</div>
+                    <div class="val">{{ t.config.piso_ideal or '—' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Target</div>
+                    <div class="val">{{ t.config.target_horizonte or '—' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Buffer</div>
+                    <div class="val">{{ t.config.buffer_pct or 0 }}%</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Universo</div>
+                    <div class="val">{{ t.config.universo or '—' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Override producto</div>
+                    <div class="val">{{ t.config.override_producto or '—' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Redondeo</div>
+                    <div class="val">{{ t.config.redondeo or '—' }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="tp-card">
+        <div class="tp-empty">
+            <div class="big">⚙</div>
+            <div>No hay tipos de pedido configurados. El seed inicial debería crear REPOSICION y COMPRA_LAB.</div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function toggleActivo(slug) {
+    const r = await fetch(`/config/tipos-pedido/${slug}/toggle`, {method: 'POST'});
+    const data = await r.json();
+    if (!data.ok) { alert(data.error || 'Error'); return; }
+    window.location.reload();
+}
+</script>
+{% endblock %}

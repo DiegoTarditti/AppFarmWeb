@@ -649,9 +649,6 @@
                     <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
                         <input type="number" min="0" value="{{ it.a_pedir }}"
                                {% if prov and not it.cubre_lab %}disabled{% endif %}
-                               {% if it.horas_prox is not none %}
-                               title="Tasa {{ it.daily_rate }}u/día × factor {{ it.factor_h }} (próx. cierre en {{ it.horas_prox }}h) = {{ it.target_unid }}u objetivo. Mín efectivo {{ it.min_efectivo }}u, stock {{ it.stock }}u."
-                               {% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
                     </td>
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
@@ -1093,7 +1090,6 @@ function _aplicarEstadoGrafico(colapsado) {
         panel.classList.remove('colapsado');
         lbl.textContent = '▾ Ocultar gráfico';
     }
-    setTimeout(_ajustarOffsetThead, 200);  // tras la transición
 }
 
 function toggleGrafico() {
@@ -1320,7 +1316,6 @@ function agregarFila(it) {
         <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
             <input type="number" min="0" value="${it.a_pedir}"
                    ${it.cubre_lab ? '' : 'disabled'}
-                   ${it.horas_prox != null ? `title="Tasa ${it.daily_rate}u/día × factor ${it.factor_h} (próx. cierre en ${it.horas_prox}h) = ${it.target_unid}u objetivo. Mín efectivo ${it.min_efectivo}u, stock ${it.stock}u."` : ''}
                    class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
         </td>
         <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">

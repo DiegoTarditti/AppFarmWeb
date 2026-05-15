@@ -794,6 +794,35 @@ class ProveedorCronograma(Base):
     )
 
 
+class TipoPedidoConfig(Base):
+    """Matriz de comportamiento por tipo de pedido (REPOSICION, COMPRA_LAB,
+    CRONOGRAMA_PROG, MODULO, TRANSFER, OFERTA_MIN, ...).
+
+    Centraliza las reglas de cálculo dispersas en compras_dia.py / order_detail
+    para que un caso nuevo se agregue como fila en lugar de un `if` en código.
+
+    `config_json` (texto/dict serializado) acepta las llaves:
+      piso_ideal:        cómo se calcula el "no bajar de" (string enum)
+      target_horizonte:  cuánto hay que cubrir hacia adelante (string enum)
+      buffer_pct:        margen de seguridad en % (int 0..100)
+      universo:          qué productos entran al listado (string enum)
+      override_producto: campo de Producto que pisa el cálculo si está seteado
+      redondeo:          cómo se redondea la cantidad (string enum)
+
+    El motor `services.calculo_pedido.calcular_a_pedir()` lee este JSON y
+    aplica las reglas. Ver ese módulo para enums válidos por llave.
+    """
+    __tablename__ = 'tipo_pedido_config'
+    id             = Column(Integer, primary_key=True)
+    slug           = Column(String(30), nullable=False, unique=True, index=True)
+    nombre         = Column(String(80), nullable=False)
+    descripcion    = Column(Text, nullable=True)
+    config_json    = Column(Text, nullable=False)  # JSON serializado, no JSONB para SQLite-compat
+    activo         = Column(Boolean, nullable=False, default=True)
+    creado_en      = Column(DateTime, default=now_ar)
+    actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
 class PedidoBorrador(Base):
     """Borrador de pedido en armado por usuario y droguería.
 
@@ -1537,7 +1566,8 @@ def init_db(database_url=None):
                         'productos_pendientes_revision',
                         'motivo_devolucion', 'destino_devolucion',
                         'devolucion_receta',
-                        'proveedor_cronograma')
+                        'proveedor_cronograma',
+                        'tipo_pedido_config')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2557,6 +2587,36 @@ def _pg_add_columns(conn):
             if 'already exists' in str(_e) or 'duplicate key' in str(_e):
                 continue
             raise
+
+    # Tabla `tipo_pedido_config` + seed inicial. La tabla la crea SQLAlchemy
+    # con create_all (corre ANTES que _pg_add_columns), así que acá ya existe.
+    # ON CONFLICT (slug) DO NOTHING hace el INSERT idempotente sobre re-deploys.
+    import json as _json
+    _seed_tipos = [
+        ('REPOSICION', 'Reposición (matriz lab/drog)',
+         'Pedido corto y rutinario por droguería. Piso = mínimo efectivo del producto. '
+         'Target = cubrir hasta el próximo cierre del drog (factor_h).',
+         {'piso_ideal': 'min_efectivo', 'target_horizonte': 'factor_h',
+          'buffer_pct': 0, 'universo': 'bajo_min_o_cobertura',
+          'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil'}),
+        ('COMPRA_LAB', 'Compra directa al laboratorio',
+         'Pedido grande y planificado al lab. Sin piso de mínimo del producto. '
+         'Cantidad = tasa diaria × cubrir_dias (configurable por slider).',
+         {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+          'buffer_pct': 0, 'universo': 'lab_x',
+          'override_producto': 'none', 'redondeo': 'ceil'}),
+    ]
+    for slug, nombre, desc, cfg in _seed_tipos:
+        try:
+            conn.execute(text(
+                "INSERT INTO tipo_pedido_config (slug, nombre, descripcion, config_json, activo) "
+                "VALUES (:slug, :nombre, :desc, :cfg, true) "
+                "ON CONFLICT (slug) DO NOTHING"
+            ), {'slug': slug, 'nombre': nombre, 'desc': desc, 'cfg': _json.dumps(cfg)})
+        except Exception:
+            # Tabla todavía no existía en ese deploy o falló por otro motivo.
+            # Se reintentará en el próximo init.
+            pass
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW()"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))
     for _col in ('monto_exento', 'monto_gravado', 'iva_105', 'iva_21', 'percepciones', 'otros'):

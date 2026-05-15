@@ -22,8 +22,8 @@ from flask_login import login_required
 from sqlalchemy import or_
 
 import database
-from database import (Laboratorio, Pedido, PedidoEmitido, ProveedorCronograma,
-                      Provider, get_db)
+from database import (Laboratorio, Pedido, PedidoEmitido, ProcesoCompra,
+                      ProveedorCronograma, Provider, get_db)
 
 _TIPOS_VALIDOS = ('programado',)
 _PARTNER_TIPOS_VALIDOS = ('laboratorio', 'drogueria')
@@ -253,6 +253,24 @@ def init_app(app):
 
             labs_map, drogs_map = _resolver_partner_maps(session, planif_cruzados + ejec)
 
+            # Map proceso_id por pedido_id: si un Pedido tiene un ProcesoCompra
+            # asociado, preferimos linkear al proceso (vista integral del ciclo
+            # análisis → pedido → factura → cruce → reclamo). Solo aplica para
+            # `Pedido` — los PedidoEmitido (matriz drog) no tienen proceso.
+            _pedido_ids = set()
+            for ev in ejec:
+                if ev.get('fuente') == 'Pedido' and ev.get('pedido_id'):
+                    _pedido_ids.add(ev['pedido_id'])
+            for ev in planif_cruzados:
+                if ev.get('match_fuente') == 'Pedido' and ev.get('match_pedido_id'):
+                    _pedido_ids.add(ev['match_pedido_id'])
+            proceso_por_pedido = {}
+            if _pedido_ids:
+                proceso_por_pedido = {p.pedido_id: p.id
+                                      for p in (session.query(ProcesoCompra)
+                                                .filter(ProcesoCompra.pedido_id.in_(_pedido_ids))
+                                                .all())}
+
             dias = {}
             d = desde
             while d <= hasta:
@@ -308,6 +326,7 @@ def init_app(app):
 
         return render_template('cronograma.html',
                                dias=dias_list,
+                               proceso_por_pedido=proceso_por_pedido,
                                laboratorios=laboratorios,
                                droguerias=droguerias,
                                lab_filtro=lab_filtro,

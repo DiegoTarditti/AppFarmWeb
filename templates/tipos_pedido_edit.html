@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% set nav_active = "tipos_pedido" %}
+{% block title %}Editar {{ tipo.slug }} — Tipos de pedido{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.tp-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px;
+}
+.tp-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.tp-topbar .slug {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(95,230,188,.14); color: var(--ds-mint);
+    border: 1px solid rgba(95,230,188,.3);
+}
+.tp-content { padding: 18px 24px; display: grid;
+              grid-template-columns: 1fr 380px; gap: 18px; }
+@media (max-width: 980px) { .tp-content { grid-template-columns: 1fr; } }
+
+.tp-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    padding: 16px 18px;
+}
+.tp-card h3 { font-size: 13px; font-weight: 700; color: var(--ds-text);
+              margin: 0 0 12px 0; }
+
+.tp-field { margin-bottom: 14px; }
+.tp-field-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ds-text-mute); font-weight: 600;
+    margin-bottom: 4px; display: block;
+}
+.tp-field-help {
+    font-size: 10px; color: var(--ds-text-mute);
+    margin-top: 3px;
+}
+.tp-input, .tp-select, .tp-textarea {
+    width: 100%;
+    background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm);
+    padding: 8px 10px;
+    font-size: 13px; color: var(--ds-text);
+    font-family: inherit;
+}
+.tp-select { background-image: linear-gradient(45deg, transparent 50%, var(--ds-text-mute) 50%),
+                                 linear-gradient(135deg, var(--ds-text-mute) 50%, transparent 50%);
+             background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+             background-size: 5px 5px; background-repeat: no-repeat;
+             padding-right: 30px; appearance: none; }
+.tp-input:focus, .tp-select:focus, .tp-textarea:focus {
+    outline: none; border-color: var(--ds-mint);
+    box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+}
+
+/* Simulador */
+.tp-sim-row {
+    display: grid; grid-template-columns: 110px 1fr 60px; gap: 8px;
+    align-items: center; margin-bottom: 6px;
+}
+.tp-sim-row label { font-size: 11px; color: var(--ds-text-mute); }
+.tp-sim-row input[type=number] {
+    background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm);
+    padding: 4px 8px;
+    font-size: 12px; color: var(--ds-text);
+    font-family: ui-monospace, Consolas, monospace;
+    text-align: right;
+}
+.tp-sim-result {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(95,230,188,.10);
+    border: 1px solid rgba(95,230,188,.3);
+    border-radius: var(--ds-r-md);
+}
+.tp-sim-result .a-pedir {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 24px; font-weight: 700; color: var(--ds-mint);
+}
+.tp-sim-result .meta {
+    font-size: 10px; color: var(--ds-text-mute); margin-top: 4px;
+}
+.tp-actions {
+    display: flex; gap: 8px; justify-content: flex-end;
+    margin-top: 18px; padding-top: 14px;
+    border-top: 1px solid var(--ds-line);
+}
+.tp-toggle {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--ds-text-soft);
+    margin-bottom: 14px; cursor: pointer;
+}
+.tp-toggle input { width: 16px; height: 16px; accent-color: var(--ds-mint); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="tp-topbar">
+    <a href="{{ url_for('tipos_pedido_list') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+        ← Volver
+    </a>
+    <span class="slug">{{ tipo.slug }}</span>
+    <h1>{{ tipo.nombre }}</h1>
+</div>
+
+<form method="post" id="tp-form">
+<div class="tp-content">
+    {# ── Columna izquierda: form de edición ── #}
+    <div>
+        <div class="tp-card">
+            <h3>Metadatos</h3>
+            <div class="tp-field">
+                <label class="tp-field-label">Nombre visible</label>
+                <input type="text" name="nombre" value="{{ tipo.nombre }}" class="tp-input">
+            </div>
+            <div class="tp-field">
+                <label class="tp-field-label">Descripción</label>
+                <textarea name="descripcion" rows="3" class="tp-textarea">{{ tipo.descripcion }}</textarea>
+                <div class="tp-field-help">Para que vos y otros usuarios entiendan cuándo se usa este tipo.</div>
+            </div>
+            <label class="tp-toggle">
+                <input type="checkbox" name="activo" value="1" {% if tipo.activo %}checked{% endif %}>
+                <span>Activo (si está pausado, el motor lo ignora y cae al fallback)</span>
+            </label>
+        </div>
+
+        <div class="tp-card mt-4" style="margin-top: 14px;">
+            <h3>Reglas de cálculo</h3>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Piso del ideal</label>
+                <select name="piso_ideal" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.piso_ideal %}
+                    <option value="{{ opt }}" {% if tipo.config.piso_ideal == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="tp-field-help">Cantidad mínima a la que apuntar (suelo del cálculo).</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Target / Horizonte</label>
+                <select name="target_horizonte" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.target_horizonte %}
+                    <option value="{{ opt }}" {% if tipo.config.target_horizonte == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="tp-field-help">Cobertura adicional sobre el piso. El motor toma el mayor de piso vs target.</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Buffer (% sobre ideal)</label>
+                <input type="number" name="buffer_pct" min="0" max="100"
+                       value="{{ tipo.config.buffer_pct or 0 }}" class="tp-input"
+                       oninput="simular()">
+                <div class="tp-field-help">Margen de seguridad. 20 = +20% sobre el ideal calculado.</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Universo (informativo)</label>
+                <select name="universo" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.universo %}
+                    <option value="{{ opt }}" {% if tipo.config.universo == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="tp-field-help">Qué productos entran al listado de este tipo. No afecta el cálculo de cantidad, solo documenta.</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Override por producto</label>
+                <select name="override_producto" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.override_producto %}
+                    <option value="{{ opt }}" {% if tipo.config.override_producto == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <div class="tp-field-help">Campo de Producto que pisa el cálculo si está seteado (ej. cantidad fija).</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">Redondeo</label>
+                <select name="redondeo" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.redondeo %}
+                    <option value="{{ opt }}" {% if tipo.config.redondeo == opt %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="tp-actions">
+            <a href="{{ url_for('tipos_pedido_list') }}"
+               class="text-[12px] px-3 py-1.5 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-line-2)] transition">
+                Cancelar
+            </a>
+            <button type="submit" class="btn btn-mint text-xs">Guardar</button>
+        </div>
+    </div>
+
+    {# ── Columna derecha: simulador (sticky) ── #}
+    <div>
+        <div class="tp-card" style="position: sticky; top: 18px;">
+            <h3>🧪 Simulador</h3>
+            <p class="tp-field-help" style="margin-bottom: 12px;">
+                Cambiá los valores para ver qué pediría el motor con la config actual del form.
+                <b>No guarda nada</b>, solo previsualiza.
+            </p>
+
+            <div class="tp-sim-row">
+                <label>Tasa diaria</label>
+                <input type="number" id="sim-daily" value="4" step="0.5" oninput="simular()">
+                <span style="font-size:10px;color:var(--ds-text-mute);">u/día</span>
+            </div>
+            <div class="tp-sim-row">
+                <label>Mín efectivo</label>
+                <input type="number" id="sim-min" value="40" oninput="simular()">
+                <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
+            </div>
+            <div class="tp-sim-row">
+                <label>Factor h</label>
+                <input type="number" id="sim-factor" value="0.5" step="0.1" oninput="simular()">
+                <span style="font-size:10px;color:var(--ds-text-mute);">×</span>
+            </div>
+            <div class="tp-sim-row">
+                <label>Cubrir días</label>
+                <input type="number" id="sim-cubrir" value="30" oninput="simular()">
+                <span style="font-size:10px;color:var(--ds-text-mute);">d</span>
+            </div>
+            <div class="tp-sim-row">
+                <label>Stock actual</label>
+                <input type="number" id="sim-stock" value="10" oninput="simular()">
+                <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
+            </div>
+            <div class="tp-sim-row">
+                <label>Cant. fija</label>
+                <input type="number" id="sim-fija" value="" placeholder="—" oninput="simular()">
+                <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
+            </div>
+
+            <div class="tp-sim-result">
+                <div style="font-size:10px;color:var(--ds-text-mute);text-transform:uppercase;letter-spacing:.06em;">A pedir</div>
+                <div class="a-pedir" id="sim-out-pedir">—</div>
+                <div class="meta" id="sim-out-meta">Tocá un campo para simular</div>
+            </div>
+        </div>
+    </div>
+</div>
+</form>
+
+<script>
+const SLUG = '{{ tipo.slug }}';
+
+async function simular() {
+    const cfg = {
+        piso_ideal:        document.querySelector('[name="piso_ideal"]').value,
+        target_horizonte:  document.querySelector('[name="target_horizonte"]').value,
+        buffer_pct:        parseInt(document.querySelector('[name="buffer_pct"]').value || 0),
+        universo:          document.querySelector('[name="universo"]').value,
+        override_producto: document.querySelector('[name="override_producto"]').value,
+        redondeo:          document.querySelector('[name="redondeo"]').value,
+    };
+    const fijaRaw = document.getElementById('sim-fija').value;
+    const ctx = {
+        daily_rate:               parseFloat(document.getElementById('sim-daily').value) || 0,
+        min_efectivo:             parseInt(document.getElementById('sim-min').value) || 0,
+        factor_h:                 parseFloat(document.getElementById('sim-factor').value) || 1,
+        cubrir_dias:              parseInt(document.getElementById('sim-cubrir').value) || 30,
+        stock_actual:             parseInt(document.getElementById('sim-stock').value) || 0,
+        cantidad_reposicion_fija: fijaRaw === '' ? null : parseInt(fijaRaw),
+        u12m: 48, sin_mov: false,
+    };
+    try {
+        const r = await fetch(`/config/tipos-pedido/${SLUG}/probar`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cfg, ctx}),
+        });
+        const data = await r.json();
+        if (!data.ok) {
+            document.getElementById('sim-out-pedir').textContent = '✗';
+            document.getElementById('sim-out-meta').textContent = data.error || 'error';
+            return;
+        }
+        document.getElementById('sim-out-pedir').textContent = data.result.a_pedir + 'u';
+        document.getElementById('sim-out-meta').textContent =
+            `ideal=${data.result.ideal}u · ${data.result.regla_usada}` +
+            (data.result.override_aplicado ? ' · OVERRIDE' : '');
+    } catch (e) {
+        document.getElementById('sim-out-pedir').textContent = '✗';
+        document.getElementById('sim-out-meta').textContent = 'red error';
+    }
+}
+
+simular();  // dispará una vez al cargar
+</script>
+{% endblock %}

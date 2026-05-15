@@ -34,12 +34,14 @@ from routes import (
     observer_sync,
     ofertas_import,
     partners,
+    pedidos_log,
     plantillas,
     procesos,
     productos,
     productos_pendientes,
     providers,
     purchase,
+    tipos_pedido,
     vademecum,
 )
 from routes import help as help_module
@@ -86,6 +88,8 @@ _modules = [
     inferencia,
     informes,
     bi,
+    tipos_pedido,
+    pedidos_log,
 ]
 
 
