@@ -450,6 +450,44 @@ una tarea aparte.
 
 ## 🌟 Features pendientes
 
+### Flujo de fondos — programar compras por presupuesto semanal (2026-05-15)
+- **Trigger**: Diego lo planteó como tema integral. "Plataforma para evaluar totales
+  de ventas por lab → programar las compras en función de lo que se puede pagar
+  por semana".
+- **Esfuerzo**: 1-2 semanas (complejo, varios componentes).
+- **Concepto**: análisis integral que cruza:
+  - Ingreso esperado por semana (ventas históricas por lab × proyección).
+  - Egreso planificado por semana (cronograma de compras programadas + plazos
+    de pago de cada drog/lab).
+  - Stock actual + cobertura (cuánto aguanta cada lab sin reponer).
+  - Capacidad de pago semanal (caja + cuenta corriente disponible).
+- **Salida esperada**: vista semanal que muestra "esta semana pagás $X, te entran
+  $Y, capacidad libre $Z". Permite ajustar el cronograma moviendo cargas de una
+  semana a otra para nivelar flujo.
+- **Estrategia de stock**: la reposición chica (matriz drog vía `compras_dia`)
+  queda como válvula de escape — si por flujo no se puede meter la compra grande
+  de un lab esta semana, el día a día sigue cubriendo los faltantes en cantidades
+  chicas sin descuento. La planificación grande prioriza descuentos/módulos.
+- **Componentes a construir**:
+  1. **Ingreso proyectado por lab**: ya tenemos `obs_ventas_mensuales`. Agregar
+     vista `/finanzas/ingreso-proyectado` con promedio + estacionalidad por lab.
+  2. **Egreso planificado**: cruzar `ProveedorCronograma` (programados) +
+     `OfertaMinimo` (oportunidades) + `pagos_ajustes_cc` (plazos abiertos).
+     Vista semanal de "qué tengo que pagar cuándo".
+  3. **Planificador semanal**: vista que muestra ingreso vs egreso por semana
+     en barras + capacidad libre. Drag de un lab de una semana a otra para
+     reprogramar (toca `proxima_fecha` del cronograma).
+  4. **Alerta de sobrecarga**: cuando el egreso planificado supera la capacidad
+     de la semana, badge rojo + sugerencia de mover algún lab.
+- **Modelo nuevo aprox.**:
+  - `flujo_caja_semanal(anio, semana, ingreso_proy, egreso_planificado, ajuste)` (snapshot).
+  - `plazo_pago_partner(partner_tipo, partner_id, dias_plazo)` (cada lab/drog tiene
+    su plazo: contado, 30d, 60d, etc).
+- **Relacionado**:
+  - Cronograma (ya hecho) define cuándo se programan los pedidos.
+  - Matriz `tipo_pedido_config` (ya hecho) define cómo se calculan las cantidades.
+  - Falta capa de "cuánto cuesta cada uno" + "cuándo se paga".
+
 ### Forecast simple de ventas
 - **Trigger**: el user pide "y cuánto voy a vender el mes que viene".
 - **Esfuerzo**: 1-2 días.
