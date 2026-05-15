@@ -17,6 +17,12 @@
 }
 .tp-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
 .tp-content { padding: 18px 24px; }
+.tp-section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text-mute); font-weight: 700;
+    margin-bottom: 10px; margin-top: 22px;
+}
+.tp-section-title:first-child { margin-top: 0; }
 .tp-card {
     background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
     border: 1px solid var(--ds-line);
@@ -39,6 +45,10 @@
 .tp-card-head .slug.off {
     background: rgba(120,120,120,.14); color: var(--ds-text-mute);
     border-color: rgba(120,120,120,.3);
+}
+.tp-card-head .slug.flag-slug {
+    background: rgba(167,139,250,.14); color: #a78bfa;
+    border-color: rgba(167,139,250,.3);
 }
 .tp-card-head h2 {
     font-size: 14px; font-weight: 600; color: var(--ds-text); margin: 0;
@@ -77,24 +87,34 @@
     font-size: 12px; color: var(--ds-text-soft);
 }
 .tp-help b { color: var(--ds-info); }
+.tp-badge-icono {
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 18px; width: 34px; height: 34px;
+    border-radius: var(--ds-r-md);
+    background: rgba(0,0,0,.2);
+    border: 1px solid var(--ds-line);
+}
 </style>
 {% endblock %}
 
 {% block main %}
 <div class="tp-topbar">
     <h1>⚙ Tipos de pedido</h1>
-    <span class="sub">{{ tipos | length }} {% if tipos | length == 1 %}configuración{% else %}configuraciones{% endif %} · matriz de cálculo</span>
+    <span class="sub">{{ pedidos | length }} tipo{{ 's' if pedidos | length != 1 else '' }} · {{ flags | length }} flag{{ 's' if flags | length != 1 else '' }}</span>
 </div>
 
 <div class="tp-content">
     <div class="tp-help">
-        Cada fila define <b>cómo se calcula la cantidad a pedir</b> según el contexto (REPO matriz, compra a lab, módulo, etc.).
-        El motor en <code>services/calculo_pedido.py</code> lee la fila activa según el flujo y aplica las reglas.
-        Cambios acá se aplican <b>inmediatamente</b> (sin restart) — el caché interno se invalida en el guardar.
+        <b>Tipos de pedido</b> definen cómo se calcula la cantidad a pedir (piso, target, buffer).
+        <b>Comportamientos excepcionales</b> son flags que marcan productos con situaciones especiales (discontinuado, reemplazado, etc.).
+        Cambios acá se aplican <b>inmediatamente</b> sin restart.
     </div>
 
-    {% if tipos %}
-    {% for t in tipos %}
+    {# ── Tipos de pedido ── #}
+    <div class="tp-section-title">Tipos de pedido</div>
+
+    {% if pedidos %}
+    {% for t in pedidos %}
     <div class="tp-card {% if not t.activo %}disabled{% endif %}">
         <div class="tp-card-head">
             <div class="flex items-center gap-3">
@@ -130,8 +150,8 @@
                     <div class="val">{{ t.config.buffer_pct or 0 }}%</div>
                 </div>
                 <div class="tp-cell">
-                    <div class="lbl">Universo</div>
-                    <div class="val">{{ t.config.universo or '—' }}</div>
+                    <div class="lbl">Días fijos</div>
+                    <div class="val">{{ t.config.dias_cobertura_fijo or 'slider' }}</div>
                 </div>
                 <div class="tp-cell">
                     <div class="lbl">Override producto</div>
@@ -149,7 +169,64 @@
     <div class="tp-card">
         <div class="tp-empty">
             <div class="big">⚙</div>
-            <div>No hay tipos de pedido configurados. El seed inicial debería crear REPOSICION y COMPRA_LAB.</div>
+            <div>No hay tipos de pedido. El seed inicial crea REPOSICION y COMPRA_LAB.</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Comportamientos excepcionales ── #}
+    <div class="tp-section-title" style="margin-top: 28px;">Comportamientos excepcionales (Flags)</div>
+
+    {% if flags %}
+    {% for t in flags %}
+    <div class="tp-card {% if not t.activo %}disabled{% endif %}">
+        <div class="tp-card-head">
+            <div class="flex items-center gap-3">
+                <span class="slug flag-slug {% if not t.activo %}off{% endif %}">{{ t.slug }}</span>
+                <span class="tp-badge-icono">{{ t.config.icono or '📝' }}</span>
+                <h2>{{ t.nombre }}</h2>
+            </div>
+            <div class="tp-actions">
+                <a href="{{ url_for('tipos_pedido_edit', slug=t.slug) }}"
+                   class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+                    Editar
+                </a>
+                <button type="button" onclick="toggleActivo('{{ t.slug }}')"
+                        class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-amber-400 transition">
+                    {{ 'Pausar' if t.activo else 'Activar' }}
+                </button>
+            </div>
+        </div>
+        <div class="tp-card-body">
+            {% if t.descripcion %}
+            <p class="tp-desc">{{ t.descripcion }}</p>
+            {% endif %}
+            <div class="tp-grid">
+                <div class="tp-cell">
+                    <div class="lbl">Efecto en armado</div>
+                    <div class="val">{{ t.config.efecto_armado or '—' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Color</div>
+                    <div class="val">{{ t.config.color or '—' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Permite reemplazo</div>
+                    <div class="val">{{ 'sí' if t.config.permite_reemplazo else 'no' }}</div>
+                </div>
+                <div class="tp-cell">
+                    <div class="lbl">Permite vigencia</div>
+                    <div class="val">{{ 'sí' if t.config.permite_vigencia else 'no' }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="tp-card">
+        <div class="tp-empty">
+            <div class="big">🏷</div>
+            <div>No hay flags configurados. El seed crea DISCONTINUADO, REEMPLAZADO, SIN_DESCUENTO y NOTA.</div>
         </div>
     </div>
     {% endif %}
