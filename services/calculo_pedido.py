@@ -121,7 +121,8 @@ def calcular_a_pedir(cfg, ctx):
     if piso_kind == 'min_efectivo':
         piso = min_efectivo
     elif piso_kind == 'daily_rate_x_cubrir_dias':
-        piso = math.ceil(daily_rate * cubrir_dias)
+        _dias = cfg.get('dias_cobertura_fijo') or cubrir_dias
+        piso = math.ceil(daily_rate * _dias)
     else:  # 'cero' u otro
         piso = 0
 
