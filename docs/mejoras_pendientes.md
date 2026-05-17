@@ -509,21 +509,21 @@ una tarea aparte.
 - **Beneficio**: el ajuste manual del usuario empieza a tener efecto real
   en las cantidades que se proponen. Cierra el loop de la feature.
 
-### Estacionalidad: refinar pooling con accion_terapeutica (2026-05-17)
-- **Trigger**: cuando el subrubro "Medicamentos" (que agrupa casi todo) dé
-  pooling poco informativo. Hoy el badge "ajust" aparece en muchas drogas
-  con λ<0.7 pero el patrón del subrubro es casi 1.0 (sin estacionalidad).
-- **Esfuerzo**: 2-3 horas.
-- **Cómo**:
-  - Bridgear `obs_productos.observer_id` → `productos.observer_id` →
-    `productos.accion_terapeutica` (string, ya existe).
-  - En `routes/estacionalidad.py`, agregar `accion_terapeutica` como
-    grupo de pooling preferido sobre `subrubro_observer` (fallback).
-  - Para drogas sin bridge, mantener subrubro.
-- **Beneficio**: "Antibióticos betalactámicos" o "Antitusivos" son
-  grupos farmacológicamente cohesivos → el patrón del grupo aporta señal real.
-- **Follow-up posible**: sumar Boletín Epidemiológico Nacional (gripe/IRA
-  semanal) como predictor externo para drogas respiratorias.
+### ~~Estacionalidad: refinar pooling con accion_terapeutica~~ ⚠ DESCARTADO 2026-05-17
+- Intentamos pivotar el pooling a `productos.accion_terapeutica`, pero la
+  tabla `productos` está **vacía en producción** (y casi vacía en local: 115
+  registros, todos sin AT). `producto_atributos` también está vacía. La
+  columna AT existe pero ningún flujo actual la setea — solo se llenaría
+  con la "Fase 3 — Backfill producto_atributos" del backlog.
+- **Pivot aplicado (commit `47ff310`):** pooling adaptativo. Subrubros
+  con >30 drogas distintas se consideran heterogéneos y NO se usan como
+  pool. La droga queda con patrón crudo. Badge "crudo" en UI cuando
+  aplica. Validado: 1464 drogas pasaron a crudo (incluido Paracetamol,
+  Ibuprofeno y casi todo el top vendidas — antes salían pooled con
+  "Medicamentos"); 2 drogas mantienen pooling en subrubros cohesivos.
+- **Cuando se haga Fase 3 (backfill producto_atributos),** retomar este
+  item para usar `monodroga_norm` o agrupar por familia química como
+  pool de mayor granularidad.
 
 ### Forecast simple de ventas
 - **Trigger**: el user pide "y cuánto voy a vender el mes que viene".
@@ -637,6 +637,13 @@ una tarea aparte.
   `/api/estacionalidad/droga/<id>` para serie por año (chart al expandir).
   11 tests verdes. Pendiente refinar el pooling con `accion_terapeutica`
   del catálogo local (el subrubro "Medicamentos" es demasiado grueso).
+- 2026-05-17: **Pooling adaptativo en estacionalidad** — subrubros con
+  >30 drogas distintas se consideran heterogéneos y no se usan como pool
+  (caso "Medicamentos" 40k productos, "Perfumería" 58k). La droga queda
+  con patrón crudo + badge "crudo" en UI. Resuelve el problema donde
+  Paracetamol salía pooled con "Medicamentos" λ=0.59. Constante
+  `HETEROGENEIDAD_MAX_DROGAS = 30` en routes/estacionalidad.py. 4 tests
+  nuevos del pooling adaptativo + 24 existentes verdes.
 - 2026-05-17: **Escenarios manuales de estacionalidad** — tabla
   `estacionalidad_escenarios` (UNIQUE droga+nombre, es_default exclusivo)
   + 4 endpoints CRUD `/api/estacionalidad/droga/<id>/escenarios[...]`.
