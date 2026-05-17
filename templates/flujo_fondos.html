@@ -569,6 +569,10 @@
                     {% if s.saldo < 0 %}-{% endif %}${{ '{:,.0f}'.format(s.saldo | abs) | replace(',', '.') }}
                 </span>
             </div>
+            <div class="ww-row" style="border-top:1px dashed rgba(255,255,255,.06);margin-top:4px;padding-top:3px;">
+                <span class="k" style="font-size:10px;opacity:.7;">acum</span>
+                <span class="v" data-field="acum" style="font-size:11px;opacity:.85;">—</span>
+            </div>
         </div>
         {% endfor %}
     </div>
@@ -601,6 +605,7 @@
     <div class="ff-section-title">
         Egreso semanal estimado por partner
         <span class="count">· {{ partners_lab | length }} labs + {{ partners_drog | length }} drogs · ranked por neto</span>
+        <span id="ff-topn-pct" style="margin-left:8px;font-size:10px;color:var(--ds-mint);font-weight:600;"></span>
     </div>
     <div class="ff-filters">
         <input type="text" id="ff-q" placeholder="🔍 Buscar partner por nombre…" autocomplete="off">
@@ -729,6 +734,7 @@
 (function(){
     const N_WEEKS = {{ n_semanas }};
     const INGRESO_TEORICO = {{ ingreso_semanal_base | tojson }};
+    const EGRESO_NETO_TOTAL = {{ egreso_neto_sem | tojson }};
     const STORAGE_PREFIX = 'ff:weeks:';
     const CAPACIDAD_KEY = 'ff:capacidad';
     let INGRESO_SEM = INGRESO_TEORICO;
@@ -804,7 +810,7 @@
             }
         });
 
-        let totBruto = 0, totNeto = 0, semNeg = 0;
+        let totBruto = 0, totNeto = 0, semNeg = 0, acum = 0;
         for (let i = 0; i < N_WEEKS; i++) {
             totBruto += wkBruto[i];
             totNeto += wkNeto[i];
@@ -813,7 +819,9 @@
             const iEl = card.querySelector('[data-field="ingreso"]');
             const eEl = card.querySelector('[data-field="egreso"]');
             const sEl = card.querySelector('[data-field="saldo"]');
+            const aEl = card.querySelector('[data-field="acum"]');
             const saldo = INGRESO_SEM - wkNeto[i];
+            acum += saldo;
             if (saldo < 0) semNeg++;
             if (iEl) iEl.textContent = fmt(INGRESO_SEM);
             if (eEl) eEl.textContent = fmt(wkNeto[i]);
@@ -821,6 +829,10 @@
                 sEl.textContent = (saldo < 0 ? '-' : '') + fmt(saldo);
                 sEl.classList.toggle('danger', saldo < 0);
                 sEl.classList.toggle('mint', saldo >= 0);
+            }
+            if (aEl) {
+                aEl.textContent = (acum < 0 ? '-' : '') + fmt(acum);
+                aEl.style.color = acum < 0 ? 'var(--ds-danger)' : 'var(--ds-mint)';
             }
         }
 
@@ -1102,6 +1114,16 @@
         if (fCount) fCount.textContent = (shown === total && !restoCount)
             ? `${total} partners`
             : `${shown} de ${total} visibles`;
+
+        // % del egreso que representan los partners visibles (top-N activo)
+        const pctEl = document.getElementById('ff-topn-pct');
+        if (pctEl && EGRESO_NETO_TOTAL > 0 && restoCount > 0) {
+            const netoVisible = EGRESO_NETO_TOTAL - restoBruto; // restoBruto tiene neto del resto
+            const pct = ((EGRESO_NETO_TOTAL - restoNeto) / EGRESO_NETO_TOTAL * 100).toFixed(0);
+            pctEl.textContent = `· top ${shown} = ${pct}% del egreso`;
+        } else if (pctEl) {
+            pctEl.textContent = '';
+        }
     }
 
     function setTopN(n) {
