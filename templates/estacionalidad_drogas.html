@@ -459,9 +459,17 @@
 .aplic-esc-select:focus { border-color: var(--ds-mint); }
 .aplic-resumen { margin-left: auto; font-size: 11px; color: var(--ds-text-mute); }
 .aplic-labs-list {
-    display: flex; flex-direction: column; gap: 8px;
-    max-height: 480px; overflow-y: auto;
+    /* display: block (no flex) — flex+max-height aplasta los hijos
+       cuando el contenido excede. Con block el scroll funciona bien. */
+    display: block;
+    max-height: 520px; overflow-y: auto;
     padding-right: 4px;
+}
+.aplic-labs-list > .aplic-lab-group {
+    margin-bottom: 8px;  /* gap manual ya que no es flex */
+}
+.aplic-labs-list > .aplic-lab-group:last-child {
+    margin-bottom: 0;
 }
 .aplic-lab-group {
     border: 1px solid var(--ds-line);
@@ -499,13 +507,13 @@
 .aplic-lab-group.open .aplic-lab-body { display: block; }
 .aplic-prod-row {
     display: flex; align-items: center; gap: 10px;
-    padding: 8px 14px 8px 36px;  /* indent extra a la izq para indicar jerarquía */
+    padding: 8px 14px 8px 36px;
     border-bottom: 1px solid rgba(255,255,255,.05);
     min-height: 32px;
 }
 .aplic-prod-row:last-child { border-bottom: none; }
 .aplic-prod-row:hover { background: rgba(95,230,188,.06); }
-.aplic-prod-row input[type="checkbox"] {
+.aplic-prod-check {
     accent-color: var(--ds-mint); cursor: pointer;
     flex-shrink: 0; width: 14px; height: 14px;
 }
