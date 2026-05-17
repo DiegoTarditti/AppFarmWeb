@@ -4,6 +4,32 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Catálogo de configuraciones de pedido (2026-05-17)
+
+Pantalla nueva (futura, no urgente) que liste TODAS las configuraciones
+cargadas a través de `/pedido/prueba` y `/informes/estacionalidad-drogas`,
+para auditar/limpiar sin tener que recorrer lab por lab.
+
+Ruta sugerida: `/config/comportamiento-catalogo` con 4 secciones:
+- Escenarios producto (todos los `EstacionalidadEscenario` con
+  `producto_id IS NOT NULL`).
+- Escenarios droga (con `producto_id IS NULL`).
+- Flags por producto (`ProductoFlag` con EAN seteado).
+- Flags por laboratorio (`ProductoFlag` con `laboratorio_id`).
+
+Cada sección con tabla buscable + filtros + acción "Eliminar"
+(con confirmación). Útil para:
+- Auditar todas las configuraciones de una.
+- Limpiar configuraciones de productos discontinuados que ya no aplican.
+- Detectar inconsistencias (ej. un escenario producto que duplica el
+  de la droga sin cambios = redundante).
+
+Esfuerzo estimado: 3-4 horas.
+Trigger: cuando haya 50+ configuraciones cargadas y empiece a costar
+revisarlas una a una desde /pedido/prueba.
+
+---
+
 ## 🎨 Migración UX al theme-emerald (en curso, 2026-05-08+)
 
 Rediseño visual unificado iniciado en commit `d0243e4` (home + design system).
