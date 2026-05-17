@@ -55,6 +55,18 @@
     border-color: var(--ds-mint);
     box-shadow: 0 0 0 1px rgba(95,230,188,.3);
 }
+.ff-week.week-neg {
+    border-color: rgba(239,68,68,.5);
+    box-shadow: 0 0 0 1px rgba(239,68,68,.2);
+}
+.ff-week .badge-pico {
+    font-size: 8px; font-weight: 700;
+    padding: 1px 5px; border-radius: 999px;
+    background: rgba(245,158,11,.18); color: var(--ds-warn);
+    text-transform: uppercase; letter-spacing: .04em;
+    display: none;
+}
+.ff-week .badge-pico.visible { display: inline; }
 .ff-week .lbl-week {
     font-family: 'Space Grotesk', sans-serif;
     font-size: 13px; font-weight: 700; color: var(--ds-text);
@@ -374,6 +386,25 @@
     font-size: 10px;
     color: var(--ds-text-mute);
 }
+.ff-cron-banner {
+    display: none;
+    margin-bottom: 12px;
+    padding: 8px 14px;
+    background: rgba(56,189,248,.08);
+    border: 1px solid rgba(56,189,248,.25);
+    border-radius: var(--ds-r-md);
+    font-size: 11px; color: var(--ds-info);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.ff-cron-banner .cron-item {
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(56,189,248,.12);
+    font-size: 10px; white-space: nowrap;
+}
+.ff-dto-warn {
+    font-size: 10px; color: var(--ds-warn);
+    margin-top: 3px;
+}
 
 /* ─── Click en card de semana → detalle inline ─────────── */
 .ff-week { cursor: pointer; }
@@ -521,6 +552,7 @@
             <div class="lbl">↓ Egreso semanal neto</div>
             <div class="val warn" data-kpi="egreso-neto">${{ '{:,.0f}'.format(egreso_neto_sem) | replace(',', '.') }}</div>
             <div class="sub">aplicando dto base</div>
+            <div class="ff-dto-warn" id="ff-dto-warn"></div>
         </div>
         <div class="ff-kpi">
             <div class="lbl">≡ Saldo semanal</div>
@@ -553,12 +585,14 @@
         <span class="count">· click en una para ver detalle · prendé/apagá toggles por partner abajo</span>
         <span id="ff-warn" class="ff-saldo-warn"></span>
     </div>
+    <div id="ff-cron-banner" class="ff-cron-banner" style="display:none;"></div>
     <div class="ff-weeks">
         {% for s in semanas %}
         <div class="ff-week {% if s.es_actual %}actual{% endif %}" data-week-idx="{{ s.idx }}" role="button" tabindex="0" title="Click → ver partners de esta semana">
             <div class="lbl-week">
                 Sem {{ s.idx + 1 }}
                 {% if s.es_actual %}<span class="badge-actual">hoy</span>{% endif %}
+                <span class="badge-pico">pico</span>
             </div>
             <div class="ww-row"><span class="k">{{ s.label }}</span></div>
             <div class="ww-row"><span class="k">↑ ing</span><span class="v mint" data-field="ingreso">${{ '{:,.0f}'.format(s.ingreso_proy) | replace(',', '.') }}</span></div>
@@ -810,6 +844,9 @@
             }
         });
 
+        // Semana pico = mayor egreso neto
+        const maxNeto = Math.max(...wkNeto);
+
         let totBruto = 0, totNeto = 0, semNeg = 0, acum = 0;
         for (let i = 0; i < N_WEEKS; i++) {
             totBruto += wkBruto[i];
@@ -820,6 +857,7 @@
             const eEl = card.querySelector('[data-field="egreso"]');
             const sEl = card.querySelector('[data-field="saldo"]');
             const aEl = card.querySelector('[data-field="acum"]');
+            const picoBadge = card.querySelector('.badge-pico');
             const saldo = INGRESO_SEM - wkNeto[i];
             acum += saldo;
             if (saldo < 0) semNeg++;
@@ -833,6 +871,13 @@
             if (aEl) {
                 aEl.textContent = (acum < 0 ? '-' : '') + fmt(acum);
                 aEl.style.color = acum < 0 ? 'var(--ds-danger)' : 'var(--ds-mint)';
+            }
+            // C: borde rojo si saldo negativo
+            card.classList.toggle('week-neg', saldo < 0);
+            // F: badge pico en la semana de mayor egreso (solo si hay variación real)
+            if (picoBadge) {
+                const esPico = maxNeto > 0 && wkNeto[i] === maxNeto && N_WEEKS > 1;
+                picoBadge.classList.toggle('visible', esPico);
             }
         }
 
@@ -1324,6 +1369,61 @@
     }
 
     recalc();
+
+    // E — Warning % egreso sin dto cargado
+    (function calcDtoWarn() {
+        let totalBruto = 0, sinDtoBruto = 0;
+        document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            if (tr.id === 'ff-resto-row') return;
+            const brutoCell = tr.querySelector('[data-bruto-sem]');
+            const dtoCell = tr.querySelector('.dto-editable');
+            const bruto = brutoCell ? parseFloat(brutoCell.dataset.brutoSem) || 0 : 0;
+            const dto = dtoCell ? parseFloat(dtoCell.dataset.dto) || 0 : 0;
+            totalBruto += bruto;
+            if (dto === 0) sinDtoBruto += bruto;
+        });
+        const el = document.getElementById('ff-dto-warn');
+        if (!el || totalBruto === 0) return;
+        const pct = Math.round(sinDtoBruto / totalBruto * 100);
+        if (pct > 0) {
+            el.textContent = `⚠ ${pct}% del egreso sin dto cargado`;
+        }
+    })();
+
+    // D — Banner cronograma: qué semanas tienen pagos programados
+    (async function cronBanner() {
+        const banner = document.getElementById('ff-cron-banner');
+        if (!banner) return;
+        try {
+            const res = await fetch(`/api/flujo/cronograma-precarga?n=${N_WEEKS}`,
+                                    {credentials: 'same-origin'});
+            if (!res.ok) return;
+            const data = await res.json();
+            const result = data.result || {};
+            // Por semana: contar partners con pedido programado y sumar su neto
+            const semPartners = new Array(N_WEEKS).fill(0);
+            const semNeto = new Array(N_WEEKS).fill(0);
+            for (const [key, weeks] of Object.entries(result)) {
+                const toggleEl = document.querySelector(`.wk-toggles[data-partner="${key}"]`);
+                const neto = toggleEl ? parseFloat(toggleEl.dataset.neto) || 0 : 0;
+                for (let i = 0; i < N_WEEKS; i++) {
+                    if (weeks[i]) { semPartners[i]++; semNeto[i] += neto; }
+                }
+            }
+            // Mostrar solo semanas con al menos 1 partner programado
+            const items = [];
+            for (let i = 0; i < N_WEEKS; i++) {
+                if (semPartners[i] > 0) {
+                    items.push(`<span class="cron-item">Sem ${i+1}: ${semPartners[i]} partner${semPartners[i]>1?'s':''}</span>`);
+                }
+            }
+            if (items.length > 0) {
+                banner.innerHTML = '📅 <b style="margin-right:6px;">Pedidos programados:</b>' + items.join('');
+                banner.style.display = 'flex';
+            }
+        } catch {}
+    })();
+
 })();
 </script>
 {% endblock %}
