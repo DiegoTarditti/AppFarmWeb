@@ -55,6 +55,18 @@
     border-color: var(--ds-mint);
     box-shadow: 0 0 0 1px rgba(95,230,188,.3);
 }
+.ff-week.week-neg {
+    border-color: rgba(239,68,68,.5);
+    box-shadow: 0 0 0 1px rgba(239,68,68,.2);
+}
+.ff-week .badge-pico {
+    font-size: 8px; font-weight: 700;
+    padding: 1px 5px; border-radius: 999px;
+    background: rgba(245,158,11,.18); color: var(--ds-warn);
+    text-transform: uppercase; letter-spacing: .04em;
+    display: none;
+}
+.ff-week .badge-pico.visible { display: inline; }
 .ff-week .lbl-week {
     font-family: 'Space Grotesk', sans-serif;
     font-size: 13px; font-weight: 700; color: var(--ds-text);
@@ -374,6 +386,24 @@
     font-size: 10px;
     color: var(--ds-text-mute);
 }
+.ff-cron-banner {
+    margin-bottom: 12px;
+    padding: 8px 14px;
+    background: rgba(56,189,248,.08);
+    border: 1px solid rgba(56,189,248,.25);
+    border-radius: var(--ds-r-md);
+    font-size: 11px; color: var(--ds-info);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.ff-cron-banner .cron-item {
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(56,189,248,.12);
+    font-size: 10px; white-space: nowrap;
+}
+.ff-dto-warn {
+    font-size: 10px; color: var(--ds-warn);
+    margin-top: 3px;
+}
 
 /* ─── Click en card de semana → detalle inline ─────────── */
 .ff-week { cursor: pointer; }
@@ -521,6 +551,11 @@
             <div class="lbl">↓ Egreso semanal neto</div>
             <div class="val warn" data-kpi="egreso-neto">${{ '{:,.0f}'.format(egreso_neto_sem) | replace(',', '.') }}</div>
             <div class="sub">aplicando dto base</div>
+            <div class="ff-dto-warn" id="ff-dto-warn"></div>
+            <button type="button" id="ff-btn-dto-default" style="display:none;margin-top:4px;font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--ds-line);color:var(--ds-text-mute);background:transparent;cursor:pointer;"
+                    onclick="aplicarDtoDefault(this)">
+                Cargar 30% a los vacíos
+            </button>
         </div>
         <div class="ff-kpi">
             <div class="lbl">≡ Saldo semanal</div>
@@ -553,12 +588,14 @@
         <span class="count">· click en una para ver detalle · prendé/apagá toggles por partner abajo</span>
         <span id="ff-warn" class="ff-saldo-warn"></span>
     </div>
+    <div id="ff-cron-banner" class="ff-cron-banner" style="display:none;"></div>
     <div class="ff-weeks">
         {% for s in semanas %}
         <div class="ff-week {% if s.es_actual %}actual{% endif %}" data-week-idx="{{ s.idx }}" role="button" tabindex="0" title="Click → ver partners de esta semana">
             <div class="lbl-week">
                 Sem {{ s.idx + 1 }}
                 {% if s.es_actual %}<span class="badge-actual">hoy</span>{% endif %}
+                <span class="badge-pico">pico</span>
             </div>
             <div class="ww-row"><span class="k">{{ s.label }}</span></div>
             <div class="ww-row"><span class="k">↑ ing</span><span class="v mint" data-field="ingreso">${{ '{:,.0f}'.format(s.ingreso_proy) | replace(',', '.') }}</span></div>
@@ -810,6 +847,9 @@
             }
         });
 
+        // Semana pico = mayor egreso neto
+        const maxNeto = Math.max(...wkNeto);
+
         let totBruto = 0, totNeto = 0, semNeg = 0, acum = 0;
         for (let i = 0; i < N_WEEKS; i++) {
             totBruto += wkBruto[i];
@@ -820,6 +860,7 @@
             const eEl = card.querySelector('[data-field="egreso"]');
             const sEl = card.querySelector('[data-field="saldo"]');
             const aEl = card.querySelector('[data-field="acum"]');
+            const picoBadge = card.querySelector('.badge-pico');
             const saldo = INGRESO_SEM - wkNeto[i];
             acum += saldo;
             if (saldo < 0) semNeg++;
@@ -833,6 +874,13 @@
             if (aEl) {
                 aEl.textContent = (acum < 0 ? '-' : '') + fmt(acum);
                 aEl.style.color = acum < 0 ? 'var(--ds-danger)' : 'var(--ds-mint)';
+            }
+            // C: borde rojo si saldo negativo
+            card.classList.toggle('week-neg', saldo < 0);
+            // F: badge pico en la semana de mayor egreso (solo si hay variación real)
+            if (picoBadge) {
+                const esPico = maxNeto > 0 && wkNeto[i] === maxNeto && N_WEEKS > 1 && maxNeto > Math.min(...wkNeto);
+                picoBadge.classList.toggle('visible', esPico);
             }
         }
 
@@ -1118,7 +1166,6 @@
         // % del egreso que representan los partners visibles (top-N activo)
         const pctEl = document.getElementById('ff-topn-pct');
         if (pctEl && EGRESO_NETO_TOTAL > 0 && restoCount > 0) {
-            const netoVisible = EGRESO_NETO_TOTAL - restoBruto; // restoBruto tiene neto del resto
             const pct = ((EGRESO_NETO_TOTAL - restoNeto) / EGRESO_NETO_TOTAL * 100).toFixed(0);
             pctEl.textContent = `· top ${shown} = ${pct}% del egreso`;
         } else if (pctEl) {
@@ -1324,6 +1371,86 @@
     }
 
     recalc();
+
+    // E — Info dto: cuántos usan el 30% default vs dto propio
+    (function calcDtoWarn() {
+        let totalLabs = 0, defaultLabs = 0;
+        document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            if (tr.id === 'ff-resto-row') return;
+            const dtoCell = tr.querySelector('.dto-editable');
+            if (!dtoCell) return;
+            totalLabs++;
+            if (parseFloat(dtoCell.dataset.dto) === 30) defaultLabs++;
+        });
+        const el = document.getElementById('ff-dto-warn');
+        if (!el || totalLabs === 0) return;
+        const btn = document.getElementById('ff-btn-dto-default');
+        if (defaultLabs > 0) {
+            el.textContent = `${defaultLabs} de ${totalLabs} labs usan dto default 30%`;
+            el.style.color = 'var(--ds-text-mute)';
+            if (btn) btn.style.display = 'inline-block';
+        }
+    })();
+
+    async function aplicarDtoDefault(btn) {
+        if (!confirm(`Guardar 30% de descuento en la DB para todos los labs que tienen el campo vacío.\n¿Continuar?`)) return;
+        btn.disabled = true;
+        btn.textContent = '⏳ Guardando…';
+        try {
+            const r = await fetch('/api/flujo/aplicar-dto-default', {
+                method: 'POST', credentials: 'same-origin'
+            });
+            if (!r.ok) throw new Error(await r.text());
+            const d = await r.json();
+            if (d.ok) {
+                toast(`✓ ${d.actualizados} labs actualizados a 30%`, '#10b981');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                toast('✕ Error al guardar', '#ef4444');
+                btn.disabled = false;
+                btn.textContent = 'Cargar 30% a los vacíos';
+            }
+        } catch {
+            toast('✕ Error de red', '#ef4444');
+            btn.disabled = false;
+            btn.textContent = 'Cargar 30% a los vacíos';
+        }
+    }
+
+    // D — Banner cronograma: qué semanas tienen pagos programados
+    (async function cronBanner() {
+        const banner = document.getElementById('ff-cron-banner');
+        if (!banner) return;
+        try {
+            const res = await fetch(`/api/flujo/cronograma-precarga?n=${N_WEEKS}`,
+                                    {credentials: 'same-origin'});
+            if (!res.ok) return;
+            const data = await res.json();
+            const result = data.result || {};
+            // Por semana: contar partners con pedido programado y sumar su neto
+            const semPartners = new Array(N_WEEKS).fill(0);
+            const semNeto = new Array(N_WEEKS).fill(0);
+            for (const [key, weeks] of Object.entries(result)) {
+                const toggleEl = document.querySelector(`.wk-toggles[data-partner="${key}"]`);
+                const neto = toggleEl ? parseFloat(toggleEl.dataset.neto) || 0 : 0;
+                for (let i = 0; i < N_WEEKS; i++) {
+                    if (weeks[i]) { semPartners[i]++; semNeto[i] += neto; }
+                }
+            }
+            // Mostrar solo semanas con al menos 1 partner programado
+            const items = [];
+            for (let i = 0; i < N_WEEKS; i++) {
+                if (semPartners[i] > 0) {
+                    items.push(`<span class="cron-item">Sem ${i+1}: ${semPartners[i]} partner${semPartners[i]>1?'s':''}</span>`);
+                }
+            }
+            if (items.length > 0) {
+                banner.innerHTML = '📅 <b style="margin-right:6px;">Pedidos programados:</b>' + items.join('');
+                banner.style.display = 'flex';
+            }
+        } catch (e) { console.warn('cronBanner:', e); }
+    })();
+
 })();
 </script>
 {% endblock %}
