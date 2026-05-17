@@ -798,32 +798,48 @@ class ProveedorCronograma(Base):
 
 
 class TipoPedidoConfig(Base):
-    """Matriz de comportamiento por tipo de pedido (REPOSICION, COMPRA_LAB,
-    CRONOGRAMA_PROG, MODULO, TRANSFER, OFERTA_MIN, ...).
+    """Matriz de comportamiento configurable. Dos categorías:
 
-    Centraliza las reglas de cálculo dispersas en compras_dia.py / order_detail
-    para que un caso nuevo se agregue como fila en lugar de un `if` en código.
+    categoria='pedido': REPOSICION, COMPRA_LAB, etc.
+      config_json keys: piso_ideal, target_horizonte, buffer_pct, universo,
+                        override_producto, redondeo, dias_cobertura_fijo.
 
-    `config_json` (texto/dict serializado) acepta las llaves:
-      piso_ideal:        cómo se calcula el "no bajar de" (string enum)
-      target_horizonte:  cuánto hay que cubrir hacia adelante (string enum)
-      buffer_pct:        margen de seguridad en % (int 0..100)
-      universo:          qué productos entran al listado (string enum)
-      override_producto: campo de Producto que pisa el cálculo si está seteado
-      redondeo:          cómo se redondea la cantidad (string enum)
-
-    El motor `services.calculo_pedido.calcular_a_pedir()` lee este JSON y
-    aplica las reglas. Ver ese módulo para enums válidos por llave.
+    categoria='flag': DISCONTINUADO, REEMPLAZADO, SIN_DESCUENTO, NOTA, etc.
+      config_json keys: efecto_armado ('excluir'|'badge_cero'|'solo_badge'|'ninguno'),
+                        icono (emoji), color ('red'|'amber'|'violet'|'sky'|'gray'),
+                        permite_reemplazo (bool), permite_vigencia (bool).
     """
     __tablename__ = 'tipo_pedido_config'
     id             = Column(Integer, primary_key=True)
     slug           = Column(String(30), nullable=False, unique=True, index=True)
     nombre         = Column(String(80), nullable=False)
     descripcion    = Column(Text, nullable=True)
-    config_json    = Column(Text, nullable=False)  # JSON serializado, no JSONB para SQLite-compat
+    config_json    = Column(Text, nullable=False)
+    categoria      = Column(String(20), nullable=False, default='pedido')  # 'pedido' | 'flag'
     activo         = Column(Boolean, nullable=False, default=True)
     creado_en      = Column(DateTime, default=now_ar)
     actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
+class ProductoFlag(Base):
+    """Comportamiento excepcional por producto (EAN) o laboratorio.
+
+    Referencia un tipo de flag via flag_slug (slug de TipoPedidoConfig con
+    categoria='flag'). El efecto concreto en el armado lo define config_json
+    del tipo (efecto_armado, etc.).
+    """
+    __tablename__ = 'producto_flags'
+    id              = Column(Integer, primary_key=True)
+    flag_slug       = Column(String(30), nullable=False, index=True)
+    ean             = Column(String(30), nullable=True, index=True)
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id', ondelete='CASCADE'),
+                              nullable=True, index=True)
+    nota            = Column(Text, nullable=True)
+    ean_reemplazo   = Column(String(30), nullable=True)
+    vigente_hasta   = Column(Date, nullable=True)
+    creado_en       = Column(DateTime, default=now_ar)
+    creado_por      = Column(String(80), nullable=True)
+    laboratorio     = relationship('Laboratorio')
 
 
 class PedidoBorrador(Base):
@@ -1603,6 +1619,7 @@ def init_db(database_url=None):
                         'devolucion_receta',
                         'proveedor_cronograma',
                         'tipo_pedido_config',
+                        'producto_flags',
                         'estacionalidad_escenarios')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
@@ -2661,30 +2678,48 @@ def _pg_add_columns(conn):
     # con create_all (corre ANTES que _pg_add_columns), así que acá ya existe.
     # ON CONFLICT (slug) DO NOTHING hace el INSERT idempotente sobre re-deploys.
     import json as _json
+    conn.execute(text(
+        "ALTER TABLE tipo_pedido_config ADD COLUMN IF NOT EXISTS categoria VARCHAR(20) NOT NULL DEFAULT 'pedido'"
+    ))
     _seed_tipos = [
-        ('REPOSICION', 'Reposición (matriz lab/drog)',
-         'Pedido corto y rutinario por droguería. Piso = mínimo efectivo del producto. '
-         'Target = cubrir hasta el próximo cierre del drog (factor_h).',
-         {'piso_ideal': 'min_efectivo', 'target_horizonte': 'factor_h',
+        ('REPOSICION', 'Reposición (matriz lab/drog)', 'pedido',
+         'Pedido corto y rutinario por droguería. Piso = tasa diaria × 4 días. '
+         'Sin target adicional — pide lo mínimo necesario para cubrir el período.',
+         {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
           'buffer_pct': 0, 'universo': 'bajo_min_o_cobertura',
-          'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil'}),
-        ('COMPRA_LAB', 'Compra directa al laboratorio',
+          'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
+          'dias_cobertura_fijo': 4}),
+        ('COMPRA_LAB', 'Compra directa al laboratorio', 'pedido',
          'Pedido grande y planificado al lab. Sin piso de mínimo del producto. '
          'Cantidad = tasa diaria × cubrir_dias (configurable por slider).',
          {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
           'buffer_pct': 0, 'universo': 'lab_x',
           'override_producto': 'none', 'redondeo': 'ceil'}),
+        ('DISCONTINUADO', 'Discontinuado', 'flag',
+         'Producto fuera de línea. Vender hasta agotar stock, no reponer.',
+         {'efecto_armado': 'badge_cero', 'icono': '🚫', 'color': 'red',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
+        ('REEMPLAZADO', 'Reemplazado por otro', 'flag',
+         'El producto fue reemplazado por una nueva presentación o marca.',
+         {'efecto_armado': 'solo_badge', 'icono': '↔', 'color': 'violet',
+          'permite_reemplazo': True, 'permite_vigencia': False}),
+        ('SIN_DESCUENTO', 'Sin descuento vigente', 'flag',
+         'El descuento que tenía este producto/lab ya no aplica.',
+         {'efecto_armado': 'solo_badge', 'icono': '💡', 'color': 'amber',
+          'permite_reemplazo': False, 'permite_vigencia': True}),
+        ('NOTA', 'Nota informativa', 'flag',
+         'Comentario libre sobre el producto o laboratorio.',
+         {'efecto_armado': 'ninguno', 'icono': '📝', 'color': 'sky',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
     ]
-    for slug, nombre, desc, cfg in _seed_tipos:
+    for slug, nombre, cat, desc, cfg in _seed_tipos:
         try:
             conn.execute(text(
-                "INSERT INTO tipo_pedido_config (slug, nombre, descripcion, config_json, activo) "
-                "VALUES (:slug, :nombre, :desc, :cfg, true) "
+                "INSERT INTO tipo_pedido_config (slug, nombre, categoria, descripcion, config_json, activo) "
+                "VALUES (:slug, :nombre, :cat, :desc, :cfg, true) "
                 "ON CONFLICT (slug) DO NOTHING"
-            ), {'slug': slug, 'nombre': nombre, 'desc': desc, 'cfg': _json.dumps(cfg)})
+            ), {'slug': slug, 'nombre': nombre, 'cat': cat, 'desc': desc, 'cfg': _json.dumps(cfg)})
         except Exception:
-            # Tabla todavía no existía en ese deploy o falló por otro motivo.
-            # Se reintentará en el próximo init.
             pass
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW()"))
     conn.execute(text("ALTER TABLE facturas ADD COLUMN IF NOT EXISTS conciliado BOOLEAN NOT NULL DEFAULT false"))

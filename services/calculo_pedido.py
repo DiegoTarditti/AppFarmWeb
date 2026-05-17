@@ -42,37 +42,32 @@ import math
 
 logger = logging.getLogger(__name__)
 
-# Cache en memoria del config por slug. Se limpia con `invalidar_cache()`.
-_CONFIG_CACHE = {}
-
-
 def cargar_config(slug):
-    """Lee la config del tipo de pedido por slug. Resultado cacheado.
+    """Lee la config del tipo de pedido por slug. Sin cache — siempre DB.
+
+    Sin cache en memoria porque en Render con múltiples workers gunicorn,
+    invalidar_cache() solo limpia el worker que atiende el save, y los demás
+    sirven el config viejo indefinidamente. El config cambia raramente y
+    la query es barata.
 
     Devuelve dict con las llaves del config_json. Si el slug no existe en DB
     o la fila está inactiva, devuelve None (el caller decide qué hacer).
     """
-    if slug in _CONFIG_CACHE:
-        return _CONFIG_CACHE[slug]
     from database import TipoPedidoConfig, get_db
     with get_db() as session:
         row = (session.query(TipoPedidoConfig)
                .filter_by(slug=slug, activo=True).first())
         if not row:
-            _CONFIG_CACHE[slug] = None
             return None
         try:
-            cfg = json.loads(row.config_json or '{}')
+            return json.loads(row.config_json or '{}')
         except (ValueError, TypeError):
             logger.warning('Config inválido para tipo_pedido %s', slug)
-            cfg = {}
-        _CONFIG_CACHE[slug] = cfg
-    return cfg
+            return {}
 
 
 def invalidar_cache():
-    """Limpia el cache. Llamar después de editar tipo_pedido_config en DB."""
-    _CONFIG_CACHE.clear()
+    """No-op — sin cache en memoria. Se mantiene por compatibilidad con callers."""
 
 
 def calcular_a_pedir(cfg, ctx):
@@ -126,7 +121,8 @@ def calcular_a_pedir(cfg, ctx):
     if piso_kind == 'min_efectivo':
         piso = min_efectivo
     elif piso_kind == 'daily_rate_x_cubrir_dias':
-        piso = math.ceil(daily_rate * cubrir_dias)
+        _dias = cfg.get('dias_cobertura_fijo') or cubrir_dias
+        piso = math.ceil(daily_rate * _dias)
     else:  # 'cero' u otro
         piso = 0
 
