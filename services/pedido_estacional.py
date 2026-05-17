@@ -31,6 +31,8 @@ from database import (
     EstacionalidadEscenario,
     ObsCodigoBarras,
     ObsProducto,
+    ObsStock,
+    ObsVentaMensual,
     ProductoFlag,
     TipoPedidoConfig,
 )
@@ -294,3 +296,134 @@ def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
         # Diagnostico
         'razon': razon,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────
+#  Calculo de sugerido para /pedido/dia (REPOSICION tactica)
+#
+#  Replica fiel de la logica de routes/compras_dia.py:760-820 para 1
+#  producto. Sirve para mostrar la columna "Día act." en /pedido/prueba
+#  comparando con el calculo estacional.
+#
+#  Asunciones (vs. compras_dia.py que tiene mas contexto):
+#  - factor_h=1.0 (no hay drog asignada → sin ponderación por hora cierre).
+#  - cubrir_dias=30 (no hay slider de pantalla).
+#  - meses_rotacion=3 (default de compras_dia, configurable hasta 12).
+#  - pack_quantity=None (no se lee de Producto local).
+#  - cantidad_reposicion_fija=None (no se lee de Producto local).
+# ──────────────────────────────────────────────────────────────────────
+
+_DIAS_PROM_MES = 30.42  # mismo valor que compras_dia.py
+_MESES_ROTACION_DEFAULT = 3
+
+
+def _obtener_ventas_arr_12m(session, producto_observer_id, id_farmacia, hoy=None):
+    """Devuelve array de 12 floats con ventas mensuales [0]=mas antiguo,
+    [11]=mes actual (parcial). Llena con 0 los meses sin data."""
+    if hoy is None:
+        hoy = _date.today()
+    # 12 meses incluyendo el actual.
+    pares = []
+    anio, mes = hoy.year, hoy.month
+    for _ in range(12):
+        pares.append((anio, mes))
+        mes -= 1
+        if mes <= 0:
+            mes = 12
+            anio -= 1
+    pares.reverse()  # ahora [0]=mas antiguo, [11]=actual
+
+    pares_set = {(a, m) for a, m in pares}
+    rows = (session.query(ObsVentaMensual.anio, ObsVentaMensual.mes,
+                          ObsVentaMensual.unidades)
+            .filter(ObsVentaMensual.producto_observer == producto_observer_id,
+                    ObsVentaMensual.id_farmacia == id_farmacia)
+            .all())
+    por_mes = {(r.anio, r.mes): float(r.unidades or 0)
+               for r in rows if (r.anio, r.mes) in pares_set}
+    return [por_mes.get((a, m), 0.0) for a, m in pares]
+
+
+def calcular_sugerido_dia_actual(session, producto_observer_id, id_farmacia,
+                                 meses_rotacion=_MESES_ROTACION_DEFAULT,
+                                 factor_h=1.0, cubrir_dias=30,
+                                 stock_actual=None, min_actual=None,
+                                 hoy=None):
+    """Replica fiel del calculo de /pedido/dia (REPOSICION) para 1 producto.
+
+    Devuelve int (a_pedir) o None si no se puede calcular.
+
+    Args:
+        session: SQLAlchemy session.
+        producto_observer_id: int.
+        id_farmacia: int.
+        meses_rotacion: int 1-12 (default 3, igual que compras_dia).
+        factor_h: float (default 1.0).
+        cubrir_dias: int (default 30).
+        stock_actual: int (opcional; si no se pasa, se busca de ObsStock).
+        min_actual: int (opcional; si no se pasa, se busca de ObsStock).
+        hoy: date para tests (default = date.today()).
+    """
+    try:
+        from purchase_helpers import calcular_min_sugerido, clasificar_min
+        from services.calculo_pedido import calcular_a_pedir, cargar_config
+    except ImportError:
+        return None
+
+    if hoy is None:
+        hoy = _date.today()
+
+    # Si no vienen stock/min cargados, hago 1 query a ObsStock.
+    if stock_actual is None or min_actual is None:
+        st = (session.query(ObsStock.stock_actual, ObsStock.minimo)
+              .filter(ObsStock.producto_observer == producto_observer_id,
+                      ObsStock.id_farmacia == id_farmacia)
+              .first())
+        stock_actual = int((st and st.stock_actual) or 0)
+        min_actual = int((st and st.minimo) or 0)
+
+    ventas_arr = _obtener_ventas_arr_12m(
+        session, producto_observer_id, id_farmacia, hoy=hoy)
+    u12m_int = int(sum(ventas_arr))
+
+    # min_sugerido + sin_mov (mismo helper que compras_dia).
+    try:
+        start_month = hoy.month  # aprox, compras_dia usa el del slider
+        end_month = hoy.month
+        min_sugerido, _avg_m, sin_mov, _tipo = calcular_min_sugerido(
+            ventas_arr, stock_actual, start_month, end_month)
+    except Exception:
+        min_sugerido, sin_mov = 0, False
+
+    if u12m_int == 0 or sin_mov:
+        min_sugerencia = None
+    else:
+        min_sugerencia = clasificar_min(min_actual, min_sugerido)
+
+    # u_rot: meses anteriores al actual (excluye parcial).
+    _i_end = 11
+    _i_start = max(0, _i_end - meses_rotacion)
+    u_rot = sum(ventas_arr[_i_start:_i_end])
+    dias_rotacion = int(meses_rotacion * _DIAS_PROM_MES)
+    daily_rate = (u_rot / dias_rotacion) if dias_rotacion else 0
+
+    # min_efectivo (correccion del minimo si esta desfasado).
+    if min_sugerencia in ('up', 'down') and min_sugerido > 0:
+        min_efectivo = min_sugerido
+    else:
+        min_efectivo = min_actual
+
+    # Llamar al motor compartido.
+    cfg = cargar_config('REPOSICION') or {}
+    result = calcular_a_pedir(cfg, {
+        'daily_rate': daily_rate,
+        'min_efectivo': min_efectivo,
+        'factor_h': factor_h,
+        'cubrir_dias': cubrir_dias,
+        'stock_actual': stock_actual,
+        'cantidad_reposicion_fija': None,
+        'pack_quantity': None,
+        'u12m': u12m_int,
+        'sin_mov': sin_mov,
+    })
+    return int(result.get('a_pedir', 0))

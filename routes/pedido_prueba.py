@@ -34,6 +34,7 @@ from database import (
 from services.pedido_estacional import (
     LIMITES,
     MESES_ES,
+    calcular_sugerido_dia_actual,
     calcular_sugerido_estacional,
 )
 
@@ -65,42 +66,10 @@ def _stock_por_producto(session, producto_ids, id_farmacia):
                                   'minimo': int(r.minimo or 0)} for r in rows}
 
 
-def _sugerido_dia_actual(session, producto, u12m, stock_actual, minimo):
-    """Replica simplificada de la logica de /pedido/dia con la matriz
-    REPOSICION: usa daily_rate basado en u3m (no u12m). Devuelve int.
-    Si no se puede calcular, devuelve None."""
-    try:
-        from services.calculo_pedido import calcular_a_pedir, cargar_config
-
-        cfg = cargar_config('REPOSICION') or {}
-        # u3m: ventas ultimos 3 meses → daily_rate aprox.
-        from datetime import date as _date
-        hoy = _date.today()
-        # 3 meses atras: aproximacion por año/mes.
-        anio_3m, mes_3m = hoy.year, hoy.month - 3
-        while mes_3m <= 0:
-            mes_3m += 12
-            anio_3m -= 1
-        u3m = (session.query(func.sum(ObsVentaMensual.unidades))
-               .filter(ObsVentaMensual.producto_observer == producto.observer_id,
-                       (ObsVentaMensual.anio * 100 + ObsVentaMensual.mes)
-                       >= (anio_3m * 100 + mes_3m))
-               .scalar()) or 0
-        daily_rate = float(u3m) / 90.0
-        result = calcular_a_pedir(cfg, {
-            'daily_rate': daily_rate,
-            'min_efectivo': minimo,
-            'factor_h': 1.0,
-            'cubrir_dias': 30,
-            'stock_actual': stock_actual,
-            'cantidad_reposicion_fija': None,
-            'pack_quantity': None,
-            'u12m': u12m,
-            'sin_mov': u12m == 0,
-        })
-        return int(result.get('a_pedir', 0))
-    except Exception:
-        return None
+# _sugerido_dia_actual eliminada — ahora se usa la replica fiel
+# calcular_sugerido_dia_actual de services/pedido_estacional.py que usa
+# los mismos building blocks que routes/compras_dia.py (purchase_helpers.
+# calcular_min_sugerido + services.calculo_pedido.calcular_a_pedir).
 
 
 def init_app(app):
@@ -210,9 +179,10 @@ def init_app(app):
                     stock_actual=st['stock'], minimo=st['minimo'],
                     lead_default=lead_default, cob_default=cob_default,
                 )
-                # Sugerido dia (REPOSICION)
-                sug_dia = _sugerido_dia_actual(
-                    session, p, u12m, st['stock'], st['minimo'])
+                # Sugerido dia (REPOSICION) — replica fiel de /pedido/dia
+                sug_dia = calcular_sugerido_dia_actual(
+                    session, p.observer_id, id_farmacia,
+                    stock_actual=st['stock'], min_actual=st['minimo'])
 
                 delta = (est['sugerido_final'] - (sug_dia or 0)) if sug_dia is not None else None
 
