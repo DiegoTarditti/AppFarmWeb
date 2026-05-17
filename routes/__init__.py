@@ -21,6 +21,7 @@ from routes import (
     descuentos_base,
     devoluciones,
     docs_pendientes,
+    estacionalidad,
     flujo_fondos,
     home_cards,
     inferencia,
@@ -92,6 +93,7 @@ _modules = [
     tipos_pedido,
     pedidos_log,
     flujo_fondos,
+    estacionalidad,
 ]
 
 

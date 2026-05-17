@@ -1,0 +1,665 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Estacionalidad por droga{% endblock %}
+{% block main %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<style>
+    .heat-cell {
+        width: 38px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 4px 0;
+    }
+    .heat-cell.muted { color: #bbb; font-weight: 400; }
+    .heat-cell.lo-2  { background: #b91c1c; color: #fff; }
+    .heat-cell.lo-1  { background: #fca5a5; color: #7f1d1d; }
+    .heat-cell.lo-05 { background: #fecaca; color: #7f1d1d; }
+    .heat-cell.neu   { background: #f3f4f6; color: #555; }
+    .heat-cell.hi-05 { background: #bbf7d0; color: #14532d; }
+    .heat-cell.hi-1  { background: #4ade80; color: #14532d; }
+    .heat-cell.hi-2  { background: #15803d; color: #fff; }
+    .heat-cell.peak  { outline: 2px solid #f59e0b; outline-offset: -2px; }
+    .month-th { width: 38px; text-align: center; font-size: 10px; color: #888; padding: 4px 0; }
+    .chev { transition: transform 0.15s; }
+    .expanded .chev { transform: rotate(90deg); }
+
+    /* Tabs del panel expand */
+    .tab-btn {
+        padding: 6px 12px; font-size: 11px; font-weight: 600; color: #6f6f6f;
+        border-bottom: 2px solid transparent; cursor: pointer;
+    }
+    .tab-btn.active { color: #7c3aed; border-bottom-color: #7c3aed; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Chip de escenarios */
+    .esc-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 10px; border-radius: 999px;
+        background: #f3f4f6; color: #444; font-size: 11px; font-weight: 600;
+        border: 1px solid transparent; cursor: pointer;
+    }
+    .esc-chip.active { background: #ede9fe; color: #6d28d9; border-color: #c4b5fd; }
+    .esc-chip.default::before { content: '★'; color: #f59e0b; font-size: 12px; }
+
+    /* Sliders verticales por mes */
+    .slider-grid {
+        display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px;
+        align-items: end; margin-top: 8px;
+    }
+    .slider-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .slider-cell input[type="range"] {
+        writing-mode: bt-lr;  /* IE */
+        -webkit-appearance: slider-vertical;
+        appearance: slider-vertical;
+        width: 18px; height: 100px; padding: 0; cursor: pointer;
+        accent-color: #7c3aed;
+    }
+    .slider-cell .slider-val {
+        font-size: 10px; font-variant-numeric: tabular-nums;
+        font-weight: 600; color: #1e1e1e; min-width: 30px; text-align: center;
+    }
+    .slider-cell .slider-mes { font-size: 10px; color: #888; }
+    .slider-cell.modified .slider-val { color: #d97706; }
+
+    /* Range horizontal (lead/cobertura) */
+    .range-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+    .range-row label { font-size: 11px; font-weight: 600; color: #555; min-width: 100px; }
+    .range-row input[type="range"] { flex: 1; accent-color: #f59e0b; }
+    .range-row .range-val {
+        font-size: 11px; font-weight: 700; min-width: 50px; text-align: right;
+        font-variant-numeric: tabular-nums; color: #b45309;
+    }
+</style>
+
+<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <h1 class="text-base font-bold text-[#1e1e1e]">📅 Estacionalidad por droga</h1>
+    <span class="text-xs text-[#6f6f6f]">{{ '{:,}'.format(total) }} drogas con historia suficiente</span>
+    <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-100 text-violet-800">OBS</span>
+    <span class="text-[10px] text-[#888] ml-auto">
+        Pooling bayesiano por subrubro (K=12)
+    </span>
+</div>
+
+<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
+
+    <form method="get" class="bg-white border border-surface-border rounded-xl p-4 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end">
+        <div class="sm:col-span-2">
+            <label class="block text-[10px] uppercase font-bold text-[#888] mb-1">Buscar droga</label>
+            <input type="text" name="q" value="{{ q or '' }}"
+                   placeholder="ej: paracetamol, ibuprofeno"
+                   class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-bold text-[#888] mb-1">Min. años</label>
+            <select name="min_anios" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                <option value="1" {% if min_anios == 1 %}selected{% endif %}>≥ 1 año</option>
+                <option value="2" {% if min_anios == 2 %}selected{% endif %}>≥ 2 años</option>
+                <option value="3" {% if min_anios == 3 %}selected{% endif %}>≥ 3 años</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-bold text-[#888] mb-1">Min. unidades 12m</label>
+            <input type="number" name="min_u12m" value="{{ min_u12m if min_u12m else '' }}" min="0" step="1"
+                   placeholder="0"
+                   class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+        </div>
+        <div>
+            <label class="block text-[10px] uppercase font-bold text-[#888] mb-1">Ordenar por</label>
+            <select name="orden" class="w-full bg-surface-input border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                <option value="cv"     {% if orden == 'cv'     %}selected{% endif %}>Más estacional</option>
+                <option value="u12m"   {% if orden == 'u12m'   %}selected{% endif %}>Más vendida</option>
+                <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Nombre A-Z</option>
+            </select>
+        </div>
+        <div class="sm:col-span-5 flex items-center gap-2">
+            <button type="submit" class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg">Aplicar</button>
+            {% if q or min_anios > 1 or min_u12m > 0 or orden != 'cv' %}
+            <a href="{{ url_for('informe_estacionalidad_drogas') }}"
+               class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">Limpiar filtros</a>
+            {% endif %}
+            <span class="text-[11px] text-[#888] ml-auto">
+                Leyenda:
+                <span class="inline-block px-1.5 rounded heat-cell lo-2">≤0.5</span>
+                <span class="inline-block px-1.5 rounded heat-cell lo-1">0.7</span>
+                <span class="inline-block px-1.5 rounded heat-cell neu">1.0</span>
+                <span class="inline-block px-1.5 rounded heat-cell hi-1">1.3</span>
+                <span class="inline-block px-1.5 rounded heat-cell hi-2">≥1.5</span>
+                <span class="ml-2">Valor = ventas del mes / promedio anual</span>
+            </span>
+        </div>
+    </form>
+
+    <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="bg-[#f5f5f5] text-[10px] uppercase tracking-wide text-[#aaa]">
+                <tr>
+                    <th class="text-left px-3 py-2 sticky left-0 bg-[#f5f5f5] z-10">Monodroga</th>
+                    {% for m in meses_es %}
+                    <th class="month-th">{{ m }}</th>
+                    {% endfor %}
+                    <th class="text-right px-3 py-2 w-20" title="Coef. variación: a más alto, más estacional">CV</th>
+                    <th class="text-right px-3 py-2 w-20" title="Unidades vendidas últimos 12m">u 12m</th>
+                    <th class="text-center px-3 py-2 w-24" title="Años de historia disponible">Confianza</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-surface-border">
+                {% for d in drogas %}
+                {% set peak_idx = d.indices.index(d.indices|max) %}
+                <tr class="hover:bg-black/[0.02] droga-row" data-droga-id="{{ d.droga_id }}">
+                    <td class="px-3 py-2 sticky left-0 bg-white z-10 hover:bg-[#fafafa]">
+                        <button type="button" data-droga-id="{{ d.droga_id }}" data-droga-nombre="{{ d.nombre }}"
+                                class="btn-expand inline-flex items-center gap-1.5 text-left hover:text-violet-700 max-w-[280px]">
+                            <svg class="chev w-3 h-3 text-[#aaa] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                            </svg>
+                            <span class="truncate text-[13px]">{{ d.nombre }}</span>
+                            {% if d.pooled and d.lambda_shrink < 0.7 %}
+                            <span class="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded flex-shrink-0"
+                                  title="Patrón suavizado con subrubro ({{ d.subrubro_nombre or '?' }}): λ={{ '%.2f'|format(d.lambda_shrink) }}">
+                                ajust
+                            </span>
+                            {% endif %}
+                            {% if d.escenario_default %}
+                            <span class="text-[9px] font-bold text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded flex-shrink-0"
+                                  title="Tiene escenario manual default: {{ d.escenario_default }}">
+                                ★ {{ d.escenario_default }}
+                            </span>
+                            {% endif %}
+                        </button>
+                    </td>
+                    {% for v in d.indices %}
+                        {% set cls = 'neu' %}
+                        {% if v <= 0.5 %}{% set cls = 'lo-2' %}
+                        {% elif v <= 0.7 %}{% set cls = 'lo-1' %}
+                        {% elif v < 0.9 %}{% set cls = 'lo-05' %}
+                        {% elif v < 1.1 %}{% set cls = 'neu' %}
+                        {% elif v < 1.3 %}{% set cls = 'hi-05' %}
+                        {% elif v < 1.5 %}{% set cls = 'hi-1' %}
+                        {% else %}{% set cls = 'hi-2' %}
+                        {% endif %}
+                        <td class="heat-cell {{ cls }} {% if loop.index0 == peak_idx %}peak{% endif %}"
+                            title="{{ meses_es[loop.index0] }}: índice {{ '%.2f'|format(v) }}">{{ '%.2f'|format(v) }}</td>
+                    {% endfor %}
+                    <td class="px-3 py-2 text-right font-mono text-xs text-[#1e1e1e]">{{ '%.2f'|format(d.cv) }}</td>
+                    <td class="px-3 py-2 text-right text-[#555] font-mono text-xs">{{ '{:,.0f}'.format(d.u12m) }}</td>
+                    <td class="px-3 py-2 text-center">
+                        {% if d.confianza == 'alta' %}
+                            <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">{{ d.anios }}a · alta</span>
+                        {% elif d.confianza == 'media' %}
+                            <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">{{ d.anios }}a · media</span>
+                        {% else %}
+                            <span class="text-[10px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded">{{ d.anios }}a · baja</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr class="expand-row hidden" data-parent="{{ d.droga_id }}">
+                    <td colspan="16" class="p-0">
+                        <div class="bg-[#fafafa] border-t border-surface-border px-6 py-4 expand-body"
+                             data-droga-id="{{ d.droga_id }}"
+                             data-droga-nombre="{{ d.nombre }}"
+                             data-calc-indices='{{ d.indices | tojson }}'>
+
+                            <div class="flex items-baseline justify-between mb-2">
+                                <div class="text-[13px] font-bold text-[#1e1e1e]">{{ d.nombre }}</div>
+                                <div class="text-[11px] text-[#888]">
+                                    {% if d.subrubro_nombre %}Subrubro: {{ d.subrubro_nombre }} · {% endif %}
+                                    λ = {{ '%.2f'|format(d.lambda_shrink) }}
+                                    {% if d.pooled %}<span class="text-amber-700">(suavizado con subrubro)</span>{% endif %}
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2 border-b border-surface-border mb-3">
+                                <button type="button" class="tab-btn active" data-tab="historico">📈 Histórico</button>
+                                <button type="button" class="tab-btn" data-tab="ajustar">🎚 Ajustar y guardar</button>
+                            </div>
+
+                            {# ─── TAB Histórico ─── #}
+                            <div class="tab-panel active" data-tab="historico">
+                                <div style="height: 260px;">
+                                    <canvas class="chart-historico"></canvas>
+                                </div>
+                            </div>
+
+                            {# ─── TAB Ajustar ─── #}
+                            <div class="tab-panel" data-tab="ajustar">
+                                <div class="flex items-center gap-2 flex-wrap mb-3 escenarios-row">
+                                    <span class="text-[11px] font-bold text-[#888] uppercase">Escenarios:</span>
+                                    <span class="esc-list inline-flex flex-wrap gap-1"></span>
+                                    <button type="button" class="esc-nuevo text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded">
+                                        + Nuevo escenario
+                                    </button>
+                                </div>
+
+                                <div style="height: 260px;">
+                                    <canvas class="chart-ajustar"></canvas>
+                                </div>
+
+                                <div class="slider-grid">
+                                    {% for m in meses_es %}
+                                    <div class="slider-cell" data-mes-idx="{{ loop.index0 }}">
+                                        <span class="slider-val">1.00</span>
+                                        <input type="range" min="0" max="3" step="0.05" value="1.00" class="slider-mes-input">
+                                        <span class="slider-mes">{{ m }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+
+                                <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div class="range-row">
+                                        <label>Lead time (m):</label>
+                                        <input type="range" min="0" max="6" step="1" value="0" class="lead-input">
+                                        <span class="range-val lead-val">0</span>
+                                    </div>
+                                    <div class="range-row">
+                                        <label>Cobertura (m):</label>
+                                        <input type="range" min="0.25" max="3" step="0.05" value="1" class="cob-input">
+                                        <span class="range-val cob-val">1.00</span>
+                                    </div>
+                                </div>
+
+                                <div class="mt-3 flex items-center gap-2 flex-wrap">
+                                    <button type="button" class="btn-reset text-[11px] font-bold text-[#555] bg-white border border-surface-border hover:border-[#888] px-3 py-1.5 rounded">
+                                        ⟲ Reset a calculado
+                                    </button>
+                                    <button type="button" class="btn-default text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded hidden">
+                                        ★ Marcar como default
+                                    </button>
+                                    <button type="button" class="btn-eliminar text-[11px] font-bold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded hidden">
+                                        🗑 Eliminar escenario
+                                    </button>
+                                    <span class="flex-1"></span>
+                                    <input type="text" class="esc-nombre-input bg-surface-input border border-surface-border rounded px-2 py-1 text-[11px] w-40" placeholder="Nombre del escenario" value="base">
+                                    <label class="text-[10px] text-[#555] flex items-center gap-1">
+                                        <input type="checkbox" class="esc-default-check"> default
+                                    </label>
+                                    <button type="button" class="btn-guardar text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 rounded">
+                                        💾 Guardar
+                                    </button>
+                                </div>
+                                <div class="mt-2 text-[10px] text-[#888] msg-status"></div>
+                            </div>
+
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="16" class="px-3 py-12 text-center text-[#888] text-sm">
+                    Sin drogas que cumplan los filtros. Probá bajar el mínimo de años o limpiar la búsqueda.
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    {% if last_page > 1 %}
+    <div class="flex items-center justify-center gap-2 text-sm">
+        {% for p in range(1, last_page + 1) %}
+            {% if p == page %}
+                <span class="px-3 py-1 rounded bg-brand text-brand-dark font-semibold">{{ p }}</span>
+            {% else %}
+                <a class="px-3 py-1 rounded bg-white border border-surface-border hover:border-brand"
+                   href="?q={{ q }}&min_anios={{ min_anios }}&min_u12m={{ min_u12m }}&orden={{ orden }}&page={{ p }}">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+(function() {
+    const meses = {{ meses_es | tojson }};
+    const yearColors = ['#cbd5e1', '#94a3b8', '#64748b', '#475569', '#334155'];
+
+    /** Estado por droga expandida. drogaId → { chartH, chartA, escenarios, escActivo } */
+    const state = new Map();
+
+    function $(root, sel) { return root.querySelector(sel); }
+    function $all(root, sel) { return root.querySelectorAll(sel); }
+
+    /** Inicializa el chart Histórico (tab 1): series anuales + índice calculado. */
+    async function initHistorico(body, drogaId, indicesCalc) {
+        const canvas = $(body, 'canvas.chart-historico');
+        if (canvas.dataset.rendered === '1') return;
+        let series = [];
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}`);
+            if (r.ok) series = (await r.json()).series || [];
+        } catch (e) { /* silent */ }
+
+        const datasets = series.map((s, i) => ({
+            type: 'line', label: `${s.anio}`, data: s.unidades,
+            borderColor: yearColors[(yearColors.length - series.length + i + 5) % yearColors.length],
+            backgroundColor: 'transparent', borderWidth: 1.5, tension: 0.25,
+            pointRadius: 2, yAxisID: 'y2',
+        }));
+        datasets.push({
+            type: 'line', label: 'Índice calculado', data: indicesCalc,
+            borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,.12)',
+            borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
+        });
+
+        new Chart(canvas, {
+            data: { labels: meses, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                    tooltip: { callbacks: { label: ctx =>
+                        ctx.dataset.label === 'Índice calculado'
+                            ? `Índice: ${ctx.parsed.y.toFixed(2)}`
+                            : `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-AR')} u`
+                    } }
+                },
+                scales: {
+                    y: { position: 'left', title: { display: true, text: 'Índice', font: { size: 10 } },
+                         grid: { color: 'rgba(124,58,237,.08)' }, ticks: { font: { size: 10 } } },
+                    y2: { position: 'right', title: { display: true, text: 'Unidades/año', font: { size: 10 } },
+                          grid: { display: false }, ticks: { font: { size: 10 } } },
+                    x: { ticks: { font: { size: 10 } } },
+                }
+            }
+        });
+        canvas.dataset.rendered = '1';
+    }
+
+    /** Calcula la curva "a comprar" desplazada por lead time, escalada por cobertura. */
+    function curvaCompra(indicesAjustados, leadMeses, cobMeses) {
+        const out = new Array(12);
+        for (let m = 0; m < 12; m++) {
+            const target = (m + leadMeses) % 12;
+            out[m] = indicesAjustados[target] * cobMeses;
+        }
+        return out;
+    }
+
+    /** Inicializa o actualiza el chart Ajustar (tab 2). Dataset 0=calc, 1=ajust, 2=compra. */
+    function buildChartAjustar(body, indicesCalc, indicesAjust, leadMeses, cobMeses) {
+        const canvas = $(body, 'canvas.chart-ajustar');
+        const st = state.get(body.dataset.drogaId);
+        if (st.chartA) {
+            st.chartA.data.datasets[1].data = [...indicesAjust];
+            st.chartA.data.datasets[2].data = curvaCompra(indicesAjust, leadMeses, cobMeses);
+            st.chartA.update('none');
+            return;
+        }
+        st.chartA = new Chart(canvas, {
+            data: {
+                labels: meses,
+                datasets: [
+                    {
+                        type: 'line', label: 'Calculado', data: indicesCalc,
+                        borderColor: '#c4b5fd', backgroundColor: 'transparent',
+                        borderWidth: 2, borderDash: [4, 4], tension: 0.3, pointRadius: 2, yAxisID: 'y',
+                    },
+                    {
+                        type: 'line', label: 'Ajustado', data: [...indicesAjust],
+                        borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,.10)',
+                        borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
+                    },
+                    {
+                        type: 'bar', label: 'A comprar', data: curvaCompra(indicesAjust, leadMeses, cobMeses),
+                        backgroundColor: 'rgba(245,158,11,.55)', borderColor: '#d97706',
+                        borderWidth: 1, yAxisID: 'y',
+                    },
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}` } }
+                },
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Índice (1 = neutro)', font: { size: 10 } },
+                         grid: { color: 'rgba(0,0,0,.05)' }, ticks: { font: { size: 10 } } },
+                    x: { ticks: { font: { size: 10 } } },
+                }
+            }
+        });
+    }
+
+    function leerSliders(body) {
+        const sliders = $all(body, 'input.slider-mes-input');
+        return Array.from(sliders).map(s => parseFloat(s.value));
+    }
+
+    function escribirSliders(body, indices, indicesCalc) {
+        const cells = $all(body, '.slider-cell');
+        cells.forEach((cell, i) => {
+            const input = $(cell, 'input.slider-mes-input');
+            const valEl = $(cell, '.slider-val');
+            input.value = indices[i];
+            valEl.textContent = indices[i].toFixed(2);
+            const modificado = Math.abs(indices[i] - indicesCalc[i]) > 0.005;
+            cell.classList.toggle('modified', modificado);
+        });
+    }
+
+    function rerenderChips(body) {
+        const st = state.get(body.dataset.drogaId);
+        const list = $(body, '.esc-list');
+        list.innerHTML = '';
+        st.escenarios.forEach(e => {
+            const chip = document.createElement('span');
+            chip.className = 'esc-chip' + (st.escActivo && st.escActivo.id === e.id ? ' active' : '')
+                                        + (e.es_default ? ' default' : '');
+            chip.textContent = e.nombre;
+            chip.dataset.escId = e.id;
+            list.appendChild(chip);
+        });
+    }
+
+    function cargarEscenario(body, esc) {
+        const st = state.get(body.dataset.drogaId);
+        st.escActivo = esc;
+        const indices = esc ? [...esc.indices] : [...st.indicesCalc];
+        const lead = esc ? esc.lead_time_meses : 0;
+        const cob = esc ? esc.cobertura_meses : 1.0;
+
+        escribirSliders(body, indices, st.indicesCalc);
+        $(body, '.lead-input').value = lead;
+        $(body, '.lead-val').textContent = lead;
+        $(body, '.cob-input').value = cob;
+        $(body, '.cob-val').textContent = cob.toFixed(2);
+        $(body, '.esc-nombre-input').value = esc ? esc.nombre : 'base';
+        $(body, '.esc-default-check').checked = esc ? esc.es_default : false;
+        $(body, '.btn-default').classList.toggle('hidden', !esc || esc.es_default);
+        $(body, '.btn-eliminar').classList.toggle('hidden', !esc);
+
+        buildChartAjustar(body, st.indicesCalc, indices, lead, cob);
+        rerenderChips(body);
+    }
+
+    async function cargarEscenarios(body, drogaId) {
+        const st = state.get(drogaId);
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`);
+            if (r.ok) st.escenarios = (await r.json()).escenarios || [];
+        } catch (e) {
+            st.escenarios = [];
+        }
+        const def = st.escenarios.find(e => e.es_default) || st.escenarios[0] || null;
+        cargarEscenario(body, def);
+    }
+
+    function actualizarChartDesdeControles(body) {
+        const st = state.get(body.dataset.drogaId);
+        const indices = leerSliders(body);
+        const lead = parseInt($(body, '.lead-input').value, 10);
+        const cob = parseFloat($(body, '.cob-input').value);
+        buildChartAjustar(body, st.indicesCalc, indices, lead, cob);
+        // Marcar slider modificado en vivo
+        const cells = $all(body, '.slider-cell');
+        cells.forEach((cell, i) => {
+            $(cell, '.slider-val').textContent = indices[i].toFixed(2);
+            const modificado = Math.abs(indices[i] - st.indicesCalc[i]) > 0.005;
+            cell.classList.toggle('modified', modificado);
+        });
+    }
+
+    function mostrarStatus(body, msg, ok = true) {
+        const el = $(body, '.msg-status');
+        el.textContent = msg;
+        el.className = 'mt-2 text-[10px] ' + (ok ? 'text-emerald-700' : 'text-red-700');
+        clearTimeout(el._t);
+        el._t = setTimeout(() => { el.textContent = ''; }, 4000);
+    }
+
+    /** ───── Event delegation ───── */
+    document.addEventListener('click', async (e) => {
+        // Toggle expand
+        const btn = e.target.closest('.btn-expand');
+        if (btn) {
+            const drogaId = btn.dataset.drogaId;
+            const row = document.querySelector(`tr.expand-row[data-parent="${drogaId}"]`);
+            if (!row) return;
+            const parentRow = btn.closest('tr.droga-row');
+            const willOpen = row.classList.contains('hidden');
+            row.classList.toggle('hidden');
+            parentRow.classList.toggle('expanded', willOpen);
+            if (!willOpen) return;
+
+            const body = $(row, '.expand-body');
+            const id = body.dataset.drogaId;
+            const indicesCalc = JSON.parse(body.dataset.calcIndices);
+            if (!state.has(id)) {
+                state.set(id, { indicesCalc, escenarios: [], escActivo: null, chartA: null });
+            }
+            initHistorico(body, drogaId, indicesCalc);
+            await cargarEscenarios(body, id);
+            return;
+        }
+
+        // Tab switch
+        const tabBtn = e.target.closest('.tab-btn');
+        if (tabBtn) {
+            const body = tabBtn.closest('.expand-body');
+            const tab = tabBtn.dataset.tab;
+            $all(body, '.tab-btn').forEach(b => b.classList.toggle('active', b === tabBtn));
+            $all(body, '.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+            return;
+        }
+
+        // Click en chip de escenario
+        const chip = e.target.closest('.esc-chip');
+        if (chip) {
+            const body = chip.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            const esc = st.escenarios.find(x => x.id === parseInt(chip.dataset.escId, 10));
+            if (esc) cargarEscenario(body, esc);
+            return;
+        }
+
+        // + Nuevo escenario
+        if (e.target.classList.contains('esc-nuevo')) {
+            const body = e.target.closest('.expand-body');
+            cargarEscenario(body, null);
+            $(body, '.esc-nombre-input').value = '';
+            $(body, '.esc-nombre-input').focus();
+            return;
+        }
+
+        // Reset a calculado
+        if (e.target.classList.contains('btn-reset')) {
+            const body = e.target.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            escribirSliders(body, [...st.indicesCalc], st.indicesCalc);
+            $(body, '.lead-input').value = 0;
+            $(body, '.lead-val').textContent = '0';
+            $(body, '.cob-input').value = 1;
+            $(body, '.cob-val').textContent = '1.00';
+            actualizarChartDesdeControles(body);
+            return;
+        }
+
+        // Marcar como default
+        if (e.target.classList.contains('btn-default')) {
+            const body = e.target.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            if (!st.escActivo) return;
+            const r = await fetch(`/api/estacionalidad/droga/${body.dataset.drogaId}/escenarios/${st.escActivo.id}/default`, { method: 'POST' });
+            if (r.ok) {
+                await cargarEscenarios(body, body.dataset.drogaId);
+                mostrarStatus(body, 'Marcado como default.');
+            } else {
+                mostrarStatus(body, 'Error al marcar default.', false);
+            }
+            return;
+        }
+
+        // Eliminar
+        if (e.target.classList.contains('btn-eliminar')) {
+            const body = e.target.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            if (!st.escActivo) return;
+            if (!confirm(`¿Eliminar escenario "${st.escActivo.nombre}"?`)) return;
+            const r = await fetch(`/api/estacionalidad/droga/${body.dataset.drogaId}/escenarios/${st.escActivo.id}`, { method: 'DELETE' });
+            if (r.ok) {
+                await cargarEscenarios(body, body.dataset.drogaId);
+                mostrarStatus(body, 'Escenario eliminado.');
+            } else {
+                mostrarStatus(body, 'Error al eliminar.', false);
+            }
+            return;
+        }
+
+        // Guardar
+        if (e.target.classList.contains('btn-guardar')) {
+            const body = e.target.closest('.expand-body');
+            const drogaId = body.dataset.drogaId;
+            const nombre = ($(body, '.esc-nombre-input').value || '').trim();
+            if (!nombre) { mostrarStatus(body, 'Falta nombre del escenario.', false); return; }
+            const payload = {
+                nombre,
+                indices: leerSliders(body),
+                lead_time_meses: parseInt($(body, '.lead-input').value, 10),
+                cobertura_meses: parseFloat($(body, '.cob-input').value),
+                es_default: $(body, '.esc-default-check').checked,
+            };
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (r.ok) {
+                const esc = await r.json();
+                await cargarEscenarios(body, drogaId);
+                const st = state.get(drogaId);
+                const recargado = st.escenarios.find(x => x.id === esc.id);
+                if (recargado) cargarEscenario(body, recargado);
+                mostrarStatus(body, `Escenario "${esc.nombre}" guardado.`);
+            } else {
+                const err = await r.json().catch(() => ({}));
+                mostrarStatus(body, err.error || 'Error al guardar.', false);
+            }
+            return;
+        }
+    });
+
+    /** Sliders + ranges: input event (live update). */
+    document.addEventListener('input', (e) => {
+        if (e.target.matches('.slider-mes-input, .lead-input, .cob-input')) {
+            const body = e.target.closest('.expand-body');
+            if (!body) return;
+            if (e.target.classList.contains('lead-input')) {
+                $(body, '.lead-val').textContent = e.target.value;
+            }
+            if (e.target.classList.contains('cob-input')) {
+                $(body, '.cob-val').textContent = parseFloat(e.target.value).toFixed(2);
+            }
+            actualizarChartDesdeControles(body);
+        }
+    });
+})();
+</script>
+
+{% endblock %}

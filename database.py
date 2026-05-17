@@ -1497,6 +1497,34 @@ class DevolucionReceta(Base):
     )
 
 
+class EstacionalidadEscenario(Base):
+    """Escenario de ajuste estacional para una droga.
+
+    Permite al usuario guardar variantes nombradas ("base", "agresivo", etc.)
+    con sus 12 indices mensuales + parametros de lead time y cobertura. Uno
+    puede ser default y se usa al calcular cantidades sugeridas en pedidos.
+
+    El indice del mes m es un multiplicador sobre el promedio anual de la
+    droga: 1.0 = neutro, 2.0 = el doble del promedio en ese mes.
+    """
+    __tablename__ = 'estacionalidad_escenarios'
+    id = Column(Integer, primary_key=True)
+    droga_id = Column(Integer, ForeignKey('obs_nombres_drogas.observer_id'),
+                      nullable=False, index=True)
+    nombre = Column(String(60), nullable=False, default='base')
+    indices_json = Column(Text, nullable=False)  # JSON array de 12 floats
+    lead_time_meses = Column(Integer, nullable=False, default=0)
+    cobertura_meses = Column(DECIMAL(4, 2), nullable=False, default=1.0)
+    es_default = Column(Boolean, nullable=False, default=False, index=True)
+    creado_por = Column(String(80), nullable=True)
+    creado_en = Column(DateTime, default=now_ar)
+    actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+    __table_args__ = (
+        UniqueConstraint('droga_id', 'nombre', name='uq_estac_droga_nombre'),
+    )
+
+
 CAMPOS_SISTEMA = [
     ('fijo',            'Valor fijo / constante'),
     ('codigo_barra',    'Código de barra (EAN)'),
@@ -1570,7 +1598,8 @@ def init_db(database_url=None):
                         'motivo_devolucion', 'destino_devolucion',
                         'devolucion_receta',
                         'proveedor_cronograma',
-                        'tipo_pedido_config')
+                        'tipo_pedido_config',
+                        'estacionalidad_escenarios')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
