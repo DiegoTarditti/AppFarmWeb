@@ -324,15 +324,6 @@
     padding-top: 12px; border-top: 1px solid var(--ds-line);
 }
 .drawer-actions .spacer { flex: 1; }
-.cantidad-input {
-    background: rgba(0,0,0,.35);
-    border: 1px solid var(--ds-mint);
-    color: var(--ds-text);
-    padding: 5px 10px; border-radius: 4px;
-    font-size: 14px; width: 80px;
-    font-family: ui-monospace, Consolas, monospace;
-    font-weight: 700; text-align: right;
-}
 .drawer-status {
     margin-top: 8px; font-size: 11px; min-height: 14px;
 }
@@ -412,9 +403,8 @@
 
 <div class="pp-topbar">
     <h1>🧪 Pedido prueba</h1>
-    <span class="sub">Planificación grande con estacionalidad y comportamientos excepcionales</span>
-    <span class="pill">EXP</span>
-    <span class="meta">Comparativo en vivo vs /pedido/dia</span>
+    <span class="sub">Configurá estacionalidad y comportamientos excepcionales por producto · comparativo en vivo vs /pedido/dia</span>
+    <span class="pill">CONFIG</span>
 </div>
 
 <div class="pp-content">
@@ -429,22 +419,22 @@
             <div class="hsection">
                 <div class="hsection-title">🎯 Para qué sirve</div>
                 <p>
-                    Planificar <strong>pedidos grandes con anticipación</strong> usando
-                    estacionalidad por droga/producto y comportamientos excepcionales (DISCONTINUADO,
-                    REEMPLAZADO, SIN_DESCUENTO, NOTA).
+                    <strong>Configurar comportamiento por producto</strong>: estacionalidad
+                    (índices mensuales, lead time, cobertura) y comportamientos excepcionales
+                    (DISCONTINUADO, REEMPLAZADO, SIN_DESCUENTO, NOTA). No arma pedidos
+                    — solo guarda configuración que <strong>se aplicará automáticamente</strong>
+                    cuando armes pedidos en otras pantallas.
                 </p>
                 <p>
-                    Es <strong>paralelo</strong> a <code>/pedido/dia</code>:
+                    La fórmula nueva es <strong>paralela</strong> a <code>/pedido/dia</code>:
                 </p>
                 <ul>
-                    <li><code>/pedido/dia</code> = reposición táctica de las últimas
-                        ventas. Usa <code>u3m/90</code> como ritmo (lo que vendiste en
-                        los últimos 3 meses).</li>
-                    <li><code>/pedido/prueba</code> = planificación grande. Usa
-                        <code>u12m/365</code> como base neutra × <code>indice estacional del
-                        mes objetivo</code> × <code>cobertura en días</code>. Pensado para
-                        anticipar picos estacionales (verano = filtro solar, invierno =
-                        antitusivos, etc.) antes de que lleguen.</li>
+                    <li><code>/pedido/dia</code> = reposición táctica con
+                        <code>u3m/90</code> (ritmo del último trimestre).</li>
+                    <li><code>/pedido/prueba</code> = base
+                        <code>u12m/365</code> × <code>indice estacional del mes objetivo</code> ×
+                        <code>cobertura en días</code>. Pensado para anticipar picos
+                        estacionales (verano = filtro solar, invierno = antitusivos, etc.).</li>
                 </ul>
             </div>
 
@@ -454,20 +444,18 @@
                     <li>Elegí un <strong>laboratorio</strong> en el autocomplete
                         (multi-token: tipea <code>"abb dia"</code> matchea Abbott Diabetes).</li>
                     <li>Ajustá los <strong>defaults de cabecera</strong> (Lead time y
-                        Cobertura) según lo que aplique a este pedido. Por ejemplo:
-                        compra grande mensual = lead 7d / cob 30d; compra de
-                        temporada con anticipación = lead 30d / cob 60d.</li>
-                    <li>Click <strong>▶ Calcular</strong>. La tabla muestra
+                        Cobertura) según lo típico de tu operatoria con ese lab. Aplican
+                        a productos sin escenario propio.</li>
+                    <li>Click <strong>▶ Calcular</strong>. La tabla compara
                         <strong>sugerido día actual</strong> vs <strong>sugerido prueba</strong>
-                        para comparar.</li>
+                        para que veas dónde el cálculo nuevo difiere.</li>
+                    <li>Filtrá con <code>Mostrar: Solo con Δ ≠ 0</code> para enfocar
+                        productos donde hay desvío relevante.</li>
                     <li>Click en una <strong>fila</strong> para abrir el drawer con
-                        chart histórico + sliders para ajustar la estacionalidad del
-                        producto puntual + cantidad final editable.</li>
-                    <li>Filtrá con <code>Mostrar: Solo con Δ ≠ 0</code> para enfocarte
-                        en productos donde difiere del cálculo del día.</li>
-                    <li>Cuando estés conforme: <strong>💾 Guardar pedido</strong>
-                        (queda registrado con <code>origen='prueba'</code> en la lista
-                        de pedidos).</li>
+                        chart histórico + sliders. Ajustá la estacionalidad del producto
+                        puntual y guardá como escenario "Generico" del producto.</li>
+                    <li>Aplicá <strong>flags</strong> (DISCONTINUADO, etc.) a los productos
+                        que necesiten comportamiento excepcional.</li>
                 </ol>
             </div>
 
@@ -488,11 +476,9 @@
                         <span class="b-mute">AUTO</span> = sin escenario, usa los defaults
                         de cabecera + índices neutros (1.0/mes).</li>
                     <li><strong>Flag</strong>: comportamiento excepcional aplicado al EAN.
-                        <span class="b-danger">DISCONTINUADO</span> excluye del pedido (final=0),
+                        <span class="b-danger">DISCONTINUADO</span> excluye (sugerido=0),
                         <span class="b-warn">REEMPLAZADO/SIN_DESCUENTO</span> son badges
                         informativos, <span style="color:var(--ds-info);">NOTA</span> también.</li>
-                    <li><strong>Final</strong>: cantidad final editable. Empieza igual al
-                        sugerido prueba; podés cambiarla en el drawer.</li>
                 </ul>
             </div>
 
@@ -512,9 +498,9 @@
                         producto (no a otros de la misma droga).</li>
                     <li><strong>Guardar escenario producto</strong>: persiste el ajuste
                         en DB. La próxima vez que calcules, este producto va a usar
-                        el escenario propio (Origen pasa a <span class="b-mint">PRODUCTO</span>).</li>
-                    <li><strong>Cantidad final</strong>: override puntual del sugerido.
-                        No se guarda en escenario, solo va al pedido al guardar.</li>
+                        el escenario propio (Origen pasa a <span class="b-mint">PRODUCTO</span>).
+                        Cuando armes pedidos en otras pantallas, también se va a usar
+                        este escenario.</li>
                 </ul>
             </div>
 
@@ -582,22 +568,28 @@
         </div>
         <div class="pp-defaults">
             <div class="field-h"
-                 title="Lead time default que se usa para productos sin escenario propio. Mínimo 2 días.">
+                 title="Lead time default que se usa para productos sin escenario propio.">
                 <label>Lead time default:</label>
-                <input type="number" id="lead-default-input" min="2" max="180" step="1" value="2">
-                <span class="hint">días entre pedido y entrega · piso 2d</span>
+                <input type="number" id="lead-default-input"
+                       min="{{ limites.lead_dias_piso }}"
+                       max="{{ limites.lead_dias_max }}"
+                       step="1" value="{{ limites.lead_dias_default }}">
+                <span class="hint">días entre pedido y entrega · piso {{ limites.lead_dias_piso }}d</span>
             </div>
             <div class="field-h"
                  title="Cobertura default que se usa para productos sin escenario propio. Cuántos días querés cubrir con cada pedido.">
                 <label>Cobertura default:</label>
-                <input type="number" id="cob-default-input" min="1" max="365" step="1" value="30">
-                <span class="hint">días de demanda a cubrir · típico 30 (1 mes)</span>
+                <input type="number" id="cob-default-input"
+                       min="{{ limites.cob_dias_min }}"
+                       max="{{ limites.cob_dias_max }}"
+                       step="1" value="{{ limites.cob_dias_default }}">
+                <span class="hint">días de demanda a cubrir · típico {{ limites.cob_dias_default }} (1 mes)</span>
             </div>
         </div>
+        <script type="application/json" id="limites-data">{{ limites | tojson }}</script>
 
         <div class="actions">
             <button class="pp-btn primary" id="btn-calcular">▶ Calcular</button>
-            <button class="pp-btn" id="btn-save" disabled>💾 Guardar pedido</button>
             <span class="meta" style="margin-left:auto;font-size:11px;color:var(--ds-text-mute);">
                 Origen escenario:
                 <span class="pp-origen producto">producto</span>
@@ -637,7 +629,6 @@
                     <th>Δ</th>
                     <th>Origen</th>
                     <th>Flag</th>
-                    <th>Final</th>
                 </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -650,8 +641,8 @@
 (function() {
     const meses = {{ meses_es | tojson }};
     let itemsCache = [];
-    let cantidades = new Map();  // producto_id → cantidad_final editada
     const labsData = JSON.parse(document.getElementById('labs-data').textContent);
+    const LIMITES = JSON.parse(document.getElementById('limites-data').textContent);
 
     const $ = (sel, root=document) => root.querySelector(sel);
     const $$ = (sel, root=document) => root.querySelectorAll(sel);
@@ -782,7 +773,6 @@
     }
 
     function renderItem(it) {
-        const finalCantidad = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
         const flagHtml = it.flag
             ? `<span class="pp-flag ${it.flag.color}" title="${it.flag.nombre}">${it.flag.icono} ${it.flag.slug}</span>`
             : '';
@@ -797,17 +787,15 @@
             <td class="${clase(it.delta)}">${deltaStr}</td>
             <td><span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span></td>
             <td>${flagHtml}</td>
-            <td><b>${finalCantidad}</b></td>
         </tr>
         <tr class="drawer-row" data-parent="${it.producto_id}">
-            <td colspan="9">
+            <td colspan="8">
                 <div class="drawer-body"></div>
             </td>
         </tr>`;
     }
 
     function renderDrawer(it) {
-        const finalCantidad = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
         const peakIdx = it.indices.indexOf(Math.max(...it.indices));
         const slidersHtml = meses.map((m, i) => {
             const v = it.indices[i];
@@ -857,12 +845,14 @@
             <div class="drawer-grid">
                 <div class="range-row">
                     <label>Lead time:</label>
-                    <input type="range" min="2" max="180" step="1" value="${Math.max(2, it.lead_dias)}" class="lead-input">
-                    <span class="range-val lead-val">${Math.max(2, it.lead_dias)}d</span>
+                    <input type="range" min="${LIMITES.lead_dias_piso}" max="${LIMITES.lead_dias_max}" step="1"
+                           value="${Math.max(LIMITES.lead_dias_piso, it.lead_dias)}" class="lead-input">
+                    <span class="range-val lead-val">${Math.max(LIMITES.lead_dias_piso, it.lead_dias)}d</span>
                 </div>
                 <div class="range-row">
                     <label>Cobertura:</label>
-                    <input type="range" min="1" max="365" step="1" value="${it.cobertura_dias}" class="cob-input">
+                    <input type="range" min="${LIMITES.cob_dias_min}" max="${LIMITES.cob_dias_max}" step="1"
+                           value="${it.cobertura_dias}" class="cob-input">
                     <span class="range-val cob-val">${it.cobertura_dias}d</span>
                 </div>
             </div>
@@ -870,9 +860,6 @@
 
         <div class="drawer-actions">
             <button class="pp-btn primary btn-guardar-escenario">💾 Guardar escenario producto</button>
-            <span class="spacer"></span>
-            <label style="font-size:11px;color:var(--ds-text-soft);">Cantidad final:</label>
-            <input type="number" class="cantidad-input cantidad-final" value="${finalCantidad}" min="0" step="1">
         </div>
         <div class="drawer-status"></div>`;
     }
@@ -899,12 +886,12 @@
     }
 
     function actualizarKpis(items) {
+        // KPIs informativos puros (no se arma pedido en esta pantalla).
         $('#kpi-prods').textContent = items.length;
         let totalDia = 0, totalPrueba = 0;
         items.forEach(it => {
             totalDia += (it.sugerido_dia || 0);
-            const cant = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
-            totalPrueba += cant;
+            totalPrueba += (it.sugerido_prueba || 0);
         });
         const delta = totalPrueba - totalDia;
         const pct = totalDia ? ((delta / totalDia) * 100).toFixed(1) : '—';
@@ -919,13 +906,14 @@
         const labId = $('#lab-select').value;
         if (!labId) { alert('Elegí un laboratorio'); return; }
         const minU12m = parseFloat($('#min-u12m-input').value || '0');
-        const leadDefault = Math.max(2, parseInt($('#lead-default-input').value || '2'));
-        const cobDefault = Math.max(1, parseInt($('#cob-default-input').value || '30'));
+        const leadDefault = Math.max(LIMITES.lead_dias_piso,
+                                     parseInt($('#lead-default-input').value || String(LIMITES.lead_dias_default)));
+        const cobDefault = Math.max(LIMITES.cob_dias_min,
+                                    parseInt($('#cob-default-input').value || String(LIMITES.cob_dias_default)));
         $('#msg-wrap').textContent = 'Calculando…';
         $('#msg-wrap').style.display = '';
         $('#table-wrap').style.display = 'none';
         $('#kpis-wrap').style.display = 'none';
-        cantidades.clear();
 
         try {
             const r = await fetch('/api/pedido-prueba/calcular', {
@@ -947,7 +935,6 @@
             $('#msg-wrap').style.display = 'none';
             $('#table-wrap').style.display = '';
             $('#kpis-wrap').style.display = '';
-            $('#btn-save').disabled = false;
             renderTabla();
         } catch (e) {
             $('#msg-wrap').textContent = 'Error al calcular: ' + e.message;
@@ -1113,33 +1100,8 @@
         }
     }
 
-    async function guardarPedido() {
-        if (!itemsCache.length) return;
-        const items = itemsCache.filter(it => {
-            const cant = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
-            return cant > 0 && pasaFiltros(it);
-        }).map(it => ({
-            producto_id: it.producto_id,
-            ean: '',
-            nombre: it.producto_nombre,
-            cantidad: cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba,
-            precio: 0,
-        }));
-        if (!items.length) { alert('No hay productos con cantidad > 0'); return; }
-
-        const labId = parseInt($('#lab-select').value);
-        const r = await fetch('/api/pedido-prueba/save', {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({lab_id: labId, items}),
-        });
-        if (!r.ok) { alert('Error al guardar'); return; }
-        const data = await r.json();
-        alert(`Pedido #${data.pedido_id} guardado con ${data.total_unidades} unidades.`);
-    }
-
     /* ───── Event delegation ───── */
     $('#btn-calcular').addEventListener('click', calcular);
-    $('#btn-save').addEventListener('click', guardarPedido);
     $('#filtro-input').addEventListener('input', renderTabla);
     $('#mostrar-select').addEventListener('change', renderTabla);
 
@@ -1169,18 +1131,6 @@
         if (e.target.matches('.cob-input')) {
             body.querySelector('.cob-val').textContent = e.target.value + 'd';
             actualizarChartDesdeSliders(body);
-        }
-        if (e.target.matches('.cantidad-final')) {
-            const tr = body.closest('tr.drawer-row');
-            const id = parseInt(tr.dataset.parent);
-            const cant = parseInt(e.target.value) || 0;
-            cantidades.set(id, cant);
-            // Actualizar la fila padre
-            const rowData = document.querySelector(`tr.row-data[data-id="${id}"]`);
-            if (rowData) {
-                rowData.querySelector('td:last-child').innerHTML = `<b>${cant}</b>`;
-            }
-            actualizarKpis(itemsCache.filter(pasaFiltros));
         }
     });
 })();

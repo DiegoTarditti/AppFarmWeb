@@ -62,14 +62,21 @@ def _validar_payload_escenario(payload):
     except (TypeError, ValueError):
         return False, 'Los indices deben ser numericos.', None
     try:
-        # Piso operativo 2 dias: ningun proveedor entrega instantaneo.
-        from services.pedido_estacional import LEAD_DIAS_PISO
-        lead = max(LEAD_DIAS_PISO,
-                   min(180, int(payload.get('lead_time_dias', LEAD_DIAS_PISO))))
+        # Limites centralizados en services/pedido_estacional.LIMITES.
+        from services.pedido_estacional import LIMITES
+        lead = max(
+            LIMITES['lead_dias_piso'],
+            min(LIMITES['lead_dias_max'],
+                int(payload.get('lead_time_dias', LIMITES['lead_dias_default']))),
+        )
     except (TypeError, ValueError):
         return False, 'lead_time_dias invalido.', None
     try:
-        cob = max(1, min(365, int(payload.get('cobertura_dias', 30))))
+        cob = max(
+            LIMITES['cob_dias_min'],
+            min(LIMITES['cob_dias_max'],
+                int(payload.get('cobertura_dias', LIMITES['cob_dias_default']))),
+        )
     except (TypeError, ValueError):
         return False, 'cobertura_dias invalida.', None
     es_default = bool(payload.get('es_default', False))
@@ -352,6 +359,7 @@ def init_app(app):
         meses_es = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
                     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
+        from services.pedido_estacional import LIMITES as _LIMITES
         return render_template(
             'estacionalidad_drogas.html',
             drogas=resultado_pag,
@@ -364,6 +372,7 @@ def init_app(app):
             orden=orden,
             per_page=per_page,
             meses_es=meses_es,
+            limites=_LIMITES,
         )
 
     @app.route('/api/estacionalidad/droga/<int:droga_id>')

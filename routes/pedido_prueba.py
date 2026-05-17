@@ -15,11 +15,10 @@ productos del lab con ventas en 12m → cada producto muestra:
 
 import json
 import os
-from datetime import datetime as _dt
 
 from flask import jsonify, render_template, request
 from flask_login import current_user, login_required
-from sqlalchemy import desc, func
+from sqlalchemy import func
 
 from database import (
     EstacionalidadEscenario,
@@ -28,14 +27,12 @@ from database import (
     ObsProducto,
     ObsStock,
     ObsVentaMensual,
-    Pedido,
-    PedidoItem,
     ProductoFlag,
     TipoPedidoConfig,
     get_db,
 )
 from services.pedido_estacional import (
-    LEAD_DIAS_PISO,
+    LIMITES,
     MESES_ES,
     calcular_sugerido_estacional,
 )
@@ -121,7 +118,8 @@ def init_app(app):
                          for l in labs]
         return render_template('pedido_prueba.html',
                                labs=labs_list,
-                               meses_es=MESES_ES)
+                               meses_es=MESES_ES,
+                               limites=LIMITES)
 
     @app.route('/api/pedido-prueba/historico/<int:producto_id>')
     @login_required
@@ -164,14 +162,21 @@ def init_app(app):
         # SIN escenario propio (origen='auto'). Los productos con escenario
         # propio o de droga mantienen sus valores.
         try:
-            lead_default = max(LEAD_DIAS_PISO,
-                               min(180, int(payload.get('lead_default') or LEAD_DIAS_PISO)))
+            lead_default = max(
+                LIMITES['lead_dias_piso'],
+                min(LIMITES['lead_dias_max'],
+                    int(payload.get('lead_default') or LIMITES['lead_dias_default'])),
+            )
         except (TypeError, ValueError):
-            lead_default = LEAD_DIAS_PISO
+            lead_default = LIMITES['lead_dias_default']
         try:
-            cob_default = max(1, min(365, int(payload.get('cob_default') or 30)))
+            cob_default = max(
+                LIMITES['cob_dias_min'],
+                min(LIMITES['cob_dias_max'],
+                    int(payload.get('cob_default') or LIMITES['cob_dias_default'])),
+            )
         except (TypeError, ValueError):
-            cob_default = 30
+            cob_default = LIMITES['cob_dias_default']
         id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
 
         with get_db() as session:
@@ -265,9 +270,16 @@ def init_app(app):
             return jsonify({'error': 'Se esperan 12 indices'}), 400
         try:
             indices = [max(0.0, float(v)) for v in indices]
-            lead = max(LEAD_DIAS_PISO,
-                       min(180, int(payload.get('lead_time_dias', LEAD_DIAS_PISO))))
-            cob = max(1, min(365, int(payload.get('cobertura_dias', 30))))
+            lead = max(
+                LIMITES['lead_dias_piso'],
+                min(LIMITES['lead_dias_max'],
+                    int(payload.get('lead_time_dias', LIMITES['lead_dias_default']))),
+            )
+            cob = max(
+                LIMITES['cob_dias_min'],
+                min(LIMITES['cob_dias_max'],
+                    int(payload.get('cobertura_dias', LIMITES['cob_dias_default']))),
+            )
         except (TypeError, ValueError):
             return jsonify({'error': 'parametros invalidos'}), 400
 
@@ -369,53 +381,8 @@ def init_app(app):
 
             return jsonify({'ok': True})
 
-    @app.route('/api/pedido-prueba/save', methods=['POST'])
-    @login_required
-    def api_pedido_prueba_save():
-        """Guarda como Pedido con origen='prueba' + PedidoItems."""
-        payload = request.get_json(silent=True) or {}
-        try:
-            lab_id = int(payload.get('lab_id') or 0)
-        except (TypeError, ValueError):
-            return jsonify({'error': 'lab_id invalido'}), 400
-        items = payload.get('items') or []
-        if not lab_id or not items:
-            return jsonify({'error': 'lab_id e items requeridos'}), 400
-
-        with get_db() as session:
-            lab = (session.query(ObsLaboratorio)
-                   .filter_by(observer_id=lab_id).first())
-            lab_nombre = lab.descripcion if lab else f'Lab#{lab_id}'
-
-            pedido = Pedido(
-                laboratorio=lab_nombre,
-                farmacia='',
-                periodo='planificacion',
-                n_days=30,
-                origen='prueba',
-                creado_en=_dt.utcnow(),
-            )
-            session.add(pedido)
-            session.flush()
-
-            total_unidades = 0
-            for it in items:
-                cantidad = int(it.get('cantidad') or 0)
-                if cantidad <= 0:
-                    continue
-                session.add(PedidoItem(
-                    pedido_id=pedido.id,
-                    codigo_barra=str(it.get('ean') or ''),
-                    nombre=str(it.get('nombre') or ''),
-                    cantidad=cantidad,
-                    precio_pvp=float(it.get('precio') or 0),
-                    subtotal=float(it.get('precio') or 0) * cantidad,
-                ))
-                total_unidades += cantidad
-
-            session.commit()
-            return jsonify({
-                'ok': True,
-                'pedido_id': pedido.id,
-                'total_unidades': total_unidades,
-            })
+    # Endpoint /save eliminado en el pivot a "solo configuración".
+    # La pantalla ya no arma pedidos; los escenarios y flags se persisten
+    # individualmente por el drawer (escenario-producto) y por el endpoint
+    # de flag. Si en el futuro vuelve a hacer falta armar pedido desde
+    # aca, ver git history en branch feat/pedido-prueba (commit ef68334).

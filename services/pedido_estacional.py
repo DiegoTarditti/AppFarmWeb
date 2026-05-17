@@ -37,10 +37,29 @@ from database import (
 
 # Default por si no hay escenario ni para producto ni para droga.
 _DEFAULT_INDICES = [1.0] * 12
-_DEFAULT_LEAD_DIAS = 2  # piso operativo: ningun proveedor entrega instantaneo
-_DEFAULT_COBERTURA_DIAS = 30
 _ESCENARIO_NOMBRE = 'Generico'  # convencion v1: 1 solo escenario por droga/producto
-LEAD_DIAS_PISO = 2  # exportado para que los endpoints clipeen consistente
+
+# ────── Source of truth UNICO de los limites lead/cobertura ──────
+# Todos los validadores backend, los sliders/inputs del frontend y los JS
+# leen de aca. Si querés cambiar algun limite, lo haces en UN solo lugar
+# y se propaga al template via Jinja (route lo pasa como `limites=LIMITES`)
+# y al JS via <script type="application/json" id="limites">.
+LIMITES = {
+    # Lead time (dias entre pedido y entrega del proveedor)
+    'lead_dias_piso':    2,    # piso operativo: ningun proveedor entrega instantaneo
+    'lead_dias_default': 2,    # valor inicial cuando no hay escenario configurado
+    'lead_dias_max':     180,  # tope razonable (~6 meses)
+
+    # Cobertura (dias de demanda a cubrir con cada pedido)
+    'cob_dias_min':      1,
+    'cob_dias_default':  30,   # 1 mes tipico
+    'cob_dias_max':      365,  # tope razonable (1 anio)
+}
+
+# Aliases retrocompat (no usar en codigo nuevo, usar LIMITES['...']).
+LEAD_DIAS_PISO = LIMITES['lead_dias_piso']
+_DEFAULT_LEAD_DIAS = LIMITES['lead_dias_default']
+_DEFAULT_COBERTURA_DIAS = LIMITES['cob_dias_default']
 
 
 MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
