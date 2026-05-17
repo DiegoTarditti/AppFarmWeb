@@ -8,15 +8,12 @@ import json
 import pytest
 
 import database
-import routes.estacionalidad as estac_routes
 from database import EstacionalidadEscenario, ObsNombreDroga
 
-
-@pytest.fixture(scope='module', autouse=True)
-def _registrar_modulo_estacionalidad(flask_app):
-    if 'informe_estacionalidad_drogas' in flask_app.view_functions:
-        return
-    estac_routes.init_app(flask_app)
+# Nota: routes.estacionalidad.init_app(flask_app) está registrado en
+# tests/conftest.py junto a los otros módulos de rutas; no re-registramos
+# acá porque Flask rechaza nuevas rutas después del primer request del app
+# (lo cual rompe el orden de tests en CI).
 
 
 @pytest.fixture

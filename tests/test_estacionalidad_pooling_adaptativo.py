@@ -12,7 +12,6 @@ from datetime import datetime
 import pytest
 
 import database
-import routes.estacionalidad as estac_routes
 from database import (
     ObsNombreDroga,
     ObsProducto,
@@ -21,14 +20,8 @@ from database import (
 )
 from routes.estacionalidad import HETEROGENEIDAD_MAX_DROGAS
 
-
-@pytest.fixture(scope='module', autouse=True)
-def _registrar_modulo_estacionalidad(flask_app):
-    # Si otro módulo de tests ya lo registró, no re-registrar (Flask no permite
-    # agregar rutas después del primer request).
-    if 'informe_estacionalidad_drogas' in flask_app.view_functions:
-        return
-    estac_routes.init_app(flask_app)
+# Nota: routes.estacionalidad.init_app(flask_app) está registrado en
+# tests/conftest.py.
 
 
 def _seed_subrubro(session, sr_id, descripcion):
