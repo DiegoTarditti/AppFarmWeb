@@ -221,6 +221,16 @@
 .pp-flag.sky    { background: rgba(56,189,248,.14); color: var(--ds-info); }
 .pp-flag.gray   { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
 
+/* Badge de rotación (A/M/B) */
+.pp-rot {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px;
+}
+.pp-rot.mint   { background: rgba(95,230,188,.16); color: var(--ds-mint); }
+.pp-rot.warn   { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-rot.muted  { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
 .chev { display: inline-block; transition: transform .15s; color: var(--ds-text-mute); }
 .expanded > td .chev { transform: rotate(90deg); color: var(--ds-mint); }
 
@@ -641,6 +651,8 @@
                     <th>Stock</th>
                     <th title="Unidades vendidas en últimos 3 meses completos (excluye mes parcial actual)">u3m</th>
                     <th title="Unidades vendidas en últimos 12 meses">u12m</th>
+                    <th title="Rotación basada en promedio mensual 12m: A=alta (≥20/mes), M=media (≥5/mes), B=baja (<5/mes)">Rot</th>
+                    <th title="Promedio mensual de ventas (u12m/12)">Prom/mes</th>
                     <th>Día act.</th>
                     <th>Prueba</th>
                     <th>Δ</th>
@@ -827,12 +839,19 @@
         const pvpStr = it.precio_pvp == null ? '—' : '$ ' + fmt(it.precio_pvp);
         const montoPruebaStr = it.monto_prueba == null
             ? '—' : '$ ' + fmt(Math.round(it.monto_prueba));
+        const rotLabels = {A: 'Alta', M: 'Media', B: 'Baja'};
+        const rotClase = {A: 'mint', M: 'warn', B: 'muted'};
+        const rotHtml = it.rotacion
+            ? `<span class="pp-rot ${rotClase[it.rotacion]}" title="${rotLabels[it.rotacion]}">${it.rotacion}</span>`
+            : '—';
         return `
         <tr class="row-data" data-id="${it.producto_id}">
             <td class="left"><span class="chev">▶</span> ${it.producto_nombre}</td>
             <td>${it.stock}</td>
             <td class="muted">${fmt(it.u3m || 0)}</td>
             <td>${fmt(it.u12m)}</td>
+            <td>${rotHtml}</td>
+            <td class="muted">${it.prom_12m != null ? fmt(it.prom_12m) : '—'}</td>
             <td>${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
             <td><b>${it.sugerido_prueba}</b></td>
             <td class="${clase(it.delta)}">${deltaStr}</td>
@@ -842,7 +861,7 @@
             <td>${flagHtml}</td>
         </tr>
         <tr class="drawer-row" data-parent="${it.producto_id}">
-            <td colspan="11">
+            <td colspan="13">
                 <div class="drawer-body"></div>
             </td>
         </tr>`;
@@ -850,6 +869,11 @@
 
     function renderDrawer(it) {
         const peakIdx = it.indices.indexOf(Math.max(...it.indices));
+        const rotLabels = {A: 'Alta', M: 'Media', B: 'Baja'};
+        const rotClase = {A: 'mint', M: 'warn', B: 'muted'};
+        const rotHtml = it.rotacion
+            ? `<span class="pp-rot ${rotClase[it.rotacion]}" title="${rotLabels[it.rotacion]}">${it.rotacion} · ${rotLabels[it.rotacion]}</span>`
+            : '—';
         const slidersHtml = meses.map((m, i) => {
             const v = it.indices[i];
             const peak = i === peakIdx ? 'peak' : '';
@@ -879,8 +903,12 @@
                 <div class="card-title">Estado base</div>
                 <div class="razon">
                     Stock actual: <b>${it.stock}</b> &nbsp;·&nbsp;
-                    Mínimo: <b>${it.minimo}</b><br>
+                    Mínimo: <b>${it.minimo}</b> &nbsp;·&nbsp;
+                    Rotación: ${rotHtml}<br>
                     Ventas 12m: <b>${fmt(it.u12m)}u</b> &nbsp;·&nbsp;
+                    Prom 12m: <b>${fmt(it.prom_12m)}u/mes</b><br>
+                    Ventas 3m: <b>${fmt(it.u3m)}u</b> &nbsp;·&nbsp;
+                    Prom 3m: <b>${fmt(it.prom_3m)}u/mes</b><br>
                     Ritmo diario ajustado: <b>${it.ritmo_diario} u/d</b><br>
                     Demanda proyectada: <b>${it.demanda_proyectada}u</b> &nbsp;·&nbsp;
                     Sugerido prueba: <b>${it.sugerido_prueba}u</b>

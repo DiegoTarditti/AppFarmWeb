@@ -239,6 +239,12 @@ def init_app(app):
                 # Aprovecho ventas_arr_bulk que ya tengo cargado.
                 _arr = ventas_arr_bulk.get(p.observer_id, [0.0] * 12)
                 u3m = int(sum(_arr[8:11]))  # indices 8,9,10 = 3 meses antes del actual
+                # Promedios mensuales + rotacion (usando rotation_index de
+                # purchase_engine.py que ya define A/M/B: >=20/mes, >=5/mes, resto).
+                prom_3m = round(u3m / 3.0, 1) if u3m else 0
+                prom_12m = round(float(u12m) / 12.0, 1) if u12m else 0
+                from purchase_engine import rotation_index as _rot_idx
+                rotacion = _rot_idx(prom_12m)  # 'A' | 'M' | 'B'
                 resultado.append({
                     'producto_id': p.observer_id,
                     'producto_nombre': p.descripcion,
@@ -248,6 +254,9 @@ def init_app(app):
                     'minimo': st['minimo'],
                     'u12m': int(u12m),
                     'u3m': u3m,
+                    'prom_3m': prom_3m,
+                    'prom_12m': prom_12m,
+                    'rotacion': rotacion,
                     'sugerido_dia': sug_dia,
                     'sugerido_prueba': est['sugerido_final'],
                     'sugerido_base_prueba': est['sugerido_base'],
