@@ -387,7 +387,6 @@
     color: var(--ds-text-mute);
 }
 .ff-cron-banner {
-    display: none;
     margin-bottom: 12px;
     padding: 8px 14px;
     background: rgba(56,189,248,.08);
@@ -880,7 +879,7 @@
             card.classList.toggle('week-neg', saldo < 0);
             // F: badge pico en la semana de mayor egreso (solo si hay variación real)
             if (picoBadge) {
-                const esPico = maxNeto > 0 && wkNeto[i] === maxNeto && N_WEEKS > 1;
+                const esPico = maxNeto > 0 && wkNeto[i] === maxNeto && N_WEEKS > 1 && maxNeto > Math.min(...wkNeto);
                 picoBadge.classList.toggle('visible', esPico);
             }
         }
@@ -1167,7 +1166,6 @@
         // % del egreso que representan los partners visibles (top-N activo)
         const pctEl = document.getElementById('ff-topn-pct');
         if (pctEl && EGRESO_NETO_TOTAL > 0 && restoCount > 0) {
-            const netoVisible = EGRESO_NETO_TOTAL - restoBruto; // restoBruto tiene neto del resto
             const pct = ((EGRESO_NETO_TOTAL - restoNeto) / EGRESO_NETO_TOTAL * 100).toFixed(0);
             pctEl.textContent = `· top ${shown} = ${pct}% del egreso`;
         } else if (pctEl) {
@@ -1402,6 +1400,7 @@
             const r = await fetch('/api/flujo/aplicar-dto-default', {
                 method: 'POST', credentials: 'same-origin'
             });
+            if (!r.ok) throw new Error(await r.text());
             const d = await r.json();
             if (d.ok) {
                 toast(`✓ ${d.actualizados} labs actualizados a 30%`, '#10b981');
@@ -1449,7 +1448,7 @@
                 banner.innerHTML = '📅 <b style="margin-right:6px;">Pedidos programados:</b>' + items.join('');
                 banner.style.display = 'flex';
             }
-        } catch {}
+        } catch (e) { console.warn('cronBanner:', e); }
     })();
 
 })();
