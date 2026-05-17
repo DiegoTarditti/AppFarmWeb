@@ -354,12 +354,20 @@
                    title="Solo se procesan productos con ≥ este nº de unidades vendidas en los últimos 12 meses. 0 = sin filtro. Default 6 = al menos 0,5/mes.">
         </div>
         <div class="field">
-            <label title="Filtra la tabla por texto que matchee el nombre del producto o la droga.">Filtro producto</label>
-            <input type="text" id="filtro-input" placeholder="nombre o droga..."
-                   title="Texto que matchea nombre del producto o de la droga. Vacío = sin filtro.">
+            <label title="Filtra la tabla por texto. Multi-token AND: 'amox 500' matchea 'AMOXIDAL 500'.">Filtro producto</label>
+            <p class="pp-help">
+                Multi-token AND: <b>'amox 500'</b> matchea nombre o droga.
+                <br>Case-insensitive, sin acentos. Vacío = sin filtro.
+            </p>
+            <input type="text" id="filtro-input" placeholder="ej: amox 500"
+                   title="Multi-token: cada palabra debe estar en el nombre o en la droga del producto.">
         </div>
         <div class="field">
             <label title="Qué filas mostrar en la tabla.">Mostrar</label>
+            <p class="pp-help">
+                Filtra por relevancia. <b>Δ ≠ 0</b> = solo donde difiere
+                de /pedido/dia; <b>flag</b> = solo con comportamiento excepcional.
+            </p>
             <select id="mostrar-select"
                     title="Todos = todas las filas. Solo con Δ = solo las que difieren del cálculo de /pedido/dia. Solo con flag = solo las que tienen comportamiento excepcional aplicado.">
                 <option value="todos">Todos</option>
@@ -635,10 +643,12 @@
     }
 
     function pasaFiltros(it) {
-        const filtro = ($('#filtro-input').value || '').toLowerCase();
-        if (filtro && !(it.producto_nombre.toLowerCase().includes(filtro)
-                      || (it.droga_nombre||'').toLowerCase().includes(filtro))) {
-            return false;
+        // Multi-token AND sobre nombre y droga (normalizado: lowercase + sin acentos).
+        const query = $('#filtro-input').value || '';
+        const tokens = normalizar(query).split(/\s+/).filter(t => t.length > 0);
+        if (tokens.length) {
+            const haystack = normalizar(it.producto_nombre) + ' ' + normalizar(it.droga_nombre || '');
+            if (!tokens.every(t => haystack.includes(t))) return false;
         }
         const mostrar = $('#mostrar-select').value;
         if (mostrar === 'delta' && (it.delta == null || it.delta === 0)) return false;
