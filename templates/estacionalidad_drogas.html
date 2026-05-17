@@ -405,6 +405,79 @@
 }
 .est-pag a:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
 .est-pag .active { background: var(--ds-mint); color: var(--ds-bg); border-color: var(--ds-mint); }
+
+/* ────────── Tab Aplicar a productos ────────── */
+.aplic-loading {
+    padding: 24px; text-align: center;
+    font-size: 12px; color: var(--ds-text-mute);
+}
+.aplic-header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding: 10px 14px;
+    background: rgba(0,0,0,.18);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+}
+.aplic-lbl {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ds-text-mute);
+    white-space: nowrap;
+}
+.aplic-esc-select {
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px; padding: 5px 10px; font-size: 12px; outline: none;
+}
+.aplic-esc-select:focus { border-color: var(--ds-mint); }
+.aplic-resumen { margin-left: auto; font-size: 11px; color: var(--ds-text-mute); }
+.aplic-labs-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 380px; overflow-y: auto;
+    padding-right: 2px;
+}
+.aplic-lab-group {
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md); overflow: hidden;
+}
+.aplic-lab-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    background: rgba(0,0,0,.22);
+    cursor: pointer; user-select: none;
+}
+.aplic-lab-head:hover { background: rgba(0,0,0,.3); }
+.aplic-lab-chev { font-size: 9px; color: var(--ds-text-mute); transition: transform .15s; }
+.aplic-lab-group.open .aplic-lab-chev { transform: rotate(90deg); }
+.aplic-lab-nombre {
+    font-size: 12px; font-weight: 700; color: var(--ds-text); flex: 1;
+}
+.aplic-lab-cnt { font-size: 10px; color: var(--ds-text-mute); }
+.aplic-lab-body {
+    display: none; padding: 4px 0;
+}
+.aplic-lab-group.open .aplic-lab-body { display: block; }
+.aplic-prod-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 14px;
+    border-bottom: 1px solid rgba(255,255,255,.03);
+}
+.aplic-prod-row:last-child { border-bottom: none; }
+.aplic-prod-row:hover { background: rgba(95,230,188,.04); }
+.aplic-prod-row input[type="checkbox"] { accent-color: var(--ds-mint); cursor: pointer; }
+.aplic-prod-desc { font-size: 11px; color: var(--ds-text-soft); flex: 1; }
+.aplic-badge-asig {
+    font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 999px;
+    background: rgba(95,230,188,.14); color: var(--ds-mint);
+    white-space: nowrap;
+}
+.aplic-footer {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--ds-line);
+}
+.aplic-sel-count { font-size: 12px; color: var(--ds-text-mute); flex: 1; }
 </style>
 {% endblock %}
 
@@ -548,6 +621,7 @@
                             <div class="est-tabs">
                                 <button type="button" class="est-tab active" data-tab="historico">📈 Histórico</button>
                                 <button type="button" class="est-tab" data-tab="ajustar">🎚 Ajustar y guardar</button>
+                                <button type="button" class="est-tab" data-tab="aplicar">📦 Aplicar a productos</button>
                             </div>
 
                             {# ─── TAB Histórico ─── #}
@@ -692,6 +766,30 @@
                                     </button>
                                 </div>
                                 <div class="msg-status"></div>
+                            </div>
+
+                            {# ─── TAB Aplicar a productos ─── #}
+                            <div class="tab-panel" data-tab="aplicar">
+                                <div class="aplic-loading">Cargando productos…</div>
+                                <div class="aplic-content" style="display:none;">
+                                    <div class="aplic-header">
+                                        <span class="aplic-lbl">Escenario a aplicar:</span>
+                                        <select class="aplic-esc-select">
+                                            <option value="">— sin escenarios guardados —</option>
+                                        </select>
+                                        <span class="aplic-resumen"></span>
+                                    </div>
+                                    <div class="aplic-labs-list"></div>
+                                    <div class="aplic-footer">
+                                        <span class="aplic-sel-count">0 seleccionados</span>
+                                        <button type="button" class="est-btn aplic-btn-desvincular" style="display:none;">
+                                            ✕ Desvincular seleccionados
+                                        </button>
+                                        <button type="button" class="est-btn primary aplic-btn-aplicar" disabled>
+                                            Aplicar escenario
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
 
                         </div>
@@ -971,6 +1069,50 @@
             const tab = tabBtn.dataset.tab;
             $all(body, '.est-tab').forEach(b => b.classList.toggle('active', b === tabBtn));
             $all(body, '.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+            if (tab === 'aplicar') {
+                const drogaId = body.dataset.drogaId;
+                const panel = $(body, '.tab-panel[data-tab="aplicar"]');
+                if (!panel.dataset.loaded) initAplicar(body, drogaId);
+            }
+            return;
+        }
+
+        if (e.target.closest('.aplic-lab-head')) {
+            e.target.closest('.aplic-lab-group').classList.toggle('open');
+            return;
+        }
+
+        if (e.target.classList.contains('aplic-lab-check')) {
+            const group = e.target.closest('.aplic-lab-group');
+            const checked = e.target.checked;
+            $all(group, '.aplic-prod-check').forEach(c => { c.checked = checked; });
+            actualizarContadorAplic(e.target.closest('.expand-body'));
+            return;
+        }
+
+        if (e.target.classList.contains('aplic-prod-check')) {
+            actualizarContadorAplic(e.target.closest('.expand-body'));
+            return;
+        }
+
+        if (e.target.classList.contains('aplic-btn-aplicar')) {
+            const body = e.target.closest('.expand-body');
+            const drogaId = body.dataset.drogaId;
+            const escId = parseInt($(body, '.aplic-esc-select').value, 10);
+            if (!escId) { alert('Seleccioná un escenario primero.'); return; }
+            const prodIds = getCheckedProdIds(body);
+            if (!prodIds.length) return;
+            aplicarEscenario(body, drogaId, escId, prodIds);
+            return;
+        }
+
+        if (e.target.classList.contains('aplic-btn-desvincular')) {
+            const body = e.target.closest('.expand-body');
+            const drogaId = body.dataset.drogaId;
+            const prodIds = getCheckedProdIds(body);
+            if (!prodIds.length) return;
+            if (!confirm(`¿Desvincular escenario de ${prodIds.length} producto(s)?`)) return;
+            desvincularProductos(body, drogaId, prodIds);
             return;
         }
 
@@ -1075,7 +1217,148 @@
             }
             actualizarChartDesdeControles(body);
         }
+
+        if (e.target.classList.contains('aplic-esc-select')) {
+            actualizarContadorAplic(e.target.closest('.expand-body'));
+        }
     });
+
+    // ── Funciones tab "Aplicar a productos" ──────────────────────────────
+
+    async function initAplicar(body, drogaId) {
+        const panel = $(body, '.tab-panel[data-tab="aplicar"]');
+        panel.dataset.loaded = '1';
+        const loading = $(panel, '.aplic-loading');
+        const content = $(panel, '.aplic-content');
+
+        let data;
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/productos`);
+            if (!r.ok) throw new Error(await r.text());
+            data = await r.json();
+        } catch (err) {
+            loading.textContent = `Error al cargar productos: ${err.message}`;
+            return;
+        }
+
+        // Poblar selector de escenarios desde state
+        const st = state.get(drogaId);
+        const sel = $(panel, '.aplic-esc-select');
+        sel.innerHTML = '';
+        if (st && st.escenarios.length) {
+            st.escenarios.forEach(e => {
+                const opt = document.createElement('option');
+                opt.value = e.id;
+                opt.textContent = (e.es_default ? '★ ' : '') + e.nombre;
+                if (e.es_default) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        } else {
+            sel.innerHTML = '<option value="">— sin escenarios guardados —</option>';
+        }
+
+        // Resumen total asignados
+        const totalAsig = data.labs.reduce((a, l) => a + l.productos.filter(p => p.escenario_id).length, 0);
+        $(panel, '.aplic-resumen').textContent =
+            totalAsig ? `${totalAsig} de ${data.total} ya asignados` : `${data.total} productos`;
+
+        // Construir lista de labs
+        const list = $(panel, '.aplic-labs-list');
+        list.innerHTML = '';
+
+        if (!data.labs.length) {
+            list.innerHTML = '<p style="font-size:12px;color:var(--ds-text-mute);padding:12px 0;">Sin productos con ventas para esta droga.</p>';
+        } else {
+            data.labs.forEach(lab => {
+                const asigCount = lab.productos.filter(p => p.escenario_id).length;
+                const div = document.createElement('div');
+                div.className = 'aplic-lab-group open';
+                div.innerHTML = `
+                    <div class="aplic-lab-head">
+                        <span class="aplic-lab-chev">▶</span>
+                        <input type="checkbox" class="aplic-lab-check" title="Seleccionar todos los productos de este laboratorio">
+                        <span class="aplic-lab-nombre">${lab.lab_desc}</span>
+                        <span class="aplic-lab-cnt">${lab.productos.length} prod${lab.productos.length !== 1 ? 's' : ''}${asigCount ? ` · ${asigCount} ✓` : ''}</span>
+                    </div>
+                    <div class="aplic-lab-body">
+                        ${lab.productos.map(p => `
+                            <div class="aplic-prod-row">
+                                <input type="checkbox" class="aplic-prod-check" value="${p.prod_id}"
+                                       data-asignado="${p.escenario_id || ''}">
+                                <span class="aplic-prod-desc">${p.desc}</span>
+                                ${p.escenario_id ? `<span class="aplic-badge-asig">✓ asignado</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        loading.style.display = 'none';
+        content.style.display = '';
+        actualizarContadorAplic(body);
+    }
+
+    function getCheckedProdIds(body) {
+        return [...$all(body, '.aplic-prod-check:checked')].map(c => parseInt(c.value, 10));
+    }
+
+    function actualizarContadorAplic(body) {
+        const panel = $(body, '.tab-panel[data-tab="aplicar"]');
+        if (!panel || !panel.dataset.loaded) return;
+        const ids = getCheckedProdIds(body);
+        const n = ids.length;
+        $(panel, '.aplic-sel-count').textContent = n ? `${n} seleccionado${n !== 1 ? 's' : ''}` : '0 seleccionados';
+        $(panel, '.aplic-btn-aplicar').disabled = n === 0 || !$(panel, '.aplic-esc-select').value;
+        const tieneAsig = ids.some(id => {
+            const cb = panel.querySelector(`.aplic-prod-check[value="${id}"]`);
+            return cb && cb.dataset.asignado;
+        });
+        $(panel, '.aplic-btn-desvincular').style.display = tieneAsig && n > 0 ? '' : 'none';
+    }
+
+    async function aplicarEscenario(body, drogaId, escId, prodIds) {
+        const panel = $(body, '.tab-panel[data-tab="aplicar"]');
+        const btn = $(panel, '.aplic-btn-aplicar');
+        btn.disabled = true;
+        btn.textContent = '⏳ Aplicando…';
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/aplicar`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ escenario_id: escId, producto_ids: prodIds }),
+            });
+            if (!r.ok) throw new Error(await r.text());
+            const d = await r.json();
+            mostrarStatus(body, `✓ Escenario aplicado a ${d.aplicados} producto(s).`);
+            // Recargar el panel para reflejar cambios
+            panel.dataset.loaded = '';
+            initAplicar(body, drogaId);
+        } catch (err) {
+            mostrarStatus(body, `Error: ${err.message}`, false);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Aplicar escenario';
+        }
+    }
+
+    async function desvincularProductos(body, drogaId, prodIds) {
+        const panel = $(body, '.tab-panel[data-tab="aplicar"]');
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/desvincular`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ producto_ids: prodIds }),
+            });
+            if (!r.ok) throw new Error(await r.text());
+            const d = await r.json();
+            mostrarStatus(body, `✓ ${d.desvinculados} producto(s) desvinculados.`);
+            panel.dataset.loaded = '';
+            initAplicar(body, drogaId);
+        } catch (err) {
+            mostrarStatus(body, `Error: ${err.message}`, false);
+        }
+    }
+
 })();
 </script>
 

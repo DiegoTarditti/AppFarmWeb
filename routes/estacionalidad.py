@@ -21,9 +21,11 @@ from sqlalchemy import text as _text
 
 from database import (
     EstacionalidadEscenario,
+    EstacionalidadProducto,
     ObsNombreDroga,
     ObsSubrubro,
     get_db,
+    now_ar,
 )
 
 K_PRIOR = 12
@@ -486,3 +488,108 @@ def init_app(app):
             session.commit()
             session.refresh(esc)
             return jsonify(_escenario_a_dict(esc))
+
+    @app.route('/api/estacionalidad/droga/<int:droga_id>/productos')
+    @login_required
+    def api_estacionalidad_droga_productos(droga_id):
+        """Productos activos de esta droga agrupados por lab, con estado de asignación."""
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        with get_db() as session:
+            sql = _text("""
+                SELECT
+                    p.observer_id        AS prod_id,
+                    p.descripcion        AS prod_desc,
+                    l.observer_id        AS lab_id,
+                    l.descripcion        AS lab_desc,
+                    ep.escenario_id      AS escenario_asignado_id,
+                    ep.aplicado_en       AS asignado_en
+                FROM obs_productos p
+                LEFT JOIN obs_laboratorios l ON l.observer_id = p.laboratorio_observer
+                LEFT JOIN estacionalidad_productos ep
+                       ON ep.producto_observer_id = p.observer_id
+                WHERE p.nombre_droga_observer = :droga_id
+                  AND p.fecha_baja IS NULL
+                  AND EXISTS (
+                      SELECT 1 FROM obs_ventas_mensuales v
+                      WHERE v.producto_observer = p.observer_id
+                        AND v.id_farmacia = :fid
+                        AND v.unidades > 0
+                  )
+                ORDER BY l.descripcion NULLS LAST, p.descripcion
+            """)
+            rows = session.execute(sql, {'droga_id': droga_id, 'fid': id_farmacia}).fetchall()
+
+        labs: dict = {}
+        for r in rows:
+            lab_id = r.lab_id or 0
+            lab_desc = r.lab_desc or 'Sin laboratorio'
+            if lab_id not in labs:
+                labs[lab_id] = {'lab_id': lab_id, 'lab_desc': lab_desc, 'productos': []}
+            labs[lab_id]['productos'].append({
+                'prod_id': r.prod_id,
+                'desc': r.prod_desc,
+                'escenario_id': r.escenario_asignado_id,
+                'asignado_en': r.asignado_en.isoformat() if r.asignado_en else None,
+            })
+
+        return jsonify({
+            'droga_id': droga_id,
+            'labs': list(labs.values()),
+            'total': len(rows),
+        })
+
+    @app.route('/api/estacionalidad/droga/<int:droga_id>/aplicar', methods=['POST'])
+    @login_required
+    def api_estacionalidad_aplicar_productos(droga_id):
+        """Asigna un escenario a una lista de productos."""
+        payload = request.get_json(silent=True) or {}
+        escenario_id = payload.get('escenario_id')
+        prod_ids = payload.get('producto_ids', [])
+        if not escenario_id or not prod_ids:
+            return jsonify({'error': 'Falta escenario_id o producto_ids'}), 400
+
+        with get_db() as session:
+            esc = (session.query(EstacionalidadEscenario)
+                   .filter_by(id=escenario_id, droga_id=droga_id).first())
+            if not esc:
+                return jsonify({'error': 'Escenario inexistente para esta droga'}), 404
+
+            aplicado_por = getattr(current_user, 'username', None)
+            n = 0
+            for pid in prod_ids:
+                existente = (session.query(EstacionalidadProducto)
+                             .filter_by(producto_observer_id=pid).first())
+                if existente:
+                    existente.escenario_id = escenario_id
+                    existente.droga_id = droga_id
+                    existente.aplicado_por = aplicado_por
+                    existente.aplicado_en = now_ar()
+                else:
+                    session.add(EstacionalidadProducto(
+                        producto_observer_id=pid,
+                        droga_id=droga_id,
+                        escenario_id=escenario_id,
+                        aplicado_por=aplicado_por,
+                    ))
+                n += 1
+            session.commit()
+
+        return jsonify({'ok': True, 'aplicados': n})
+
+    @app.route('/api/estacionalidad/droga/<int:droga_id>/desvincular', methods=['POST'])
+    @login_required
+    def api_estacionalidad_desvincular_productos(droga_id):
+        """Elimina la asignación de escenario de una lista de productos."""
+        payload = request.get_json(silent=True) or {}
+        prod_ids = payload.get('producto_ids', [])
+        if not prod_ids:
+            return jsonify({'error': 'Falta producto_ids'}), 400
+
+        with get_db() as session:
+            n = (session.query(EstacionalidadProducto)
+                 .filter(EstacionalidadProducto.producto_observer_id.in_(prod_ids),
+                         EstacionalidadProducto.droga_id == droga_id)
+                 .delete(synchronize_session=False))
+            session.commit()
+
+        return jsonify({'ok': True, 'desvinculados': n})
