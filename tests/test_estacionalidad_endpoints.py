@@ -14,6 +14,8 @@ from database import EstacionalidadEscenario, ObsNombreDroga
 
 @pytest.fixture(scope='module', autouse=True)
 def _registrar_modulo_estacionalidad(flask_app):
+    if 'informe_estacionalidad_drogas' in flask_app.view_functions:
+        return
     estac_routes.init_app(flask_app)
 
 

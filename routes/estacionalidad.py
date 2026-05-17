@@ -28,6 +28,12 @@ from database import (
 
 K_PRIOR = 12
 
+# Si un subrubro agrupa mas de N drogas distintas, lo consideramos
+# demasiado heterogeneo (caso "Medicamentos" 40k productos, "Perfumeria" 58k)
+# y el patron del grupo no aporta senal real. En esos casos no hacemos
+# pooling y dejamos el patron crudo de la droga.
+HETEROGENEIDAD_MAX_DROGAS = 30
+
 
 def _escenario_a_dict(e):
     return {
@@ -194,7 +200,7 @@ def init_app(app):
                   p.subrubro_observer     AS subrubro_id,
                   v.anio                  AS anio,
                   v.mes                   AS mes,
-                  SUM(v.unidades)::FLOAT  AS unidades
+                  SUM(v.unidades)         AS unidades
                 FROM obs_productos p
                 JOIN obs_ventas_mensuales v ON v.producto_observer = p.observer_id
                 WHERE p.fecha_baja IS NULL
@@ -207,6 +213,7 @@ def init_app(app):
 
             por_droga_meses = defaultdict(lambda: defaultdict(list))
             por_subrubro_meses = defaultdict(lambda: defaultdict(list))
+            drogas_por_subrubro = defaultdict(set)
             droga_subrubro_votos = defaultdict(lambda: defaultdict(float))
             droga_anios = defaultdict(set)
             droga_total = defaultdict(float)
@@ -220,14 +227,29 @@ def init_app(app):
                 if r.subrubro_id:
                     droga_subrubro_votos[droga][r.subrubro_id] += u
                     por_subrubro_meses[r.subrubro_id][r.mes].append(u)
+                    drogas_por_subrubro[r.subrubro_id].add(droga)
 
             droga_subrubro = {
                 d: max(votos, key=votos.get)
                 for d, votos in droga_subrubro_votos.items()
             }
 
+            # Pooling adaptativo: subrubros con muchas drogas distintas son
+            # "ruidosos" y su patron promedio aporta poca senal. Los marcamos
+            # como heterogeneos y para las drogas que pertenecen a uno, NO
+            # hacemos pooling (el patron crudo es preferible).
+            subrubros_heterogeneos = {
+                sr for sr, drogas in drogas_por_subrubro.items()
+                if len(drogas) > HETEROGENEIDAD_MAX_DROGAS
+            }
+            tamano_subrubro = {
+                sr: len(drogas) for sr, drogas in drogas_por_subrubro.items()
+            }
+
             indice_subrubro = {}
             for sr, meses in por_subrubro_meses.items():
+                if sr in subrubros_heterogeneos:
+                    continue
                 idx = _calcular_indice_subrubro(meses)
                 if idx is not None:
                     indice_subrubro[sr] = idx
@@ -286,6 +308,15 @@ def init_app(app):
                 else:
                     confianza = 'baja'
 
+                razon_sin_pool = None
+                if not est['pooled']:
+                    if sr and sr in subrubros_heterogeneos:
+                        razon_sin_pool = 'subrubro_heterogeneo'
+                    elif not sr:
+                        razon_sin_pool = 'sin_subrubro'
+                    else:
+                        razon_sin_pool = 'sin_data_grupo'
+
                 resultado.append({
                     'droga_id': droga,
                     'nombre': nombre,
@@ -297,6 +328,8 @@ def init_app(app):
                     'pooled': est['pooled'],
                     'lambda_shrink': est['lambda_shrink'],
                     'subrubro_nombre': nombres_sr.get(sr) if sr else None,
+                    'n_drogas_grupo': tamano_subrubro.get(sr, 0) if sr else 0,
+                    'razon_sin_pool': razon_sin_pool,
                     'escenario_default': escenarios_default.get(droga),
                 })
 
@@ -338,7 +371,7 @@ def init_app(app):
 
         with get_db() as session:
             sql = _text("""
-                SELECT v.anio AS anio, v.mes AS mes, SUM(v.unidades)::FLOAT AS unidades
+                SELECT v.anio AS anio, v.mes AS mes, SUM(v.unidades) AS unidades
                 FROM obs_productos p
                 JOIN obs_ventas_mensuales v ON v.producto_observer = p.observer_id
                 WHERE p.fecha_baja IS NULL

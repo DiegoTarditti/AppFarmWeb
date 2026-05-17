@@ -164,6 +164,11 @@
                                   title="Patrón suavizado con subrubro ({{ d.subrubro_nombre or '?' }}): λ={{ '%.2f'|format(d.lambda_shrink) }}">
                                 ajust
                             </span>
+                            {% elif d.razon_sin_pool == 'subrubro_heterogeneo' %}
+                            <span class="text-[9px] font-bold text-[#888] bg-gray-100 px-1.5 py-0.5 rounded flex-shrink-0"
+                                  title="Subrubro {{ d.subrubro_nombre }} agrupa {{ d.n_drogas_grupo }} drogas distintas — demasiado heterogéneo para aportar señal. Patrón crudo sin suavizar.">
+                                crudo
+                            </span>
                             {% endif %}
                             {% if d.escenario_default %}
                             <span class="text-[9px] font-bold text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded flex-shrink-0"
@@ -208,9 +213,19 @@
                             <div class="flex items-baseline justify-between mb-2">
                                 <div class="text-[13px] font-bold text-[#1e1e1e]">{{ d.nombre }}</div>
                                 <div class="text-[11px] text-[#888]">
-                                    {% if d.subrubro_nombre %}Subrubro: {{ d.subrubro_nombre }} · {% endif %}
-                                    λ = {{ '%.2f'|format(d.lambda_shrink) }}
-                                    {% if d.pooled %}<span class="text-amber-700">(suavizado con subrubro)</span>{% endif %}
+                                    {% if d.subrubro_nombre %}Subrubro: {{ d.subrubro_nombre }}
+                                        {% if d.n_drogas_grupo %} ({{ d.n_drogas_grupo }} drogas){% endif %} ·
+                                    {% endif %}
+                                    {% if d.pooled %}
+                                        λ = {{ '%.2f'|format(d.lambda_shrink) }}
+                                        <span class="text-amber-700">(suavizado con subrubro)</span>
+                                    {% elif d.razon_sin_pool == 'subrubro_heterogeneo' %}
+                                        <span class="text-[#888]">sin pooling: subrubro demasiado heterogéneo (>{{ 30 }} drogas)</span>
+                                    {% elif d.razon_sin_pool == 'sin_subrubro' %}
+                                        <span class="text-[#888]">sin clasificación de subrubro</span>
+                                    {% else %}
+                                        <span class="text-[#888]">patrón crudo (sin pooling)</span>
+                                    {% endif %}
                                 </div>
                             </div>
 
