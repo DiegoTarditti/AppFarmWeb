@@ -653,6 +653,7 @@
     let itemsCache = [];
     const labsData = JSON.parse(document.getElementById('labs-data').textContent);
     const LIMITES = JSON.parse(document.getElementById('limites-data').textContent);
+    const drawerDirty = new Set();  // producto_ids cuyos drawers tienen cambios sin guardar
 
     const $ = (sel, root=document) => root.querySelector(sel);
     const $$ = (sel, root=document) => root.querySelectorAll(sel);
@@ -1080,17 +1081,34 @@
         chart.update('none');
     }
 
+    function confirmarCierreSiSucio(pid) {
+        if (drawerDirty.has(pid)) {
+            return confirm('Hay cambios en este escenario sin guardar. ¿Cerrar igual y descartarlos?');
+        }
+        return true;
+    }
+
     function toggleDrawer(rowData) {
         const id = rowData.dataset.id;
+        const pid = parseInt(id);
         const drawer = document.querySelector(`tr.drawer-row[data-parent="${id}"]`);
         const open = drawer.classList.contains('open');
         // Cerrar otros drawers (y destruir sus charts)
+        let cancelado = false;
         $$('.drawer-row.open').forEach(d => {
+            if (cancelado) return;
+            const dpid = parseInt(d.dataset.parent);
+            if (!confirmarCierreSiSucio(dpid)) {
+                cancelado = true; return;
+            }
             d.classList.remove('open');
-            destruirChart(parseInt(d.dataset.parent));
+            destruirChart(dpid);
+            drawerDirty.delete(dpid);
             const r = document.querySelector(`tr.row-data[data-id="${d.dataset.parent}"]`);
             if (r) r.classList.remove('expanded');
         });
+        if (cancelado) return;
+
         if (!open) {
             const it = itemsCache.find(x => x.producto_id == id);
             if (!it) return;
@@ -1098,10 +1116,16 @@
             body.innerHTML = renderDrawer(it);
             drawer.classList.add('open');
             rowData.classList.add('expanded');
+            drawerDirty.delete(pid);  // se abre limpio
             // Esperar al siguiente frame para que el canvas tenga tamaño antes de Chart.js.
             requestAnimationFrame(() => buildDrawerChart(body, it));
         } else {
-            destruirChart(parseInt(id));
+            // Click en la propia fila para cerrar — chequear sucio.
+            if (!confirmarCierreSiSucio(pid)) return;
+            drawer.classList.remove('open');
+            destruirChart(pid);
+            drawerDirty.delete(pid);
+            rowData.classList.remove('expanded');
         }
     }
 
@@ -1121,6 +1145,7 @@
             });
             if (!r.ok) throw new Error('HTTP ' + r.status);
             const data = await r.json();
+            drawerDirty.delete(parseInt(id));  // ya está guardado
             // Actualizar item en cache y re-render fila + drawer
             const it = itemsCache.find(x => x.producto_id == id);
             if (it) {
@@ -1159,6 +1184,13 @@
         }
     });
 
+    function marcarDirty(body) {
+        const tr = body.closest('tr.drawer-row');
+        if (!tr) return;
+        const pid = parseInt(tr.dataset.parent);
+        drawerDirty.add(pid);
+    }
+
     document.addEventListener('input', (e) => {
         const body = e.target.closest('.drawer-body');
         if (!body) return;
@@ -1166,14 +1198,25 @@
             const cell = e.target.closest('.slider-cell');
             cell.querySelector('.slider-val').textContent = parseFloat(e.target.value).toFixed(2);
             actualizarChartDesdeSliders(body);
+            marcarDirty(body);
         }
         if (e.target.matches('.lead-input')) {
             body.querySelector('.lead-val').textContent = e.target.value + 'd';
             actualizarChartDesdeSliders(body);
+            marcarDirty(body);
         }
         if (e.target.matches('.cob-input')) {
             body.querySelector('.cob-val').textContent = e.target.value + 'd';
             actualizarChartDesdeSliders(body);
+            marcarDirty(body);
+        }
+    });
+
+    // Aviso al cerrar la pestaña con cambios sin guardar.
+    window.addEventListener('beforeunload', (e) => {
+        if (drawerDirty.size > 0) {
+            e.preventDefault();
+            e.returnValue = '';  // requerido por algunos browsers
         }
     });
 })();
