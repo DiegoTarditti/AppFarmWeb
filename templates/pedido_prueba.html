@@ -345,7 +345,13 @@
     border: 1px solid rgba(95,230,188,.18);
     border-radius: var(--ds-r-md);
     margin-bottom: 14px;
+    transition: box-shadow .3s;
 }
+@keyframes pp-help-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(95,230,188,0); }
+    50%      { box-shadow: 0 0 0 6px rgba(95,230,188,.25); }
+}
+.pp-help-banner.pulse { animation: pp-help-pulse 1.4s ease-in-out 2; }
 .pp-help-toggle {
     width: 100%; background: none; border: none;
     padding: 10px 14px;
@@ -658,18 +664,32 @@
     const $ = (sel, root=document) => root.querySelector(sel);
     const $$ = (sel, root=document) => root.querySelectorAll(sel);
 
-    /* ───── Banner de ayuda (persistido en localStorage) ───── */
+    /* ───── Banner de ayuda (persistido en localStorage) ─────
+       Default v2: PLEGADO con pulso visual 2 ciclos para descubrirlo. */
     (function initHelp() {
+        const banner = $('#pp-help-banner');
         const body = $('#pp-help-body');
         const chev = $('#pp-help-chev');
-        const oculta = localStorage.getItem('pp_ayuda_oculta') === '1';
+        const storageKey = 'pp_ayuda_estado_v2';  // v2 = default plegado
+        const estado = localStorage.getItem(storageKey);
+        // Si nunca interactuó (estado null), arranca plegado y hace pulso
+        // para que lo descubra. Si ya tocó, respeta su decisión.
+        const oculta = estado == null ? true : (estado === '1');
+        const primeraVez = estado == null;
+
         body.style.display = oculta ? 'none' : '';
         chev.textContent = oculta ? '▶' : '▼';
+        if (primeraVez && oculta) {
+            banner.classList.add('pulse');
+            setTimeout(() => banner.classList.remove('pulse'), 3500);
+        }
+
         $('#pp-help-toggle').addEventListener('click', () => {
             const yaOculta = body.style.display === 'none';
             body.style.display = yaOculta ? '' : 'none';
             chev.textContent = yaOculta ? '▼' : '▶';
-            localStorage.setItem('pp_ayuda_oculta', yaOculta ? '0' : '1');
+            localStorage.setItem(storageKey, yaOculta ? '0' : '1');
+            banner.classList.remove('pulse');
         });
     })();
 
