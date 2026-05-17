@@ -47,9 +47,19 @@
     border-radius: 4px;
     padding: 6px 10px;
     font-size: 12px; outline: none;
+    color-scheme: dark;  /* fuerza al browser a usar UI dark para el dropdown */
 }
 .pp-setup .field input:focus, .pp-setup .field select:focus {
     border-color: var(--ds-mint);
+}
+.pp-setup .field select option {
+    background-color: var(--ds-surface);
+    color: var(--ds-text);
+}
+.pp-setup .field select option:checked,
+.pp-setup .field select option:hover {
+    background-color: var(--ds-mint);
+    color: var(--ds-bg);
 }
 .pp-setup .actions {
     grid-column: 1 / -1;
