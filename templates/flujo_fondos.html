@@ -55,6 +55,18 @@
     border-color: var(--ds-mint);
     box-shadow: 0 0 0 1px rgba(95,230,188,.3);
 }
+.ff-week.week-neg {
+    border-color: rgba(239,68,68,.5);
+    box-shadow: 0 0 0 1px rgba(239,68,68,.2);
+}
+.ff-week .badge-pico {
+    font-size: 8px; font-weight: 700;
+    padding: 1px 5px; border-radius: 999px;
+    background: rgba(245,158,11,.18); color: var(--ds-warn);
+    text-transform: uppercase; letter-spacing: .04em;
+    display: none;
+}
+.ff-week .badge-pico.visible { display: inline; }
 .ff-week .lbl-week {
     font-family: 'Space Grotesk', sans-serif;
     font-size: 13px; font-weight: 700; color: var(--ds-text);
@@ -213,6 +225,20 @@
     border-color: var(--ds-mint);
     color: var(--ds-mint);
 }
+.ff-topn-btn {
+    background: transparent;
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-mute);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+}
+.ff-topn-btn:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.ff-topn-btn.active { border-color: var(--ds-mint); color: var(--ds-mint);
+                      background: rgba(95,230,188,.10); font-weight: 600; }
+#ff-resto-row td { background: rgba(0,0,0,.18); border-top: 1px dashed var(--ds-line); }
 
 /* ─── Acciones globales ──────────────────────────────────── */
 .ff-actions {
@@ -359,6 +385,24 @@
     margin-left: 10px;
     font-size: 10px;
     color: var(--ds-text-mute);
+}
+.ff-cron-banner {
+    margin-bottom: 12px;
+    padding: 8px 14px;
+    background: rgba(56,189,248,.08);
+    border: 1px solid rgba(56,189,248,.25);
+    border-radius: var(--ds-r-md);
+    font-size: 11px; color: var(--ds-info);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.ff-cron-banner .cron-item {
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(56,189,248,.12);
+    font-size: 10px; white-space: nowrap;
+}
+.ff-dto-warn {
+    font-size: 10px; color: var(--ds-warn);
+    margin-top: 3px;
 }
 
 /* ─── Click en card de semana → detalle inline ─────────── */
@@ -507,6 +551,11 @@
             <div class="lbl">↓ Egreso semanal neto</div>
             <div class="val warn" data-kpi="egreso-neto">${{ '{:,.0f}'.format(egreso_neto_sem) | replace(',', '.') }}</div>
             <div class="sub">aplicando dto base</div>
+            <div class="ff-dto-warn" id="ff-dto-warn"></div>
+            <button type="button" id="ff-btn-dto-default" style="display:none;margin-top:4px;font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--ds-line);color:var(--ds-text-mute);background:transparent;cursor:pointer;"
+                    onclick="aplicarDtoDefault(this)">
+                Cargar 30% a los vacíos
+            </button>
         </div>
         <div class="ff-kpi">
             <div class="lbl">≡ Saldo semanal</div>
@@ -539,12 +588,14 @@
         <span class="count">· click en una para ver detalle · prendé/apagá toggles por partner abajo</span>
         <span id="ff-warn" class="ff-saldo-warn"></span>
     </div>
+    <div id="ff-cron-banner" class="ff-cron-banner" style="display:none;"></div>
     <div class="ff-weeks">
         {% for s in semanas %}
         <div class="ff-week {% if s.es_actual %}actual{% endif %}" data-week-idx="{{ s.idx }}" role="button" tabindex="0" title="Click → ver partners de esta semana">
             <div class="lbl-week">
                 Sem {{ s.idx + 1 }}
                 {% if s.es_actual %}<span class="badge-actual">hoy</span>{% endif %}
+                <span class="badge-pico">pico</span>
             </div>
             <div class="ww-row"><span class="k">{{ s.label }}</span></div>
             <div class="ww-row"><span class="k">↑ ing</span><span class="v mint" data-field="ingreso">${{ '{:,.0f}'.format(s.ingreso_proy) | replace(',', '.') }}</span></div>
@@ -554,6 +605,10 @@
                 <span class="v {{ 'danger' if s.saldo < 0 else 'mint' }}" data-field="saldo">
                     {% if s.saldo < 0 %}-{% endif %}${{ '{:,.0f}'.format(s.saldo | abs) | replace(',', '.') }}
                 </span>
+            </div>
+            <div class="ww-row" style="border-top:1px dashed rgba(255,255,255,.06);margin-top:4px;padding-top:3px;">
+                <span class="k" style="font-size:10px;opacity:.7;">acum</span>
+                <span class="v" data-field="acum" style="font-size:11px;opacity:.85;">—</span>
             </div>
         </div>
         {% endfor %}
@@ -587,6 +642,7 @@
     <div class="ff-section-title">
         Egreso semanal estimado por partner
         <span class="count">· {{ partners_lab | length }} labs + {{ partners_drog | length }} drogs · ranked por neto</span>
+        <span id="ff-topn-pct" style="margin-left:8px;font-size:10px;color:var(--ds-mint);font-weight:600;"></span>
     </div>
     <div class="ff-filters">
         <input type="text" id="ff-q" placeholder="🔍 Buscar partner por nombre…" autocomplete="off">
@@ -609,6 +665,12 @@
             <option value="set">Con dto cargado</option>
         </select>
         <button type="button" id="ff-clear-filters" class="clear-btn">Limpiar</button>
+        <span style="width:1px;height:18px;background:var(--ds-line);display:inline-block;margin:0 4px;vertical-align:middle;"></span>
+        <span style="font-size:10px;color:var(--ds-text-mute);margin-right:2px;">Top</span>
+        {% for n in [5, 10, 20] %}
+        <button type="button" class="ff-topn-btn {% if loop.first %}active{% endif %}" data-n="{{ n }}">{{ n }}</button>
+        {% endfor %}
+        <button type="button" class="ff-topn-btn" data-n="all">Todos</button>
         <span class="filter-count" id="ff-filter-count"></span>
     </div>
     <div class="ff-partners">
@@ -627,7 +689,7 @@
             <tbody>
                 {% for p in partners %}
                 {% set pct_ingreso = (p.neto_sem / ingreso_semanal_base * 100) if ingreso_semanal_base else 0 %}
-                <tr data-row-partner="{{ p.tipo }}-{{ p.id }}">
+                <tr data-row-partner="{{ p.tipo }}-{{ p.id }}" data-rank="{{ loop.index0 }}">
                     <td class="left">
                         <span class="pill {{ 'lab' if p.tipo == 'laboratorio' else 'drog' }}">
                             {{ 'LAB' if p.tipo == 'laboratorio' else 'DROG' }}
@@ -660,6 +722,19 @@
                     </td>
                 </tr>
                 {% endfor %}
+                <tr id="ff-resto-row" style="display:none;">
+                    <td class="left" style="color:var(--ds-text-mute);font-style:italic;" id="ff-resto-label">▼ El resto</td>
+                    <td></td>
+                    <td class="bruto" id="ff-resto-bruto">—</td>
+                    <td></td>
+                    <td class="neto" id="ff-resto-neto">—</td>
+                    <td class="pct" id="ff-resto-pct">—</td>
+                    <td style="text-align:center;">
+                        <button type="button" id="ff-resto-expand"
+                                style="font-size:10px;padding:2px 8px;border-radius:999px;border:1px solid var(--ds-line);color:var(--ds-text-mute);background:transparent;cursor:pointer;"
+                                onclick="setTopN('all')">Ver todos</button>
+                    </td>
+                </tr>
             </tbody>
             <tfoot>
                 <tr>
@@ -696,6 +771,7 @@
 (function(){
     const N_WEEKS = {{ n_semanas }};
     const INGRESO_TEORICO = {{ ingreso_semanal_base | tojson }};
+    const EGRESO_NETO_TOTAL = {{ egreso_neto_sem | tojson }};
     const STORAGE_PREFIX = 'ff:weeks:';
     const CAPACIDAD_KEY = 'ff:capacidad';
     let INGRESO_SEM = INGRESO_TEORICO;
@@ -771,7 +847,10 @@
             }
         });
 
-        let totBruto = 0, totNeto = 0, semNeg = 0;
+        // Semana pico = mayor egreso neto
+        const maxNeto = Math.max(...wkNeto);
+
+        let totBruto = 0, totNeto = 0, semNeg = 0, acum = 0;
         for (let i = 0; i < N_WEEKS; i++) {
             totBruto += wkBruto[i];
             totNeto += wkNeto[i];
@@ -780,7 +859,10 @@
             const iEl = card.querySelector('[data-field="ingreso"]');
             const eEl = card.querySelector('[data-field="egreso"]');
             const sEl = card.querySelector('[data-field="saldo"]');
+            const aEl = card.querySelector('[data-field="acum"]');
+            const picoBadge = card.querySelector('.badge-pico');
             const saldo = INGRESO_SEM - wkNeto[i];
+            acum += saldo;
             if (saldo < 0) semNeg++;
             if (iEl) iEl.textContent = fmt(INGRESO_SEM);
             if (eEl) eEl.textContent = fmt(wkNeto[i]);
@@ -788,6 +870,17 @@
                 sEl.textContent = (saldo < 0 ? '-' : '') + fmt(saldo);
                 sEl.classList.toggle('danger', saldo < 0);
                 sEl.classList.toggle('mint', saldo >= 0);
+            }
+            if (aEl) {
+                aEl.textContent = (acum < 0 ? '-' : '') + fmt(acum);
+                aEl.style.color = acum < 0 ? 'var(--ds-danger)' : 'var(--ds-mint)';
+            }
+            // C: borde rojo si saldo negativo
+            card.classList.toggle('week-neg', saldo < 0);
+            // F: badge pico en la semana de mayor egreso (solo si hay variación real)
+            if (picoBadge) {
+                const esPico = maxNeto > 0 && wkNeto[i] === maxNeto && N_WEEKS > 1 && maxNeto > Math.min(...wkNeto);
+                picoBadge.classList.toggle('visible', esPico);
             }
         }
 
@@ -1005,16 +1098,27 @@
     const fClear = document.getElementById('ff-clear-filters');
     const fCount = document.getElementById('ff-filter-count');
 
+    let _topN = 5;
+
     function applyFilters() {
         const q = (fQ ? fQ.value : '').trim().toLowerCase();
         const tipo = fTipo ? fTipo.value : 'all';
         const minNeto = fMinNeto ? parseFloat(fMinNeto.value) || 0 : 0;
         const dtoState = fDtoState ? fDtoState.value : 'all';
+        const hasFilter = q || tipo !== 'all' || minNeto > 0 || dtoState !== 'all';
+        // Con filtro activo mostramos todos los matches (topN desactivado)
+        const efectivoN = hasFilter ? Infinity : _topN;
+
         let shown = 0, total = 0;
+        let restoBruto = 0, restoNeto = 0, restoCount = 0;
+        const restoRow = document.getElementById('ff-resto-row');
+
         document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            if (tr.id === 'ff-resto-row') return;
             total++;
             const key = tr.dataset.rowPartner || '';
             const [rowTipo] = key.split('-');
+            const rank = parseInt(tr.dataset.rank ?? '9999');
             const nombreEl = tr.querySelector('.nombre');
             const nombre = (nombreEl ? nombreEl.textContent : '').toLowerCase();
             const brutoCell = tr.querySelector('[data-bruto-sem]');
@@ -1022,19 +1126,65 @@
             const dtoCell = tr.querySelector('.dto-editable');
             const dto = dtoCell ? parseFloat(dtoCell.dataset.dto) || 0 : 0;
             const neto = bruto * (1 - dto / 100);
-            let ok = true;
-            if (q && !nombre.includes(q)) ok = false;
-            if (tipo !== 'all' && rowTipo !== tipo) ok = false;
-            if (neto < minNeto) ok = false;
-            if (dtoState === 'zero' && dto > 0) ok = false;
-            if (dtoState === 'set' && dto === 0) ok = false;
-            tr.style.display = ok ? '' : 'none';
-            if (ok) shown++;
+
+            let passesFilter = true;
+            if (q && !nombre.includes(q)) passesFilter = false;
+            if (tipo !== 'all' && rowTipo !== tipo) passesFilter = false;
+            if (neto < minNeto) passesFilter = false;
+            if (dtoState === 'zero' && dto > 0) passesFilter = false;
+            if (dtoState === 'set' && dto === 0) passesFilter = false;
+
+            const inTop = rank < efectivoN;
+            const visible = passesFilter && inTop;
+            tr.style.display = visible ? '' : 'none';
+
+            if (passesFilter) {
+                if (inTop) { shown++; }
+                else { restoBruto += bruto; restoNeto += neto; restoCount++; }
+            }
         });
-        if (fCount) fCount.textContent = (shown === total)
+
+        // Fila "El resto"
+        if (restoRow) {
+            if (restoCount > 0 && !hasFilter) {
+                restoRow.style.display = '';
+                document.getElementById('ff-resto-label').textContent =
+                    `▼ El resto — ${restoCount} partner${restoCount !== 1 ? 's' : ''}`;
+                document.getElementById('ff-resto-bruto').textContent = fmt(restoBruto);
+                document.getElementById('ff-resto-neto').textContent = fmt(restoNeto);
+                const pct = INGRESO_TEORICO > 0 ? (restoNeto / INGRESO_TEORICO * 100).toFixed(1) : '—';
+                document.getElementById('ff-resto-pct').textContent = pct !== '—' ? pct + '%' : '—';
+            } else {
+                restoRow.style.display = 'none';
+            }
+        }
+
+        if (fCount) fCount.textContent = (shown === total && !restoCount)
             ? `${total} partners`
-            : `${shown} / ${total} partners visibles`;
+            : `${shown} de ${total} visibles`;
+
+        // % del egreso que representan los partners visibles (top-N activo)
+        const pctEl = document.getElementById('ff-topn-pct');
+        if (pctEl && EGRESO_NETO_TOTAL > 0 && restoCount > 0) {
+            const pct = ((EGRESO_NETO_TOTAL - restoNeto) / EGRESO_NETO_TOTAL * 100).toFixed(0);
+            pctEl.textContent = `· top ${shown} = ${pct}% del egreso`;
+        } else if (pctEl) {
+            pctEl.textContent = '';
+        }
     }
+
+    function setTopN(n) {
+        _topN = n === 'all' ? Infinity : parseInt(n);
+        document.querySelectorAll('.ff-topn-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.n === String(n));
+        });
+        applyFilters();
+    }
+
+    document.querySelectorAll('.ff-topn-btn').forEach(btn => {
+        btn.addEventListener('click', () => setTopN(btn.dataset.n));
+    });
+
     [fQ, fTipo, fMinNeto, fDtoState].forEach(el => {
         if (el) el.addEventListener('input', applyFilters);
     });
@@ -1221,6 +1371,86 @@
     }
 
     recalc();
+
+    // E — Info dto: cuántos usan el 30% default vs dto propio
+    (function calcDtoWarn() {
+        let totalLabs = 0, defaultLabs = 0;
+        document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            if (tr.id === 'ff-resto-row') return;
+            const dtoCell = tr.querySelector('.dto-editable');
+            if (!dtoCell) return;
+            totalLabs++;
+            if (parseFloat(dtoCell.dataset.dto) === 30) defaultLabs++;
+        });
+        const el = document.getElementById('ff-dto-warn');
+        if (!el || totalLabs === 0) return;
+        const btn = document.getElementById('ff-btn-dto-default');
+        if (defaultLabs > 0) {
+            el.textContent = `${defaultLabs} de ${totalLabs} labs usan dto default 30%`;
+            el.style.color = 'var(--ds-text-mute)';
+            if (btn) btn.style.display = 'inline-block';
+        }
+    })();
+
+    async function aplicarDtoDefault(btn) {
+        if (!confirm(`Guardar 30% de descuento en la DB para todos los labs que tienen el campo vacío.\n¿Continuar?`)) return;
+        btn.disabled = true;
+        btn.textContent = '⏳ Guardando…';
+        try {
+            const r = await fetch('/api/flujo/aplicar-dto-default', {
+                method: 'POST', credentials: 'same-origin'
+            });
+            if (!r.ok) throw new Error(await r.text());
+            const d = await r.json();
+            if (d.ok) {
+                toast(`✓ ${d.actualizados} labs actualizados a 30%`, '#10b981');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                toast('✕ Error al guardar', '#ef4444');
+                btn.disabled = false;
+                btn.textContent = 'Cargar 30% a los vacíos';
+            }
+        } catch {
+            toast('✕ Error de red', '#ef4444');
+            btn.disabled = false;
+            btn.textContent = 'Cargar 30% a los vacíos';
+        }
+    }
+
+    // D — Banner cronograma: qué semanas tienen pagos programados
+    (async function cronBanner() {
+        const banner = document.getElementById('ff-cron-banner');
+        if (!banner) return;
+        try {
+            const res = await fetch(`/api/flujo/cronograma-precarga?n=${N_WEEKS}`,
+                                    {credentials: 'same-origin'});
+            if (!res.ok) return;
+            const data = await res.json();
+            const result = data.result || {};
+            // Por semana: contar partners con pedido programado y sumar su neto
+            const semPartners = new Array(N_WEEKS).fill(0);
+            const semNeto = new Array(N_WEEKS).fill(0);
+            for (const [key, weeks] of Object.entries(result)) {
+                const toggleEl = document.querySelector(`.wk-toggles[data-partner="${key}"]`);
+                const neto = toggleEl ? parseFloat(toggleEl.dataset.neto) || 0 : 0;
+                for (let i = 0; i < N_WEEKS; i++) {
+                    if (weeks[i]) { semPartners[i]++; semNeto[i] += neto; }
+                }
+            }
+            // Mostrar solo semanas con al menos 1 partner programado
+            const items = [];
+            for (let i = 0; i < N_WEEKS; i++) {
+                if (semPartners[i] > 0) {
+                    items.push(`<span class="cron-item">Sem ${i+1}: ${semPartners[i]} partner${semPartners[i]>1?'s':''}</span>`);
+                }
+            }
+            if (items.length > 0) {
+                banner.innerHTML = '📅 <b style="margin-right:6px;">Pedidos programados:</b>' + items.join('');
+                banner.style.display = 'flex';
+            }
+        } catch (e) { console.warn('cronBanner:', e); }
+    })();
+
 })();
 </script>
 {% endblock %}

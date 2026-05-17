@@ -95,7 +95,7 @@ def init_app(app):
             for lab in labs_q:
                 ventas = float(lab.ventas_12m or 0)
                 bruto_sem = ventas / 52.0
-                dto_pct = float(lab.descuento_base) if lab.descuento_base else 0.0
+                dto_pct = float(lab.descuento_base) if lab.descuento_base else 30.0
                 neto_sem = bruto_sem * (1.0 - dto_pct / 100.0)
                 partners_lab.append({
                     'tipo': 'laboratorio',
@@ -183,6 +183,19 @@ def init_app(app):
                                egreso_neto_sem=egreso_neto_sem,
                                saldo_sem=saldo_sem,
                                hoy_iso=hoy.isoformat())
+
+    @app.route('/api/flujo/aplicar-dto-default', methods=['POST'])
+    @login_required
+    def flujo_aplicar_dto_default():
+        """Setea descuento_base=30 en labs que tienen NULL. No toca los que ya tienen valor."""
+        with get_db() as session:
+            labs = session.query(Laboratorio).filter(
+                Laboratorio.descuento_base.is_(None)
+            ).all()
+            for lab in labs:
+                lab.descuento_base = 30
+            session.commit()
+            return jsonify({'ok': True, 'actualizados': len(labs)})
 
     @app.route('/api/flujo/cronograma-precarga')
     @login_required

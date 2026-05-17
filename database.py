@@ -1552,6 +1552,27 @@ class EstacionalidadEscenario(Base):
     )
 
 
+class EstacionalidadProducto(Base):
+    """Asignación de un escenario estacional a un producto concreto (observer_id).
+
+    Un producto solo puede tener un escenario activo. La asignación es explícita:
+    si un producto no tiene registro acá, hereda el default de su droga (si lo hay).
+    """
+    __tablename__ = 'estacionalidad_productos'
+    id                   = Column(Integer, primary_key=True)
+    producto_observer_id = Column(Integer,
+                                  ForeignKey('obs_productos.observer_id'),
+                                  nullable=False, unique=True, index=True)
+    droga_id             = Column(Integer,
+                                  ForeignKey('obs_nombres_drogas.observer_id'),
+                                  nullable=False)
+    escenario_id         = Column(Integer,
+                                  ForeignKey('estacionalidad_escenarios.id'),
+                                  nullable=False)
+    aplicado_por         = Column(String(80), nullable=True)
+    aplicado_en          = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
 CAMPOS_SISTEMA = [
     ('fijo',            'Valor fijo / constante'),
     ('codigo_barra',    'Código de barra (EAN)'),
@@ -1627,7 +1648,8 @@ def init_db(database_url=None):
                         'proveedor_cronograma',
                         'tipo_pedido_config',
                         'producto_flags',
-                        'estacionalidad_escenarios')
+                        'estacionalidad_escenarios',
+                        'estacionalidad_productos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
