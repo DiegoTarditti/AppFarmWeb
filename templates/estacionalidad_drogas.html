@@ -1,0 +1,1082 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Estacionalidad por droga — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ────────── Topbar ────────── */
+.est-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.est-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.est-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+.est-topbar .pill {
+    display: inline-block;
+    padding: 3px 9px; border-radius: 999px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    background: rgba(95,230,188,.14); color: var(--ds-mint);
+}
+.est-topbar .meta { margin-left: auto; font-size: 11px; color: var(--ds-text-mute); }
+
+/* ────────── Filtros ────────── */
+.est-content { padding: 18px 24px; }
+.est-filters {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 14px 16px;
+    display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px;
+    align-items: end;
+    margin-bottom: 14px;
+}
+.est-filters .field label {
+    display: block; font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ds-text-mute); margin-bottom: 4px;
+}
+.est-filters .field input, .est-filters .field select {
+    width: 100%;
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px; outline: none;
+}
+.est-filters .field input:focus, .est-filters .field select:focus {
+    border-color: var(--ds-mint);
+}
+.est-filters .actions {
+    grid-column: 1 / -1;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding-top: 4px;
+}
+.est-filters .actions .legend {
+    margin-left: auto; font-size: 11px; color: var(--ds-text-mute);
+    display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+}
+
+/* ────────── Botones ────────── */
+.est-btn {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-soft);
+    border-radius: var(--ds-r-md);
+    padding: 6px 14px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+}
+.est-btn:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.est-btn.primary {
+    background: rgba(95,230,188,.12);
+    border-color: var(--ds-mint); color: var(--ds-mint);
+}
+.est-btn.danger {
+    background: rgba(239,68,68,.10);
+    border-color: rgba(239,68,68,.3); color: var(--ds-danger);
+}
+.est-btn.danger:hover { border-color: var(--ds-danger); }
+.est-btn-link {
+    background: transparent; border: none; color: var(--ds-text-mute);
+    font-size: 11px; cursor: pointer; padding: 4px 6px;
+}
+.est-btn-link:hover { color: var(--ds-mint); }
+
+/* ────────── Tabla heatmap ────────── */
+.est-table-card {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    overflow: hidden;
+}
+.est-table-scroll { overflow-x: auto; }
+.est-table { width: 100%; border-collapse: collapse; }
+.est-table thead th {
+    background: rgba(0,0,0,.25);
+    color: var(--ds-text-mute);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 10px 12px; text-align: right;
+    border-bottom: 1px solid var(--ds-line);
+    position: sticky; top: 0;
+}
+.est-table thead th.left { text-align: left; }
+.est-table thead th.month-th { width: 42px; text-align: center; padding: 10px 0; }
+.est-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+.est-table tbody tr:hover { background: rgba(95,230,188,.04); }
+.est-table tbody tr:last-child { border-bottom: none; }
+.est-table tbody td {
+    padding: 8px 12px; font-size: 12px;
+    color: var(--ds-text);
+    font-family: ui-monospace, Consolas, monospace;
+    text-align: right;
+}
+.est-table tbody td.left {
+    text-align: left; font-family: inherit;
+    position: sticky; left: 0; background: var(--ds-surface);
+    z-index: 1;
+}
+.est-table tbody tr:hover td.left { background: var(--ds-surface-hover, rgba(95,230,188,.05)); }
+.est-table .btn-expand {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: none; border: none; color: var(--ds-text);
+    font-weight: 600; cursor: pointer; text-align: left;
+    max-width: 280px; font-size: 12.5px;
+}
+.est-table .btn-expand:hover { color: var(--ds-mint); }
+.est-table .btn-expand .chev {
+    width: 10px; height: 10px; color: var(--ds-text-mute);
+    transition: transform .15s;
+}
+.est-table .btn-expand .nombre { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.expanded .btn-expand .chev { transform: rotate(90deg); color: var(--ds-mint); }
+
+/* Badges en la fila */
+.est-badge {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 7px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: .04em;
+    margin-left: 4px;
+}
+.est-badge.ajust  { background: rgba(245,158,11,.16); color: var(--ds-warn); }
+.est-badge.crudo  { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+.est-badge.default-star { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+
+.est-confianza {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.est-confianza.alta  { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+.est-confianza.media { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.est-confianza.baja  { background: rgba(239,68,68,.12); color: var(--ds-danger); }
+
+/* ────────── Heatmap cells ──────────
+   Colores SÓLIDOS (no rgba con alpha) para que se vean bien sobre el
+   fondo verde-oscuro del theme. Cada celda es opaca como un chip de Excel. */
+.heat-cell {
+    width: 42px; text-align: center; padding: 5px 0;
+    font-variant-numeric: tabular-nums;
+    font-size: 11px; font-weight: 700;
+    border: 1px solid rgba(0,0,0,.25);
+}
+.heat-cell.lo-2  { background: #991b1b; color: #fff; }      /* rojo intenso */
+.heat-cell.lo-1  { background: #dc2626; color: #fff; }      /* rojo medio */
+.heat-cell.lo-05 { background: #fca5a5; color: #7f1d1d; }   /* rosa claro */
+.heat-cell.neu   { background: #d1d5db; color: #374151; }   /* gris claro */
+.heat-cell.hi-05 { background: #86efac; color: #14532d; }   /* verde claro */
+.heat-cell.hi-1  { background: #16a34a; color: #fff; }      /* verde medio */
+.heat-cell.hi-2  { background: #14532d; color: #fff; }      /* verde oscuro */
+.heat-cell.peak  { box-shadow: inset 0 0 0 2px var(--ds-warn); }
+
+/* Leyenda del heatmap */
+.heat-legend {
+    display: inline-flex; align-items: center; gap: 1px;
+}
+.heat-legend .heat-cell { width: 36px; padding: 3px 0; font-size: 10px; }
+
+/* ────────── Expand panel ────────── */
+.est-expand {
+    background: var(--ds-bg);
+    border-top: 1px solid var(--ds-line);
+    padding: 18px 22px;
+    text-align: left;  /* override del text-align: right heredado del td padre */
+}
+.est-expand * { text-align: inherit; }
+.est-expand .titulo, .est-expand .meta,
+.est-expand .est-help-body, .est-expand .est-help-body * { text-align: left; }
+.est-expand .slider-cell, .est-expand .slider-cell * { text-align: center; }
+.est-expand .range-row .range-val { text-align: right; }
+.est-expand-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+}
+.est-expand-header .titulo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px; font-weight: 700; color: var(--ds-text);
+}
+.est-expand-header .meta {
+    font-size: 11px; color: var(--ds-text-mute);
+}
+.est-expand-header .meta .pooled { color: var(--ds-warn); }
+.est-expand-header .meta .crudo  { color: var(--ds-text-mute); }
+
+/* Tabs */
+.est-tabs {
+    display: flex; gap: 4px;
+    border-bottom: 1px solid var(--ds-line);
+    margin-bottom: 14px;
+}
+.est-tab {
+    background: none; border: none;
+    padding: 8px 14px; cursor: pointer;
+    color: var(--ds-text-mute);
+    font-size: 12px; font-weight: 600;
+    border-bottom: 2px solid transparent;
+    transition: all .15s;
+}
+.est-tab:hover { color: var(--ds-text-soft); }
+.est-tab.active { color: var(--ds-mint); border-bottom-color: var(--ds-mint); }
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ────────── Banner ayuda ────────── */
+.est-help {
+    background: rgba(95,230,188,.04);
+    border: 1px solid rgba(95,230,188,.18);
+    border-radius: var(--ds-r-md);
+    margin-bottom: 14px;
+}
+.est-help-toggle {
+    width: 100%; background: none; border: none;
+    padding: 9px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; text-align: left;
+    color: var(--ds-mint); font-size: 12px; font-weight: 700;
+}
+.est-help-toggle .chev { font-size: 9px; color: var(--ds-text-mute); }
+.est-help-body {
+    padding: 0 14px 14px;
+    font-size: 12px; line-height: 1.55; color: var(--ds-text-soft);
+    text-align: left;
+}
+.est-help-body p, .est-help-body ul { margin: 0 0 8px; text-align: left; }
+.est-help-body ul { padding-left: 18px; }
+.est-help-body li { margin-bottom: 4px; text-align: left; }
+.est-help-body strong { color: var(--ds-text); }
+.est-help-body code {
+    background: rgba(0,0,0,.35); color: var(--ds-mint);
+    padding: 1px 5px; border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+}
+.est-help-body .swatch-calc   { color: #c4b5fd; }
+.est-help-body .swatch-ajust  { color: var(--ds-mint); font-weight: 700; }
+.est-help-body .swatch-compra { color: var(--ds-warn); font-weight: 700; }
+
+/* ────────── Escenarios ────────── */
+.est-escenarios {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 4px; flex-wrap: wrap;
+}
+.est-escenarios .lbl {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ds-text-mute);
+}
+.est-help-line {
+    font-size: 10px; color: var(--ds-text-mute);
+    margin: 4px 0 12px;
+}
+.esc-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 11px; border-radius: 999px;
+    background: rgba(0,0,0,.25);
+    color: var(--ds-text-soft);
+    font-size: 11px; font-weight: 600;
+    border: 1px solid var(--ds-line);
+    cursor: pointer; transition: all .12s;
+}
+.esc-chip:hover { border-color: var(--ds-mint); color: var(--ds-text); }
+.esc-chip.active {
+    background: rgba(95,230,188,.16); color: var(--ds-mint);
+    border-color: var(--ds-mint);
+}
+.esc-chip.default::before { content: '★'; color: var(--ds-warn); font-size: 11px; }
+.esc-nuevo {
+    background: rgba(95,230,188,.10);
+    border: 1px solid rgba(95,230,188,.3);
+    color: var(--ds-mint);
+    font-size: 11px; font-weight: 700;
+    padding: 4px 10px; border-radius: 999px; cursor: pointer;
+}
+.esc-nuevo:hover { background: rgba(95,230,188,.18); }
+
+/* ────────── Charts ────────── */
+.chart-wrap { height: 280px; }
+
+/* ────────── Sliders por mes ────────── */
+.slider-grid {
+    display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px;
+    align-items: end; margin-top: 8px;
+    background: rgba(0,0,0,.18); padding: 10px 8px;
+    border-radius: var(--ds-r-md);
+    border: 1px solid var(--ds-line);
+}
+.slider-cell {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.slider-cell input[type="range"] {
+    writing-mode: bt-lr;
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    width: 18px; height: 100px; padding: 0; cursor: pointer;
+    accent-color: var(--ds-mint);
+}
+.slider-cell .slider-val {
+    font-size: 10px; font-variant-numeric: tabular-nums;
+    font-weight: 700; color: var(--ds-text); min-width: 32px; text-align: center;
+}
+.slider-cell .slider-mes {
+    font-size: 9px; color: var(--ds-text-mute);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.slider-cell.modified .slider-val { color: var(--ds-warn); }
+.slider-cell.modified input[type="range"] { accent-color: var(--ds-warn); }
+
+/* ────────── Range horizontal lead/cobertura ────────── */
+.range-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    margin-top: 12px;
+}
+.range-row {
+    display: flex; align-items: center; gap: 10px; margin: 4px 0;
+}
+.range-row label {
+    font-size: 11px; font-weight: 600;
+    color: var(--ds-text-soft);
+    min-width: 120px;
+}
+.range-row input[type="range"] {
+    flex: 1; accent-color: var(--ds-warn); cursor: pointer;
+}
+.range-row .range-val {
+    font-size: 12px; font-weight: 700;
+    min-width: 55px; text-align: right;
+    color: var(--ds-warn);
+    font-family: ui-monospace, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+}
+.range-help {
+    font-size: 10px; color: var(--ds-text-mute);
+    margin: 2px 0 0 130px;
+}
+
+/* ────────── Acciones del escenario ────────── */
+.est-esc-actions {
+    margin-top: 14px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding-top: 12px; border-top: 1px solid var(--ds-line);
+}
+.est-esc-actions .spacer { flex: 1; }
+.esc-nombre-input {
+    background: rgba(0,0,0,.35);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    padding: 5px 10px; border-radius: 4px;
+    font-size: 12px; width: 160px; outline: none;
+}
+.esc-nombre-input:focus { border-color: var(--ds-mint); }
+.esc-default-label {
+    font-size: 11px; color: var(--ds-text-soft);
+    display: flex; align-items: center; gap: 4px;
+}
+.esc-default-label input { accent-color: var(--ds-mint); }
+.msg-status { margin-top: 8px; font-size: 11px; min-height: 14px; }
+.msg-status.ok { color: var(--ds-mint); }
+.msg-status.err { color: var(--ds-danger); }
+
+/* ────────── Empty state ────────── */
+.est-empty {
+    padding: 40px 20px; text-align: center;
+    color: var(--ds-text-mute); font-size: 13px;
+}
+
+/* ────────── Paginación ────────── */
+.est-pag {
+    display: flex; justify-content: center; gap: 6px;
+    margin: 14px 0; font-size: 12px;
+}
+.est-pag a, .est-pag span {
+    padding: 5px 11px; border-radius: 4px;
+    text-decoration: none;
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-soft);
+    font-weight: 600;
+}
+.est-pag a:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.est-pag .active { background: var(--ds-mint); color: var(--ds-bg); border-color: var(--ds-mint); }
+</style>
+{% endblock %}
+
+{% block main %}
+
+<div class="est-topbar">
+    <h1>Estacionalidad por droga</h1>
+    <span class="sub">{{ '{:,}'.format(total) }} drogas con historia suficiente</span>
+    <span class="pill">OBS</span>
+    <span class="meta">Pooling bayesiano adaptativo (K=12, skip subrubros &gt;30 drogas)</span>
+</div>
+
+<div class="est-content">
+
+    <form method="get" class="est-filters">
+        <div class="field" style="grid-column: 1 / 3;">
+            <label>Buscar droga</label>
+            <input type="text" name="q" value="{{ q or '' }}" placeholder="ej: paracetamol, ibuprofeno">
+        </div>
+        <div class="field">
+            <label>Min. años</label>
+            <select name="min_anios">
+                <option value="1" {% if min_anios == 1 %}selected{% endif %}>≥ 1 año</option>
+                <option value="2" {% if min_anios == 2 %}selected{% endif %}>≥ 2 años</option>
+                <option value="3" {% if min_anios == 3 %}selected{% endif %}>≥ 3 años</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Min. u 12m</label>
+            <input type="number" name="min_u12m" value="{{ min_u12m if min_u12m else '' }}" min="0" step="1" placeholder="0">
+        </div>
+        <div class="field">
+            <label>Ordenar por</label>
+            <select name="orden">
+                <option value="cv"     {% if orden == 'cv'     %}selected{% endif %}>Más estacional</option>
+                <option value="u12m"   {% if orden == 'u12m'   %}selected{% endif %}>Más vendida</option>
+                <option value="nombre" {% if orden == 'nombre' %}selected{% endif %}>Nombre A-Z</option>
+            </select>
+        </div>
+        <div class="actions">
+            <button type="submit" class="est-btn primary">Aplicar</button>
+            {% if q or min_anios > 1 or min_u12m > 0 or orden != 'cv' %}
+            <a href="{{ url_for('informe_estacionalidad_drogas') }}" class="est-btn-link">Limpiar filtros</a>
+            {% endif %}
+            <span class="legend">
+                Índice =
+                <span class="heat-legend">
+                    <span class="heat-cell lo-2">≤0.5</span>
+                    <span class="heat-cell lo-1">0.7</span>
+                    <span class="heat-cell neu">1.0</span>
+                    <span class="heat-cell hi-1">1.3</span>
+                    <span class="heat-cell hi-2">≥1.5</span>
+                </span>
+                <span>ventas del mes / promedio anual</span>
+            </span>
+        </div>
+    </form>
+
+    <div class="est-table-card">
+        <div class="est-table-scroll">
+        <table class="est-table">
+            <thead>
+                <tr>
+                    <th class="left">Monodroga</th>
+                    {% for m in meses_es %}
+                    <th class="month-th">{{ m }}</th>
+                    {% endfor %}
+                    <th title="Coef. variación: a más alto, más estacional">CV</th>
+                    <th title="Unidades vendidas últimos 12m">u 12m</th>
+                    <th title="Años de historia disponible">Confianza</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in drogas %}
+                {% set peak_idx = d.indices.index(d.indices|max) %}
+                <tr class="droga-row" data-droga-id="{{ d.droga_id }}">
+                    <td class="left">
+                        <button type="button" class="btn-expand" data-droga-id="{{ d.droga_id }}" data-droga-nombre="{{ d.nombre }}">
+                            <svg class="chev" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/>
+                            </svg>
+                            <span class="nombre">{{ d.nombre }}</span>
+                            {% if d.pooled and d.lambda_shrink < 0.7 %}
+                            <span class="est-badge ajust"
+                                  title="Suavizado con subrubro ({{ d.subrubro_nombre or '?' }}): λ={{ '%.2f'|format(d.lambda_shrink) }}">ajust</span>
+                            {% elif d.razon_sin_pool == 'subrubro_heterogeneo' %}
+                            <span class="est-badge crudo"
+                                  title="Subrubro {{ d.subrubro_nombre }} agrupa {{ d.n_drogas_grupo }} drogas — demasiado heterogéneo para aportar señal. Patrón crudo.">crudo</span>
+                            {% endif %}
+                            {% if d.escenario_default %}
+                            <span class="est-badge default-star"
+                                  title="Tiene escenario manual default: {{ d.escenario_default }}">★ {{ d.escenario_default }}</span>
+                            {% endif %}
+                        </button>
+                    </td>
+                    {% for v in d.indices %}
+                        {% set cls = 'neu' %}
+                        {% if v <= 0.5 %}{% set cls = 'lo-2' %}
+                        {% elif v <= 0.7 %}{% set cls = 'lo-1' %}
+                        {% elif v < 0.9 %}{% set cls = 'lo-05' %}
+                        {% elif v < 1.1 %}{% set cls = 'neu' %}
+                        {% elif v < 1.3 %}{% set cls = 'hi-05' %}
+                        {% elif v < 1.5 %}{% set cls = 'hi-1' %}
+                        {% else %}{% set cls = 'hi-2' %}
+                        {% endif %}
+                        <td class="heat-cell {{ cls }} {% if loop.index0 == peak_idx %}peak{% endif %}"
+                            title="{{ meses_es[loop.index0] }}: índice {{ '%.2f'|format(v) }}">{{ '%.2f'|format(v) }}</td>
+                    {% endfor %}
+                    <td>{{ '%.2f'|format(d.cv) }}</td>
+                    <td>{{ '{:,.0f}'.format(d.u12m) }}</td>
+                    <td>
+                        <span class="est-confianza {{ d.confianza }}">{{ d.anios }}a · {{ d.confianza }}</span>
+                    </td>
+                </tr>
+                <tr class="expand-row" data-parent="{{ d.droga_id }}" style="display: none;">
+                    <td colspan="16" style="padding: 0;">
+                        <div class="est-expand expand-body"
+                             data-droga-id="{{ d.droga_id }}"
+                             data-droga-nombre="{{ d.nombre }}"
+                             data-calc-indices='{{ d.indices | tojson }}'>
+
+                            <div class="est-expand-header">
+                                <div class="titulo">{{ d.nombre }}</div>
+                                <div class="meta">
+                                    {% if d.subrubro_nombre %}Subrubro: {{ d.subrubro_nombre }}
+                                        {% if d.n_drogas_grupo %} ({{ d.n_drogas_grupo }} drogas){% endif %} ·
+                                    {% endif %}
+                                    {% if d.pooled %}
+                                        λ = {{ '%.2f'|format(d.lambda_shrink) }}
+                                        <span class="pooled">(suavizado con subrubro)</span>
+                                    {% elif d.razon_sin_pool == 'subrubro_heterogeneo' %}
+                                        <span class="crudo">sin pooling: subrubro heterogéneo (&gt;30 drogas)</span>
+                                    {% elif d.razon_sin_pool == 'sin_subrubro' %}
+                                        <span class="crudo">sin clasificación</span>
+                                    {% else %}
+                                        <span class="crudo">patrón crudo</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="est-tabs">
+                                <button type="button" class="est-tab active" data-tab="historico">📈 Histórico</button>
+                                <button type="button" class="est-tab" data-tab="ajustar">🎚 Ajustar y guardar</button>
+                            </div>
+
+                            {# ─── TAB Histórico ─── #}
+                            <div class="tab-panel active" data-tab="historico">
+                                <div class="chart-wrap">
+                                    <canvas class="chart-historico"></canvas>
+                                </div>
+                            </div>
+
+                            {# ─── TAB Ajustar ─── #}
+                            <div class="tab-panel" data-tab="ajustar">
+
+                                <div class="est-help ayuda-banner">
+                                    <button type="button" class="est-help-toggle ayuda-toggle">
+                                        <span>❔ Cómo se usa este panel</span>
+                                        <span class="chev ayuda-chev">▼</span>
+                                    </button>
+                                    <div class="est-help-body ayuda-body">
+                                        <p>
+                                            El <strong>índice estacional</strong> de cada mes es un multiplicador
+                                            sobre el promedio anual. Si Jul = <code>1.5</code>, ese mes se vende
+                                            un 50% más que el promedio. <code>1.0</code> es neutro,
+                                            <code>0.5</code> es la mitad, <code>2.0</code> el doble.
+                                        </p>
+                                        <ul>
+                                            <li>
+                                                <strong>Sliders por mes</strong> — ajustá manualmente lo que esperás
+                                                vender cada mes. Vienen preseteados con el cálculo automático.
+                                                Subilos donde haya pico previsible (campañas, estacionalidad
+                                                conocida) o bajálos donde haya bajón.
+                                            </li>
+                                            <li>
+                                                <strong>Lead time (días)</strong> — días entre que hacés el pedido
+                                                y te llega. Si pedís hoy y tarda <code>15d</code>, lo que compres
+                                                ahora cubre la demanda de dentro de 15 días. Desplaza las barras
+                                                ámbar "a comprar" hacia atrás en el tiempo.
+                                            </li>
+                                            <li>
+                                                <strong>Cobertura (días)</strong> — cuántos días de venta querés
+                                                cubrir con cada pedido. <code>30</code> = pedís para 1 mes;
+                                                <code>60</code> = pedís para 2 meses; <code>15</code> = para 15 días.
+                                                Escala el tamaño de las barras proporcionalmente.
+                                            </li>
+                                        </ul>
+                                        <p>
+                                            <strong>El chart</strong> muestra 3 series:
+                                            la línea <span class="swatch-calc">violeta punteada</span> es lo
+                                            que calculó el sistema solo;
+                                            la línea <span class="swatch-ajust">mint sólida</span> es tu ajuste
+                                            manual;
+                                            las <span class="swatch-compra">barras ámbar</span> son la cantidad
+                                            a comprar cada mes (demanda futura proyectada, aplicando lead time
+                                            y cobertura).
+                                        </p>
+                                        <p>
+                                            <strong>Escenarios</strong> — podés guardar varias versiones con
+                                            nombre ("base", "agresivo", "invierno duro"). El que tenga ★
+                                            <em>default</em> es el que el sistema usará al calcular cantidades
+                                            sugeridas en pedidos.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="est-escenarios escenarios-row">
+                                    <span class="lbl">Escenarios:</span>
+                                    <span class="esc-list" style="display:inline-flex;flex-wrap:wrap;gap:5px;"></span>
+                                    <button type="button" class="esc-nuevo" title="Crear una variante nueva con otro nombre">+ Nuevo</button>
+                                </div>
+                                <p class="est-help-line">
+                                    Click en un chip para cargar ese escenario. ★ = el que se usa al calcular pedidos.
+                                </p>
+
+                                <div class="chart-wrap">
+                                    <canvas class="chart-ajustar"></canvas>
+                                </div>
+
+                                <p class="est-help-line" style="margin-top:10px;">
+                                    <strong style="color:var(--ds-text-soft);">Ajuste por mes:</strong>
+                                    arrastrá cada slider para subir/bajar el índice de ese mes. El valor cambia
+                                    a ámbar cuando difiere del calculado.
+                                </p>
+                                <div class="slider-grid">
+                                    {% for m in meses_es %}
+                                    <div class="slider-cell" data-mes-idx="{{ loop.index0 }}"
+                                         title="Índice estacional de {{ m }}">
+                                        <span class="slider-val">1.00</span>
+                                        <input type="range" min="0" max="3" step="0.05" value="1.00" class="slider-mes-input">
+                                        <span class="slider-mes">{{ m }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+
+                                <div class="range-grid">
+                                    <div>
+                                        <div class="range-row">
+                                            <label>Lead time (días):</label>
+                                            <input type="range" min="0" max="90" step="1" value="0" class="lead-input"
+                                                   title="Días entre que hacés el pedido y te llega. Desplaza la curva 'a comprar' hacia atrás.">
+                                            <span class="range-val lead-val">0</span>
+                                        </div>
+                                        <p class="range-help">
+                                            Si tarda 15d en llegar, lo que comprás hoy cubre la demanda de dentro de 15d.
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <div class="range-row">
+                                            <label>Cobertura (días):</label>
+                                            <input type="range" min="1" max="180" step="1" value="30" class="cob-input"
+                                                   title="Cuántos días de demanda querés cubrir con cada pedido. Escala las barras 'a comprar'.">
+                                            <span class="range-val cob-val">30</span>
+                                        </div>
+                                        <p class="range-help">
+                                            30 = pedís para 1 mes; 60 = para 2 meses; 15 = para 15 días.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="est-esc-actions">
+                                    <button type="button" class="est-btn btn-reset"
+                                            title="Vuelve los 12 sliders + lead + cobertura al cálculo automático">
+                                        ⟲ Reset
+                                    </button>
+                                    <button type="button" class="est-btn btn-default" style="display:none;"
+                                            title="Marca este escenario como el que el sistema usará al calcular pedidos">
+                                        ★ Marcar default
+                                    </button>
+                                    <button type="button" class="est-btn danger btn-eliminar" style="display:none;"
+                                            title="Borra el escenario actual permanentemente">
+                                        🗑 Eliminar
+                                    </button>
+                                    <span class="spacer"></span>
+                                    <input type="text" class="esc-nombre-input"
+                                           placeholder="Nombre del escenario" value="base"
+                                           title="Nombre corto (ej: base, agresivo, invierno)">
+                                    <label class="esc-default-label"
+                                           title="Si está marcado, este escenario se usará al calcular pedidos">
+                                        <input type="checkbox" class="esc-default-check"> default
+                                    </label>
+                                    <button type="button" class="est-btn primary btn-guardar"
+                                            title="Guarda los valores actuales. Si el nombre ya existe, lo reemplaza.">
+                                        💾 Guardar
+                                    </button>
+                                </div>
+                                <div class="msg-status"></div>
+                            </div>
+
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="16" class="est-empty">
+                    Sin drogas que cumplan los filtros. Probá bajar el mínimo de años o limpiar la búsqueda.
+                </td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    {% if last_page > 1 %}
+    <div class="est-pag">
+        {% for p in range(1, last_page + 1) %}
+            {% if p == page %}
+                <span class="active">{{ p }}</span>
+            {% else %}
+                <a href="?q={{ q }}&min_anios={{ min_anios }}&min_u12m={{ min_u12m }}&orden={{ orden }}&page={{ p }}">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+(function() {
+    const meses = {{ meses_es | tojson }};
+    const yearColors = ['#1f4138', '#2a6b59', '#3d8c75', '#5fbf9d', '#a7e6d0'];
+
+    /** Estado por droga expandida. drogaId → { chartH, chartA, escenarios, escActivo, indicesCalc } */
+    const state = new Map();
+
+    function $(root, sel) { return root.querySelector(sel); }
+    function $all(root, sel) { return root.querySelectorAll(sel); }
+
+    function aplicarEstadoAyuda(body) {
+        const oculta = localStorage.getItem('estac_ayuda_oculta') === '1';
+        const banner = $(body, '.ayuda-banner');
+        const body_ = $(banner, '.ayuda-body');
+        const chev = $(banner, '.ayuda-chev');
+        body_.style.display = oculta ? 'none' : '';
+        chev.textContent = oculta ? '▶' : '▼';
+    }
+
+    async function initHistorico(body, drogaId, indicesCalc) {
+        const canvas = $(body, 'canvas.chart-historico');
+        if (canvas.dataset.rendered === '1') return;
+        let series = [];
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}`);
+            if (r.ok) series = (await r.json()).series || [];
+        } catch (e) { /* silent */ }
+
+        const datasets = series.map((s, i) => ({
+            type: 'line', label: `${s.anio}`, data: s.unidades,
+            borderColor: yearColors[(yearColors.length - series.length + i + 5) % yearColors.length],
+            backgroundColor: 'transparent', borderWidth: 1.5, tension: 0.25,
+            pointRadius: 2, yAxisID: 'y2',
+        }));
+        datasets.push({
+            type: 'line', label: 'Índice calculado', data: indicesCalc,
+            borderColor: '#5fe6bc', backgroundColor: 'rgba(95,230,188,.10)',
+            borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
+        });
+
+        new Chart(canvas, {
+            data: { labels: meses, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#a7b4b0' } },
+                    tooltip: { callbacks: { label: ctx =>
+                        ctx.dataset.label === 'Índice calculado'
+                            ? `Índice: ${ctx.parsed.y.toFixed(2)}`
+                            : `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-AR')} u`
+                    } }
+                },
+                scales: {
+                    y: { position: 'left', title: { display: true, text: 'Índice', font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { color: 'rgba(95,230,188,.08)' }, ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    y2: { position: 'right', title: { display: true, text: 'Unidades/año', font: { size: 10 }, color: '#a7b4b0' },
+                          grid: { display: false }, ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    x: { ticks: { font: { size: 10 }, color: '#a7b4b0' }, grid: { color: 'rgba(255,255,255,.03)' } },
+                }
+            }
+        });
+        canvas.dataset.rendered = '1';
+    }
+
+    function curvaCompra(indicesAjustados, leadDias, cobDias) {
+        const leadMeses = Math.round(leadDias / 30);
+        const cobMeses = cobDias / 30;
+        const out = new Array(12);
+        for (let m = 0; m < 12; m++) {
+            const target = (m + leadMeses) % 12;
+            out[m] = indicesAjustados[target] * cobMeses;
+        }
+        return out;
+    }
+
+    function buildChartAjustar(body, indicesCalc, indicesAjust, leadDias, cobDias) {
+        const canvas = $(body, 'canvas.chart-ajustar');
+        const st = state.get(body.dataset.drogaId);
+        if (st.chartA) {
+            st.chartA.data.datasets[1].data = [...indicesAjust];
+            st.chartA.data.datasets[2].data = curvaCompra(indicesAjust, leadDias, cobDias);
+            st.chartA.update('none');
+            return;
+        }
+        st.chartA = new Chart(canvas, {
+            data: {
+                labels: meses,
+                datasets: [
+                    {
+                        type: 'line', label: 'Calculado', data: indicesCalc,
+                        borderColor: '#c4b5fd', backgroundColor: 'transparent',
+                        borderWidth: 2, borderDash: [4, 4], tension: 0.3, pointRadius: 2, yAxisID: 'y',
+                    },
+                    {
+                        type: 'line', label: 'Ajustado', data: [...indicesAjust],
+                        borderColor: '#5fe6bc', backgroundColor: 'rgba(95,230,188,.12)',
+                        borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
+                    },
+                    {
+                        type: 'bar', label: 'A comprar', data: curvaCompra(indicesAjust, leadDias, cobDias),
+                        backgroundColor: 'rgba(245,158,11,.55)', borderColor: '#d97706',
+                        borderWidth: 1, yAxisID: 'y',
+                    },
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#a7b4b0' } },
+                    tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}` } }
+                },
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Índice (1 = neutro)', font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { color: 'rgba(255,255,255,.05)' }, ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    x: { ticks: { font: { size: 10 }, color: '#a7b4b0' }, grid: { color: 'rgba(255,255,255,.03)' } },
+                }
+            }
+        });
+    }
+
+    function leerSliders(body) {
+        const sliders = $all(body, 'input.slider-mes-input');
+        return Array.from(sliders).map(s => parseFloat(s.value));
+    }
+
+    function escribirSliders(body, indices, indicesCalc) {
+        const cells = $all(body, '.slider-cell');
+        cells.forEach((cell, i) => {
+            const input = $(cell, 'input.slider-mes-input');
+            const valEl = $(cell, '.slider-val');
+            input.value = indices[i];
+            valEl.textContent = indices[i].toFixed(2);
+            const modificado = Math.abs(indices[i] - indicesCalc[i]) > 0.005;
+            cell.classList.toggle('modified', modificado);
+        });
+    }
+
+    function rerenderChips(body) {
+        const st = state.get(body.dataset.drogaId);
+        const list = $(body, '.esc-list');
+        list.innerHTML = '';
+        st.escenarios.forEach(e => {
+            const chip = document.createElement('span');
+            chip.className = 'esc-chip' + (st.escActivo && st.escActivo.id === e.id ? ' active' : '')
+                                        + (e.es_default ? ' default' : '');
+            chip.textContent = e.nombre;
+            chip.dataset.escId = e.id;
+            list.appendChild(chip);
+        });
+    }
+
+    function cargarEscenario(body, esc) {
+        const st = state.get(body.dataset.drogaId);
+        st.escActivo = esc;
+        const indices = esc ? [...esc.indices] : [...st.indicesCalc];
+        const leadDias = esc ? esc.lead_time_dias : 0;
+        const cobDias = esc ? esc.cobertura_dias : 30;
+
+        escribirSliders(body, indices, st.indicesCalc);
+        $(body, '.lead-input').value = leadDias;
+        $(body, '.lead-val').textContent = leadDias;
+        $(body, '.cob-input').value = cobDias;
+        $(body, '.cob-val').textContent = cobDias;
+        $(body, '.esc-nombre-input').value = esc ? esc.nombre : 'base';
+        $(body, '.esc-default-check').checked = esc ? esc.es_default : false;
+        $(body, '.btn-default').style.display = (!esc || esc.es_default) ? 'none' : '';
+        $(body, '.btn-eliminar').style.display = esc ? '' : 'none';
+
+        buildChartAjustar(body, st.indicesCalc, indices, leadDias, cobDias);
+        rerenderChips(body);
+    }
+
+    async function cargarEscenarios(body, drogaId) {
+        const st = state.get(drogaId);
+        try {
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`);
+            if (r.ok) st.escenarios = (await r.json()).escenarios || [];
+        } catch (e) { st.escenarios = []; }
+        const def = st.escenarios.find(e => e.es_default) || st.escenarios[0] || null;
+        cargarEscenario(body, def);
+    }
+
+    function actualizarChartDesdeControles(body) {
+        const st = state.get(body.dataset.drogaId);
+        const indices = leerSliders(body);
+        const leadDias = parseInt($(body, '.lead-input').value, 10);
+        const cobDias = parseInt($(body, '.cob-input').value, 10);
+        buildChartAjustar(body, st.indicesCalc, indices, leadDias, cobDias);
+        const cells = $all(body, '.slider-cell');
+        cells.forEach((cell, i) => {
+            $(cell, '.slider-val').textContent = indices[i].toFixed(2);
+            const modificado = Math.abs(indices[i] - st.indicesCalc[i]) > 0.005;
+            cell.classList.toggle('modified', modificado);
+        });
+    }
+
+    function mostrarStatus(body, msg, ok = true) {
+        const el = $(body, '.msg-status');
+        el.textContent = msg;
+        el.className = 'msg-status ' + (ok ? 'ok' : 'err');
+        clearTimeout(el._t);
+        el._t = setTimeout(() => { el.textContent = ''; }, 4000);
+    }
+
+    /** ───── Event delegation ───── */
+    document.addEventListener('click', async (e) => {
+        const ayudaBtn = e.target.closest('.ayuda-toggle');
+        if (ayudaBtn) {
+            const banner = ayudaBtn.closest('.ayuda-banner');
+            const body_ = $(banner, '.ayuda-body');
+            const chev = $(banner, '.ayuda-chev');
+            const yaOculta = body_.style.display === 'none';
+            body_.style.display = yaOculta ? '' : 'none';
+            chev.textContent = yaOculta ? '▼' : '▶';
+            localStorage.setItem('estac_ayuda_oculta', yaOculta ? '0' : '1');
+            return;
+        }
+
+        const btn = e.target.closest('.btn-expand');
+        if (btn) {
+            const drogaId = btn.dataset.drogaId;
+            const row = document.querySelector(`tr.expand-row[data-parent="${drogaId}"]`);
+            if (!row) return;
+            const parentRow = btn.closest('tr.droga-row');
+            const willOpen = row.style.display === 'none';
+            row.style.display = willOpen ? '' : 'none';
+            parentRow.classList.toggle('expanded', willOpen);
+            if (!willOpen) return;
+
+            const body = $(row, '.expand-body');
+            const id = body.dataset.drogaId;
+            const indicesCalc = JSON.parse(body.dataset.calcIndices);
+            if (!state.has(id)) {
+                state.set(id, { indicesCalc, escenarios: [], escActivo: null, chartA: null });
+            }
+            aplicarEstadoAyuda(body);
+            initHistorico(body, drogaId, indicesCalc);
+            await cargarEscenarios(body, id);
+            return;
+        }
+
+        const tabBtn = e.target.closest('.est-tab');
+        if (tabBtn) {
+            const body = tabBtn.closest('.expand-body');
+            const tab = tabBtn.dataset.tab;
+            $all(body, '.est-tab').forEach(b => b.classList.toggle('active', b === tabBtn));
+            $all(body, '.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
+            return;
+        }
+
+        const chip = e.target.closest('.esc-chip');
+        if (chip) {
+            const body = chip.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            const esc = st.escenarios.find(x => x.id === parseInt(chip.dataset.escId, 10));
+            if (esc) cargarEscenario(body, esc);
+            return;
+        }
+
+        if (e.target.classList.contains('esc-nuevo')) {
+            const body = e.target.closest('.expand-body');
+            cargarEscenario(body, null);
+            $(body, '.esc-nombre-input').value = '';
+            $(body, '.esc-nombre-input').focus();
+            return;
+        }
+
+        if (e.target.classList.contains('btn-reset')) {
+            const body = e.target.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            escribirSliders(body, [...st.indicesCalc], st.indicesCalc);
+            $(body, '.lead-input').value = 0;
+            $(body, '.lead-val').textContent = '0';
+            $(body, '.cob-input').value = 30;
+            $(body, '.cob-val').textContent = '30';
+            actualizarChartDesdeControles(body);
+            return;
+        }
+
+        if (e.target.classList.contains('btn-default')) {
+            const body = e.target.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            if (!st.escActivo) return;
+            const r = await fetch(`/api/estacionalidad/droga/${body.dataset.drogaId}/escenarios/${st.escActivo.id}/default`, { method: 'POST' });
+            if (r.ok) {
+                await cargarEscenarios(body, body.dataset.drogaId);
+                mostrarStatus(body, 'Marcado como default.');
+            } else {
+                mostrarStatus(body, 'Error al marcar default.', false);
+            }
+            return;
+        }
+
+        if (e.target.classList.contains('btn-eliminar')) {
+            const body = e.target.closest('.expand-body');
+            const st = state.get(body.dataset.drogaId);
+            if (!st.escActivo) return;
+            if (!confirm(`¿Eliminar escenario "${st.escActivo.nombre}"?`)) return;
+            const r = await fetch(`/api/estacionalidad/droga/${body.dataset.drogaId}/escenarios/${st.escActivo.id}`, { method: 'DELETE' });
+            if (r.ok) {
+                await cargarEscenarios(body, body.dataset.drogaId);
+                mostrarStatus(body, 'Escenario eliminado.');
+            } else {
+                mostrarStatus(body, 'Error al eliminar.', false);
+            }
+            return;
+        }
+
+        if (e.target.classList.contains('btn-guardar')) {
+            const body = e.target.closest('.expand-body');
+            const drogaId = body.dataset.drogaId;
+            const nombre = ($(body, '.esc-nombre-input').value || '').trim();
+            if (!nombre) { mostrarStatus(body, 'Falta nombre del escenario.', false); return; }
+            const payload = {
+                nombre,
+                indices: leerSliders(body),
+                lead_time_dias: parseInt($(body, '.lead-input').value, 10),
+                cobertura_dias: parseInt($(body, '.cob-input').value, 10),
+                es_default: $(body, '.esc-default-check').checked,
+            };
+            const r = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (r.ok) {
+                const esc = await r.json();
+                await cargarEscenarios(body, drogaId);
+                const st = state.get(drogaId);
+                const recargado = st.escenarios.find(x => x.id === esc.id);
+                if (recargado) cargarEscenario(body, recargado);
+                mostrarStatus(body, `Escenario "${esc.nombre}" guardado.`);
+            } else {
+                const err = await r.json().catch(() => ({}));
+                mostrarStatus(body, err.error || 'Error al guardar.', false);
+            }
+            return;
+        }
+    });
+
+    document.addEventListener('input', (e) => {
+        if (e.target.matches('.slider-mes-input, .lead-input, .cob-input')) {
+            const body = e.target.closest('.expand-body');
+            if (!body) return;
+            if (e.target.classList.contains('lead-input')) {
+                $(body, '.lead-val').textContent = e.target.value;
+            }
+            if (e.target.classList.contains('cob-input')) {
+                $(body, '.cob-val').textContent = e.target.value;
+            }
+            actualizarChartDesdeControles(body);
+        }
+    });
+})();
+</script>
+
+{% endblock %}

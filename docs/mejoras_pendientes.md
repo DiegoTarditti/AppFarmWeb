@@ -488,6 +488,43 @@ una tarea aparte.
   - Matriz `tipo_pedido_config` (ya hecho) define cómo se calculan las cantidades.
   - Falta capa de "cuánto cuesta cada uno" + "cuándo se paga".
 
+### Estacionalidad: consumir escenario default en cálculo de pedidos (2026-05-17)
+- **Trigger**: el panel de ajuste ya guarda escenarios pero todavía no los
+  consume al sugerir cantidades. Hoy `calcular_metricas_pedido_auto` y la
+  lógica de `compras_dia_armar` calculan sugerido sin estacionalidad.
+- **Esfuerzo**: 1 día.
+- **Cómo**:
+  1. Helper `obtener_factor_estacional(droga_id, mes_objetivo) -> float`:
+     consulta el escenario default de la droga y devuelve
+     `indices[(mes_objetivo + lead_time) % 12] * cobertura_meses`.
+     Default 1.0 si no hay escenario.
+  2. En `calcular_metricas_pedido_auto` (routes/informes.py): multiplicar
+     `sugerido` por `obtener_factor_estacional(droga, mes_pedido)`.
+     Bridgear producto → droga vía obs_productos.
+  3. Igual en `routes/compras_dia.py` / `purchase_helpers.calcular_min_sugerido`.
+  4. Mostrar en UI: badge "ajustado por estacionalidad ×1.5" cuando el
+     factor != 1.0, link al escenario que lo gobierna.
+- **Riesgo**: toca código crítico que ya está en producción. Validar
+  primero con 5-10 drogas marcadas y comparar contra cálculo viejo.
+- **Beneficio**: el ajuste manual del usuario empieza a tener efecto real
+  en las cantidades que se proponen. Cierra el loop de la feature.
+
+### ~~Estacionalidad: refinar pooling con accion_terapeutica~~ ⚠ DESCARTADO 2026-05-17
+- Intentamos pivotar el pooling a `productos.accion_terapeutica`, pero la
+  tabla `productos` está **vacía en producción** (y casi vacía en local: 115
+  registros, todos sin AT). `producto_atributos` también está vacía. La
+  columna AT existe pero ningún flujo actual la setea — solo se llenaría
+  con la "Fase 3 — Backfill producto_atributos" del backlog.
+- **Pivot aplicado (commit `47ff310`):** pooling adaptativo. Subrubros
+  con >30 drogas distintas se consideran heterogéneos y NO se usan como
+  pool. La droga queda con patrón crudo. Badge "crudo" en UI cuando
+  aplica. Validado: 1464 drogas pasaron a crudo (incluido Paracetamol,
+  Ibuprofeno y casi todo el top vendidas — antes salían pooled con
+  "Medicamentos"); 2 drogas mantienen pooling en subrubros cohesivos.
+- **Cuando se haga Fase 3 (backfill producto_atributos),** retomar este
+  item para usar `monodroga_norm` o agrupar por familia química como
+  pool de mayor granularidad.
+
 ### Forecast simple de ventas
 - **Trigger**: el user pide "y cuánto voy a vender el mes que viene".
 - **Esfuerzo**: 1-2 días.
@@ -593,6 +630,31 @@ una tarea aparte.
 
 ## ✅ Hechos recientes (histórico)
 
+- 2026-05-17: **Informe de estacionalidad por droga** — `/informes/estacionalidad-drogas`
+  con heatmap E-D (índice = ventas_mes / promedio_anual), pooling bayesiano
+  por subrubro (K=12) para drogas con poca historia, CV para ordenar por
+  "más estacional", confianza por años de data (1/2/3+). Endpoint API
+  `/api/estacionalidad/droga/<id>` para serie por año (chart al expandir).
+  11 tests verdes. Pendiente refinar el pooling con `accion_terapeutica`
+  del catálogo local (el subrubro "Medicamentos" es demasiado grueso).
+- 2026-05-17: **Pooling adaptativo en estacionalidad** — subrubros con
+  >30 drogas distintas se consideran heterogéneos y no se usan como pool
+  (caso "Medicamentos" 40k productos, "Perfumería" 58k). La droga queda
+  con patrón crudo + badge "crudo" en UI. Resuelve el problema donde
+  Paracetamol salía pooled con "Medicamentos" λ=0.59. Constante
+  `HETEROGENEIDAD_MAX_DROGAS = 30` en routes/estacionalidad.py. 4 tests
+  nuevos del pooling adaptativo + 24 existentes verdes.
+- 2026-05-17: **Escenarios manuales de estacionalidad** — tabla
+  `estacionalidad_escenarios` (UNIQUE droga+nombre, es_default exclusivo)
+  + 4 endpoints CRUD `/api/estacionalidad/droga/<id>/escenarios[...]`.
+  Panel inline en la pantalla de estacionalidad con tabs Histórico/Ajustar:
+  12 sliders verticales (índice por mes), sliders lead_time + cobertura,
+  chart de 3 series (calculado / ajustado / barras "a comprar" desplazadas
+  por lead_time × cobertura). Múltiples escenarios nombrados por droga
+  ("base", "agresivo", etc.) con uno marcable como default. Badge
+  `★ <nombre>` en la fila cuando hay escenario default. 13 tests
+  funcionales de endpoints verdes (CRUD + upsert + exclusividad default
+  + clipping + persistencia).
 - 2026-04-25: **`field_inference.py` central + endpoints `/api/inferir/*`** — diccionario de datos de campos del dominio (núcleo: ean, codigo, descripcion, cantidad, precio, descuento) + funciones reusables: `inferir_tipo_valor`, `inferir_campo_por_header`, `inferir_columnas`, `relacion_aritmetica`, `detectar_campos_factura`. 4 endpoints HTTP en `routes/inferencia.py`. 13 tests de endpoints + 65 tests del módulo. Botón "⚡ Auto-detectar (server)" en `converter_pick.html` que reemplaza JS local.
 - 2026-04-25: **Wizard de ofertas con OCR** — acepta XLSX, PDF (texto + escaneado), JPG/PNG/WEBP/etc. Fallback automático si `extract_tables` no encuentra: `helpers.extract_text_with_ocr_fallback` → tokenización por línea → matriz best-effort. Botones "Plantilla rápida" para preset descuento+mín o solo descuento.
 - 2026-04-25: **Trigram index en obs_productos** — `pg_trgm` + GIN gin_trgm_ops para acelerar `ILIKE '%...%'` (full scan → bitmap index ~0.7ms).
