@@ -1506,6 +1506,10 @@ class EstacionalidadEscenario(Base):
 
     El indice del mes m es un multiplicador sobre el promedio anual de la
     droga: 1.0 = neutro, 2.0 = el doble del promedio en ese mes.
+
+    lead_time_dias y cobertura_dias se almacenan en DIAS (no meses) porque
+    la operatoria farmaceutica natural pasa en dias (proveedor tarda 3d,
+    cubris 15d, etc). Para el chart mensual se convierten dividiendo por 30.
     """
     __tablename__ = 'estacionalidad_escenarios'
     id = Column(Integer, primary_key=True)
@@ -1513,8 +1517,8 @@ class EstacionalidadEscenario(Base):
                       nullable=False, index=True)
     nombre = Column(String(60), nullable=False, default='base')
     indices_json = Column(Text, nullable=False)  # JSON array de 12 floats
-    lead_time_meses = Column(Integer, nullable=False, default=0)
-    cobertura_meses = Column(DECIMAL(4, 2), nullable=False, default=1.0)
+    lead_time_dias = Column(Integer, nullable=False, default=0)
+    cobertura_dias = Column(Integer, nullable=False, default=30)
     es_default = Column(Boolean, nullable=False, default=False, index=True)
     creado_por = Column(String(80), nullable=True)
     creado_en = Column(DateTime, default=now_ar)
@@ -1767,6 +1771,38 @@ def init_db(database_url=None):
                         ultimo_resultado TEXT
                     )
                 """))
+                # Migración estacionalidad_escenarios: meses → días.
+                # lead_time_meses (INT) → lead_time_dias (INT) — solo rename.
+                # cobertura_meses (DECIMAL meses) → cobertura_dias (INT días):
+                # multiplicar valor existente por 30 y cambiar tipo.
+                try:
+                    col_names = {
+                        r.column_name for r in conn.execute(text("""
+                            SELECT column_name FROM information_schema.columns
+                            WHERE table_name = 'estacionalidad_escenarios'
+                        """)).fetchall()
+                    }
+                    if 'lead_time_meses' in col_names and 'lead_time_dias' not in col_names:
+                        conn.execute(text(
+                            "ALTER TABLE estacionalidad_escenarios "
+                            "RENAME COLUMN lead_time_meses TO lead_time_dias"
+                        ))
+                    if 'cobertura_meses' in col_names and 'cobertura_dias' not in col_names:
+                        conn.execute(text(
+                            "ALTER TABLE estacionalidad_escenarios "
+                            "ALTER COLUMN cobertura_meses TYPE INTEGER "
+                            "USING ROUND(cobertura_meses * 30)::INTEGER"
+                        ))
+                        conn.execute(text(
+                            "ALTER TABLE estacionalidad_escenarios "
+                            "ALTER COLUMN cobertura_meses SET DEFAULT 30"
+                        ))
+                        conn.execute(text(
+                            "ALTER TABLE estacionalidad_escenarios "
+                            "RENAME COLUMN cobertura_meses TO cobertura_dias"
+                        ))
+                except Exception as _e_estac:
+                    print(f'Migración estacionalidad_escenarios meses→días: {_e_estac}')
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos

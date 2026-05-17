@@ -41,8 +41,8 @@ def _escenario_a_dict(e):
         'droga_id': e.droga_id,
         'nombre': e.nombre,
         'indices': json.loads(e.indices_json),
-        'lead_time_meses': int(e.lead_time_meses or 0),
-        'cobertura_meses': float(e.cobertura_meses or 1.0),
+        'lead_time_dias': int(e.lead_time_dias or 0),
+        'cobertura_dias': int(e.cobertura_dias or 30),
         'es_default': bool(e.es_default),
         'creado_por': e.creado_por,
         'actualizado_en': e.actualizado_en.isoformat() if e.actualizado_en else None,
@@ -62,19 +62,19 @@ def _validar_payload_escenario(payload):
     except (TypeError, ValueError):
         return False, 'Los indices deben ser numericos.', None
     try:
-        lead = max(0, min(6, int(payload.get('lead_time_meses', 0))))
+        lead = max(0, min(180, int(payload.get('lead_time_dias', 0))))
     except (TypeError, ValueError):
-        return False, 'lead_time_meses invalido.', None
+        return False, 'lead_time_dias invalido.', None
     try:
-        cob = max(0.25, min(6.0, float(payload.get('cobertura_meses', 1.0))))
+        cob = max(1, min(365, int(payload.get('cobertura_dias', 30))))
     except (TypeError, ValueError):
-        return False, 'cobertura_meses invalida.', None
+        return False, 'cobertura_dias invalida.', None
     es_default = bool(payload.get('es_default', False))
     return True, None, {
         'nombre': nombre,
         'indices': indices,
-        'lead_time_meses': lead,
-        'cobertura_meses': cob,
+        'lead_time_dias': lead,
+        'cobertura_dias': cob,
         'es_default': es_default,
     }
 
@@ -429,8 +429,8 @@ def init_app(app):
                          .first())
             if existente:
                 existente.indices_json = json.dumps(datos['indices'])
-                existente.lead_time_meses = datos['lead_time_meses']
-                existente.cobertura_meses = datos['cobertura_meses']
+                existente.lead_time_dias = datos['lead_time_dias']
+                existente.cobertura_dias = datos['cobertura_dias']
                 if datos['es_default']:
                     existente.es_default = True
                 esc = existente
@@ -439,8 +439,8 @@ def init_app(app):
                     droga_id=droga_id,
                     nombre=datos['nombre'],
                     indices_json=json.dumps(datos['indices']),
-                    lead_time_meses=datos['lead_time_meses'],
-                    cobertura_meses=datos['cobertura_meses'],
+                    lead_time_dias=datos['lead_time_dias'],
+                    cobertura_dias=datos['cobertura_dias'],
                     es_default=datos['es_default'],
                     creado_por=getattr(current_user, 'username', None),
                 )

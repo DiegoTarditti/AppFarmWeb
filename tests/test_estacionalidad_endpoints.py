@@ -56,8 +56,8 @@ class TestCrear:
         body = r.get_json()
         assert body['nombre'] == 'base'
         assert body['indices'] == _indices_validos()
-        assert body['lead_time_meses'] == 0
-        assert body['cobertura_meses'] == 1.0
+        assert body['lead_time_dias'] == 0
+        assert body['cobertura_dias'] == 30
         assert body['es_default'] is False
         assert body['id'] is not None
 
@@ -65,14 +65,14 @@ class TestCrear:
         r = client.post(f'/api/estacionalidad/droga/{droga_demo}/escenarios', json={
             'nombre': 'agresivo',
             'indices': _indices_validos(),
-            'lead_time_meses': 2,
-            'cobertura_meses': 1.5,
+            'lead_time_dias': 15,
+            'cobertura_dias': 45,
             'es_default': True,
         })
         assert r.status_code == 200
         body = r.get_json()
-        assert body['lead_time_meses'] == 2
-        assert body['cobertura_meses'] == 1.5
+        assert body['lead_time_dias'] == 15
+        assert body['cobertura_dias'] == 45
         assert body['es_default'] is True
 
     def test_rechaza_indices_incompletos(self, client, droga_demo):
@@ -99,26 +99,26 @@ class TestCrear:
         # Actualizar misma key (droga_id, nombre): debería upsertear, no crear duplicado.
         nuevos = [2.0] * 12
         r = client.post(f'/api/estacionalidad/droga/{droga_demo}/escenarios',
-                        json={'nombre': 'base', 'indices': nuevos, 'lead_time_meses': 3})
+                        json={'nombre': 'base', 'indices': nuevos, 'lead_time_dias': 60})
         assert r.status_code == 200
         assert r.get_json()['indices'] == nuevos
-        assert r.get_json()['lead_time_meses'] == 3
+        assert r.get_json()['lead_time_dias'] == 60
 
         # Listar: debe haber solo 1
         r2 = client.get(f'/api/estacionalidad/droga/{droga_demo}/escenarios')
         assert len(r2.get_json()['escenarios']) == 1
 
     def test_clipping_lead_y_cobertura(self, client, droga_demo):
-        # lead_time fuera de rango se clipea a [0, 6]
+        # lead_time_dias se clipea a [0, 180]; cobertura_dias se clipea a [1, 365].
         r = client.post(f'/api/estacionalidad/droga/{droga_demo}/escenarios', json={
             'nombre': 'clip',
             'indices': _indices_validos(),
-            'lead_time_meses': 99,
-            'cobertura_meses': 50,
+            'lead_time_dias': 999,
+            'cobertura_dias': 9999,
         })
         body = r.get_json()
-        assert body['lead_time_meses'] == 6
-        assert body['cobertura_meses'] == 6.0
+        assert body['lead_time_dias'] == 180
+        assert body['cobertura_dias'] == 365
 
 
 class TestDefault:
@@ -180,7 +180,7 @@ class TestPersistencia:
 
     def test_se_guarda_en_db(self, client, droga_demo):
         payload = {'nombre': 'real', 'indices': _indices_validos(),
-                   'lead_time_meses': 1, 'cobertura_meses': 0.75}
+                   'lead_time_dias': 7, 'cobertura_dias': 21}
         client.post(f'/api/estacionalidad/droga/{droga_demo}/escenarios', json=payload)
 
         s = database.SessionLocal()
@@ -189,7 +189,7 @@ class TestPersistencia:
                 droga_id=droga_demo, nombre='real').first()
             assert esc is not None
             assert json.loads(esc.indices_json) == _indices_validos()
-            assert esc.lead_time_meses == 1
-            assert float(esc.cobertura_meses) == 0.75
+            assert esc.lead_time_dias == 7
+            assert esc.cobertura_dias == 21
         finally:
             s.close()

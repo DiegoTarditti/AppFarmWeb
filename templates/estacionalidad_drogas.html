@@ -270,16 +270,19 @@
                                                 conocida) o bajálos donde haya bajón previsible.
                                             </li>
                                             <li>
-                                                <strong>Lead time</strong> — meses entre que hacés el pedido y te
-                                                llega. Si pedís hoy y tarda 2 meses, lo que compres ahora cubre
-                                                la demanda dentro de 2 meses. Desplaza las barras ámbar "a comprar"
-                                                hacia atrás en el tiempo.
+                                                <strong>Lead time (días)</strong> — días entre que hacés el pedido
+                                                y te llega. Si pedís hoy y tarda
+                                                <code class="bg-white px-1 rounded">15d</code>, lo que compres
+                                                ahora cubre la demanda de dentro de 15 días.
+                                                Desplaza las barras ámbar "a comprar" hacia atrás en el tiempo.
                                             </li>
                                             <li>
-                                                <strong>Cobertura</strong> — cuántos meses de venta querés cubrir
-                                                con cada pedido. <code class="bg-white px-1 rounded">1.0</code> =
-                                                pedís lo justo para un mes; <code class="bg-white px-1 rounded">2.0</code>
-                                                = pedís el doble (cubre 2 meses). Escala el tamaño de las barras.
+                                                <strong>Cobertura (días)</strong> — cuántos días de venta querés
+                                                cubrir con cada pedido. <code class="bg-white px-1 rounded">30</code> =
+                                                pedís para 1 mes; <code class="bg-white px-1 rounded">60</code>
+                                                = pedís para 2 meses;
+                                                <code class="bg-white px-1 rounded">15</code> = para 15 días.
+                                                Escala el tamaño de las barras proporcionalmente.
                                             </li>
                                         </ul>
                                         <p>
@@ -334,25 +337,25 @@
 
                                 <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div>
-                                        <div class="range-row"
-                                             title="Tiempo entre que hacés el pedido y te llega. Desplaza la curva 'a comprar' hacia atrás.">
-                                            <label>Lead time (m):</label>
-                                            <input type="range" min="0" max="6" step="1" value="0" class="lead-input">
+                                        <div class="range-row">
+                                            <label>Lead time (días):</label>
+                                            <input type="range" min="0" max="90" step="1" value="0" class="lead-input"
+                                                   title="Días entre que hacés el pedido y te llega. Desplaza la curva 'a comprar' hacia atrás.">
                                             <span class="range-val lead-val">0</span>
                                         </div>
                                         <p class="text-[10px] text-[#888] mt-0.5 pl-[108px]">
-                                            Si tarda 2m en llegar, lo que comprás hoy cubre la demanda de dentro de 2m.
+                                            Si tarda 15d en llegar, lo que comprás hoy cubre la demanda de dentro de 15d.
                                         </p>
                                     </div>
                                     <div>
-                                        <div class="range-row"
-                                             title="Cuántos meses de demanda querés cubrir con cada pedido. Escala el tamaño de las barras 'a comprar'.">
-                                            <label>Cobertura (m):</label>
-                                            <input type="range" min="0.25" max="3" step="0.05" value="1" class="cob-input">
-                                            <span class="range-val cob-val">1.00</span>
+                                        <div class="range-row">
+                                            <label>Cobertura (días):</label>
+                                            <input type="range" min="1" max="180" step="1" value="30" class="cob-input"
+                                                   title="Cuántos días de demanda querés cubrir con cada pedido. Escala el tamaño de las barras 'a comprar'.">
+                                            <span class="range-val cob-val">30</span>
                                         </div>
                                         <p class="text-[10px] text-[#888] mt-0.5 pl-[108px]">
-                                            1 = pedís para 1 mes; 2 = pedís el doble (stock para 2m).
+                                            30 = pedís para 1 mes; 60 = pedís para 2 meses; 15 = para 15 días.
                                         </p>
                                     </div>
                                 </div>
@@ -472,8 +475,12 @@
         canvas.dataset.rendered = '1';
     }
 
-    /** Calcula la curva "a comprar" desplazada por lead time, escalada por cobertura. */
-    function curvaCompra(indicesAjustados, leadMeses, cobMeses) {
+    /** Calcula la curva "a comprar" desplazada por lead time, escalada por cobertura.
+     *  Recibe los parámetros en DÍAS y los convierte internamente a meses (÷30) para
+     *  alinear con los 12 buckets mensuales del chart. */
+    function curvaCompra(indicesAjustados, leadDias, cobDias) {
+        const leadMeses = Math.round(leadDias / 30);
+        const cobMeses = cobDias / 30;
         const out = new Array(12);
         for (let m = 0; m < 12; m++) {
             const target = (m + leadMeses) % 12;
@@ -483,12 +490,12 @@
     }
 
     /** Inicializa o actualiza el chart Ajustar (tab 2). Dataset 0=calc, 1=ajust, 2=compra. */
-    function buildChartAjustar(body, indicesCalc, indicesAjust, leadMeses, cobMeses) {
+    function buildChartAjustar(body, indicesCalc, indicesAjust, leadDias, cobDias) {
         const canvas = $(body, 'canvas.chart-ajustar');
         const st = state.get(body.dataset.drogaId);
         if (st.chartA) {
             st.chartA.data.datasets[1].data = [...indicesAjust];
-            st.chartA.data.datasets[2].data = curvaCompra(indicesAjust, leadMeses, cobMeses);
+            st.chartA.data.datasets[2].data = curvaCompra(indicesAjust, leadDias, cobDias);
             st.chartA.update('none');
             return;
         }
@@ -507,7 +514,7 @@
                         borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
                     },
                     {
-                        type: 'bar', label: 'A comprar', data: curvaCompra(indicesAjust, leadMeses, cobMeses),
+                        type: 'bar', label: 'A comprar', data: curvaCompra(indicesAjust, leadDias, cobDias),
                         backgroundColor: 'rgba(245,158,11,.55)', borderColor: '#d97706',
                         borderWidth: 1, yAxisID: 'y',
                     },
@@ -564,20 +571,20 @@
         const st = state.get(body.dataset.drogaId);
         st.escActivo = esc;
         const indices = esc ? [...esc.indices] : [...st.indicesCalc];
-        const lead = esc ? esc.lead_time_meses : 0;
-        const cob = esc ? esc.cobertura_meses : 1.0;
+        const leadDias = esc ? esc.lead_time_dias : 0;
+        const cobDias = esc ? esc.cobertura_dias : 30;
 
         escribirSliders(body, indices, st.indicesCalc);
-        $(body, '.lead-input').value = lead;
-        $(body, '.lead-val').textContent = lead;
-        $(body, '.cob-input').value = cob;
-        $(body, '.cob-val').textContent = cob.toFixed(2);
+        $(body, '.lead-input').value = leadDias;
+        $(body, '.lead-val').textContent = leadDias;
+        $(body, '.cob-input').value = cobDias;
+        $(body, '.cob-val').textContent = cobDias;
         $(body, '.esc-nombre-input').value = esc ? esc.nombre : 'base';
         $(body, '.esc-default-check').checked = esc ? esc.es_default : false;
         $(body, '.btn-default').classList.toggle('hidden', !esc || esc.es_default);
         $(body, '.btn-eliminar').classList.toggle('hidden', !esc);
 
-        buildChartAjustar(body, st.indicesCalc, indices, lead, cob);
+        buildChartAjustar(body, st.indicesCalc, indices, leadDias, cobDias);
         rerenderChips(body);
     }
 
@@ -596,9 +603,9 @@
     function actualizarChartDesdeControles(body) {
         const st = state.get(body.dataset.drogaId);
         const indices = leerSliders(body);
-        const lead = parseInt($(body, '.lead-input').value, 10);
-        const cob = parseFloat($(body, '.cob-input').value);
-        buildChartAjustar(body, st.indicesCalc, indices, lead, cob);
+        const leadDias = parseInt($(body, '.lead-input').value, 10);
+        const cobDias = parseInt($(body, '.cob-input').value, 10);
+        buildChartAjustar(body, st.indicesCalc, indices, leadDias, cobDias);
         // Marcar slider modificado en vivo
         const cells = $all(body, '.slider-cell');
         cells.forEach((cell, i) => {
@@ -701,8 +708,8 @@
             escribirSliders(body, [...st.indicesCalc], st.indicesCalc);
             $(body, '.lead-input').value = 0;
             $(body, '.lead-val').textContent = '0';
-            $(body, '.cob-input').value = 1;
-            $(body, '.cob-val').textContent = '1.00';
+            $(body, '.cob-input').value = 30;
+            $(body, '.cob-val').textContent = '30';
             actualizarChartDesdeControles(body);
             return;
         }
@@ -747,8 +754,8 @@
             const payload = {
                 nombre,
                 indices: leerSliders(body),
-                lead_time_meses: parseInt($(body, '.lead-input').value, 10),
-                cobertura_meses: parseFloat($(body, '.cob-input').value),
+                lead_time_dias: parseInt($(body, '.lead-input').value, 10),
+                cobertura_dias: parseInt($(body, '.cob-input').value, 10),
                 es_default: $(body, '.esc-default-check').checked,
             };
             const r = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`, {
@@ -779,7 +786,7 @@
                 $(body, '.lead-val').textContent = e.target.value;
             }
             if (e.target.classList.contains('cob-input')) {
-                $(body, '.cob-val').textContent = parseFloat(e.target.value).toFixed(2);
+                $(body, '.cob-val').textContent = e.target.value;
             }
             actualizarChartDesdeControles(body);
         }
