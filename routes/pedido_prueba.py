@@ -122,6 +122,30 @@ def init_app(app):
                                labs=labs_list,
                                meses_es=MESES_ES)
 
+    @app.route('/api/pedido-prueba/historico/<int:producto_id>')
+    @login_required
+    def api_pedido_prueba_historico(producto_id):
+        """Serie mensual de ventas del producto por anio, para chart del drawer."""
+        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        from collections import defaultdict
+        with get_db() as session:
+            rows = (session.query(
+                ObsVentaMensual.anio, ObsVentaMensual.mes,
+                func.sum(ObsVentaMensual.unidades).label('u'))
+                .filter(ObsVentaMensual.producto_observer == producto_id,
+                        ObsVentaMensual.id_farmacia == id_farmacia)
+                .group_by(ObsVentaMensual.anio, ObsVentaMensual.mes)
+                .order_by(ObsVentaMensual.anio, ObsVentaMensual.mes)
+                .all())
+        por_anio = defaultdict(lambda: [0.0] * 12)
+        for r in rows:
+            por_anio[r.anio][r.mes - 1] = float(r.u or 0)
+        return jsonify({
+            'producto_id': producto_id,
+            'series': [{'anio': a, 'unidades': por_anio[a]}
+                       for a in sorted(por_anio.keys())],
+        })
+
     @app.route('/api/pedido-prueba/calcular', methods=['POST'])
     @login_required
     def api_pedido_prueba_calcular():

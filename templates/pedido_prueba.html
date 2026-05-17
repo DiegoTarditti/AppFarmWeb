@@ -4,6 +4,7 @@
 {% block body_class %}theme-emerald{% endblock %}
 
 {% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 .pp-topbar {
     background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
@@ -227,6 +228,15 @@
 .drawer-card .razon {
     font-size: 12px; color: var(--ds-text-soft); line-height: 1.5;
     font-family: ui-monospace, Consolas, monospace;
+}
+
+/* Chart en el drawer */
+.drawer-chart-wrap {
+    height: 240px; margin: 10px 0 14px;
+    background: rgba(0,0,0,.18);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 10px 14px;
 }
 
 /* Slider grid (12 meses) */
@@ -594,6 +604,10 @@
             </div>
         </div>
 
+        <div class="drawer-chart-wrap">
+            <canvas class="drawer-chart"></canvas>
+        </div>
+
         <div class="drawer-card">
             <div class="card-title">Ajuste del escenario "Generico" del producto</div>
             <div class="slider-grid">${slidersHtml}</div>
@@ -688,22 +702,124 @@
         }
     }
 
+    /* ───── Chart Chart.js dentro del drawer ───── */
+    const yearColors = ['#1f4138', '#2a6b59', '#3d8c75', '#5fbf9d', '#a7e6d0'];
+    const chartsPorDroga = new Map();  // producto_id → Chart.js instance
+
+    function curvaCompra(indices, leadDias, cobDias) {
+        const leadMeses = Math.round((leadDias || 0) / 30);
+        const cobMeses = (cobDias || 30) / 30;
+        const out = new Array(12);
+        for (let m = 0; m < 12; m++) {
+            const target = (m + leadMeses) % 12;
+            out[m] = indices[target] * cobMeses;
+        }
+        return out;
+    }
+
+    function destruirChart(producto_id) {
+        const c = chartsPorDroga.get(producto_id);
+        if (c) { c.destroy(); chartsPorDroga.delete(producto_id); }
+    }
+
+    async function buildDrawerChart(drawerBody, it) {
+        const canvas = drawerBody.querySelector('canvas.drawer-chart');
+        if (!canvas) return;
+        // Limpiar instancia previa para este producto.
+        destruirChart(it.producto_id);
+
+        let series = [];
+        try {
+            const r = await fetch(`/api/pedido-prueba/historico/${it.producto_id}`);
+            if (r.ok) series = (await r.json()).series || [];
+        } catch (e) { /* silent */ }
+
+        const datasets = series.map((s, i) => ({
+            type: 'line', label: `${s.anio}`, data: s.unidades,
+            borderColor: yearColors[(yearColors.length - series.length + i + 5) % yearColors.length],
+            backgroundColor: 'transparent', borderWidth: 1.5, tension: 0.25,
+            pointRadius: 2, yAxisID: 'y2',
+        }));
+        datasets.push({
+            type: 'line', label: 'Índice ajustado', data: [...it.indices],
+            borderColor: '#5fe6bc', backgroundColor: 'rgba(95,230,188,.12)',
+            borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
+        });
+        datasets.push({
+            type: 'bar', label: 'A comprar (índice × cob)',
+            data: curvaCompra(it.indices, it.lead_dias, it.cobertura_dias),
+            backgroundColor: 'rgba(245,158,11,.55)', borderColor: '#d97706',
+            borderWidth: 1, yAxisID: 'y',
+        });
+
+        const chart = new Chart(canvas, {
+            data: { labels: meses, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#a7b4b0' } },
+                    tooltip: { callbacks: { label: ctx =>
+                        ctx.dataset.label.startsWith('Índice') || ctx.dataset.label.startsWith('A comprar')
+                            ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`
+                            : `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-AR')} u`
+                    } }
+                },
+                scales: {
+                    y: { beginAtZero: true,
+                         title: { display: true, text: 'Índice (1 = neutro)', font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { color: 'rgba(255,255,255,.05)' },
+                         ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    y2: { position: 'right',
+                          title: { display: true, text: 'Unidades vendidas/año', font: { size: 10 }, color: '#a7b4b0' },
+                          grid: { display: false },
+                          ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    x: { ticks: { font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { color: 'rgba(255,255,255,.03)' } },
+                }
+            }
+        });
+        chartsPorDroga.set(it.producto_id, chart);
+    }
+
+    function actualizarChartDesdeSliders(drawerBody) {
+        const tr = drawerBody.closest('tr.drawer-row');
+        const id = parseInt(tr.dataset.parent);
+        const chart = chartsPorDroga.get(id);
+        if (!chart) return;
+        const sliders = drawerBody.querySelectorAll('.slider-mes-input');
+        const indices = Array.from(sliders).map(s => parseFloat(s.value));
+        const lead = parseInt(drawerBody.querySelector('.lead-input').value, 10);
+        const cob = parseInt(drawerBody.querySelector('.cob-input').value, 10);
+        // datasets: 0..N-3 son series anuales, N-2 índice, N-1 a comprar
+        const ds = chart.data.datasets;
+        ds[ds.length - 2].data = [...indices];
+        ds[ds.length - 1].data = curvaCompra(indices, lead, cob);
+        chart.update('none');
+    }
+
     function toggleDrawer(rowData) {
         const id = rowData.dataset.id;
         const drawer = document.querySelector(`tr.drawer-row[data-parent="${id}"]`);
         const open = drawer.classList.contains('open');
-        // Cerrar otros drawers
+        // Cerrar otros drawers (y destruir sus charts)
         $$('.drawer-row.open').forEach(d => {
             d.classList.remove('open');
+            destruirChart(parseInt(d.dataset.parent));
             const r = document.querySelector(`tr.row-data[data-id="${d.dataset.parent}"]`);
             if (r) r.classList.remove('expanded');
         });
         if (!open) {
             const it = itemsCache.find(x => x.producto_id == id);
             if (!it) return;
-            drawer.querySelector('.drawer-body').innerHTML = renderDrawer(it);
+            const body = drawer.querySelector('.drawer-body');
+            body.innerHTML = renderDrawer(it);
             drawer.classList.add('open');
             rowData.classList.add('expanded');
+            // Esperar al siguiente frame para que el canvas tenga tamaño antes de Chart.js.
+            requestAnimationFrame(() => buildDrawerChart(body, it));
+        } else {
+            destruirChart(parseInt(id));
         }
     }
 
@@ -792,12 +908,15 @@
         if (e.target.matches('.slider-mes-input')) {
             const cell = e.target.closest('.slider-cell');
             cell.querySelector('.slider-val').textContent = parseFloat(e.target.value).toFixed(2);
+            actualizarChartDesdeSliders(body);
         }
         if (e.target.matches('.lead-input')) {
             body.querySelector('.lead-val').textContent = e.target.value;
+            actualizarChartDesdeSliders(body);
         }
         if (e.target.matches('.cob-input')) {
             body.querySelector('.cob-val').textContent = e.target.value;
+            actualizarChartDesdeSliders(body);
         }
         if (e.target.matches('.cantidad-final')) {
             const tr = body.closest('tr.drawer-row');
