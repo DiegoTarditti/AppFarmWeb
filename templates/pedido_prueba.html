@@ -347,6 +347,56 @@
 }
 .pp-help b { color: var(--ds-text-soft); font-weight: 600; }
 
+/* ────────── Banner de ayuda ────────── */
+.pp-help-banner {
+    background: rgba(95,230,188,.04);
+    border: 1px solid rgba(95,230,188,.18);
+    border-radius: var(--ds-r-md);
+    margin-bottom: 14px;
+}
+.pp-help-toggle {
+    width: 100%; background: none; border: none;
+    padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; text-align: left;
+    color: var(--ds-mint); font-size: 13px; font-weight: 700;
+}
+.pp-help-toggle .chev { font-size: 10px; color: var(--ds-text-mute); }
+.pp-help-body {
+    padding: 0 16px 16px;
+    font-size: 12.5px; line-height: 1.55; color: var(--ds-text-soft);
+}
+.pp-help-body .hsection {
+    margin-top: 10px;
+}
+.pp-help-body .hsection-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text); margin-bottom: 4px;
+    display: flex; align-items: center; gap: 6px;
+}
+.pp-help-body .hsection-title::before {
+    content: ''; flex: 1; height: 1px;
+    background: var(--ds-line); margin-left: 10px;
+    order: 2;
+}
+.pp-help-body ol, .pp-help-body ul {
+    margin: 4px 0 0; padding-left: 22px;
+}
+.pp-help-body li { margin-bottom: 3px; }
+.pp-help-body strong { color: var(--ds-text); }
+.pp-help-body code {
+    background: rgba(0,0,0,.35); color: var(--ds-mint);
+    padding: 1px 5px; border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+}
+.pp-help-body .b-mint { color: var(--ds-mint); font-weight: 700; }
+.pp-help-body .b-warn { color: var(--ds-warn); font-weight: 700; }
+.pp-help-body .b-danger { color: var(--ds-danger); font-weight: 700; }
+.pp-help-body .b-mute { color: var(--ds-text-mute); font-weight: 700; }
+.pp-help-body p { margin: 4px 0 6px; }
+
 /* Mensaje empty / loading */
 .pp-msg {
     padding: 40px 20px; text-align: center;
@@ -368,6 +418,123 @@
 </div>
 
 <div class="pp-content">
+
+    <div class="pp-help-banner" id="pp-help-banner">
+        <button type="button" class="pp-help-toggle" id="pp-help-toggle">
+            <span>❔ Cómo se usa este pedido prueba</span>
+            <span class="chev" id="pp-help-chev">▼</span>
+        </button>
+        <div class="pp-help-body" id="pp-help-body">
+
+            <div class="hsection">
+                <div class="hsection-title">🎯 Para qué sirve</div>
+                <p>
+                    Planificar <strong>pedidos grandes con anticipación</strong> usando
+                    estacionalidad por droga/producto y comportamientos excepcionales (DISCONTINUADO,
+                    REEMPLAZADO, SIN_DESCUENTO, NOTA).
+                </p>
+                <p>
+                    Es <strong>paralelo</strong> a <code>/pedido/dia</code>:
+                </p>
+                <ul>
+                    <li><code>/pedido/dia</code> = reposición táctica de las últimas
+                        ventas. Usa <code>u3m/90</code> como ritmo (lo que vendiste en
+                        los últimos 3 meses).</li>
+                    <li><code>/pedido/prueba</code> = planificación grande. Usa
+                        <code>u12m/365</code> como base neutra × <code>indice estacional del
+                        mes objetivo</code> × <code>cobertura en días</code>. Pensado para
+                        anticipar picos estacionales (verano = filtro solar, invierno =
+                        antitusivos, etc.) antes de que lleguen.</li>
+                </ul>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">📋 Workflow recomendado</div>
+                <ol>
+                    <li>Elegí un <strong>laboratorio</strong> en el autocomplete
+                        (multi-token: tipea <code>"abb dia"</code> matchea Abbott Diabetes).</li>
+                    <li>Ajustá los <strong>defaults de cabecera</strong> (Lead time y
+                        Cobertura) según lo que aplique a este pedido. Por ejemplo:
+                        compra grande mensual = lead 7d / cob 30d; compra de
+                        temporada con anticipación = lead 30d / cob 60d.</li>
+                    <li>Click <strong>▶ Calcular</strong>. La tabla muestra
+                        <strong>sugerido día actual</strong> vs <strong>sugerido prueba</strong>
+                        para comparar.</li>
+                    <li>Click en una <strong>fila</strong> para abrir el drawer con
+                        chart histórico + sliders para ajustar la estacionalidad del
+                        producto puntual + cantidad final editable.</li>
+                    <li>Filtrá con <code>Mostrar: Solo con Δ ≠ 0</code> para enfocarte
+                        en productos donde difiere del cálculo del día.</li>
+                    <li>Cuando estés conforme: <strong>💾 Guardar pedido</strong>
+                        (queda registrado con <code>origen='prueba'</code> en la lista
+                        de pedidos).</li>
+                </ol>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">📊 Columnas de la tabla</div>
+                <ul>
+                    <li><strong>Stock</strong>: stock actual del producto en ObServer.</li>
+                    <li><strong>u12m</strong>: unidades vendidas en los últimos 12 meses.</li>
+                    <li><strong>Día act.</strong>: lo que sugeriría <code>/pedido/dia</code>
+                        (matriz REPOSICION con <code>u3m/90</code>). Es el cálculo táctico.</li>
+                    <li><strong>Prueba</strong>: este cálculo. Fórmula:
+                        <code>(u12m/365) × indice[mes_objetivo] × cobertura_dias − stock</code>.</li>
+                    <li><strong>Δ</strong>: <span class="b-mint">verde</span> = más que día act,
+                        <span class="b-danger">rojo</span> = menos.</li>
+                    <li><strong>Origen</strong>:
+                        <span class="b-mint">PRODUCTO</span> = escenario propio del producto,
+                        <span class="b-warn">DROGA</span> = heredado del escenario de la droga,
+                        <span class="b-mute">AUTO</span> = sin escenario, usa los defaults
+                        de cabecera + índices neutros (1.0/mes).</li>
+                    <li><strong>Flag</strong>: comportamiento excepcional aplicado al EAN.
+                        <span class="b-danger">DISCONTINUADO</span> excluye del pedido (final=0),
+                        <span class="b-warn">REEMPLAZADO/SIN_DESCUENTO</span> son badges
+                        informativos, <span style="color:var(--ds-info);">NOTA</span> también.</li>
+                    <li><strong>Final</strong>: cantidad final editable. Empieza igual al
+                        sugerido prueba; podés cambiarla en el drawer.</li>
+                </ul>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">🎚 Drawer (al click en una fila)</div>
+                <ul>
+                    <li><strong>Desglose</strong>: razón paso a paso del cálculo
+                        (u12m, índice aplicado, cobertura, stock restado).</li>
+                    <li><strong>Chart</strong>: líneas grises = ventas reales por año
+                        (eje derecho); <span class="b-mint">línea mint sólida</span> =
+                        índice estacional ajustado; <span class="b-warn">barras ámbar</span>
+                        = qué hay que comprar cada mes (índice × cobertura, desplazado
+                        por lead time).</li>
+                    <li><strong>12 sliders mensuales</strong>: índice estacional. 1.00 =
+                        neutro, 2.00 = doble del promedio anual, 0.50 = la mitad.</li>
+                    <li><strong>Lead time / Cobertura</strong>: solo afectan a este
+                        producto (no a otros de la misma droga).</li>
+                    <li><strong>Guardar escenario producto</strong>: persiste el ajuste
+                        en DB. La próxima vez que calcules, este producto va a usar
+                        el escenario propio (Origen pasa a <span class="b-mint">PRODUCTO</span>).</li>
+                    <li><strong>Cantidad final</strong>: override puntual del sugerido.
+                        No se guarda en escenario, solo va al pedido al guardar.</li>
+                </ul>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">💡 Tips</div>
+                <ul>
+                    <li>Los <strong>escenarios de droga</strong> (que afectan a varios
+                        productos a la vez) se editan desde
+                        <code>/informes/estacionalidad-drogas</code>.</li>
+                    <li>Si un producto no tiene ventas en 12m, no aparece en la tabla
+                        (el cálculo da 0).</li>
+                    <li>El <strong>piso de 2 días</strong> en lead time es operativo:
+                        ningún proveedor entrega instantáneo.</li>
+                    <li>Para esconder este panel: click en <code>❔</code>. Queda plegado
+                        en próximas visitas.</li>
+                </ul>
+            </div>
+
+        </div>
+    </div>
 
     <div class="pp-setup">
         <div class="field">
@@ -488,6 +655,21 @@
 
     const $ = (sel, root=document) => root.querySelector(sel);
     const $$ = (sel, root=document) => root.querySelectorAll(sel);
+
+    /* ───── Banner de ayuda (persistido en localStorage) ───── */
+    (function initHelp() {
+        const body = $('#pp-help-body');
+        const chev = $('#pp-help-chev');
+        const oculta = localStorage.getItem('pp_ayuda_oculta') === '1';
+        body.style.display = oculta ? 'none' : '';
+        chev.textContent = oculta ? '▶' : '▼';
+        $('#pp-help-toggle').addEventListener('click', () => {
+            const yaOculta = body.style.display === 'none';
+            body.style.display = yaOculta ? '' : 'none';
+            chev.textContent = yaOculta ? '▼' : '▶';
+            localStorage.setItem('pp_ayuda_oculta', yaOculta ? '0' : '1');
+        });
+    })();
 
     /* ───── Autocomplete multi-token de laboratorio ───── */
     function normalizar(s) {
