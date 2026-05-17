@@ -348,23 +348,26 @@
 .wk-btn {
     width: 22px; height: 22px;
     border: 1px solid var(--ds-line);
-    background: rgba(0,0,0,.3);
-    color: var(--ds-text-mute);
+    background: rgba(0,0,0,.5);
+    color: rgba(255,255,255,.25);
     font-family: ui-monospace, Consolas, monospace;
     font-size: 10px; font-weight: 700;
     border-radius: 4px;
     cursor: pointer;
     transition: background .12s, border-color .12s, color .12s;
     padding: 0; line-height: 1;
+    text-decoration: line-through;
 }
 .wk-btn:hover {
     border-color: var(--ds-mint);
     color: var(--ds-text);
+    text-decoration: none;
 }
 .wk-btn.active {
-    background: rgba(95,230,188,.22);
-    border-color: var(--ds-mint);
-    color: var(--ds-mint);
+    background: #16a34a;
+    border-color: #22c55e;
+    color: #fff;
+    text-decoration: none;
 }
 .ff-reset-btn {
     margin-left: 14px;
