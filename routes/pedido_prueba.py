@@ -21,7 +21,6 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from database import (
-    EstacionalidadEscenario,
     ObsLaboratorio,
     ObsNombreDroga,
     ObsProducto,
@@ -292,83 +291,13 @@ def init_app(app):
                 'ventas_sync_en': ventas_sync.isoformat() if ventas_sync else None,
             })
 
-    @app.route('/api/pedido-prueba/escenario-producto/<int:producto_id>',
-               methods=['POST'])
-    @login_required
-    def api_escenario_producto(producto_id):
-        """Crea/actualiza el escenario 'Generico' de un producto puntual.
-
-        Body: { indices: [12], lead_time_dias, cobertura_dias }.
-        Devuelve el calculo recalculado del producto.
-        """
-        payload = request.get_json(silent=True) or {}
-        indices = payload.get('indices')
-        if not isinstance(indices, list) or len(indices) != 12:
-            return jsonify({'error': 'Se esperan 12 indices'}), 400
-        try:
-            indices = [max(0.0, float(v)) for v in indices]
-            lead = max(
-                LIMITES['lead_dias_piso'],
-                min(LIMITES['lead_dias_max'],
-                    int(payload.get('lead_time_dias', LIMITES['lead_dias_default']))),
-            )
-            cob = max(
-                LIMITES['cob_dias_min'],
-                min(LIMITES['cob_dias_max'],
-                    int(payload.get('cobertura_dias', LIMITES['cob_dias_default']))),
-            )
-        except (TypeError, ValueError):
-            return jsonify({'error': 'parametros invalidos'}), 400
-
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
-
-        with get_db() as session:
-            producto = (session.query(ObsProducto)
-                        .filter_by(observer_id=producto_id).first())
-            if not producto:
-                return jsonify({'error': 'producto inexistente'}), 404
-            droga_id = producto.nombre_droga_observer
-            if not droga_id:
-                return jsonify({'error': 'producto sin droga'}), 400
-
-            esc = (session.query(EstacionalidadEscenario)
-                   .filter_by(droga_id=droga_id, producto_id=producto_id,
-                              nombre='Generico')
-                   .first())
-            if esc:
-                esc.indices_json = json.dumps(indices)
-                esc.lead_time_dias = lead
-                esc.cobertura_dias = cob
-            else:
-                esc = EstacionalidadEscenario(
-                    droga_id=droga_id, producto_id=producto_id,
-                    nombre='Generico',
-                    indices_json=json.dumps(indices),
-                    lead_time_dias=lead, cobertura_dias=cob,
-                    es_default=True,
-                    creado_por=getattr(current_user, 'username', None),
-                )
-                session.add(esc)
-            session.commit()
-
-            # Recalcular para devolver datos frescos
-            u12m_map = _u12m_por_producto(session, [producto_id], id_farmacia)
-            stock_map = _stock_por_producto(session, [producto_id], id_farmacia)
-            u12m = u12m_map.get(producto_id, 0)
-            st = stock_map.get(producto_id, {'stock': 0, 'minimo': 0})
-            est = calcular_sugerido_estacional(
-                session, producto, u12m=u12m,
-                stock_actual=st['stock'], minimo=st['minimo'],
-            )
-            return jsonify({
-                'ok': True,
-                'sugerido_prueba': est['sugerido_final'],
-                'origen_escenario': est['origen_escenario'],
-                'indices': est['indices'],
-                'lead_dias': est['lead_dias'],
-                'cobertura_dias': est['cobertura_dias'],
-                'razon': est['razon'],
-            })
+    # Endpoint /escenario-producto eliminado tras merge con main:
+    # la asignación producto → escenario ahora va por la tabla
+    # EstacionalidadProducto y los endpoints de routes/estacionalidad.py:
+    #   POST /api/estacionalidad/droga/<id>/aplicar   {escenario_id, producto_observer_ids: [...]}
+    #   POST /api/estacionalidad/droga/<id>/desvincular  {producto_observer_ids: [...]}
+    # El drawer del pedido_prueba solo lee + muestra; las ediciones de
+    # estacionalidad se hacen desde /informes/estacionalidad-drogas.
 
     @app.route('/api/pedido-prueba/flag/<int:producto_id>', methods=['POST'])
     @login_required

@@ -30,6 +30,7 @@ from sqlalchemy import func as _func
 
 from database import (
     EstacionalidadEscenario,
+    EstacionalidadProducto,
     ObsCodigoBarras,
     ObsProducto,
     ObsStock,
@@ -71,38 +72,46 @@ MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
 
 
 def obtener_escenarios_bulk(session, droga_ids, producto_ids):
-    """Carga TODOS los escenarios "Generico" relevantes para un conjunto
-    de drogas y productos en 1 query. Devuelve:
+    """Carga los escenarios relevantes para un conjunto de drogas y
+    asignaciones producto→escenario en 2 queries. Devuelve dict:
 
         {
-            ('producto', producto_id): EstacionalidadEscenario,
+            ('producto', producto_observer_id): EstacionalidadEscenario,
             ('droga', droga_id): EstacionalidadEscenario,
         }
 
-    Diseñado para llamarse 1 vez por endpoint con los IDs del lab entero.
-    Despues `obtener_escenario_aplicable(...)` lo lee del dict en O(1).
+    Lógica (alineada con el modelo de main, post commit 8f84f5f):
+    - Los escenarios siempre se crean a nivel droga (EstacionalidadEscenario
+      sin producto_id — solo droga_id + es_default).
+    - La asignación a un producto puntual va en la tabla intermedia
+      EstacionalidadProducto que apunta a un escenario droga existente.
     """
-    if not droga_ids and not producto_ids:
-        return {}
+    out = {}
     droga_ids_list = list(droga_ids or [])
     producto_ids_list = list(producto_ids or [])
-    if not droga_ids_list and not producto_ids_list:
-        return {}
 
-    rows = (session.query(EstacionalidadEscenario)
-            .filter(EstacionalidadEscenario.nombre == _ESCENARIO_NOMBRE)
-            .filter(or_(
-                and_(EstacionalidadEscenario.producto_id.is_(None),
-                     EstacionalidadEscenario.droga_id.in_(droga_ids_list or [-1])),
-                EstacionalidadEscenario.producto_id.in_(producto_ids_list or [-1]),
-            ))
-            .all())
-    out = {}
-    for e in rows:
-        if e.producto_id is not None:
-            out[('producto', e.producto_id)] = e
-        else:
-            out[('droga', e.droga_id)] = e
+    if droga_ids_list:
+        # Escenarios de droga (preferimos los es_default; si no, el ultimo).
+        rows = (session.query(EstacionalidadEscenario)
+                .filter(EstacionalidadEscenario.droga_id.in_(droga_ids_list))
+                .order_by(EstacionalidadEscenario.es_default.desc(),
+                          EstacionalidadEscenario.actualizado_en.desc())
+                .all())
+        for e in rows:
+            key = ('droga', e.droga_id)
+            if key not in out:  # primer match = el preferido
+                out[key] = e
+
+    if producto_ids_list:
+        # Asignaciones producto → escenario via tabla intermedia.
+        rows = (session.query(EstacionalidadProducto, EstacionalidadEscenario)
+                .join(EstacionalidadEscenario,
+                      EstacionalidadEscenario.id == EstacionalidadProducto.escenario_id)
+                .filter(EstacionalidadProducto.producto_observer_id.in_(producto_ids_list))
+                .all())
+        for asig, esc in rows:
+            out[('producto', asig.producto_observer_id)] = esc
+
     return out
 
 
@@ -197,20 +206,22 @@ def obtener_escenario_aplicable(session, droga_id, producto_id,
         return None, 'auto'
 
     # Path lento (queries individuales) — solo cuando no se pasa bulk.
+    # 1. Asignacion explicita producto → escenario via EstacionalidadProducto.
     if producto_id is not None:
-        esc = (session.query(EstacionalidadEscenario)
-               .filter_by(droga_id=droga_id,
-                          producto_id=producto_id,
-                          nombre=_ESCENARIO_NOMBRE)
+        row = (session.query(EstacionalidadProducto, EstacionalidadEscenario)
+               .join(EstacionalidadEscenario,
+                     EstacionalidadEscenario.id == EstacionalidadProducto.escenario_id)
+               .filter(EstacionalidadProducto.producto_observer_id == producto_id)
                .first())
-        if esc:
-            return esc, 'producto'
+        if row:
+            return row[1], 'producto'
 
+    # 2. Escenario default de la droga (es_default=True; si no, ultimo creado).
     if droga_id is not None:
         esc = (session.query(EstacionalidadEscenario)
-               .filter(EstacionalidadEscenario.droga_id == droga_id,
-                       EstacionalidadEscenario.producto_id.is_(None),
-                       EstacionalidadEscenario.nombre == _ESCENARIO_NOMBRE)
+               .filter(EstacionalidadEscenario.droga_id == droga_id)
+               .order_by(EstacionalidadEscenario.es_default.desc(),
+                         EstacionalidadEscenario.actualizado_en.desc())
                .first())
         if esc:
             return esc, 'droga'

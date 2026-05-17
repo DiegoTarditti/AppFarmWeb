@@ -1531,10 +1531,6 @@ class EstacionalidadEscenario(Base):
     id = Column(Integer, primary_key=True)
     droga_id = Column(Integer, ForeignKey('obs_nombres_drogas.observer_id'),
                       nullable=False, index=True)
-    # Si NULL: escenario aplica a TODA la droga (default).
-    # Si seteado: escenario aplica solo a ese producto especifico (override).
-    producto_id = Column(Integer, ForeignKey('obs_productos.observer_id'),
-                         nullable=True, index=True)
     nombre = Column(String(60), nullable=False, default='base')
     indices_json = Column(Text, nullable=False)  # JSON array de 12 floats
     lead_time_dias = Column(Integer, nullable=False, default=0)
@@ -1545,10 +1541,7 @@ class EstacionalidadEscenario(Base):
     actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
 
     __table_args__ = (
-        # UNIQUE (droga, producto, nombre): permite 1 "Generico" por droga
-        # (producto_id NULL) Y 1 "Generico" por cada producto de esa droga.
-        UniqueConstraint('droga_id', 'producto_id', 'nombre',
-                         name='uq_estac_droga_producto_nombre'),
+        UniqueConstraint('droga_id', 'nombre', name='uq_estac_droga_nombre'),
     )
 
 
@@ -1850,37 +1843,33 @@ def init_db(database_url=None):
                 except Exception as _e_estac:
                     print(f'Migración estacionalidad_escenarios meses→días: {_e_estac}')
 
-                # Migración estacionalidad_escenarios: agregar producto_id
-                # nullable + reemplazar UNIQUE (droga,nombre) por
-                # UNIQUE (droga,producto,nombre) para soportar escenarios
-                # de producto especificos ademas de los de droga (NULL).
+                # Cleanup: si un deploy previo agrego producto_id a
+                # estacionalidad_escenarios (idea descartada — ahora la
+                # asignacion va por la tabla estacionalidad_productos),
+                # revertir para volver al schema original.
                 try:
-                    # Postgres soporta ADD COLUMN IF NOT EXISTS desde 9.6.
                     conn.execute(text(
                         "ALTER TABLE estacionalidad_escenarios "
-                        "ADD COLUMN IF NOT EXISTS producto_id INTEGER NULL "
-                        "REFERENCES obs_productos(observer_id)"
+                        "DROP CONSTRAINT IF EXISTS uq_estac_droga_producto_nombre"
                     ))
                     conn.execute(text(
-                        "CREATE INDEX IF NOT EXISTS idx_estac_producto_id "
-                        "ON estacionalidad_escenarios(producto_id)"
+                        "DROP INDEX IF EXISTS idx_estac_producto_id"
                     ))
-                    # Reemplazar UNIQUE viejo por el nuevo (idempotente).
                     conn.execute(text(
                         "ALTER TABLE estacionalidad_escenarios "
-                        "DROP CONSTRAINT IF EXISTS uq_estac_droga_nombre"
+                        "DROP COLUMN IF EXISTS producto_id"
                     ))
-                    # ADD CONSTRAINT no tiene IF NOT EXISTS, asi que envuelve.
+                    # Asegurar el UNIQUE original.
                     try:
                         conn.execute(text(
                             "ALTER TABLE estacionalidad_escenarios "
-                            "ADD CONSTRAINT uq_estac_droga_producto_nombre "
-                            "UNIQUE (droga_id, producto_id, nombre)"
+                            "ADD CONSTRAINT uq_estac_droga_nombre "
+                            "UNIQUE (droga_id, nombre)"
                         ))
                     except Exception:
                         pass  # Ya existe.
                 except Exception as _e_estac2:
-                    print(f'Migración estacionalidad_escenarios producto_id: {_e_estac2}')
+                    print(f'Cleanup estacionalidad_escenarios producto_id: {_e_estac2}')
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos

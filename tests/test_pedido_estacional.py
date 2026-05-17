@@ -16,6 +16,7 @@ import pytest
 import database
 from database import (
     EstacionalidadEscenario,
+    EstacionalidadProducto,
     ObsCodigoBarras,
     ObsLaboratorio,
     ObsNombreDroga,
@@ -52,11 +53,12 @@ def session_demo():
 
 def _add_escenario(s, droga_id, producto_id=None, indices=None,
                    lead=0, cob=30, nombre='Generico'):
+    """Crea escenario droga + (opcional) asignacion al producto via tabla
+    intermedia EstacionalidadProducto (alineado con arquitectura post 8f84f5f)."""
     if indices is None:
         indices = [1.0] * 12
     e = EstacionalidadEscenario(
         droga_id=droga_id,
-        producto_id=producto_id,
         nombre=nombre,
         indices_json=json.dumps(indices),
         lead_time_dias=lead,
@@ -64,6 +66,14 @@ def _add_escenario(s, droga_id, producto_id=None, indices=None,
         es_default=True,
     )
     s.add(e)
+    s.flush()
+    if producto_id is not None:
+        # Asignacion explicita: este producto usa este escenario.
+        s.add(EstacionalidadProducto(
+            producto_observer_id=producto_id,
+            droga_id=droga_id,
+            escenario_id=e.id,
+        ))
     s.commit()
     return e
 
@@ -141,13 +151,15 @@ class TestFormula:
 class TestEscenarioHierarchy:
 
     def test_escenario_producto_gana_sobre_droga(self, session_demo):
-        # Escenario de droga: indices 1.0 plano.
-        _add_escenario(session_demo, droga_id=600, producto_id=None)
-        # Escenario del producto: indices con peak en jul (índice 3.0).
+        # Escenario "Generico" de droga (default si no se asigna nada): indices plano.
+        _add_escenario(session_demo, droga_id=600, producto_id=None,
+                       nombre='Generico')
+        # Otro escenario de droga con peak en jul (nombre distinto para
+        # respetar UNIQUE droga+nombre) y asignacion explicita al producto.
         idx_prod = [1.0] * 12
         idx_prod[6] = 3.0
         _add_escenario(session_demo, droga_id=600, producto_id=700,
-                       indices=idx_prod, lead=60)
+                       indices=idx_prod, lead=60, nombre='Peak_Jul')
 
         # hoy 17 mayo + lead 60d → 16 jul (mes 7).
         r = calcular_sugerido_estacional(
