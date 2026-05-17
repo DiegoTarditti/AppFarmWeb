@@ -291,10 +291,11 @@
 .drawer-status.ok { color: var(--ds-mint); }
 .drawer-status.err { color: var(--ds-danger); }
 
-/* Microcopy bajo un campo del setup */
+/* Microcopy ARRIBA del input (entre label y input) — así el input
+   queda en la misma línea horizontal que los demás del row. */
 .pp-help {
     font-size: 10px; color: var(--ds-text-mute);
-    margin-top: 4px; line-height: 1.4;
+    margin: 2px 0 6px; line-height: 1.35;
 }
 .pp-help b { color: var(--ds-text-soft); font-weight: 600; }
 
@@ -335,12 +336,12 @@
         <script type="application/json" id="labs-data">{{ labs | tojson }}</script>
         <div class="field">
             <label title="Filtra productos esporádicos. Solo se procesan los que vendieron al menos este valor en los últimos 12 meses.">Mín. ventas 12m</label>
+            <p class="pp-help">
+                Filtra esporádicos: entran los que vendieron <b>≥ N</b> en 12m.
+                <br>0 = sin filtro · 6 ≈ 0,5/mes · 50 = relevantes.
+            </p>
             <input type="number" id="min-u12m-input" value="6" min="0" step="1"
                    title="Solo se procesan productos con ≥ este nº de unidades vendidas en los últimos 12 meses. 0 = sin filtro. Default 6 = al menos 0,5/mes.">
-            <p class="pp-help">
-                Filtra productos esporádicos: solo entran los que vendieron <b>≥ N unidades</b> en 12m.
-                <br>0 = sin filtro · 6 ≈ 0,5/mes · 50 = ventas relevantes.
-            </p>
         </div>
         <div class="field">
             <label title="Filtra la tabla por texto que matchee el nombre del producto o la droga.">Filtro producto</label>
