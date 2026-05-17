@@ -38,6 +38,7 @@ from routes import (
     pedidos_log,
     plantillas,
     procesos,
+    producto_flags,
     productos,
     productos_pendientes,
     providers,
@@ -90,6 +91,7 @@ _modules = [
     informes,
     bi,
     tipos_pedido,
+    producto_flags,
     pedidos_log,
     flujo_fondos,
 ]

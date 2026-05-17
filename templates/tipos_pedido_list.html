@@ -175,7 +175,13 @@
     {% endif %}
 
     {# ── Comportamientos excepcionales ── #}
-    <div class="tp-section-title" style="margin-top: 28px;">Comportamientos excepcionales (Flags)</div>
+    <div class="tp-section-title" style="margin-top: 28px; display: flex; align-items: center; justify-content: space-between;">
+        <span>Comportamientos excepcionales (Flags)</span>
+        <a href="{{ url_for('producto_flags_list') }}"
+           class="text-[11px] px-2.5 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition normal-case tracking-normal font-normal">
+            🏷 Ver asignaciones →
+        </a>
+    </div>
 
     {% if flags %}
     {% for t in flags %}
