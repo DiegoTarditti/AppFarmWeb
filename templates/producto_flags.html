@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% set nav_active = "tipos_pedido" %}
+{% block title %}Flags de productos{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.pf-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.pf-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.pf-content { padding: 18px 24px; display: grid;
+              grid-template-columns: 1fr 340px; gap: 18px; }
+@media (max-width: 960px) { .pf-content { grid-template-columns: 1fr; } }
+
+.pf-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    overflow: hidden;
+}
+.pf-card-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--ds-line);
+    background: rgba(0,0,0,.10);
+    display: flex; align-items: center; justify-content: space-between;
+}
+.pf-card-head h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0; }
+
+/* Tabla */
+.pf-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pf-table th {
+    padding: 8px 12px; text-align: left;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ds-text-mute); font-weight: 600;
+    border-bottom: 1px solid var(--ds-line);
+    background: rgba(0,0,0,.08);
+}
+.pf-table td {
+    padding: 9px 12px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    vertical-align: middle;
+}
+.pf-table tr:last-child td { border-bottom: none; }
+.pf-table tr:hover td { background: rgba(255,255,255,.03); }
+
+/* Badge de flag */
+.pf-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
+}
+.pf-badge.red    { background: rgba(239,68,68,.15);  color: #f87171; border: 1px solid rgba(239,68,68,.3); }
+.pf-badge.amber  { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+.pf-badge.violet { background: rgba(167,139,250,.15);color: #a78bfa; border: 1px solid rgba(167,139,250,.3); }
+.pf-badge.sky    { background: rgba(56,189,248,.15); color: #38bdf8; border: 1px solid rgba(56,189,248,.3); }
+.pf-badge.gray   { background: rgba(120,120,120,.15);color: var(--ds-text-mute); border: 1px solid rgba(120,120,120,.3); }
+
+/* Filtros pill */
+.pf-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pf-pill {
+    padding: 3px 10px; border-radius: 999px; font-size: 11px; cursor: pointer;
+    border: 1px solid var(--ds-line); color: var(--ds-text-mute);
+    background: var(--ds-surface); text-decoration: none;
+    transition: border-color .15s, color .15s;
+}
+.pf-pill:hover { border-color: var(--ds-mint); color: var(--ds-text); }
+.pf-pill.active { border-color: var(--ds-mint); color: var(--ds-mint);
+                  background: rgba(95,230,188,.10); }
+
+/* Form lateral */
+.pf-field { margin-bottom: 13px; }
+.pf-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ds-text-mute); font-weight: 600; display: block; margin-bottom: 4px;
+}
+.pf-input, .pf-select, .pf-textarea {
+    width: 100%;
+    background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm);
+    padding: 7px 10px;
+    font-size: 13px; color: var(--ds-text); font-family: inherit;
+}
+.pf-select { appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ds-text-mute) 50%),
+                      linear-gradient(135deg, var(--ds-text-mute) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
+    background-size: 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
+.pf-input:focus, .pf-select:focus, .pf-textarea:focus {
+    outline: none; border-color: var(--ds-mint);
+    box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+}
+.pf-help { font-size: 10px; color: var(--ds-text-mute); margin-top: 3px; }
+.pf-extra { display: none; }
+.pf-extra.visible { display: block; }
+.pf-empty { padding: 40px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="pf-topbar">
+    <a href="{{ url_for('tipos_pedido_list') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">
+        ← Config flags
+    </a>
+    <h1>🏷 Flags de productos</h1>
+    <span class="text-[11px] text-[color:var(--ds-text-mute)]">{{ flags | length }} asignación{{ 'es' if flags | length != 1 else '' }}</span>
+</div>
+
+<div class="pf-content">
+    {# ── Tabla de flags asignados ── #}
+    <div>
+        {# Filtro por tipo #}
+        <div class="pf-pills mb-3">
+            <a href="{{ url_for('producto_flags_list') }}"
+               class="pf-pill {% if not filtro_slug %}active{% endif %}">Todos</a>
+            {% for slug, cfg in flag_configs.items() %}
+            <a href="{{ url_for('producto_flags_list', slug=slug) }}"
+               class="pf-pill {% if filtro_slug == slug %}active{% endif %}">
+                {{ cfg.icono }} {{ cfg.nombre }}
+            </a>
+            {% endfor %}
+        </div>
+
+        <div class="pf-card">
+            {% if flags %}
+            <table class="pf-table">
+                <thead>
+                    <tr>
+                        <th>Flag</th>
+                        <th>EAN</th>
+                        <th>Producto / Lab</th>
+                        <th>Nota</th>
+                        <th>Extra</th>
+                        <th>Fecha</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for f in flags %}
+                <tr>
+                    <td>
+                        <span class="pf-badge {{ f.flag_color }}">
+                            {{ f.flag_icono }} {{ f.flag_slug }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if f.ean %}
+                        <code class="text-[11px] font-mono text-[color:var(--ds-text-mute)]">{{ f.ean }}</code>
+                        {% else %}
+                        <span class="text-[color:var(--ds-text-mute)] text-[11px]">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-[color:var(--ds-text-soft)]">
+                        {% if f.prod_nombre %}
+                            {{ f.prod_nombre }}
+                        {% elif f.lab_nombre %}
+                            🏭 {{ f.lab_nombre }}
+                        {% else %}
+                            <span class="text-[color:var(--ds-text-mute)]">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-[color:var(--ds-text-mute)] max-w-[180px]">
+                        <span title="{{ f.nota }}">{{ f.nota[:50] }}{% if f.nota | length > 50 %}…{% endif %}</span>
+                    </td>
+                    <td class="text-[11px]">
+                        {% if f.ean_reemplazo %}
+                        <span class="text-violet-400" title="Reemplazado por">↔ {{ f.ean_reemplazo }}</span>
+                        {% elif f.vigente_hasta %}
+                        <span class="text-amber-400" title="Vigente hasta">📅 {{ f.vigente_hasta }}</span>
+                        {% else %}
+                        <span class="text-[color:var(--ds-text-mute)]">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-[11px] text-[color:var(--ds-text-mute)] whitespace-nowrap">
+                        {{ f.creado_en }}
+                        {% if f.creado_por %}<br><span class="text-[10px]">{{ f.creado_por }}</span>{% endif %}
+                    </td>
+                    <td>
+                        <form method="post" action="{{ url_for('producto_flags_eliminar', flag_id=f.id) }}"
+                              onsubmit="return confirm('¿Eliminar este flag?')">
+                            <button type="submit"
+                                    class="text-[11px] text-rose-500 hover:text-rose-300 px-1 py-0.5 rounded hover:bg-rose-900/20 transition">
+                                ✕
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="pf-empty">
+                <div class="text-2xl mb-2">🏷</div>
+                No hay flags asignados{% if filtro_slug %} para {{ filtro_slug }}{% endif %}.
+                Usá el formulario para agregar el primero.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Form de asignación (sticky) ── #}
+    <div>
+        <div class="pf-card" style="position: sticky; top: 18px;">
+            <div class="pf-card-head">
+                <h3>➕ Asignar flag</h3>
+            </div>
+            <form method="post" action="{{ url_for('producto_flags_asignar') }}"
+                  style="padding: 16px 18px;">
+
+                <div class="pf-field">
+                    <label class="pf-label">Tipo de flag</label>
+                    <select name="flag_slug" class="pf-select" id="sel-flag" onchange="actualizarExtras()">
+                        <option value="">— Seleccioná —</option>
+                        {% for slug, cfg in flag_configs.items() %}
+                        <option value="{{ slug }}"
+                                data-reemplazo="{{ '1' if cfg.permite_reemplazo else '0' }}"
+                                data-vigencia="{{ '1' if cfg.permite_vigencia else '0' }}">
+                            {{ cfg.icono }} {{ cfg.nombre }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="pf-field">
+                    <label class="pf-label">EAN del producto</label>
+                    <input type="text" name="ean" class="pf-input" placeholder="7791234567890"
+                           id="inp-ean" oninput="buscarNombre(this.value)">
+                    <div class="pf-help" id="ean-nombre-hint"></div>
+                </div>
+
+                {% if labs %}
+                <div class="pf-field">
+                    <label class="pf-label">O laboratorio completo (opcional)</label>
+                    <select name="laboratorio_id" class="pf-select">
+                        <option value="">— Sin lab —</option>
+                        {% for lab in labs %}
+                        <option value="{{ lab.id }}">{{ lab.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="pf-help">Si elegís lab, aplica a todos sus productos.</div>
+                </div>
+                {% endif %}
+
+                <div class="pf-field">
+                    <label class="pf-label">Nota (opcional)</label>
+                    <textarea name="nota" rows="2" class="pf-textarea"
+                              placeholder="Ej: Discontinuado desde marzo 2026"></textarea>
+                </div>
+
+                <div class="pf-field pf-extra" id="extra-reemplazo">
+                    <label class="pf-label">EAN de reemplazo</label>
+                    <input type="text" name="ean_reemplazo" class="pf-input" placeholder="EAN del producto nuevo">
+                    <div class="pf-help">El producto que reemplaza a este.</div>
+                </div>
+
+                <div class="pf-field pf-extra" id="extra-vigencia">
+                    <label class="pf-label">Vigente hasta</label>
+                    <input type="date" name="vigente_hasta" class="pf-input">
+                    <div class="pf-help">Después de esta fecha el flag ya no aplica.</div>
+                </div>
+
+                <button type="submit" class="btn btn-mint text-xs w-full mt-2">Asignar flag</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+const FLAG_CONFIGS = {{ flag_configs | tojson }};
+
+function actualizarExtras() {
+    const sel = document.getElementById('sel-flag');
+    const opt = sel.options[sel.selectedIndex];
+    const reemplazo = opt && opt.dataset.reemplazo === '1';
+    const vigencia  = opt && opt.dataset.vigencia  === '1';
+    document.getElementById('extra-reemplazo').classList.toggle('visible', reemplazo);
+    document.getElementById('extra-vigencia').classList.toggle('visible', vigencia);
+}
+
+let _debounce = null;
+function buscarNombre(ean) {
+    const hint = document.getElementById('ean-nombre-hint');
+    if (ean.length < 8) { hint.textContent = ''; return; }
+    clearTimeout(_debounce);
+    _debounce = setTimeout(async () => {
+        try {
+            const r = await fetch(`/api/producto-nombre?ean=${encodeURIComponent(ean)}`,
+                                  {credentials: 'same-origin'});
+            if (!r.ok) { hint.textContent = ''; return; }
+            const d = await r.json();
+            hint.textContent = d.nombre ? '✓ ' + d.nombre : 'EAN no encontrado en master';
+            hint.style.color = d.nombre ? 'var(--ds-mint)' : 'var(--ds-text-mute)';
+        } catch { hint.textContent = ''; }
+    }, 350);
+}
+</script>
+{% endblock %}
