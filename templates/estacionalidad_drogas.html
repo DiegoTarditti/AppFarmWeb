@@ -322,14 +322,28 @@
     accent-color: var(--ds-mint);
 }
 .slider-cell .slider-val {
+    /* Input numérico chico: permite tipear el valor exacto sin pelearse
+       con el slider. Sincronizado bidireccionalmente con el slider hermano. */
     font-size: 10px; font-variant-numeric: tabular-nums;
-    font-weight: 700; color: var(--ds-text); min-width: 32px; text-align: center;
+    font-weight: 700; color: var(--ds-text);
+    width: 42px; text-align: center;
+    background: rgba(0,0,0,.35);
+    border: 1px solid var(--ds-line);
+    border-radius: 3px;
+    padding: 1px 3px;
+    outline: none;
+    -moz-appearance: textfield;  /* sacar flechas en Firefox */
 }
+.slider-cell .slider-val::-webkit-outer-spin-button,
+.slider-cell .slider-val::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+}
+.slider-cell .slider-val:focus { border-color: var(--ds-mint); }
 .slider-cell .slider-mes {
     font-size: 9px; color: var(--ds-text-mute);
     text-transform: uppercase; letter-spacing: .04em;
 }
-.slider-cell.modified .slider-val { color: var(--ds-warn); }
+.slider-cell.modified .slider-val { color: var(--ds-warn); border-color: rgba(245,158,11,.4); }
 .slider-cell.modified input[type="range"] { accent-color: var(--ds-warn); }
 
 /* ────────── Range horizontal lead/cobertura ────────── */
@@ -706,9 +720,10 @@
                                 <div class="slider-grid">
                                     {% for m in meses_es %}
                                     <div class="slider-cell" data-mes-idx="{{ loop.index0 }}"
-                                         title="Índice estacional de {{ m }}">
-                                        <span class="slider-val">1.00</span>
-                                        <input type="range" min="0" max="3" step="0.05" value="1.00" class="slider-mes-input">
+                                         title="Índice estacional de {{ m }} (1.00 = neutro, 2.00 = doble, 0.50 = mitad). Podés arrastrar el slider o tipear el valor exacto arriba.">
+                                        <input type="number" class="slider-val"
+                                               min="0" max="3" step="0.1" value="1.00">
+                                        <input type="range" min="0" max="3" step="0.1" value="1.00" class="slider-mes-input">
                                         <span class="slider-mes">{{ m }}</span>
                                     </div>
                                     {% endfor %}
@@ -963,7 +978,7 @@
             const input = $(cell, 'input.slider-mes-input');
             const valEl = $(cell, '.slider-val');
             input.value = indices[i];
-            valEl.textContent = indices[i].toFixed(2);
+            valEl.value = indices[i].toFixed(2);  // input numerico ahora
             const modificado = Math.abs(indices[i] - indicesCalc[i]) > 0.005;
             cell.classList.toggle('modified', modificado);
         });
@@ -1024,7 +1039,7 @@
         buildChartAjustar(body, st.indicesCalc, indices, leadDias, cobDias);
         const cells = $all(body, '.slider-cell');
         cells.forEach((cell, i) => {
-            $(cell, '.slider-val').textContent = indices[i].toFixed(2);
+            $(cell, '.slider-val').value = indices[i].toFixed(2);  // input numerico
             const modificado = Math.abs(indices[i] - st.indicesCalc[i]) > 0.005;
             cell.classList.toggle('modified', modificado);
         });
@@ -1218,6 +1233,20 @@
     });
 
     document.addEventListener('input', (e) => {
+        // Sincronización bidireccional: si el user tipea en el input numérico
+        // .slider-val, copiar el valor al range hermano (y viceversa).
+        if (e.target.classList.contains('slider-val')) {
+            const body = e.target.closest('.expand-body');
+            if (!body) return;
+            const cell = e.target.closest('.slider-cell');
+            const range = cell.querySelector('input.slider-mes-input');
+            let v = parseFloat(e.target.value);
+            if (isNaN(v)) v = 1.0;
+            v = Math.max(0, Math.min(3, v));
+            range.value = v;
+            actualizarChartDesdeControles(body);
+            return;
+        }
         if (e.target.matches('.slider-mes-input, .lead-input, .cob-input')) {
             const body = e.target.closest('.expand-body');
             if (!body) return;
