@@ -228,21 +228,88 @@
 
                             {# ─── TAB Ajustar ─── #}
                             <div class="tab-panel" data-tab="ajustar">
-                                <div class="flex items-center gap-2 flex-wrap mb-3 escenarios-row">
+
+                                {# ─── Banner de ayuda (plegable, persistido en localStorage) ─── #}
+                                <div class="ayuda-banner bg-violet-50 border border-violet-200 rounded-lg mb-3">
+                                    <button type="button" class="ayuda-toggle w-full flex items-center justify-between px-3 py-2 text-left">
+                                        <span class="text-[12px] font-bold text-violet-800 flex items-center gap-1.5">
+                                            ❔ Cómo se usa esto
+                                        </span>
+                                        <span class="text-[10px] text-violet-600 ayuda-chev">▼</span>
+                                    </button>
+                                    <div class="ayuda-body px-3 pb-3 text-[12px] leading-relaxed text-[#3b3b3b] space-y-2">
+                                        <p>
+                                            <strong>El índice estacional</strong> de cada mes es un multiplicador
+                                            sobre el promedio anual.
+                                            Si Jul = <code class="bg-white px-1 rounded text-violet-700">1.5</code>,
+                                            ese mes se vende un 50% más que el promedio.
+                                            <code class="bg-white px-1 rounded">1.0</code> es neutro,
+                                            <code class="bg-white px-1 rounded">0.5</code> es la mitad,
+                                            <code class="bg-white px-1 rounded">2.0</code> el doble.
+                                        </p>
+                                        <ul class="list-disc pl-5 space-y-1">
+                                            <li>
+                                                <strong>Sliders por mes</strong> — ajustá manualmente lo que esperás
+                                                vender cada mes. Vienen preseteados con el cálculo automático;
+                                                subilos donde sepas que viene un pico (campañas, estacionalidad
+                                                conocida) o bajálos donde haya bajón previsible.
+                                            </li>
+                                            <li>
+                                                <strong>Lead time</strong> — meses entre que hacés el pedido y te
+                                                llega. Si pedís hoy y tarda 2 meses, lo que compres ahora cubre
+                                                la demanda dentro de 2 meses. Desplaza las barras ámbar "a comprar"
+                                                hacia atrás en el tiempo.
+                                            </li>
+                                            <li>
+                                                <strong>Cobertura</strong> — cuántos meses de venta querés cubrir
+                                                con cada pedido. <code class="bg-white px-1 rounded">1.0</code> =
+                                                pedís lo justo para un mes; <code class="bg-white px-1 rounded">2.0</code>
+                                                = pedís el doble (cubre 2 meses). Escala el tamaño de las barras.
+                                            </li>
+                                        </ul>
+                                        <p>
+                                            <strong>El chart</strong> muestra 3 cosas:
+                                            la línea <span class="text-violet-400">violeta punteada</span> es lo
+                                            que calculó el sistema solo;
+                                            la línea <span class="text-violet-700 font-bold">violeta sólida</span>
+                                            es tu ajuste manual;
+                                            las <span class="text-amber-700 font-bold">barras ámbar</span> es
+                                            lo que tendrías que comprar cada mes (demanda futura proyectada,
+                                            aplicando lead time y cobertura).
+                                        </p>
+                                        <p>
+                                            <strong>Escenarios</strong> — podés guardar varias versiones de ajuste
+                                            con nombre ("base", "agresivo", "invierno duro"). El que tenga ★
+                                            <em>default</em> es el que va a usar el sistema cuando calcule
+                                            cantidades sugeridas en pedidos.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-2 flex-wrap mb-1 escenarios-row">
                                     <span class="text-[11px] font-bold text-[#888] uppercase">Escenarios:</span>
                                     <span class="esc-list inline-flex flex-wrap gap-1"></span>
-                                    <button type="button" class="esc-nuevo text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded">
+                                    <button type="button" class="esc-nuevo text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 rounded"
+                                            title="Crear una variante nueva de ajuste con otro nombre">
                                         + Nuevo escenario
                                     </button>
                                 </div>
+                                <p class="text-[10px] text-[#888] mb-3">
+                                    Click en un chip para cargar ese escenario. ★ = el que se usa al calcular pedidos.
+                                </p>
 
                                 <div style="height: 260px;">
                                     <canvas class="chart-ajustar"></canvas>
                                 </div>
 
+                                <p class="text-[10px] text-[#888] mt-2 mb-1">
+                                    <strong>Ajuste por mes</strong> — arrastrá cada slider para subir/bajar
+                                    el índice de ese mes. El valor cambia de color cuando difiere del calculado.
+                                </p>
                                 <div class="slider-grid">
                                     {% for m in meses_es %}
-                                    <div class="slider-cell" data-mes-idx="{{ loop.index0 }}">
+                                    <div class="slider-cell" data-mes-idx="{{ loop.index0 }}"
+                                         title="Índice estacional de {{ m }}: cuánto se vende ese mes vs el promedio anual (1.0 = neutro)">
                                         <span class="slider-val">1.00</span>
                                         <input type="range" min="0" max="3" step="0.05" value="1.00" class="slider-mes-input">
                                         <span class="slider-mes">{{ m }}</span>
@@ -251,34 +318,53 @@
                                 </div>
 
                                 <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div class="range-row">
-                                        <label>Lead time (m):</label>
-                                        <input type="range" min="0" max="6" step="1" value="0" class="lead-input">
-                                        <span class="range-val lead-val">0</span>
+                                    <div>
+                                        <div class="range-row"
+                                             title="Tiempo entre que hacés el pedido y te llega. Desplaza la curva 'a comprar' hacia atrás.">
+                                            <label>Lead time (m):</label>
+                                            <input type="range" min="0" max="6" step="1" value="0" class="lead-input">
+                                            <span class="range-val lead-val">0</span>
+                                        </div>
+                                        <p class="text-[10px] text-[#888] mt-0.5 pl-[108px]">
+                                            Si tarda 2m en llegar, lo que comprás hoy cubre la demanda de dentro de 2m.
+                                        </p>
                                     </div>
-                                    <div class="range-row">
-                                        <label>Cobertura (m):</label>
-                                        <input type="range" min="0.25" max="3" step="0.05" value="1" class="cob-input">
-                                        <span class="range-val cob-val">1.00</span>
+                                    <div>
+                                        <div class="range-row"
+                                             title="Cuántos meses de demanda querés cubrir con cada pedido. Escala el tamaño de las barras 'a comprar'.">
+                                            <label>Cobertura (m):</label>
+                                            <input type="range" min="0.25" max="3" step="0.05" value="1" class="cob-input">
+                                            <span class="range-val cob-val">1.00</span>
+                                        </div>
+                                        <p class="text-[10px] text-[#888] mt-0.5 pl-[108px]">
+                                            1 = pedís para 1 mes; 2 = pedís el doble (stock para 2m).
+                                        </p>
                                     </div>
                                 </div>
 
                                 <div class="mt-3 flex items-center gap-2 flex-wrap">
-                                    <button type="button" class="btn-reset text-[11px] font-bold text-[#555] bg-white border border-surface-border hover:border-[#888] px-3 py-1.5 rounded">
+                                    <button type="button" class="btn-reset text-[11px] font-bold text-[#555] bg-white border border-surface-border hover:border-[#888] px-3 py-1.5 rounded"
+                                            title="Vuelve los 12 sliders + lead + cobertura a los valores que calculó el sistema automáticamente">
                                         ⟲ Reset a calculado
                                     </button>
-                                    <button type="button" class="btn-default text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded hidden">
+                                    <button type="button" class="btn-default text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded hidden"
+                                            title="Marca este escenario como el que el sistema usará cuando calcule pedidos">
                                         ★ Marcar como default
                                     </button>
-                                    <button type="button" class="btn-eliminar text-[11px] font-bold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded hidden">
+                                    <button type="button" class="btn-eliminar text-[11px] font-bold text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded hidden"
+                                            title="Borra el escenario actual permanentemente">
                                         🗑 Eliminar escenario
                                     </button>
                                     <span class="flex-1"></span>
-                                    <input type="text" class="esc-nombre-input bg-surface-input border border-surface-border rounded px-2 py-1 text-[11px] w-40" placeholder="Nombre del escenario" value="base">
-                                    <label class="text-[10px] text-[#555] flex items-center gap-1">
+                                    <input type="text" class="esc-nombre-input bg-surface-input border border-surface-border rounded px-2 py-1 text-[11px] w-40"
+                                           placeholder="Nombre del escenario" value="base"
+                                           title="Nombre corto para identificar este ajuste (ej: base, agresivo, invierno)">
+                                    <label class="text-[10px] text-[#555] flex items-center gap-1"
+                                           title="Si está marcado, este escenario se usará al calcular pedidos">
                                         <input type="checkbox" class="esc-default-check"> default
                                     </label>
-                                    <button type="button" class="btn-guardar text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 rounded">
+                                    <button type="button" class="btn-guardar text-[11px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 rounded"
+                                            title="Guarda los valores actuales con el nombre indicado. Si el nombre ya existe, lo reemplaza.">
                                         💾 Guardar
                                     </button>
                                 </div>
@@ -515,8 +601,31 @@
         el._t = setTimeout(() => { el.textContent = ''; }, 4000);
     }
 
+    /** Aplica el estado guardado del banner de ayuda. */
+    function aplicarEstadoAyuda(body) {
+        const oculta = localStorage.getItem('estac_ayuda_oculta') === '1';
+        const banner = $(body, '.ayuda-banner');
+        const body_ = $(banner, '.ayuda-body');
+        const chev = $(banner, '.ayuda-chev');
+        body_.classList.toggle('hidden', oculta);
+        chev.textContent = oculta ? '▶' : '▼';
+    }
+
     /** ───── Event delegation ───── */
     document.addEventListener('click', async (e) => {
+        // Toggle ayuda
+        const ayudaBtn = e.target.closest('.ayuda-toggle');
+        if (ayudaBtn) {
+            const banner = ayudaBtn.closest('.ayuda-banner');
+            const body_ = $(banner, '.ayuda-body');
+            const chev = $(banner, '.ayuda-chev');
+            const yaOculta = body_.classList.contains('hidden');
+            body_.classList.toggle('hidden', !yaOculta);
+            chev.textContent = yaOculta ? '▼' : '▶';
+            localStorage.setItem('estac_ayuda_oculta', yaOculta ? '0' : '1');
+            return;
+        }
+
         // Toggle expand
         const btn = e.target.closest('.btn-expand');
         if (btn) {
@@ -535,6 +644,7 @@
             if (!state.has(id)) {
                 state.set(id, { indicesCalc, escenarios: [], escActivo: null, chartA: null });
             }
+            aplicarEstadoAyuda(body);
             initHistorico(body, drogaId, indicesCalc);
             await cargarEscenarios(body, id);
             return;
