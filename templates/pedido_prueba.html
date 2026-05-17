@@ -406,6 +406,9 @@
     <h1>🧪 Pedido prueba</h1>
     <span class="sub">Configurá estacionalidad y comportamientos excepcionales por producto · comparativo en vivo vs /pedido/dia</span>
     <span class="pill">CONFIG</span>
+    <span class="meta" id="sync-info" style="display:none;">
+        Datos: stock <b id="sync-stock">—</b> · ventas <b id="sync-ventas">—</b>
+    </span>
 </div>
 
 <div class="pp-content">
@@ -627,7 +630,8 @@
                 <tr>
                     <th class="left">Producto</th>
                     <th>Stock</th>
-                    <th>u12m</th>
+                    <th title="Unidades vendidas en últimos 3 meses completos (excluye mes parcial actual)">u3m</th>
+                    <th title="Unidades vendidas en últimos 12 meses">u12m</th>
                     <th>Día act.</th>
                     <th>Prueba</th>
                     <th>Δ</th>
@@ -771,6 +775,20 @@
     });
 
     function fmt(n) { return Number(n||0).toLocaleString('es-AR'); }
+
+    function formatearAntiguedad(isoStr) {
+        if (!isoStr) return 'sin data';
+        const dt = new Date(isoStr);
+        if (isNaN(dt)) return '—';
+        const diff = Date.now() - dt.getTime();
+        const min = Math.floor(diff / 60000);
+        if (min < 1) return 'ahora';
+        if (min < 60) return `hace ${min}m`;
+        const h = Math.floor(min / 60);
+        if (h < 24) return `hace ${h}h`;
+        const d = Math.floor(h / 24);
+        return `hace ${d}d`;
+    }
     function clase(v) {
         if (v == null) return 'delta-zero';
         if (v > 0) return 'delta-pos';
@@ -790,6 +808,7 @@
         <tr class="row-data" data-id="${it.producto_id}">
             <td class="left"><span class="chev">▶</span> ${it.producto_nombre}</td>
             <td>${it.stock}</td>
+            <td class="muted">${fmt(it.u3m || 0)}</td>
             <td>${fmt(it.u12m)}</td>
             <td>${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
             <td><b>${it.sugerido_prueba}</b></td>
@@ -800,7 +819,7 @@
             <td>${flagHtml}</td>
         </tr>
         <tr class="drawer-row" data-parent="${it.producto_id}">
-            <td colspan="10">
+            <td colspan="11">
                 <div class="drawer-body"></div>
             </td>
         </tr>`;
@@ -955,6 +974,10 @@
             $('#msg-wrap').style.display = 'none';
             $('#table-wrap').style.display = '';
             $('#kpis-wrap').style.display = '';
+            // Frescura de datos en el topbar
+            $('#sync-info').style.display = '';
+            $('#sync-stock').textContent = formatearAntiguedad(data.stock_sync_en);
+            $('#sync-ventas').textContent = formatearAntiguedad(data.ventas_sync_en);
             renderTabla();
         } catch (e) {
             $('#msg-wrap').textContent = 'Error al calcular: ' + e.message;

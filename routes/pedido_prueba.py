@@ -189,6 +189,18 @@ def init_app(app):
             flags_bulk = obtener_flags_bulk(session, todos_eans, lab_id=lab_id)
             ventas_arr_bulk = obtener_ventas_arr_bulk(session, producto_ids, id_farmacia)
 
+            # Frescura de datos: tomar el sync_en mas reciente de obs_stock
+            # y obs_ventas_mensuales (proxies de "stock" y "ventas"
+            # actualizadas). Si no hay data, devuelve None.
+            stock_sync = (session.query(func.max(ObsStock.sync_en))
+                          .filter(ObsStock.id_farmacia == id_farmacia,
+                                  ObsStock.producto_observer.in_(producto_ids))
+                          .scalar() if producto_ids else None)
+            ventas_sync = (session.query(func.max(ObsVentaMensual.sync_en))
+                           .filter(ObsVentaMensual.id_farmacia == id_farmacia,
+                                   ObsVentaMensual.producto_observer.in_(producto_ids))
+                           .scalar() if producto_ids else None)
+
             resultado = []
             total_dia = 0
             total_prueba = 0
@@ -224,6 +236,10 @@ def init_app(app):
 
                 delta = (est['sugerido_final'] - (sug_dia or 0)) if sug_dia is not None else None
 
+                # u3m: ultimos 3 meses (excluyendo mes parcial actual).
+                # Aprovecho ventas_arr_bulk que ya tengo cargado.
+                _arr = ventas_arr_bulk.get(p.observer_id, [0.0] * 12)
+                u3m = int(sum(_arr[8:11]))  # indices 8,9,10 = 3 meses antes del actual
                 resultado.append({
                     'producto_id': p.observer_id,
                     'producto_nombre': p.descripcion,
@@ -232,6 +248,7 @@ def init_app(app):
                     'stock': st['stock'],
                     'minimo': st['minimo'],
                     'u12m': int(u12m),
+                    'u3m': u3m,
                     'sugerido_dia': sug_dia,
                     'sugerido_prueba': est['sugerido_final'],
                     'sugerido_base_prueba': est['sugerido_base'],
@@ -271,6 +288,8 @@ def init_app(app):
                 'monto_delta': round(monto_prueba - monto_dia, 2),
                 'lead_default': lead_default,
                 'cob_default': cob_default,
+                'stock_sync_en': stock_sync.isoformat() if stock_sync else None,
+                'ventas_sync_en': ventas_sync.isoformat() if ventas_sync else None,
             })
 
     @app.route('/api/pedido-prueba/escenario-producto/<int:producto_id>',
