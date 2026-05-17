@@ -34,6 +34,7 @@ from database import (
     ObsStock,
     ObsVentaMensual,
     ProductoFlag,
+    ProductoPrecioHist,
     TipoPedidoConfig,
 )
 
@@ -93,6 +94,41 @@ def obtener_escenario_aplicable(session, droga_id, producto_id):
             return esc, 'droga'
 
     return None, 'auto'
+
+
+def obtener_precios_publicos_bulk(session, eans):
+    """Devuelve dict {ean: precio_publico} con el precio MAS RECIENTE
+    por EAN (fecha de factura mas alta). Para EANs sin precio, no aparecen
+    en el dict.
+
+    Diseñado para llamarse 1 vez por endpoint con TODOS los eans de un lab
+    a la vez (en lugar de 1 query por producto = N+1).
+    """
+    if not eans:
+        return {}
+    from sqlalchemy import desc, func as _func
+    # Subquery: por cada EAN, fecha maxima.
+    sq = (session.query(
+            ProductoPrecioHist.codigo_barra.label('ean'),
+            _func.max(ProductoPrecioHist.fecha).label('max_fecha'))
+        .filter(ProductoPrecioHist.codigo_barra.in_(eans),
+                ProductoPrecioHist.precio_publico.isnot(None),
+                ProductoPrecioHist.precio_publico > 0)
+        .group_by(ProductoPrecioHist.codigo_barra)
+        .subquery())
+    rows = (session.query(
+            ProductoPrecioHist.codigo_barra,
+            ProductoPrecioHist.precio_publico)
+        .join(sq, and_(ProductoPrecioHist.codigo_barra == sq.c.ean,
+                       ProductoPrecioHist.fecha == sq.c.max_fecha))
+        .filter(ProductoPrecioHist.precio_publico.isnot(None))
+        .all())
+    out = {}
+    for r in rows:
+        # Si hay multiple filas con misma fecha y ean, se queda la primera.
+        if r.codigo_barra not in out:
+            out[r.codigo_barra] = float(r.precio_publico)
+    return out
 
 
 def obtener_eans_producto(session, producto_observer_id):

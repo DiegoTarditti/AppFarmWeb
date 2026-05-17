@@ -36,6 +36,7 @@ from services.pedido_estacional import (
     MESES_ES,
     calcular_sugerido_dia_actual,
     calcular_sugerido_estacional,
+    obtener_precios_publicos_bulk,
 )
 
 
@@ -157,6 +158,22 @@ def init_app(app):
             u12m_map = _u12m_por_producto(session, producto_ids, id_farmacia)
             stock_map = _stock_por_producto(session, producto_ids, id_farmacia)
 
+            # Precios PVP (precio publico). Pre-cargar todos los EANs del
+            # lab en 2 queries: 1 para EANs activos + 1 para precios.
+            from database import ObsCodigoBarras
+            ean_rows = (session.query(
+                ObsCodigoBarras.producto_observer, ObsCodigoBarras.codigo_barras)
+                .filter(ObsCodigoBarras.producto_observer.in_(producto_ids),
+                        ObsCodigoBarras.fecha_baja.is_(None))
+                .order_by(ObsCodigoBarras.orden)
+                .all()) if producto_ids else []
+            eans_por_producto = {}
+            for r in ean_rows:
+                eans_por_producto.setdefault(r.producto_observer, []).append(
+                    r.codigo_barras)
+            todos_eans = list({e for eans in eans_por_producto.values() for e in eans})
+            precios_map = obtener_precios_publicos_bulk(session, todos_eans)
+
             # Nombres de drogas
             drogas_ids = list({p.nombre_droga_observer for p in productos
                                if p.nombre_droga_observer is not None})
@@ -167,11 +184,19 @@ def init_app(app):
             resultado = []
             total_dia = 0
             total_prueba = 0
+            monto_dia = 0.0
+            monto_prueba = 0.0
             for p in productos:
                 u12m = u12m_map.get(p.observer_id, 0)
                 if u12m < min_u12m:
                     continue
                 st = stock_map.get(p.observer_id, {'stock': 0, 'minimo': 0})
+                # Precio publico: tomar de cualquiera de los EANs del producto.
+                precio_pvp = None
+                for ean in eans_por_producto.get(p.observer_id, []):
+                    if ean in precios_map:
+                        precio_pvp = precios_map[ean]
+                        break
 
                 # Sugerido estacional
                 est = calcular_sugerido_estacional(
@@ -198,6 +223,9 @@ def init_app(app):
                     'sugerido_prueba': est['sugerido_final'],
                     'sugerido_base_prueba': est['sugerido_base'],
                     'delta': delta,
+                    'precio_pvp': precio_pvp,
+                    'monto_dia': (precio_pvp * sug_dia) if (precio_pvp and sug_dia) else None,
+                    'monto_prueba': (precio_pvp * est['sugerido_final']) if precio_pvp else None,
                     'origen_escenario': est['origen_escenario'],
                     'escenario_nombre': est['escenario_nombre'],
                     'indices': est['indices'],
@@ -214,6 +242,10 @@ def init_app(app):
                 total_prueba += est['sugerido_final']
                 if sug_dia is not None:
                     total_dia += sug_dia
+                if precio_pvp:
+                    if sug_dia:
+                        monto_dia += precio_pvp * sug_dia
+                    monto_prueba += precio_pvp * est['sugerido_final']
 
             return jsonify({
                 'lab_id': lab_id,
@@ -221,6 +253,9 @@ def init_app(app):
                 'total_dia': total_dia,
                 'total_prueba': total_prueba,
                 'delta_total': total_prueba - total_dia,
+                'monto_dia': round(monto_dia, 2),
+                'monto_prueba': round(monto_prueba, 2),
+                'monto_delta': round(monto_prueba - monto_dia, 2),
                 'lead_default': lead_default,
                 'cob_default': cob_default,
             })

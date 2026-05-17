@@ -198,6 +198,7 @@
 .pp-table td.delta-pos { color: var(--ds-mint); font-weight: 700; }
 .pp-table td.delta-neg { color: var(--ds-danger); font-weight: 700; }
 .pp-table td.delta-zero { color: var(--ds-text-mute); }
+.pp-table td.muted { color: var(--ds-text-mute); }
 
 .pp-origen {
     display: inline-block;
@@ -604,12 +605,15 @@
             <div class="pp-kpi"><div class="lbl">Productos</div>
                 <div class="val mint" id="kpi-prods">0</div></div>
             <div class="pp-kpi"><div class="lbl">Sugerido día actual</div>
-                <div class="val" id="kpi-dia">0 u</div></div>
+                <div class="val" id="kpi-dia">0 u</div>
+                <div class="sub" id="kpi-monto-dia">$ 0</div></div>
             <div class="pp-kpi"><div class="lbl">Sugerido prueba</div>
-                <div class="val mint" id="kpi-prueba">0 u</div></div>
+                <div class="val mint" id="kpi-prueba">0 u</div>
+                <div class="sub" id="kpi-monto-prueba">$ 0</div></div>
             <div class="pp-kpi"><div class="lbl">Δ total</div>
                 <div class="val warn" id="kpi-delta">0 u</div>
-                <div class="sub" id="kpi-delta-pct"></div></div>
+                <div class="sub" id="kpi-delta-pct"></div>
+                <div class="sub" id="kpi-monto-delta">$ 0</div></div>
         </div>
     </div>
 
@@ -627,6 +631,8 @@
                     <th>Día act.</th>
                     <th>Prueba</th>
                     <th>Δ</th>
+                    <th title="Precio Público (PVP) más reciente cargado de facturas">PVP</th>
+                    <th title="Sugerido prueba × PVP">$ Prueba</th>
                     <th>Origen</th>
                     <th>Flag</th>
                 </tr>
@@ -777,6 +783,9 @@
             ? `<span class="pp-flag ${it.flag.color}" title="${it.flag.nombre}">${it.flag.icono} ${it.flag.slug}</span>`
             : '';
         const deltaStr = it.delta == null ? '—' : (it.delta >= 0 ? '+' : '') + it.delta;
+        const pvpStr = it.precio_pvp == null ? '—' : '$ ' + fmt(it.precio_pvp);
+        const montoPruebaStr = it.monto_prueba == null
+            ? '—' : '$ ' + fmt(Math.round(it.monto_prueba));
         return `
         <tr class="row-data" data-id="${it.producto_id}">
             <td class="left"><span class="chev">▶</span> ${it.producto_nombre}</td>
@@ -785,11 +794,13 @@
             <td>${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
             <td><b>${it.sugerido_prueba}</b></td>
             <td class="${clase(it.delta)}">${deltaStr}</td>
+            <td class="muted">${pvpStr}</td>
+            <td><b>${montoPruebaStr}</b></td>
             <td><span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span></td>
             <td>${flagHtml}</td>
         </tr>
         <tr class="drawer-row" data-parent="${it.producto_id}">
-            <td colspan="8">
+            <td colspan="10">
                 <div class="drawer-body"></div>
             </td>
         </tr>`;
@@ -889,17 +900,26 @@
         // KPIs informativos puros (no se arma pedido en esta pantalla).
         $('#kpi-prods').textContent = items.length;
         let totalDia = 0, totalPrueba = 0;
+        let montoDia = 0, montoPrueba = 0;
         items.forEach(it => {
             totalDia += (it.sugerido_dia || 0);
             totalPrueba += (it.sugerido_prueba || 0);
+            if (it.precio_pvp) {
+                if (it.sugerido_dia) montoDia += it.precio_pvp * it.sugerido_dia;
+                montoPrueba += it.precio_pvp * it.sugerido_prueba;
+            }
         });
         const delta = totalPrueba - totalDia;
+        const deltaMonto = montoPrueba - montoDia;
         const pct = totalDia ? ((delta / totalDia) * 100).toFixed(1) : '—';
         $('#kpi-dia').textContent = fmt(totalDia) + ' u';
         $('#kpi-prueba').textContent = fmt(totalPrueba) + ' u';
         $('#kpi-delta').textContent = (delta >= 0 ? '+' : '') + fmt(delta) + ' u';
         $('#kpi-delta-pct').textContent = totalDia ? `(${delta >= 0 ? '+' : ''}${pct}%)` : '';
         $('#kpi-delta').className = 'val ' + (delta === 0 ? '' : (delta > 0 ? 'mint' : 'danger'));
+        $('#kpi-monto-dia').textContent = '$ ' + fmt(Math.round(montoDia));
+        $('#kpi-monto-prueba').textContent = '$ ' + fmt(Math.round(montoPrueba));
+        $('#kpi-monto-delta').textContent = (deltaMonto >= 0 ? '+$ ' : '-$ ') + fmt(Math.abs(Math.round(deltaMonto)));
     }
 
     async function calcular() {
