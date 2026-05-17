@@ -346,6 +346,18 @@
 .slider-cell.modified .slider-val { color: var(--ds-warn); border-color: rgba(245,158,11,.4); }
 .slider-cell.modified input[type="range"] { accent-color: var(--ds-warn); }
 
+/* ────────── Modo "1 solo escenario por droga" (convención v1) ──────────
+   Esconder UI de múltiples escenarios: chips, "+ Nuevo", nombre,
+   checkbox default, botón eliminar. Backend sigue soportando N pero
+   el flujo asume 1 escenario "base" por droga, autocreado al abrir. */
+.expand-body .escenarios-row,
+.expand-body .esc-nombre-input,
+.expand-body .esc-default-label,
+.expand-body .btn-default,
+.expand-body .btn-eliminar { display: none !important; }
+/* Help line "Click en chip" tampoco aplica si no hay chips. */
+.expand-body .escenarios-row + .est-help-line { display: none !important; }
+
 /* ────────── Range horizontal lead/cobertura ────────── */
 .range-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
@@ -1027,6 +1039,31 @@
             const r = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`);
             if (r.ok) st.escenarios = (await r.json()).escenarios || [];
         } catch (e) { st.escenarios = []; }
+
+        // Convención v1: 1 solo escenario por droga, llamado "base".
+        // Si no existe ninguno, lo creamos automáticamente con los
+        // valores calculados (semilla) para que el usuario solo tenga
+        // que ajustar y guardar — nunca "crear de cero".
+        if (st.escenarios.length === 0) {
+            try {
+                const seed = {
+                    nombre: 'base',
+                    indices: [...st.indicesCalc],
+                    lead_time_dias: LIMITES.lead_dias_default,
+                    cobertura_dias: LIMITES.cob_dias_default,
+                    es_default: true,
+                };
+                const r2 = await fetch(`/api/estacionalidad/droga/${drogaId}/escenarios`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(seed),
+                });
+                if (r2.ok) {
+                    const esc = await r2.json();
+                    st.escenarios = [esc];
+                }
+            } catch (e) { /* falla silenciosa: queda como auto */ }
+        }
+
         const def = st.escenarios.find(e => e.es_default) || st.escenarios[0] || null;
         cargarEscenario(body, def);
     }
