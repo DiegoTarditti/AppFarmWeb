@@ -291,6 +291,13 @@
 .drawer-status.ok { color: var(--ds-mint); }
 .drawer-status.err { color: var(--ds-danger); }
 
+/* Microcopy bajo un campo del setup */
+.pp-help {
+    font-size: 10px; color: var(--ds-text-mute);
+    margin-top: 4px; line-height: 1.4;
+}
+.pp-help b { color: var(--ds-text-soft); font-weight: 600; }
+
 /* Mensaje empty / loading */
 .pp-msg {
     padding: 40px 20px; text-align: center;
@@ -315,25 +322,35 @@
 
     <div class="pp-setup">
         <div class="field">
-            <label>Laboratorio</label>
+            <label title="Laboratorio del que armás el pedido. Tipea parte del nombre y elegí.">Laboratorio</label>
             <div class="lab-autocomplete">
-                <input type="text" id="lab-search" placeholder="Escribí parte del nombre (ej: 'abb dia')" autocomplete="off">
+                <input type="text" id="lab-search"
+                       placeholder="Escribí parte del nombre (ej: 'abb dia')"
+                       autocomplete="off"
+                       title="Multi-token: 'abb dia' matchea 'Abbott Diabetes'. ↑↓ navega, Enter selecciona.">
                 <input type="hidden" id="lab-select" value="">
                 <div class="lab-autocomplete-dropdown" id="lab-dropdown"></div>
             </div>
         </div>
         <script type="application/json" id="labs-data">{{ labs | tojson }}</script>
         <div class="field">
-            <label>Mín. u 12m</label>
-            <input type="number" id="min-u12m-input" value="6" min="0" step="1">
+            <label title="Filtra productos esporádicos. Solo se procesan los que vendieron al menos este valor en los últimos 12 meses.">Mín. ventas 12m</label>
+            <input type="number" id="min-u12m-input" value="6" min="0" step="1"
+                   title="Solo se procesan productos con ≥ este nº de unidades vendidas en los últimos 12 meses. 0 = sin filtro. Default 6 = al menos 0,5/mes.">
+            <p class="pp-help">
+                Filtra productos esporádicos: solo entran los que vendieron <b>≥ N unidades</b> en 12m.
+                <br>0 = sin filtro · 6 ≈ 0,5/mes · 50 = ventas relevantes.
+            </p>
         </div>
         <div class="field">
-            <label>Filtro producto</label>
-            <input type="text" id="filtro-input" placeholder="texto...">
+            <label title="Filtra la tabla por texto que matchee el nombre del producto o la droga.">Filtro producto</label>
+            <input type="text" id="filtro-input" placeholder="nombre o droga..."
+                   title="Texto que matchea nombre del producto o de la droga. Vacío = sin filtro.">
         </div>
         <div class="field">
-            <label>Mostrar</label>
-            <select id="mostrar-select">
+            <label title="Qué filas mostrar en la tabla.">Mostrar</label>
+            <select id="mostrar-select"
+                    title="Todos = todas las filas. Solo con Δ = solo las que difieren del cálculo de /pedido/dia. Solo con flag = solo las que tienen comportamiento excepcional aplicado.">
                 <option value="todos">Todos</option>
                 <option value="delta">Solo con Δ ≠ 0</option>
                 <option value="flags">Solo con flag</option>
