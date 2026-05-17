@@ -26,6 +26,7 @@ from datetime import date as _date
 from datetime import timedelta
 
 from sqlalchemy import and_, or_
+from sqlalchemy import func as _func
 
 from database import (
     EstacionalidadEscenario,
@@ -227,7 +228,6 @@ def obtener_precios_publicos_bulk(session, eans):
     """
     if not eans:
         return {}
-    from sqlalchemy import desc, func as _func
     # Subquery: por cada EAN, fecha maxima.
     sq = (session.query(
             ProductoPrecioHist.codigo_barra.label('ean'),
