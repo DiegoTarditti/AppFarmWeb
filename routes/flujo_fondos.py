@@ -10,7 +10,7 @@ Modelo (Fase 3 — predicción sin cronograma):
 from datetime import date as _date
 from datetime import timedelta
 
-from flask import jsonify, render_template, request, flash, redirect, url_for
+from flask import jsonify, render_template, request
 from flask_login import login_required
 from sqlalchemy import func, or_
 
