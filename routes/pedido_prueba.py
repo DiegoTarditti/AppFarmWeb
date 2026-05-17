@@ -418,6 +418,87 @@ def init_app(app):
 
             return jsonify({'ok': True})
 
+    @app.route('/api/pedido-prueba/export-xlsx', methods=['POST'])
+    @login_required
+    def api_pedido_prueba_export_xlsx():
+        """Exporta a XLSX el resultado del calculo actual (lab + filtros).
+
+        Body: mismo formato que /calcular. Reusa la logica para regenerar
+        los items y los escribe a un workbook. No persiste nada.
+        """
+        from io import BytesIO
+
+        import openpyxl
+        from flask import send_file
+        from openpyxl.styles import Alignment, Font, PatternFill
+
+        # Re-ejecutar el calculo
+        with app.test_request_context('/api/pedido-prueba/calcular',
+                                       method='POST', json=request.get_json()):
+            try:
+                resp = api_pedido_prueba_calcular()
+            except Exception as e:
+                return jsonify({'error': f'calcular fallo: {e}'}), 500
+            if isinstance(resp, tuple):
+                resp = resp[0]
+            data = resp.get_json()
+        items = data.get('items', [])
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'PedidoPrueba'
+
+        headers = ['Producto', 'Droga', 'Stock', 'u3m', 'u12m',
+                   'Sug. dia act.', 'Sug. prueba', 'Δ',
+                   'PVP', '$ Prueba', 'Origen', 'Flag']
+        hdr_fill = PatternFill('solid', fgColor='1e1e1e')
+        for ci, h in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=ci, value=h)
+            cell.font = Font(bold=True, color='FFFFFF', size=10)
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal='center')
+
+        for ri, it in enumerate(items, 2):
+            ws.cell(row=ri, column=1, value=it.get('producto_nombre'))
+            ws.cell(row=ri, column=2, value=it.get('droga_nombre'))
+            ws.cell(row=ri, column=3, value=it.get('stock'))
+            ws.cell(row=ri, column=4, value=it.get('u3m'))
+            ws.cell(row=ri, column=5, value=it.get('u12m'))
+            ws.cell(row=ri, column=6, value=it.get('sugerido_dia'))
+            ws.cell(row=ri, column=7, value=it.get('sugerido_prueba'))
+            ws.cell(row=ri, column=8, value=it.get('delta'))
+            ws.cell(row=ri, column=9, value=it.get('precio_pvp'))
+            ws.cell(row=ri, column=10, value=it.get('monto_prueba'))
+            ws.cell(row=ri, column=11, value=it.get('origen_escenario'))
+            ws.cell(row=ri, column=12,
+                    value=(it['flag']['slug'] if it.get('flag') else ''))
+
+        widths = [38, 28, 8, 8, 8, 12, 12, 8, 12, 14, 12, 18]
+        for ci, w in enumerate(widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+
+        # Fila final con totales
+        totals_row = len(items) + 2
+        ws.cell(row=totals_row, column=1, value='TOTAL').font = Font(bold=True)
+        ws.cell(row=totals_row, column=6, value=data.get('total_dia')).font = Font(bold=True)
+        ws.cell(row=totals_row, column=7, value=data.get('total_prueba')).font = Font(bold=True)
+        ws.cell(row=totals_row, column=8, value=data.get('delta_total')).font = Font(bold=True)
+        ws.cell(row=totals_row, column=10, value=data.get('monto_prueba')).font = Font(bold=True)
+
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+
+        # Nombre archivo con lab_id + timestamp
+        from datetime import datetime as _dt2
+        lab_id = data.get('lab_id', 0)
+        ts = _dt2.now().strftime('%Y%m%d-%H%M')
+        fname = f'PedidoPrueba_lab{lab_id}_{ts}.xlsx'
+        return send_file(
+            buf, as_attachment=True, download_name=fname,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
     # Endpoint /save eliminado en el pivot a "solo configuración".
     # La pantalla ya no arma pedidos; los escenarios y flags se persisten
     # individualmente por el drawer (escenario-producto) y por el endpoint

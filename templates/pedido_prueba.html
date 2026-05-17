@@ -600,6 +600,10 @@
 
         <div class="actions">
             <button class="pp-btn primary" id="btn-calcular">▶ Calcular</button>
+            <button class="pp-btn" id="btn-export" disabled
+                    title="Exportar el resultado actual a XLSX (lab + filtros aplicados)">
+                📥 Exportar XLSX
+            </button>
             <span class="meta" style="margin-left:auto;font-size:11px;color:var(--ds-text-mute);">
                 Origen escenario:
                 <span class="pp-origen producto">producto</span>
@@ -995,6 +999,7 @@
             $('#msg-wrap').style.display = 'none';
             $('#table-wrap').style.display = '';
             $('#kpis-wrap').style.display = '';
+            $('#btn-export').disabled = false;
             // Frescura de datos en el topbar
             $('#sync-info').style.display = '';
             $('#sync-stock').textContent = formatearAntiguedad(data.stock_sync_en);
@@ -1188,8 +1193,45 @@
         }
     }
 
+    async function exportarXLSX() {
+        const labId = $('#lab-select').value;
+        if (!labId) return;
+        const minU12m = parseFloat($('#min-u12m-input').value || '0');
+        const leadDefault = Math.max(LIMITES.lead_dias_piso,
+                                     parseInt($('#lead-default-input').value || String(LIMITES.lead_dias_default)));
+        const cobDefault = Math.max(LIMITES.cob_dias_min,
+                                    parseInt($('#cob-default-input').value || String(LIMITES.cob_dias_default)));
+        try {
+            const r = await fetch('/api/pedido-prueba/export-xlsx', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    lab_id: parseInt(labId),
+                    min_u12m: minU12m,
+                    lead_default: leadDefault,
+                    cob_default: cobDefault,
+                }),
+            });
+            if (!r.ok) { alert('Error al exportar'); return; }
+            const blob = await r.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Filename desde header
+            const cd = r.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="?([^"]+)"?/i);
+            a.download = m ? m[1] : 'pedido_prueba.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('Error al exportar: ' + e.message);
+        }
+    }
+
     /* ───── Event delegation ───── */
     $('#btn-calcular').addEventListener('click', calcular);
+    $('#btn-export').addEventListener('click', exportarXLSX);
     $('#filtro-input').addEventListener('input', renderTabla);
     $('#mostrar-select').addEventListener('change', renderTabla);
 
