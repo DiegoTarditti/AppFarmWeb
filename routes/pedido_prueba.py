@@ -36,7 +36,10 @@ from services.pedido_estacional import (
     MESES_ES,
     calcular_sugerido_dia_actual,
     calcular_sugerido_estacional,
+    obtener_escenarios_bulk,
+    obtener_flags_bulk,
     obtener_precios_publicos_bulk,
+    obtener_ventas_arr_bulk,
 )
 
 
@@ -181,6 +184,11 @@ def init_app(app):
                 ObsNombreDroga.observer_id, ObsNombreDroga.descripcion)
                 .filter(ObsNombreDroga.observer_id.in_(drogas_ids)).all()) if drogas_ids else {}
 
+            # Bulk precargas para eliminar N+1 dentro del loop.
+            escenarios_bulk = obtener_escenarios_bulk(session, drogas_ids, producto_ids)
+            flags_bulk = obtener_flags_bulk(session, todos_eans, lab_id=lab_id)
+            ventas_arr_bulk = obtener_ventas_arr_bulk(session, producto_ids, id_farmacia)
+
             resultado = []
             total_dia = 0
             total_prueba = 0
@@ -198,16 +206,21 @@ def init_app(app):
                         precio_pvp = precios_map[ean]
                         break
 
-                # Sugerido estacional
+                # Sugerido estacional (con bulks precargados → cero N+1)
                 est = calcular_sugerido_estacional(
                     session, p, u12m=u12m,
                     stock_actual=st['stock'], minimo=st['minimo'],
                     lead_default=lead_default, cob_default=cob_default,
+                    escenarios_bulk=escenarios_bulk,
+                    eans_producto=eans_por_producto.get(p.observer_id, []),
+                    flags_bulk=flags_bulk,
+                    lab_id_hint=lab_id,
                 )
-                # Sugerido dia (REPOSICION) — replica fiel de /pedido/dia
+                # Sugerido dia (REPOSICION) — replica fiel + bulk
                 sug_dia = calcular_sugerido_dia_actual(
                     session, p.observer_id, id_farmacia,
-                    stock_actual=st['stock'], min_actual=st['minimo'])
+                    stock_actual=st['stock'], min_actual=st['minimo'],
+                    ventas_arr_bulk=ventas_arr_bulk)
 
                 delta = (est['sugerido_final'] - (sug_dia or 0)) if sug_dia is not None else None
 

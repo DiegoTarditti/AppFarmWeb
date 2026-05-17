@@ -69,12 +69,133 @@ MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
             'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
 
-def obtener_escenario_aplicable(session, droga_id, producto_id):
+def obtener_escenarios_bulk(session, droga_ids, producto_ids):
+    """Carga TODOS los escenarios "Generico" relevantes para un conjunto
+    de drogas y productos en 1 query. Devuelve:
+
+        {
+            ('producto', producto_id): EstacionalidadEscenario,
+            ('droga', droga_id): EstacionalidadEscenario,
+        }
+
+    Diseñado para llamarse 1 vez por endpoint con los IDs del lab entero.
+    Despues `obtener_escenario_aplicable(...)` lo lee del dict en O(1).
+    """
+    if not droga_ids and not producto_ids:
+        return {}
+    droga_ids_list = list(droga_ids or [])
+    producto_ids_list = list(producto_ids or [])
+    if not droga_ids_list and not producto_ids_list:
+        return {}
+
+    rows = (session.query(EstacionalidadEscenario)
+            .filter(EstacionalidadEscenario.nombre == _ESCENARIO_NOMBRE)
+            .filter(or_(
+                and_(EstacionalidadEscenario.producto_id.is_(None),
+                     EstacionalidadEscenario.droga_id.in_(droga_ids_list or [-1])),
+                EstacionalidadEscenario.producto_id.in_(producto_ids_list or [-1]),
+            ))
+            .all())
+    out = {}
+    for e in rows:
+        if e.producto_id is not None:
+            out[('producto', e.producto_id)] = e
+        else:
+            out[('droga', e.droga_id)] = e
+    return out
+
+
+def obtener_flags_bulk(session, eans, lab_id=None):
+    """Devuelve dict ean → (ProductoFlag, TipoPedidoConfig).
+    Si lab_id se pasa, agrega tambien el flag por lab bajo la key
+    ('lab', lab_id).
+    """
+    out = {}
+    if eans:
+        flags = (session.query(ProductoFlag)
+                 .filter(ProductoFlag.ean.in_(list(eans)))
+                 .all())
+        slugs = list({f.flag_slug for f in flags})
+        cfgs = {c.slug: c for c in (session.query(TipoPedidoConfig)
+                                    .filter(TipoPedidoConfig.slug.in_(slugs),
+                                            TipoPedidoConfig.categoria == 'flag')
+                                    .all())} if slugs else {}
+        for f in flags:
+            out[f.ean] = (f, cfgs.get(f.flag_slug))
+    if lab_id is not None:
+        f_lab = (session.query(ProductoFlag)
+                 .filter(ProductoFlag.ean.is_(None),
+                         ProductoFlag.laboratorio_id == lab_id)
+                 .first())
+        if f_lab:
+            cfg = (session.query(TipoPedidoConfig)
+                   .filter_by(slug=f_lab.flag_slug, categoria='flag').first())
+            out[('lab', lab_id)] = (f_lab, cfg)
+    return out
+
+
+def obtener_ventas_arr_bulk(session, producto_ids, id_farmacia, hoy=None):
+    """Devuelve dict producto_id → ventas_arr[12] con [0]=mas antiguo,
+    [11]=mes actual parcial. En 1 query.
+    """
+    if not producto_ids:
+        return {}
+    if hoy is None:
+        hoy = _date.today()
+    # Calculo los 12 meses (anio, mes) tuples
+    pares = []
+    anio, mes = hoy.year, hoy.month
+    for _ in range(12):
+        pares.append((anio, mes))
+        mes -= 1
+        if mes <= 0:
+            mes = 12
+            anio -= 1
+    pares.reverse()
+    pares_idx = {p: i for i, p in enumerate(pares)}
+    anio_min = pares[0][0]
+    mes_min = pares[0][1]
+    cutoff = anio_min * 100 + mes_min  # YYYYMM
+
+    rows = (session.query(ObsVentaMensual.producto_observer,
+                          ObsVentaMensual.anio,
+                          ObsVentaMensual.mes,
+                          ObsVentaMensual.unidades)
+            .filter(ObsVentaMensual.producto_observer.in_(list(producto_ids)),
+                    ObsVentaMensual.id_farmacia == id_farmacia,
+                    (ObsVentaMensual.anio * 100 + ObsVentaMensual.mes) >= cutoff)
+            .all())
+    out = {pid: [0.0] * 12 for pid in producto_ids}
+    for r in rows:
+        idx = pares_idx.get((r.anio, r.mes))
+        if idx is not None and r.producto_observer in out:
+            out[r.producto_observer][idx] = float(r.unidades or 0)
+    return out
+
+
+def obtener_escenario_aplicable(session, droga_id, producto_id,
+                                escenarios_bulk=None):
     """Devuelve (escenario_obj, origen) donde origen es:
     'producto' | 'droga' | 'auto'.
 
+    Si `escenarios_bulk` (dict de obtener_escenarios_bulk) se pasa, lee
+    de ahi en O(1) sin tocar la DB. Esto elimina N+1 cuando se procesan
+    muchos productos.
+
     Si no hay escenario en ningun nivel, devuelve (None, 'auto').
     """
+    if escenarios_bulk is not None:
+        if producto_id is not None:
+            esc = escenarios_bulk.get(('producto', producto_id))
+            if esc:
+                return esc, 'producto'
+        if droga_id is not None:
+            esc = escenarios_bulk.get(('droga', droga_id))
+            if esc:
+                return esc, 'droga'
+        return None, 'auto'
+
+    # Path lento (queries individuales) — solo cuando no se pasa bulk.
     if producto_id is not None:
         esc = (session.query(EstacionalidadEscenario)
                .filter_by(droga_id=droga_id,
@@ -193,7 +314,9 @@ def mes_objetivo_default(lead_dias, hoy=None):
 
 def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
                                  minimo=0, override_mes_obj=None, hoy=None,
-                                 lead_default=None, cob_default=None):
+                                 lead_default=None, cob_default=None,
+                                 escenarios_bulk=None, eans_producto=None,
+                                 flags_bulk=None, lab_id_hint=None):
     """Calculo principal. Devuelve dict con todo el desglose.
 
     Args:
@@ -213,8 +336,9 @@ def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
     droga_id = producto.nombre_droga_observer
     producto_id = producto.observer_id
 
-    # 1. Escenario aplicable.
-    esc, origen = obtener_escenario_aplicable(session, droga_id, producto_id)
+    # 1. Escenario aplicable (con bulk_map si se paso).
+    esc, origen = obtener_escenario_aplicable(
+        session, droga_id, producto_id, escenarios_bulk=escenarios_bulk)
     if esc:
         indices = json.loads(esc.indices_json)
         # Clipear al piso operativo aun si la DB tiene un valor mas bajo
@@ -262,11 +386,25 @@ def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
 
     # 4. Flag de comportamiento excepcional (busca por EAN principal +
     #    alternativos del producto; fallback a lab).
-    eans = obtener_eans_producto(session, producto_id)
-    flag_obj, flag_cfg = obtener_flag_producto(
-        session, eans=eans,
-        laboratorio_id=producto.laboratorio_observer,
-    )
+    if eans_producto is not None:
+        eans = eans_producto
+    else:
+        eans = obtener_eans_producto(session, producto_id)
+    lab_id_effective = lab_id_hint if lab_id_hint is not None else producto.laboratorio_observer
+
+    if flags_bulk is not None:
+        # Lookup en bulk_map.
+        flag_obj, flag_cfg = None, None
+        for ean in eans:
+            if ean in flags_bulk:
+                flag_obj, flag_cfg = flags_bulk[ean]
+                break
+        if flag_obj is None and ('lab', lab_id_effective) in flags_bulk:
+            flag_obj, flag_cfg = flags_bulk[('lab', lab_id_effective)]
+    else:
+        flag_obj, flag_cfg = obtener_flag_producto(
+            session, eans=eans, laboratorio_id=lab_id_effective,
+        )
     flag_dict = None
     excluido_por_flag = False
     sugerido_final = sugerido_base
@@ -384,7 +522,7 @@ def calcular_sugerido_dia_actual(session, producto_observer_id, id_farmacia,
                                  meses_rotacion=_MESES_ROTACION_DEFAULT,
                                  factor_h=1.0, cubrir_dias=30,
                                  stock_actual=None, min_actual=None,
-                                 hoy=None):
+                                 hoy=None, ventas_arr_bulk=None):
     """Replica fiel del calculo de /pedido/dia (REPOSICION) para 1 producto.
 
     Devuelve int (a_pedir) o None si no se puede calcular.
@@ -418,8 +556,11 @@ def calcular_sugerido_dia_actual(session, producto_observer_id, id_farmacia,
         stock_actual = int((st and st.stock_actual) or 0)
         min_actual = int((st and st.minimo) or 0)
 
-    ventas_arr = _obtener_ventas_arr_12m(
-        session, producto_observer_id, id_farmacia, hoy=hoy)
+    if ventas_arr_bulk is not None:
+        ventas_arr = ventas_arr_bulk.get(producto_observer_id, [0.0] * 12)
+    else:
+        ventas_arr = _obtener_ventas_arr_12m(
+            session, producto_observer_id, id_farmacia, hoy=hoy)
     u12m_int = int(sum(ventas_arr))
 
     # min_sugerido + sin_mov (mismo helper que compras_dia).
