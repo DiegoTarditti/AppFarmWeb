@@ -213,6 +213,20 @@
     border-color: var(--ds-mint);
     color: var(--ds-mint);
 }
+.ff-topn-btn {
+    background: transparent;
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-mute);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+}
+.ff-topn-btn:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.ff-topn-btn.active { border-color: var(--ds-mint); color: var(--ds-mint);
+                      background: rgba(95,230,188,.10); font-weight: 600; }
+#ff-resto-row td { background: rgba(0,0,0,.18); border-top: 1px dashed var(--ds-line); }
 
 /* ─── Acciones globales ──────────────────────────────────── */
 .ff-actions {
@@ -609,6 +623,12 @@
             <option value="set">Con dto cargado</option>
         </select>
         <button type="button" id="ff-clear-filters" class="clear-btn">Limpiar</button>
+        <span style="width:1px;height:18px;background:var(--ds-line);display:inline-block;margin:0 4px;vertical-align:middle;"></span>
+        <span style="font-size:10px;color:var(--ds-text-mute);margin-right:2px;">Top</span>
+        {% for n in [5, 10, 20] %}
+        <button type="button" class="ff-topn-btn {% if loop.first %}active{% endif %}" data-n="{{ n }}">{{ n }}</button>
+        {% endfor %}
+        <button type="button" class="ff-topn-btn" data-n="all">Todos</button>
         <span class="filter-count" id="ff-filter-count"></span>
     </div>
     <div class="ff-partners">
@@ -627,7 +647,7 @@
             <tbody>
                 {% for p in partners %}
                 {% set pct_ingreso = (p.neto_sem / ingreso_semanal_base * 100) if ingreso_semanal_base else 0 %}
-                <tr data-row-partner="{{ p.tipo }}-{{ p.id }}">
+                <tr data-row-partner="{{ p.tipo }}-{{ p.id }}" data-rank="{{ loop.index0 }}">
                     <td class="left">
                         <span class="pill {{ 'lab' if p.tipo == 'laboratorio' else 'drog' }}">
                             {{ 'LAB' if p.tipo == 'laboratorio' else 'DROG' }}
@@ -660,6 +680,19 @@
                     </td>
                 </tr>
                 {% endfor %}
+                <tr id="ff-resto-row" style="display:none;">
+                    <td class="left" style="color:var(--ds-text-mute);font-style:italic;" id="ff-resto-label">▼ El resto</td>
+                    <td></td>
+                    <td class="bruto" id="ff-resto-bruto">—</td>
+                    <td></td>
+                    <td class="neto" id="ff-resto-neto">—</td>
+                    <td class="pct" id="ff-resto-pct">—</td>
+                    <td style="text-align:center;">
+                        <button type="button" id="ff-resto-expand"
+                                style="font-size:10px;padding:2px 8px;border-radius:999px;border:1px solid var(--ds-line);color:var(--ds-text-mute);background:transparent;cursor:pointer;"
+                                onclick="setTopN('all')">Ver todos</button>
+                    </td>
+                </tr>
             </tbody>
             <tfoot>
                 <tr>
@@ -1005,16 +1038,27 @@
     const fClear = document.getElementById('ff-clear-filters');
     const fCount = document.getElementById('ff-filter-count');
 
+    let _topN = 5;
+
     function applyFilters() {
         const q = (fQ ? fQ.value : '').trim().toLowerCase();
         const tipo = fTipo ? fTipo.value : 'all';
         const minNeto = fMinNeto ? parseFloat(fMinNeto.value) || 0 : 0;
         const dtoState = fDtoState ? fDtoState.value : 'all';
+        const hasFilter = q || tipo !== 'all' || minNeto > 0 || dtoState !== 'all';
+        // Con filtro activo mostramos todos los matches (topN desactivado)
+        const efectivoN = hasFilter ? Infinity : _topN;
+
         let shown = 0, total = 0;
+        let restoBruto = 0, restoNeto = 0, restoCount = 0;
+        const restoRow = document.getElementById('ff-resto-row');
+
         document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
+            if (tr.id === 'ff-resto-row') return;
             total++;
             const key = tr.dataset.rowPartner || '';
             const [rowTipo] = key.split('-');
+            const rank = parseInt(tr.dataset.rank ?? '9999');
             const nombreEl = tr.querySelector('.nombre');
             const nombre = (nombreEl ? nombreEl.textContent : '').toLowerCase();
             const brutoCell = tr.querySelector('[data-bruto-sem]');
@@ -1022,19 +1066,56 @@
             const dtoCell = tr.querySelector('.dto-editable');
             const dto = dtoCell ? parseFloat(dtoCell.dataset.dto) || 0 : 0;
             const neto = bruto * (1 - dto / 100);
-            let ok = true;
-            if (q && !nombre.includes(q)) ok = false;
-            if (tipo !== 'all' && rowTipo !== tipo) ok = false;
-            if (neto < minNeto) ok = false;
-            if (dtoState === 'zero' && dto > 0) ok = false;
-            if (dtoState === 'set' && dto === 0) ok = false;
-            tr.style.display = ok ? '' : 'none';
-            if (ok) shown++;
+
+            let passesFilter = true;
+            if (q && !nombre.includes(q)) passesFilter = false;
+            if (tipo !== 'all' && rowTipo !== tipo) passesFilter = false;
+            if (neto < minNeto) passesFilter = false;
+            if (dtoState === 'zero' && dto > 0) passesFilter = false;
+            if (dtoState === 'set' && dto === 0) passesFilter = false;
+
+            const inTop = rank < efectivoN;
+            const visible = passesFilter && inTop;
+            tr.style.display = visible ? '' : 'none';
+
+            if (passesFilter) {
+                if (inTop) { shown++; }
+                else { restoBruto += bruto; restoNeto += neto; restoCount++; }
+            }
         });
-        if (fCount) fCount.textContent = (shown === total)
+
+        // Fila "El resto"
+        if (restoRow) {
+            if (restoCount > 0 && !hasFilter) {
+                restoRow.style.display = '';
+                document.getElementById('ff-resto-label').textContent =
+                    `▼ El resto — ${restoCount} partner${restoCount !== 1 ? 's' : ''}`;
+                document.getElementById('ff-resto-bruto').textContent = fmt(restoBruto);
+                document.getElementById('ff-resto-neto').textContent = fmt(restoNeto);
+                const pct = INGRESO_TEORICO > 0 ? (restoNeto / INGRESO_TEORICO * 100).toFixed(1) : '—';
+                document.getElementById('ff-resto-pct').textContent = pct !== '—' ? pct + '%' : '—';
+            } else {
+                restoRow.style.display = 'none';
+            }
+        }
+
+        if (fCount) fCount.textContent = (shown === total && !restoCount)
             ? `${total} partners`
-            : `${shown} / ${total} partners visibles`;
+            : `${shown} de ${total} visibles`;
     }
+
+    function setTopN(n) {
+        _topN = n === 'all' ? Infinity : parseInt(n);
+        document.querySelectorAll('.ff-topn-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.n === String(n));
+        });
+        applyFilters();
+    }
+
+    document.querySelectorAll('.ff-topn-btn').forEach(btn => {
+        btn.addEventListener('click', () => setTopN(btn.dataset.n));
+    });
+
     [fQ, fTipo, fMinNeto, fDtoState].forEach(el => {
         if (el) el.addEventListener('input', applyFilters);
     });
