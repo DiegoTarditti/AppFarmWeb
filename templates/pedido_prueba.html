@@ -1,0 +1,663 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% block title %}Pedido prueba — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.pp-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.pp-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.pp-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+.pp-topbar .pill {
+    display: inline-block; padding: 3px 9px; border-radius: 999px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    background: rgba(95,230,188,.14); color: var(--ds-mint);
+}
+.pp-topbar .meta { margin-left: auto; font-size: 11px; color: var(--ds-text-mute); }
+
+.pp-content { padding: 18px 24px; }
+
+/* Selector de lab + KPIs */
+.pp-setup {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px;
+    align-items: end;
+}
+.pp-setup .field label {
+    display: block; font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ds-text-mute); margin-bottom: 4px;
+}
+.pp-setup .field input, .pp-setup .field select {
+    width: 100%;
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px; outline: none;
+}
+.pp-setup .field input:focus, .pp-setup .field select:focus {
+    border-color: var(--ds-mint);
+}
+.pp-setup .actions {
+    grid-column: 1 / -1;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding-top: 4px;
+}
+
+/* KPIs hero */
+.pp-kpis {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 14px 18px;
+    margin-bottom: 14px;
+}
+.pp-kpi .lbl {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text-mute); font-weight: 700;
+}
+.pp-kpi .val {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 24px; font-weight: 700; color: var(--ds-text);
+    line-height: 1.1; margin-top: 2px;
+}
+.pp-kpi .val.mint { color: var(--ds-mint); }
+.pp-kpi .val.warn { color: var(--ds-warn); }
+.pp-kpi .val.danger { color: var(--ds-danger); }
+.pp-kpi .sub { font-size: 11px; color: var(--ds-text-mute); margin-top: 4px; }
+
+/* Botones */
+.pp-btn {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-soft);
+    border-radius: var(--ds-r-md);
+    padding: 6px 14px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+}
+.pp-btn:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.pp-btn.primary {
+    background: rgba(95,230,188,.12);
+    border-color: var(--ds-mint); color: var(--ds-mint);
+}
+.pp-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Tabla */
+.pp-table-card {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    overflow: hidden;
+}
+.pp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pp-table thead th {
+    background: rgba(0,0,0,.25);
+    color: var(--ds-text-mute);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 10px 12px; text-align: right;
+    border-bottom: 1px solid var(--ds-line);
+}
+.pp-table thead th.left { text-align: left; }
+.pp-table tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    cursor: pointer;
+}
+.pp-table tbody tr:hover { background: rgba(95,230,188,.04); }
+.pp-table tbody td {
+    padding: 8px 12px;
+    color: var(--ds-text);
+    font-family: ui-monospace, Consolas, monospace;
+    text-align: right;
+}
+.pp-table tbody td.left { text-align: left; font-family: inherit; }
+.pp-table td.delta-pos { color: var(--ds-mint); font-weight: 700; }
+.pp-table td.delta-neg { color: var(--ds-danger); font-weight: 700; }
+.pp-table td.delta-zero { color: var(--ds-text-mute); }
+
+.pp-origen {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.pp-origen.producto { background: rgba(95,230,188,.16); color: var(--ds-mint); }
+.pp-origen.droga    { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-origen.auto     { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
+.pp-flag {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+}
+.pp-flag.red    { background: rgba(239,68,68,.14); color: var(--ds-danger); }
+.pp-flag.amber  { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-flag.violet { background: rgba(167,139,250,.14); color: #c4b5fd; }
+.pp-flag.sky    { background: rgba(56,189,248,.14); color: var(--ds-info); }
+.pp-flag.gray   { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
+.chev { display: inline-block; transition: transform .15s; color: var(--ds-text-mute); }
+.expanded > td .chev { transform: rotate(90deg); color: var(--ds-mint); }
+
+/* Drawer */
+.drawer-row { display: none; }
+.drawer-row.open { display: table-row; }
+.drawer-row > td { background: var(--ds-bg); border-top: 1px solid var(--ds-line); padding: 0; }
+.drawer-body { padding: 18px 22px; text-align: left; }
+.drawer-body * { text-align: inherit; }
+.drawer-body .slider-cell, .drawer-body .slider-cell * { text-align: center; }
+.drawer-body .range-val { text-align: right; }
+
+.drawer-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+}
+.drawer-header .titulo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px; font-weight: 700; color: var(--ds-text);
+}
+.drawer-header .meta { font-size: 11px; color: var(--ds-text-mute); }
+
+.drawer-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin-bottom: 14px;
+}
+
+.drawer-card {
+    background: rgba(0,0,0,.18);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 12px 14px;
+}
+.drawer-card .card-title {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ds-text-mute);
+    margin-bottom: 8px;
+}
+.drawer-card .razon {
+    font-size: 12px; color: var(--ds-text-soft); line-height: 1.5;
+    font-family: ui-monospace, Consolas, monospace;
+}
+
+/* Slider grid (12 meses) */
+.slider-grid {
+    display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px;
+    align-items: end; margin: 8px 0;
+    background: rgba(0,0,0,.18); padding: 10px 8px;
+    border-radius: var(--ds-r-md);
+    border: 1px solid var(--ds-line);
+}
+.slider-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.slider-cell input[type="range"] {
+    writing-mode: bt-lr;
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    width: 18px; height: 80px; padding: 0; cursor: pointer;
+    accent-color: var(--ds-mint);
+}
+.slider-cell .slider-val {
+    font-size: 10px; font-variant-numeric: tabular-nums;
+    font-weight: 700; color: var(--ds-text);
+}
+.slider-cell .slider-mes {
+    font-size: 9px; color: var(--ds-text-mute);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.slider-cell.peak .slider-val { color: var(--ds-warn); }
+
+.range-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.range-row label {
+    font-size: 11px; font-weight: 600; color: var(--ds-text-soft);
+    min-width: 120px;
+}
+.range-row input[type="range"] {
+    flex: 1; accent-color: var(--ds-warn); cursor: pointer;
+}
+.range-row .range-val {
+    font-size: 12px; font-weight: 700; min-width: 55px;
+    color: var(--ds-warn);
+    font-family: ui-monospace, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.drawer-actions {
+    margin-top: 14px;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding-top: 12px; border-top: 1px solid var(--ds-line);
+}
+.drawer-actions .spacer { flex: 1; }
+.cantidad-input {
+    background: rgba(0,0,0,.35);
+    border: 1px solid var(--ds-mint);
+    color: var(--ds-text);
+    padding: 5px 10px; border-radius: 4px;
+    font-size: 14px; width: 80px;
+    font-family: ui-monospace, Consolas, monospace;
+    font-weight: 700; text-align: right;
+}
+.drawer-status {
+    margin-top: 8px; font-size: 11px; min-height: 14px;
+}
+.drawer-status.ok { color: var(--ds-mint); }
+.drawer-status.err { color: var(--ds-danger); }
+
+/* Mensaje empty / loading */
+.pp-msg {
+    padding: 40px 20px; text-align: center;
+    color: var(--ds-text-mute); font-size: 13px;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+}
+</style>
+{% endblock %}
+
+{% block main %}
+
+<div class="pp-topbar">
+    <h1>🧪 Pedido prueba</h1>
+    <span class="sub">Planificación grande con estacionalidad y comportamientos excepcionales</span>
+    <span class="pill">EXP</span>
+    <span class="meta">Comparativo en vivo vs /pedido/dia</span>
+</div>
+
+<div class="pp-content">
+
+    <div class="pp-setup">
+        <div class="field">
+            <label>Laboratorio</label>
+            <select id="lab-select">
+                <option value="">— Elegí un laboratorio —</option>
+                {% for lab in labs %}
+                <option value="{{ lab.id }}">{{ lab.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label>Mín. u 12m</label>
+            <input type="number" id="min-u12m-input" value="6" min="0" step="1">
+        </div>
+        <div class="field">
+            <label>Filtro producto</label>
+            <input type="text" id="filtro-input" placeholder="texto...">
+        </div>
+        <div class="field">
+            <label>Mostrar</label>
+            <select id="mostrar-select">
+                <option value="todos">Todos</option>
+                <option value="delta">Solo con Δ ≠ 0</option>
+                <option value="flags">Solo con flag</option>
+            </select>
+        </div>
+        <div class="actions">
+            <button class="pp-btn primary" id="btn-calcular">▶ Calcular</button>
+            <button class="pp-btn" id="btn-save" disabled>💾 Guardar pedido</button>
+            <span class="meta" style="margin-left:auto;font-size:11px;color:var(--ds-text-mute);">
+                Origen escenario:
+                <span class="pp-origen producto">producto</span>
+                <span class="pp-origen droga">droga</span>
+                <span class="pp-origen auto">auto</span>
+            </span>
+        </div>
+    </div>
+
+    <div id="kpis-wrap" style="display:none;">
+        <div class="pp-kpis">
+            <div class="pp-kpi"><div class="lbl">Productos</div>
+                <div class="val mint" id="kpi-prods">0</div></div>
+            <div class="pp-kpi"><div class="lbl">Sugerido día actual</div>
+                <div class="val" id="kpi-dia">0 u</div></div>
+            <div class="pp-kpi"><div class="lbl">Sugerido prueba</div>
+                <div class="val mint" id="kpi-prueba">0 u</div></div>
+            <div class="pp-kpi"><div class="lbl">Δ total</div>
+                <div class="val warn" id="kpi-delta">0 u</div>
+                <div class="sub" id="kpi-delta-pct"></div></div>
+        </div>
+    </div>
+
+    <div id="msg-wrap" class="pp-msg">
+        Elegí un laboratorio arriba y click <b>Calcular</b>.
+    </div>
+
+    <div id="table-wrap" class="pp-table-card" style="display:none;">
+        <table class="pp-table">
+            <thead>
+                <tr>
+                    <th class="left">Producto</th>
+                    <th>Stock</th>
+                    <th>u12m</th>
+                    <th>Día act.</th>
+                    <th>Prueba</th>
+                    <th>Δ</th>
+                    <th>Origen</th>
+                    <th>Flag</th>
+                    <th>Final</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+(function() {
+    const meses = {{ meses_es | tojson }};
+    let itemsCache = [];
+    let cantidades = new Map();  // producto_id → cantidad_final editada
+
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => root.querySelectorAll(sel);
+
+    function fmt(n) { return Number(n||0).toLocaleString('es-AR'); }
+    function clase(v) {
+        if (v == null) return 'delta-zero';
+        if (v > 0) return 'delta-pos';
+        if (v < 0) return 'delta-neg';
+        return 'delta-zero';
+    }
+
+    function renderItem(it) {
+        const finalCantidad = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
+        const flagHtml = it.flag
+            ? `<span class="pp-flag ${it.flag.color}" title="${it.flag.nombre}">${it.flag.icono} ${it.flag.slug}</span>`
+            : '';
+        const deltaStr = it.delta == null ? '—' : (it.delta >= 0 ? '+' : '') + it.delta;
+        return `
+        <tr class="row-data" data-id="${it.producto_id}">
+            <td class="left"><span class="chev">▶</span> ${it.producto_nombre}</td>
+            <td>${it.stock}</td>
+            <td>${fmt(it.u12m)}</td>
+            <td>${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
+            <td><b>${it.sugerido_prueba}</b></td>
+            <td class="${clase(it.delta)}">${deltaStr}</td>
+            <td><span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span></td>
+            <td>${flagHtml}</td>
+            <td><b>${finalCantidad}</b></td>
+        </tr>
+        <tr class="drawer-row" data-parent="${it.producto_id}">
+            <td colspan="9">
+                <div class="drawer-body"></div>
+            </td>
+        </tr>`;
+    }
+
+    function renderDrawer(it) {
+        const finalCantidad = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
+        const peakIdx = it.indices.indexOf(Math.max(...it.indices));
+        const slidersHtml = meses.map((m, i) => {
+            const v = it.indices[i];
+            const peak = i === peakIdx ? 'peak' : '';
+            return `
+            <div class="slider-cell ${peak}">
+                <span class="slider-val">${v.toFixed(2)}</span>
+                <input type="range" min="0" max="3" step="0.05" value="${v.toFixed(2)}" class="slider-mes-input">
+                <span class="slider-mes">${m}</span>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="drawer-header">
+            <div class="titulo">${it.producto_nombre}</div>
+            <div class="meta">
+                Droga: <b>${it.droga_nombre || '—'}</b> · Mes obj: <b>${it.mes_objetivo_label}</b>
+                · Origen: <span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span>
+            </div>
+        </div>
+
+        <div class="drawer-grid">
+            <div class="drawer-card">
+                <div class="card-title">Desglose del cálculo</div>
+                <div class="razon">${it.razon}</div>
+            </div>
+            <div class="drawer-card">
+                <div class="card-title">Estado base</div>
+                <div class="razon">
+                    Stock actual: <b>${it.stock}</b> &nbsp;·&nbsp;
+                    Mínimo: <b>${it.minimo}</b><br>
+                    Ventas 12m: <b>${fmt(it.u12m)}u</b> &nbsp;·&nbsp;
+                    Ritmo diario ajustado: <b>${it.ritmo_diario} u/d</b><br>
+                    Demanda proyectada: <b>${it.demanda_proyectada}u</b> &nbsp;·&nbsp;
+                    Sugerido prueba: <b>${it.sugerido_prueba}u</b>
+                </div>
+            </div>
+        </div>
+
+        <div class="drawer-card">
+            <div class="card-title">Ajuste del escenario "Generico" del producto</div>
+            <div class="slider-grid">${slidersHtml}</div>
+            <div class="drawer-grid">
+                <div class="range-row">
+                    <label>Lead time (días):</label>
+                    <input type="range" min="0" max="180" step="1" value="${it.lead_dias}" class="lead-input">
+                    <span class="range-val lead-val">${it.lead_dias}</span>
+                </div>
+                <div class="range-row">
+                    <label>Cobertura (días):</label>
+                    <input type="range" min="1" max="365" step="1" value="${it.cobertura_dias}" class="cob-input">
+                    <span class="range-val cob-val">${it.cobertura_dias}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="drawer-actions">
+            <button class="pp-btn primary btn-guardar-escenario">💾 Guardar escenario producto</button>
+            <span class="spacer"></span>
+            <label style="font-size:11px;color:var(--ds-text-soft);">Cantidad final:</label>
+            <input type="number" class="cantidad-input cantidad-final" value="${finalCantidad}" min="0" step="1">
+        </div>
+        <div class="drawer-status"></div>`;
+    }
+
+    function pasaFiltros(it) {
+        const filtro = ($('#filtro-input').value || '').toLowerCase();
+        if (filtro && !(it.producto_nombre.toLowerCase().includes(filtro)
+                      || (it.droga_nombre||'').toLowerCase().includes(filtro))) {
+            return false;
+        }
+        const mostrar = $('#mostrar-select').value;
+        if (mostrar === 'delta' && (it.delta == null || it.delta === 0)) return false;
+        if (mostrar === 'flags' && !it.flag) return false;
+        return true;
+    }
+
+    function renderTabla() {
+        const tbody = $('#tbody');
+        const filtrados = itemsCache.filter(pasaFiltros);
+        tbody.innerHTML = filtrados.map(renderItem).join('');
+        actualizarKpis(filtrados);
+    }
+
+    function actualizarKpis(items) {
+        $('#kpi-prods').textContent = items.length;
+        let totalDia = 0, totalPrueba = 0;
+        items.forEach(it => {
+            totalDia += (it.sugerido_dia || 0);
+            const cant = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
+            totalPrueba += cant;
+        });
+        const delta = totalPrueba - totalDia;
+        const pct = totalDia ? ((delta / totalDia) * 100).toFixed(1) : '—';
+        $('#kpi-dia').textContent = fmt(totalDia) + ' u';
+        $('#kpi-prueba').textContent = fmt(totalPrueba) + ' u';
+        $('#kpi-delta').textContent = (delta >= 0 ? '+' : '') + fmt(delta) + ' u';
+        $('#kpi-delta-pct').textContent = totalDia ? `(${delta >= 0 ? '+' : ''}${pct}%)` : '';
+        $('#kpi-delta').className = 'val ' + (delta === 0 ? '' : (delta > 0 ? 'mint' : 'danger'));
+    }
+
+    async function calcular() {
+        const labId = $('#lab-select').value;
+        if (!labId) { alert('Elegí un laboratorio'); return; }
+        const minU12m = parseFloat($('#min-u12m-input').value || '0');
+        $('#msg-wrap').textContent = 'Calculando…';
+        $('#msg-wrap').style.display = '';
+        $('#table-wrap').style.display = 'none';
+        $('#kpis-wrap').style.display = 'none';
+        cantidades.clear();
+
+        try {
+            const r = await fetch('/api/pedido-prueba/calcular', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({lab_id: parseInt(labId), min_u12m: minU12m}),
+            });
+            if (!r.ok) { throw new Error('HTTP ' + r.status); }
+            const data = await r.json();
+            itemsCache = data.items || [];
+            if (!itemsCache.length) {
+                $('#msg-wrap').textContent = 'Sin productos para este laboratorio con el umbral indicado.';
+                return;
+            }
+            $('#msg-wrap').style.display = 'none';
+            $('#table-wrap').style.display = '';
+            $('#kpis-wrap').style.display = '';
+            $('#btn-save').disabled = false;
+            renderTabla();
+        } catch (e) {
+            $('#msg-wrap').textContent = 'Error al calcular: ' + e.message;
+        }
+    }
+
+    function toggleDrawer(rowData) {
+        const id = rowData.dataset.id;
+        const drawer = document.querySelector(`tr.drawer-row[data-parent="${id}"]`);
+        const open = drawer.classList.contains('open');
+        // Cerrar otros drawers
+        $$('.drawer-row.open').forEach(d => {
+            d.classList.remove('open');
+            const r = document.querySelector(`tr.row-data[data-id="${d.dataset.parent}"]`);
+            if (r) r.classList.remove('expanded');
+        });
+        if (!open) {
+            const it = itemsCache.find(x => x.producto_id == id);
+            if (!it) return;
+            drawer.querySelector('.drawer-body').innerHTML = renderDrawer(it);
+            drawer.classList.add('open');
+            rowData.classList.add('expanded');
+        }
+    }
+
+    async function guardarEscenarioProducto(drawerBody) {
+        const tr = drawerBody.closest('tr.drawer-row');
+        const id = tr.dataset.parent;
+        const sliders = drawerBody.querySelectorAll('.slider-mes-input');
+        const indices = Array.from(sliders).map(s => parseFloat(s.value));
+        const lead = parseInt(drawerBody.querySelector('.lead-input').value, 10);
+        const cob = parseInt(drawerBody.querySelector('.cob-input').value, 10);
+        const status = drawerBody.querySelector('.drawer-status');
+        status.textContent = 'Guardando…'; status.className = 'drawer-status';
+        try {
+            const r = await fetch(`/api/pedido-prueba/escenario-producto/${id}`, {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({indices, lead_time_dias: lead, cobertura_dias: cob}),
+            });
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            // Actualizar item en cache y re-render fila + drawer
+            const it = itemsCache.find(x => x.producto_id == id);
+            if (it) {
+                it.indices = data.indices;
+                it.lead_dias = data.lead_dias;
+                it.cobertura_dias = data.cobertura_dias;
+                it.origen_escenario = data.origen_escenario;
+                it.sugerido_prueba = data.sugerido_prueba;
+                it.razon = data.razon;
+                // Recalcular delta
+                it.delta = it.sugerido_dia != null ? it.sugerido_prueba - it.sugerido_dia : null;
+                renderTabla();
+                // Re-expandir
+                const rowData = document.querySelector(`tr.row-data[data-id="${id}"]`);
+                if (rowData) toggleDrawer(rowData);
+            }
+            status.textContent = '✓ Escenario guardado'; status.className = 'drawer-status ok';
+        } catch (e) {
+            status.textContent = 'Error: ' + e.message; status.className = 'drawer-status err';
+        }
+    }
+
+    async function guardarPedido() {
+        if (!itemsCache.length) return;
+        const items = itemsCache.filter(it => {
+            const cant = cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba;
+            return cant > 0 && pasaFiltros(it);
+        }).map(it => ({
+            producto_id: it.producto_id,
+            ean: '',
+            nombre: it.producto_nombre,
+            cantidad: cantidades.has(it.producto_id) ? cantidades.get(it.producto_id) : it.sugerido_prueba,
+            precio: 0,
+        }));
+        if (!items.length) { alert('No hay productos con cantidad > 0'); return; }
+
+        const labId = parseInt($('#lab-select').value);
+        const r = await fetch('/api/pedido-prueba/save', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({lab_id: labId, items}),
+        });
+        if (!r.ok) { alert('Error al guardar'); return; }
+        const data = await r.json();
+        alert(`Pedido #${data.pedido_id} guardado con ${data.total_unidades} unidades.`);
+    }
+
+    /* ───── Event delegation ───── */
+    $('#btn-calcular').addEventListener('click', calcular);
+    $('#btn-save').addEventListener('click', guardarPedido);
+    $('#filtro-input').addEventListener('input', renderTabla);
+    $('#mostrar-select').addEventListener('change', renderTabla);
+
+    document.addEventListener('click', (e) => {
+        const row = e.target.closest('tr.row-data');
+        if (row && !e.target.closest('input,button')) {
+            toggleDrawer(row);
+            return;
+        }
+        if (e.target.classList.contains('btn-guardar-escenario')) {
+            guardarEscenarioProducto(e.target.closest('.drawer-body'));
+        }
+    });
+
+    document.addEventListener('input', (e) => {
+        const body = e.target.closest('.drawer-body');
+        if (!body) return;
+        if (e.target.matches('.slider-mes-input')) {
+            const cell = e.target.closest('.slider-cell');
+            cell.querySelector('.slider-val').textContent = parseFloat(e.target.value).toFixed(2);
+        }
+        if (e.target.matches('.lead-input')) {
+            body.querySelector('.lead-val').textContent = e.target.value;
+        }
+        if (e.target.matches('.cob-input')) {
+            body.querySelector('.cob-val').textContent = e.target.value;
+        }
+        if (e.target.matches('.cantidad-final')) {
+            const tr = body.closest('tr.drawer-row');
+            const id = parseInt(tr.dataset.parent);
+            const cant = parseInt(e.target.value) || 0;
+            cantidades.set(id, cant);
+            // Actualizar la fila padre
+            const rowData = document.querySelector(`tr.row-data[data-id="${id}"]`);
+            if (rowData) {
+                rowData.querySelector('td:last-child').innerHTML = `<b>${cant}</b>`;
+            }
+            actualizarKpis(itemsCache.filter(pasaFiltros));
+        }
+    });
+})();
+</script>
+
+{% endblock %}

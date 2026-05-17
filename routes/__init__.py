@@ -36,6 +36,7 @@ from routes import (
     observer_sync,
     ofertas_import,
     partners,
+    pedido_prueba,
     pedidos_log,
     plantillas,
     procesos,
@@ -96,6 +97,7 @@ _modules = [
     pedidos_log,
     flujo_fondos,
     estacionalidad,
+    pedido_prueba,
 ]
 
 

@@ -1,0 +1,268 @@
+"""Calculo de sugerido con ajuste estacional para /pedido/prueba.
+
+Modelo distinto a /pedido/dia:
+- Pedido/dia (reposicion tactica) usa u3m/90 como daily_rate (ritmo
+  reciente). Sirve para reponer lo que se vendio en el ultimo trimestre.
+- Pedido/prueba (planificacion grande) usa u12m/365 como base "neutra"
+  y aplica el indice estacional del MES OBJETIVO como multiplicador.
+  Asi no se doble-cuenta la estacionalidad: el numerador es plano y el
+  multiplicador hace todo el ajuste.
+
+Formula:
+    ritmo_diario = (u12m / 365) * indice_estacional[mes_objetivo]
+    demanda      = ritmo_diario * cobertura_dias
+    sugerido     = max(0, demanda - stock_actual)
+
+mes_objetivo = hoy + lead_time_dias (por default, override por producto).
+
+Escenario aplicable (en orden de precedencia):
+    1. Escenario "Generico" del producto especifico (producto_id NOT NULL)
+    2. Escenario "Generico" de la droga (producto_id NULL)
+    3. Calculo automatico (sin escenario): indices=1.0/mes, lead=0, cob=30
+"""
+
+import json
+from datetime import date as _date
+from datetime import timedelta
+
+from sqlalchemy import and_, or_
+
+from database import (
+    EstacionalidadEscenario,
+    ObsCodigoBarras,
+    ObsProducto,
+    ProductoFlag,
+    TipoPedidoConfig,
+)
+
+# Default por si no hay escenario ni para producto ni para droga.
+_DEFAULT_INDICES = [1.0] * 12
+_DEFAULT_LEAD_DIAS = 0
+_DEFAULT_COBERTURA_DIAS = 30
+_ESCENARIO_NOMBRE = 'Generico'  # convencion v1: 1 solo escenario por droga/producto
+
+
+MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+            'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+
+def obtener_escenario_aplicable(session, droga_id, producto_id):
+    """Devuelve (escenario_obj, origen) donde origen es:
+    'producto' | 'droga' | 'auto'.
+
+    Si no hay escenario en ningun nivel, devuelve (None, 'auto').
+    """
+    if producto_id is not None:
+        esc = (session.query(EstacionalidadEscenario)
+               .filter_by(droga_id=droga_id,
+                          producto_id=producto_id,
+                          nombre=_ESCENARIO_NOMBRE)
+               .first())
+        if esc:
+            return esc, 'producto'
+
+    if droga_id is not None:
+        esc = (session.query(EstacionalidadEscenario)
+               .filter(EstacionalidadEscenario.droga_id == droga_id,
+                       EstacionalidadEscenario.producto_id.is_(None),
+                       EstacionalidadEscenario.nombre == _ESCENARIO_NOMBRE)
+               .first())
+        if esc:
+            return esc, 'droga'
+
+    return None, 'auto'
+
+
+def obtener_eans_producto(session, producto_observer_id):
+    """Devuelve la lista de EANs activos del producto (principal +
+    alternativos, ordenados por `orden` 1..N, excluyendo dados de baja)."""
+    rows = (session.query(ObsCodigoBarras.codigo_barras)
+            .filter(ObsCodigoBarras.producto_observer == producto_observer_id,
+                    ObsCodigoBarras.fecha_baja.is_(None))
+            .order_by(ObsCodigoBarras.orden)
+            .all())
+    return [r.codigo_barras for r in rows]
+
+
+def obtener_flag_producto(session, eans, laboratorio_id=None):
+    """Devuelve (flag_producto, flag_config) o (None, None).
+
+    Busca PRIMERO por cualquiera de los EANs del producto (principal +
+    alternativos); si no hay match y se pasa laboratorio_id, busca por
+    lab (flag aplicado a todo un laboratorio). El flag por EAN siempre
+    gana al flag por lab si ambos existen.
+
+    Args:
+        eans: lista de EANs del producto (puede ser vacia).
+        laboratorio_id: int opcional, id del laboratorio del producto.
+    """
+    if not eans and not laboratorio_id:
+        return None, None
+
+    # Buscar por EAN primero (preferencia maxima).
+    if eans:
+        flag = (session.query(ProductoFlag)
+                .filter(ProductoFlag.ean.in_(eans))
+                .first())
+        if flag:
+            cfg_row = (session.query(TipoPedidoConfig)
+                       .filter_by(slug=flag.flag_slug, categoria='flag')
+                       .first())
+            return flag, cfg_row
+
+    # Fallback: por lab.
+    if laboratorio_id:
+        flag = (session.query(ProductoFlag)
+                .filter(ProductoFlag.ean.is_(None),
+                        ProductoFlag.laboratorio_id == laboratorio_id)
+                .first())
+        if flag:
+            cfg_row = (session.query(TipoPedidoConfig)
+                       .filter_by(slug=flag.flag_slug, categoria='flag')
+                       .first())
+            return flag, cfg_row
+
+    return None, None
+
+
+def mes_objetivo_default(lead_dias, hoy=None):
+    """Devuelve (mes 1-12, anio, label 'Mes YYYY') sumando lead_dias a hoy."""
+    if hoy is None:
+        hoy = _date.today()
+    objetivo = hoy + timedelta(days=int(lead_dias or 0))
+    return objetivo.month, objetivo.year, f'{MESES_ES[objetivo.month - 1]} {objetivo.year}'
+
+
+def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
+                                 minimo=0, override_mes_obj=None, hoy=None):
+    """Calculo principal. Devuelve dict con todo el desglose.
+
+    Args:
+        session: SQLAlchemy session abierta.
+        producto: instancia de ObsProducto (debe tener observer_id,
+            nombre_droga_observer, laboratorio_observer).
+        u12m: int|float, unidades vendidas en los ultimos 12 meses.
+        stock_actual: int, stock actual (ObsStock).
+        minimo: int, minimo de ObServer (puede ser 0).
+        override_mes_obj: int|None, mes 1-12. Si se pasa, lo usa en lugar
+            del calculado por lead_time.
+        hoy: date|None para tests (default = date.today()).
+
+    Returns:
+        dict con todas las variables del calculo (ver formato abajo).
+    """
+    droga_id = producto.nombre_droga_observer
+    producto_id = producto.observer_id
+
+    # 1. Escenario aplicable.
+    esc, origen = obtener_escenario_aplicable(session, droga_id, producto_id)
+    if esc:
+        indices = json.loads(esc.indices_json)
+        lead_dias = int(esc.lead_time_dias or 0)
+        cob_dias = int(esc.cobertura_dias or 30)
+        escenario_nombre = esc.nombre
+    else:
+        indices = list(_DEFAULT_INDICES)
+        lead_dias = _DEFAULT_LEAD_DIAS
+        cob_dias = _DEFAULT_COBERTURA_DIAS
+        escenario_nombre = None
+
+    # 2. Mes objetivo.
+    if override_mes_obj is not None:
+        # Mantener anio actual; si el mes ya paso este anio, usar el proximo.
+        if hoy is None:
+            hoy = _date.today()
+        anio_obj = hoy.year if override_mes_obj >= hoy.month else hoy.year + 1
+        mes_obj = int(override_mes_obj)
+        mes_obj_label = f'{MESES_ES[mes_obj - 1]} {anio_obj}'
+    else:
+        mes_obj, anio_obj, mes_obj_label = mes_objetivo_default(lead_dias, hoy=hoy)
+
+    indice_aplicado = float(indices[mes_obj - 1])
+
+    # 3. Calculo principal.
+    u12m_f = float(u12m or 0)
+    ritmo_diario_base = u12m_f / 365.0
+    ritmo_diario = ritmo_diario_base * indice_aplicado
+    demanda_proyectada = ritmo_diario * cob_dias
+
+    # Sugerido base: cubrir la demanda menos lo que ya hay.
+    sugerido_base = max(0, int(round(demanda_proyectada - (stock_actual or 0))))
+
+    # Si el sugerido base no llega ni al minimo, subir al minimo (resguardo).
+    if minimo and minimo > 0:
+        deficit_minimo = max(0, int(minimo) - int(stock_actual or 0))
+        sugerido_base = max(sugerido_base, deficit_minimo)
+
+    # 4. Flag de comportamiento excepcional (busca por EAN principal +
+    #    alternativos del producto; fallback a lab).
+    eans = obtener_eans_producto(session, producto_id)
+    flag_obj, flag_cfg = obtener_flag_producto(
+        session, eans=eans,
+        laboratorio_id=producto.laboratorio_observer,
+    )
+    flag_dict = None
+    excluido_por_flag = False
+    sugerido_final = sugerido_base
+    if flag_obj and flag_cfg:
+        cfg_json = json.loads(flag_cfg.config_json or '{}')
+        flag_dict = {
+            'slug': flag_obj.flag_slug,
+            'nombre': flag_cfg.nombre,
+            'efecto_armado': cfg_json.get('efecto_armado', 'ninguno'),
+            'icono': cfg_json.get('icono', ''),
+            'color': cfg_json.get('color', 'gray'),
+        }
+        if flag_dict['efecto_armado'] == 'excluir':
+            sugerido_final = 0
+            excluido_por_flag = True
+        elif flag_dict['efecto_armado'] == 'badge_cero':
+            sugerido_final = 0
+
+    # 5. Razon humana.
+    if u12m_f <= 0:
+        razon = 'Sin ventas 12m → sin sugerido.'
+        sugerido_final = 0
+    elif excluido_por_flag:
+        razon = f'Excluido por flag {flag_dict["slug"]}.'
+    else:
+        razon = (
+            f'u12m {int(u12m_f)}/365 = {ritmo_diario_base:.2f} u/d base. '
+            f'× indice {mes_obj_label} ({indice_aplicado:.2f}) '
+            f'= {ritmo_diario:.2f} u/d. '
+            f'× cobertura {cob_dias}d = {demanda_proyectada:.0f}u demanda. '
+            f'- stock {stock_actual or 0}u = {sugerido_base}u sugerido.'
+        )
+
+    return {
+        # Identidad
+        'producto_observer_id': producto_id,
+        'producto_nombre': producto.descripcion,
+        'droga_id': droga_id,
+        # Estado base
+        'stock_actual': int(stock_actual or 0),
+        'minimo': int(minimo or 0),
+        'u12m': int(u12m_f),
+        # Escenario
+        'origen_escenario': origen,
+        'escenario_nombre': escenario_nombre,
+        'indices': indices,
+        'lead_dias': lead_dias,
+        'cobertura_dias': cob_dias,
+        # Mes objetivo
+        'mes_objetivo': mes_obj,
+        'mes_objetivo_anio': anio_obj,
+        'mes_objetivo_label': mes_obj_label,
+        'indice_aplicado': indice_aplicado,
+        # Calculo
+        'ritmo_diario_base': round(ritmo_diario_base, 3),
+        'ritmo_diario': round(ritmo_diario, 3),
+        'demanda_proyectada': int(round(demanda_proyectada)),
+        'sugerido_base': sugerido_base,
+        'sugerido_final': sugerido_final,
+        # Flag
+        'flag': flag_dict,
+        'excluido_por_flag': excluido_por_flag,
+        # Diagnostico
+        'razon': razon,
+    }
