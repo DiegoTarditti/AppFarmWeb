@@ -95,7 +95,7 @@ def init_app(app):
             for lab in labs_q:
                 ventas = float(lab.ventas_12m or 0)
                 bruto_sem = ventas / 52.0
-                dto_pct = float(lab.descuento_base) if lab.descuento_base else 0.0
+                dto_pct = float(lab.descuento_base) if lab.descuento_base else 30.0
                 neto_sem = bruto_sem * (1.0 - dto_pct / 100.0)
                 partners_lab.append({
                     'tipo': 'laboratorio',

@@ -1370,23 +1370,21 @@
 
     recalc();
 
-    // E — Warning % egreso sin dto cargado
+    // E — Info dto: cuántos usan el 30% default vs dto propio
     (function calcDtoWarn() {
-        let totalBruto = 0, sinDtoBruto = 0;
+        let totalLabs = 0, defaultLabs = 0;
         document.querySelectorAll('.ff-partners tbody tr').forEach(tr => {
             if (tr.id === 'ff-resto-row') return;
-            const brutoCell = tr.querySelector('[data-bruto-sem]');
             const dtoCell = tr.querySelector('.dto-editable');
-            const bruto = brutoCell ? parseFloat(brutoCell.dataset.brutoSem) || 0 : 0;
-            const dto = dtoCell ? parseFloat(dtoCell.dataset.dto) || 0 : 0;
-            totalBruto += bruto;
-            if (dto === 0) sinDtoBruto += bruto;
+            if (!dtoCell) return;
+            totalLabs++;
+            if (parseFloat(dtoCell.dataset.dto) === 30) defaultLabs++;
         });
         const el = document.getElementById('ff-dto-warn');
-        if (!el || totalBruto === 0) return;
-        const pct = Math.round(sinDtoBruto / totalBruto * 100);
-        if (pct > 0) {
-            el.textContent = `⚠ ${pct}% del egreso sin dto cargado`;
+        if (!el || totalLabs === 0) return;
+        if (defaultLabs > 0) {
+            el.textContent = `${defaultLabs} de ${totalLabs} labs usan dto default 30%`;
+            el.style.color = 'var(--ds-text-mute)';
         }
     })();
 
