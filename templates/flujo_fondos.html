@@ -553,6 +553,10 @@
             <div class="val warn" data-kpi="egreso-neto">${{ '{:,.0f}'.format(egreso_neto_sem) | replace(',', '.') }}</div>
             <div class="sub">aplicando dto base</div>
             <div class="ff-dto-warn" id="ff-dto-warn"></div>
+            <button type="button" id="ff-btn-dto-default" style="display:none;margin-top:4px;font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--ds-line);color:var(--ds-text-mute);background:transparent;cursor:pointer;"
+                    onclick="aplicarDtoDefault(this)">
+                Cargar 30% a los vacíos
+            </button>
         </div>
         <div class="ff-kpi">
             <div class="lbl">≡ Saldo semanal</div>
@@ -1382,11 +1386,37 @@
         });
         const el = document.getElementById('ff-dto-warn');
         if (!el || totalLabs === 0) return;
+        const btn = document.getElementById('ff-btn-dto-default');
         if (defaultLabs > 0) {
             el.textContent = `${defaultLabs} de ${totalLabs} labs usan dto default 30%`;
             el.style.color = 'var(--ds-text-mute)';
+            if (btn) btn.style.display = 'inline-block';
         }
     })();
+
+    async function aplicarDtoDefault(btn) {
+        if (!confirm(`Guardar 30% de descuento en la DB para todos los labs que tienen el campo vacío.\n¿Continuar?`)) return;
+        btn.disabled = true;
+        btn.textContent = '⏳ Guardando…';
+        try {
+            const r = await fetch('/api/flujo/aplicar-dto-default', {
+                method: 'POST', credentials: 'same-origin'
+            });
+            const d = await r.json();
+            if (d.ok) {
+                toast(`✓ ${d.actualizados} labs actualizados a 30%`, '#10b981');
+                setTimeout(() => location.reload(), 800);
+            } else {
+                toast('✕ Error al guardar', '#ef4444');
+                btn.disabled = false;
+                btn.textContent = 'Cargar 30% a los vacíos';
+            }
+        } catch {
+            toast('✕ Error de red', '#ef4444');
+            btn.disabled = false;
+            btn.textContent = 'Cargar 30% a los vacíos';
+        }
+    }
 
     // D — Banner cronograma: qué semanas tienen pagos programados
     (async function cronBanner() {
