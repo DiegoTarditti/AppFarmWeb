@@ -62,7 +62,10 @@ def _validar_payload_escenario(payload):
     except (TypeError, ValueError):
         return False, 'Los indices deben ser numericos.', None
     try:
-        lead = max(0, min(180, int(payload.get('lead_time_dias', 0))))
+        # Piso operativo 2 dias: ningun proveedor entrega instantaneo.
+        from services.pedido_estacional import LEAD_DIAS_PISO
+        lead = max(LEAD_DIAS_PISO,
+                   min(180, int(payload.get('lead_time_dias', LEAD_DIAS_PISO))))
     except (TypeError, ValueError):
         return False, 'lead_time_dias invalido.', None
     try:

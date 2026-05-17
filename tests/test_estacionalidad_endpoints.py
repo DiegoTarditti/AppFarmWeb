@@ -53,7 +53,8 @@ class TestCrear:
         body = r.get_json()
         assert body['nombre'] == 'base'
         assert body['indices'] == _indices_validos()
-        assert body['lead_time_dias'] == 0
+        # Piso operativo del lead time: 2 días (LEAD_DIAS_PISO).
+        assert body['lead_time_dias'] == 2
         assert body['cobertura_dias'] == 30
         assert body['es_default'] is False
         assert body['id'] is not None

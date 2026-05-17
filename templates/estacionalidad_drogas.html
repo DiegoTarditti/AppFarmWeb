@@ -644,9 +644,9 @@
                                     <div>
                                         <div class="range-row">
                                             <label>Lead time (días):</label>
-                                            <input type="range" min="0" max="90" step="1" value="0" class="lead-input"
-                                                   title="Días entre que hacés el pedido y te llega. Desplaza la curva 'a comprar' hacia atrás.">
-                                            <span class="range-val lead-val">0</span>
+                                            <input type="range" min="2" max="90" step="1" value="2" class="lead-input"
+                                                   title="Días entre que hacés el pedido y te llega. Mínimo 2d. Desplaza la curva 'a comprar' hacia atrás.">
+                                            <span class="range-val lead-val">2</span>
                                         </div>
                                         <p class="range-help">
                                             Si tarda 15d en llegar, lo que comprás hoy cubre la demanda de dentro de 15d.
@@ -879,7 +879,8 @@
         const st = state.get(body.dataset.drogaId);
         st.escActivo = esc;
         const indices = esc ? [...esc.indices] : [...st.indicesCalc];
-        const leadDias = esc ? esc.lead_time_dias : 0;
+        // Piso operativo 2 días para lead (mismo criterio que el backend).
+        const leadDias = Math.max(2, esc ? esc.lead_time_dias : 2);
         const cobDias = esc ? esc.cobertura_dias : 30;
 
         escribirSliders(body, indices, st.indicesCalc);
@@ -995,8 +996,8 @@
             const body = e.target.closest('.expand-body');
             const st = state.get(body.dataset.drogaId);
             escribirSliders(body, [...st.indicesCalc], st.indicesCalc);
-            $(body, '.lead-input').value = 0;
-            $(body, '.lead-val').textContent = '0';
+            $(body, '.lead-input').value = 2;
+            $(body, '.lead-val').textContent = '2';
             $(body, '.cob-input').value = 30;
             $(body, '.cob-val').textContent = '30';
             actualizarChartDesdeControles(body);

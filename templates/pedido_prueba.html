@@ -92,6 +92,39 @@
     padding-top: 4px;
 }
 
+/* Fila de defaults globales: aplican a productos sin escenario propio */
+.pp-defaults {
+    grid-column: 1 / -1;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; padding: 10px 0 4px;
+    border-top: 1px dashed var(--ds-line);
+    margin-top: 4px;
+}
+.pp-defaults .field-h {
+    display: flex; align-items: center; gap: 10px;
+}
+.pp-defaults .field-h label {
+    font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ds-text-mute);
+    min-width: 140px;
+}
+.pp-defaults .field-h input[type="number"] {
+    flex: 0 0 70px;
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 5px 9px;
+    font-size: 12px; font-weight: 700; text-align: right;
+    font-family: ui-monospace, Consolas, monospace;
+    outline: none;
+}
+.pp-defaults .field-h input[type="number"]:focus { border-color: var(--ds-warn); }
+.pp-defaults .field-h .hint {
+    font-size: 10px; color: var(--ds-text-mute);
+    flex: 1; min-width: 0;
+}
+
 /* KPIs hero */
 .pp-kpis {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -274,10 +307,15 @@
     flex: 1; accent-color: var(--ds-warn); cursor: pointer;
 }
 .range-row .range-val {
-    font-size: 12px; font-weight: 700; min-width: 55px;
+    font-size: 13px; font-weight: 700;
+    min-width: 50px;
     color: var(--ds-warn);
     font-family: ui-monospace, Consolas, monospace;
     font-variant-numeric: tabular-nums;
+    background: rgba(245,158,11,.10);
+    border: 1px solid rgba(245,158,11,.3);
+    padding: 2px 8px; border-radius: 4px;
+    text-align: center;
 }
 
 .drawer-actions {
@@ -375,6 +413,21 @@
                 <option value="flags">Solo con flag</option>
             </select>
         </div>
+        <div class="pp-defaults">
+            <div class="field-h"
+                 title="Lead time default que se usa para productos sin escenario propio. Mínimo 2 días.">
+                <label>Lead time default:</label>
+                <input type="number" id="lead-default-input" min="2" max="180" step="1" value="2">
+                <span class="hint">días entre pedido y entrega · piso 2d</span>
+            </div>
+            <div class="field-h"
+                 title="Cobertura default que se usa para productos sin escenario propio. Cuántos días querés cubrir con cada pedido.">
+                <label>Cobertura default:</label>
+                <input type="number" id="cob-default-input" min="1" max="365" step="1" value="30">
+                <span class="hint">días de demanda a cubrir · típico 30 (1 mes)</span>
+            </div>
+        </div>
+
         <div class="actions">
             <button class="pp-btn primary" id="btn-calcular">▶ Calcular</button>
             <button class="pp-btn" id="btn-save" disabled>💾 Guardar pedido</button>
@@ -621,14 +674,14 @@
             <div class="slider-grid">${slidersHtml}</div>
             <div class="drawer-grid">
                 <div class="range-row">
-                    <label>Lead time (días):</label>
-                    <input type="range" min="0" max="180" step="1" value="${it.lead_dias}" class="lead-input">
-                    <span class="range-val lead-val">${it.lead_dias}</span>
+                    <label>Lead time:</label>
+                    <input type="range" min="2" max="180" step="1" value="${Math.max(2, it.lead_dias)}" class="lead-input">
+                    <span class="range-val lead-val">${Math.max(2, it.lead_dias)}d</span>
                 </div>
                 <div class="range-row">
-                    <label>Cobertura (días):</label>
+                    <label>Cobertura:</label>
                     <input type="range" min="1" max="365" step="1" value="${it.cobertura_dias}" class="cob-input">
-                    <span class="range-val cob-val">${it.cobertura_dias}</span>
+                    <span class="range-val cob-val">${it.cobertura_dias}d</span>
                 </div>
             </div>
         </div>
@@ -684,6 +737,8 @@
         const labId = $('#lab-select').value;
         if (!labId) { alert('Elegí un laboratorio'); return; }
         const minU12m = parseFloat($('#min-u12m-input').value || '0');
+        const leadDefault = Math.max(2, parseInt($('#lead-default-input').value || '2'));
+        const cobDefault = Math.max(1, parseInt($('#cob-default-input').value || '30'));
         $('#msg-wrap').textContent = 'Calculando…';
         $('#msg-wrap').style.display = '';
         $('#table-wrap').style.display = 'none';
@@ -693,7 +748,12 @@
         try {
             const r = await fetch('/api/pedido-prueba/calcular', {
                 method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({lab_id: parseInt(labId), min_u12m: minU12m}),
+                body: JSON.stringify({
+                    lab_id: parseInt(labId),
+                    min_u12m: minU12m,
+                    lead_default: leadDefault,
+                    cob_default: cobDefault,
+                }),
             });
             if (!r.ok) { throw new Error('HTTP ' + r.status); }
             const data = await r.json();
@@ -921,11 +981,11 @@
             actualizarChartDesdeSliders(body);
         }
         if (e.target.matches('.lead-input')) {
-            body.querySelector('.lead-val').textContent = e.target.value;
+            body.querySelector('.lead-val').textContent = e.target.value + 'd';
             actualizarChartDesdeSliders(body);
         }
         if (e.target.matches('.cob-input')) {
-            body.querySelector('.cob-val').textContent = e.target.value;
+            body.querySelector('.cob-val').textContent = e.target.value + 'd';
             actualizarChartDesdeSliders(body);
         }
         if (e.target.matches('.cantidad-final')) {

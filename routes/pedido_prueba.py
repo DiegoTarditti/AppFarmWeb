@@ -35,6 +35,7 @@ from database import (
     get_db,
 )
 from services.pedido_estacional import (
+    LEAD_DIAS_PISO,
     MESES_ES,
     calcular_sugerido_estacional,
 )
@@ -159,6 +160,18 @@ def init_app(app):
             return jsonify({'error': 'lab_id requerido'}), 400
 
         min_u12m = max(0, float(payload.get('min_u12m') or 0))
+        # Defaults configurables desde la cabecera. Se aplican a productos
+        # SIN escenario propio (origen='auto'). Los productos con escenario
+        # propio o de droga mantienen sus valores.
+        try:
+            lead_default = max(LEAD_DIAS_PISO,
+                               min(180, int(payload.get('lead_default') or LEAD_DIAS_PISO)))
+        except (TypeError, ValueError):
+            lead_default = LEAD_DIAS_PISO
+        try:
+            cob_default = max(1, min(365, int(payload.get('cob_default') or 30)))
+        except (TypeError, ValueError):
+            cob_default = 30
         id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
 
         with get_db() as session:
@@ -190,6 +203,7 @@ def init_app(app):
                 est = calcular_sugerido_estacional(
                     session, p, u12m=u12m,
                     stock_actual=st['stock'], minimo=st['minimo'],
+                    lead_default=lead_default, cob_default=cob_default,
                 )
                 # Sugerido dia (REPOSICION)
                 sug_dia = _sugerido_dia_actual(
@@ -232,6 +246,8 @@ def init_app(app):
                 'total_dia': total_dia,
                 'total_prueba': total_prueba,
                 'delta_total': total_prueba - total_dia,
+                'lead_default': lead_default,
+                'cob_default': cob_default,
             })
 
     @app.route('/api/pedido-prueba/escenario-producto/<int:producto_id>',
@@ -249,7 +265,8 @@ def init_app(app):
             return jsonify({'error': 'Se esperan 12 indices'}), 400
         try:
             indices = [max(0.0, float(v)) for v in indices]
-            lead = max(0, min(180, int(payload.get('lead_time_dias', 0))))
+            lead = max(LEAD_DIAS_PISO,
+                       min(180, int(payload.get('lead_time_dias', LEAD_DIAS_PISO))))
             cob = max(1, min(365, int(payload.get('cobertura_dias', 30))))
         except (TypeError, ValueError):
             return jsonify({'error': 'parametros invalidos'}), 400

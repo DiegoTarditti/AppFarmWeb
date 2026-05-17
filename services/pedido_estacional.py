@@ -37,9 +37,10 @@ from database import (
 
 # Default por si no hay escenario ni para producto ni para droga.
 _DEFAULT_INDICES = [1.0] * 12
-_DEFAULT_LEAD_DIAS = 0
+_DEFAULT_LEAD_DIAS = 2  # piso operativo: ningun proveedor entrega instantaneo
 _DEFAULT_COBERTURA_DIAS = 30
 _ESCENARIO_NOMBRE = 'Generico'  # convencion v1: 1 solo escenario por droga/producto
+LEAD_DIAS_PISO = 2  # exportado para que los endpoints clipeen consistente
 
 
 MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -134,7 +135,8 @@ def mes_objetivo_default(lead_dias, hoy=None):
 
 
 def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
-                                 minimo=0, override_mes_obj=None, hoy=None):
+                                 minimo=0, override_mes_obj=None, hoy=None,
+                                 lead_default=None, cob_default=None):
     """Calculo principal. Devuelve dict con todo el desglose.
 
     Args:
@@ -158,13 +160,20 @@ def calcular_sugerido_estacional(session, producto, u12m, stock_actual,
     esc, origen = obtener_escenario_aplicable(session, droga_id, producto_id)
     if esc:
         indices = json.loads(esc.indices_json)
-        lead_dias = int(esc.lead_time_dias or 0)
+        # Clipear al piso operativo aun si la DB tiene un valor mas bajo
+        # (puede pasar con escenarios viejos guardados con lead=0).
+        lead_dias = max(LEAD_DIAS_PISO, int(esc.lead_time_dias or 0))
         cob_dias = int(esc.cobertura_dias or 30)
         escenario_nombre = esc.nombre
     else:
+        # Sin escenario: usar defaults pasados por el caller (cabecera del
+        # /pedido/prueba), o los de modulo si no se pasan.
         indices = list(_DEFAULT_INDICES)
-        lead_dias = _DEFAULT_LEAD_DIAS
-        cob_dias = _DEFAULT_COBERTURA_DIAS
+        lead_dias = max(LEAD_DIAS_PISO,
+                        int(lead_default) if lead_default is not None
+                        else _DEFAULT_LEAD_DIAS)
+        cob_dias = max(1, int(cob_default) if cob_default is not None
+                          else _DEFAULT_COBERTURA_DIAS)
         escenario_nombre = None
 
     # 2. Mes objetivo.
