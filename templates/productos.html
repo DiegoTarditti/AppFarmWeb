@@ -523,7 +523,12 @@ async function crearProducto() {
     filterProductos();
 }
 
-window.addEventListener('DOMContentLoaded', loadProductos);
+window.addEventListener('DOMContentLoaded', () => {
+    // Permite linkear desde otras pantallas con /productos?q=EAN
+    const qParam = new URLSearchParams(location.search).get('q');
+    if (qParam) document.getElementById('search').value = qParam;
+    loadProductos();
+});
 </script>
 
 {% include '_grafico_historico.html' %}

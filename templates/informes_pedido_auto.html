@@ -277,7 +277,23 @@
                                 {% for r in rows %}
                                 <tr class="hover:bg-black/[0.02]">
                                     <td class="px-3 py-2">
-                                        <p class="font-semibold text-[#1e1e1e]">{{ r.descripcion }}</p>
+                                        <div class="flex items-start gap-2 flex-wrap">
+                                            <p class="font-semibold text-[#1e1e1e]">{{ r.descripcion }}</p>
+                                            {% if r.flag %}
+                                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold border {{ r.flag.color_clases }}"
+                                                  title="{{ r.flag.nombre }}{% if r.flag.nota %} — {{ r.flag.nota }}{% endif %}{% if r.flag.vigente_hasta %} (vigente hasta {{ r.flag.vigente_hasta }}){% endif %}">
+                                                {{ r.flag.icono }} {{ r.flag.nombre }}
+                                            </span>
+                                            {% if r.flag.slug == 'REEMPLAZADO' and r.flag.ean_reemplazo %}
+                                            <a href="/productos?q={{ r.flag.ean_reemplazo }}"
+                                               target="_blank"
+                                               class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-violet-50 hover:bg-violet-100 text-violet-800 border border-violet-300"
+                                               title="EAN de reemplazo: {{ r.flag.ean_reemplazo }}">
+                                                ↗ Ver reemplazo
+                                            </a>
+                                            {% endif %}
+                                            {% endif %}
+                                        </div>
                                         {% if r.codigo_alfabeta %}
                                         <p class="text-[10px] text-[#888] font-mono">{{ r.codigo_alfabeta }}</p>
                                         {% endif %}
