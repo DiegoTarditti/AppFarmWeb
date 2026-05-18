@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ info.nombre or 'Producto no encontrado' }} — Estadísticas{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Prefijo cps- (producto-stats) */
+.cps-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 80px; }
+.cps-header { position: sticky; top: 0; z-index: 20;
+              background: var(--ds-bg); padding: 8px 0; border-bottom: 1px solid var(--ds-line);
+              display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.cps-back { width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--ds-surface); border: 1px solid var(--ds-line);
+            border-radius: 8px; color: var(--ds-text); font-size: 18px; text-decoration: none; }
+.cps-title { flex: 1; min-width: 0; }
+.cps-h1 { font-size: 15px; font-weight: 700; color: var(--ds-text); line-height: 1.2;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cps-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 1px;
+            font-family: ui-monospace, Consolas, monospace; }
+
+.cps-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+            border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.cps-card-title { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+                  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+.cps-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 560px) { .cps-kpis { grid-template-columns: repeat(5, 1fr); } }
+.cps-kpi { background: var(--ds-surface-2); border-radius: 10px; padding: 10px;
+           border: 1px solid var(--ds-line); }
+.cps-kpi-label { font-size: 10px; color: var(--ds-text-mute); text-transform: uppercase;
+                 letter-spacing: .06em; margin-bottom: 4px; }
+.cps-kpi-value { font-size: 22px; font-weight: 700; color: var(--ds-mint); line-height: 1; }
+
+.cps-top { display: flex; flex-direction: column; gap: 6px; }
+.cps-top-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+               background: var(--ds-surface-2); border-radius: 8px; border: 1px solid var(--ds-line);
+               text-decoration: none; color: var(--ds-text); }
+.cps-top-row:active { background: rgba(95,230,188,.08); }
+.cps-top-name { flex: 1; min-width: 0; font-size: 13px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cps-top-uds { font-size: 14px; font-weight: 700; color: var(--ds-mint);
+               font-family: ui-monospace, Consolas, monospace; }
+
+.cps-rango { padding: 6px 10px; background: var(--ds-surface-2); border-radius: 8px;
+             font-size: 11px; color: var(--ds-text-mute); margin-bottom: 12px;
+             display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.cps-rango-btns { display: flex; gap: 6px; }
+.cps-rango-btn { padding: 4px 10px; background: var(--ds-surface);
+                 border: 1px solid var(--ds-line); border-radius: 6px;
+                 color: var(--ds-text-mute); font-size: 11px; text-decoration: none; }
+.cps-rango-btn.active { background: var(--ds-mint); color: #0a3a2a;
+                        border-color: var(--ds-mint-deep); font-weight: 700; }
+
+.cps-chart-wrap { position: relative; height: 200px; }
+.cps-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 12px; }
+
+.cps-scan-link { display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+                 padding: 4px 10px; background: var(--ds-surface-2);
+                 border: 1px solid var(--ds-line); border-radius: 6px;
+                 color: var(--ds-text-soft); text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cps-screen">
+    <div class="cps-header">
+        <a href="javascript:history.back()" class="cps-back" title="Volver">←</a>
+        <a href="{{ url_for('consulta_stock') }}" class="cps-back" title="Home-móvil">🏠</a>
+        <div class="cps-title">
+            <div class="cps-h1">📦 {{ info.nombre or 'No encontrado' }}</div>
+            {% if info.encontrado and info.codigo_barra %}
+            <div class="cps-meta">EAN {{ info.codigo_barra }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not info.encontrado %}
+    <div class="cps-card"><div class="cps-empty">Producto no encontrado.</div></div>
+    {% else %}
+
+    <div class="cps-rango">
+        <span>📅 Últimos <b>{{ info.n_days }}</b> días</span>
+        <div class="cps-rango-btns">
+            <a href="?dias=30"  class="cps-rango-btn {% if info.n_days == 30 %}active{% endif %}">30d</a>
+            <a href="?dias=90"  class="cps-rango-btn {% if info.n_days == 90 %}active{% endif %}">90d</a>
+            <a href="?dias=180" class="cps-rango-btn {% if info.n_days == 180 %}active{% endif %}">180d</a>
+            <a href="?dias=365" class="cps-rango-btn {% if info.n_days == 365 %}active{% endif %}">1a</a>
+        </div>
+    </div>
+
+    {% if info.codigo_barra %}
+    <div class="cps-card" style="padding: 8px 14px;">
+        <a href="{{ url_for('consulta_producto_detalle', ean=info.codigo_barra) }}" class="cps-scan-link">
+            🔍 Ver stock e info del producto (scan)
+        </a>
+    </div>
+    {% endif %}
+
+    <div class="cps-card">
+        <div class="cps-card-title">Indicadores</div>
+        <div class="cps-kpis">
+            <div class="cps-kpi"><div class="cps-kpi-label">Unidades</div>
+                <div class="cps-kpi-value">{{ '%.0f' | format(info.kpis.unidades) }}</div></div>
+            <div class="cps-kpi"><div class="cps-kpi-label">Recetas</div>
+                <div class="cps-kpi-value">{{ info.kpis.ops }}</div></div>
+            <div class="cps-kpi"><div class="cps-kpi-label">Médicos</div>
+                <div class="cps-kpi-value">{{ info.kpis.medicos }}</div></div>
+            <div class="cps-kpi"><div class="cps-kpi-label">Pacientes</div>
+                <div class="cps-kpi-value">{{ info.kpis.pacientes }}</div></div>
+            <div class="cps-kpi"><div class="cps-kpi-label">Importe</div>
+                <div class="cps-kpi-value" style="font-size:16px;">$ {{ '%.0f' | format(info.kpis.importe) }}</div></div>
+        </div>
+    </div>
+
+    {% if info.top_medicos %}
+    <div class="cps-card">
+        <div class="cps-card-title">Top médicos prescriptores</div>
+        <div class="cps-top">
+            {% for m in info.top_medicos %}
+            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id, dias=info.n_days) }}"
+               class="cps-top-row">
+                <span class="cps-top-name">👨‍⚕️ {{ m.nombre }}</span>
+                <span class="cps-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if info.top_os %}
+    <div class="cps-card">
+        <div class="cps-card-title">Top obras sociales</div>
+        <div class="cps-top">
+            {% for o in info.top_os %}
+            <div class="cps-top-row">
+                <span class="cps-top-name">🏥 {{ o.nombre }}</span>
+                <span class="cps-top-uds">{{ '%.0f' | format(o.unidades) }}u</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if info.top_pacientes %}
+    <div class="cps-card">
+        <div class="cps-card-title">Top pacientes recurrentes</div>
+        <div class="cps-top">
+            {% for c in info.top_pacientes %}
+            <a href="{{ url_for('consulta_paciente_detalle', cliente_id=c.observer_id, dias=info.n_days) }}"
+               class="cps-top-row">
+                <span class="cps-top-name">🧑 {{ c.nombre }}</span>
+                <span class="cps-top-uds">{{ '%.0f' | format(c.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="cps-card">
+        <div class="cps-card-title">Evolución 12 meses</div>
+        {% if info.serie %}<div class="cps-chart-wrap"><canvas id="cps-chart"></canvas></div>
+        {% else %}<div class="cps-empty">Sin historial.</div>{% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{% if info.encontrado and info.serie %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const serie = {{ info.serie | tojson }};
+    const labels = serie.map(s => `${String(s.mes).padStart(2,'0')}/${String(s.anio).slice(2)}`);
+    new Chart(document.getElementById('cps-chart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Unidades', data: serie.map(s => s.unidades),
+            backgroundColor: 'rgba(95,230,188,.7)', borderColor: 'rgba(45,180,140,1)', borderWidth: 1 }]},
+        options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.1)' } },
+                      x: { ticks: { color: '#94a3b8' }, grid: { display: false } } } }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

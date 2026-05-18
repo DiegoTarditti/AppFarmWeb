@@ -138,6 +138,8 @@
             {% set drill_url = url_for('consulta_medico_detalle', medico_id=r.key, dias=info.n_days) %}
           {% elif info.group_by == 'droga' %}
             {% set drill_url = url_for('consulta_droga_detalle', droga_id=r.key, dias=info.n_days) %}
+          {% elif info.group_by == 'producto' %}
+            {% set drill_url = url_for('consulta_producto_stats', observer_id=r.key, dias=info.n_days) %}
           {% endif %}
         {% endif %}
         {% if drill_url %}

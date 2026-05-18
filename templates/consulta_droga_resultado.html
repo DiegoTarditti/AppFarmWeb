@@ -114,16 +114,17 @@
         </div>
     </div>
 
-    {# Top productos #}
+    {# Top productos (drill a /consulta-producto-stats/<id>) #}
     <div class="cdr-card">
         <div class="cdr-card-title">Top productos con esta droga</div>
         {% if info.top_productos %}
         <div class="cdr-top">
             {% for p in info.top_productos %}
-            <div class="cdr-top-row">
-                <span class="cdr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
+            <a href="{{ url_for('consulta_producto_stats', observer_id=p.observer_id, dias=info.n_days) }}"
+               class="cdr-top-row">
+                <span class="cdr-top-name" title="{{ p.nombre }}">📦 {{ p.nombre }}</span>
                 <span class="cdr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
-            </div>
+            </a>
             {% endfor %}
         </div>
         {% else %}
