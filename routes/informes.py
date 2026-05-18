@@ -15,7 +15,7 @@ from datetime import date
 
 from flask import jsonify, render_template, request
 from flask_login import login_required
-from sqlalchemy import distinct, func, or_
+from sqlalchemy import distinct, func
 
 import database
 from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock, ObsVentaMensual, Producto
@@ -823,10 +823,9 @@ def init_app(app):
         # Solo ejecutamos el cruce si algún filtro fue aplicado o es rango corto.
         # Sin filtros + 30d puede ser pesado, lo dejamos correr igual capeado a 200.
         with database.get_db() as session:
+            from helpers import ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta,
-                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
                 op = session.get(ObsProducto, producto_id)
@@ -1125,10 +1124,9 @@ def init_app(app):
 
         # Reusar la misma lógica de query (copia del handler de la pantalla).
         with database.get_db() as session:
+            from helpers import ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta,
-                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1299,10 +1297,9 @@ def init_app(app):
         drill_value = (request.args.get('drill_value') or '').strip()
 
         with database.get_db() as session:
+            from helpers import ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta,
-                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1411,6 +1408,7 @@ def init_app(app):
             ObsProducto,
             ObsVentaDetalle,
         )
+        from helpers import ventas_periodo_filter
 
         def _parse_d(s):
             try:
@@ -1433,10 +1431,8 @@ def init_app(app):
                     .join(ObsProducto,
                           ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
                     .filter(ObsProducto.nombre_droga_observer == droga_id,
-                            ObsVentaDetalle.fecha_estadistica >= desde,
-                            ObsVentaDetalle.fecha_estadistica <= hasta,
-                            ObsVentaDetalle.medico_observer.isnot(None),
-                            or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))))
+                            ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            ObsVentaDetalle.medico_observer.isnot(None)))
 
             # Top N médicos por cantidad total en el período.
             top_q = (base.with_entities(
