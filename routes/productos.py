@@ -100,10 +100,14 @@ def init_app(app):
 
     @app.route('/productos')
     def productos_list():
-        from database import ObsRubro
+        from database import ObsLaboratorio, ObsRubro
         with database.get_db() as session:
-            labs = [{'id': l.id, 'nombre': l.nombre}
-                    for l in session.query(Laboratorio).order_by(Laboratorio.nombre).all()]
+            # Labs del catalogo grande (ObServer): observer_id como valor del
+            # dropdown — alineado con el filtro de /api/productos.
+            labs = [{'id': l.observer_id, 'nombre': l.descripcion}
+                    for l in session.query(ObsLaboratorio)
+                                     .filter(ObsLaboratorio.fecha_baja.is_(None))
+                                     .order_by(ObsLaboratorio.descripcion).all()]
             rubros = [{'id': r.observer_id, 'nombre': r.descripcion}
                       for r in session.query(ObsRubro)
                                        .order_by(ObsRubro.descripcion).all()]
@@ -112,8 +116,27 @@ def init_app(app):
 
     @app.route('/api/productos')
     def api_productos():
+        """Lista el catalogo completo: ObsProducto LEFT JOIN Producto.
+
+        Base = obs_productos (espejo ObServer, ~122k filas activas). Cuando
+        existe master local lo overlay: precio_pvp, alts manuales, es_pack,
+        atributos. Cuando no existe, el row es read-only en la UI (boton
+        'Crear local' lo materializa).
+        """
+        from collections import defaultdict
+
         from sqlalchemy import func, or_
-        from sqlalchemy.orm import joinedload
+
+        from database import (
+            ErpStock,
+            ObsCodigoBarras,
+            ObsLaboratorio,
+            ObsProducto,
+            ObsStock,
+            ObsSubrubro,
+            ProductoAtributo,
+            ProductoCodigoBarra,
+        )
 
         q = (request.args.get('q') or '').strip()
         lab = (request.args.get('lab') or '').strip()
@@ -131,94 +154,160 @@ def init_app(app):
             offset = 0
 
         with database.get_db() as session:
-            base = session.query(Producto).options(joinedload(Producto.laboratorio))
+            base = (session.query(ObsProducto, Producto)
+                    .outerjoin(Producto,
+                               Producto.observer_id == ObsProducto.observer_id)
+                    .filter(ObsProducto.fecha_baja.is_(None)))
+
             if q:
                 from helpers import multi_token_filter
-                clausula = multi_token_filter(q,
-                    Producto.descripcion,
-                    Producto.codigo_barra)
+                clausula = multi_token_filter(q, ObsProducto.descripcion)
                 if clausula is not None:
-                    # También buscar en producto_codigos_barra (1-a-N) por
-                    # el primer token. Para simplicidad usamos un EXISTS subquery.
-                    from database import ProductoCodigoBarra
                     primer_token = q.split()[0] if q.split() else ''
                     if primer_token:
-                        sub = (session.query(ProductoCodigoBarra.producto_id)
-                               .filter(ProductoCodigoBarra.codigo_barra.ilike(f'%{primer_token}%'))
-                               .subquery())
-                        base = base.filter(or_(clausula, Producto.id.in_(sub)))
+                        # Match adicional por EAN: en obs_codigos_barras o en
+                        # producto_codigos_barra (alts manuales del master).
+                        sub_obs = (session.query(ObsCodigoBarras.producto_observer)
+                                   .filter(ObsCodigoBarras.codigo_barras.ilike(f'%{primer_token}%'))
+                                   .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                                   .subquery())
+                        sub_loc_obs = (session.query(Producto.observer_id)
+                                       .join(ProductoCodigoBarra,
+                                             ProductoCodigoBarra.producto_id == Producto.id)
+                                       .filter(ProductoCodigoBarra.codigo_barra.ilike(f'%{primer_token}%'))
+                                       .filter(Producto.observer_id.isnot(None))
+                                       .subquery())
+                        base = base.filter(or_(
+                            clausula,
+                            ObsProducto.observer_id.in_(sub_obs),
+                            ObsProducto.observer_id.in_(sub_loc_obs),
+                        ))
                     else:
                         base = base.filter(clausula)
+
             if lab == '__none__':
-                base = base.filter(Producto.laboratorio_id.is_(None))
+                base = base.filter(ObsProducto.laboratorio_observer.is_(None))
             elif lab:
                 try:
-                    base = base.filter(Producto.laboratorio_id == int(lab))
+                    base = base.filter(ObsProducto.laboratorio_observer == int(lab))
                 except ValueError:
                     pass
+
             if only_alt:
-                # Productos con al menos un EAN alternativo en la 1-a-N
-                # (además del principal). Antes era OR sobre alt1/2/3.
-                from database import ProductoCodigoBarra
-                sub = (session.query(ProductoCodigoBarra.producto_id)
-                       .filter(ProductoCodigoBarra.es_principal.is_(False))
-                       .subquery())
-                base = base.filter(Producto.id.in_(sub))
+                # Productos con >=2 EAN en obs_codigos_barras (principal + alts)
+                # o que tienen alts manuales en producto_codigos_barra.
+                sub_obs = (session.query(ObsCodigoBarras.producto_observer)
+                           .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                           .filter(ObsCodigoBarras.orden > 1)
+                           .subquery())
+                sub_loc = (session.query(Producto.observer_id)
+                           .join(ProductoCodigoBarra,
+                                 ProductoCodigoBarra.producto_id == Producto.id)
+                           .filter(ProductoCodigoBarra.es_principal.is_(False))
+                           .filter(Producto.observer_id.isnot(None))
+                           .subquery())
+                base = base.filter(or_(
+                    ObsProducto.observer_id.in_(sub_obs),
+                    ObsProducto.observer_id.in_(sub_loc),
+                ))
+
             if only_pack:
+                # es_pack es campo del master. Requiere que exista master.
                 base = base.filter(Producto.es_pack == 1)
-            # Filtro por rubro (vía obs_productos.subrubro_observer → obs_subrubros.rubro_observer).
+
             if rubro:
-                from database import ObsProducto, ObsSubrubro
                 try:
                     rubro_id = int(rubro)
                     sub_ids = (session.query(ObsSubrubro.observer_id)
                                .filter(ObsSubrubro.rubro_observer == rubro_id).subquery())
-                    obs_pids = (session.query(ObsProducto.observer_id)
-                                .filter(ObsProducto.subrubro_observer.in_(sub_ids)).subquery())
-                    base = base.filter(Producto.observer_id.in_(obs_pids))
+                    base = base.filter(ObsProducto.subrubro_observer.in_(sub_ids))
                 except (ValueError, TypeError):
                     pass
 
-            # Filtro por tipo de venta y control (vía obs_productos.id_tipo_venta_control)
             if venta_tipo:
-                from database import ObsProducto
                 if venta_tipo == 'libre':
                     tvc_vals = ['L']
                 elif venta_tipo == 'receta':
                     tvc_vals = ['R', 'A']
                 elif venta_tipo == 'controlado':
-                    tvc_vals = ['1','2','3','4','5','6','7','8']
+                    tvc_vals = ['1', '2', '3', '4', '5', '6', '7', '8']
                 else:
                     tvc_vals = []
                 if tvc_vals:
-                    sub = (session.query(ObsProducto.observer_id)
-                           .filter(ObsProducto.id_tipo_venta_control.in_(tvc_vals)).subquery())
-                    base = base.filter(Producto.observer_id.in_(sub))
+                    base = base.filter(ObsProducto.id_tipo_venta_control.in_(tvc_vals))
 
             total = base.count()
-            prods = base.order_by(Producto.descripcion).limit(limit).offset(offset).all()
+            rows = (base.order_by(ObsProducto.descripcion)
+                        .limit(limit).offset(offset).all())
 
-            # Resolver tvc + droga por producto en batch
-            from database import ObsProducto, ProductoAtributo
-            obs_ids = [p.observer_id for p in prods if p.observer_id]
-            tvc_map = {}
-            droga_map = {}
+            obs_ids = [obs.observer_id for obs, _ in rows]
+            local_ids = [loc.id for _, loc in rows if loc]
+
+            # EANs por obs_id: principal (orden=1) + alts (orden>1).
+            ean_principal_por_obs = {}
+            ean_alts_por_obs = defaultdict(list)
             if obs_ids:
-                rows = (session.query(ObsProducto.observer_id,
-                                       ObsProducto.id_tipo_venta_control,
-                                       ObsProducto.nombre_droga_observer)
-                        .filter(ObsProducto.observer_id.in_(obs_ids)).all())
-                for oid, tvc, droga in rows:
-                    tvc_map[oid] = tvc
-                    if droga:
-                        droga_map[oid] = droga
+                cb_rows = (session.query(ObsCodigoBarras.producto_observer,
+                                         ObsCodigoBarras.codigo_barras,
+                                         ObsCodigoBarras.orden)
+                           .filter(ObsCodigoBarras.producto_observer.in_(obs_ids))
+                           .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                           .order_by(ObsCodigoBarras.producto_observer,
+                                     ObsCodigoBarras.orden).all())
+                for oid, cb, orden in cb_rows:
+                    if oid not in ean_principal_por_obs:
+                        ean_principal_por_obs[oid] = cb
+                    else:
+                        ean_alts_por_obs[oid].append(cb)
 
-            # Atributos catalogados en batch
-            prod_ids = [p.id for p in prods]
+            # Alts del master (sobreescriben a obs_codigos_barras cuando hay master).
+            alts_master_por_prod = defaultdict(list)
+            if local_ids:
+                cb_loc = (session.query(ProductoCodigoBarra.producto_id,
+                                        ProductoCodigoBarra.codigo_barra)
+                          .filter(ProductoCodigoBarra.producto_id.in_(local_ids))
+                          .filter(ProductoCodigoBarra.es_principal.is_(False))
+                          .all())
+                for pid, cb in cb_loc:
+                    alts_master_por_prod[pid].append(cb)
+
+            # Labs ObServer (nombre por observer_id).
+            labs_obs = {}
+            lab_obs_ids = list({obs.laboratorio_observer for obs, _ in rows
+                                if obs.laboratorio_observer})
+            if lab_obs_ids:
+                rows_lo = (session.query(ObsLaboratorio.observer_id,
+                                          ObsLaboratorio.descripcion)
+                            .filter(ObsLaboratorio.observer_id.in_(lab_obs_ids)).all())
+                labs_obs = dict(rows_lo)
+
+            # Stock ObServer (sum por producto, todas las farmacias).
+            stock_obs_map = {}
+            if obs_ids:
+                rows_so = (session.query(ObsStock.producto_observer,
+                                          func.sum(ObsStock.stock_actual))
+                           .filter(ObsStock.producto_observer.in_(obs_ids))
+                           .group_by(ObsStock.producto_observer).all())
+                stock_obs_map = dict(rows_so)
+
+            # Stock ERP local: por codigo_barra (master o EAN principal de obs).
+            cb_para_erp = set()
+            for obs, loc in rows:
+                cb_principal = (loc.codigo_barra if loc else None) or \
+                               ean_principal_por_obs.get(obs.observer_id)
+                if cb_principal:
+                    cb_para_erp.add(cb_principal)
+            stock_erp_map = {}
+            if cb_para_erp:
+                rows_se = (session.query(ErpStock.codigo_barra, ErpStock.cantidad)
+                           .filter(ErpStock.codigo_barra.in_(list(cb_para_erp))).all())
+                stock_erp_map = dict(rows_se)
+
+            # Atributos del master.
             atributos_map = {}
-            if prod_ids:
+            if local_ids:
                 atrs = (session.query(ProductoAtributo)
-                        .filter(ProductoAtributo.producto_id.in_(prod_ids)).all())
+                        .filter(ProductoAtributo.producto_id.in_(local_ids)).all())
                 for a in atrs:
                     atributos_map[a.producto_id] = {
                         'monodroga': a.monodroga_display,
@@ -230,19 +319,23 @@ def init_app(app):
                         'confianza': a.confianza,
                     }
 
-            # Stock en batch: ERP local (por codigo_barra) + ObServer (por observer_id)
-            from database import ErpStock, ObsStock
-            stock_erp_map = {}
-            cb_list = [p.codigo_barra for p in prods if p.codigo_barra]
-            if cb_list:
-                rows = (session.query(ErpStock.codigo_barra, ErpStock.cantidad)
-                        .filter(ErpStock.codigo_barra.in_(cb_list)).all())
-                stock_erp_map = dict(rows)
-            stock_obs_map = {}
-            if obs_ids:
-                rows = (session.query(ObsStock.producto_observer, ObsStock.stock_actual)
-                        .filter(ObsStock.producto_observer.in_(obs_ids)).all())
-                stock_obs_map = dict(rows)
+            # Mapping local Laboratorio (para mostrar nombre del lab elegido en
+            # el dropdown de cambio de laboratorio en cada row del master).
+            local_labs_map = {}
+            if local_ids:
+                local_lab_ids = list({loc.laboratorio_id for _, loc in rows
+                                      if loc and loc.laboratorio_id})
+                if local_lab_ids:
+                    rows_ll = (session.query(Laboratorio.id, Laboratorio.nombre)
+                                .filter(Laboratorio.id.in_(local_lab_ids)).all())
+                    local_labs_map = dict(rows_ll)
+
+            tvc_map = {}
+            droga_map = {}
+            for obs, _ in rows:
+                tvc_map[obs.observer_id] = obs.id_tipo_venta_control
+                if obs.nombre_droga_observer:
+                    droga_map[obs.observer_id] = obs.nombre_droga_observer
 
             def _tvc_label(t):
                 if not t:
@@ -251,43 +344,127 @@ def init_app(app):
                     return 'Libre'
                 if t in ('R', 'A'):
                     return 'Receta'
-                if t in ('1','2','3','4','5','6','7','8'):
+                if t in ('1', '2', '3', '4', '5', '6', '7', '8'):
                     return f'Ctrl·{t}'
                 return t
 
-            # EANs alternativos vía 1-a-N en batch (alt1/2/3 ya no se exponen)
-            from database import ProductoCodigoBarra
-            alts_por_prod = {}
-            if prod_ids:
-                for pid, ean in (session.query(ProductoCodigoBarra.producto_id,
-                                                ProductoCodigoBarra.codigo_barra)
-                                  .filter(ProductoCodigoBarra.producto_id.in_(prod_ids))
-                                  .filter(ProductoCodigoBarra.es_principal.is_(False))
-                                  .all()):
-                    alts_por_prod.setdefault(pid, []).append(ean)
-            data = [
-                {
-                    'id': p.id,
-                    'codigo_barra': p.codigo_barra,
-                    'descripcion': p.descripcion or '',
-                    'alts': alts_por_prod.get(p.id, []),  # lista — antes alt1/2/3
-                    'precio_pvp': float(p.precio_pvp) if p.precio_pvp else None,
-                    'laboratorio_id': p.laboratorio_id or '',
-                    'laboratorio_nombre': p.laboratorio.nombre if p.laboratorio else '',
-                    'actualizado_en': p.actualizado_en.strftime('%d/%m/%Y') if p.actualizado_en else '',
-                    'ultima_compra': p.ultima_compra.strftime('%d/%m/%Y') if p.ultima_compra else '',
-                    'es_pack': p.es_pack or 0,
-                    'cantidad_reposicion_fija': p.cantidad_reposicion_fija,
-                    'tvc': tvc_map.get(p.observer_id, '') if p.observer_id else '',
-                    'tvc_label': _tvc_label(tvc_map.get(p.observer_id, '') if p.observer_id else ''),
-                    'droga_id': droga_map.get(p.observer_id) if p.observer_id else None,
-                    'stock_erp': stock_erp_map.get(p.codigo_barra),
-                    'stock_obs': stock_obs_map.get(p.observer_id) if p.observer_id else None,
-                    'atributos': atributos_map.get(p.id),
-                }
-                for p in prods
-            ]
+            data = []
+            for obs, loc in rows:
+                cb_principal = (loc.codigo_barra if loc else None) or \
+                               ean_principal_por_obs.get(obs.observer_id) or ''
+                alts = (alts_master_por_prod[loc.id] if loc
+                        else ean_alts_por_obs.get(obs.observer_id, []))
+                lab_nombre = ''
+                if loc and loc.laboratorio_id:
+                    lab_nombre = local_labs_map.get(loc.laboratorio_id, '')
+                if not lab_nombre and obs.laboratorio_observer:
+                    lab_nombre = labs_obs.get(obs.laboratorio_observer, '')
+                data.append({
+                    'id': loc.id if loc else None,
+                    'observer_id': obs.observer_id,
+                    'codigo_barra': cb_principal,
+                    'descripcion': (loc.descripcion if loc else obs.descripcion) or '',
+                    'alts': alts,
+                    'precio_pvp': float(loc.precio_pvp) if loc and loc.precio_pvp else None,
+                    'laboratorio_id': (loc.laboratorio_id if loc else None) or '',
+                    'laboratorio_observer': obs.laboratorio_observer,
+                    'laboratorio_nombre': lab_nombre,
+                    'actualizado_en': loc.actualizado_en.strftime('%d/%m/%Y')
+                                      if loc and loc.actualizado_en else '',
+                    'ultima_compra': loc.ultima_compra.strftime('%d/%m/%Y')
+                                     if loc and loc.ultima_compra else '',
+                    'es_pack': (loc.es_pack if loc else 0) or 0,
+                    'cantidad_reposicion_fija': loc.cantidad_reposicion_fija if loc else None,
+                    'tvc': obs.id_tipo_venta_control or '',
+                    'tvc_label': _tvc_label(obs.id_tipo_venta_control),
+                    'droga_id': obs.nombre_droga_observer,
+                    'stock_erp': stock_erp_map.get(cb_principal),
+                    'stock_obs': stock_obs_map.get(obs.observer_id),
+                    'atributos': atributos_map.get(loc.id) if loc else None,
+                    'tiene_master': loc is not None,
+                })
             return jsonify({'data': data, 'total': total, 'limit': limit, 'offset': offset})
+
+    @app.route('/producto/materializar/<int:observer_id>', methods=['POST'])
+    @login_required
+    def producto_materializar(observer_id):
+        """Crea un Producto master local a partir de un ObsProducto.
+
+        EAN principal: el de orden=1 en obs_codigos_barras. Si no hay EANs en
+        ObServer, se usa el observer_id como placeholder (mejor que fallar —
+        el usuario lo edita despues).
+
+        Laboratorio: matchea Laboratorio.observer_id == obs.laboratorio_observer.
+        Si no existe local, se intenta crear con el nombre de ObsLaboratorio.
+        """
+        from database import (
+            Laboratorio,
+            ObsCodigoBarras,
+            ObsLaboratorio,
+            ObsProducto,
+        )
+
+        with database.get_db() as session:
+            obs = session.get(ObsProducto, observer_id)
+            if not obs:
+                return jsonify({'ok': False,
+                                'error': f'observer_id {observer_id} no existe'}), 404
+
+            # Idempotente: si ya existe master, devolverlo.
+            existente = (session.query(Producto)
+                         .filter_by(observer_id=observer_id).first())
+            if existente:
+                return jsonify({'ok': True, 'id': existente.id,
+                                'msg': 'ya existia'})
+
+            # EAN principal desde obs_codigos_barras.
+            ean_row = (session.query(ObsCodigoBarras.codigo_barras)
+                       .filter_by(producto_observer=observer_id)
+                       .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                       .order_by(ObsCodigoBarras.orden)
+                       .first())
+            ean = ean_row[0] if ean_row else f'OBS-{observer_id}'
+
+            # Si por casualidad ese EAN ya esta tomado por otro producto local,
+            # bail con error claro en vez de violar UNIQUE.
+            colision = (session.query(Producto)
+                        .filter_by(codigo_barra=ean).first())
+            if colision:
+                return jsonify({
+                    'ok': False,
+                    'error': f'EAN {ean} ya esta asignado al producto master '
+                             f'#{colision.id}. Vinculalo desde /catalogacion.',
+                }), 409
+
+            # Resolver laboratorio local por observer_id (o crearlo si falta).
+            lab_id_local = None
+            if obs.laboratorio_observer:
+                lab = (session.query(Laboratorio)
+                       .filter_by(observer_id=obs.laboratorio_observer).first())
+                if not lab:
+                    obs_lab = session.get(ObsLaboratorio, obs.laboratorio_observer)
+                    if obs_lab:
+                        lab = Laboratorio(
+                            nombre=obs_lab.descripcion,
+                            observer_id=obs.laboratorio_observer,
+                            activo=True,
+                        )
+                        session.add(lab)
+                        session.flush()
+                if lab:
+                    lab_id_local = lab.id
+
+            prod = Producto(
+                codigo_barra=ean,
+                descripcion=obs.descripcion,
+                observer_id=observer_id,
+                laboratorio_id=lab_id_local,
+                codigo_alfabeta=obs.codigo_alfabeta,
+                fuente_creacion='materializar_obs',
+            )
+            session.add(prod)
+            session.commit()
+            return jsonify({'ok': True, 'id': prod.id})
 
     @app.route('/producto/<int:prod_id>/laboratorio', methods=['POST'])
     def producto_set_laboratorio(prod_id):

@@ -414,6 +414,14 @@ class DockerPanel(tk.Tk):
         tk.Label(left, text="SYNC AUTOMÁTICO", font=("Segoe UI", 8, "bold"),
                  bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
 
+        # Caption: el sync solo funciona dentro de la red de la farmacia
+        # (ObServer corre en la LAN, IP 192.168.x). Desde casa no se puede.
+        tk.Label(left,
+                 text="⚠ Solo desde la farmacia (LAN de ObServer)",
+                 font=("Segoe UI", 7, "italic"),
+                 bg=BG, fg="#a89060",
+                 wraplength=220, justify="left").pack(anchor="w", padx=4, pady=(0, 4))
+
         btn_sync_now = tk.Button(
             left, text="🔄  Sincronizar ahora",
             font=("Segoe UI", 9, "bold"),
