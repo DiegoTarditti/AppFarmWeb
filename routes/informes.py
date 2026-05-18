@@ -19,6 +19,16 @@ from sqlalchemy import distinct, func, or_
 
 import database
 from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock, ObsVentaMensual, Producto
+from services.pedido_estacional import obtener_flags_bulk
+
+# Mapeo color -> clases Tailwind para chips de flag (alineado con config_json de
+# TipoPedidoConfig categoria='flag': red/violet/amber/sky).
+_FLAG_COLOR_CLASSES = {
+    'red':    'bg-red-100 text-red-800 border-red-300',
+    'violet': 'bg-violet-100 text-violet-800 border-violet-300',
+    'amber':  'bg-amber-100 text-amber-800 border-amber-300',
+    'sky':    'bg-sky-100 text-sky-800 border-sky-300',
+}
 
 
 def _ventana_12m():
@@ -1682,6 +1692,47 @@ def init_app(app):
                     )
                     for r in rows:
                         r['ean'] = ean_by_obs.get(r['producto_id'])
+
+                # Flags por EAN + lab (Comportamientos excepcionales).
+                # Si DISCONTINUADO: sugerido baja a 0 (el usuario puede editarlo
+                # manualmente en el input igual). Resto (REEMPLAZADO, SIN_DESCUENTO,
+                # NOTA): solo chip informativo, sin tocar sugerido.
+                eans_para_flags = [r['ean'] for r in rows if r.get('ean')]
+                lab_local_id = local_lab.id if local_lab else None
+                flags_map = obtener_flags_bulk(
+                    session, eans_para_flags, lab_id=lab_local_id)
+                import json as _json
+                flag_lab = flags_map.get(('lab', lab_local_id)) if lab_local_id else None
+                for r in rows:
+                    par = flags_map.get(r['ean']) if r.get('ean') else None
+                    if not par and flag_lab:
+                        par = flag_lab  # fallback al flag del lab entero
+                    if not par:
+                        r['flag'] = None
+                        continue
+                    flag, cfg = par
+                    cfg_dict = {}
+                    if cfg and cfg.config_json:
+                        try:
+                            cfg_dict = _json.loads(cfg.config_json)
+                        except Exception:
+                            cfg_dict = {}
+                    color = cfg_dict.get('color', 'sky')
+                    r['flag'] = {
+                        'slug': flag.flag_slug,
+                        'nombre': cfg.nombre if cfg else flag.flag_slug,
+                        'icono': cfg_dict.get('icono', '🚩'),
+                        'color_clases': _FLAG_COLOR_CLASSES.get(
+                            color, _FLAG_COLOR_CLASSES['sky']),
+                        'efecto_armado': cfg_dict.get('efecto_armado', 'ninguno'),
+                        'nota': flag.nota or '',
+                        'ean_reemplazo': flag.ean_reemplazo or '',
+                        'vigente_hasta': flag.vigente_hasta.isoformat()
+                                         if flag.vigente_hasta else '',
+                    }
+                    if r['flag']['efecto_armado'] == 'badge_cero':
+                        r['sugerido_original'] = r.get('sugerido', 0)
+                        r['sugerido'] = 0
 
         stats = {
             'productos': len(rows),

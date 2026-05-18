@@ -414,6 +414,14 @@ class DockerPanel(tk.Tk):
         tk.Label(left, text="SYNC AUTOMÁTICO", font=("Segoe UI", 8, "bold"),
                  bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
 
+        # Caption: el sync solo funciona dentro de la red de la farmacia
+        # (ObServer corre en la LAN, IP 192.168.x). Desde casa no se puede.
+        tk.Label(left,
+                 text="⚠ Solo desde la farmacia (LAN de ObServer)",
+                 font=("Segoe UI", 7, "italic"),
+                 bg=BG, fg="#a89060",
+                 wraplength=220, justify="left").pack(anchor="w", padx=4, pady=(0, 4))
+
         btn_sync_now = tk.Button(
             left, text="🔄  Sincronizar ahora",
             font=("Segoe UI", 9, "bold"),
@@ -440,6 +448,25 @@ class DockerPanel(tk.Tk):
         btn_sync_cfg.bind("<Enter>", lambda e: btn_sync_cfg.config(bg=BORDER))
         btn_sync_cfg.bind("<Leave>", lambda e: btn_sync_cfg.config(bg=SURFACE))
         # === END AUTO-SYNC ===
+
+        # === BEGIN PUSH MASTER (laboratorios + productos local → Render) ===
+        tk.Label(left, text="CATÁLOGO MASTER", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg=FG_DIM).pack(anchor="w", pady=(12, 4))
+
+        btn_push_master = tk.Button(
+            left, text="📦  Push productos master a Render",
+            font=("Segoe UI", 9, "bold"),
+            bg="#3a2a1a", fg="#ffb87f",
+            activebackground="#4a3a2a", activeforeground="#ffb87f",
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=lambda: threading.Thread(
+                target=self._push_productos_master, daemon=True
+            ).start()
+        )
+        btn_push_master.pack(fill="x", pady=2)
+        btn_push_master.bind("<Enter>", lambda e: btn_push_master.config(bg="#5a3a2a"))
+        btn_push_master.bind("<Leave>", lambda e: btn_push_master.config(bg="#3a2a1a"))
+        # === END PUSH MASTER ===
 
         # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
         tk.Label(left, text="PANEL REMOTO", font=("Segoe UI", 8, "bold"),
@@ -1590,6 +1617,60 @@ class DockerPanel(tk.Tk):
             self.after(0, self._update_autosync_label)
             if not automatico:
                 self.after(0, self._cerrar_overlay_sync)
+
+    def _push_productos_master(self):
+        """Dispara el endpoint /admin/push-productos-master de la app local
+        (Docker), que internamente conecta a RENDER_DATABASE_URL y upsertea
+        laboratorios + productos. Reusa la config del auto-sync (url + token).
+        """
+        import datetime as _dt
+        cfg = self._load_auto_sync_config()
+        url = (cfg.get('url') or '').strip().rstrip('/')
+        if not url:
+            self.after(0, self._append,
+                       "  ⚠ push-master: falta configurar URL del auto-sync\n", "err")
+            return
+        endpoint = url + '/admin/push-productos-master'
+        token = (cfg.get('token') or '').strip()
+
+        ts = _dt.datetime.now().strftime('%H:%M')
+        self.after(0, self._append,
+                   f"\n📦 {ts} push productos master → {endpoint}\n", "dim")
+        self.after(0, self._mostrar_overlay_sync,
+                   'Pusheando productos master a Render',
+                   'Conectando…')
+        try:
+            headers = {'User-Agent': 'DockerPanel-PushMaster',
+                       'Content-Type': 'application/json'}
+            if token:
+                headers['X-Auto-Sync-Token'] = token
+            req = urllib.request.Request(endpoint, data=b'',
+                                         headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=600) as r:
+                body = r.read().decode('utf-8', errors='replace')
+            try:
+                result = json.loads(body)
+            except Exception:
+                result = {'ok': r.getcode() == 200, 'raw': body[:200]}
+            if result.get('ok'):
+                res = result.get('resultados', {})
+                resumen = ' · '.join(
+                    f"{k}:{v['filas']}"
+                    for k, v in res.items()
+                    if isinstance(v, dict) and 'filas' in v
+                )
+                total_ms = res.get('TOTAL_MS', '?')
+                self.after(0, self._append,
+                           f"  ✓ push-master OK — {resumen} ({total_ms} ms)\n", "ok")
+            else:
+                self.after(0, self._append,
+                           f"  ✗ push-master FALLÓ — {result.get('error', 'error desconocido')}\n",
+                           "err")
+        except (urllib.error.URLError, OSError, socket.timeout) as e:
+            self.after(0, self._append,
+                       f"  ✗ push-master conexión falló: {e}\n", "err")
+        finally:
+            self.after(0, self._cerrar_overlay_sync)
 
     def _config_autosync(self):
         """Diálogo para configurar el auto-sync: enabled, horarios, URL, token."""
