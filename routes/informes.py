@@ -1685,26 +1685,51 @@ def init_app(app):
                     })
                     obs_ids.append(r.pid)
 
+                # Bulk-load TODOS los EANs por producto: 1) master local
+                # (Producto.codigo_barra) + 2) catalogo ObServer (todos los
+                # obs_codigos_barras activos, principal y alts). Necesario para
+                # productos obs-only y para flagear por EAN alternativo.
+                eans_por_pid = {}   # producto_observer_id -> [ean,...]
                 if obs_ids:
                     ean_by_obs = dict(
                         session.query(Producto.observer_id, Producto.codigo_barra)
                         .filter(Producto.observer_id.in_(obs_ids)).all()
                     )
+                    from database import ObsCodigoBarras
+                    for pid, ean in (session.query(ObsCodigoBarras.producto_observer,
+                                                    ObsCodigoBarras.codigo_barras)
+                                     .filter(ObsCodigoBarras.producto_observer.in_(obs_ids))
+                                     .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                                     .all()):
+                        eans_por_pid.setdefault(pid, []).append(ean)
                     for r in rows:
-                        r['ean'] = ean_by_obs.get(r['producto_id'])
+                        # EAN principal "vitrina": master si existe, sino el 1ro de obs
+                        master_ean = ean_by_obs.get(r['producto_id'])
+                        obs_eans = eans_por_pid.get(r['producto_id'], [])
+                        r['ean'] = master_ean or (obs_eans[0] if obs_eans else None)
+                        # Lista completa para lookup de flag (cualquier EAN cuenta)
+                        eans_completos = set(obs_eans)
+                        if master_ean:
+                            eans_completos.add(master_ean)
+                        r['_eans_para_flag'] = list(eans_completos)
 
                 # Flags por EAN + lab (Comportamientos excepcionales).
                 # Si DISCONTINUADO: sugerido baja a 0 (el usuario puede editarlo
                 # manualmente en el input igual). Resto (REEMPLAZADO, SIN_DESCUENTO,
                 # NOTA): solo chip informativo, sin tocar sugerido.
-                eans_para_flags = [r['ean'] for r in rows if r.get('ean')]
+                eans_para_flags = list({e for r in rows
+                                        for e in r.get('_eans_para_flag', [])})
                 lab_local_id = local_lab.id if local_lab else None
                 flags_map = obtener_flags_bulk(
                     session, eans_para_flags, lab_id=lab_local_id)
                 import json as _json
                 flag_lab = flags_map.get(('lab', lab_local_id)) if lab_local_id else None
                 for r in rows:
-                    par = flags_map.get(r['ean']) if r.get('ean') else None
+                    par = None
+                    for e in r.get('_eans_para_flag', []):
+                        par = flags_map.get(e)
+                        if par:
+                            break
                     if not par and flag_lab:
                         par = flag_lab  # fallback al flag del lab entero
                     if not par:

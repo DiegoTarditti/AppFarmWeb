@@ -101,6 +101,16 @@
 .pf-extra.visible { display: block; }
 .pf-empty { padding: 40px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
 
+/* Flash messages */
+.pf-flash {
+    padding: 10px 14px; border-radius: var(--ds-r-sm);
+    font-size: 12px; margin-bottom: 8px;
+    border: 1px solid; font-weight: 500;
+}
+.pf-flash-success, .pf-flash-message { background: rgba(95,230,188,.10); border-color: rgba(95,230,188,.4); color: var(--ds-mint); }
+.pf-flash-error   { background: rgba(239,68,68,.10);  border-color: rgba(239,68,68,.4);  color: #fca5a5; }
+.pf-flash-warning { background: rgba(245,158,11,.10); border-color: rgba(245,158,11,.4); color: #fbbf24; }
+
 /* Autocomplete por nombre */
 .pf-ac-wrap { position: relative; }
 .pf-ac-results {
@@ -158,6 +168,17 @@
     <h1>🏷 Flags de productos</h1>
     <span class="text-[11px] text-[color:var(--ds-text-mute)]">{{ flags | length }} asignación{{ 'es' if flags | length != 1 else '' }}</span>
 </div>
+
+{# Flash messages (success/error de asignar/eliminar) #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="padding: 8px 24px 0 24px;">
+        {% for category, msg in messages %}
+        <div class="pf-flash pf-flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
 
 <div class="pf-content">
     {# ── Tabla de flags asignados ── #}
@@ -258,7 +279,7 @@
                 <h3>➕ Asignar flag</h3>
             </div>
             <form method="post" action="{{ url_for('producto_flags_asignar') }}"
-                  style="padding: 16px 18px;">
+                  style="padding: 16px 18px;" onsubmit="return validarForm(event);">
 
                 <div class="pf-field">
                     <label class="pf-label">Tipo de flag</label>
@@ -336,6 +357,26 @@
 <script>
 const FLAG_CONFIGS = {{ flag_configs | tojson }};
 
+function validarForm(e) {
+    const flag = document.getElementById('sel-flag').value.trim();
+    const ean = document.getElementById('inp-ean').value.trim();
+    const labSel = document.querySelector('select[name="laboratorio_id"]');
+    const lab = labSel ? labSel.value.trim() : '';
+    if (!flag) {
+        e.preventDefault();
+        alert('Elegí un tipo de flag.');
+        document.getElementById('sel-flag').focus();
+        return false;
+    }
+    if (!ean && !lab) {
+        e.preventDefault();
+        alert('Elegí un producto (buscar por nombre) o un laboratorio completo.');
+        document.getElementById('inp-search').focus();
+        return false;
+    }
+    return true;
+}
+
 function actualizarExtras() {
     const sel = document.getElementById('sel-flag');
     const opt = sel.options[sel.selectedIndex];
@@ -386,7 +427,7 @@ function renderResults(items, tokens) {
         <div class="pf-ac-item" data-idx="${i}">
             <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
             <div class="ac-meta">
-                <code>${escapeHtml(p.codigo_barra || '—')}</code>
+                <code>${escapeHtml(p.codigo_barra)}</code>
                 ${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}
             </div>
         </div>
@@ -426,7 +467,7 @@ inpSearch.addEventListener('input', () => {
     _acDebounce = setTimeout(async () => {
         const seq = ++_acSeq;
         try {
-            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&limit=15`,
+            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&con_ean=1&limit=15`,
                                   {credentials: 'same-origin'});
             if (seq !== _acSeq) return;  // descartar respuesta vieja
             if (!r.ok) { acResults.classList.remove('open'); return; }
