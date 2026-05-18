@@ -34,7 +34,9 @@
 .cor-rows { display: flex; flex-direction: column; gap: 6px; }
 .cor-row { background: var(--ds-surface); border: 1px solid var(--ds-line);
            border-radius: 10px; padding: 10px 12px;
-           display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+           display: flex; align-items: center; justify-content: space-between; gap: 10px;
+           text-decoration: none; color: var(--ds-text); }
+.cor-row:active { background: rgba(95,230,188,.08); }
 .cor-row-l { flex: 1; min-width: 0; }
 .cor-row-rank { font-size: 10px; color: var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace; }
 .cor-row-label { font-size: 13px; color: var(--ds-text); font-weight: 600;
@@ -108,7 +110,7 @@
         </div>
         <div class="cor-kpi">
             <div class="cor-kpi-val">{{ info.kpis.clientes }}</div>
-            <div class="cor-kpi-lbl">Clientes</div>
+            <div class="cor-kpi-lbl">Pacientes</div>
         </div>
         <div class="cor-kpi">
             <div class="cor-kpi-val">{{ info.kpis.medicos }}</div>
@@ -129,6 +131,28 @@
     {% if info.rows %}
     <div class="cor-rows">
         {% for r in info.rows %}
+        {# Determinar URL drill según group_by. Mes no es clickeable. #}
+        {% set drill_url = none %}
+        {% if r.key %}
+          {% if info.group_by == 'medico' %}
+            {% set drill_url = url_for('consulta_medico_detalle', medico_id=r.key, dias=info.n_days) %}
+          {% elif info.group_by == 'droga' %}
+            {% set drill_url = url_for('consulta_droga_detalle', droga_id=r.key, dias=info.n_days) %}
+          {% endif %}
+        {% endif %}
+        {% if drill_url %}
+        <a href="{{ drill_url }}" class="cor-row">
+            <div class="cor-row-l">
+                <div class="cor-row-rank">#{{ loop.index }}</div>
+                <div class="cor-row-label">{{ r.label }}</div>
+            </div>
+            <div class="cor-row-r">
+                <div class="cor-row-uds">{{ '%.0f' | format(r.unidades) }} u</div>
+                <div class="cor-row-imp">${{ '%.0f' | format(r.importe) }}</div>
+                <div class="cor-row-ops">{{ r.ops }} ops</div>
+            </div>
+        </a>
+        {% else %}
         <div class="cor-row">
             <div class="cor-row-l">
                 <div class="cor-row-rank">#{{ loop.index }}</div>
@@ -140,6 +164,7 @@
                 <div class="cor-row-ops">{{ r.ops }} ops</div>
             </div>
         </div>
+        {% endif %}
         {% endfor %}
     </div>
     <div class="cor-foot">
