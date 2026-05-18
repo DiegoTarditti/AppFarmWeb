@@ -896,6 +896,68 @@ def init_app(app):
             for it in items:
                 it['pendientes_count'] = pendientes_por_obs.get(it['pid'], 0)
 
+            # ── Flags (Comportamientos excepcionales) por EAN ──
+            # Cualquier EAN del producto (principal o alt en obs_codigos_barras)
+            # cuenta para encontrar el flag. Adjunta it['flag'] con dict {slug,
+            # nombre, icono, color_clases, nota, ean_reemplazo} o None.
+            if obs_ids_items:
+                from database import ProductoFlag, TipoPedidoConfig
+                eans_completos_por_pid = {}
+                for ecb in (session.query(ObsCodigoBarras.producto_observer,
+                                          ObsCodigoBarras.codigo_barras)
+                            .filter(ObsCodigoBarras.producto_observer.in_(obs_ids_items))
+                            .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                            .all()):
+                    eans_completos_por_pid.setdefault(ecb.producto_observer, []).append(ecb.codigo_barras)
+                todos_eans_flag = list({e for lst in eans_completos_por_pid.values() for e in lst})
+                flag_por_ean = {}
+                cfg_por_slug = {}
+                if todos_eans_flag:
+                    pf_rows = (session.query(ProductoFlag)
+                               .filter(ProductoFlag.ean.in_(todos_eans_flag)).all())
+                    for f in pf_rows:
+                        flag_por_ean[f.ean] = f
+                    if pf_rows:
+                        slugs = list({f.flag_slug for f in pf_rows})
+                        cfg_por_slug = {c.slug: c for c in (
+                            session.query(TipoPedidoConfig)
+                            .filter(TipoPedidoConfig.slug.in_(slugs),
+                                    TipoPedidoConfig.categoria == 'flag').all())}
+                _flag_color_clases = {
+                    'red':    'bg-red-100 text-red-800 border-red-300',
+                    'violet': 'bg-violet-100 text-violet-800 border-violet-300',
+                    'amber':  'bg-amber-100 text-amber-800 border-amber-300',
+                    'sky':    'bg-sky-100 text-sky-800 border-sky-300',
+                }
+                import json as _json_flag
+                for it in items:
+                    it['flag'] = None
+                    for ean in eans_completos_por_pid.get(it['pid'], []):
+                        fobj = flag_por_ean.get(ean)
+                        if not fobj:
+                            continue
+                        cfg = cfg_por_slug.get(fobj.flag_slug)
+                        cfg_d = {}
+                        if cfg and cfg.config_json:
+                            try:
+                                cfg_d = _json_flag.loads(cfg.config_json)
+                            except Exception:
+                                cfg_d = {}
+                        color = cfg_d.get('color', 'sky')
+                        it['flag'] = {
+                            'slug': fobj.flag_slug,
+                            'nombre': cfg.nombre if cfg else fobj.flag_slug,
+                            'icono': cfg_d.get('icono', '🚩'),
+                            'color_clases': _flag_color_clases.get(
+                                color, _flag_color_clases['sky']),
+                            'nota': fobj.nota or '',
+                            'ean_reemplazo': fobj.ean_reemplazo or '',
+                        }
+                        break
+            else:
+                for it in items:
+                    it['flag'] = None
+
             cierre = proximo_cierre(session, prov_id) if prov_id else None
 
             # Pendientes de pedidos anteriores a esta drog: pedida > recibida.

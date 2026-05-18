@@ -551,6 +551,12 @@
                         <span class="text-[9px] bg-rose-100 text-rose-700 border border-rose-300 px-1 py-0.5 rounded mr-1 font-bold" title="Marcado como 'No pedir'. Reactivá desde la columna Acciones.">⛔ NO PEDIR</span>
                         {% endif %}
                         {{ it.desc }}
+                        {% if it.flag %}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ml-1 align-middle {{ it.flag.color_clases }}"
+                              title="{{ it.flag.nombre }}{% if it.flag.nota %} — {{ it.flag.nota }}{% endif %}{% if it.flag.ean_reemplazo %} (reemplazo: {{ it.flag.ean_reemplazo }}){% endif %}">
+                            {{ it.flag.icono }} {{ it.flag.nombre }}
+                        </span>
+                        {% endif %}
                     </td>
                     <td class="px-3 py-1 text-[#666]">
                         {{ it.lab_nombre }}
