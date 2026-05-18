@@ -142,18 +142,14 @@
         {% if info.top_productos %}
         <div class="cmr-top">
             {% for p in info.top_productos %}
-            {% if p.codigo_barra %}
-            <a href="{{ url_for('consulta_producto_detalle', ean=p.codigo_barra) }}"
+            {# Drill a /consulta-producto-stats con filtro ?medico_id=N — mantiene
+               el contexto: stats del producto FILTRADAS por este médico. La
+               pantalla muestra banner "Filtrado por: <nombre>" y permite quitar. #}
+            <a href="{{ url_for('consulta_producto_stats', observer_id=p.observer_id, medico_id=info.medico_id, dias=info.n_days) }}"
                class="cmr-top-row" style="text-decoration:none;">
                 <span class="cmr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
                 <span class="cmr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
             </a>
-            {% else %}
-            <div class="cmr-top-row" title="Sin código de barras vinculado">
-                <span class="cmr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
-                <span class="cmr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
-            </div>
-            {% endif %}
             {% endfor %}
         </div>
         {% else %}

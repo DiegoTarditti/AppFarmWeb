@@ -14,7 +14,11 @@ from flask_login import login_required
 from sqlalchemy import desc, func
 
 import database
-from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
+from helpers import (
+    excluir_no_medicamentos_ovd,
+    medicos_observer_ids_compartidos,
+    ventas_periodo_filter,
+)
 
 
 def init_app(app):
@@ -26,10 +30,17 @@ def init_app(app):
             n_days = max(7, min(365, int(request.args.get('dias', 90))))
         except (ValueError, TypeError):
             n_days = 90
+        # Filtro opcional: si se pasa ?medico_id=N, restringe stats a ese médico
+        # (usa medicos_observer_ids_compartidos para agrupar variantes por matrícula).
+        try:
+            medico_id = int(request.args.get('medico_id') or 0) or None
+        except (ValueError, TypeError):
+            medico_id = None
         hasta = date.today()
         desde = hasta - timedelta(days=n_days)
 
-        info = {'observer_id': observer_id, 'encontrado': False, 'n_days': n_days}
+        info = {'observer_id': observer_id, 'encontrado': False, 'n_days': n_days,
+                'filtro_medico_id': medico_id, 'filtro_medico_nombre': None}
         with database.get_db() as session:
             prod = session.get(database.ObsProducto, observer_id)
             if not prod:
@@ -55,9 +66,20 @@ def init_app(app):
                 'codigo_barra': cb,
             })
 
+            # Si vino ?medico_id=N, resolver IDs compartidos (variantes por matrícula)
+            # y mostrar el nombre del médico para el banner contextual.
+            medico_ids_filter = None
+            if medico_id:
+                med = session.get(database.ObsMedico, medico_id)
+                if med:
+                    info['filtro_medico_nombre'] = med.nombre or f'#{medico_id}'
+                    medico_ids_filter = medicos_observer_ids_compartidos(session, medico_id)
+
             base = (session.query(database.ObsVentaDetalle)
                     .filter(database.ObsVentaDetalle.producto_observer == observer_id,
                             ventas_periodo_filter(database.ObsVentaDetalle, desde, hasta)))
+            if medico_ids_filter:
+                base = base.filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids_filter))
 
             # KPIs
             kpi_row = base.with_entities(
@@ -137,17 +159,19 @@ def init_app(app):
                 'unidades':    float(r[1] or 0),
             } for r in cli_rows]
 
-            # Serie 12 meses
+            # Serie 12 meses (también respeta filtro de médico si vino).
             desde_serie = hasta - timedelta(days=365)
             ym = (func.extract('year', database.ObsVentaDetalle.fecha_estadistica) * 100
                   + func.extract('month', database.ObsVentaDetalle.fecha_estadistica))
-            serie_rows = (session.query(
+            serie_q = (session.query(
                               ym.label('ym'),
                               func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'))
                           .filter(database.ObsVentaDetalle.producto_observer == observer_id,
                                   database.ObsVentaDetalle.fecha_estadistica >= desde_serie,
-                                  database.ObsVentaDetalle.fecha_estadistica <= hasta)
-                          .group_by('ym').order_by('ym').all())
+                                  database.ObsVentaDetalle.fecha_estadistica <= hasta))
+            if medico_ids_filter:
+                serie_q = serie_q.filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids_filter))
+            serie_rows = serie_q.group_by('ym').order_by('ym').all()
             info['serie'] = [{
                 'anio':     int(r[0] // 100),
                 'mes':      int(r[0] % 100),
