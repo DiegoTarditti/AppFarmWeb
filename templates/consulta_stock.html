@@ -207,13 +207,16 @@ input[type=radio]:checked + .cs-tipo-btn {
                 <span id="btn-label">Consultar stock</span>
             </button>
 
-            {# Atajos a otras consultas mobile — médico, lab, y producto al
+            {# Atajos a otras consultas mobile — médico, lab, OS y producto al
                final (uso menos frecuente, escaneo de troquel). #}
             <a href="{{ url_for('consulta_medico') }}" class="cs-cta cs-cta--alt">
                 👨‍⚕️ Consultar médico
             </a>
             <a href="{{ url_for('consulta_lab') }}" class="cs-cta cs-cta--alt">
                 🧪 Consultar laboratorio
+            </a>
+            <a href="{{ url_for('consulta_os') }}" class="cs-cta cs-cta--alt">
+                🏥 Consultar obra social
             </a>
             <a href="{{ url_for('consulta_producto') }}" class="cs-cta cs-cta--alt">
                 🔍 Consultar producto
