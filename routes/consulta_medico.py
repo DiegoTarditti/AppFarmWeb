@@ -70,10 +70,14 @@ def init_app(app):
             #   (devoluciones), NC (notas de crédito). El signo de `cantidad`
             #   ya lleva el descuento (devoluciones vienen con cantidad < 0),
             #   asi el sum() neto refleja ventas reales menos devueltas.
+            # - Excluimos no-medicamentos (sellado de recetas, costo cupón).
+            from helpers import excluir_no_medicamentos_ovd
             base = (session.query(database.ObsVentaDetalle)
                     .filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids),
                             database.ObsVentaDetalle.fecha_estadistica >= desde,
-                            database.ObsVentaDetalle.fecha_estadistica <= hasta))
+                            database.ObsVentaDetalle.fecha_estadistica <= hasta,
+                            excluir_no_medicamentos_ovd(database.ObsVentaDetalle,
+                                                        database.ObsProducto, session)))
 
             kpi_row = base.with_entities(
                 func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
@@ -157,7 +161,9 @@ def init_app(app):
                               func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'))
                           .filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids),
                                   database.ObsVentaDetalle.fecha_estadistica >= desde_serie,
-                                  database.ObsVentaDetalle.fecha_estadistica <= hasta)
+                                  database.ObsVentaDetalle.fecha_estadistica <= hasta,
+                                  excluir_no_medicamentos_ovd(database.ObsVentaDetalle,
+                                                              database.ObsProducto, session))
                           .group_by('ym')
                           .order_by('ym').all())
             info['serie'] = [{

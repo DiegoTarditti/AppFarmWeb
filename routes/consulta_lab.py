@@ -80,12 +80,14 @@ def init_app(app):
                 info['sin_bridge'] = True
                 return render_template('consulta_lab_resultado.html', info=info)
 
-            # Productos del lab en Observer.
+            # Productos del lab en Observer (excluyendo no-medicamentos).
+            from helpers import filtro_solo_medicamentos
             base = (session.query(database.ObsVentaDetalle)
                     .join(database.ObsProducto,
                           database.ObsProducto.observer_id == database.ObsVentaDetalle.producto_observer)
                     .filter(database.ObsProducto.laboratorio_observer == obs_lab_id,
                             ventas_periodo_filter(database.ObsVentaDetalle, desde, hasta)))
+            base = filtro_solo_medicamentos(base, database.ObsProducto)
 
             kpi_row = base.with_entities(
                 func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
@@ -165,13 +167,14 @@ def init_app(app):
             desde_serie = hasta - timedelta(days=365)
             ym = (func.extract('year', database.ObsVentaDetalle.fecha_estadistica) * 100
                   + func.extract('month', database.ObsVentaDetalle.fecha_estadistica))
-            serie_rows = (session.query(ym.label('ym'),
+            serie_q = (session.query(ym.label('ym'),
                                        func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'))
                           .join(database.ObsProducto,
                                 database.ObsProducto.observer_id == database.ObsVentaDetalle.producto_observer)
                           .filter(database.ObsProducto.laboratorio_observer == obs_lab_id,
-                                  ventas_periodo_filter(database.ObsVentaDetalle, desde_serie, hasta))
-                          .group_by('ym').order_by('ym').all())
+                                  ventas_periodo_filter(database.ObsVentaDetalle, desde_serie, hasta)))
+            serie_rows = filtro_solo_medicamentos(serie_q, database.ObsProducto)\
+                          .group_by('ym').order_by('ym').all()
             info['serie'] = [{
                 'anio': int(r[0] // 100), 'mes': int(r[0] % 100),
                 'unidades': float(r[1] or 0),

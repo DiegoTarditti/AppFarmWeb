@@ -467,7 +467,7 @@ def init_app(app):
             ).group_by(ObsVentaMensual.producto_observer).subquery())
 
             # Ventas ayer y última semana por producto.
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             hoy_d = _date.today()
             _ayer = hoy_d - _td(days=1)
             _semana = hoy_d - _td(days=7)
@@ -476,7 +476,8 @@ def init_app(app):
                 ObsVentaDetalle.fecha_estadistica,
                 func.sum(ObsVentaDetalle.cantidad).label('cant'),
             ).filter(
-                ventas_periodo_filter(ObsVentaDetalle, _semana, hoy_d)
+                ventas_periodo_filter(ObsVentaDetalle, _semana, hoy_d),
+                excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session),
              ).group_by(ObsVentaDetalle.producto_observer,
                         ObsVentaDetalle.fecha_estadistica).all()
             v24h_rows = {}

@@ -823,9 +823,10 @@ def init_app(app):
         # Solo ejecutamos el cruce si algún filtro fue aplicado o es rango corto.
         # Sin filtros + 30d puede ser pesado, lo dejamos correr igual capeado a 200.
         with database.get_db() as session:
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
                 op = session.get(ObsProducto, producto_id)
@@ -1124,9 +1125,10 @@ def init_app(app):
 
         # Reusar la misma lógica de query (copia del handler de la pantalla).
         with database.get_db() as session:
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1297,9 +1299,10 @@ def init_app(app):
         drill_value = (request.args.get('drill_value') or '').strip()
 
         with database.get_db() as session:
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1425,6 +1428,7 @@ def init_app(app):
         top_n = max(1, min(request.args.get('top', default=5, type=int), 15))
 
         with database.get_db() as session:
+            from helpers import excluir_no_medicamentos_ovd
             anio = _func.extract('year', ObsVentaDetalle.fecha_estadistica)
             mes = _func.extract('month', ObsVentaDetalle.fecha_estadistica)
             base = (session.query(ObsVentaDetalle)
@@ -1432,6 +1436,7 @@ def init_app(app):
                           ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
                     .filter(ObsProducto.nombre_droga_observer == droga_id,
                             ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session),
                             ObsVentaDetalle.medico_observer.isnot(None)))
 
             # Top N médicos por cantidad total en el período.

@@ -132,7 +132,7 @@ NO_MEDICAMENTO_PATTERNS = (
 def filtro_solo_medicamentos(query, ObsProducto):
     """Aplica NOT LIKE para excluir items no-medicamento de una query SQLAlchemy.
 
-    Uso:
+    Uso (cuando la query YA tiene join con ObsProducto):
         from helpers import filtro_solo_medicamentos
         base_q = filtro_solo_medicamentos(base_q, ObsProducto)
     """
@@ -140,6 +140,35 @@ def filtro_solo_medicamentos(query, ObsProducto):
     for pat in NO_MEDICAMENTO_PATTERNS:
         query = query.filter(not_(ObsProducto.descripcion.ilike(pat)))
     return query
+
+
+def excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session):
+    """Devuelve un filtro SQLAlchemy para queries sobre ObsVentaDetalle que
+    excluye filas cuyo producto es 'no-medicamento' (sellado de recetas,
+    costo receta/cupón, etc.) — items que NO son ventas de medicamentos
+    sino servicios administrativos de la farmacia.
+
+    Usa una subquery — NO requiere joinear ObsProducto en la query principal.
+    Aplicable en CUALQUIER estadística de ventas que sume cantidad/importe.
+
+    Uso típico:
+        from helpers import excluir_no_medicamentos_ovd
+        base = (session.query(ObsVentaDetalle)
+                .filter(
+                    ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                    excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session),
+                    # ... otros filtros propios
+                ))
+
+    Convención del proyecto: SIEMPRE excluir estos items al calcular
+    "ventas". Solo se incluyen en informes de servicios o auditoría
+    contable (donde el dato del cobro del cupón sí cuenta).
+    """
+    from sqlalchemy import not_, or_
+    no_med_ids = session.query(ObsProducto.observer_id).filter(
+        or_(*[ObsProducto.descripcion.ilike(pat) for pat in NO_MEDICAMENTO_PATTERNS])
+    )
+    return not_(ObsVentaDetalle.producto_observer.in_(no_med_ids))
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(CONVERTER_DIR, exist_ok=True)
