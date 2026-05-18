@@ -11,22 +11,35 @@
     body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-    /* === Panel gráfico (scrollea junto con el resto) === */
-    /* El sticky se desactivó: --chart-h era inestable y producía dos bugs
-       (thead "flotante" y thead invisible detrás del panel). El usuario
-       puede colapsar/expandir el panel con el botón si quiere más espacio
-       para la tabla. El thead sí queda sticky al tope del scroll-wrapper. */
+    /* === Panel gráfico sticky + thead sticky (alturas fijas) === */
+    /* Ambos quedan pegados al tope cuando scrolleás. La altura del panel es
+       FIJA (no medida con JS) para que el offset del thead sea predecible.
+       Si el chart no llega a esa altura, sobra espacio; si la pasa, queda
+       oculto detrás del scroll. */
     #panel-grafico {
-        transition: max-height 0.18s ease-out; z-index: 5;
+        position: sticky; top: 0; z-index: 30;
         background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
         border-bottom: 1px solid var(--ds-line);
+        max-height: 300px; overflow: hidden;
+        transition: max-height 0.18s ease-out;
     }
+    #panel-grafico.colapsado { max-height: 44px; overflow: hidden; padding-top: 6px; padding-bottom: 6px; }
     #panel-grafico.colapsado #grafico-body { display: none; }
-    #panel-grafico.colapsado { padding-top: 6px; padding-bottom: 6px; }
-    table.tabla-armar thead { position: sticky; top: 0; z-index: 20; }
+    /* Thead sticky pegado al borde inferior del panel.
+       300px chart activo · 44px colapsado · 60px sin seleccion. */
+    table.tabla-armar thead { position: sticky; top: 300px; z-index: 20; }
+    .scroll-wrapper:has(#panel-grafico.colapsado) table.tabla-armar thead { top: 44px; }
+    /* Cuando ningún producto está seleccionado, el panel muestra el placeholder
+       de 1 línea — bajamos su altura para no ocupar espacio innecesario. */
+    #panel-grafico:not(.chart-active) { max-height: 60px; }
+    .scroll-wrapper:has(#panel-grafico:not(.chart-active)) table.tabla-armar thead { top: 60px; }
+
     @media (max-width: 1280px) {
+        #panel-grafico { max-height: 220px; }
+        table.tabla-armar thead { top: 220px; }
+        .scroll-wrapper:has(#panel-grafico.colapsado) table.tabla-armar thead { top: 44px; }
         #dual-grafico-panel .chart-canvas-wrap,
-        #dual-grafico-panel > div > div > div > div.relative { height: 180px !important; }
+        #dual-grafico-panel > div > div > div > div.relative { height: 140px !important; }
     }
     #dual-grafico-panel > .flex.items-center.justify-between { display: none; }
     #dual-grafico-panel { background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; margin: 0; }
@@ -67,13 +80,13 @@
     /* Toggle buttons (filtro Drog: / Libres a:) */
     .toggle-drog {
         display: inline-flex; align-items: center; justify-content: center;
-        padding: 4px 12px; border-radius: var(--ds-r-sm);
-        font-size: 11px; font-weight: 600; line-height: 1.4;
+        padding: 2px 8px; border-radius: var(--ds-r-sm);
+        font-size: 10.5px; font-weight: 600; line-height: 1.3;
         border: 1px solid var(--ds-line-2);
         background: rgba(0,0,0,.2);
         color: var(--ds-text-mute);
         cursor: pointer; user-select: none;
-        transition: all .15s; min-width: 56px;
+        transition: all .15s; min-width: 44px;
     }
     .toggle-drog input[type="checkbox"] {
         position: absolute; opacity: 0; pointer-events: none;
@@ -110,16 +123,16 @@
     .ar-filter-bar {
         background: rgba(95,230,188,.05);
         border-bottom: 1px solid var(--ds-line-2);
-        padding: 8px 24px;
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 5px 16px;
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     }
     .ar-filter-bar input[type="text"], .ar-filter-bar select {
         background: var(--ds-surface);
         border: 1px solid var(--ds-line-2);
         color: var(--ds-text);
         border-radius: 4px;
-        padding: 5px 10px;
-        font-size: 13px;
+        padding: 3px 8px;
+        font-size: 12px;
         font-family: inherit;
     }
     .ar-filter-bar input[type="text"]:focus, .ar-filter-bar select:focus {
@@ -127,8 +140,8 @@
         box-shadow: 0 0 0 2px rgba(95,230,188,.15);
     }
     .ar-filter-bar input[type="text"]::placeholder { color: var(--ds-text-mute); }
-    .ar-filter-bar label { color: var(--ds-text-soft); }
-    .ar-filter-bar .filt-count, .ar-filter-bar .sug-count { color: var(--ds-text-mute); font-size: 11px; }
+    .ar-filter-bar label { color: var(--ds-text-soft); font-size: 11px; }
+    .ar-filter-bar .filt-count, .ar-filter-bar .sug-count { color: var(--ds-text-mute); font-size: 10.5px; }
 
     /* === Panel gráfico header === */
     .grafico-header {
@@ -152,8 +165,13 @@
         background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
         border: 1px solid var(--ds-line);
         border-radius: var(--ds-r-lg);
-        overflow: hidden;
+        /* NO overflow: hidden — rompe position:sticky del thead (lo encierra
+           dentro del wrap, que no scrollea, y el thead deja de pegarse). */
     }
+    /* Border-radius solo en los th de las puntas para mantener visual sin
+       overflow:hidden en ningún ancestro del thead. */
+    .tabla-armar thead th:first-child { border-top-left-radius: var(--ds-r-lg); }
+    .tabla-armar thead th:last-child  { border-top-right-radius: var(--ds-r-lg); }
     .tabla-armar { width: 100%; font-size: 13px; border-collapse: collapse; }
     .tabla-armar thead {
         background: rgba(0,0,0,.25) !important;
@@ -396,14 +414,14 @@
 <div class="ar-filter-bar">
     {# Col 1: Filtrar producto + Filtrar lab stacked #}
     <div class="flex flex-col gap-1">
-        <input type="text" id="filtro-prod" placeholder="Filtrar producto (tokenizado)…" style="width: 240px;">
-        <input type="text" id="filtro-lab" placeholder="Filtrar lab…" style="width: 240px;">
+        <input type="text" id="filtro-prod" placeholder="Producto…" style="width: 180px;" title="Filtro tokenizado por producto">
+        <input type="text" id="filtro-lab" placeholder="Lab…" style="width: 180px;">
     </div>
     {# Col 2: Filtrar rubro arriba + Filtrar droga abajo #}
     <div class="flex flex-col gap-1">
         {% if rubros_disponibles %}
         {# Filtro de rubro server-side: recarga la página con ?rubros=X. #}
-        <select id="filtro-rubro" onchange="cambiarRubro(this.value)" style="width: 240px;">
+        <select id="filtro-rubro" onchange="cambiarRubro(this.value)" style="width: 180px;">
             <option value="all" {% if not rubros_seleccionados %}selected{% endif %}>Todos los rubros</option>
             {% for r in rubros_disponibles %}
             <option value="{{ r.id }}"
@@ -413,7 +431,7 @@
             {% endfor %}
         </select>
         {% endif %}
-        <input type="text" id="filtro-droga" placeholder="Filtrar droga (monodroga)…" style="width: 240px;">
+        <input type="text" id="filtro-droga" placeholder="Droga…" style="width: 180px;" title="Filtrar por monodroga">
     </div>
     {% if prov %}
     {# En modo single-drog, "otra drog" filtra los labs que NO cubre esta drog
@@ -448,7 +466,7 @@
             <button type="button"
                     onclick="asignarLibresA({{ drog_id }}, '{{ drog_nombre_full[drog_id] | e }}', '{{ sig }}')"
                     class="font-bold rounded text-center"
-                    style="font-size: 11px; padding: 4px 12px; min-width: 56px;
+                    style="font-size: 10.5px; padding: 2px 8px; min-width: 44px;
                            background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);
                            color: #fff; border: 1px solid var(--ds-orange-deep);
                            cursor: pointer; transition: all .15s;"
@@ -477,8 +495,8 @@
     <button type="button" id="btn-orden-sug" onclick="toggleOrdenSug()"
             title="Mover los productos con sugerencia 'subir mín.' arriba"
             class="font-semibold"
-            style="font-size: 10px; padding: 3px 10px; border-radius: 4px; background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3); color: var(--ds-danger); cursor: pointer;">
-        ▲ Urgentes arriba
+            style="font-size: 10px; padding: 2px 8px; border-radius: 4px; background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.3); color: var(--ds-danger); cursor: pointer;">
+        ▲ Urgentes
     </button>
 
     <div class="relative ml-auto">
@@ -793,6 +811,9 @@ function seleccionarProducto(row) {
         r.classList.remove('ring-2', 'ring-emerald-500', 'ring-inset'));
     row.classList.add('ring-2', 'ring-emerald-500', 'ring-inset');
     _selectedPid = row.dataset.pid;
+    // Marca el panel como activo para que CSS le aplique altura completa.
+    const panel = document.getElementById('panel-grafico');
+    if (panel) panel.classList.add('chart-active');
     const titulo = document.getElementById('panel-chart-titulo');
     if (titulo) titulo.textContent = row.dataset.nombre;
     cargarGraficoDual(_selectedPid, row.dataset.nombre);

@@ -57,10 +57,12 @@ def init_app(app):
             return None
         return redirect(url_for('compras_dia'))
 
-    # Rol 'rendicion': solo accede a /devoluciones/* y /rend.
-    _RENDICION_PATHS_OK = ('/devoluciones/', '/static/')
+    # Rol 'rendicion' / 'auditor': solo acceden a /rend-recetas/* y /rend.
+    # Mantenemos /devoluciones/* en la lista por compat (rutas viejas que
+    # podrían quedar bookmarkeadas).
+    _RENDICION_PATHS_OK = ('/rend-recetas/', '/devoluciones/', '/static/')
     _RENDICION_PATHS_OK_EXACT = {
-        '/devoluciones', '/rend',
+        '/rend-recetas', '/devoluciones', '/rend',
         '/login', '/logout', '/cambiar-password', '/health',
     }
 
@@ -76,6 +78,22 @@ def init_app(app):
         if any(p.startswith(pref) for pref in _RENDICION_PATHS_OK):
             return None
         return redirect(url_for('devoluciones_buscar'))
+
+    # Rol 'auditor': mismo scope que rendicion (solo /devoluciones/*),
+    # pero ve TODAS las devoluciones (no solo las suyas) y agrega la
+    # segunda etapa del chequeo.
+    @app.before_request
+    def _restrict_rol_auditor():
+        if not current_user.is_authenticated:
+            return None
+        if getattr(current_user, 'rol', None) != 'auditor':
+            return None
+        p = request.path or '/'
+        if p in _RENDICION_PATHS_OK_EXACT:
+            return None
+        if any(p.startswith(pref) for pref in _RENDICION_PATHS_OK):
+            return None
+        return redirect(url_for('devoluciones_por_vendedor'))
 
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
@@ -103,6 +121,8 @@ def init_app(app):
                 return redirect(request.args.get('next') or url_for('compras_dia'))
             if user.rol == 'rendicion':
                 return redirect(request.args.get('next') or url_for('devoluciones_buscar'))
+            if user.rol == 'auditor':
+                return redirect(request.args.get('next') or url_for('devoluciones_por_vendedor'))
             return redirect(request.args.get('next') or url_for('index'))
         return render_template('login.html')
 

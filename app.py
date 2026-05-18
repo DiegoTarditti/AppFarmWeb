@@ -81,6 +81,18 @@ def abs_filter(value):
     return abs(value)
 
 
+@app.template_filter('fromjson')
+def fromjson_filter(value):
+    """Parsea string JSON a objeto Python. Devuelve None si vacío o inválido."""
+    if not value:
+        return None
+    try:
+        import json as _json
+        return _json.loads(value)
+    except (ValueError, TypeError):
+        return None
+
+
 @app.template_filter('arg_currency')
 def arg_currency(value):
     """Formatea un número como moneda argentina: 1234567.89 → 1.234.567,89"""

@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+{% set _rol = rol_actual %}
+{% if _rol == 'rendicion' %}
+  {% set _titulo = 'Mis rendiciones' %}
+{% else %}
+  {% set _titulo = 'Lotes de rendición' %}
+{% endif %}
+{% block title %}{{ _titulo }}{% endblock %}
+{% block main %}
+<div class="max-w-6xl mx-auto p-4 space-y-4">
+  <div class="flex items-center justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="text-2xl font-bold">{{ _titulo }}</h1>
+      <p class="text-sm text-gray-600">
+        {% if _rol == 'rendicion' %}Las que tenés abiertas + las cerradas.{% else %}Todas las rendiciones del sistema.{% endif %}
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <button type="button" onclick="document.getElementById('modal-nuevo').classList.remove('hidden')"
+              class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">
+        + Nueva rendición
+      </button>
+      <a href="{{ url_for('devoluciones_list') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">← Recetas</a>
+    </div>
+  </div>
+
+  {% if items %}
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="bg-gray-800 text-yellow-400">
+          <th class="px-3 py-2 text-left">Nro</th>
+          <th class="px-3 py-2 text-left">Estado</th>
+          <th class="px-3 py-2 text-left">Período</th>
+          <th class="px-3 py-2 text-left">Etiqueta</th>
+          {% if _rol != 'rendicion' %}
+          <th class="px-3 py-2 text-left">Vendedor</th>
+          {% endif %}
+          <th class="px-3 py-2 text-right">Recetas</th>
+          <th class="px-3 py-2 text-right">Auditadas</th>
+          <th class="px-3 py-2 text-center">Entregada</th>
+          <th class="px-3 py-2 text-right">Días s/ act.</th>
+          <th class="px-3 py-2 w-32"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for it in items %}
+        {% set lote = it.lote %}
+        {% set urg = it.dias_sin_actividad if lote.estado == 'abierta' else 0 %}
+        <tr class="hover:bg-gray-50 {% if urg >= 14 %}bg-red-50{% elif urg >= 7 %}bg-yellow-50{% endif %} {% if lote.estado == 'cerrada' %}opacity-60{% endif %}">
+          <td class="px-3 py-2 font-mono font-bold">
+            <a href="{{ url_for('devoluciones_buscar', lote_id=lote.id) }}"
+               class="text-blue-700 hover:underline">{{ lote.nro }}</a>
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {% if lote.estado == 'abierta' %}
+            <span class="px-2 py-0.5 rounded bg-yellow-100 text-yellow-800 font-semibold">ABIERTA</span>
+            {% else %}
+            <span class="px-2 py-0.5 rounded bg-green-100 text-green-800 font-semibold">CERRADA</span>
+            {% if lote.cerrado_en %}
+            <div class="text-[10px] text-gray-500 mt-0.5">{{ lote.cerrado_en.strftime('%d/%m/%y') }} · {{ lote.cerrado_por or '' }}</div>
+            {% endif %}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs whitespace-nowrap">
+            {% if lote.periodo_desde or lote.periodo_hasta %}
+              {{ lote.periodo_desde.strftime('%d/%m') if lote.periodo_desde else '?' }}
+              →
+              {{ lote.periodo_hasta.strftime('%d/%m') if lote.periodo_hasta else '?' }}
+            {% else %}<span class="text-gray-400">—</span>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">{{ lote.etiqueta or '—' }}</td>
+          {% if _rol != 'rendicion' %}
+          <td class="px-3 py-2 text-xs">{{ lote.vendedor_nombre or '—' }}</td>
+          {% endif %}
+          <td class="px-3 py-2 text-right font-mono">{{ it.n_recetas }}</td>
+          <td class="px-3 py-2 text-right font-mono">
+            {% if it.n_recetas %}
+            <span class="{% if it.n_auditadas == it.n_recetas %}text-green-700 font-bold{% else %}text-gray-600{% endif %}">
+              {{ it.n_auditadas }}/{{ it.n_recetas }}
+            </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-center">
+            {% if _rol in ('auditor', 'admin', 'dev') %}
+              <form method="post" action="{{ url_for('rendicion_lote_toggle_entregada', id=lote.id) }}" class="inline"
+                    onsubmit="return confirm('{% if lote.entregada %}¿Confirmás que la rendición #{{ lote.nro }} NO fue entregada? Esto va a quitar la marca de entrega.{% else %}¿Confirmás que entregaste físicamente la rendición #{{ lote.nro }}?{% if lote.estado == 'abierta' %} El lote también se va a CERRAR automáticamente.{% endif %}{% endif %}');">
+                <button type="submit" title="{% if lote.entregada %}Desmarcar entrega{% else %}Marcar como entregada{% endif %}"
+                        class="text-base {% if lote.entregada %}text-green-700{% else %}text-gray-300 hover:text-gray-500{% endif %}">
+                  {% if lote.entregada %}☑{% else %}☐{% endif %}
+                </button>
+              </form>
+              {% if lote.entregada and lote.entregada_en %}
+              <div class="text-[10px] text-green-700 mt-0.5">
+                {{ lote.entregada_en.strftime('%d/%m') }} · {{ lote.entregada_por or '' }}
+              </div>
+              {% endif %}
+            {% else %}
+              {# Para rol rendicion: readonly #}
+              <span class="text-base {% if lote.entregada %}text-green-700{% else %}text-gray-300{% endif %}">
+                {% if lote.entregada %}☑{% else %}☐{% endif %}
+              </span>
+              {% if lote.entregada and lote.entregada_en %}
+              <div class="text-[10px] text-green-700">{{ lote.entregada_en.strftime('%d/%m') }}</div>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right text-xs
+                     {% if urg >= 14 %}text-red-700 font-bold{% elif urg >= 7 %}text-yellow-700 font-bold{% else %}text-gray-500{% endif %}">
+            {{ it.dias_sin_actividad }}d
+          </td>
+          <td class="px-3 py-2 text-right whitespace-nowrap">
+            {% if lote.estado == 'abierta' %}
+            {% if _rol == 'auditor' %}
+            {# Auditor: lleva a la vista plana filtrada por la rendición —
+               desde ahí audita inline cada receta. #}
+            <a href="{{ url_for('devoluciones_list', presentacion=lote.nro) }}"
+               class="text-xs bg-purple-100 hover:bg-purple-200 text-purple-800 px-2 py-1 rounded font-semibold">🔍 Auditar</a>
+            {% else %}
+            <a href="{{ url_for('devoluciones_buscar', lote_id=lote.id) }}"
+               class="text-xs bg-blue-100 hover:bg-blue-200 text-blue-800 px-2 py-1 rounded font-semibold">Abrir</a>
+            {% endif %}
+            <a href="{{ url_for('rendicion_lote_recibo_pdf', id=lote.id) }}"
+               class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 px-2 py-1 rounded font-semibold ml-1"
+               title="PDF imprimible con espacio firma">📄 PDF</a>
+            <form method="post" action="{{ url_for('rendicion_lote_cerrar', id=lote.id) }}"
+                  onsubmit="return confirm('¿Cerrar rendición #{{ lote.nro }}? Si hay pendientes/sin auditar te va a bloquear.')" class="inline">
+              <button type="submit" class="text-xs text-gray-500 hover:text-gray-700 ml-1">cerrar</button>
+            </form>
+            {% if it.n_recetas == 0 and _rol in ('auditor', 'admin', 'dev') %}
+            <form method="post" action="{{ url_for('rendicion_lote_eliminar', id=lote.id) }}" class="inline"
+                  onsubmit="return confirm('¿Eliminar el lote #{{ lote.nro }} (vacío)?')">
+              <button type="submit" class="text-xs text-red-500 hover:text-red-700 ml-1" title="Eliminar lote vacío">✕</button>
+            </form>
+            {% endif %}
+            {% else %}
+            {# Lote cerrado: solo Ver/PDF, no Abrir (no se modifica). #}
+            <a href="{{ url_for('devoluciones_list', presentacion=lote.nro) }}"
+               class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded font-semibold">Ver</a>
+            <a href="{{ url_for('rendicion_lote_recibo_pdf', id=lote.id) }}"
+               class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 px-2 py-1 rounded font-semibold ml-1">📄 PDF</a>
+            {% if _rol in ('admin', 'dev') %}
+            <form method="post" action="{{ url_for('rendicion_lote_reabrir', id=lote.id) }}" class="inline">
+              <button type="submit" class="text-xs text-gray-500 hover:text-gray-700 ml-1">reabrir</button>
+            </form>
+            {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+    <p class="text-gray-500 text-sm">Sin rendiciones todavía. Creá la primera con el botón de arriba.</p>
+  </div>
+  {% endif %}
+
+  {# Modal nueva rendición #}
+  <div id="modal-nuevo" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+    <form method="post" action="{{ url_for('rendicion_lote_crear') }}"
+          class="bg-white rounded-lg p-5 max-w-md w-full mx-4">
+      <h3 class="font-semibold mb-3">Nueva rendición</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs uppercase text-gray-500 mb-1">Nro</label>
+          <input name="nro" required autofocus type="number" min="1" placeholder="Ej: 35227"
+                 class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs uppercase text-gray-500 mb-1">Período desde</label>
+            <input name="periodo_desde" type="date"
+                   class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label class="block text-xs uppercase text-gray-500 mb-1">Período hasta</label>
+            <input name="periodo_hasta" type="date"
+                   class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs uppercase text-gray-500 mb-1">Etiqueta (opcional)</label>
+          <input name="etiqueta" placeholder="Ej: Mayo 1ra quincena"
+                 class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-4">
+        <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"
+                class="px-3 py-1.5 rounded border border-gray-300 text-sm">Cancelar</button>
+        <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-4 py-1.5 rounded text-sm font-semibold">
+          Crear y abrir
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

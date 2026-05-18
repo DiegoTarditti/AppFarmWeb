@@ -22,6 +22,7 @@ _AR_TZ = timezone(timedelta(hours=-3))
 def now_ar():
     """Hora actual en Argentina (UTC-3), sin tzinfo para SQLAlchemy DateTime."""
     return datetime.now(_AR_TZ).replace(tzinfo=None)
+from sqlalchemy import event
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 Base = declarative_base()
@@ -1460,16 +1461,108 @@ class MotivoDevolucion(Base):
     nombre = Column(String(150), nullable=False, unique=True)
     activo = Column(Boolean, nullable=False, default=True)
     creado_en = Column(DateTime, default=now_ar)
+    # Restringe qué rol puede usar este motivo. 'rendicion' = motivo de la
+    # 1ra etapa (operador de mostrador), 'auditor' = 2da etapa (revisión),
+    # 'ambos' = visible para los dos. Default 'ambos' para compat con datos viejos.
+    uso_rol = Column(String(20), nullable=False, default='ambos')
 
 
-class DestinoDevolucion(Base):
-    """A quién/qué área se le devuelve (vendedor original, cobranzas,
-    auditoría, etc.). ABM desde la app."""
-    __tablename__ = 'destino_devolucion'
+class RendicionLote(Base):
+    """Lote de rendición: agrupador real (con su propia identidad) de las
+    devoluciones/checks de recetas que se presentan juntas a una o varias OS.
+
+    Reemplaza el concepto de "nro_presentacion" como string libre en
+    DevolucionReceta por una entidad con FK. RendicionLote.nro es el ÚNICO
+    source of truth — DevolucionReceta.nro_presentacion sigue existiendo
+    como cache desnormalizado pero se sincroniza vía event-listener cada
+    vez que se cambia RendicionLote.nro (ver `_sync_nro_presentacion` abajo).
+    """
+    __tablename__ = 'rendicion_lote'
     id = Column(Integer, primary_key=True)
-    nombre = Column(String(150), nullable=False, unique=True)
-    activo = Column(Boolean, nullable=False, default=True)
+    nro = Column(String(50), nullable=False, index=True)
+    # Vendedor "dueño" de la rendición (UUID de ObServer + nombre cacheado).
+    vendedor_observer_id = Column(String(36), nullable=True, index=True)
+    vendedor_nombre = Column(String(100), nullable=True)
+    # Período declarado por el operador (puede no coincidir con
+    # fecha_operacion de cada receta). Útil cuando el lote cierra un quincenal
+    # y arrastra unas recetas viejas o nuevas.
+    periodo_desde = Column(Date, nullable=True)
+    periodo_hasta = Column(Date, nullable=True)
+    # Etiqueta libre del operador ("Mayo 1ra quincena", "Bonarea junio", etc.).
+    etiqueta = Column(String(200), nullable=True)
+    # abierta | cerrada (la cerrada queda inmutable salvo que un admin la reabra).
+    estado = Column(String(20), nullable=False, default='abierta', index=True)
     creado_en = Column(DateTime, default=now_ar)
+    creado_por = Column(String(100), nullable=True)
+    cerrado_en = Column(DateTime, nullable=True)
+    cerrado_por = Column(String(100), nullable=True)
+    # Estado físico: ¿el lote fue entregado a la OS / canal correspondiente?
+    # Lo marca el auditor (o admin) cuando confirma que el batch ya se mandó.
+    entregada = Column(Boolean, nullable=False, default=False, index=True)
+    entregada_en = Column(DateTime, nullable=True)
+    entregada_por = Column(String(100), nullable=True)
+    __table_args__ = (
+        UniqueConstraint('nro', 'vendedor_observer_id',
+                         name='uq_rendicion_lote_nro_vendedor'),
+    )
+
+
+@event.listens_for(RendicionLote.nro, 'set', propagate=True)
+def _sync_nro_presentacion(lote, new_value, old_value, initiator):
+    """Si cambia RendicionLote.nro, propagar a todas las DevolucionReceta
+    asociadas (mantener cache desnormalizado en sync). Skip si es la primera
+    asignación (old_value es symbol NO_VALUE) o si no cambia el valor."""
+    from sqlalchemy.orm.attributes import NO_VALUE
+    if old_value is NO_VALUE or old_value == new_value or lote.id is None:
+        return
+    from sqlalchemy import inspect
+    sess = inspect(lote).session
+    if sess is None:
+        return
+    sess.query(DevolucionReceta).filter(
+        DevolucionReceta.rendicion_lote_id == lote.id
+    ).update({DevolucionReceta.nro_presentacion: new_value},
+             synchronize_session=False)
+
+
+class VendedorBookmark(Base):
+    """Bookmark por vendedor: guarda la última operación procesada en alguna
+    rendición. Sirve para auto-rellenar el filtro 'desde' en el form de
+    búsqueda y evitar que el operador re-procese recetas que ya pasaron por
+    un lote anterior.
+
+    Se actualiza al guardar devoluciones en /rend-recetas/guardar.
+    """
+    __tablename__ = 'vendedor_bookmark'
+    id = Column(Integer, primary_key=True)
+    vendedor_observer_id = Column(String(36), nullable=False, unique=True, index=True)
+    vendedor_nombre = Column(String(100), nullable=True)
+    ultima_op_id = Column(Integer, nullable=True)
+    ultima_fecha_op = Column(DateTime, nullable=True)
+    ultimo_lote_id = Column(Integer, ForeignKey('rendicion_lote.id'), nullable=True)
+    actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
+
+
+class RolFiltroObraSocial(Base):
+    """Filtra qué obras sociales puede VER un rol al buscar/listar recetas.
+    Si hay registros para un rol, esas OS quedan OCULTAS para los usuarios
+    de ese rol (lista negra). Caso típico: rol=rendicion no debe ver PAMI
+    ni AMTAE porque las maneja otro circuito.
+
+    En el futuro puede haber overrides por usuario individual (otra tabla),
+    pero MVP es solo por rol.
+    """
+    __tablename__ = 'rol_filtro_obra_social'
+    id = Column(Integer, primary_key=True)
+    rol = Column(String(20), nullable=False, index=True)
+    obra_social_observer_id = Column(Integer, nullable=False)
+    # Nombre cacheado para mostrar en ABM sin tener que joinear cada vez.
+    nombre_cached = Column(String(200), nullable=False, default='')
+    creado_en = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        UniqueConstraint('rol', 'obra_social_observer_id',
+                         name='uq_rol_filtro_os'),
+    )
 
 
 class DevolucionReceta(Base):
@@ -1479,6 +1572,10 @@ class DevolucionReceta(Base):
     __tablename__ = 'devolucion_receta'
     id = Column(Integer, primary_key=True)
     nro_presentacion = Column(String(50), nullable=True, index=True)
+    # FK al lote de rendición (modelo nuevo 2026-05-18). Mantenemos
+    # nro_presentacion también para no romper queries viejas; en rendiciones
+    # nuevas ambos quedan sincronizados.
+    rendicion_lote_id = Column(Integer, ForeignKey('rendicion_lote.id'), nullable=True, index=True)
     # Vendedor (Observer)
     vendedor_observer_id = Column(String(36), nullable=True)   # UUID DW.OperadoresVenta
     vendedor_nombre = Column(String(100), nullable=True)
@@ -1490,13 +1587,25 @@ class DevolucionReceta(Base):
     importe_a_cargo_os = Column(DECIMAL(12, 2), nullable=True)
     # Devolución
     motivo_id = Column(Integer, ForeignKey('motivo_devolucion.id'), nullable=True)
-    destino_id = Column(Integer, ForeignKey('destino_devolucion.id'), nullable=True)  # legacy
+    # destino_id legacy borrado 2026-05-18 — DestinoDevolucion eliminado del sistema.
     # Destino = vendedor de ObServer (a quién se devuelve la receta para corregir)
     destino_vendedor_observer_id = Column(String(36), nullable=True)
     destino_vendedor_nombre = Column(String(100), nullable=True)
     observaciones = Column(Text, nullable=True)
+    # Etapa 1 — operador rendicion (mostrador). Notas exclusivas del operador
+    # que cargó el chequeo inicial, separadas de `observaciones` (que puede
+    # quedar para auditor o legacy).
+    observaciones_rendicion = Column(Text, nullable=True)
+    # Sub-checkboxes para motivo "AGREGAR DATOS": JSON array de strings
+    # (afiliado / fecha / diagnostico / concentracion / cant_comprom / monodroga).
+    agregar_datos_json = Column(Text, nullable=True)
     creado_en = Column(DateTime, default=now_ar, index=True)
     creado_por = Column(String(100), nullable=True)            # email del user
+    # Etapa 2 — auditor (revisa lo que cargó rendicion).
+    auditor_motivo_id = Column(Integer, ForeignKey('motivo_devolucion.id'), nullable=True)
+    auditor_observaciones = Column(Text, nullable=True)
+    auditor_user = Column(String(100), nullable=True)
+    auditor_fecha = Column(DateTime, nullable=True)
     # Cierre del ciclo
     estado = Column(String(20), nullable=False, default='pendiente', index=True)
                                                                # pendiente | resuelta | descartada
@@ -1504,8 +1613,9 @@ class DevolucionReceta(Base):
     cerrada_en = Column(DateTime, nullable=True)
     cerrada_por = Column(String(100), nullable=True)
 
-    motivo = relationship('MotivoDevolucion')
-    destino = relationship('DestinoDevolucion')
+    motivo = relationship('MotivoDevolucion', foreign_keys=[motivo_id])
+    auditor_motivo = relationship('MotivoDevolucion', foreign_keys=[auditor_motivo_id])
+    # rendicion_lote relationship → ver `rendicion_lote_id` definido arriba.
 
     __table_args__ = (
         UniqueConstraint('id_operacion_observer', 'creado_en',
@@ -1636,8 +1746,11 @@ def init_db(database_url=None):
                         'panel_comandos', 'farmacias', 'usuario_farmacias',
                         'alarmas_notificadas', 'sync_lock',
                         'productos_pendientes_revision',
-                        'motivo_devolucion', 'destino_devolucion',
+                        'motivo_devolucion',
                         'devolucion_receta',
+                        'rendicion_lote',
+                        'vendedor_bookmark',
+                        'rol_filtro_obra_social',
                         'proveedor_cronograma',
                         'tipo_pedido_config',
                         'producto_flags',
@@ -3112,6 +3225,26 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_ovd_tipo ON obs_ventas_detalle(tipo_operacion)"
     ))
+    # Devoluciones v2 (2026-05-18): rol auditor + etapa 2 + AGREGAR DATOS
+    # estructurado + observaciones exclusivas del operador rendicion.
+    for stmt in [
+        "ALTER TABLE motivo_devolucion ADD COLUMN IF NOT EXISTS uso_rol VARCHAR(20) NOT NULL DEFAULT 'ambos'",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS observaciones_rendicion TEXT",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS agregar_datos_json TEXT",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_motivo_id INTEGER REFERENCES motivo_devolucion(id)",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_observaciones TEXT",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_user VARCHAR(100)",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_fecha TIMESTAMP",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS rendicion_lote_id INTEGER REFERENCES rendicion_lote(id)",
+        # Cleanup 2026-05-18: DestinoDevolucion deprecado completamente.
+        "ALTER TABLE devolucion_receta DROP COLUMN IF EXISTS destino_id",
+        "DROP TABLE IF EXISTS destino_devolucion CASCADE",
+        # Estado físico de entrega del lote — lo marca el auditor.
+        "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_en TIMESTAMP",
+        "ALTER TABLE rendicion_lote ADD COLUMN IF NOT EXISTS entregada_por VARCHAR(100)",
+    ]:
+        conn.execute(text(stmt))
     # Índices para queries frecuentes
     for stmt in [
         "CREATE INDEX IF NOT EXISTS idx_factura_items_factura ON factura_items(factura_id)",

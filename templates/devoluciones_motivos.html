@@ -7,9 +7,14 @@
     <a href="{{ url_for('devoluciones_list') }}" class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">← Devoluciones</a>
   </div>
 
-  <form method="post" class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 flex gap-2">
+  <form method="post" class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 flex gap-2 items-center">
     <input name="nombre" required autofocus placeholder="Ej: Falta firma del médico"
            class="flex-1 border border-gray-300 rounded px-2 py-1.5 text-sm" />
+    <select name="uso_rol" class="border border-gray-300 rounded px-2 py-1.5 text-sm" title="Qué rol puede elegir este motivo">
+      <option value="ambos">Ambos roles</option>
+      <option value="rendicion">Solo rendición</option>
+      <option value="auditor" selected>Solo auditor</option>
+    </select>
     <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-4 py-1.5 rounded text-sm font-semibold">
       + Agregar
     </button>
@@ -18,12 +23,27 @@
   <div class="bg-white rounded-lg shadow-sm border border-gray-200">
     <table class="w-full text-sm">
       <thead>
-        <tr><th class="px-3 py-2 text-left">Nombre</th><th class="px-3 py-2 w-32">Estado</th><th class="px-3 py-2 w-32"></th></tr>
+        <tr>
+          <th class="px-3 py-2 text-left">Nombre</th>
+          <th class="px-3 py-2 w-40">Rol permitido</th>
+          <th class="px-3 py-2 w-28">Estado</th>
+          <th class="px-3 py-2 w-12"></th>
+        </tr>
       </thead>
       <tbody class="divide-y divide-gray-200">
         {% for m in motivos %}
         <tr class="{% if not m.activo %}opacity-60{% endif %}">
           <td class="px-3 py-2">{{ m.nombre }}</td>
+          <td class="px-3 py-2 text-xs">
+            <form method="post" action="{{ url_for('devoluciones_motivo_uso_rol', id=m.id) }}" class="inline">
+              <select name="uso_rol" onchange="this.form.submit()"
+                      class="border border-gray-300 rounded px-2 py-0.5 text-xs">
+                <option value="ambos"     {% if m.uso_rol == 'ambos' %}selected{% endif %}>Ambos</option>
+                <option value="rendicion" {% if m.uso_rol == 'rendicion' %}selected{% endif %}>Rendición</option>
+                <option value="auditor"   {% if m.uso_rol == 'auditor' %}selected{% endif %}>Auditor</option>
+              </select>
+            </form>
+          </td>
           <td class="px-3 py-2 text-xs">
             <form method="post" action="{{ url_for('devoluciones_motivo_toggle', id=m.id) }}">
               <button type="submit" class="px-2 py-0.5 rounded text-xs {% if m.activo %}bg-green-100 text-green-800{% else %}bg-gray-200 text-gray-600{% endif %}">
@@ -39,7 +59,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="3" class="px-4 py-6 text-center text-gray-500 text-sm">Sin motivos cargados.</td></tr>
+        <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500 text-sm">Sin motivos cargados.</td></tr>
         {% endfor %}
       </tbody>
     </table>
