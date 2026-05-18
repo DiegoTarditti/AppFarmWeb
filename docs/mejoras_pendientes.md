@@ -4,6 +4,63 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Implementar sistema de Grupos para usuarios (2026-05-18)
+
+Diego mostró el panel de Grupos de ObServer (CAJERO, Facturacion, Farmaceutico,
+PERMISO TOTAL, VENTAS, "Todos los usuarios" como root). Quiere replicar el
+concepto en AppFarmWeb.
+
+**Decisiones pendientes** (a discutir cuando se retome):
+
+1. **Alcance**:
+   - A) Espejar grupos ObServer read-only (sync desde DW.Grupos).
+   - B) Sistema propio, solo etiquetas (sin permisos).
+   - C) Sistema propio + permisos por grupo (reemplaza/complementa rol).
+   - D) `rol` actual + `grupo` como segundo eje sin lógica de permisos.
+
+2. **Cardinalidad**: ¿un user en N grupos o solo en 1?
+
+3. **Caso de uso real** que motiva esto.
+
+**Esfuerzos estimados**: A=3h, B=3h, C=1-2 días, D=2h.
+
+**Estado actual del sistema de permisos** (para referencia cuando se retome):
+- `Usuario.rol` (String, default 'remoto') — soporta `farmacia | dev | remoto | admin | pedidos | rendicion`.
+- `rendicion` ya tiene gating funcional en `routes/auth_routes.py:67-78` (solo
+  accede a `/devoluciones/*` y `/rend`). Los 27 usuarios seed están ahí.
+- `pedidos` también tiene gating similar (solo `/pedidos/*`).
+- Resto de los roles no tiene gating fuerte — checks ad-hoc en algunos endpoints
+  (`routes/observer.py:742` requiere `admin/dev`, etc.).
+
+**Si arrancamos por D (más rápido)**: agregar `Usuario.grupos_json` Text (CSV
+de nombres), UI en `/admin/usuarios` para tagger, filtro en listados. Sin
+lógica de permisos.
+
+**Si arrancamos por C (más completo)**: modelo nuevo `Grupo` + tabla N-N
+`usuario_grupos` + `Grupo.permisos_json` + middleware que combine permisos
+de todos los grupos del user. Reemplaza `rol` con grupo "PERMISO TOTAL"
+equivalente a admin, "VENTAS" equivalente a rendicion, etc.
+
+---
+
+## ⏳ Pendiente — Alerta para productos con `cantidad_reposicion_fija` seteada (2026-05-18)
+
+Cuando un producto tiene `Producto.cantidad_reposicion_fija` cargado, debería
+disparar una alerta en algún panel (alarmas / dashboard / lugar a definir) que
+liste todos los productos con override activo. Razón: el override silencia el
+cálculo dinámico; si quedó cargado por error u obsoleto, ningún workflow lo
+muestra hasta que cae al mínimo y aparece el chip "Repo fija" en el armado.
+
+**Idea**: agregar a `routes/alarmas.py` (o equivalente) un check "productos con
+repo fija" que liste los registros con `cantidad_reposicion_fija IS NOT NULL`,
+junto con su última venta y stock actual, para que el operador pueda revisar
+periódicamente si todavía aplica.
+
+Esfuerzo: 1-2 horas (query + tarjeta de alarma + link a `/productos?filtro=repo_fija`).
+Prioridad: baja — anotado para revisar más adelante.
+
+---
+
 ## ⏳ Pendiente — Planificadores deben respetar `unidades_minima` y `cantidad_reposicion_fija` (2026-05-17)
 
 Hoy ambos conceptos están desacoplados entre el armado táctico y los

@@ -1,48 +1,152 @@
 {% extends 'base.html' %}
-{% block title %}Devoluciones de Recetas{% endblock %}
+{# Título dinámico según rol del operador: rendicion → "Rendición de recetas",
+   auditor → "Auditoría de recetas", resto → genérico "Devoluciones". #}
+{% set _rol = current_user.rol if current_user.is_authenticated else None %}
+{% if _rol == 'rendicion' %}
+  {% set _titulo = 'Rendición de recetas' %}
+{% elif _rol == 'auditor' %}
+  {% set _titulo = 'Auditoría de recetas' %}
+{% else %}
+  {% set _titulo = 'Devoluciones de recetas' %}
+{% endif %}
+{% block title %}{{ _titulo }}{% endblock %}
 {% block main %}
 <div class="max-w-7xl mx-auto p-4 space-y-4">
   <div class="flex items-center justify-between flex-wrap gap-2">
-    <h1 class="text-2xl font-bold">Devoluciones de recetas</h1>
+    <h1 class="text-2xl font-bold">{{ _titulo }}</h1>
     <div class="flex gap-2">
-      <a href="{{ url_for('devoluciones_buscar') }}"
-         class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">
-        + Nueva búsqueda
+      {% if _rol != 'auditor' %}
+      <a href="{{ url_for('devoluciones_buscar', lote_id=lote_activo_id) if lote_activo_id else url_for('devoluciones_buscar') }}"
+         class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold"
+         title="{% if lote_activo_id %}Pre-cargado con tu rendición abierta más reciente{% endif %}">
+        + Nueva búsqueda{% if lote_activo_id %} <span class="text-[10px] opacity-75">(con lote)</span>{% endif %}
+      </a>
+      {% endif %}
+      <a href="{{ url_for('devoluciones_por_vendedor') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">👥 Por vendedor</a>
+      <a href="{{ url_for('rendicion_lotes_list') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">📋 Rendiciones</a>
+      {% if current_user.rol not in ('rendicion',) %}
+      <a href="{{ url_for('devoluciones_filtros_os') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">🚫 Filtros OS</a>
+      {% endif %}
+      <a href="{{ url_for('devoluciones_export_xlsx', presentacion=q_presentacion, vendedor=q_vendedor, estado=q_estado, auditoria=q_auditoria) }}"
+         class="px-3 py-1.5 rounded border border-green-400 bg-green-50 hover:bg-green-100 text-green-800 text-sm font-semibold"
+         title="Exportar las {{ total }} devoluciones filtradas a XLSX">
+        ⬇ XLSX
       </a>
       <a href="{{ url_for('devoluciones_motivos') }}"
          class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Motivos</a>
-      <a href="{{ url_for('devoluciones_destinos') }}"
-         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Destinos</a>
     </div>
   </div>
+
+  {# Banner de alertas por rol — chips inline, una sola línea #}
+  {% if _rol == 'rendicion' and alertas %}
+  <div class="flex items-center gap-2 flex-wrap text-xs">
+    {% if alertas.atrasadas_7d > 0 %}
+    <span class="px-2 py-1 rounded bg-red-100 border border-red-300 text-red-800 font-semibold">
+      ⚠ {{ alertas.atrasadas_7d }} con +7d sin respuesta
+    </span>
+    {% endif %}
+    {% if alertas.atrasadas_3d > 0 %}
+    <span class="px-2 py-1 rounded bg-yellow-100 border border-yellow-300 text-yellow-800 font-semibold">
+      ⏰ {{ alertas.atrasadas_3d }} con +3d
+    </span>
+    {% endif %}
+    <span class="px-2 py-1 rounded bg-gray-100 border border-gray-300 text-gray-700">
+      📋 {{ alertas.pendientes }} pendientes
+    </span>
+    {% if alertas.atrasadas_7d == 0 and alertas.atrasadas_3d == 0 and alertas.pendientes == 0 %}
+    <span class="px-2 py-1 rounded bg-green-100 border border-green-300 text-green-800 font-semibold">✓ al día</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if _rol in ('auditor', 'admin', 'dev') and alertas %}
+  <div class="flex items-center gap-2 flex-wrap text-xs">
+    <span class="px-2 py-1 rounded bg-purple-100 border border-purple-300 text-purple-800 font-semibold">
+      🔍 {{ alertas.pend_auditar }} pend. auditar
+    </span>
+    {% if alertas.duplicados %}
+    <a href="{{ url_for('devoluciones_dedup_vista') }}"
+       class="px-2 py-1 rounded bg-red-100 hover:bg-red-200 border border-red-300 text-red-800 font-semibold">
+      🔄 {{ alertas.duplicados }} dups →
+    </a>
+    {% endif %}
+    {% if alertas.top_vendedores %}
+    <span class="text-gray-400 ml-2">|</span>
+    <span class="text-[10px] uppercase tracking-wide text-purple-600 font-semibold">Top pend:</span>
+    {% for v, n in alertas.top_vendedores %}
+    <a href="{{ url_for('devoluciones_list', vendedor=v, auditoria='pend') }}"
+       class="px-1.5 py-0.5 bg-white border border-purple-300 rounded text-[10px] hover:bg-purple-100">
+      <strong>{{ v }}</strong> · {{ n }}
+    </a>
+    {% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
 
   {# Chips de estado #}
   <div class="flex flex-wrap gap-2">
     {% set estados = [('', 'Todas', None), ('pendiente', 'Pendientes', 'bg-yellow-100 text-yellow-800'),
                        ('resuelta', 'Resueltas', 'bg-green-100 text-green-800'),
+                       ('devuelta', 'Devueltas', 'bg-orange-100 text-orange-800'),
                        ('descartada', 'Descartadas', 'bg-gray-200 text-gray-700')] %}
     {% for val, label, cls in estados %}
-    <a href="{{ url_for('devoluciones_list', estado=val, presentacion=q_presentacion, vendedor=q_vendedor) }}"
+    <a href="{{ url_for('devoluciones_list', estado=val, presentacion=q_presentacion, vendedor=q_vendedor, auditoria=q_auditoria) }}"
        class="px-3 py-1 rounded-full text-xs font-semibold border
               {% if q_estado == val %}border-brand text-brand bg-white{% else %}border-gray-300 text-gray-600 bg-white hover:border-brand{% endif %}">
       {{ label }}
       {% if val %}({{ cuentas_estado.get(val, 0) }}){% else %}({{ cuentas_estado.values()|sum }}){% endif %}
     </a>
     {% endfor %}
+    {% if rol_actual in ('auditor', 'admin', 'dev') %}
+    {# Filtros de auditoría — solo visibles para auditor/admin/dev #}
+    <span class="px-2 text-gray-300">|</span>
+    <a href="{{ url_for('devoluciones_list', auditoria='pend', estado=q_estado, presentacion=q_presentacion, vendedor=q_vendedor) }}"
+       class="px-3 py-1 rounded-full text-xs font-semibold border
+              {% if q_auditoria == 'pend' %}border-purple-600 text-purple-700 bg-white{% else %}border-purple-300 text-purple-600 bg-white hover:border-purple-600{% endif %}">
+      🔍 Pend. auditar ({{ pend_auditor }})
+    </a>
+    <a href="{{ url_for('devoluciones_list', auditoria='ok', estado=q_estado, presentacion=q_presentacion, vendedor=q_vendedor) }}"
+       class="px-3 py-1 rounded-full text-xs font-semibold border
+              {% if q_auditoria == 'ok' %}border-purple-600 text-purple-700 bg-white{% else %}border-purple-300 text-purple-600 bg-white hover:border-purple-600{% endif %}">
+      ✓ Auditadas
+    </a>
+    {% endif %}
   </div>
 
   <form method="get" class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 flex flex-wrap gap-3 items-end">
     <input type="hidden" name="estado" value="{{ q_estado }}">
     <div>
       <label class="block text-xs uppercase text-gray-500 mb-1">Nro. rendición</label>
+      {% if nros_filtro %}
+      <select name="presentacion" class="border border-gray-300 rounded px-2 py-1.5 text-sm w-56">
+        <option value="">— Todas —</option>
+        {% for nro in nros_filtro %}
+        <option value="{{ nro }}" {% if q_presentacion == nro %}selected{% endif %}>#{{ nro }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
       <input name="presentacion" value="{{ q_presentacion }}"
              type="number" min="0" step="1" inputmode="numeric"
-             class="border border-gray-300 rounded px-2 py-1.5 text-sm w-56" />
+             class="border border-gray-300 rounded px-2 py-1.5 text-sm w-56"
+             placeholder="Sin rendiciones cargadas" />
+      {% endif %}
     </div>
     <div>
       <label class="block text-xs uppercase text-gray-500 mb-1">Vendedor</label>
+      {% if vendedores_filtro %}
+      <select name="vendedor" class="border border-gray-300 rounded px-2 py-1.5 text-sm w-44">
+        <option value="">— Todos —</option>
+        {% for v in vendedores_filtro %}
+        <option value="{{ v }}" {% if q_vendedor == v %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+      {% else %}
       <input name="vendedor" value="{{ q_vendedor }}"
              class="border border-gray-300 rounded px-2 py-1.5 text-sm w-44" />
+      {% endif %}
     </div>
     <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm">Filtrar</button>
     {% if q_presentacion or q_vendedor or q_estado %}
@@ -54,20 +158,20 @@
   <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
-        <tr>
-          <th class="px-2 py-2 text-left">Estado</th>
-          <th class="px-2 py-2 text-left">Fecha registro</th>
-          <th class="px-2 py-2 text-left">Rendición</th>
-          <th class="px-2 py-2 text-left">Vendedor</th>
-          <th class="px-2 py-2 text-left">Op#</th>
-          <th class="px-2 py-2 text-left">Fecha receta</th>
-          <th class="px-2 py-2 text-left">Obra Social</th>
-          <th class="px-2 py-2 text-right">A cargo OS</th>
-          <th class="px-2 py-2 text-left">Motivo</th>
-          <th class="px-2 py-2 text-left">Destino</th>
-          <th class="px-2 py-2 text-left">Obs.</th>
-          <th class="px-2 py-2 text-left">Acciones</th>
-          <th class="px-2 py-2 w-10"></th>
+        <tr class="text-[10px] uppercase tracking-wide whitespace-nowrap">
+          <th class="px-2 py-1.5 text-left">Estado</th>
+          <th class="px-2 py-1.5 text-left">Reg.</th>
+          <th class="px-2 py-1.5 text-left">Rend.</th>
+          <th class="px-2 py-1.5 text-left">Vendedor</th>
+          <th class="px-2 py-1.5 text-left">Op#</th>
+          <th class="px-2 py-1.5 text-left">Receta</th>
+          <th class="px-2 py-1.5 text-left">OS</th>
+          <th class="px-2 py-1.5 text-right">OS $</th>
+          <th class="px-2 py-1.5 text-left">Motivo</th>
+          <th class="px-2 py-1.5 text-left">Obs.</th>
+          <th class="px-2 py-1.5 text-left bg-purple-900">Auditor</th>
+          <th class="px-2 py-1.5 text-left">Accs.</th>
+          <th class="px-2 py-1.5 w-8"></th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-200">
@@ -75,11 +179,13 @@
         <tr class="hover:bg-gray-50 {% if d.estado == 'descartada' %}opacity-60{% endif %}">
           <td class="px-2 py-1.5">
             {% if d.estado == 'pendiente' %}
-              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">PENDIENTE</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">PEND.</span>
             {% elif d.estado == 'resuelta' %}
-              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800">RESUELTA</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800">RES.</span>
+            {% elif d.estado == 'devuelta' %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-800">DEV.</span>
             {% else %}
-              <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-200 text-gray-700">DESCARTADA</span>
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-200 text-gray-700">DESC.</span>
             {% endif %}
             {% if d.cerrada_en %}
             <div class="text-[10px] text-gray-400 mt-0.5">{{ d.cerrada_en.strftime('%d/%m/%y') }} · {{ d.cerrada_por or '' }}</div>
@@ -90,18 +196,82 @@
           </td>
           <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.creado_en.strftime('%d/%m/%y %H:%M') if d.creado_en else '' }}</td>
           <td class="px-2 py-1.5 text-xs font-mono">{{ d.nro_presentacion or '—' }}</td>
-          <td class="px-2 py-1.5 text-xs">{{ d.vendedor_nombre or '—' }}</td>
+          <td class="px-2 py-1.5 text-xs">
+            {{ d.vendedor_nombre or '—' }}
+            {% if d.creado_por and d.creado_por.upper() != (d.vendedor_nombre or '').upper() %}
+            <div class="text-[10px] text-gray-400">cargó: {{ d.creado_por }}</div>
+            {% endif %}
+          </td>
           <td class="px-2 py-1.5 text-xs font-mono">{{ d.id_operacion_observer }}</td>
           <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.fecha_operacion.strftime('%d/%m/%y') if d.fecha_operacion else '—' }}</td>
           <td class="px-2 py-1.5 text-xs">{{ d.obra_social_nombre or '—' }}</td>
           <td class="px-2 py-1.5 text-xs text-right font-mono">{{ '%.2f'|format(d.importe_a_cargo_os) if d.importe_a_cargo_os else '—' }}</td>
           <td class="px-2 py-1.5 text-xs">{{ d.motivo.nombre if d.motivo else '—' }}</td>
-          <td class="px-2 py-1.5 text-xs">{{ d.destino_vendedor_nombre or (d.destino.nombre if d.destino else '—') }}</td>
-          <td class="px-2 py-1.5 text-xs max-w-xs truncate" title="{{ d.observaciones or '' }}">{{ d.observaciones or '' }}</td>
+          <td class="px-2 py-1.5 text-xs max-w-xs">
+            {% if d.observaciones %}
+            <div class="truncate" title="{{ d.observaciones }}">{{ d.observaciones }}</div>
+            {% endif %}
+            {% if d.observaciones_rendicion %}
+            <div class="text-blue-700 truncate" title="Nota rendición: {{ d.observaciones_rendicion }}">
+              <span class="text-[10px] font-semibold">REND:</span> {{ d.observaciones_rendicion }}
+            </div>
+            {% endif %}
+            {% if d.agregar_datos_json %}
+            {% set ad = d.agregar_datos_json | fromjson %}
+            {% if ad %}
+            <div class="flex flex-wrap gap-1 mt-0.5">
+              {% for tag in ad %}
+              <span class="text-[9px] px-1 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 capitalize">
+                {{ tag.replace('_',' ') }}
+              </span>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% endif %}
+          </td>
+          <td class="px-2 py-1.5 text-xs bg-purple-50/30" style="min-width:240px;">
+            {% if rol_actual in ('auditor', 'admin', 'dev') %}
+              {# Modo editable: dropdown + input con autosave #}
+              <select onchange="autoAuditar(this, {{ d.id }})"
+                      class="w-full border border-purple-300 rounded px-1 py-1 text-xs mb-1
+                             {% if d.auditor_motivo_id %}bg-purple-100 text-purple-900 font-semibold{% else %}bg-white{% endif %}">
+                <option value="">— Sin auditar —</option>
+                {% for m in motivos_auditor %}
+                <option value="{{ m.id }}" {% if d.auditor_motivo_id == m.id %}selected{% endif %}>{{ m.nombre }}</option>
+                {% endfor %}
+              </select>
+              <input type="text"
+                     value="{{ d.auditor_observaciones or '' }}"
+                     placeholder="Observación auditor..."
+                     onblur="autoAuditarObs(this, {{ d.id }})"
+                     onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                     class="w-full border border-purple-200 rounded px-1 py-1 text-xs bg-white" />
+              {% if d.auditor_motivo_id or d.auditor_observaciones %}
+              <div class="text-[10px] text-purple-500 mt-0.5">
+                ✓ {{ d.auditor_user or '—' }} · {{ d.auditor_fecha.strftime('%d/%m %H:%M') if d.auditor_fecha else '' }}
+              </div>
+              {% endif %}
+            {% else %}
+              {# Modo readonly para rol rendicion: ve la respuesta del auditor #}
+              {% if d.auditor_motivo_id or d.auditor_observaciones %}
+                <div class="text-xs font-semibold text-purple-900">{{ d.auditor_motivo.nombre if d.auditor_motivo else '—' }}</div>
+                {% if d.auditor_observaciones %}
+                <div class="text-xs text-purple-700 italic">"{{ d.auditor_observaciones }}"</div>
+                {% endif %}
+                <div class="text-[10px] text-purple-500 mt-0.5">
+                  ✓ {{ d.auditor_user or '—' }} · {{ d.auditor_fecha.strftime('%d/%m %H:%M') if d.auditor_fecha else '' }}
+                </div>
+              {% else %}
+                <span class="text-xs text-gray-400 italic">esperando auditor</span>
+              {% endif %}
+            {% endif %}
+          </td>
           <td class="px-2 py-1.5">
             {% if d.estado == 'pendiente' %}
               <button type="button" onclick="abrirCierre({{ d.id }}, 'resuelta')"
-                      class="text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2 py-0.5 rounded font-semibold">✓ Resolver</button>
+                      class="text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2 py-0.5 rounded font-semibold">✓ Resuelta</button>
+              <button type="button" onclick="abrirCierre({{ d.id }}, 'devuelta')"
+                      class="text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-semibold ml-1">↩ Devuelta</button>
               <button type="button" onclick="abrirCierre({{ d.id }}, 'descartada')"
                       class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded font-semibold ml-1">Descartar</button>
             {% else %}
@@ -111,9 +281,13 @@
               </form>
             {% endif %}
           </td>
-          <td class="px-2 py-1.5">
+          <td class="px-2 py-1.5 whitespace-nowrap text-right">
+            <button type="button" onclick="verTimeline({{ d.id }})"
+                    title="Ver historial completo"
+                    class="text-gray-500 hover:text-blue-700 text-xs mr-1">🕒</button>
             <form method="post" action="{{ url_for('devolucion_eliminar', id=d.id) }}"
-                  onsubmit="return confirm('¿Eliminar devolución #{{ d.id }}?')">
+                  onsubmit="return confirm('¿Eliminar devolución #{{ d.id }}?')"
+                  class="inline">
               <button type="submit" class="text-red-500 hover:text-red-700 text-xs">✕</button>
             </form>
           </td>
@@ -145,13 +319,106 @@
   <script>
     function abrirCierre(devId, estado) {
       const form = document.getElementById('form-cierre');
-      form.action = '/devoluciones/' + devId + '/estado';
+      form.action = '/rend-recetas/' + devId + '/estado';
       document.getElementById('modal-estado').value = estado;
-      document.getElementById('modal-titulo').textContent =
-          estado === 'resuelta' ? 'Marcar como resuelta' : 'Descartar devolución';
+      document.getElementById('modal-titulo').textContent = ({
+          'resuelta': 'Marcar como resuelta',
+          'devuelta': 'Marcar como devuelta',
+          'descartada': 'Descartar devolución'
+      })[estado] || 'Cambiar estado';
       document.getElementById('modal-cierre').classList.remove('hidden');
     }
+    // Timeline modal: trae los eventos de la devolución y los renderiza.
+    async function verTimeline(devId) {
+      const modal = document.getElementById('modal-timeline');
+      const body = document.getElementById('timeline-body');
+      body.innerHTML = '<p class="text-sm text-gray-500">Cargando…</p>';
+      modal.classList.remove('hidden');
+      try {
+        const r = await fetch('/rend-recetas/' + devId + '/timeline');
+        if (!r.ok) {
+          body.innerHTML = '<p class="text-sm text-red-600">Error cargando timeline.</p>';
+          return;
+        }
+        const d = await r.json();
+        const colorByTipo = {creada:'blue', auditada:'purple', cerrada:'green'};
+        const iconByTipo  = {creada:'📝', auditada:'🔍', cerrada:'✓'};
+        const eventos = d.eventos.map(ev => {
+          const c = colorByTipo[ev.tipo] || 'gray';
+          const ic = iconByTipo[ev.tipo] || '·';
+          let detalle = '';
+          if (ev.detalle) {
+            if (ev.detalle.motivo) detalle += `<div class="text-xs"><b>Motivo:</b> ${ev.detalle.motivo}</div>`;
+            if (ev.detalle.obs) detalle += `<div class="text-xs"><b>Obs:</b> ${ev.detalle.obs}</div>`;
+            if (ev.detalle.obs_rendicion) detalle += `<div class="text-xs text-blue-700"><b>Nota rendición:</b> ${ev.detalle.obs_rendicion}</div>`;
+            if (ev.detalle.agregar_datos?.length) detalle += `<div class="text-xs"><b>Datos faltantes:</b> ${ev.detalle.agregar_datos.join(', ')}</div>`;
+            if (ev.detalle.nota) detalle += `<div class="text-xs"><b>Nota:</b> ${ev.detalle.nota}</div>`;
+          }
+          if (ev.estado) detalle = `<div class="text-xs"><b>Estado:</b> ${ev.estado}</div>` + detalle;
+          return `
+            <div class="border-l-4 border-${c}-400 pl-3 py-2 mb-3">
+              <div class="text-sm font-semibold text-${c}-800">${ic} ${ev.tipo.toUpperCase()}</div>
+              <div class="text-xs text-gray-600">${ev.cuando} · por <b>${ev.quien}</b></div>
+              ${detalle}
+            </div>`;
+        }).join('');
+        body.innerHTML = `
+          <div class="mb-3 text-xs text-gray-500">
+            Op#${d.receta_op} · ${d.os || '—'} · Vendedor ${d.vendedor || '—'} · Rendición ${d.rendicion || '—'}
+          </div>
+          ${eventos || '<p class="text-sm text-gray-500">Sin eventos.</p>'}`;
+      } catch (e) {
+        body.innerHTML = '<p class="text-sm text-red-600">Error de red.</p>';
+      }
+    }
+    // Auto-auditar: al elegir motivo del dropdown, POST async y refrescar.
+    async function autoAuditar(sel, devId) {
+      const fd = new FormData();
+      fd.append('auditor_motivo_id', sel.value || '');
+      // Captar obs actual del input hermano para no perder lo escrito.
+      const obs = sel.parentElement.querySelector('input[type="text"]');
+      if (obs && obs.value) fd.append('auditor_observaciones', obs.value);
+      try {
+        const resp = await fetch('/rend-recetas/' + devId + '/auditar', {
+          method: 'POST', body: fd, credentials: 'same-origin'
+        });
+        if (!resp.ok) { alert('Error guardando auditoría'); return; }
+        location.reload();
+      } catch (e) {
+        alert('Error de red: ' + e);
+      }
+    }
+    // Autosave del input de observación (al perder foco / Enter).
+    async function autoAuditarObs(inp, devId) {
+      const sel = inp.parentElement.querySelector('select');
+      const motivo = sel ? sel.value : '';
+      const fd = new FormData();
+      fd.append('auditor_motivo_id', motivo);
+      fd.append('auditor_observaciones', inp.value);
+      try {
+        const resp = await fetch('/rend-recetas/' + devId + '/auditar', {
+          method: 'POST', body: fd, credentials: 'same-origin'
+        });
+        if (!resp.ok) { inp.style.borderColor = '#dc2626'; return; }
+        inp.style.borderColor = '#10b981';
+        setTimeout(() => { inp.style.borderColor = ''; }, 1000);
+      } catch (e) {
+        inp.style.borderColor = '#dc2626';
+      }
+    }
   </script>
+
+  {# Modal de timeline / historial — todos los roles #}
+  <div id="modal-timeline" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg p-5 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-gray-800">🕒 Historial de la receta</h3>
+        <button type="button" onclick="document.getElementById('modal-timeline').classList.add('hidden')"
+                class="text-gray-500 hover:text-gray-900">✕</button>
+      </div>
+      <div id="timeline-body"></div>
+    </div>
+  </div>
 
   {% if last_page > 1 %}
   <div class="flex items-center gap-2 text-sm">

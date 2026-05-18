@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% set _rol = rol_actual %}
+{% block title %}Auditoría por vendedor{% endblock %}
+{% block main %}
+<div class="max-w-6xl mx-auto p-4 space-y-3">
+  <div class="flex items-center justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="text-2xl font-bold">Rendiciones por vendedor</h1>
+      <p class="text-sm text-gray-600">Click en una rendición para ver el detalle.</p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('devoluciones_list') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">📋 Vista plana</a>
+      <a href="{{ url_for('rendicion_lotes_list') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">Lotes</a>
+      {% if _rol != 'auditor' %}
+      <a href="{{ url_for('devoluciones_buscar') }}"
+         class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">+ Nueva</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not vendedores %}
+  <div class="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500 text-sm">
+    Sin rendiciones cargadas todavía.
+  </div>
+  {% else %}
+  <div class="space-y-2">
+    {% for v in vendedores %}
+    <details {% if v.n_pend > 0 %}open{% endif %}
+             class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      {% set color_map_v = {
+        'gray': 'bg-gray-100 text-gray-700 border-gray-300',
+        'purple': 'bg-purple-100 text-purple-800 border-purple-300',
+        'orange': 'bg-orange-100 text-orange-800 border-orange-300',
+        'blue': 'bg-blue-100 text-blue-800 border-blue-300',
+        'green': 'bg-green-100 text-green-800 border-green-300',
+        'green-dark': 'bg-green-200 text-green-900 border-green-400'
+      } %}
+      {# Renombrar labels para rol rendicion (sin mención a "auditar"). #}
+      {% macro label_para_rol(est) -%}
+        {% if _rol == 'rendicion' and 'SIN AUDITAR' in est.label %}
+          EN REVISIÓN{{ est.label.replace('SIN AUDITAR', '') }}
+        {% elif _rol == 'rendicion' and 'A RESOLVER' in est.label %}
+          EN PROCESO{{ est.label.replace('A RESOLVER', '') }}
+        {% else %}{{ est.label }}{% endif %}
+      {%- endmacro %}
+      <summary class="px-4 py-3 cursor-pointer hover:bg-gray-50 flex items-center justify-between gap-4 flex-wrap">
+        <div class="flex items-center gap-3">
+          <span class="font-bold text-gray-900">{{ v.vendedor }}</span>
+          <span class="text-xs text-gray-500">
+            {{ v.n_rendiciones }} rendición{{ 'es' if v.n_rendiciones != 1 }}
+          </span>
+          {# Badge peor estado — el de mayor prioridad entre todas sus rendiciones #}
+          <span class="px-2 py-1 rounded border {{ color_map_v[v.peor_estado.color] }} text-[10px] font-bold uppercase tracking-wide"
+                title="Estado más crítico entre las {{ v.n_rendiciones }} rendiciones">
+            {{ label_para_rol(v.peor_estado) }}
+          </span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <span class="px-2 py-1 rounded bg-gray-100 border border-gray-300">📋 {{ v.n_total }} recetas</span>
+          {% if _rol != 'rendicion' and v.n_audit < v.n_total %}
+          <span class="px-2 py-1 rounded bg-purple-100 border border-purple-300 text-purple-800 font-semibold">
+            {{ v.n_total - v.n_audit }} sin auditar
+          </span>
+          {% endif %}
+          {% if _rol in ('auditor', 'admin', 'dev') %}
+          {# Stock breakdown — el auditor controla qué está en cada extremo #}
+          <span class="text-gray-300 mx-1">|</span>
+          <span class="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">stock:</span>
+          {% if v.stock_en_proceso %}
+          <span class="px-2 py-1 rounded bg-yellow-50 border border-yellow-300 text-yellow-800" title="Recetas en lotes abiertos (en carga/auditoría)">
+            🟡 {{ v.stock_en_proceso }} en proceso
+          </span>
+          {% endif %}
+          {% if v.stock_pend_entrega %}
+          <span class="px-2 py-1 rounded bg-blue-50 border border-blue-300 text-blue-800" title="Recetas en lotes cerrados sin entrega física">
+            📦 {{ v.stock_pend_entrega }} p/entregar
+          </span>
+          {% endif %}
+          {% if v.stock_entregadas %}
+          <span class="px-2 py-1 rounded bg-green-50 border border-green-300 text-green-800" title="Recetas en lotes ya entregados">
+            ✓ {{ v.stock_entregadas }} entregadas
+          </span>
+          {% endif %}
+          {% endif %}
+        </div>
+      </summary>
+      <div class="border-t border-gray-200">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="bg-gray-50 text-gray-600 text-[10px] uppercase tracking-wide">
+              <th class="px-3 py-2 text-left">Rendición</th>
+              <th class="px-3 py-2 text-left">Última carga</th>
+              <th class="px-3 py-2 text-left">Estado</th>
+              <th class="px-3 py-2 text-right">Recetas</th>
+              {% if _rol != 'rendicion' %}
+              <th class="px-3 py-2 text-right">Audit.</th>
+              {% endif %}
+              <th class="px-3 py-2 text-right">A cargo OS</th>
+              <th class="px-3 py-2 text-center w-10"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for r in v.rendiciones %}
+            {% set color_map = {
+              'gray': 'bg-gray-100 text-gray-700 border-gray-300',
+              'purple': 'bg-purple-100 text-purple-800 border-purple-300',
+              'orange': 'bg-orange-100 text-orange-800 border-orange-300',
+              'blue': 'bg-blue-100 text-blue-800 border-blue-300',
+              'green': 'bg-green-100 text-green-800 border-green-300',
+              'green-dark': 'bg-green-200 text-green-900 border-green-400'
+            } %}
+            <tr class="hover:bg-blue-50">
+              <td class="px-3 py-2 font-mono font-bold">
+                <a href="{{ url_for('devoluciones_list', presentacion=r.nro, vendedor=v.vendedor) }}"
+                   class="text-blue-700 hover:underline">#{{ r.nro }}</a>
+              </td>
+              <td class="px-3 py-2 text-xs">{{ r.ult_carga.strftime('%d/%m/%y %H:%M') if r.ult_carga else '—' }}</td>
+              <td class="px-3 py-2">
+                <span class="px-2 py-1 rounded border {{ color_map[r.estado.color] }} text-[10px] font-bold uppercase tracking-wide">
+                  {{ label_para_rol(r.estado) }}
+                </span>
+                {% if r.lote_estado == 'cerrada' %}
+                <span class="ml-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[9px] font-semibold">lote cerrado</span>
+                {% endif %}
+              </td>
+              <td class="px-3 py-2 text-right font-mono">{{ r.n_total }}</td>
+              {% if _rol != 'rendicion' %}
+              <td class="px-3 py-2 text-right font-mono
+                  {% if r.todo_auditado %}text-green-700 font-bold{% else %}text-gray-600{% endif %}">
+                {{ r.n_audit }}/{{ r.n_total }}
+              </td>
+              {% endif %}
+              <td class="px-3 py-2 text-right font-mono text-xs">
+                {% if r.imp_os %}${{ '{:,.0f}'.format(r.imp_os).replace(',', '.') }}{% else %}—{% endif %}
+              </td>
+              <td class="px-3 py-2 text-center">
+                <a href="{{ url_for('devoluciones_list', presentacion=r.nro, vendedor=v.vendedor) }}"
+                   class="text-blue-600 hover:text-blue-800" title="Ver detalle">→</a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
