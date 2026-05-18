@@ -138,7 +138,7 @@
         <div class="cdr-card-title">Top médicos prescriptores</div>
         <div class="cdr-top">
             {% for m in info.top_medicos %}
-            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id) }}"
+            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id, dias=info.n_days) }}"
                class="cdr-top-row">
                 <span class="cdr-top-name">👨‍⚕️ {{ m.nombre }}</span>
                 <span class="cdr-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>

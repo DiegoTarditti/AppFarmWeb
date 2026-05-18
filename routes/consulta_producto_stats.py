@@ -77,7 +77,9 @@ def init_app(app):
 
             base = (session.query(database.ObsVentaDetalle)
                     .filter(database.ObsVentaDetalle.producto_observer == observer_id,
-                            ventas_periodo_filter(database.ObsVentaDetalle, desde, hasta)))
+                            ventas_periodo_filter(database.ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(database.ObsVentaDetalle,
+                                                        database.ObsProducto, session)))
             if medico_ids_filter:
                 base = base.filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids_filter))
 
@@ -168,7 +170,9 @@ def init_app(app):
                               func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'))
                           .filter(database.ObsVentaDetalle.producto_observer == observer_id,
                                   database.ObsVentaDetalle.fecha_estadistica >= desde_serie,
-                                  database.ObsVentaDetalle.fecha_estadistica <= hasta))
+                                  database.ObsVentaDetalle.fecha_estadistica <= hasta,
+                                  excluir_no_medicamentos_ovd(database.ObsVentaDetalle,
+                                                              database.ObsProducto, session)))
             if medico_ids_filter:
                 serie_q = serie_q.filter(database.ObsVentaDetalle.medico_observer.in_(medico_ids_filter))
             serie_rows = serie_q.group_by('ym').order_by('ym').all()
