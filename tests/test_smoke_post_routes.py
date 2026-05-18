@@ -113,9 +113,6 @@ RUTAS_POST = [
     ('/claim/create', 'claim_create'),
     ('/claim/1/complete', 'claim_complete'),
 
-    # Pedidos / análisis
-    ('/informes/pedido-auto/crear', 'pedido_auto_crear'),
-
     # Laboratorios
     ('/laboratorio/create', 'lab_create'),
     ('/laboratorio/1/edit', 'lab_edit'),

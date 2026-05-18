@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ info.nombre or 'OS' }} — Consulta{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.cor-screen { max-width: 720px; margin: 0 auto; padding: 12px; }
+.cor-header { display: flex; align-items: baseline; justify-content: space-between;
+              gap: 12px; margin-bottom: 4px; }
+.cor-h1 { font-size: 19px; font-weight: 700; color: var(--ds-text); line-height: 1.2; }
+.cor-back { font-size: 13px; color: var(--ds-text-mute); text-decoration: none; white-space: nowrap; }
+.cor-sub { font-size: 11px; color: var(--ds-text-mute); margin-bottom: 14px;
+           font-family: ui-monospace, Consolas, monospace; }
+
+/* KPI cards 2x3 */
+.cor-kpis { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 14px; }
+.cor-kpi { background: var(--ds-surface); border: 1px solid var(--ds-line);
+           border-radius: 10px; padding: 8px 10px; }
+.cor-kpi-val { font-size: 16px; font-weight: 700; color: var(--ds-text); line-height: 1.1; }
+.cor-kpi-lbl { font-size: 9.5px; color: var(--ds-text-mute); text-transform: uppercase;
+               letter-spacing: 0.4px; margin-top: 2px; }
+.cor-kpi-acc { color: var(--ds-mint); }
+
+/* Segmented control para group_by */
+.cor-tabs { display: flex; gap: 4px; background: var(--ds-surface-2); padding: 3px;
+            border-radius: 10px; margin-bottom: 12px; }
+.cor-tab { flex: 1; padding: 8px 6px; text-align: center; font-size: 12px;
+           font-weight: 600; color: var(--ds-text-mute); border-radius: 7px;
+           cursor: pointer; text-decoration: none; transition: background .15s; }
+.cor-tab.active { background: var(--ds-mint); color: #0a3a2a; }
+
+/* Cards de resultados */
+.cor-rows { display: flex; flex-direction: column; gap: 6px; }
+.cor-row { background: var(--ds-surface); border: 1px solid var(--ds-line);
+           border-radius: 10px; padding: 10px 12px;
+           display: flex; align-items: center; justify-content: space-between; gap: 10px;
+           text-decoration: none; color: var(--ds-text); }
+.cor-row:active { background: rgba(95,230,188,.08); }
+.cor-row-l { flex: 1; min-width: 0; }
+.cor-row-rank { font-size: 10px; color: var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace; }
+.cor-row-label { font-size: 13px; color: var(--ds-text); font-weight: 600;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cor-row-r { text-align: right; white-space: nowrap; }
+.cor-row-uds { font-size: 14px; font-weight: 700; color: var(--ds-mint); }
+.cor-row-imp { font-size: 11px; color: var(--ds-text-mute);
+               font-family: ui-monospace, Consolas, monospace; }
+.cor-row-ops { font-size: 9.5px; color: var(--ds-text-mute); margin-top: 1px; }
+
+.cor-empty { text-align: center; padding: 30px; color: var(--ds-text-mute); font-size: 13px; }
+
+/* Rango chips */
+.cor-rangos { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+.cor-rango { padding: 5px 10px; font-size: 11px; font-weight: 600;
+             background: var(--ds-surface); color: var(--ds-text-mute);
+             border: 1px solid var(--ds-line); border-radius: 8px;
+             text-decoration: none; }
+.cor-rango.active { background: var(--ds-mint); color: #0a3a2a; border-color: var(--ds-mint); }
+
+.cor-foot { margin-top: 16px; padding: 10px 12px; background: var(--ds-surface-2);
+            border-radius: 10px; font-size: 11px; color: var(--ds-text-mute); text-align: center; }
+</style>
+{% endblock %}
+
+{% block main %}
+{% if not info.encontrado %}
+<div class="cor-screen">
+    <div class="cor-header">
+        <h1 class="cor-h1">OS no encontrada</h1>
+        <a href="{{ url_for('consulta_os') }}" class="cor-back">← Volver</a>
+    </div>
+</div>
+{% else %}
+<div class="cor-screen">
+
+    <div class="cor-header">
+        <h1 class="cor-h1">🏥 {{ info.nombre }}{% if info.baja %} <small style="color:#f87171;">(baja)</small>{% endif %}</h1>
+        <a href="{{ url_for('consulta_os') }}" class="cor-back">← Otra</a>
+    </div>
+    <p class="cor-sub">Últ. {{ info.n_days }} días · todos los rubros · neto de devoluciones</p>
+
+    {# Chips de rango — preserva el group_by actual #}
+    <div class="cor-rangos">
+        {% for d in [7, 30, 90, 180, 365] %}
+        <a href="?dias={{ d }}&gb={{ info.group_by }}"
+           class="cor-rango {% if info.n_days == d %}active{% endif %}">
+           {% if d == 7 %}7d{% elif d == 30 %}30d{% elif d == 90 %}90d
+           {% elif d == 180 %}6m{% else %}1a{% endif %}
+        </a>
+        {% endfor %}
+    </div>
+
+    {# KPIs 2x3: unidades / importe / a cargo OS / ops / clientes / médicos #}
+    <div class="cor-kpis">
+        <div class="cor-kpi">
+            <div class="cor-kpi-val cor-kpi-acc">{{ '%.0f' | format(info.kpis.unidades) }}</div>
+            <div class="cor-kpi-lbl">Unidades</div>
+        </div>
+        <div class="cor-kpi">
+            <div class="cor-kpi-val">${{ '%.0f' | format(info.kpis.importe) }}</div>
+            <div class="cor-kpi-lbl">Importe</div>
+        </div>
+        <div class="cor-kpi">
+            <div class="cor-kpi-val cor-kpi-acc">{{ '%.0f' | format(info.kpis.pct_a_cargo_os) }}%</div>
+            <div class="cor-kpi-lbl">A cargo OS</div>
+        </div>
+        <div class="cor-kpi">
+            <div class="cor-kpi-val">{{ info.kpis.ops }}</div>
+            <div class="cor-kpi-lbl">Operaciones</div>
+        </div>
+        <div class="cor-kpi">
+            <div class="cor-kpi-val">{{ info.kpis.clientes }}</div>
+            <div class="cor-kpi-lbl">Pacientes</div>
+        </div>
+        <div class="cor-kpi">
+            <div class="cor-kpi-val">{{ info.kpis.medicos }}</div>
+            <div class="cor-kpi-lbl">Médicos</div>
+        </div>
+    </div>
+
+    {# Tabs / segmented control — group_by #}
+    <div class="cor-tabs">
+        {% for gb, label in [('producto', 'Productos'), ('medico', 'Médicos'),
+                              ('mes', 'Meses'), ('droga', 'Drogas')] %}
+        <a href="?dias={{ info.n_days }}&gb={{ gb }}"
+           class="cor-tab {% if info.group_by == gb %}active{% endif %}">{{ label }}</a>
+        {% endfor %}
+    </div>
+
+    {# Lista de cards #}
+    {% if info.rows %}
+    <div class="cor-rows">
+        {% for r in info.rows %}
+        {# Determinar URL drill según group_by. Mes no es clickeable. #}
+        {% set drill_url = none %}
+        {% if r.key %}
+          {% if info.group_by == 'medico' %}
+            {% set drill_url = url_for('consulta_medico_detalle', medico_id=r.key, dias=info.n_days) %}
+          {% elif info.group_by == 'droga' %}
+            {% set drill_url = url_for('consulta_droga_detalle', droga_id=r.key, dias=info.n_days) %}
+          {% elif info.group_by == 'producto' %}
+            {% set drill_url = url_for('consulta_producto_stats', observer_id=r.key, dias=info.n_days) %}
+          {% endif %}
+        {% endif %}
+        {% if drill_url %}
+        <a href="{{ drill_url }}" class="cor-row">
+            <div class="cor-row-l">
+                <div class="cor-row-rank">#{{ loop.index }}</div>
+                <div class="cor-row-label">{{ r.label }}</div>
+            </div>
+            <div class="cor-row-r">
+                <div class="cor-row-uds">{{ '%.0f' | format(r.unidades) }} u</div>
+                <div class="cor-row-imp">${{ '%.0f' | format(r.importe) }}</div>
+                <div class="cor-row-ops">{{ r.ops }} ops</div>
+            </div>
+        </a>
+        {% else %}
+        <div class="cor-row">
+            <div class="cor-row-l">
+                <div class="cor-row-rank">#{{ loop.index }}</div>
+                <div class="cor-row-label">{{ r.label }}</div>
+            </div>
+            <div class="cor-row-r">
+                <div class="cor-row-uds">{{ '%.0f' | format(r.unidades) }} u</div>
+                <div class="cor-row-imp">${{ '%.0f' | format(r.importe) }}</div>
+                <div class="cor-row-ops">{{ r.ops }} ops</div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    <div class="cor-foot">
+        Total: <b>{{ '%.0f' | format(info.total_unidades) }} u</b> ·
+        <b>${{ '%.0f' | format(info.total_importe) }}</b>
+        {% if info.rows | length == 100 %} · top 100 mostrados{% endif %}
+    </div>
+    {% else %}
+    <div class="cor-empty">Sin ventas en este período.</div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

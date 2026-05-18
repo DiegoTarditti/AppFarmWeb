@@ -132,7 +132,7 @@ NO_MEDICAMENTO_PATTERNS = (
 def filtro_solo_medicamentos(query, ObsProducto):
     """Aplica NOT LIKE para excluir items no-medicamento de una query SQLAlchemy.
 
-    Uso:
+    Uso (cuando la query YA tiene join con ObsProducto):
         from helpers import filtro_solo_medicamentos
         base_q = filtro_solo_medicamentos(base_q, ObsProducto)
     """
@@ -140,6 +140,120 @@ def filtro_solo_medicamentos(query, ObsProducto):
     for pat in NO_MEDICAMENTO_PATTERNS:
         query = query.filter(not_(ObsProducto.descripcion.ilike(pat)))
     return query
+
+
+def top_productos_por_medico(session, medico_observer_ids, desde, hasta,
+                              limit=10, resolver_codigo_barra=False,
+                              excluir_no_medicamentos=True):
+    """Top productos vendidos por uno o varios médicos en un rango.
+
+    Devuelve lista de dicts con: observer_id, nombre, unidades, importe.
+    Si `resolver_codigo_barra=True`, agrega `codigo_barra` (busca primero en
+    Producto local por bridge, fallback a obs_codigos_barras orden=1).
+
+    Aplica `ventas_periodo_filter` (suma neta = descuenta devoluciones).
+    Si `excluir_no_medicamentos=True` (default) aplica el filtro de
+    sellado/costo cupón.
+
+    Args:
+        session: SQLAlchemy session.
+        medico_observer_ids: list[int] — IDs del médico. Usar
+            `helpers.medicos_observer_ids_compartidos()` para agrupar
+            variantes por matrícula (mismo médico, múltiples observer_id).
+        desde, hasta: fechas inclusivas.
+        limit: cantidad máxima de productos.
+        resolver_codigo_barra: si True, resuelve el EAN para cada producto.
+        excluir_no_medicamentos: si True (default), excluye sellado/cupón.
+
+    Usado por: routes/consulta_medico.py (top 10 con CB). Disponible para
+    otras pantallas que quieran "qué receta este médico" sin re-implementar.
+    """
+    from sqlalchemy import desc as _desc
+    from sqlalchemy import func as _func
+
+    import database as _db
+
+    base = (session.query(_db.ObsVentaDetalle)
+            .filter(_db.ObsVentaDetalle.medico_observer.in_(medico_observer_ids),
+                    ventas_periodo_filter(_db.ObsVentaDetalle, desde, hasta)))
+    if excluir_no_medicamentos:
+        base = base.filter(excluir_no_medicamentos_ovd(
+            _db.ObsVentaDetalle, _db.ObsProducto, session))
+
+    top_rows = (base.with_entities(
+                    _db.ObsVentaDetalle.producto_observer,
+                    _func.coalesce(_func.sum(_db.ObsVentaDetalle.cantidad), 0).label('uds'),
+                    _func.coalesce(_func.sum(_db.ObsVentaDetalle.importe), 0).label('imp'),
+                )
+                .group_by(_db.ObsVentaDetalle.producto_observer)
+                .order_by(_desc('uds'))
+                .limit(limit).all())
+
+    prod_ids = [r[0] for r in top_rows if r[0]]
+    nombre_por_id = {}
+    cb_por_id = {}
+    if prod_ids:
+        for op in (session.query(_db.ObsProducto)
+                   .filter(_db.ObsProducto.observer_id.in_(prod_ids)).all()):
+            nombre_por_id[op.observer_id] = op.descripcion or ''
+        if resolver_codigo_barra:
+            for p in (session.query(_db.Producto)
+                      .filter(_db.Producto.observer_id.in_(prod_ids)).all()):
+                if p.codigo_barra:
+                    cb_por_id[p.observer_id] = p.codigo_barra
+            sin_cb = [pid for pid in prod_ids if pid not in cb_por_id]
+            if sin_cb:
+                for row in (session.query(_db.ObsCodigoBarras.producto_observer,
+                                          _db.ObsCodigoBarras.codigo_barras)
+                            .filter(_db.ObsCodigoBarras.producto_observer.in_(sin_cb),
+                                    _db.ObsCodigoBarras.fecha_baja.is_(None),
+                                    _db.ObsCodigoBarras.orden == 1).all()):
+                    if row[1]:
+                        cb_por_id[row[0]] = row[1].strip()
+
+    out = []
+    for r in top_rows:
+        if not r[0]:
+            continue
+        item = {
+            'observer_id': r[0],
+            'nombre':      nombre_por_id.get(r[0], f'#{r[0]}'),
+            'unidades':    float(r[1] or 0),
+            'importe':     float(r[2] or 0),
+        }
+        if resolver_codigo_barra:
+            item['codigo_barra'] = cb_por_id.get(r[0])
+        out.append(item)
+    return out
+
+
+def excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session):
+    """Devuelve un filtro SQLAlchemy para queries sobre ObsVentaDetalle que
+    excluye filas cuyo producto es 'no-medicamento' (sellado de recetas,
+    costo receta/cupón, etc.) — items que NO son ventas de medicamentos
+    sino servicios administrativos de la farmacia.
+
+    Usa una subquery — NO requiere joinear ObsProducto en la query principal.
+    Aplicable en CUALQUIER estadística de ventas que sume cantidad/importe.
+
+    Uso típico:
+        from helpers import excluir_no_medicamentos_ovd
+        base = (session.query(ObsVentaDetalle)
+                .filter(
+                    ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                    excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session),
+                    # ... otros filtros propios
+                ))
+
+    Convención del proyecto: SIEMPRE excluir estos items al calcular
+    "ventas". Solo se incluyen en informes de servicios o auditoría
+    contable (donde el dato del cobro del cupón sí cuenta).
+    """
+    from sqlalchemy import not_, or_
+    no_med_ids = session.query(ObsProducto.observer_id).filter(
+        or_(*[ObsProducto.descripcion.ilike(pat) for pat in NO_MEDICAMENTO_PATTERNS])
+    )
+    return not_(ObsVentaDetalle.producto_observer.in_(no_med_ids))
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(CONVERTER_DIR, exist_ok=True)
@@ -1003,3 +1117,136 @@ def medicos_observer_ids_compartidos(session, medico_id):
     ids = {r[0] for r in relacionados}
     ids.add(medico_id)
     return sorted(ids)
+
+
+def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m,
+                                  dias_cobertura=None):
+    """Métricas de reposición para un producto bajo mínimo.
+
+    Función pura, sin DB. Testeable.
+
+    Args:
+        stock: int, stock actual.
+        minimo: int, mínimo configurado.
+        maximo: int o None, máximo configurado.
+        u12m: int, unidades vendidas en los últimos 12 meses.
+        m12m: float, monto vendido en los últimos 12 meses.
+        dias_cobertura: int o None. Si se especifica, calcula `sugerido` para
+            cubrir esa cantidad de días de venta proyectada (en base a u12m),
+            ignorando mínimo/máximo configurados.
+
+    Returns:
+        dict con: sugerido, base_sugerido, avg_mensual, precio_unit,
+                  perdida_mensual, perdida_pesos, min_diag, min_diag_label.
+
+    Reglas:
+      - Si u12m=0 → sugerido=0 (no proponer compra de productos sin movimiento).
+      - Si dias_cobertura → sugerido = ceil(u12m/365 * dias) - stock, clip ≥ 0.
+      - Si hay máximo > stock → sugerido = maximo - stock.
+      - Si no → sugerido = max(1, minimo - stock).
+      - avg_mensual = u12m / 12.
+      - precio_unit = m12m / u12m (0 si no hay ventas).
+      - factor_falta = clamp((minimo - stock) / minimo, 0, 1).
+      - perdida_mensual = avg_mensual * factor_falta.
+      - perdida_pesos = perdida_mensual * precio_unit.
+      - Diagnóstico de mínimo:
+          - sin_ventas si u12m=0
+          - ratio = minimo / avg_mensual
+          - <0.5 → bajo (cubre <~2 semanas)
+          - >2   → alto (cubre >2 meses)
+          - sino → ok
+    """
+    import math
+    stock = int(stock or 0)
+    minimo = int(minimo or 0)
+    maximo = int(maximo) if maximo is not None else None
+    u12m = int(u12m or 0)
+    m12m = float(m12m or 0)
+    dias_cobertura = int(dias_cobertura) if dias_cobertura else None
+
+    if u12m <= 0:
+        sugerido = 0
+        base_sugerido = 'sin_ventas'
+    elif dias_cobertura and dias_cobertura > 0:
+        target = math.ceil(u12m / 365.0 * dias_cobertura)
+        sugerido = max(0, target - stock)
+        base_sugerido = f'dias-{dias_cobertura}'
+    elif maximo and maximo > stock:
+        sugerido = maximo - stock
+        base_sugerido = 'max-stock'
+    else:
+        sugerido = max(1, minimo - stock)
+        base_sugerido = 'min-stock'
+
+    avg_mensual = u12m / 12.0 if u12m else 0.0
+    precio_unit = (m12m / u12m) if u12m else 0.0
+    factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
+    perdida_mensual = round(avg_mensual * factor_falta, 1)
+    perdida_pesos = round(perdida_mensual * precio_unit, 2)
+
+    if avg_mensual <= 0:
+        min_diag = 'sin_ventas'
+        min_diag_label = 'Sin ventas 12m'
+    else:
+        ratio = minimo / avg_mensual
+        if ratio < 0.5:
+            min_diag = 'bajo'
+            min_diag_label = f'Bajo — cubre ~{int(ratio * 30)}d, sugerido ≥{int(round(avg_mensual))}'
+        elif ratio > 2:
+            min_diag = 'alto'
+            min_diag_label = f'Alto — cubre ~{int(ratio * 30)}d, sugerido ≈{int(round(avg_mensual * 1.5))}'
+        else:
+            min_diag = 'ok'
+            min_diag_label = f'OK — cubre ~{int(ratio * 30)}d'
+
+    return {
+        'sugerido': sugerido,
+        'base_sugerido': base_sugerido,
+        'avg_mensual': round(avg_mensual, 2),
+        'precio_unit': round(precio_unit, 2),
+        'perdida_mensual': perdida_mensual,
+        'perdida_pesos': perdida_pesos,
+        'min_diag': min_diag,
+        'min_diag_label': min_diag_label,
+    }
+
+
+def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_min):
+    """Aplica overrides operativos sobre un sugerido calculado.
+
+    Función pura, sin DB. Sirve para que /pedido/prueba (planificador) muestre
+    los mismos números que después aparecen en /compras/dia/armar (operativo),
+    que ya respeta estos overrides via services/calculo_pedido.py.
+
+    Reglas (orden de precedencia):
+      1. cant_fija (Producto.cantidad_reposicion_fija): hard override. Si
+         stock <= minimo y cant_fija > 0 → sugerido = cant_fija, regardless
+         de lo que diga el cálculo. Decisión explícita del operador.
+      2. oferta_min (OfertaMinimo.unidades_minima): piso. Si sugerido > 0
+         y sugerido < oferta_min → sugerido = oferta_min (subir al mínimo
+         para acceder al descuento TRF). Si sugerido = 0 NO sube (no compro
+         solo por la oferta).
+      3. Sin override → sugerido sin cambios.
+
+    Args:
+        sugerido: int, cantidad calculada antes de override.
+        stock: int, stock actual (usado para regla cant_fija).
+        minimo: int, mínimo configurado (usado para regla cant_fija).
+        cant_fija: int|None, valor de Producto.cantidad_reposicion_fija.
+        oferta_min: int|None, valor de OfertaMinimo.unidades_minima vigente.
+
+    Returns:
+        tuple (sugerido_final, override_slug, override_valor) donde
+        override_slug es 'cant_fija' | 'oferta_min' | None.
+    """
+    sugerido = int(sugerido or 0)
+    stock = int(stock or 0)
+    minimo = int(minimo or 0)
+    cant_fija = int(cant_fija) if cant_fija else 0
+    oferta_min = int(oferta_min) if oferta_min else 0
+
+    if cant_fija > 0 and stock <= minimo:
+        return (cant_fija, 'cant_fija', cant_fija)
+    if oferta_min > 0 and 0 < sugerido < oferta_min:
+        return (oferta_min, 'oferta_min', oferta_min)
+    return (sugerido, None, None)

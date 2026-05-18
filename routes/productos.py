@@ -353,7 +353,7 @@ def init_app(app):
                     droga_map[obs.observer_id] = obs.nombre_droga_observer
 
             # Flags por producto: cualquiera de sus EANs (master + obs_codigos_barras)
-            # cuenta. Misma logica que en informe_pedido_auto.
+            # cuenta.
             from database import ProductoFlag, TipoPedidoConfig
             eans_por_obs = defaultdict(set)
             for obs, loc in rows:

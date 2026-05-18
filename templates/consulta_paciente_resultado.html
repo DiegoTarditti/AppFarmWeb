@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}{{ info.nombre or 'Paciente no encontrado' }} — Estadísticas{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+/* Prefijo cpc- (paciente). Mismo patrón que cmr-/cdr- */
+.cpc-screen { max-width: 720px; margin: 0 auto; padding: 12px; padding-bottom: 80px; }
+.cpc-header { position: sticky; top: 0; z-index: 20;
+              background: var(--ds-bg); padding: 8px 0; border-bottom: 1px solid var(--ds-line);
+              display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.cpc-back { width: 36px; height: 36px; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--ds-surface); border: 1px solid var(--ds-line);
+            border-radius: 8px; color: var(--ds-text); font-size: 18px; text-decoration: none; }
+.cpc-title { flex: 1; min-width: 0; }
+.cpc-h1 { font-size: 15px; font-weight: 700; color: var(--ds-text); line-height: 1.2;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cpc-meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 1px;
+            font-family: ui-monospace, Consolas, monospace; }
+
+.cpc-card { background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+            border-radius: 12px; padding: 14px; margin-bottom: 12px; }
+.cpc-card-title { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
+                  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+.cpc-kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+@media (min-width: 560px) { .cpc-kpis { grid-template-columns: repeat(5, 1fr); } }
+.cpc-kpi { background: var(--ds-surface-2); border-radius: 10px; padding: 10px;
+           border: 1px solid var(--ds-line); }
+.cpc-kpi-label { font-size: 10px; color: var(--ds-text-mute); text-transform: uppercase;
+                 letter-spacing: .06em; margin-bottom: 4px; }
+.cpc-kpi-value { font-size: 22px; font-weight: 700; color: var(--ds-mint); line-height: 1; }
+
+.cpc-top { display: flex; flex-direction: column; gap: 6px; }
+.cpc-top-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+               background: var(--ds-surface-2); border-radius: 8px; border: 1px solid var(--ds-line);
+               text-decoration: none; color: var(--ds-text); }
+.cpc-top-row:active { background: rgba(95,230,188,.08); }
+.cpc-top-name { flex: 1; min-width: 0; font-size: 13px;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cpc-top-uds { font-size: 14px; font-weight: 700; color: var(--ds-mint);
+               font-family: ui-monospace, Consolas, monospace; }
+
+.cpc-rango { padding: 6px 10px; background: var(--ds-surface-2); border-radius: 8px;
+             font-size: 11px; color: var(--ds-text-mute); margin-bottom: 12px;
+             display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.cpc-rango-btns { display: flex; gap: 6px; }
+.cpc-rango-btn { padding: 4px 10px; background: var(--ds-surface);
+                 border: 1px solid var(--ds-line); border-radius: 6px;
+                 color: var(--ds-text-mute); font-size: 11px; text-decoration: none; }
+.cpc-rango-btn.active { background: var(--ds-mint); color: #0a3a2a;
+                        border-color: var(--ds-mint-deep); font-weight: 700; }
+
+.cpc-chart-wrap { position: relative; height: 200px; }
+.cpc-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 12px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="cpc-screen">
+    <div class="cpc-header">
+        <a href="javascript:history.back()" class="cpc-back" title="Volver">←</a>
+        <a href="{{ url_for('consulta_stock') }}" class="cpc-back" title="Home-móvil">🏠</a>
+        <div class="cpc-title">
+            <div class="cpc-h1">🧑 {{ info.nombre or 'No encontrado' }}</div>
+            {% if info.encontrado %}
+            <div class="cpc-meta">
+                {% if info.documento %}{{ info.documento }}{% endif %}
+                {% if info.documento and info.localidad %} · {% endif %}
+                {% if info.localidad %}{{ info.localidad }}{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if not info.encontrado %}
+    <div class="cpc-card"><div class="cpc-empty">Paciente no encontrado.</div></div>
+    {% else %}
+
+    <div class="cpc-rango">
+        <span>📅 Últimos <b>{{ info.n_days }}</b> días</span>
+        <div class="cpc-rango-btns">
+            <a href="?dias=30"  class="cpc-rango-btn {% if info.n_days == 30 %}active{% endif %}">30d</a>
+            <a href="?dias=90"  class="cpc-rango-btn {% if info.n_days == 90 %}active{% endif %}">90d</a>
+            <a href="?dias=180" class="cpc-rango-btn {% if info.n_days == 180 %}active{% endif %}">180d</a>
+            <a href="?dias=365" class="cpc-rango-btn {% if info.n_days == 365 %}active{% endif %}">1a</a>
+        </div>
+    </div>
+
+    <div class="cpc-card">
+        <div class="cpc-card-title">Indicadores</div>
+        <div class="cpc-kpis">
+            <div class="cpc-kpi"><div class="cpc-kpi-label">Unidades</div>
+                <div class="cpc-kpi-value">{{ '%.0f' | format(info.kpis.unidades) }}</div></div>
+            <div class="cpc-kpi"><div class="cpc-kpi-label">Recetas</div>
+                <div class="cpc-kpi-value">{{ info.kpis.ops }}</div></div>
+            <div class="cpc-kpi"><div class="cpc-kpi-label">Productos</div>
+                <div class="cpc-kpi-value">{{ info.kpis.productos }}</div></div>
+            <div class="cpc-kpi"><div class="cpc-kpi-label">Médicos</div>
+                <div class="cpc-kpi-value">{{ info.kpis.medicos }}</div></div>
+            <div class="cpc-kpi"><div class="cpc-kpi-label">Importe</div>
+                <div class="cpc-kpi-value" style="font-size:16px;">$ {{ '%.0f' | format(info.kpis.importe) }}</div></div>
+        </div>
+    </div>
+
+    <div class="cpc-card">
+        <div class="cpc-card-title">Top productos comprados</div>
+        {% if info.top_productos %}
+        <div class="cpc-top">
+            {% for p in info.top_productos %}
+            <a href="{{ url_for('consulta_producto_stats', observer_id=p.observer_id, dias=info.n_days) }}"
+               class="cpc-top-row">
+                <span class="cpc-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
+                <span class="cpc-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}<div class="cpc-empty">Sin compras en este rango.</div>{% endif %}
+    </div>
+
+    {% if info.top_medicos %}
+    <div class="cpc-card">
+        <div class="cpc-card-title">Médicos que le recetan</div>
+        <div class="cpc-top">
+            {% for m in info.top_medicos %}
+            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id, dias=info.n_days) }}"
+               class="cpc-top-row">
+                <span class="cpc-top-name">👨‍⚕️ {{ m.nombre }}</span>
+                <span class="cpc-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if info.top_os %}
+    <div class="cpc-card">
+        <div class="cpc-card-title">Top obras sociales</div>
+        <div class="cpc-top">
+            {% for o in info.top_os %}
+            <div class="cpc-top-row">
+                <span class="cpc-top-name">🏥 {{ o.nombre }}</span>
+                <span class="cpc-top-uds">{{ '%.0f' | format(o.unidades) }}u</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="cpc-card">
+        <div class="cpc-card-title">Evolución 12 meses</div>
+        {% if info.serie %}<div class="cpc-chart-wrap"><canvas id="cpc-chart"></canvas></div>
+        {% else %}<div class="cpc-empty">Sin historial.</div>{% endif %}
+    </div>
+
+    {% if info.top_productos %}
+    <div class="cpc-card">
+        <div class="cpc-card-title">Distribución de compras</div>
+        <div class="cpc-chart-wrap" style="height: 260px;"><canvas id="cpc-donut"></canvas></div>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+
+{% if info.encontrado and info.serie %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    const serie = {{ info.serie | tojson }};
+    const labels = serie.map(s => `${String(s.mes).padStart(2,'0')}/${String(s.anio).slice(2)}`);
+    new Chart(document.getElementById('cpc-chart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Unidades', data: serie.map(s => s.unidades),
+            backgroundColor: 'rgba(95,230,188,.7)', borderColor: 'rgba(45,180,140,1)', borderWidth: 1 }]},
+        options: { responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: 'rgba(148,163,184,.1)' } },
+                      x: { ticks: { color: '#94a3b8' }, grid: { display: false } } } }
+    });
+
+    const topProds = {{ info.top_productos | tojson }};
+    const donut = document.getElementById('cpc-donut');
+    if (donut && topProds && topProds.length) {
+        const palette = ['#5FE6BC','#3B82F6','#F59E0B','#EF4444','#A78BFA',
+                         '#10B981','#F472B6','#06B6D4','#FBBF24','#8B5CF6'];
+        new Chart(donut, {
+            type: 'doughnut',
+            data: { labels: topProds.map(p => p.nombre.length > 35 ? p.nombre.slice(0,32)+'…' : p.nombre),
+                    datasets: [{ data: topProds.map(p => p.unidades),
+                        backgroundColor: topProds.map((_, i) => palette[i % palette.length]),
+                        borderColor: 'rgba(0,0,0,.2)', borderWidth: 1 }]},
+            options: { responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'right',
+                    labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 6 } },
+                    tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}u` } } } }
+        });
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}

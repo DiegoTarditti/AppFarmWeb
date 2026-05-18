@@ -156,7 +156,6 @@ RUTAS_GET = [
     ('/informes/drogas-sin-alternativa', 'informes_sin_alt'),
     ('/informes/presentaciones-por-droga', 'informes_presentaciones'),
     ('/informes/bajo-minimo', 'informes_bajo_minimo'),
-    ('/informes/pedido-auto', 'informes_pedido_auto'),
     ('/bi', 'bi_tablero'),
 
     # Observer

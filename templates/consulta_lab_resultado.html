@@ -126,7 +126,7 @@
         {% if info.top_productos %}
         <div class="clr-top">
             {% for p in info.top_productos %}
-            <a href="{{ url_for('consulta_producto_detalle', ean=p.observer_id) }}" class="clr-top-row">
+            <a href="{{ url_for('consulta_producto_stats', observer_id=p.observer_id, dias=info.n_days) }}" class="clr-top-row">
                 <span class="clr-top-name" title="{{ p.nombre }}">{{ p.nombre }}</span>
                 <span class="clr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
             </a>
@@ -142,7 +142,7 @@
         <div class="clr-card-title">Top médicos que recetan</div>
         <div class="clr-top">
             {% for m in info.top_medicos %}
-            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id) }}" class="clr-top-row">
+            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id, dias=info.n_days) }}" class="clr-top-row">
                 <span class="clr-top-name">👨‍⚕️ {{ m.nombre }}</span>
                 <span class="clr-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>
             </a>

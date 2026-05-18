@@ -1,6 +1,6 @@
 """Tests del cálculo de métricas del pedido auto.
 
-`calcular_metricas_pedido_auto` (en routes/informes.py) es función pura.
+`calcular_metricas_pedido_auto` (en helpers.py) es función pura.
 Testea: cantidad sugerida, pérdida en u/mes, pérdida en $, diagnóstico
 del mínimo (BAJO/OK/ALTO/sin ventas).
 
@@ -8,7 +8,7 @@ Cada caso vino de los datos reales de Roemmers que probamos el 2026-04-26.
 """
 import pytest
 
-from routes.informes import calcular_metricas_pedido_auto
+from helpers import calcular_metricas_pedido_auto
 
 
 class TestCantidadSugerida:

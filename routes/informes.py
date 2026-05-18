@@ -19,16 +19,6 @@ from sqlalchemy import distinct, func
 
 import database
 from database import ObsLaboratorio, ObsNombreDroga, ObsProducto, ObsStock, ObsVentaMensual, Producto
-from services.pedido_estacional import obtener_flags_bulk
-
-# Mapeo color -> clases Tailwind para chips de flag (alineado con config_json de
-# TipoPedidoConfig categoria='flag': red/violet/amber/sky).
-_FLAG_COLOR_CLASSES = {
-    'red':    'bg-red-100 text-red-800 border-red-300',
-    'violet': 'bg-violet-100 text-violet-800 border-violet-300',
-    'amber':  'bg-amber-100 text-amber-800 border-amber-300',
-    'sky':    'bg-sky-100 text-sky-800 border-sky-300',
-}
 
 
 def _ventana_12m():
@@ -42,138 +32,6 @@ def _ventana_12m():
         desde_y += 1
     desde = desde_y * 100 + desde_m
     return desde, hasta
-
-
-def sugerir_drogueria_para_lab(session, lab_nombre):
-    """Devuelve dict {provider_id, nombre, n_pedidos_anteriores} o None.
-
-    Busca pedidos pasados con canal='drogueria' para ese laboratorio y
-    devuelve la droguería más frecuente. Si no hay historial → None.
-
-    Args:
-        session: SQLAlchemy session.
-        lab_nombre: nombre del laboratorio (string, como en Pedido.laboratorio).
-    """
-    from sqlalchemy import func
-
-    from database import Pedido, Provider
-
-    if not lab_nombre:
-        return None
-
-    row = (session.query(
-                Pedido.partner_id,
-                func.count(Pedido.id).label('n'),
-            )
-            .filter(Pedido.laboratorio == lab_nombre)
-            .filter(Pedido.canal == 'drogueria')
-            .filter(Pedido.partner_id.isnot(None))
-            .group_by(Pedido.partner_id)
-            .order_by(func.count(Pedido.id).desc())
-            .first())
-
-    if not row or not row[0]:
-        return None
-    prov = session.get(Provider, row[0])
-    if not prov:
-        return None
-    return {
-        'provider_id': prov.id,
-        'nombre': prov.razon_social,
-        'n_pedidos_anteriores': int(row[1]),
-    }
-
-
-def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m,
-                                  dias_cobertura=None):
-    """Calcula las métricas de un producto bajo mínimo para el pedido automático.
-
-    Función pura, sin DB. Testeable.
-
-    Args:
-        stock: int, stock actual.
-        minimo: int, mínimo configurado.
-        maximo: int o None, máximo configurado.
-        u12m: int, unidades vendidas en los últimos 12 meses.
-        m12m: float, monto vendido en los últimos 12 meses.
-        dias_cobertura: int o None. Si se especifica, calcula `sugerido` para
-            cubrir esa cantidad de días de venta proyectada (en base a u12m),
-            ignorando mínimo/máximo configurados.
-
-    Returns:
-        dict con: sugerido, base_sugerido, perdida_mensual, perdida_pesos,
-                  precio_unit, min_diag (sin_ventas|bajo|ok|alto), min_diag_label.
-
-    Reglas:
-      - Si u12m=0 → sugerido=0 (no proponer compra de productos sin movimiento).
-      - Si dias_cobertura → sugerido = ceil(u12m/365 * dias) - stock, clip ≥ 0.
-      - Si hay máximo > stock → sugerido = maximo - stock.
-      - Si no → sugerido = max(1, minimo - stock).
-      - avg_mensual = u12m / 12.
-      - precio_unit = m12m / u12m (0 si no hay ventas).
-      - factor_falta = clamp((minimo - stock) / minimo, 0, 1).
-      - perdida_mensual = avg_mensual * factor_falta.
-      - perdida_pesos = perdida_mensual * precio_unit.
-      - Diagnóstico de mínimo:
-          - sin_ventas si u12m=0
-          - ratio = minimo / avg_mensual
-          - <0.5 → bajo (cubre <~2 semanas)
-          - >2   → alto (cubre >2 meses)
-          - sino → ok
-    """
-    import math
-    stock = int(stock or 0)
-    minimo = int(minimo or 0)
-    maximo = int(maximo) if maximo is not None else None
-    u12m = int(u12m or 0)
-    m12m = float(m12m or 0)
-    dias_cobertura = int(dias_cobertura) if dias_cobertura else None
-
-    if u12m <= 0:
-        sugerido = 0
-        base_sugerido = 'sin_ventas'
-    elif dias_cobertura and dias_cobertura > 0:
-        target = math.ceil(u12m / 365.0 * dias_cobertura)
-        sugerido = max(0, target - stock)
-        base_sugerido = f'dias-{dias_cobertura}'
-    elif maximo and maximo > stock:
-        sugerido = maximo - stock
-        base_sugerido = 'max-stock'
-    else:
-        sugerido = max(1, minimo - stock)
-        base_sugerido = 'min-stock'
-
-    avg_mensual = u12m / 12.0 if u12m else 0.0
-    precio_unit = (m12m / u12m) if u12m else 0.0
-    factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
-    perdida_mensual = round(avg_mensual * factor_falta, 1)
-    perdida_pesos = round(perdida_mensual * precio_unit, 2)
-
-    if avg_mensual <= 0:
-        min_diag = 'sin_ventas'
-        min_diag_label = 'Sin ventas 12m'
-    else:
-        ratio = minimo / avg_mensual
-        if ratio < 0.5:
-            min_diag = 'bajo'
-            min_diag_label = f'Bajo — cubre ~{int(ratio * 30)}d, sugerido ≥{int(round(avg_mensual))}'
-        elif ratio > 2:
-            min_diag = 'alto'
-            min_diag_label = f'Alto — cubre ~{int(ratio * 30)}d, sugerido ≈{int(round(avg_mensual * 1.5))}'
-        else:
-            min_diag = 'ok'
-            min_diag_label = f'OK — cubre ~{int(ratio * 30)}d'
-
-    return {
-        'sugerido': sugerido,
-        'base_sugerido': base_sugerido,
-        'avg_mensual': round(avg_mensual, 2),
-        'precio_unit': round(precio_unit, 2),
-        'perdida_mensual': perdida_mensual,
-        'perdida_pesos': perdida_pesos,
-        'min_diag': min_diag,
-        'min_diag_label': min_diag_label,
-    }
 
 
 def init_app(app):
@@ -833,9 +691,10 @@ def init_app(app):
         # Solo ejecutamos el cruce si algún filtro fue aplicado o es rango corto.
         # Sin filtros + 30d puede ser pesado, lo dejamos correr igual capeado a 200.
         with database.get_db() as session:
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
                 op = session.get(ObsProducto, producto_id)
@@ -1134,9 +993,10 @@ def init_app(app):
 
         # Reusar la misma lógica de query (copia del handler de la pantalla).
         with database.get_db() as session:
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1307,9 +1167,10 @@ def init_app(app):
         drill_value = (request.args.get('drill_value') or '').strip()
 
         with database.get_db() as session:
-            from helpers import ventas_periodo_filter
+            from helpers import excluir_no_medicamentos_ovd, ventas_periodo_filter
             base = (session.query(ObsVentaDetalle)
-                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta)))
+                    .filter(ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session)))
             if producto_id:
                 base = base.filter(ObsVentaDetalle.producto_observer == producto_id)
             if medico_id:
@@ -1435,6 +1296,7 @@ def init_app(app):
         top_n = max(1, min(request.args.get('top', default=5, type=int), 15))
 
         with database.get_db() as session:
+            from helpers import excluir_no_medicamentos_ovd
             anio = _func.extract('year', ObsVentaDetalle.fecha_estadistica)
             mes = _func.extract('month', ObsVentaDetalle.fecha_estadistica)
             base = (session.query(ObsVentaDetalle)
@@ -1442,6 +1304,7 @@ def init_app(app):
                           ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
                     .filter(ObsProducto.nombre_droga_observer == droga_id,
                             ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+                            excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session),
                             ObsVentaDetalle.medico_observer.isnot(None)))
 
             # Top N médicos por cantidad total en el período.
@@ -1493,24 +1356,9 @@ def init_app(app):
                 })
             return jsonify({'ok': True, 'labels': labels, 'series': series})
 
-    @app.route('/api/informes/buscar-medico')
-    @login_required
-    def api_informes_buscar_medico():
-        """Autocomplete para el filtro médico. Top 20 por nombre."""
-        from database import ObsMedico
-        q = (request.args.get('q') or '').strip()
-        if len(q) < 2:
-            return jsonify({'items': []})
-        with database.get_db() as session:
-            results = (session.query(ObsMedico)
-                       .filter(ObsMedico.fecha_baja.is_(None),
-                               ObsMedico.nombre.ilike(f'%{q}%'))
-                       .order_by(ObsMedico.nombre)
-                       .limit(20).all())
-            return jsonify({'items': [{'id': m.observer_id,
-                                        'nombre': m.nombre,
-                                        'cuit': m.cuit or ''}
-                                       for m in results]})
+    # /api/informes/buscar-medico eliminado — el JS de informe_ventas_multi
+    # ahora consume /api/consulta-medico/buscar (superset: multi-token AND +
+    # matrícula en el response).
 
     @app.route('/api/informes/buscar-os')
     @login_required
@@ -1545,407 +1393,6 @@ def init_app(app):
             return jsonify({'items': [{'id': p.observer_id, 'nombre': p.descripcion}
                                        for p in results]})
 
-    @app.route('/informes/pedido-auto', methods=['GET'])
-    @login_required
-    def informe_pedido_auto():
-        """Análisis de mínimos #2: armar un pedido sugerido para un laboratorio,
-        partiendo de los productos del lab que están bajo mínimo en ObServer.
-
-        Cantidad sugerida por ítem:
-          - Si hay máximo cargado: max(1, maximo - stock_actual).
-          - Si no: max(1, minimo - stock_actual).
-        """
-        lab_id = request.args.get('lab_id', type=int)
-        venta_tipo = (request.args.get('venta_tipo') or '').strip()
-        labs_con_alertas = []
-        rows = []
-        lab_nombre = None
-
-        with database.get_db() as session:
-            stock_q = (
-                session.query(
-                    ObsStock.producto_observer.label('pid'),
-                    func.sum(ObsStock.stock_actual).label('stock'),
-                    func.sum(ObsStock.minimo).label('minimo'),
-                    func.sum(ObsStock.maximo).label('maximo'),
-                )
-                .filter(ObsStock.minimo.isnot(None))
-                .filter(ObsStock.minimo > 0)
-                .group_by(ObsStock.producto_observer)
-                .subquery()
-            )
-
-            # Selector de labs: solo los que tienen al menos 1 producto bajo mínimo.
-            labs_q = (session.query(
-                        ObsLaboratorio.observer_id,
-                        ObsLaboratorio.descripcion,
-                        func.count(distinct(ObsProducto.observer_id)).label('n'),
-                     )
-                     .join(ObsProducto,
-                           ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
-                     .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
-                     .filter(ObsProducto.fecha_baja.is_(None))
-                     .filter(stock_q.c.stock < stock_q.c.minimo)
-                     .group_by(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
-                     .order_by(func.count(distinct(ObsProducto.observer_id)).desc()))
-            labs_con_alertas = [
-                {'lab_id': r[0], 'nombre': r[1], 'n_productos': int(r[2])}
-                for r in labs_q.all()
-            ]
-
-            tiene_plantilla = False
-            local_lab_nombre = None
-            droguerias = []
-            sugerencia_drogueria = None
-            if lab_id:
-                lab = session.get(ObsLaboratorio, lab_id)
-                lab_nombre = lab.descripcion if lab else None
-                # Buscar Laboratorio local mapeado para detectar plantilla.
-                from database import ExportTemplate, Laboratorio, Provider
-                local_lab = (session.query(Laboratorio)
-                             .filter(Laboratorio.observer_id == lab_id).first())
-                if local_lab:
-                    local_lab_nombre = local_lab.nombre
-                    tpl = session.get(ExportTemplate, local_lab.id)
-                    tiene_plantilla = bool(tpl and tpl.columns_json)
-
-                # Droguerías disponibles para el dropdown del canal.
-                provs = (session.query(Provider)
-                         .filter(Provider.tipo == 'drogueria')
-                         .filter(Provider.activo == True)  # noqa: E712
-                         .order_by(Provider.razon_social).all())
-                droguerias = [{'id': p.id, 'nombre': p.razon_social} for p in provs]
-
-                # Sugerencia: el lab que usamos en Pedido.laboratorio es el local.
-                nombre_para_buscar = local_lab_nombre or lab_nombre
-                sugerencia_drogueria = sugerir_drogueria_para_lab(
-                    session, nombre_para_buscar)
-
-                desde, hasta = _ventana_12m()
-                ventas_sub = (
-                    session.query(
-                        ObsVentaMensual.producto_observer.label('pid'),
-                        func.sum(ObsVentaMensual.unidades).label('u12m'),
-                        func.sum(ObsVentaMensual.monto).label('m12m'),
-                    )
-                    .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes >= desde)
-                    .filter(ObsVentaMensual.anio * 100 + ObsVentaMensual.mes <= hasta)
-                    .group_by(ObsVentaMensual.producto_observer)
-                    .subquery()
-                )
-
-                q = (session.query(
-                        ObsProducto.observer_id.label('pid'),
-                        ObsProducto.descripcion.label('desc'),
-                        ObsProducto.codigo_alfabeta,
-                        ObsProducto.id_tipo_venta_control.label('tvc'),
-                        ObsProducto.nombre_droga_observer.label('droga_id'),
-                        stock_q.c.stock,
-                        stock_q.c.minimo,
-                        stock_q.c.maximo,
-                        func.coalesce(ventas_sub.c.u12m, 0).label('u12m'),
-                        func.coalesce(ventas_sub.c.m12m, 0).label('m12m'),
-                     )
-                     .join(stock_q, stock_q.c.pid == ObsProducto.observer_id)
-                     .outerjoin(ventas_sub, ventas_sub.c.pid == ObsProducto.observer_id)
-                     .filter(ObsProducto.fecha_baja.is_(None))
-                     .filter(ObsProducto.laboratorio_observer == lab_id)
-                     .filter(stock_q.c.stock < stock_q.c.minimo)
-                     # A→Z por descripción (default global del proyecto).
-                     .order_by(ObsProducto.descripcion.asc()))
-                if venta_tipo == 'libre':
-                    q = q.filter(ObsProducto.id_tipo_venta_control == 'L')
-                elif venta_tipo == 'receta':
-                    q = q.filter(ObsProducto.id_tipo_venta_control.in_(['R', 'A']))
-                elif venta_tipo == 'controlado':
-                    q = q.filter(ObsProducto.id_tipo_venta_control.in_(['1','2','3','4','5','6','7','8']))
-
-                obs_ids = []
-                for r in q.all():
-                    metricas = calcular_metricas_pedido_auto(
-                        stock=r.stock, minimo=r.minimo, maximo=r.maximo,
-                        u12m=r.u12m, m12m=r.m12m,
-                    )
-                    rows.append({
-                        'producto_id': r.pid,
-                        'descripcion': r.desc,
-                        'codigo_alfabeta': r.codigo_alfabeta,
-                        'tvc': (r.tvc or '').strip(),
-                        'droga_id': r.droga_id,
-                        'stock': int(r.stock or 0),
-                        'minimo': int(r.minimo or 0),
-                        'maximo': int(r.maximo) if r.maximo is not None else None,
-                        'u12m': int(r.u12m or 0),
-                        'ean': None,
-                        **metricas,
-                    })
-                    obs_ids.append(r.pid)
-
-                # Bulk-load TODOS los EANs por producto: 1) master local
-                # (Producto.codigo_barra) + 2) catalogo ObServer (todos los
-                # obs_codigos_barras activos, principal y alts). Necesario para
-                # productos obs-only y para flagear por EAN alternativo.
-                eans_por_pid = {}   # producto_observer_id -> [ean,...]
-                if obs_ids:
-                    ean_by_obs = dict(
-                        session.query(Producto.observer_id, Producto.codigo_barra)
-                        .filter(Producto.observer_id.in_(obs_ids)).all()
-                    )
-                    from database import ObsCodigoBarras
-                    for pid, ean in (session.query(ObsCodigoBarras.producto_observer,
-                                                    ObsCodigoBarras.codigo_barras)
-                                     .filter(ObsCodigoBarras.producto_observer.in_(obs_ids))
-                                     .filter(ObsCodigoBarras.fecha_baja.is_(None))
-                                     .all()):
-                        eans_por_pid.setdefault(pid, []).append(ean)
-                    for r in rows:
-                        # EAN principal "vitrina": master si existe, sino el 1ro de obs
-                        master_ean = ean_by_obs.get(r['producto_id'])
-                        obs_eans = eans_por_pid.get(r['producto_id'], [])
-                        r['ean'] = master_ean or (obs_eans[0] if obs_eans else None)
-                        # Lista completa para lookup de flag (cualquier EAN cuenta)
-                        eans_completos = set(obs_eans)
-                        if master_ean:
-                            eans_completos.add(master_ean)
-                        r['_eans_para_flag'] = list(eans_completos)
-
-                # Flags por EAN + lab (Comportamientos excepcionales).
-                # Si DISCONTINUADO: sugerido baja a 0 (el usuario puede editarlo
-                # manualmente en el input igual). Resto (REEMPLAZADO, SIN_DESCUENTO,
-                # NOTA): solo chip informativo, sin tocar sugerido.
-                eans_para_flags = list({e for r in rows
-                                        for e in r.get('_eans_para_flag', [])})
-                lab_local_id = local_lab.id if local_lab else None
-                flags_map = obtener_flags_bulk(
-                    session, eans_para_flags, lab_id=lab_local_id)
-                import json as _json
-                flag_lab = flags_map.get(('lab', lab_local_id)) if lab_local_id else None
-                for r in rows:
-                    par = None
-                    for e in r.get('_eans_para_flag', []):
-                        par = flags_map.get(e)
-                        if par:
-                            break
-                    if not par and flag_lab:
-                        par = flag_lab  # fallback al flag del lab entero
-                    if not par:
-                        r['flag'] = None
-                        continue
-                    flag, cfg = par
-                    cfg_dict = {}
-                    if cfg and cfg.config_json:
-                        try:
-                            cfg_dict = _json.loads(cfg.config_json)
-                        except Exception:
-                            cfg_dict = {}
-                    color = cfg_dict.get('color', 'sky')
-                    r['flag'] = {
-                        'slug': flag.flag_slug,
-                        'nombre': cfg.nombre if cfg else flag.flag_slug,
-                        'icono': cfg_dict.get('icono', '🚩'),
-                        'color_clases': _FLAG_COLOR_CLASSES.get(
-                            color, _FLAG_COLOR_CLASSES['sky']),
-                        'efecto_armado': cfg_dict.get('efecto_armado', 'ninguno'),
-                        'nota': flag.nota or '',
-                        'ean_reemplazo': flag.ean_reemplazo or '',
-                        'vigente_hasta': flag.vigente_hasta.isoformat()
-                                         if flag.vigente_hasta else '',
-                    }
-                    if r['flag']['efecto_armado'] == 'badge_cero':
-                        r['sugerido_original'] = r.get('sugerido', 0)
-                        r['sugerido'] = 0
-
-        stats = {
-            'productos': len(rows),
-            'unidades_total': sum(r['sugerido'] for r in rows),
-            'perdida_mensual_total': round(sum(r.get('perdida_mensual', 0) for r in rows), 1),
-            'perdida_pesos_total': round(sum(r.get('perdida_pesos', 0) for r in rows), 2),
-        }
-        # Top 10 por pérdida estimada para el gráfico de barras.
-        top_perdida = sorted(
-            [r for r in rows if r.get('perdida_mensual', 0) > 0],
-            key=lambda r: -r['perdida_mensual'],
-        )[:10]
-        chart_perdida = {
-            'labels': [r['descripcion'][:50] for r in top_perdida],
-            'data':   [r['perdida_mensual'] for r in top_perdida],
-        }
-        # Top 10 por pérdida valorizada en pesos.
-        top_pesos = sorted(
-            [r for r in rows if r.get('perdida_pesos', 0) > 0],
-            key=lambda r: -r['perdida_pesos'],
-        )[:10]
-        chart_pesos = {
-            'labels': [r['descripcion'][:50] for r in top_pesos],
-            'data':   [r['perdida_pesos'] for r in top_pesos],
-        }
-        return render_template('informes_pedido_auto.html',
-                               lab_id=lab_id,
-                               venta_tipo=venta_tipo,
-                               lab_nombre=lab_nombre,
-                               labs_con_alertas=labs_con_alertas,
-                               rows=rows,
-                               stats=stats,
-                               chart_perdida=chart_perdida,
-                               chart_pesos=chart_pesos,
-                               tiene_plantilla=tiene_plantilla,
-                               local_lab_nombre=local_lab_nombre,
-                               droguerias=droguerias,
-                               sugerencia_drogueria=sugerencia_drogueria)
-
-    @app.route('/informes/pedido-auto/crear', methods=['POST'])
-    @login_required
-    def informe_pedido_auto_crear():
-        """Crea un Pedido + PedidoItems con las cantidades editadas por el
-        usuario en la pantalla de pedido auto."""
-        from database import Pedido, PedidoItem
-        lab_id = request.form.get('lab_id', type=int)
-        if not lab_id:
-            return jsonify({'error': 'lab_id requerido'}), 400
-
-        with database.get_db() as session:
-            lab = session.get(ObsLaboratorio, lab_id)
-            # Preferir el nombre del Laboratorio LOCAL si está mapeado:
-            # así ExportTemplate (PK=lab.id) y filtros de plantilla del
-            # /order/<id> matchean por pedido.laboratorio.
-            from database import Laboratorio
-            local_lab = (session.query(Laboratorio)
-                         .filter(Laboratorio.observer_id == lab_id).first())
-            if local_lab:
-                lab_nombre = local_lab.nombre
-            else:
-                lab_nombre = lab.descripcion if lab else f'Lab #{lab_id}'
-
-            items = []
-            i = 0
-            while True:
-                pid = request.form.get(f'pid_{i}', type=int)
-                if pid is None:
-                    break
-                qty = request.form.get(f'qty_{i}', type=int) or 0
-                if qty > 0:
-                    nombre = request.form.get(f'nombre_{i}', '').strip()
-                    cb = request.form.get(f'ean_{i}', '').strip() or f'OBS:{pid}'
-                    items.append(PedidoItem(
-                        codigo_barra=cb[:20],
-                        nombre=nombre[:200],
-                        cantidad=qty,
-                        precio_pvp=0,
-                        subtotal=0,
-                    ))
-                i += 1
-
-            if not items:
-                from flask import flash, redirect, url_for
-                flash('No hay items con cantidad > 0.', 'warning')
-                return redirect(url_for('informe_pedido_auto', lab_id=lab_id))
-
-            # Canal: lo que el user eligió en el form (laboratorio/drogueria/'').
-            canal = (request.form.get('canal') or '').strip() or None
-            partner_id = request.form.get('partner_id', type=int)
-            if canal not in ('laboratorio', 'drogueria'):
-                canal = None
-            if canal == 'drogueria' and not partner_id:
-                # Pidió droguería pero no eligió cuál → no settear canal.
-                canal = None
-                partner_id = None
-            if canal != 'drogueria':
-                partner_id = None
-
-            from helpers import _upsert_pedido_items, now_ar
-            origen = ('Inf.Auto.Drog' if canal == 'drogueria'
-                      else 'Inf.Auto.Lab' if canal == 'laboratorio'
-                      else 'Inf.Auto')
-            pedido = Pedido(
-                laboratorio=lab_nombre,
-                farmacia='',
-                periodo=f'Auto bajo mínimo {now_ar().strftime("%Y-%m-%d")}',
-                n_days=0,
-                items=items,
-                estado='PENDIENTE',
-                canal=canal,
-                partner_id=partner_id,
-                canal_elegido_en=now_ar() if canal else None,
-                origen=origen,
-            )
-            session.add(pedido)
-            # Sumar al catálogo master los productos del pedido (antes este flow lo omitía).
-            _upsert_pedido_items(session, items)
-            session.commit()
-            pedido_id = pedido.id
-
-            # Si el user clickeó "Crear + exportar plantilla", generamos el XLSX
-            # acá mismo en lugar de redirigir a /order/<id>. Reusa la lógica del
-            # endpoint /order/<id>/export/plantilla pero sin requerir round-trip.
-            if request.form.get('exportar_plantilla') == '1':
-                import json as _json
-                from io import BytesIO
-
-                import openpyxl
-                from flask import send_file
-                from openpyxl.styles import Alignment, Font, PatternFill
-
-                from database import ExportTemplate, Laboratorio
-
-                local_lab_for_tpl = (session.query(Laboratorio)
-                                     .filter_by(nombre=lab_nombre).first())
-                tpl = (session.get(ExportTemplate, local_lab_for_tpl.id)
-                       if local_lab_for_tpl else None)
-                if tpl and tpl.columns_json:
-                    cols = [c for c in _json.loads(tpl.columns_json) if c.get('enabled')]
-                    if cols:
-                        # Construimos rows con los campos disponibles. El pedido auto
-                        # tiene ean/nombre/cantidad sí o sí; el resto queda vacío y
-                        # la plantilla pone celda en blanco.
-                        rows = [{
-                            'ean': it.codigo_barra,
-                            'codigo_barra': it.codigo_barra,
-                            'nombre': it.nombre,
-                            'descripcion': it.nombre,
-                            'cantidad': it.cantidad,
-                            'total': it.cantidad,
-                        } for it in items]
-
-                        wb = openpyxl.Workbook()
-                        ws = wb.active
-                        ws.title = 'Pedido'
-                        row_offset = 1
-                        if tpl.custom_header:
-                            ws.cell(row=1, column=1, value=tpl.custom_header).font = Font(bold=True, size=12)
-                            ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(cols))
-                            row_offset = 2
-                        hdr_fill = PatternFill('solid', fgColor='1e1e1e')
-                        for ci, col in enumerate(cols, 1):
-                            cell = ws.cell(row=row_offset, column=ci, value=col['label'])
-                            cell.font = Font(bold=True, color='FFFFFF', size=10)
-                            cell.fill = hdr_fill
-                            cell.alignment = Alignment(horizontal='center')
-                        for ri, row in enumerate(rows, row_offset + 1):
-                            for ci, col in enumerate(cols, 1):
-                                val = row.get(col['field'])
-                                if val == '':
-                                    val = None
-                                ws.cell(row=ri, column=ci, value=val)
-                        for ci, col in enumerate(cols, 1):
-                            field = col['field']
-                            ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = (
-                                20 if field in ('nombre', 'descripcion') else 15 if field in ('ean', 'codigo_barra') else 12
-                            )
-                        buf = BytesIO()
-                        wb.save(buf)
-                        buf.seek(0)
-                        fname = f"Pedido_{lab_nombre}_AutoBajoMinimo.xlsx".replace(' ', '_')
-                        return send_file(
-                            buf, as_attachment=True, download_name=fname,
-                            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        )
-                # Si la plantilla no está bien configurada, fallback a redirect normal.
-                from flask import flash as _flash
-                _flash('La plantilla del laboratorio no está bien configurada. Pedido creado, exportá manualmente desde la pantalla del pedido.', 'warning')
-
-        from flask import flash, redirect, url_for
-        flash(f'Pedido creado: {len(items)} productos.', 'success')
-        return redirect(url_for('order_detail', pedido_id=pedido_id))
 
     @app.route('/api/observer-product/<int:observer_id>/chart')
     @login_required

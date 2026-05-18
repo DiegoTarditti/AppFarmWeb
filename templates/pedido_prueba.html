@@ -231,6 +231,60 @@
 .pp-rot.warn   { background: rgba(245,158,11,.14); color: var(--ds-warn); }
 .pp-rot.muted  { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
 
+/* Chip de override operativo (cant_fija / oferta_min).
+   Siempre visible si el producto tiene el campo seteado en DB; el variant
+   `.active` (más intenso) marca cuando además modificó el sugerido. */
+.pp-override {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px; margin-left: 6px;
+    border: 1px solid;
+}
+.pp-override.cant_fija         { background: rgba(167,139,250,.10); color: #c4b5fd; border-color: rgba(167,139,250,.25); }
+.pp-override.cant_fija.active  { background: rgba(167,139,250,.30); color: #ddd6fe; border-color: rgba(167,139,250,.6); }
+.pp-override.oferta_min        { background: rgba(245,158,11,.10);  color: var(--ds-warn); border-color: rgba(245,158,11,.25); }
+.pp-override.oferta_min.active { background: rgba(245,158,11,.30);  color: #fde68a;       border-color: rgba(245,158,11,.6); }
+.pp-tachado {
+    color: var(--ds-text-mute); text-decoration: line-through;
+    margin-right: 4px; font-size: 11px;
+}
+
+/* Badge diagnóstico mínimo (bajo / ok / alto / sin_ventas) */
+.pp-diag {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 6px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.pp-diag.bajo       { background: rgba(239,68,68,.14); color: var(--ds-danger); }
+.pp-diag.alto       { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-diag.ok         { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+.pp-diag.sin_ventas { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
+/* Panel chart pérdida $/mes (Top 10 faltantes que más cuestan) */
+.pp-perdida-card {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 12px 16px;
+    margin-bottom: 14px;
+}
+.pp-perdida-card .head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 8px; gap: 12px; flex-wrap: wrap;
+}
+.pp-perdida-card .head h3 {
+    margin: 0; font-family: 'Space Grotesk', sans-serif;
+    font-size: 13px; font-weight: 700; color: var(--ds-text);
+}
+.pp-perdida-card .head .total {
+    font-size: 12px; color: var(--ds-danger); font-weight: 700;
+}
+.pp-perdida-card .head .sub {
+    font-size: 10px; color: var(--ds-text-mute);
+}
+.pp-perdida-card .wrap { height: 280px; }
+
 .chev { display: inline-block; transition: transform .15s; color: var(--ds-text-mute); }
 .expanded > td .chev { transform: rotate(90deg); color: var(--ds-mint); }
 
@@ -636,7 +690,20 @@
                 <div class="val warn" id="kpi-delta">0 u</div>
                 <div class="sub" id="kpi-delta-pct"></div>
                 <div class="sub" id="kpi-monto-delta">$ 0</div></div>
+            <div class="pp-kpi" title="Estimación de $ que se dejan de vender por mes por productos bajo mínimo (avg_mensual × factor_falta × PVP).">
+                <div class="lbl">Pérdida $/mes faltantes</div>
+                <div class="val danger" id="kpi-perdida">$ 0</div>
+                <div class="sub" id="kpi-perdida-prods"></div></div>
         </div>
+    </div>
+
+    <div id="perdida-wrap" class="pp-perdida-card" style="display:none;">
+        <div class="head">
+            <h3>📉 Top 10 — pérdida $/mes por faltantes</h3>
+            <span class="total" id="perdida-total">$ 0/mes total</span>
+            <span class="sub">Productos bajo mínimo: cuánto deja de vender la farmacia por mes (avg × factor falta × PVP).</span>
+        </div>
+        <div class="wrap"><canvas id="chart-perdida-pesos"></canvas></div>
     </div>
 
     <div id="msg-wrap" class="pp-msg">
@@ -653,6 +720,7 @@
                     <th title="Unidades vendidas en últimos 12 meses">u12m</th>
                     <th title="Rotación basada en promedio mensual 12m: A=alta (≥20/mes), M=media (≥5/mes), B=baja (<5/mes)">Rot</th>
                     <th title="Promedio mensual de ventas (u12m/12)">Prom/mes</th>
+                    <th title="Diagnóstico del mínimo configurado en Observer vs la venta promedio: BAJO (cubre <2 semanas) / OK / ALTO (cubre >2 meses)">Diag mín</th>
                     <th>Día act.</th>
                     <th>Prueba</th>
                     <th>Δ</th>
@@ -844,16 +912,47 @@
         const rotHtml = it.rotacion
             ? `<span class="pp-rot ${rotClase[it.rotacion]}" title="${rotLabels[it.rotacion]}">${it.rotacion}</span>`
             : '—';
+        const diagSlug = it.min_diag || 'sin_ventas';
+        const diagShort = {bajo: 'BAJO', alto: 'ALTO', ok: 'OK', sin_ventas: '—'}[diagSlug] || '—';
+        const diagHtml = `<span class="pp-diag ${diagSlug}" title="${(it.min_diag_label || '').replace(/"/g, '&quot;')}">${diagShort}</span>`;
+
+        // Chips de override operativo (se muestran SIEMPRE que el campo exista
+        // en DB; .active = además modificó el sugerido).
+        let chipsOverride = '';
+        if (it.cant_fija) {
+            const active = it.override_aplicado === 'cant_fija' ? 'active' : '';
+            const tip = active
+                ? `Repo fija: stock (${it.stock}) ≤ mín (${it.minimo}) → fuerza pedir ${it.cant_fija}u (override Producto.cantidad_reposicion_fija)`
+                : `Repo fija configurada (${it.cant_fija}u) — se activa cuando stock cae al mínimo`;
+            chipsOverride += ` <span class="pp-override cant_fija ${active}" title="${tip}">📦 Repo: ${it.cant_fija}</span>`;
+        }
+        if (it.oferta_min) {
+            const active = it.override_aplicado === 'oferta_min' ? 'active' : '';
+            const tip = active
+                ? `Sube a ${it.oferta_min}u para acceder al descuento TRF (cálculo sugería ${it.sugerido_prueba_original}u)`
+                : `Mínimo de oferta TRF: ${it.oferta_min}u — se sube solo si el cálculo queda por debajo`;
+            chipsOverride += ` <span class="pp-override oferta_min ${active}" title="${tip}">🎁 Mín oferta: ${it.oferta_min}</span>`;
+        }
+
+        // Si el override modificó el sugerido, mostrar el original tachado.
+        const tachPrueba = (it.override_aplicado && it.sugerido_prueba_original !== it.sugerido_prueba)
+            ? `<span class="pp-tachado">${it.sugerido_prueba_original}</span>` : '';
+        const tachDia = (it.override_aplicado && it.sugerido_dia != null
+                         && it.sugerido_dia_original != null
+                         && it.sugerido_dia_original !== it.sugerido_dia)
+            ? `<span class="pp-tachado">${it.sugerido_dia_original}</span>` : '';
+
         return `
         <tr class="row-data" data-id="${it.producto_id}">
-            <td class="left"><span class="chev">▶</span> ${it.producto_nombre}</td>
+            <td class="left"><span class="chev">▶</span> ${it.producto_nombre}${chipsOverride}</td>
             <td>${it.stock}</td>
             <td class="muted">${fmt(it.u3m || 0)}</td>
             <td>${fmt(it.u12m)}</td>
             <td>${rotHtml}</td>
             <td class="muted">${it.prom_12m != null ? fmt(it.prom_12m) : '—'}</td>
-            <td>${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
-            <td><b>${it.sugerido_prueba}</b></td>
+            <td>${diagHtml}</td>
+            <td>${tachDia}${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
+            <td>${tachPrueba}<b>${it.sugerido_prueba}</b></td>
             <td class="${clase(it.delta)}">${deltaStr}</td>
             <td class="muted">${pvpStr}</td>
             <td><b>${montoPruebaStr}</b></td>
@@ -861,7 +960,7 @@
             <td>${flagHtml}</td>
         </tr>
         <tr class="drawer-row" data-parent="${it.producto_id}">
-            <td colspan="13">
+            <td colspan="14">
                 <div class="drawer-body"></div>
             </td>
         </tr>`;
@@ -897,7 +996,15 @@
         <div class="drawer-grid">
             <div class="drawer-card">
                 <div class="card-title">Desglose del cálculo</div>
-                <div class="razon">${it.razon}</div>
+                <div class="razon">${it.razon}${
+                    it.override_aplicado === 'cant_fija'
+                        ? `<br><span style="color:#c4b5fd;font-weight:700;">⚠ Override aplicado:</span> Repo fija = ${it.cant_fija}u (cálculo daba ${it.sugerido_prueba_original}u, pero stock ${it.stock} ≤ mín ${it.minimo} dispara override).`
+                        : it.override_aplicado === 'oferta_min'
+                        ? `<br><span style="color:var(--ds-warn);font-weight:700;">⚠ Override aplicado:</span> Subido a mínimo oferta TRF (${it.oferta_min}u). Cálculo daba ${it.sugerido_prueba_original}u.`
+                        : (it.cant_fija || it.oferta_min)
+                        ? `<br><span style="color:var(--ds-text-mute);">ℹ Producto tiene overrides configurados ${it.cant_fija ? `(repo fija ${it.cant_fija}u)` : ''}${it.oferta_min ? ` (mín oferta ${it.oferta_min}u)` : ''} pero no aplican en este caso.</span>`
+                        : ''
+                }</div>
             </div>
             <div class="drawer-card">
                 <div class="card-title">Estado base</div>
@@ -968,12 +1075,17 @@
         $('#kpi-prods').textContent = items.length;
         let totalDia = 0, totalPrueba = 0;
         let montoDia = 0, montoPrueba = 0;
+        let perdidaTotal = 0, perdidaProds = 0;
         items.forEach(it => {
             totalDia += (it.sugerido_dia || 0);
             totalPrueba += (it.sugerido_prueba || 0);
             if (it.precio_pvp) {
                 if (it.sugerido_dia) montoDia += it.precio_pvp * it.sugerido_dia;
                 montoPrueba += it.precio_pvp * it.sugerido_prueba;
+            }
+            if (it.perdida_pesos > 0) {
+                perdidaTotal += it.perdida_pesos;
+                perdidaProds += 1;
             }
         });
         const delta = totalPrueba - totalDia;
@@ -987,6 +1099,52 @@
         $('#kpi-monto-dia').textContent = '$ ' + fmt(Math.round(montoDia));
         $('#kpi-monto-prueba').textContent = '$ ' + fmt(Math.round(montoPrueba));
         $('#kpi-monto-delta').textContent = (deltaMonto >= 0 ? '+$ ' : '-$ ') + fmt(Math.abs(Math.round(deltaMonto)));
+        $('#kpi-perdida').textContent = '$ ' + fmt(Math.round(perdidaTotal));
+        $('#kpi-perdida-prods').textContent = perdidaProds
+            ? `${perdidaProds} producto${perdidaProds === 1 ? '' : 's'} bajo mínimo`
+            : 'sin faltantes';
+    }
+
+    /* ───── Chart Top 10 pérdida $/mes ───── */
+    let chartPerdida = null;
+    function renderChartPerdida(chartData, total) {
+        const wrap = $('#perdida-wrap');
+        const canvas = $('#chart-perdida-pesos');
+        if (chartPerdida) { chartPerdida.destroy(); chartPerdida = null; }
+        if (!chartData || !chartData.labels || !chartData.labels.length) {
+            wrap.style.display = 'none';
+            return;
+        }
+        wrap.style.display = '';
+        $('#perdida-total').textContent = '$ ' + fmt(Math.round(total || 0)) + '/mes total';
+        const fmtPesos = v => '$' + Math.round(v).toLocaleString('es-AR');
+        chartPerdida = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    label: 'Pérdida $/mes',
+                    data: chartData.data,
+                    backgroundColor: 'rgba(239,68,68,.55)',
+                    borderColor: '#ef4444', borderWidth: 1,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: c => fmtPesos(c.parsed.x) + ' /mes' } }
+                },
+                scales: {
+                    x: { beginAtZero: true,
+                         ticks: { font: { size: 10 }, color: '#a7b4b0', callback: v => fmtPesos(v) },
+                         grid: { color: 'rgba(255,255,255,.05)' } },
+                    y: { ticks: { font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { display: false } }
+                }
+            }
+        });
     }
 
     async function calcular() {
@@ -1027,6 +1185,7 @@
             $('#sync-info').style.display = '';
             $('#sync-stock').textContent = formatearAntiguedad(data.stock_sync_en);
             $('#sync-ventas').textContent = formatearAntiguedad(data.ventas_sync_en);
+            renderChartPerdida(data.chart_perdida_pesos, data.perdida_pesos_total);
             renderTabla();
         } catch (e) {
             $('#msg-wrap').textContent = 'Error al calcular: ' + e.message;

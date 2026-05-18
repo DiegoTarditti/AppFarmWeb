@@ -159,7 +159,7 @@
             📦 Armar pedido (todas las drogs) →
         </a>
         {# Botón "Laboratorio": revela un dropdown con labs que tienen
-           productos bajo mínimo. Al elegir, va a informe_pedido_auto?lab_id=N
+           productos bajo mínimo. Al elegir, va a compras_dia_armar?lab_id=N
            (eje-lab con alertas por producto, sin matriz lab/drog). #}
         <div class="relative" id="cd-lab-wrap">
             <button type="button" id="cd-lab-btn"
@@ -208,6 +208,46 @@
 </div>
 
 <div class="flex-1 overflow-auto px-4 sm:px-6 py-4 space-y-4">
+    {# ─── Card "Comportamientos activos" ───
+       Resumen global de ProductoFlag vigentes, agrupado por slug. Permite ver
+       al toque qué productos tienen reglas especiales hoy (DISCONTINUADO,
+       REEMPLAZADO, etc.) sin tener que entrar al armado. Link a /producto-flags
+       para editar/agregar/quitar. #}
+    {% if comportamientos %}
+    {% set _cb_color_clases = {
+        'red':    'bg-red-50 text-red-800 border-red-200',
+        'violet': 'bg-violet-50 text-violet-800 border-violet-200',
+        'amber':  'bg-amber-50 text-amber-800 border-amber-200',
+        'sky':    'bg-sky-50 text-sky-800 border-sky-200',
+    } %}
+    <div class="bg-surface border border-surface-border rounded-xl p-4">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+            <div class="flex items-center gap-2">
+                <span class="text-base">🚩</span>
+                <h3 class="text-sm font-bold text-[#1e1e1e]">Comportamientos activos</h3>
+                <span class="text-[11px] text-[#888]">
+                    {{ comportamientos_total }} producto{{ '' if comportamientos_total == 1 else 's' }}
+                    con regla especial vigente
+                </span>
+            </div>
+            <a href="{{ url_for('producto_flags_list') }}"
+               class="text-[11px] text-[#888] hover:text-[#1e1e1e] underline">
+                Ver / editar →
+            </a>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            {% for c in comportamientos %}
+            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs font-semibold {{ _cb_color_clases.get(c.color, _cb_color_clases['sky']) }}"
+                  title="{{ c.nombre }}{% if c.efecto_armado != 'ninguno' %} — efecto: {{ c.efecto_armado }}{% endif %}">
+                <span class="text-sm leading-none">{{ c.icono }}</span>
+                <span>{{ c.nombre }}</span>
+                <span class="bg-white/70 px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums">{{ c.count }}</span>
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
     {% for prov in proveedores %}
     <div class="cd-prov-card" data-prov-id="{{ prov.id }}">
         <div class="cd-prov-head">
