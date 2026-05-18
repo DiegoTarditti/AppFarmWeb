@@ -168,7 +168,9 @@ def top_productos_por_medico(session, medico_observer_ids, desde, hasta,
     Usado por: routes/consulta_medico.py (top 10 con CB). Disponible para
     otras pantallas que quieran "qué receta este médico" sin re-implementar.
     """
-    from sqlalchemy import desc as _desc, func as _func
+    from sqlalchemy import desc as _desc
+    from sqlalchemy import func as _func
+
     import database as _db
 
     base = (session.query(_db.ObsVentaDetalle)

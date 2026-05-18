@@ -175,7 +175,9 @@ def init_app(app):
 
 def _agrupar(base_q, col):
     """Helper interno: agrupa base_q por col, devuelve rows con key + KPIs."""
-    from sqlalchemy import desc as _desc, func as _func
+    from sqlalchemy import desc as _desc
+    from sqlalchemy import func as _func
+
     import database as _db
     q = (base_q.with_entities(
             col.label('key'),
