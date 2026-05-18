@@ -69,9 +69,27 @@ def init_app(app):
             eans = [r.ean for r in rows if r.ean]
             productos_map = {}
             if eans:
+                # 1) Master local: codigo_barra principal (UNIQUE)
                 prods = (session.query(Producto.codigo_barra, Producto.descripcion)
                          .filter(Producto.codigo_barra.in_(eans)).all())
-                productos_map = {p.codigo_barra: p.descripcion for p in prods}
+                for cb, desc in prods:
+                    productos_map[cb] = desc
+                # 2) Fallback ObServer: EAN → ObsCodigoBarras → ObsProducto.descripcion.
+                # Necesario para flags asignados a EANs del catalogo ObServer sin
+                # contraparte en Producto master.
+                from database import ObsCodigoBarras, ObsProducto
+                pendientes = [e for e in eans if e not in productos_map]
+                if pendientes:
+                    obs_rows = (session.query(ObsCodigoBarras.codigo_barras,
+                                              ObsProducto.descripcion)
+                                .join(ObsProducto,
+                                      ObsProducto.observer_id == ObsCodigoBarras.producto_observer)
+                                .filter(ObsCodigoBarras.codigo_barras.in_(pendientes))
+                                .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                                .all())
+                    for cb, desc in obs_rows:
+                        if cb not in productos_map:
+                            productos_map[cb] = desc
 
             flags = [_row_to_dict(r, productos_map, cfgs) for r in rows]
 

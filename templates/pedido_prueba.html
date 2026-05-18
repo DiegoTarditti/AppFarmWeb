@@ -1,0 +1,1197 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% block title %}Pedido prueba — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.pp-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.pp-topbar h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+}
+.pp-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+.pp-topbar .pill {
+    display: inline-block; padding: 3px 9px; border-radius: 999px;
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    background: rgba(95,230,188,.14); color: var(--ds-mint);
+}
+.pp-topbar .meta { margin-left: auto; font-size: 11px; color: var(--ds-text-mute); }
+
+.pp-content { padding: 18px 24px; }
+
+/* Selector de lab + KPIs */
+.pp-setup {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 14px 16px;
+    margin-bottom: 14px;
+    display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px;
+    align-items: end;
+}
+.pp-setup .field label {
+    display: block; font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ds-text-mute); margin-bottom: 4px;
+}
+.pp-setup .field input, .pp-setup .field select {
+    width: 100%;
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px; outline: none;
+    color-scheme: dark;
+}
+.pp-setup .field input:focus, .pp-setup .field select:focus {
+    border-color: var(--ds-mint);
+}
+
+/* Autocomplete multi-token para laboratorio */
+.lab-autocomplete { position: relative; }
+.lab-autocomplete-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-mint);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    max-height: 280px; overflow-y: auto;
+    z-index: 100;
+    box-shadow: 0 6px 16px rgba(0,0,0,.4);
+    display: none;
+}
+.lab-autocomplete-dropdown.open { display: block; }
+.lab-autocomplete-item {
+    padding: 7px 11px; cursor: pointer; font-size: 12px;
+    color: var(--ds-text-soft);
+    border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.lab-autocomplete-item:last-child { border-bottom: none; }
+.lab-autocomplete-item:hover,
+.lab-autocomplete-item.active {
+    background: rgba(95,230,188,.14);
+    color: var(--ds-mint);
+}
+.lab-autocomplete-item .match {
+    color: var(--ds-mint); font-weight: 700;
+}
+.lab-autocomplete-empty {
+    padding: 12px; text-align: center;
+    color: var(--ds-text-mute); font-size: 12px; font-style: italic;
+}
+.pp-setup .actions {
+    grid-column: 1 / -1;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    padding-top: 4px;
+}
+
+/* Fila de defaults globales: aplican a productos sin escenario propio */
+.pp-defaults {
+    grid-column: 1 / -1;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; padding: 10px 0 4px;
+    border-top: 1px dashed var(--ds-line);
+    margin-top: 4px;
+}
+.pp-defaults .field-h {
+    display: flex; align-items: center; gap: 10px;
+}
+.pp-defaults .field-h label {
+    font-size: 9px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ds-text-mute);
+    min-width: 140px;
+}
+.pp-defaults .field-h input[type="number"] {
+    flex: 0 0 70px;
+    background: rgba(0,0,0,.3);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text);
+    border-radius: 4px;
+    padding: 5px 9px;
+    font-size: 12px; font-weight: 700; text-align: right;
+    font-family: ui-monospace, Consolas, monospace;
+    outline: none;
+}
+.pp-defaults .field-h input[type="number"]:focus { border-color: var(--ds-warn); }
+.pp-defaults .field-h .hint {
+    font-size: 10px; color: var(--ds-text-mute);
+    flex: 1; min-width: 0;
+}
+
+/* KPIs hero */
+.pp-kpis {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 14px 18px;
+    margin-bottom: 14px;
+}
+.pp-kpi .lbl {
+    font-size: 9px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text-mute); font-weight: 700;
+}
+.pp-kpi .val {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 24px; font-weight: 700; color: var(--ds-text);
+    line-height: 1.1; margin-top: 2px;
+}
+.pp-kpi .val.mint { color: var(--ds-mint); }
+.pp-kpi .val.warn { color: var(--ds-warn); }
+.pp-kpi .val.danger { color: var(--ds-danger); }
+.pp-kpi .sub { font-size: 11px; color: var(--ds-text-mute); margin-top: 4px; }
+
+/* Botones */
+.pp-btn {
+    background: rgba(0,0,0,.25);
+    border: 1px solid var(--ds-line);
+    color: var(--ds-text-soft);
+    border-radius: var(--ds-r-md);
+    padding: 6px 14px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+}
+.pp-btn:hover { border-color: var(--ds-mint); color: var(--ds-mint); }
+.pp-btn.primary {
+    background: rgba(95,230,188,.12);
+    border-color: var(--ds-mint); color: var(--ds-mint);
+}
+.pp-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Tabla */
+.pp-table-card {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-lg);
+    overflow: hidden;
+}
+.pp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pp-table thead th {
+    background: rgba(0,0,0,.25);
+    color: var(--ds-text-mute);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    padding: 10px 12px; text-align: right;
+    border-bottom: 1px solid var(--ds-line);
+}
+.pp-table thead th.left { text-align: left; }
+.pp-table tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    cursor: pointer;
+}
+.pp-table tbody tr:hover { background: rgba(95,230,188,.04); }
+.pp-table tbody td {
+    padding: 8px 12px;
+    color: var(--ds-text);
+    font-family: ui-monospace, Consolas, monospace;
+    text-align: right;
+}
+.pp-table tbody td.left { text-align: left; font-family: inherit; }
+.pp-table td.delta-pos { color: var(--ds-mint); font-weight: 700; }
+.pp-table td.delta-neg { color: var(--ds-danger); font-weight: 700; }
+.pp-table td.delta-zero { color: var(--ds-text-mute); }
+.pp-table td.muted { color: var(--ds-text-mute); }
+
+.pp-origen {
+    display: inline-block;
+    font-size: 9px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.pp-origen.producto { background: rgba(95,230,188,.16); color: var(--ds-mint); }
+.pp-origen.droga    { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-origen.auto     { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
+.pp-flag {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    padding: 2px 7px; border-radius: 4px;
+}
+.pp-flag.red    { background: rgba(239,68,68,.14); color: var(--ds-danger); }
+.pp-flag.amber  { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-flag.violet { background: rgba(167,139,250,.14); color: #c4b5fd; }
+.pp-flag.sky    { background: rgba(56,189,248,.14); color: var(--ds-info); }
+.pp-flag.gray   { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
+/* Badge de rotación (A/M/B) */
+.pp-rot {
+    display: inline-block;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px;
+}
+.pp-rot.mint   { background: rgba(95,230,188,.16); color: var(--ds-mint); }
+.pp-rot.warn   { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+.pp-rot.muted  { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+
+.chev { display: inline-block; transition: transform .15s; color: var(--ds-text-mute); }
+.expanded > td .chev { transform: rotate(90deg); color: var(--ds-mint); }
+
+/* Drawer */
+.drawer-row { display: none; }
+.drawer-row.open { display: table-row; }
+.drawer-row > td { background: var(--ds-bg); border-top: 1px solid var(--ds-line); padding: 0; }
+.drawer-body { padding: 18px 22px; text-align: left; }
+.drawer-body * { text-align: inherit; }
+.drawer-body .slider-cell, .drawer-body .slider-cell * { text-align: center; }
+.drawer-body .range-val { text-align: right; }
+
+.drawer-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 10px;
+}
+.drawer-header .titulo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 14px; font-weight: 700; color: var(--ds-text);
+}
+.drawer-header .meta { font-size: 11px; color: var(--ds-text-mute); }
+
+.drawer-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+    margin-bottom: 14px;
+}
+
+.drawer-card {
+    background: rgba(0,0,0,.18);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 12px 14px;
+}
+.drawer-card .card-title {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ds-text-mute);
+    margin-bottom: 8px;
+}
+.drawer-card .razon {
+    font-size: 12px; color: var(--ds-text-soft); line-height: 1.5;
+    font-family: ui-monospace, Consolas, monospace;
+}
+
+/* Chart en el drawer */
+.drawer-chart-wrap {
+    height: 240px; margin: 10px 0 14px;
+    background: rgba(0,0,0,.18);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+    padding: 10px 14px;
+}
+
+/* Slider grid (12 meses) */
+.slider-grid {
+    display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px;
+    align-items: end; margin: 8px 0;
+    background: rgba(0,0,0,.18); padding: 10px 8px;
+    border-radius: var(--ds-r-md);
+    border: 1px solid var(--ds-line);
+}
+.slider-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.slider-cell input[type="range"] {
+    writing-mode: bt-lr;
+    -webkit-appearance: slider-vertical;
+    appearance: slider-vertical;
+    width: 18px; height: 80px; padding: 0; cursor: pointer;
+    accent-color: var(--ds-mint);
+}
+.slider-cell .slider-val {
+    font-size: 10px; font-variant-numeric: tabular-nums;
+    font-weight: 700; color: var(--ds-text);
+}
+.slider-cell .slider-mes {
+    font-size: 9px; color: var(--ds-text-mute);
+    text-transform: uppercase; letter-spacing: .04em;
+}
+.slider-cell.peak .slider-val { color: var(--ds-warn); }
+
+.range-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.range-row label {
+    font-size: 11px; font-weight: 600; color: var(--ds-text-soft);
+    min-width: 120px;
+}
+.range-row input[type="range"] {
+    flex: 1; accent-color: var(--ds-warn); cursor: pointer;
+}
+.range-row .range-val {
+    font-size: 13px; font-weight: 700;
+    min-width: 50px;
+    color: var(--ds-warn);
+    font-family: ui-monospace, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    background: rgba(245,158,11,.10);
+    border: 1px solid rgba(245,158,11,.3);
+    padding: 2px 8px; border-radius: 4px;
+    text-align: center;
+}
+
+.drawer-actions {
+    margin-top: 14px;
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    padding-top: 12px; border-top: 1px solid var(--ds-line);
+}
+.drawer-actions .spacer { flex: 1; }
+.drawer-status {
+    margin-top: 8px; font-size: 11px; min-height: 14px;
+}
+.drawer-status.ok { color: var(--ds-mint); }
+.drawer-status.err { color: var(--ds-danger); }
+
+/* Microcopy ARRIBA del input (entre label y input) — así el input
+   queda en la misma línea horizontal que los demás del row. */
+.pp-help {
+    font-size: 10px; color: var(--ds-text-mute);
+    margin: 2px 0 6px; line-height: 1.35;
+}
+.pp-help b { color: var(--ds-text-soft); font-weight: 600; }
+
+/* ────────── Banner de ayuda ────────── */
+.pp-help-banner {
+    background: rgba(95,230,188,.04);
+    border: 1px solid rgba(95,230,188,.18);
+    border-radius: var(--ds-r-md);
+    margin-bottom: 14px;
+    transition: box-shadow .3s;
+}
+@keyframes pp-help-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(95,230,188,0); }
+    50%      { box-shadow: 0 0 0 6px rgba(95,230,188,.25); }
+}
+.pp-help-banner.pulse { animation: pp-help-pulse 1.4s ease-in-out 2; }
+.pp-help-toggle {
+    width: 100%; background: none; border: none;
+    padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; text-align: left;
+    color: var(--ds-mint); font-size: 13px; font-weight: 700;
+}
+.pp-help-toggle .chev { font-size: 10px; color: var(--ds-text-mute); }
+.pp-help-body {
+    padding: 0 16px 16px;
+    font-size: 12.5px; line-height: 1.55; color: var(--ds-text-soft);
+}
+.pp-help-body .hsection {
+    margin-top: 10px;
+}
+.pp-help-body .hsection-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text); margin-bottom: 4px;
+    display: flex; align-items: center; gap: 6px;
+}
+.pp-help-body .hsection-title::before {
+    content: ''; flex: 1; height: 1px;
+    background: var(--ds-line); margin-left: 10px;
+    order: 2;
+}
+.pp-help-body ol, .pp-help-body ul {
+    margin: 4px 0 0; padding-left: 22px;
+}
+.pp-help-body li { margin-bottom: 3px; }
+.pp-help-body strong { color: var(--ds-text); }
+.pp-help-body code {
+    background: rgba(0,0,0,.35); color: var(--ds-mint);
+    padding: 1px 5px; border-radius: 3px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+}
+.pp-help-body .b-mint { color: var(--ds-mint); font-weight: 700; }
+.pp-help-body .b-warn { color: var(--ds-warn); font-weight: 700; }
+.pp-help-body .b-danger { color: var(--ds-danger); font-weight: 700; }
+.pp-help-body .b-mute { color: var(--ds-text-mute); font-weight: 700; }
+.pp-help-body p { margin: 4px 0 6px; }
+
+/* Mensaje empty / loading */
+.pp-msg {
+    padding: 40px 20px; text-align: center;
+    color: var(--ds-text-mute); font-size: 13px;
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-md);
+}
+</style>
+{% endblock %}
+
+{% block main %}
+
+<div class="pp-topbar">
+    <h1>🧪 Pedido prueba</h1>
+    <span class="sub">Configurá estacionalidad y comportamientos excepcionales por producto · comparativo en vivo vs /pedido/dia</span>
+    <span class="pill">CONFIG</span>
+    <span class="meta" id="sync-info" style="display:none;">
+        Datos: stock <b id="sync-stock">—</b> · ventas <b id="sync-ventas">—</b>
+    </span>
+</div>
+
+<div class="pp-content">
+
+    <div class="pp-help-banner" id="pp-help-banner">
+        <button type="button" class="pp-help-toggle" id="pp-help-toggle">
+            <span>❔ Cómo se usa este pedido prueba</span>
+            <span class="chev" id="pp-help-chev">▼</span>
+        </button>
+        <div class="pp-help-body" id="pp-help-body">
+
+            <div class="hsection">
+                <div class="hsection-title">🎯 Para qué sirve</div>
+                <p>
+                    <strong>Configurar comportamiento por producto</strong>: estacionalidad
+                    (índices mensuales, lead time, cobertura) y comportamientos excepcionales
+                    (DISCONTINUADO, REEMPLAZADO, SIN_DESCUENTO, NOTA). No arma pedidos
+                    — solo guarda configuración que <strong>se aplicará automáticamente</strong>
+                    cuando armes pedidos en otras pantallas.
+                </p>
+                <p>
+                    La fórmula nueva es <strong>paralela</strong> a <code>/pedido/dia</code>:
+                </p>
+                <ul>
+                    <li><code>/pedido/dia</code> = reposición táctica con
+                        <code>u3m/90</code> (ritmo del último trimestre).</li>
+                    <li><code>/pedido/prueba</code> = base
+                        <code>u12m/365</code> × <code>indice estacional del mes objetivo</code> ×
+                        <code>cobertura en días</code>. Pensado para anticipar picos
+                        estacionales (verano = filtro solar, invierno = antitusivos, etc.).</li>
+                </ul>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">📋 Workflow recomendado</div>
+                <ol>
+                    <li>Elegí un <strong>laboratorio</strong> en el autocomplete
+                        (multi-token: tipea <code>"abb dia"</code> matchea Abbott Diabetes).</li>
+                    <li>Ajustá los <strong>defaults de cabecera</strong> (Lead time y
+                        Cobertura) según lo típico de tu operatoria con ese lab. Aplican
+                        a productos sin escenario propio.</li>
+                    <li>Click <strong>▶ Calcular</strong>. La tabla compara
+                        <strong>sugerido día actual</strong> vs <strong>sugerido prueba</strong>
+                        para que veas dónde el cálculo nuevo difiere.</li>
+                    <li>Filtrá con <code>Mostrar: Solo con Δ ≠ 0</code> para enfocar
+                        productos donde hay desvío relevante.</li>
+                    <li>Click en una <strong>fila</strong> para abrir el drawer con
+                        chart histórico + sliders. Ajustá la estacionalidad del producto
+                        puntual y guardá como escenario "Generico" del producto.</li>
+                    <li>Aplicá <strong>flags</strong> (DISCONTINUADO, etc.) a los productos
+                        que necesiten comportamiento excepcional.</li>
+                </ol>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">📊 Columnas de la tabla</div>
+                <ul>
+                    <li><strong>Stock</strong>: stock actual del producto en ObServer.</li>
+                    <li><strong>u12m</strong>: unidades vendidas en los últimos 12 meses.</li>
+                    <li><strong>Día act.</strong>: lo que sugeriría <code>/pedido/dia</code>
+                        (matriz REPOSICION con <code>u3m/90</code>). Es el cálculo táctico.</li>
+                    <li><strong>Prueba</strong>: este cálculo. Fórmula:
+                        <code>(u12m/365) × indice[mes_objetivo] × cobertura_dias − stock</code>.</li>
+                    <li><strong>Δ</strong>: <span class="b-mint">verde</span> = más que día act,
+                        <span class="b-danger">rojo</span> = menos.</li>
+                    <li><strong>Origen</strong>:
+                        <span class="b-mint">PRODUCTO</span> = escenario propio del producto,
+                        <span class="b-warn">DROGA</span> = heredado del escenario de la droga,
+                        <span class="b-mute">AUTO</span> = sin escenario, usa los defaults
+                        de cabecera + índices neutros (1.0/mes).</li>
+                    <li><strong>Flag</strong>: comportamiento excepcional aplicado al EAN.
+                        <span class="b-danger">DISCONTINUADO</span> excluye (sugerido=0),
+                        <span class="b-warn">REEMPLAZADO/SIN_DESCUENTO</span> son badges
+                        informativos, <span style="color:var(--ds-info);">NOTA</span> también.</li>
+                </ul>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">🎚 Drawer (al click en una fila)</div>
+                <ul>
+                    <li><strong>Desglose</strong>: razón paso a paso del cálculo
+                        (u12m, índice aplicado, cobertura, stock restado).</li>
+                    <li><strong>Chart</strong>: líneas grises = ventas reales por año
+                        (eje derecho); <span class="b-mint">línea mint sólida</span> =
+                        índice estacional aplicado; <span class="b-warn">barras ámbar</span>
+                        = qué hay que comprar cada mes (índice × cobertura, desplazado
+                        por lead time).</li>
+                    <li><strong>Sliders + lead + cobertura</strong>: <em>read-only</em>
+                        en esta pantalla. Muestra los valores del escenario aplicado.
+                        Para EDITARLOS, usá el botón "✏ Editar en estacionalidad-drogas"
+                        que abre la pantalla de configuración de escenarios.</li>
+                    <li><strong>Origen</strong> de un producto cambia a
+                        <span class="b-mint">PRODUCTO</span> cuando le asignaste un
+                        escenario puntual desde estacionalidad-drogas (tab "📦 Aplicar
+                        a productos"). Si no, hereda el default de su droga.</li>
+                </ul>
+            </div>
+
+            <div class="hsection">
+                <div class="hsection-title">💡 Tips</div>
+                <ul>
+                    <li>Los <strong>escenarios de droga</strong> (que afectan a varios
+                        productos a la vez) se editan desde
+                        <code>/informes/estacionalidad-drogas</code>.</li>
+                    <li>Si un producto no tiene ventas en 12m, no aparece en la tabla
+                        (el cálculo da 0).</li>
+                    <li>El <strong>piso de 2 días</strong> en lead time es operativo:
+                        ningún proveedor entrega instantáneo.</li>
+                    <li>Para esconder este panel: click en <code>❔</code>. Queda plegado
+                        en próximas visitas.</li>
+                </ul>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="pp-setup">
+        <div class="field">
+            <label title="Laboratorio del que armás el pedido. Tipea parte del nombre y elegí.">Laboratorio</label>
+            <div class="lab-autocomplete">
+                <input type="text" id="lab-search"
+                       placeholder="Escribí parte del nombre (ej: 'abb dia')"
+                       autocomplete="off"
+                       title="Multi-token: 'abb dia' matchea 'Abbott Diabetes'. ↑↓ navega, Enter selecciona.">
+                <input type="hidden" id="lab-select" value="">
+                <div class="lab-autocomplete-dropdown" id="lab-dropdown"></div>
+            </div>
+        </div>
+        <script type="application/json" id="labs-data">{{ labs | tojson }}</script>
+        <div class="field">
+            <label title="Filtra productos esporádicos. Solo se procesan los que vendieron al menos este valor en los últimos 12 meses.">Mín. ventas 12m</label>
+            <p class="pp-help">
+                Filtra esporádicos: entran los que vendieron <b>≥ N</b> en 12m.
+                <br>0 = sin filtro · 6 ≈ 0,5/mes · 50 = relevantes.
+            </p>
+            <input type="number" id="min-u12m-input" value="6" min="0" step="1"
+                   title="Solo se procesan productos con ≥ este nº de unidades vendidas en los últimos 12 meses. 0 = sin filtro. Default 6 = al menos 0,5/mes.">
+        </div>
+        <div class="field">
+            <label title="Filtra la tabla por texto. Multi-token AND: 'amox 500' matchea 'AMOXIDAL 500'.">Filtro producto</label>
+            <p class="pp-help">
+                Multi-token AND: <b>'amox 500'</b> matchea nombre o droga.
+                <br>Case-insensitive, sin acentos. Vacío = sin filtro.
+            </p>
+            <input type="text" id="filtro-input" placeholder="ej: amox 500"
+                   title="Multi-token: cada palabra debe estar en el nombre o en la droga del producto.">
+        </div>
+        <div class="field">
+            <label title="Qué filas mostrar en la tabla.">Mostrar</label>
+            <p class="pp-help">
+                Filtra por relevancia. <b>Δ ≠ 0</b> = solo donde difiere
+                de /pedido/dia; <b>flag</b> = solo con comportamiento excepcional.
+            </p>
+            <select id="mostrar-select"
+                    title="Todos = todas las filas. Solo con Δ = solo las que difieren del cálculo de /pedido/dia. Solo con flag = solo las que tienen comportamiento excepcional aplicado.">
+                <option value="todos">Todos</option>
+                <option value="delta">Solo con Δ ≠ 0</option>
+                <option value="flags">Solo con flag</option>
+            </select>
+        </div>
+        <div class="pp-defaults">
+            <div class="field-h"
+                 title="Lead time default que se usa para productos sin escenario propio.">
+                <label>Lead time default:</label>
+                <input type="number" id="lead-default-input"
+                       min="{{ limites.lead_dias_piso }}"
+                       max="{{ limites.lead_dias_max }}"
+                       step="1" value="{{ limites.lead_dias_default }}">
+                <span class="hint">días entre pedido y entrega · piso {{ limites.lead_dias_piso }}d</span>
+            </div>
+            <div class="field-h"
+                 title="Cobertura default que se usa para productos sin escenario propio. Cuántos días querés cubrir con cada pedido.">
+                <label>Cobertura default:</label>
+                <input type="number" id="cob-default-input"
+                       min="{{ limites.cob_dias_min }}"
+                       max="{{ limites.cob_dias_max }}"
+                       step="1" value="{{ limites.cob_dias_default }}">
+                <span class="hint">días de demanda a cubrir · típico {{ limites.cob_dias_default }} (1 mes)</span>
+            </div>
+        </div>
+        <script type="application/json" id="limites-data">{{ limites | tojson }}</script>
+
+        <div class="actions">
+            <button class="pp-btn primary" id="btn-calcular">▶ Calcular</button>
+            <button class="pp-btn" id="btn-export" disabled
+                    title="Exportar el resultado actual a XLSX (lab + filtros aplicados)">
+                📥 Exportar XLSX
+            </button>
+            <span class="meta" style="margin-left:auto;font-size:11px;color:var(--ds-text-mute);">
+                Origen escenario:
+                <span class="pp-origen producto">producto</span>
+                <span class="pp-origen droga">droga</span>
+                <span class="pp-origen auto">auto</span>
+            </span>
+        </div>
+    </div>
+
+    <div id="kpis-wrap" style="display:none;">
+        <div class="pp-kpis">
+            <div class="pp-kpi"><div class="lbl">Productos</div>
+                <div class="val mint" id="kpi-prods">0</div></div>
+            <div class="pp-kpi"><div class="lbl">Sugerido día actual</div>
+                <div class="val" id="kpi-dia">0 u</div>
+                <div class="sub" id="kpi-monto-dia">$ 0</div></div>
+            <div class="pp-kpi"><div class="lbl">Sugerido prueba</div>
+                <div class="val mint" id="kpi-prueba">0 u</div>
+                <div class="sub" id="kpi-monto-prueba">$ 0</div></div>
+            <div class="pp-kpi"><div class="lbl">Δ total</div>
+                <div class="val warn" id="kpi-delta">0 u</div>
+                <div class="sub" id="kpi-delta-pct"></div>
+                <div class="sub" id="kpi-monto-delta">$ 0</div></div>
+        </div>
+    </div>
+
+    <div id="msg-wrap" class="pp-msg">
+        Elegí un laboratorio arriba y click <b>Calcular</b>.
+    </div>
+
+    <div id="table-wrap" class="pp-table-card" style="display:none;">
+        <table class="pp-table">
+            <thead>
+                <tr>
+                    <th class="left">Producto</th>
+                    <th>Stock</th>
+                    <th title="Unidades vendidas en últimos 3 meses completos (excluye mes parcial actual)">u3m</th>
+                    <th title="Unidades vendidas en últimos 12 meses">u12m</th>
+                    <th title="Rotación basada en promedio mensual 12m: A=alta (≥20/mes), M=media (≥5/mes), B=baja (<5/mes)">Rot</th>
+                    <th title="Promedio mensual de ventas (u12m/12)">Prom/mes</th>
+                    <th>Día act.</th>
+                    <th>Prueba</th>
+                    <th>Δ</th>
+                    <th title="Precio Público (PVP) más reciente cargado de facturas">PVP</th>
+                    <th title="Sugerido prueba × PVP">$ Prueba</th>
+                    <th>Origen</th>
+                    <th>Flag</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+(function() {
+    const meses = {{ meses_es | tojson }};
+    let itemsCache = [];
+    const labsData = JSON.parse(document.getElementById('labs-data').textContent);
+    const LIMITES = JSON.parse(document.getElementById('limites-data').textContent);
+
+    const $ = (sel, root=document) => root.querySelector(sel);
+    const $$ = (sel, root=document) => root.querySelectorAll(sel);
+
+    /* ───── Banner de ayuda (persistido en localStorage) ─────
+       Default v2: PLEGADO con pulso visual 2 ciclos para descubrirlo. */
+    (function initHelp() {
+        const banner = $('#pp-help-banner');
+        const body = $('#pp-help-body');
+        const chev = $('#pp-help-chev');
+        const storageKey = 'pp_ayuda_estado_v2';  // v2 = default plegado
+        const estado = localStorage.getItem(storageKey);
+        // Si nunca interactuó (estado null), arranca plegado y hace pulso
+        // para que lo descubra. Si ya tocó, respeta su decisión.
+        const oculta = estado == null ? true : (estado === '1');
+        const primeraVez = estado == null;
+
+        body.style.display = oculta ? 'none' : '';
+        chev.textContent = oculta ? '▶' : '▼';
+        if (primeraVez && oculta) {
+            banner.classList.add('pulse');
+            setTimeout(() => banner.classList.remove('pulse'), 3500);
+        }
+
+        $('#pp-help-toggle').addEventListener('click', () => {
+            const yaOculta = body.style.display === 'none';
+            body.style.display = yaOculta ? '' : 'none';
+            chev.textContent = yaOculta ? '▼' : '▶';
+            localStorage.setItem(storageKey, yaOculta ? '0' : '1');
+            banner.classList.remove('pulse');
+        });
+    })();
+
+    /* ───── Autocomplete multi-token de laboratorio ───── */
+    function normalizar(s) {
+        return (s || '').toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '');
+    }
+    function filtrarLabs(query) {
+        const tokens = normalizar(query).split(/\s+/).filter(t => t.length > 0);
+        if (!tokens.length) return labsData.slice(0, 30);
+        return labsData.filter(lab => {
+            const norm = normalizar(lab.nombre);
+            return tokens.every(t => norm.includes(t));
+        }).slice(0, 30);
+    }
+    function highlight(nombre, query) {
+        const tokens = normalizar(query).split(/\s+/).filter(t => t.length > 0);
+        if (!tokens.length) return nombre;
+        // Marca todos los matches de cualquier token sin perder caracteres originales.
+        const normNombre = normalizar(nombre);
+        let result = '';
+        let i = 0;
+        while (i < nombre.length) {
+            let match = null;
+            for (const t of tokens) {
+                if (normNombre.substr(i, t.length) === t) {
+                    match = t.length;
+                    break;
+                }
+            }
+            if (match) {
+                result += '<span class="match">' + nombre.substr(i, match) + '</span>';
+                i += match;
+            } else {
+                result += nombre[i];
+                i += 1;
+            }
+        }
+        return result;
+    }
+    let activeIndex = -1;
+    let lastResults = [];
+    function renderLabDropdown(query) {
+        const dropdown = $('#lab-dropdown');
+        const results = filtrarLabs(query);
+        lastResults = results;
+        activeIndex = -1;
+        if (!results.length) {
+            dropdown.innerHTML = `<div class="lab-autocomplete-empty">Sin coincidencias para "${query}"</div>`;
+        } else {
+            dropdown.innerHTML = results.map((lab, i) =>
+                `<div class="lab-autocomplete-item" data-idx="${i}" data-id="${lab.id}">${highlight(lab.nombre, query)}</div>`
+            ).join('');
+        }
+        dropdown.classList.add('open');
+    }
+    function seleccionarLab(lab) {
+        $('#lab-search').value = lab.nombre;
+        $('#lab-select').value = lab.id;
+        $('#lab-dropdown').classList.remove('open');
+    }
+    function setActive(idx) {
+        $$('.lab-autocomplete-item').forEach((el, i) => {
+            el.classList.toggle('active', i === idx);
+            if (i === idx) el.scrollIntoView({block: 'nearest'});
+        });
+        activeIndex = idx;
+    }
+
+    $('#lab-search').addEventListener('input', (e) => {
+        $('#lab-select').value = '';  // invalidar selección al teclear
+        renderLabDropdown(e.target.value);
+    });
+    $('#lab-search').addEventListener('focus', (e) => {
+        renderLabDropdown(e.target.value);
+    });
+    $('#lab-search').addEventListener('keydown', (e) => {
+        if (!$('#lab-dropdown').classList.contains('open')) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActive(Math.min(activeIndex + 1, lastResults.length - 1));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActive(Math.max(activeIndex - 1, 0));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const idx = activeIndex >= 0 ? activeIndex : 0;
+            if (lastResults[idx]) seleccionarLab(lastResults[idx]);
+        } else if (e.key === 'Escape') {
+            $('#lab-dropdown').classList.remove('open');
+        }
+    });
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.lab-autocomplete')) {
+            $('#lab-dropdown').classList.remove('open');
+        }
+        const item = e.target.closest('.lab-autocomplete-item');
+        if (item) {
+            const id = parseInt(item.dataset.id);
+            const lab = labsData.find(l => l.id === id);
+            if (lab) seleccionarLab(lab);
+        }
+    });
+
+    function fmt(n) { return Number(n||0).toLocaleString('es-AR'); }
+
+    function formatearAntiguedad(isoStr) {
+        if (!isoStr) return 'sin data';
+        const dt = new Date(isoStr);
+        if (isNaN(dt)) return '—';
+        const diff = Date.now() - dt.getTime();
+        const min = Math.floor(diff / 60000);
+        if (min < 1) return 'ahora';
+        if (min < 60) return `hace ${min}m`;
+        const h = Math.floor(min / 60);
+        if (h < 24) return `hace ${h}h`;
+        const d = Math.floor(h / 24);
+        return `hace ${d}d`;
+    }
+    function clase(v) {
+        if (v == null) return 'delta-zero';
+        if (v > 0) return 'delta-pos';
+        if (v < 0) return 'delta-neg';
+        return 'delta-zero';
+    }
+
+    function renderItem(it) {
+        const flagHtml = it.flag
+            ? `<span class="pp-flag ${it.flag.color}" title="${it.flag.nombre}">${it.flag.icono} ${it.flag.slug}</span>`
+            : '';
+        const deltaStr = it.delta == null ? '—' : (it.delta >= 0 ? '+' : '') + it.delta;
+        const pvpStr = it.precio_pvp == null ? '—' : '$ ' + fmt(it.precio_pvp);
+        const montoPruebaStr = it.monto_prueba == null
+            ? '—' : '$ ' + fmt(Math.round(it.monto_prueba));
+        const rotLabels = {A: 'Alta', M: 'Media', B: 'Baja'};
+        const rotClase = {A: 'mint', M: 'warn', B: 'muted'};
+        const rotHtml = it.rotacion
+            ? `<span class="pp-rot ${rotClase[it.rotacion]}" title="${rotLabels[it.rotacion]}">${it.rotacion}</span>`
+            : '—';
+        return `
+        <tr class="row-data" data-id="${it.producto_id}">
+            <td class="left"><span class="chev">▶</span> ${it.producto_nombre}</td>
+            <td>${it.stock}</td>
+            <td class="muted">${fmt(it.u3m || 0)}</td>
+            <td>${fmt(it.u12m)}</td>
+            <td>${rotHtml}</td>
+            <td class="muted">${it.prom_12m != null ? fmt(it.prom_12m) : '—'}</td>
+            <td>${it.sugerido_dia == null ? '—' : it.sugerido_dia}</td>
+            <td><b>${it.sugerido_prueba}</b></td>
+            <td class="${clase(it.delta)}">${deltaStr}</td>
+            <td class="muted">${pvpStr}</td>
+            <td><b>${montoPruebaStr}</b></td>
+            <td><span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span></td>
+            <td>${flagHtml}</td>
+        </tr>
+        <tr class="drawer-row" data-parent="${it.producto_id}">
+            <td colspan="13">
+                <div class="drawer-body"></div>
+            </td>
+        </tr>`;
+    }
+
+    function renderDrawer(it) {
+        const peakIdx = it.indices.indexOf(Math.max(...it.indices));
+        const rotLabels = {A: 'Alta', M: 'Media', B: 'Baja'};
+        const rotClase = {A: 'mint', M: 'warn', B: 'muted'};
+        const rotHtml = it.rotacion
+            ? `<span class="pp-rot ${rotClase[it.rotacion]}" title="${rotLabels[it.rotacion]}">${it.rotacion} · ${rotLabels[it.rotacion]}</span>`
+            : '—';
+        const slidersHtml = meses.map((m, i) => {
+            const v = it.indices[i];
+            const peak = i === peakIdx ? 'peak' : '';
+            return `
+            <div class="slider-cell ${peak}">
+                <span class="slider-val">${v.toFixed(2)}</span>
+                <input type="range" min="0" max="3" step="0.05" value="${v.toFixed(2)}" class="slider-mes-input">
+                <span class="slider-mes">${m}</span>
+            </div>`;
+        }).join('');
+
+        return `
+        <div class="drawer-header">
+            <div class="titulo">${it.producto_nombre}</div>
+            <div class="meta">
+                Droga: <b>${it.droga_nombre || '—'}</b> · Mes obj: <b>${it.mes_objetivo_label}</b>
+                · Origen: <span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span>
+            </div>
+        </div>
+
+        <div class="drawer-grid">
+            <div class="drawer-card">
+                <div class="card-title">Desglose del cálculo</div>
+                <div class="razon">${it.razon}</div>
+            </div>
+            <div class="drawer-card">
+                <div class="card-title">Estado base</div>
+                <div class="razon">
+                    Stock actual: <b>${it.stock}</b> &nbsp;·&nbsp;
+                    Mínimo: <b>${it.minimo}</b> &nbsp;·&nbsp;
+                    Rotación: ${rotHtml}<br>
+                    Ventas 12m: <b>${fmt(it.u12m)}u</b> &nbsp;·&nbsp;
+                    Prom 12m: <b>${fmt(it.prom_12m)}u/mes</b><br>
+                    Ventas 3m: <b>${fmt(it.u3m)}u</b> &nbsp;·&nbsp;
+                    Prom 3m: <b>${fmt(it.prom_3m)}u/mes</b><br>
+                    Ritmo diario ajustado: <b>${it.ritmo_diario} u/d</b><br>
+                    Demanda proyectada: <b>${it.demanda_proyectada}u</b> &nbsp;·&nbsp;
+                    Sugerido prueba: <b>${it.sugerido_prueba}u</b>
+                </div>
+            </div>
+        </div>
+
+        <div class="drawer-chart-wrap">
+            <canvas class="drawer-chart"></canvas>
+        </div>
+
+        <div class="drawer-card">
+            <div class="card-title">Escenario aplicado (read-only)</div>
+            <div class="razon">
+                Origen: <span class="pp-origen ${it.origen_escenario}">${it.origen_escenario}</span>
+                ${it.escenario_nombre ? ` · Nombre: <b>${it.escenario_nombre}</b>` : ''}
+                <br>
+                Lead time: <b>${it.lead_dias}d</b> &nbsp;·&nbsp;
+                Cobertura: <b>${it.cobertura_dias}d</b>
+            </div>
+            <div class="slider-grid" style="opacity:.85;pointer-events:none;">${slidersHtml}</div>
+        </div>
+
+        <div class="drawer-actions">
+            <a class="pp-btn primary" target="_blank"
+               href="/informes/estacionalidad-drogas?q=${encodeURIComponent(it.droga_nombre || '')}"
+               title="Abrir la droga en estacionalidad para editar/crear escenarios y asignarlos a productos">
+                ✏ Editar en estacionalidad-drogas
+            </a>
+        </div>
+        <div class="drawer-status"></div>`;
+    }
+
+    function pasaFiltros(it) {
+        // Multi-token AND sobre nombre y droga (normalizado: lowercase + sin acentos).
+        const query = $('#filtro-input').value || '';
+        const tokens = normalizar(query).split(/\s+/).filter(t => t.length > 0);
+        if (tokens.length) {
+            const haystack = normalizar(it.producto_nombre) + ' ' + normalizar(it.droga_nombre || '');
+            if (!tokens.every(t => haystack.includes(t))) return false;
+        }
+        const mostrar = $('#mostrar-select').value;
+        if (mostrar === 'delta' && (it.delta == null || it.delta === 0)) return false;
+        if (mostrar === 'flags' && !it.flag) return false;
+        return true;
+    }
+
+    function renderTabla() {
+        const tbody = $('#tbody');
+        const filtrados = itemsCache.filter(pasaFiltros);
+        tbody.innerHTML = filtrados.map(renderItem).join('');
+        actualizarKpis(filtrados);
+    }
+
+    function actualizarKpis(items) {
+        // KPIs informativos puros (no se arma pedido en esta pantalla).
+        $('#kpi-prods').textContent = items.length;
+        let totalDia = 0, totalPrueba = 0;
+        let montoDia = 0, montoPrueba = 0;
+        items.forEach(it => {
+            totalDia += (it.sugerido_dia || 0);
+            totalPrueba += (it.sugerido_prueba || 0);
+            if (it.precio_pvp) {
+                if (it.sugerido_dia) montoDia += it.precio_pvp * it.sugerido_dia;
+                montoPrueba += it.precio_pvp * it.sugerido_prueba;
+            }
+        });
+        const delta = totalPrueba - totalDia;
+        const deltaMonto = montoPrueba - montoDia;
+        const pct = totalDia ? ((delta / totalDia) * 100).toFixed(1) : '—';
+        $('#kpi-dia').textContent = fmt(totalDia) + ' u';
+        $('#kpi-prueba').textContent = fmt(totalPrueba) + ' u';
+        $('#kpi-delta').textContent = (delta >= 0 ? '+' : '') + fmt(delta) + ' u';
+        $('#kpi-delta-pct').textContent = totalDia ? `(${delta >= 0 ? '+' : ''}${pct}%)` : '';
+        $('#kpi-delta').className = 'val ' + (delta === 0 ? '' : (delta > 0 ? 'mint' : 'danger'));
+        $('#kpi-monto-dia').textContent = '$ ' + fmt(Math.round(montoDia));
+        $('#kpi-monto-prueba').textContent = '$ ' + fmt(Math.round(montoPrueba));
+        $('#kpi-monto-delta').textContent = (deltaMonto >= 0 ? '+$ ' : '-$ ') + fmt(Math.abs(Math.round(deltaMonto)));
+    }
+
+    async function calcular() {
+        const labId = $('#lab-select').value;
+        if (!labId) { alert('Elegí un laboratorio'); return; }
+        const minU12m = parseFloat($('#min-u12m-input').value || '0');
+        const leadDefault = Math.max(LIMITES.lead_dias_piso,
+                                     parseInt($('#lead-default-input').value || String(LIMITES.lead_dias_default)));
+        const cobDefault = Math.max(LIMITES.cob_dias_min,
+                                    parseInt($('#cob-default-input').value || String(LIMITES.cob_dias_default)));
+        $('#msg-wrap').textContent = 'Calculando…';
+        $('#msg-wrap').style.display = '';
+        $('#table-wrap').style.display = 'none';
+        $('#kpis-wrap').style.display = 'none';
+
+        try {
+            const r = await fetch('/api/pedido-prueba/calcular', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    lab_id: parseInt(labId),
+                    min_u12m: minU12m,
+                    lead_default: leadDefault,
+                    cob_default: cobDefault,
+                }),
+            });
+            if (!r.ok) { throw new Error('HTTP ' + r.status); }
+            const data = await r.json();
+            itemsCache = data.items || [];
+            if (!itemsCache.length) {
+                $('#msg-wrap').textContent = 'Sin productos para este laboratorio con el umbral indicado.';
+                return;
+            }
+            $('#msg-wrap').style.display = 'none';
+            $('#table-wrap').style.display = '';
+            $('#kpis-wrap').style.display = '';
+            $('#btn-export').disabled = false;
+            // Frescura de datos en el topbar
+            $('#sync-info').style.display = '';
+            $('#sync-stock').textContent = formatearAntiguedad(data.stock_sync_en);
+            $('#sync-ventas').textContent = formatearAntiguedad(data.ventas_sync_en);
+            renderTabla();
+        } catch (e) {
+            $('#msg-wrap').textContent = 'Error al calcular: ' + e.message;
+        }
+    }
+
+    /* ───── Chart Chart.js dentro del drawer ───── */
+    const yearColors = ['#1f4138', '#2a6b59', '#3d8c75', '#5fbf9d', '#a7e6d0'];
+    const chartsPorDroga = new Map();  // producto_id → Chart.js instance
+
+    function curvaCompra(indices, leadDias, cobDias) {
+        const leadMeses = Math.round((leadDias || 0) / 30);
+        const cobMeses = (cobDias || 30) / 30;
+        const out = new Array(12);
+        for (let m = 0; m < 12; m++) {
+            const target = (m + leadMeses) % 12;
+            out[m] = indices[target] * cobMeses;
+        }
+        return out;
+    }
+
+    function destruirChart(producto_id) {
+        const c = chartsPorDroga.get(producto_id);
+        if (c) { c.destroy(); chartsPorDroga.delete(producto_id); }
+    }
+
+    async function buildDrawerChart(drawerBody, it) {
+        const canvas = drawerBody.querySelector('canvas.drawer-chart');
+        if (!canvas) return;
+        // Limpiar instancia previa para este producto.
+        destruirChart(it.producto_id);
+
+        let series = [];
+        try {
+            const r = await fetch(`/api/pedido-prueba/historico/${it.producto_id}`);
+            if (r.ok) series = (await r.json()).series || [];
+        } catch (e) { /* silent */ }
+
+        const datasets = series.map((s, i) => ({
+            type: 'line', label: `${s.anio}`, data: s.unidades,
+            borderColor: yearColors[(yearColors.length - series.length + i + 5) % yearColors.length],
+            backgroundColor: 'transparent', borderWidth: 1.5, tension: 0.25,
+            pointRadius: 2, yAxisID: 'y2',
+        }));
+        datasets.push({
+            type: 'line', label: 'Índice ajustado', data: [...it.indices],
+            borderColor: '#5fe6bc', backgroundColor: 'rgba(95,230,188,.12)',
+            borderWidth: 3, tension: 0.3, pointRadius: 4, fill: true, yAxisID: 'y',
+        });
+        datasets.push({
+            type: 'bar', label: 'A comprar (índice × cob)',
+            data: curvaCompra(it.indices, it.lead_dias, it.cobertura_dias),
+            backgroundColor: 'rgba(245,158,11,.55)', borderColor: '#d97706',
+            borderWidth: 1, yAxisID: 'y',
+        });
+
+        const chart = new Chart(canvas, {
+            data: { labels: meses, datasets },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { position: 'bottom', labels: { font: { size: 11 }, color: '#a7b4b0' } },
+                    tooltip: { callbacks: { label: ctx =>
+                        ctx.dataset.label.startsWith('Índice') || ctx.dataset.label.startsWith('A comprar')
+                            ? `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`
+                            : `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString('es-AR')} u`
+                    } }
+                },
+                scales: {
+                    y: { beginAtZero: true,
+                         title: { display: true, text: 'Índice (1 = neutro)', font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { color: 'rgba(255,255,255,.05)' },
+                         ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    y2: { position: 'right',
+                          title: { display: true, text: 'Unidades vendidas/año', font: { size: 10 }, color: '#a7b4b0' },
+                          grid: { display: false },
+                          ticks: { font: { size: 10 }, color: '#a7b4b0' } },
+                    x: { ticks: { font: { size: 10 }, color: '#a7b4b0' },
+                         grid: { color: 'rgba(255,255,255,.03)' } },
+                }
+            }
+        });
+        chartsPorDroga.set(it.producto_id, chart);
+    }
+
+    // Drawer es read-only: no hay actualizarChartDesdeSliders ni dirty state.
+
+    function toggleDrawer(rowData) {
+        const id = rowData.dataset.id;
+        const drawer = document.querySelector(`tr.drawer-row[data-parent="${id}"]`);
+        const open = drawer.classList.contains('open');
+        // Cerrar otros drawers (y destruir sus charts).
+        $$('.drawer-row.open').forEach(d => {
+            d.classList.remove('open');
+            destruirChart(parseInt(d.dataset.parent));
+            const r = document.querySelector(`tr.row-data[data-id="${d.dataset.parent}"]`);
+            if (r) r.classList.remove('expanded');
+        });
+        if (!open) {
+            const it = itemsCache.find(x => x.producto_id == id);
+            if (!it) return;
+            const body = drawer.querySelector('.drawer-body');
+            body.innerHTML = renderDrawer(it);
+            drawer.classList.add('open');
+            rowData.classList.add('expanded');
+            requestAnimationFrame(() => buildDrawerChart(body, it));
+        } else {
+            destruirChart(parseInt(id));
+        }
+    }
+
+    // guardarEscenarioProducto eliminada: el drawer es read-only.
+    // La edición de escenarios se hace en /informes/estacionalidad-drogas.
+
+    async function exportarXLSX() {
+        const labId = $('#lab-select').value;
+        if (!labId) return;
+        const minU12m = parseFloat($('#min-u12m-input').value || '0');
+        const leadDefault = Math.max(LIMITES.lead_dias_piso,
+                                     parseInt($('#lead-default-input').value || String(LIMITES.lead_dias_default)));
+        const cobDefault = Math.max(LIMITES.cob_dias_min,
+                                    parseInt($('#cob-default-input').value || String(LIMITES.cob_dias_default)));
+        try {
+            const r = await fetch('/api/pedido-prueba/export-xlsx', {
+                method: 'POST', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    lab_id: parseInt(labId),
+                    min_u12m: minU12m,
+                    lead_default: leadDefault,
+                    cob_default: cobDefault,
+                }),
+            });
+            if (!r.ok) { alert('Error al exportar'); return; }
+            const blob = await r.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Filename desde header
+            const cd = r.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename="?([^"]+)"?/i);
+            a.download = m ? m[1] : 'pedido_prueba.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('Error al exportar: ' + e.message);
+        }
+    }
+
+    /* ───── Event delegation ───── */
+    $('#btn-calcular').addEventListener('click', calcular);
+    $('#btn-export').addEventListener('click', exportarXLSX);
+    $('#filtro-input').addEventListener('input', renderTabla);
+    $('#mostrar-select').addEventListener('change', renderTabla);
+
+    document.addEventListener('click', (e) => {
+        const row = e.target.closest('tr.row-data');
+        if (row && !e.target.closest('input,button,a')) {
+            toggleDrawer(row);
+        }
+    });
+    // Drawer es read-only: no hay listener input ni beforeunload.
+})();
+</script>
+
+{% endblock %}

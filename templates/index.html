@@ -305,6 +305,25 @@
                                     <a href="{{ url_for('compras_multi_lab') }}" class="btn btn-secondary btn-sm">Multi-lab</a>
                                     <a href="{{ url_for('cronograma_list') }}" class="btn btn-secondary btn-sm">Planificación</a>
                                     <a href="{{ url_for('flujo_fondos') }}" class="btn btn-secondary btn-sm">💰 Flujo</a>
+                                    <a href="{{ url_for('pedido_prueba') }}" class="btn btn-secondary btn-sm" title="Pedido prueba — planificación con estacionalidad">🧪 Ped.Prueba</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if cat_key == 'catalogo' %}
+                    {# Card especial: Comportamientos excepcionales (flags por producto/lab). #}
+                    <div class="card home-card" data-card-text="flags comportamiento excepcional discontinuado reemplazado sin descuento nota producto laboratorio">
+                        <div class="action-content">
+                            <div class="icon-tile">🚩</div>
+                            <div class="action-content__body">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="action-content__title">Comportamientos excepcionales</span>
+                                </div>
+                                <div class="action-content__desc">Asigná flags (DISCONTINUADO, REEMPLAZADO, SIN_DESCUENTO, NOTA) a productos o laboratorios.</div>
+                                <div class="flex gap-2 flex-wrap" style="margin-top:8px;">
+                                    <a href="{{ url_for('producto_flags_list') }}" class="btn btn-primary btn-sm">Ver / asignar</a>
+                                    <a href="{{ url_for('tipos_pedido_list') }}" class="btn btn-secondary btn-sm" title="Editar definiciones de tipos de pedido y flags">⚙ Configurar tipos</a>
                                 </div>
                             </div>
                         </div>

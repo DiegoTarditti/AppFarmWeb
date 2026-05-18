@@ -255,6 +255,40 @@ def init_app(app):
         flash(f'Config: sync_ventas_mensuales traerá {meses} meses.', 'success')
         return redirect(url_for('observer_sync_panel'))
 
+    @app.route('/admin/push-productos-master', methods=['POST'])
+    def push_productos_master():
+        """Replica las tablas master (laboratorios + productos) local → Render.
+
+        Distinto de observer_push_render: aquel sincroniza el espejo de ObServer
+        (obs_*). Este sincroniza el catalogo MASTER de la app (productos que
+        muestra /productos). Upsert por codigo_barra. NO toca tablas que
+        dependan de productos.id.
+
+        Diseñado para ser llamado desde el DockerPanel via panel remoto o por
+        boton dedicado. Acepta header X-Auto-Sync-Token (mismo del auto-sync).
+        Devuelve JSON con el resumen.
+        """
+        # Auth simple (reusa token del auto-sync).
+        expected = os.environ.get('AUTO_SYNC_TOKEN', '').strip()
+        if expected:
+            sent = request.headers.get('X-Auto-Sync-Token', '').strip()
+            if sent != expected:
+                return jsonify({'ok': False, 'error': 'token invalido'}), 401
+
+        render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
+        if not render_url:
+            return jsonify({
+                'ok': False,
+                'error': 'Falta RENDER_DATABASE_URL en el .env',
+            }), 400
+
+        from scripts.push_productos_master_to_render import push
+        try:
+            res = push(render_url=render_url)
+            return jsonify({'ok': True, 'resultados': res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/admin/observer-push-render', methods=['POST'])
     def observer_push_render():
         """Replica las tablas obs_* + productos.observer_id a la DB de Render."""

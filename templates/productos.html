@@ -265,29 +265,37 @@ function atributosCell(p) {
 }
 
 function buildRow(p) {
-    // p.alts es ahora una lista de strings (1-a-N producto_codigos_barra).
-    // alt1/2/3 legacy ya no existen.
+    // p.alts: lista de EANs alternativos (master 1-a-N o obs_codigos_barras orden>1)
+    // p.tiene_master: true si existe Producto local. Cuando false, deshabilitamos
+    // edicion inline y mostramos un boton para "materializar" el master.
     const altsList = Array.isArray(p.alts) ? p.alts.filter(Boolean) : [];
     const hasAlt = altsList.length > 0;
-    const labSel = LAB_OPTIONS.replace(`value="${p.laboratorio_id}"`, `value="${p.laboratorio_id}" selected`);
+    const hasMaster = !!p.tiene_master;
     const altsHtml = altsList.length
         ? altsList.map(a => `<div class="font-mono text-[11px] text-[#555]">${escHtml(a)}</div>`).join('')
         : '<span class="text-[#bbb] text-[11px] italic">—</span>';
-    return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors"
-        data-desc="${escHtml(p.descripcion.toLowerCase())}"
-        data-cb="${escHtml(p.codigo_barra)}"
-        data-alts="${escHtml(altsList.join(' '))}"
-        data-labid="${escHtml(String(p.laboratorio_id))}"
-        data-hasalt="${hasAlt ? 'true' : 'false'}"
-        data-ispack="${p.es_pack ? 'true' : 'false'}">
-        <td class="px-3 py-2 font-medium text-[#1e1e1e] editable-cell" data-id="${p.id}" data-field="descripcion">${escHtml(p.descripcion)}</td>
-        <td class="px-3 py-2 font-mono text-[#555] text-[11px] editable-cell" data-id="${p.id}" data-field="codigo_barra">${escHtml(p.codigo_barra)}</td>
-        <td class="px-3 py-2 align-top">
-            <div class="flex flex-col gap-1" title="Para editar EANs alternativos: click en la fila → ver detalle del producto">
-                ${altsHtml}
-            </div>
-        </td>
-        <td class="px-3 py-2">
+
+    // Chip de flag (Comportamiento excepcional) si el producto tiene uno.
+    const flagChip = p.flag ? `<span class="flag-chip inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${p.flag.color_clases} ml-2 align-middle"
+        title="${escHtml(p.flag.nombre)}${p.flag.nota ? ' — ' + escHtml(p.flag.nota) : ''}${p.flag.ean_reemplazo ? ' (reemplazo: ' + escHtml(p.flag.ean_reemplazo) + ')' : ''}">${p.flag.icono} ${escHtml(p.flag.nombre)}</span>` : '';
+
+    // Cells dependientes del master (editable o read-only). El texto va en .ec-text
+    // para que cellCurrentValue lo lea sin contaminarse con el chip de flag.
+    const descCell = hasMaster
+        ? `<td class="px-3 py-2 font-medium text-[#1e1e1e] editable-cell" data-id="${p.id}" data-field="descripcion"><span class="ec-text">${escHtml(p.descripcion)}</span>${flagChip}</td>`
+        : `<td class="px-3 py-2 font-medium text-[#1e1e1e]" title="Solo en ObServer — sin master local"><span class="ec-text">${escHtml(p.descripcion)}</span>${flagChip}</td>`;
+
+    const cbCell = hasMaster
+        ? `<td class="px-3 py-2 font-mono text-[#555] text-[11px] editable-cell" data-id="${p.id}" data-field="codigo_barra">${escHtml(p.codigo_barra)}</td>`
+        : `<td class="px-3 py-2 font-mono text-[#888] text-[11px]" title="EAN principal desde obs_codigos_barras">${escHtml(p.codigo_barra) || '<span class="text-[#ccc]">—</span>'}</td>`;
+
+    // Lab: si hay master, dropdown editable (con todos los labs ObServer); si no, texto
+    let labCell;
+    if (hasMaster) {
+        const labSel = LAB_OPTIONS.replace(
+            `value="${p.laboratorio_id || p.laboratorio_observer}"`,
+            `value="${p.laboratorio_id || p.laboratorio_observer}" selected`);
+        labCell = `<td class="px-3 py-2">
             <form method="post" action="/producto/${p.id}/laboratorio" onchange="this.submit()">
                 <select name="laboratorio_id" title="Laboratorio"
                         class="bg-transparent border-0 text-xs text-[#555] focus:outline-none focus:ring-1 focus:ring-brand rounded px-1 py-0.5 cursor-pointer hover:bg-black/[0.04] max-w-[120px]">
@@ -295,42 +303,110 @@ function buildRow(p) {
                     ${labSel}
                 </select>
             </form>
-        </td>
-        <td class="px-3 py-2">${atributosCell(p)}</td>
-        <td class="px-3 py-2 text-right text-[11px] text-[#555]" title="ERP local / ObServer">${stockCell(p)}</td>
-        <td class="px-3 py-2 text-right text-[11px] text-[#666]">${escHtml(p.ultima_compra) || '<span class="text-[#ccc]">—</span>'}</td>
-        <td class="px-3 py-2 text-[11px]">${tvcCell(p.tvc, p.tvc_label)}</td>
-        <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
+        </td>`;
+    } else {
+        labCell = `<td class="px-3 py-2 text-[11px] text-[#888]" title="Lab ObServer (read-only sin master)">${escHtml(p.laboratorio_nombre) || '<span class="text-[#ccc]">—</span>'}</td>`;
+    }
+
+    const atributosTd = hasMaster
+        ? `<td class="px-3 py-2">${atributosCell(p)}</td>`
+        : `<td class="px-3 py-2 text-[10px] text-[#bbb]">— sin master —</td>`;
+
+    const pvpCell = hasMaster
+        ? `<td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
             ${p.precio_pvp ? '$' + parseInt(p.precio_pvp) : '<span class="text-[#ccc] placeholder">—</span>'}
-        </td>
-        <td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="cantidad_reposicion_fija"
+           </td>`
+        : `<td class="px-3 py-2 text-right text-[#bbb] text-[11px]">—</td>`;
+
+    const cantRepCell = hasMaster
+        ? `<td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="cantidad_reposicion_fija"
             title="Cantidad fija a pedir al llegar al mínimo. Vacío = cálculo dinámico (default).">
             ${p.cantidad_reposicion_fija ? p.cantidad_reposicion_fija + 'u' : '<span class="text-[#ccc] placeholder">—</span>'}
-        </td>
-        <td class="px-3 py-2 text-center">
+           </td>`
+        : `<td class="px-3 py-2 text-right text-[#bbb] text-[11px]">—</td>`;
+
+    const packCell = hasMaster
+        ? `<td class="px-3 py-2 text-center">
             <input type="checkbox" ${p.es_pack ? 'checked' : ''}
                    onchange="togglePack(${p.id}, this.checked)"
                    title="Si es pack, cargá el EAN de la unidad individual en 'EAN alt. 1' para que se auto-complete en Módulos de descuento."
                    class="w-3.5 h-3.5 accent-amber-500 cursor-pointer">
+           </td>`
+        : `<td class="px-3 py-2 text-center text-[#ccc]">—</td>`;
+
+    // Acciones: chart/vademecum/precios funcionan sin master. Fic/× requieren master.
+    // Cuando no hay master, mostramos "📥 Local" para materializar.
+    const accionesComunes = `
+        <button onclick="openChart('${escHtml(p.codigo_barra)}')" title="Ventas históricas"
+                class="px-1.5 py-1 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors font-semibold">📈 Vts</button>
+        ${p.droga_id ? `<button class="btn-cmp-labs px-1.5 py-1 rounded border border-cyan-300 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 transition-colors font-semibold"
+                                data-droga="${p.droga_id}" data-cb="${escHtml(p.codigo_barra)}" data-nombre="${escHtml(p.descripcion)}"
+                                title="Comparar otros labs (misma droga)">⇄ Lab</button>` : ''}
+        <a href="/vademecum?q=${encodeURIComponent(p.descripcion)}" title="Vademécum"
+           class="px-1.5 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 transition-colors font-semibold">VAD</a>
+        ${p.codigo_barra ? `<a href="/precios/${encodeURIComponent(p.codigo_barra)}" title="Historial de precios por proveedor"
+           class="px-1.5 py-1 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-colors font-semibold">$</a>` : ''}`;
+    const accionesMaster = hasMaster ? `
+        <a href="/producto/${p.id}" title="Ficha completa"
+           class="px-1.5 py-1 rounded border border-violet-300 text-violet-800 bg-violet-50 hover:bg-violet-100 transition-colors font-semibold">Fic</a>
+        <button onclick="deleteProducto(${p.id}, this)" title="Eliminar producto"
+                class="px-1.5 py-1 rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 transition-colors font-semibold">×</button>`
+    : `
+        <button onclick="materializarMaster(${p.observer_id}, this)"
+                title="Crear master local — habilita edicion de precio, atributos, alts, etc."
+                class="px-1.5 py-1 rounded border border-emerald-400 text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition-colors font-semibold">📥 Local</button>`;
+
+    return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors ${hasMaster ? '' : 'bg-[#fafafa]'}"
+        data-desc="${escHtml(p.descripcion.toLowerCase())}"
+        data-cb="${escHtml(p.codigo_barra)}"
+        data-alts="${escHtml(altsList.join(' '))}"
+        data-labid="${escHtml(String(p.laboratorio_id))}"
+        data-obsid="${p.observer_id}"
+        data-hasmaster="${hasMaster ? 'true' : 'false'}"
+        data-hasalt="${hasAlt ? 'true' : 'false'}"
+        data-ispack="${p.es_pack ? 'true' : 'false'}">
+        ${descCell}
+        ${cbCell}
+        <td class="px-3 py-2 align-top">
+            <div class="flex flex-col gap-1" title="${hasMaster ? 'Para editar EANs alternativos: click en la fila → ver detalle del producto' : 'EANs de ObServer (read-only sin master)'}">
+                ${altsHtml}
+            </div>
         </td>
+        ${labCell}
+        ${atributosTd}
+        <td class="px-3 py-2 text-right text-[11px] text-[#555]" title="ERP local / ObServer">${stockCell(p)}</td>
+        <td class="px-3 py-2 text-right text-[11px] text-[#666]">${escHtml(p.ultima_compra) || '<span class="text-[#ccc]">—</span>'}</td>
+        <td class="px-3 py-2 text-[11px]">${tvcCell(p.tvc, p.tvc_label)}</td>
+        ${pvpCell}
+        ${cantRepCell}
+        ${packCell}
         <td class="px-3 py-2">
             <div class="flex items-center justify-end gap-1 text-[10px]">
-                <button onclick="openChart('${escHtml(p.codigo_barra)}')" title="Ventas históricas"
-                        class="px-1.5 py-1 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors font-semibold">📈 Vts</button>
-                ${p.droga_id ? `<button class="btn-cmp-labs px-1.5 py-1 rounded border border-cyan-300 text-cyan-800 bg-cyan-50 hover:bg-cyan-100 transition-colors font-semibold"
-                                        data-droga="${p.droga_id}" data-cb="${escHtml(p.codigo_barra)}" data-nombre="${escHtml(p.descripcion)}"
-                                        title="Comparar otros labs (misma droga)">⇄ Lab</button>` : ''}
-                <a href="/vademecum?q=${encodeURIComponent(p.descripcion)}" title="Vademécum"
-                   class="px-1.5 py-1 rounded border border-blue-300 text-blue-800 bg-blue-50 hover:bg-blue-100 transition-colors font-semibold">VAD</a>
-                <a href="/precios/${encodeURIComponent(p.codigo_barra)}" title="Historial de precios por proveedor"
-                   class="px-1.5 py-1 rounded border border-emerald-300 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 transition-colors font-semibold">$</a>
-                <a href="/producto/${p.id}" title="Ficha completa"
-                   class="px-1.5 py-1 rounded border border-violet-300 text-violet-800 bg-violet-50 hover:bg-violet-100 transition-colors font-semibold">Fic</a>
-                <button onclick="deleteProducto(${p.id}, this)" title="Eliminar producto"
-                        class="px-1.5 py-1 rounded border border-red-300 text-red-700 bg-red-50 hover:bg-red-100 transition-colors font-semibold">×</button>
+                ${accionesComunes}
+                ${accionesMaster}
             </div>
         </td>
     </tr>`;
+}
+
+async function materializarMaster(observerId, btn) {
+    btn.disabled = true; btn.textContent = '⏳';
+    try {
+        const r = await fetch(`/producto/materializar/${observerId}`, {
+            method: 'POST',
+            credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (d.ok) {
+            await loadProductos();  // refresca la tabla
+        } else {
+            btn.disabled = false; btn.textContent = '📥 Local';
+            alert('Error: ' + (d.error || 'no se pudo crear master'));
+        }
+    } catch (e) {
+        btn.disabled = false; btn.textContent = '📥 Local';
+        alert('Error de red: ' + e.message);
+    }
 }
 
 const PAGE_SIZE = 100;
@@ -471,16 +547,20 @@ document.addEventListener('click', function(e) {
 function cellCurrentValue(td) {
     const inp = td.querySelector('input'); if (inp) return inp.value;
     const ph = td.querySelector('.placeholder'); if (ph) return '';
+    const ec = td.querySelector('.ec-text'); if (ec) return ec.textContent.trim();
     const badge = td.querySelector('.alt-badge'); if (badge) return badge.textContent.trim();
     return td.textContent.trim().replace(/^\$/, '').replace(/u$/, '');
 }
 function renderCell(td, value) {
     const field = td.dataset.field;
-    if (!value) { td.innerHTML = '<span class="text-[#ccc] placeholder">—</span>'; return; }
-    if (field === 'precio_pvp') { td.innerHTML = '$' + parseInt(value); }
-    else if (field === 'cantidad_reposicion_fija') { td.innerHTML = parseInt(value) + 'u'; }
-    else if (field.startsWith('codigo_barra_alt')) { td.innerHTML = '<span class="alt-badge">' + escHtml(value) + '</span>'; }
-    else { td.textContent = value; }
+    // Preservar el chip de flag si existe (vivir junto al texto editable).
+    const chip = td.querySelector('.flag-chip');
+    const chipHtml = chip ? chip.outerHTML : '';
+    if (!value) { td.innerHTML = '<span class="text-[#ccc] placeholder">—</span>' + chipHtml; return; }
+    if (field === 'precio_pvp') { td.innerHTML = '$' + parseInt(value) + chipHtml; }
+    else if (field === 'cantidad_reposicion_fija') { td.innerHTML = parseInt(value) + 'u' + chipHtml; }
+    else if (field.startsWith('codigo_barra_alt')) { td.innerHTML = '<span class="alt-badge">' + escHtml(value) + '</span>' + chipHtml; }
+    else { td.innerHTML = '<span class="ec-text">' + escHtml(value) + '</span>' + chipHtml; }
 }
 
 async function togglePack(id, checked) {
@@ -523,7 +603,12 @@ async function crearProducto() {
     filterProductos();
 }
 
-window.addEventListener('DOMContentLoaded', loadProductos);
+window.addEventListener('DOMContentLoaded', () => {
+    // Permite linkear desde otras pantallas con /productos?q=EAN
+    const qParam = new URLSearchParams(location.search).get('q');
+    if (qParam) document.getElementById('search').value = qParam;
+    loadProductos();
+});
 </script>
 
 {% include '_grafico_historico.html' %}

@@ -1842,6 +1842,34 @@ def init_db(database_url=None):
                         ))
                 except Exception as _e_estac:
                     print(f'Migración estacionalidad_escenarios meses→días: {_e_estac}')
+
+                # Cleanup: si un deploy previo agrego producto_id a
+                # estacionalidad_escenarios (idea descartada — ahora la
+                # asignacion va por la tabla estacionalidad_productos),
+                # revertir para volver al schema original.
+                try:
+                    conn.execute(text(
+                        "ALTER TABLE estacionalidad_escenarios "
+                        "DROP CONSTRAINT IF EXISTS uq_estac_droga_producto_nombre"
+                    ))
+                    conn.execute(text(
+                        "DROP INDEX IF EXISTS idx_estac_producto_id"
+                    ))
+                    conn.execute(text(
+                        "ALTER TABLE estacionalidad_escenarios "
+                        "DROP COLUMN IF EXISTS producto_id"
+                    ))
+                    # Asegurar el UNIQUE original.
+                    try:
+                        conn.execute(text(
+                            "ALTER TABLE estacionalidad_escenarios "
+                            "ADD CONSTRAINT uq_estac_droga_nombre "
+                            "UNIQUE (droga_id, nombre)"
+                        ))
+                    except Exception:
+                        pass  # Ya existe.
+                except Exception as _e_estac2:
+                    print(f'Cleanup estacionalidad_escenarios producto_id: {_e_estac2}')
             except Exception:
                 pass
     # create_all puede fallar con dos índices distintos cuando hay objetos

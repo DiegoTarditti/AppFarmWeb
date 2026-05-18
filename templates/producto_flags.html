@@ -100,6 +100,62 @@
 .pf-extra { display: none; }
 .pf-extra.visible { display: block; }
 .pf-empty { padding: 40px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+
+/* Flash messages */
+.pf-flash {
+    padding: 10px 14px; border-radius: var(--ds-r-sm);
+    font-size: 12px; margin-bottom: 8px;
+    border: 1px solid; font-weight: 500;
+}
+.pf-flash-success, .pf-flash-message { background: rgba(95,230,188,.10); border-color: rgba(95,230,188,.4); color: var(--ds-mint); }
+.pf-flash-error   { background: rgba(239,68,68,.10);  border-color: rgba(239,68,68,.4);  color: #fca5a5; }
+.pf-flash-warning { background: rgba(245,158,11,.10); border-color: rgba(245,158,11,.4); color: #fbbf24; }
+
+/* Autocomplete por nombre */
+.pf-ac-wrap { position: relative; }
+.pf-ac-results {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm);
+    max-height: 260px; overflow-y: auto;
+    z-index: 50;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35);
+    display: none;
+}
+.pf-ac-results.open { display: block; }
+.pf-ac-item {
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255,255,255,.04);
+    cursor: pointer;
+    font-size: 12px;
+}
+.pf-ac-item:last-child { border-bottom: none; }
+.pf-ac-item:hover, .pf-ac-item.focused { background: rgba(95,230,188,.10); }
+.pf-ac-item .ac-nombre { color: var(--ds-text); font-weight: 600; }
+.pf-ac-item .ac-meta { color: var(--ds-text-mute); font-size: 10px; margin-top: 2px;
+                       display: flex; gap: 10px; flex-wrap: wrap; }
+.pf-ac-item .ac-meta code { font-family: 'JetBrains Mono', monospace; }
+.pf-ac-item mark { background: rgba(95,230,188,.25); color: var(--ds-text); padding: 0 1px; border-radius: 2px; }
+.pf-ac-empty { padding: 12px; text-align: center; color: var(--ds-text-mute); font-size: 11px; }
+
+/* Chip producto elegido */
+.pf-chosen {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    background: rgba(95,230,188,.10);
+    border: 1px solid rgba(95,230,188,.35);
+    border-radius: var(--ds-r-sm);
+}
+.pf-chosen .chosen-info { flex: 1; min-width: 0; }
+.pf-chosen .chosen-nombre { font-size: 12px; color: var(--ds-text); font-weight: 600;
+                            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-chosen .chosen-ean { font-size: 10px; color: var(--ds-text-mute); font-family: 'JetBrains Mono', monospace; }
+.pf-chosen .chosen-clear {
+    background: transparent; border: none; color: var(--ds-text-mute);
+    cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px;
+}
+.pf-chosen .chosen-clear:hover { color: #f87171; }
 </style>
 {% endblock %}
 
@@ -112,6 +168,17 @@
     <h1>🏷 Flags de productos</h1>
     <span class="text-[11px] text-[color:var(--ds-text-mute)]">{{ flags | length }} asignación{{ 'es' if flags | length != 1 else '' }}</span>
 </div>
+
+{# Flash messages (success/error de asignar/eliminar) #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="padding: 8px 24px 0 24px;">
+        {% for category, msg in messages %}
+        <div class="pf-flash pf-flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
 
 <div class="pf-content">
     {# ── Tabla de flags asignados ── #}
@@ -212,7 +279,7 @@
                 <h3>➕ Asignar flag</h3>
             </div>
             <form method="post" action="{{ url_for('producto_flags_asignar') }}"
-                  style="padding: 16px 18px;">
+                  style="padding: 16px 18px;" onsubmit="return validarForm(event);">
 
                 <div class="pf-field">
                     <label class="pf-label">Tipo de flag</label>
@@ -229,10 +296,25 @@
                 </div>
 
                 <div class="pf-field">
-                    <label class="pf-label">EAN del producto</label>
-                    <input type="text" name="ean" class="pf-input" placeholder="7791234567890"
-                           id="inp-ean" oninput="buscarNombre(this.value)">
-                    <div class="pf-help" id="ean-nombre-hint"></div>
+                    <label class="pf-label">Producto (buscar por nombre)</label>
+                    <input type="hidden" name="ean" id="inp-ean">
+                    <div id="chosen-wrap" style="display:none;">
+                        <div class="pf-chosen">
+                            <div class="chosen-info">
+                                <div class="chosen-nombre" id="chosen-nombre"></div>
+                                <div class="chosen-ean" id="chosen-ean"></div>
+                            </div>
+                            <button type="button" class="chosen-clear" id="chosen-clear"
+                                    title="Cambiar producto">×</button>
+                        </div>
+                    </div>
+                    <div class="pf-ac-wrap" id="ac-wrap">
+                        <input type="text" class="pf-input" id="inp-search"
+                               placeholder='Ej: "ibuprofeno 400" — multi-token'
+                               autocomplete="off">
+                        <div class="pf-ac-results" id="ac-results"></div>
+                    </div>
+                    <div class="pf-help">Escribí 2+ caracteres. Soporta varios tokens (todos deben matchear).</div>
                 </div>
 
                 {% if labs %}
@@ -275,6 +357,26 @@
 <script>
 const FLAG_CONFIGS = {{ flag_configs | tojson }};
 
+function validarForm(e) {
+    const flag = document.getElementById('sel-flag').value.trim();
+    const ean = document.getElementById('inp-ean').value.trim();
+    const labSel = document.querySelector('select[name="laboratorio_id"]');
+    const lab = labSel ? labSel.value.trim() : '';
+    if (!flag) {
+        e.preventDefault();
+        alert('Elegí un tipo de flag.');
+        document.getElementById('sel-flag').focus();
+        return false;
+    }
+    if (!ean && !lab) {
+        e.preventDefault();
+        alert('Elegí un producto (buscar por nombre) o un laboratorio completo.');
+        document.getElementById('inp-search').focus();
+        return false;
+    }
+    return true;
+}
+
 function actualizarExtras() {
     const sel = document.getElementById('sel-flag');
     const opt = sel.options[sel.selectedIndex];
@@ -284,21 +386,126 @@ function actualizarExtras() {
     document.getElementById('extra-vigencia').classList.toggle('visible', vigencia);
 }
 
-let _debounce = null;
-function buscarNombre(ean) {
-    const hint = document.getElementById('ean-nombre-hint');
-    if (ean.length < 8) { hint.textContent = ''; return; }
-    clearTimeout(_debounce);
-    _debounce = setTimeout(async () => {
-        try {
-            const r = await fetch(`/api/producto-nombre?ean=${encodeURIComponent(ean)}`,
-                                  {credentials: 'same-origin'});
-            if (!r.ok) { hint.textContent = ''; return; }
-            const d = await r.json();
-            hint.textContent = d.nombre ? '✓ ' + d.nombre : 'EAN no encontrado en master';
-            hint.style.color = d.nombre ? 'var(--ds-mint)' : 'var(--ds-text-mute)';
-        } catch { hint.textContent = ''; }
-    }, 350);
+// ─── Autocomplete de producto por nombre (multi-token) ───
+const inpSearch  = document.getElementById('inp-search');
+const inpEan     = document.getElementById('inp-ean');
+const acResults  = document.getElementById('ac-results');
+const acWrap     = document.getElementById('ac-wrap');
+const chosenWrap = document.getElementById('chosen-wrap');
+const chosenNom  = document.getElementById('chosen-nombre');
+const chosenEan  = document.getElementById('chosen-ean');
+const btnClear   = document.getElementById('chosen-clear');
+
+let _acDebounce = null;
+let _acSeq = 0;
+let _acItems = [];
+let _acFocus = -1;
+
+function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => (
+        {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
+    ));
 }
+
+function highlight(text, tokens) {
+    let out = escapeHtml(text);
+    tokens.filter(t => t && t.length >= 2).forEach(t => {
+        const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+        out = out.replace(re, '<mark>$1</mark>');
+    });
+    return out;
+}
+
+function renderResults(items, tokens) {
+    _acItems = items; _acFocus = -1;
+    if (!items.length) {
+        acResults.innerHTML = '<div class="pf-ac-empty">Ningún producto coincide</div>';
+        acResults.classList.add('open');
+        return;
+    }
+    acResults.innerHTML = items.map((p, i) => `
+        <div class="pf-ac-item" data-idx="${i}">
+            <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
+            <div class="ac-meta">
+                <code>${escapeHtml(p.codigo_barra)}</code>
+                ${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}
+            </div>
+        </div>
+    `).join('');
+    acResults.classList.add('open');
+    acResults.querySelectorAll('.pf-ac-item').forEach(el => {
+        el.addEventListener('click', () => elegirProducto(items[+el.dataset.idx]));
+    });
+}
+
+function elegirProducto(p) {
+    inpEan.value = p.codigo_barra || '';
+    chosenNom.textContent = p.descripcion || '';
+    chosenEan.textContent = (p.codigo_barra || '—') +
+        (p.laboratorio_nombre ? ' · ' + p.laboratorio_nombre : '');
+    chosenWrap.style.display = 'block';
+    acWrap.style.display = 'none';
+    acResults.classList.remove('open');
+    inpSearch.value = '';
+}
+
+function limpiarEleccion() {
+    inpEan.value = '';
+    chosenWrap.style.display = 'none';
+    acWrap.style.display = '';
+    inpSearch.focus();
+}
+btnClear.addEventListener('click', limpiarEleccion);
+
+inpSearch.addEventListener('input', () => {
+    const q = inpSearch.value.trim();
+    if (q.length < 2) {
+        acResults.classList.remove('open');
+        return;
+    }
+    clearTimeout(_acDebounce);
+    _acDebounce = setTimeout(async () => {
+        const seq = ++_acSeq;
+        try {
+            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&con_ean=1&limit=15`,
+                                  {credentials: 'same-origin'});
+            if (seq !== _acSeq) return;  // descartar respuesta vieja
+            if (!r.ok) { acResults.classList.remove('open'); return; }
+            const d = await r.json();
+            renderResults(d.data || [], q.split(/\s+/));
+        } catch {
+            acResults.classList.remove('open');
+        }
+    }, 250);
+});
+
+// Keyboard nav
+inpSearch.addEventListener('keydown', (e) => {
+    const items = acResults.querySelectorAll('.pf-ac-item');
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        _acFocus = (_acFocus + 1) % items.length;
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        _acFocus = (_acFocus - 1 + items.length) % items.length;
+    } else if (e.key === 'Enter') {
+        if (_acFocus >= 0 && _acItems[_acFocus]) {
+            e.preventDefault();
+            elegirProducto(_acItems[_acFocus]);
+            return;
+        }
+    } else if (e.key === 'Escape') {
+        acResults.classList.remove('open');
+        return;
+    } else { return; }
+    items.forEach((el, i) => el.classList.toggle('focused', i === _acFocus));
+    if (_acFocus >= 0) items[_acFocus].scrollIntoView({block: 'nearest'});
+});
+
+// Cerrar dropdown al click afuera
+document.addEventListener('click', (e) => {
+    if (!acWrap.contains(e.target)) acResults.classList.remove('open');
+});
 </script>
 {% endblock %}

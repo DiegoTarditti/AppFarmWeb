@@ -4,6 +4,70 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Planificadores deben respetar `unidades_minima` y `cantidad_reposicion_fija` (2026-05-17)
+
+Hoy ambos conceptos están desacoplados entre el armado táctico y los
+planificadores. Resultado: el operador ve una sugerencia en `/pedido/prueba`
+o `/informes/pedido-auto` que después no coincide con lo que produce
+`/compras/dia/armar`.
+
+**Estado actual:**
+
+| Concepto | Modelo | Pantalla armado | `/pedido/prueba` | `/informes/pedido-auto` |
+|---|---|---|---|---|
+| Mínimo de oferta (TRF) | `OfertaMinimo.unidades_minima` | ✅ Considerado (filtro en `services/descuentos.py:106` + botón UI manual) | ❌ Ignorado | ❌ Ignorado |
+| Cantidad fija de reposición | `Producto.cantidad_reposicion_fija` | ✅ Override real en `services/calculo_pedido.py:114-117` | ❌ Pasa `None` ([services/pedido_estacional.py:498](services/pedido_estacional.py#L498) tiene comentario explícito) | ❌ No leído |
+
+**Trabajo a hacer:**
+
+1. `/informes/pedido-auto` ([routes/informes.py:1659](routes/informes.py#L1659)):
+   - Antes de calcular sugerido, bulk-load `Producto.cantidad_reposicion_fija`
+     y `OfertaMinimo.unidades_minima` por EAN.
+   - Si hay `cant_fija` y stock ≤ min → `sugerido = cant_fija`.
+   - Mostrar chip "📦 Repo fija: N" o "🎁 Mín oferta: N" en la fila para
+     que el operador entienda por qué la sugerencia es esa.
+
+2. `/pedido/prueba` ([services/pedido_estacional.py](services/pedido_estacional.py)):
+   - Quitar el `None` hardcodeado, leer `cantidad_reposicion_fija` real.
+   - Decidir política: ¿el override gana sobre el cálculo estacional (igual
+     que en `/compras/dia/armar`) o solo se usa como piso?
+
+3. (Opcional) Indicador visual en `/productos`: badge "Repo: Nu" al lado del
+   precio cuando el producto tiene `cantidad_reposicion_fija` seteado.
+
+**Esfuerzo:** 2-3 horas backend + 1 hora UI/chips.
+
+**Prioridad:** Media. Hoy el gap se nota cuando alguien usa el planificador
+para anticipar un pedido grande y después al armarlo le sale distinto.
+
+---
+
+## ⏳ Pendiente — Catálogo de configuraciones de pedido (2026-05-17)
+
+Pantalla nueva (futura, no urgente) que liste TODAS las configuraciones
+cargadas a través de `/pedido/prueba` y `/informes/estacionalidad-drogas`,
+para auditar/limpiar sin tener que recorrer lab por lab.
+
+Ruta sugerida: `/config/comportamiento-catalogo` con 4 secciones:
+- Escenarios producto (todos los `EstacionalidadEscenario` con
+  `producto_id IS NOT NULL`).
+- Escenarios droga (con `producto_id IS NULL`).
+- Flags por producto (`ProductoFlag` con EAN seteado).
+- Flags por laboratorio (`ProductoFlag` con `laboratorio_id`).
+
+Cada sección con tabla buscable + filtros + acción "Eliminar"
+(con confirmación). Útil para:
+- Auditar todas las configuraciones de una.
+- Limpiar configuraciones de productos discontinuados que ya no aplican.
+- Detectar inconsistencias (ej. un escenario producto que duplica el
+  de la droga sin cambios = redundante).
+
+Esfuerzo estimado: 3-4 horas.
+Trigger: cuando haya 50+ configuraciones cargadas y empiece a costar
+revisarlas una a una desde /pedido/prueba.
+
+---
+
 ## 🎨 Migración UX al theme-emerald (en curso, 2026-05-08+)
 
 Rediseño visual unificado iniciado en commit `d0243e4` (home + design system).
