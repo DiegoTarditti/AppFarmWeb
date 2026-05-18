@@ -14,6 +14,47 @@ def now_ar():
     return datetime.now(AR_TZ).replace(tzinfo=None)
 
 
+def ventas_periodo_filter(modelo, desde, hasta, fecha_attr='fecha_estadistica'):
+    """Filtro estándar para sumar VENTAS NETAS de ObsVentaDetalle en un período.
+
+    Devuelve un `and_(...)` listo para usar en `.filter(...)`. Reemplaza el
+    patrón duplicado de:
+
+        ObsVentaDetalle.fecha_estadistica >= desde,
+        ObsVentaDetalle.fecha_estadistica <= hasta,
+        or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None))
+
+    ════════════════════════════════════════════════════════════════════════
+    IMPORTANTE — POR QUÉ NO FILTRA tipo_operacion:
+    ════════════════════════════════════════════════════════════════════════
+    Las devoluciones (`tipo_operacion = 'D'`) vienen de Observer con
+    `cantidad` e `importe` NEGATIVOS. El `SUM()` neto descuenta solas las
+    devoluciones — NO hay que filtrarlas. Filtrar `tipo == 'V'` excluiría
+    las devoluciones y daría ventas BRUTAS en vez de NETAS (era el bug
+    que tenían 13 lugares de la app hasta el fix de hoy).
+
+    Sólo filtrá `tipo_operacion` cuando explícitamente querés ANALIZAR
+    devoluciones como casos aparte (ej. `tipo_operacion.in_(('D','NC'))`
+    para listar las devoluciones), nunca para "ventas".
+
+    Args:
+        modelo: ObsVentaDetalle (se pasa por param para no acoplar el helper
+            al import directo del modelo).
+        desde, hasta: date — extremos inclusivos.
+        fecha_attr: 'fecha_estadistica' (default) o 'fecha_operacion' según el caller.
+
+    Uso:
+        from helpers import ventas_periodo_filter
+        q = session.query(ObsVentaDetalle).filter(
+            ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
+            ObsVentaDetalle.medico_observer == med_id,  # filtros propios
+        )
+    """
+    from sqlalchemy import and_
+    fecha_col = getattr(modelo, fecha_attr)
+    return and_(fecha_col >= desde, fecha_col <= hasta)
+
+
 def multi_token_filter(query_text, *columns):
     """Devuelve una cláusula SQLAlchemy multi-token AND para búsquedas.
 

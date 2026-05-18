@@ -13,9 +13,10 @@ from datetime import date, timedelta
 
 from flask import flash, redirect, render_template, request, url_for
 from flask_login import login_required
-from sqlalchemy import desc, func, or_
+from sqlalchemy import desc, func
 
 import database
+from helpers import ventas_periodo_filter
 
 
 def init_app(app):
@@ -84,10 +85,7 @@ def init_app(app):
                     .join(database.ObsProducto,
                           database.ObsProducto.observer_id == database.ObsVentaDetalle.producto_observer)
                     .filter(database.ObsProducto.laboratorio_observer == obs_lab_id,
-                            database.ObsVentaDetalle.fecha_estadistica >= desde,
-                            database.ObsVentaDetalle.fecha_estadistica <= hasta,
-                            or_(database.ObsVentaDetalle.tipo_operacion == 'V',
-                                database.ObsVentaDetalle.tipo_operacion.is_(None))))
+                            ventas_periodo_filter(database.ObsVentaDetalle, desde, hasta)))
 
             kpi_row = base.with_entities(
                 func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
@@ -172,10 +170,7 @@ def init_app(app):
                           .join(database.ObsProducto,
                                 database.ObsProducto.observer_id == database.ObsVentaDetalle.producto_observer)
                           .filter(database.ObsProducto.laboratorio_observer == obs_lab_id,
-                                  database.ObsVentaDetalle.fecha_estadistica >= desde_serie,
-                                  database.ObsVentaDetalle.fecha_estadistica <= hasta,
-                                  or_(database.ObsVentaDetalle.tipo_operacion == 'V',
-                                      database.ObsVentaDetalle.tipo_operacion.is_(None)))
+                                  ventas_periodo_filter(database.ObsVentaDetalle, desde_serie, hasta))
                           .group_by('ym').order_by('ym').all())
             info['serie'] = [{
                 'anio': int(r[0] // 100), 'mes': int(r[0] % 100),

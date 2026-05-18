@@ -467,6 +467,7 @@ def init_app(app):
             ).group_by(ObsVentaMensual.producto_observer).subquery())
 
             # Ventas ayer y última semana por producto.
+            from helpers import ventas_periodo_filter
             hoy_d = _date.today()
             _ayer = hoy_d - _td(days=1)
             _semana = hoy_d - _td(days=7)
@@ -474,10 +475,10 @@ def init_app(app):
                 ObsVentaDetalle.producto_observer,
                 ObsVentaDetalle.fecha_estadistica,
                 func.sum(ObsVentaDetalle.cantidad).label('cant'),
-            ).filter(ObsVentaDetalle.fecha_estadistica >= _semana,
-                     or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None)))\
-             .group_by(ObsVentaDetalle.producto_observer,
-                       ObsVentaDetalle.fecha_estadistica).all()
+            ).filter(
+                ventas_periodo_filter(ObsVentaDetalle, _semana, hoy_d)
+             ).group_by(ObsVentaDetalle.producto_observer,
+                        ObsVentaDetalle.fecha_estadistica).all()
             v24h_rows = {}
             v7d_rows  = {}
             for pid_d, fec, cant in _det_rows:

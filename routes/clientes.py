@@ -266,8 +266,9 @@ def init_app(app):
                     .filter(
                         ObsVentaDetalle.cliente_observer.isnot(None),
                         ObsVentaDetalle.fecha_operacion >= desde,
-                        or_(ObsVentaDetalle.tipo_operacion == 'V',
-                            ObsVentaDetalle.tipo_operacion.is_(None)),
+                        # NO filtrar tipo_operacion: devoluciones vienen con
+                        # cantidad/importe<0, sum() neto descuenta solas.
+                        # Ver helpers.ventas_periodo_filter para la regla.
                     )
                     .group_by(ObsVentaDetalle.cliente_observer,
                               ObsVentaDetalle.producto_observer)
@@ -299,8 +300,7 @@ def init_app(app):
                         ObsVentaDetalle.cliente_observer.in_(cli_ids),
                         ObsVentaDetalle.producto_observer.in_(prod_ids),
                         ObsVentaDetalle.fecha_operacion >= desde,
-                        or_(ObsVentaDetalle.tipo_operacion == 'V',
-                            ObsVentaDetalle.tipo_operacion.is_(None)),
+                        # NO filtrar tipo_operacion (sum neto descuenta dev.).
                     )
                     .order_by(ObsVentaDetalle.cliente_observer,
                               ObsVentaDetalle.producto_observer,
@@ -426,8 +426,8 @@ def init_app(app):
                       .filter(
                           ObsVentaDetalle.cliente_observer == cliente_id,
                           ObsVentaDetalle.producto_observer == producto_id,
-                          or_(ObsVentaDetalle.tipo_operacion == 'V',
-                              ObsVentaDetalle.tipo_operacion.is_(None)),
+                          # NO filtrar tipo_operacion (sum neto). Las devoluciones
+                          # quedan separadas en `anomalias` abajo (tipo IN D/NC).
                       )
                       .order_by(ObsVentaDetalle.fecha_operacion)
                       .all())
@@ -533,8 +533,8 @@ def init_app(app):
                                         _f.sum(ObsVentaDetalle.cantidad).label('cant_total'))
                          .filter(ObsVentaDetalle.id_operacion.in_(ops_ids),
                                  ObsVentaDetalle.producto_observer != producto_id,
-                                 or_(ObsVentaDetalle.tipo_operacion == 'V',
-                                     ObsVentaDetalle.tipo_operacion.is_(None)))
+                                 # NO filtrar tipo_operacion (sum neto).
+                                 )
                          .group_by(ObsVentaDetalle.producto_observer)
                          .order_by(_f.count(ObsVentaDetalle.id_producto_vendido).desc())
                          .limit(15).all())

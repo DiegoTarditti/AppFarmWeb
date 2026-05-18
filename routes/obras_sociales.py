@@ -12,7 +12,6 @@ import random
 from datetime import date, datetime, timedelta
 
 from flask import flash, jsonify, redirect, render_template, request, url_for
-from sqlalchemy import or_
 from sqlalchemy import text as _text
 
 import database
@@ -1742,11 +1741,12 @@ def init_app(app):
             )
 
             # Filtro base: solo ventas con OS (no particulares), dentro del rango desde-hasta.
+            # ventas_periodo_filter = filtro de fechas SIN excluir devoluciones
+            # (vienen con cantidad<0, sum neto descuenta solas).
+            from helpers import ventas_periodo_filter
             base_filters = [
                 ObsVD.obra_social_observer.isnot(None),
-                ObsVD.fecha_estadistica >= desde,
-                ObsVD.fecha_estadistica <= hasta,
-                or_(ObsVD.tipo_operacion == 'V', ObsVD.tipo_operacion.is_(None)),
+                ventas_periodo_filter(ObsVD, desde, hasta),
             ]
             otros_ids_full = {oid for oid, c in os_to_cat.items() if c == 'OTROS'}
             if os_id_filter:
@@ -2064,6 +2064,7 @@ def init_app(app):
             case((ObsVentaDetalle.es_venta_particular.is_(True), 1), else_=0)
         )
 
+        from helpers import ventas_periodo_filter
         recetas_q = (session.query(
             ObsVentaDetalle.cliente_observer.label('cli_id'),
             ObsVentaDetalle.medico_observer.label('med_id'),
@@ -2078,9 +2079,7 @@ def init_app(app):
         )
             .filter(
                 ObsVentaDetalle.id_farmacia == id_farmacia,
-                ObsVentaDetalle.fecha_estadistica >= desde,
-                ObsVentaDetalle.fecha_estadistica <= hasta,
-                or_(ObsVentaDetalle.tipo_operacion == 'V', ObsVentaDetalle.tipo_operacion.is_(None)),
+                ventas_periodo_filter(ObsVentaDetalle, desde, hasta),
             )
             .group_by(
                 ObsVentaDetalle.cliente_observer,
