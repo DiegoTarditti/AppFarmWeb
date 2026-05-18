@@ -150,7 +150,8 @@ def init_app(app):
         sus rendiciones (lotes) con conteos y estado. Pensada para auditor.
         Click en una rendición → /rend-recetas?presentacion=N (vista plana).
         """
-        from sqlalchemy import case, func as _f
+        from sqlalchemy import case
+        from sqlalchemy import func as _f
         D = database.DevolucionReceta
         L = database.RendicionLote
         with database.get_db() as session:
@@ -374,14 +375,12 @@ def init_app(app):
         (vendedor, supervisor, OS) y obtener firma de recepción."""
         from io import BytesIO
 
+        from flask import send_file
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import cm
-        from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer,
-                                        Table, TableStyle)
-
-        from flask import send_file
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
         with database.get_db() as session:
             lote = session.get(database.RendicionLote, id)
@@ -718,7 +717,8 @@ def init_app(app):
 
             # Pre-calcular estado consolidado del LOTE para cada fila visible.
             # Una sola query agregada por los lote_ids únicos de las visibles.
-            from sqlalchemy import case as _case, func as _ff
+            from sqlalchemy import case as _case
+            from sqlalchemy import func as _ff
             lote_ids_v = list({d.rendicion_lote_id for d in devoluciones
                                if d.rendicion_lote_id})
             estado_por_lote = {}
@@ -816,6 +816,7 @@ def init_app(app):
             #   y > 3 días desde creado_en).
             # - auditor: cantidad de recetas pendientes de auditar.
             from datetime import datetime, timedelta
+
             from sqlalchemy import or_ as _or
             alertas = {}
             if rol_actual_lista == 'rendicion':
@@ -1362,9 +1363,8 @@ def init_app(app):
         from io import BytesIO
 
         import openpyxl
-        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-
         from flask import send_file
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
         q_presentacion = (request.args.get('presentacion') or '').strip()
         q_vendedor = (request.args.get('vendedor') or '').strip()
