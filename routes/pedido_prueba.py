@@ -30,6 +30,7 @@ from database import (
     TipoPedidoConfig,
     get_db,
 )
+from helpers import aplicar_overrides_planificador, calcular_metricas_pedido_auto
 from services.pedido_estacional import (
     LIMITES,
     MESES_ES,
@@ -188,6 +189,56 @@ def init_app(app):
             flags_bulk = obtener_flags_bulk(session, todos_eans, lab_id=lab_id)
             ventas_arr_bulk = obtener_ventas_arr_bulk(session, producto_ids, id_farmacia)
 
+            # Overrides operativos del catálogo (cant_fija + oferta_min).
+            # Sirven para que el planificador no diverja de /compras/dia/armar
+            # cuando el operador ya cargó política puntual por producto/EAN.
+            from datetime import date as _date_h
+
+            from database import Laboratorio, OfertaMinimo, Producto
+            cant_fija_por_obs = {}  # producto_observer_id → cant_fija (int) | None
+            oferta_min_por_obs = {}  # producto_observer_id → unidades_minima (int) | None
+            if producto_ids:
+                rows_cf = (session.query(Producto.observer_id,
+                                          Producto.cantidad_reposicion_fija)
+                           .filter(Producto.observer_id.in_(producto_ids),
+                                   Producto.cantidad_reposicion_fija.isnot(None))
+                           .all())
+                cant_fija_por_obs = {r.observer_id: int(r.cantidad_reposicion_fija)
+                                     for r in rows_cf}
+                # OfertaMinimo: vinculo via EAN + lab LOCAL (no observer).
+                # Si no hay Laboratorio local mapeado, no hay ofertas posibles.
+                local_lab = (session.query(Laboratorio)
+                             .filter(Laboratorio.observer_id == lab_id).first())
+                if local_lab and todos_eans:
+                    hoy_h = _date_h.today()
+                    of_rows = (session.query(OfertaMinimo.ean,
+                                             OfertaMinimo.unidades_minima,
+                                             OfertaMinimo.vigencia_hasta)
+                               .filter(OfertaMinimo.laboratorio_id == local_lab.id,
+                                       OfertaMinimo.ean.in_(todos_eans),
+                                       OfertaMinimo.unidades_minima.isnot(None),
+                                       OfertaMinimo.unidades_minima > 1)
+                               .all())
+                    # Por EAN, quedarse con el mínimo vigente más alto (la
+                    # oferta más exigente). Si una está vencida (vigencia_hasta
+                    # < hoy), se descarta.
+                    min_por_ean = {}
+                    for r in of_rows:
+                        if r.vigencia_hasta and r.vigencia_hasta < hoy_h:
+                            continue
+                        cur = min_por_ean.get(r.ean, 0)
+                        if int(r.unidades_minima) > cur:
+                            min_por_ean[r.ean] = int(r.unidades_minima)
+                    # Mapear de EAN → producto_observer_id (cualquier EAN del producto).
+                    for pid, eans_p in eans_por_producto.items():
+                        mejor = 0
+                        for e in eans_p:
+                            v = min_por_ean.get(e, 0)
+                            if v > mejor:
+                                mejor = v
+                        if mejor > 0:
+                            oferta_min_por_obs[pid] = mejor
+
             # Frescura de datos: tomar el sync_en mas reciente de obs_stock
             # y obs_ventas_mensuales (proxies de "stock" y "ventas"
             # actualizadas). Si no hay data, devuelve None.
@@ -233,7 +284,29 @@ def init_app(app):
                     stock_actual=st['stock'], min_actual=st['minimo'],
                     ventas_arr_bulk=ventas_arr_bulk)
 
-                delta = (est['sugerido_final'] - (sug_dia or 0)) if sug_dia is not None else None
+                # Overrides operativos: aplicar a AMBOS sugeridos para que la
+                # comparación dia ↔ prueba siga siendo apples-to-apples y para
+                # que el planificador refleje lo que pasaría en /compras/dia.
+                cant_fija_p = cant_fija_por_obs.get(p.observer_id)
+                oferta_min_p = oferta_min_por_obs.get(p.observer_id)
+                sug_prueba_original = est['sugerido_final']
+                sug_dia_original = sug_dia
+                sug_prueba_final, ov_slug, ov_valor = aplicar_overrides_planificador(
+                    sugerido=sug_prueba_original,
+                    stock=st['stock'], minimo=st['minimo'],
+                    cant_fija=cant_fija_p, oferta_min=oferta_min_p)
+                if sug_dia is not None:
+                    sug_dia_final, _, _ = aplicar_overrides_planificador(
+                        sugerido=sug_dia, stock=st['stock'], minimo=st['minimo'],
+                        cant_fija=cant_fija_p, oferta_min=oferta_min_p)
+                else:
+                    sug_dia_final = None
+                # Reemplazo el estacional con el final (overrides aplicados)
+                # para que totales/montos/charts usen el valor real.
+                est['sugerido_final'] = sug_prueba_final
+                sug_dia = sug_dia_final
+
+                delta = (sug_prueba_final - (sug_dia or 0)) if sug_dia is not None else None
 
                 # u3m: ultimos 3 meses (excluyendo mes parcial actual).
                 # Aprovecho ventas_arr_bulk que ya tengo cargado.
@@ -245,6 +318,16 @@ def init_app(app):
                 prom_12m = round(float(u12m) / 12.0, 1) if u12m else 0
                 from purchase_engine import rotation_index as _rot_idx
                 rotacion = _rot_idx(prom_12m)  # 'A' | 'M' | 'B'
+
+                # Diagnóstico de mínimo + pérdida estimada por faltante
+                # (heredado de /informes/pedido-auto antes de eliminarlo).
+                # m12m aproximado = precio_pvp × u12m si hay precio, sino 0
+                # (sin precio no podemos valorizar la pérdida).
+                m12m_aprox = (precio_pvp * u12m) if precio_pvp else 0
+                met = calcular_metricas_pedido_auto(
+                    stock=st['stock'], minimo=st['minimo'], maximo=None,
+                    u12m=u12m, m12m=m12m_aprox,
+                )
                 resultado.append({
                     'producto_id': p.observer_id,
                     'producto_nombre': p.descripcion,
@@ -276,6 +359,18 @@ def init_app(app):
                     'demanda_proyectada': est['demanda_proyectada'],
                     'flag': est['flag'],
                     'razon': est['razon'],
+                    'min_diag': met['min_diag'],
+                    'min_diag_label': met['min_diag_label'],
+                    'perdida_mensual': met['perdida_mensual'],
+                    'perdida_pesos': met['perdida_pesos'],
+                    # Overrides operativos (chip UI siempre que existan en DB,
+                    # incluso si no modificaron el sugerido).
+                    'cant_fija': cant_fija_p,
+                    'oferta_min': oferta_min_p,
+                    'override_aplicado': ov_slug,  # 'cant_fija'|'oferta_min'|None
+                    'override_valor': ov_valor,
+                    'sugerido_prueba_original': sug_prueba_original,
+                    'sugerido_dia_original': sug_dia_original,
                 })
                 total_prueba += est['sugerido_final']
                 if sug_dia is not None:
@@ -284,6 +379,17 @@ def init_app(app):
                     if sug_dia:
                         monto_dia += precio_pvp * sug_dia
                     monto_prueba += precio_pvp * est['sugerido_final']
+
+            # Top 10 productos por pérdida $/mes (faltantes que más cuestan).
+            con_perdida = [it for it in resultado if it['perdida_pesos'] > 0]
+            top_perdida = sorted(con_perdida,
+                                 key=lambda it: -it['perdida_pesos'])[:10]
+            chart_perdida_pesos = {
+                'labels': [it['producto_nombre'][:50] for it in top_perdida],
+                'data': [it['perdida_pesos'] for it in top_perdida],
+            }
+            perdida_pesos_total = round(
+                sum(it['perdida_pesos'] for it in resultado), 2)
 
             return jsonify({
                 'lab_id': lab_id,
@@ -294,6 +400,8 @@ def init_app(app):
                 'monto_dia': round(monto_dia, 2),
                 'monto_prueba': round(monto_prueba, 2),
                 'monto_delta': round(monto_prueba - monto_dia, 2),
+                'perdida_pesos_total': perdida_pesos_total,
+                'chart_perdida_pesos': chart_perdida_pesos,
                 'lead_default': lead_default,
                 'cob_default': cob_default,
                 'stock_sync_en': stock_sync.isoformat() if stock_sync else None,

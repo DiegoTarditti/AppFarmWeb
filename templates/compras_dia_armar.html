@@ -551,10 +551,21 @@
                         <span class="text-[9px] bg-rose-100 text-rose-700 border border-rose-300 px-1 py-0.5 rounded mr-1 font-bold" title="Marcado como 'No pedir'. Reactivá desde la columna Acciones.">⛔ NO PEDIR</span>
                         {% endif %}
                         {{ it.desc }}
+                        {# Orden: flag primero (operativo, decide si se compra o no), Repo después.
+                           Si el flag es DISCONTINUADO, ocultamos Repo (no tiene sentido reponer
+                           algo discontinuado — el a_pedir ya va a 0 por efecto_armado='excluir'). #}
                         {% if it.flag %}
                         <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ml-1 align-middle {{ it.flag.color_clases }}"
                               title="{{ it.flag.nombre }}{% if it.flag.nota %} — {{ it.flag.nota }}{% endif %}{% if it.flag.ean_reemplazo %} (reemplazo: {{ it.flag.ean_reemplazo }}){% endif %}">
                             {{ it.flag.icono }} {{ it.flag.nombre }}
+                        </span>
+                        {% endif %}
+                        {% if it.cant_reposicion_fija and not (it.flag and it.flag.slug == 'DISCONTINUADO') %}
+                        {# Chip Repo fija: siempre que el producto tenga el override seteado en DB.
+                           Variante "active" (violeta intenso) cuando además se aplicó al a_pedir. #}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ml-1 align-middle {% if it.override_aplicado %}bg-violet-200 text-violet-900 border-violet-400{% else %}bg-violet-50 text-violet-700 border-violet-200{% endif %}"
+                              title="{% if it.override_aplicado %}Override aplicado: stock ({{ it.stock }}) ≤ mín ({{ it.minimo }}) → fuerza pedir {{ it.cant_reposicion_fija }}u (Producto.cantidad_reposicion_fija){% else %}Repo fija configurada ({{ it.cant_reposicion_fija }}u) — se activa cuando stock cae al mínimo{% endif %}">
+                            📦 Repo: {{ it.cant_reposicion_fija }}
                         </span>
                         {% endif %}
                     </td>
@@ -653,6 +664,10 @@
                         {% endif %}
                     </td>
                     <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
+                        {% if it.override_aplicado and it.a_pedir_sin_override is not none and it.a_pedir_sin_override != it.a_pedir %}
+                        <span class="text-[10px] text-[#888] line-through mr-1"
+                              title="Cálculo sin override habría pedido {{ it.a_pedir_sin_override }}u. El override 'cantidad_reposicion_fija' lo subió/bajó a {{ it.a_pedir }}u.">{{ it.a_pedir_sin_override }}</span>
+                        {% endif %}
                         <input type="number" min="0" value="{{ it.a_pedir }}"
                                {% if prov and not it.cubre_lab %}disabled{% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">

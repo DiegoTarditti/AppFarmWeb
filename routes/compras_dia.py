@@ -168,9 +168,8 @@ def init_app(app):
                             for p in drogerias_sin_horarios]
 
             # Labs con al menos 1 producto bajo mínimo (para el dropdown
-            # "🧪 Laboratorio" del top bar). Mismo set que muestra
-            # informe_pedido_auto en su pantalla de selección, así no
-            # presentamos labs vacíos al usuario.
+            # "🧪 Laboratorio" del top bar), así no presentamos labs vacíos
+            # al usuario.
             from sqlalchemy import distinct as _distinct
             from sqlalchemy import func as _func2
 
@@ -204,11 +203,55 @@ def init_app(app):
                 {'lab_id': r[0], 'nombre': r[1], 'n': int(r[2])}
                 for r in _labs_alertas_q.all()
             ]
+
+            # Card "Comportamientos activos": resumen de ProductoFlag vigentes,
+            # agrupado por slug. Se muestra arriba para que el operador vea al
+            # toque qué productos tienen reglas especiales hoy (sin tener que
+            # entrar al armado para descubrirlos).
+            import json as _json_cb
+            from datetime import date as _date_cb
+
+            from database import ProductoFlag, TipoPedidoConfig
+            _hoy = _date_cb.today()
+            _flag_rows = (session.query(ProductoFlag.flag_slug,
+                                        _func2.count(ProductoFlag.id))
+                          .filter(or_(ProductoFlag.vigente_hasta.is_(None),
+                                      ProductoFlag.vigente_hasta >= _hoy))
+                          .group_by(ProductoFlag.flag_slug)
+                          .order_by(_func2.count(ProductoFlag.id).desc())
+                          .all())
+            comportamientos = []
+            comportamientos_total = 0
+            if _flag_rows:
+                _slugs = [r[0] for r in _flag_rows]
+                _cfg_rows = (session.query(TipoPedidoConfig)
+                             .filter(TipoPedidoConfig.slug.in_(_slugs),
+                                     TipoPedidoConfig.categoria == 'flag').all())
+                _cfg_por_slug = {c.slug: c for c in _cfg_rows}
+                for slug, cnt in _flag_rows:
+                    cfg = _cfg_por_slug.get(slug)
+                    cfg_d = {}
+                    if cfg and cfg.config_json:
+                        try:
+                            cfg_d = _json_cb.loads(cfg.config_json)
+                        except Exception:
+                            cfg_d = {}
+                    comportamientos.append({
+                        'slug': slug,
+                        'nombre': cfg.nombre if cfg else slug,
+                        'icono': cfg_d.get('icono', '🚩'),
+                        'color': cfg_d.get('color', 'sky'),
+                        'efecto_armado': cfg_d.get('efecto_armado', 'ninguno'),
+                        'count': int(cnt),
+                    })
+                    comportamientos_total += int(cnt)
         return render_template('compras_dia.html',
                                proveedores=proveedores,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS,
-                               labs_con_alertas=labs_con_alertas)
+                               labs_con_alertas=labs_con_alertas,
+                               comportamientos=comportamientos,
+                               comportamientos_total=comportamientos_total)
 
     @app.route('/api/drogueria/<int:prov_id>/pedidos-emitidos')
     @login_required
@@ -810,7 +853,7 @@ def init_app(app):
                 from services.calculo_pedido import calcular_a_pedir, cargar_config
                 _tipo_slug = 'COMPRA_LAB' if lab_id else 'REPOSICION'
                 _cfg = cargar_config(_tipo_slug) or {}
-                _result = calcular_a_pedir(_cfg, {
+                _ctx_base = {
                     'daily_rate': daily_rate,
                     'min_efectivo': min_efectivo,
                     'factor_h': factor_h,
@@ -819,8 +862,15 @@ def init_app(app):
                     'cantidad_reposicion_fija': cant_fija,
                     'u12m': u12m_int,
                     'sin_mov': sin_mov,
-                })
+                }
+                _result = calcular_a_pedir(_cfg, _ctx_base)
                 a_pedir = _result['a_pedir']
+                # Si cant_fija aplicó override, calcular el "sin override" para
+                # mostrar tachado en la UI ("habría pedido X, pero override → Y").
+                a_pedir_sin_override = None
+                if _result.get('override_aplicado') and cant_fija:
+                    _ctx_no_ov = dict(_ctx_base, cantidad_reposicion_fija=None)
+                    a_pedir_sin_override = calcular_a_pedir(_cfg, _ctx_no_ov).get('a_pedir')
 
                 # Urgente = bajo o igual al mínimo. No urgente = entró sólo por
                 # cobertura insuficiente (stock arriba del mín pero rota rápido).
@@ -866,6 +916,8 @@ def init_app(app):
                     'target_unid': int(target_unid),         # cantidad para cubrir hasta el próximo cierre
                     'daily_rate': round(daily_rate, 2),      # tasa diaria de venta (u_rot / dias_rotacion)
                     'cant_reposicion_fija': int(cant_fija) if cant_fija else None,  # override por producto si seteado
+                    'override_aplicado': bool(_result.get('override_aplicado')),
+                    'a_pedir_sin_override': int(a_pedir_sin_override) if a_pedir_sin_override is not None else None,
                     'avg_diario': round(avg_diario, 3),
                     'cubre_lab': cubre_lab,
                     'drogs_ids': drogs_que_cubren,    # [prov_id, ...]

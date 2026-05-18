@@ -1117,3 +1117,136 @@ def medicos_observer_ids_compartidos(session, medico_id):
     ids = {r[0] for r in relacionados}
     ids.add(medico_id)
     return sorted(ids)
+
+
+def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m,
+                                  dias_cobertura=None):
+    """Métricas de reposición para un producto bajo mínimo.
+
+    Función pura, sin DB. Testeable.
+
+    Args:
+        stock: int, stock actual.
+        minimo: int, mínimo configurado.
+        maximo: int o None, máximo configurado.
+        u12m: int, unidades vendidas en los últimos 12 meses.
+        m12m: float, monto vendido en los últimos 12 meses.
+        dias_cobertura: int o None. Si se especifica, calcula `sugerido` para
+            cubrir esa cantidad de días de venta proyectada (en base a u12m),
+            ignorando mínimo/máximo configurados.
+
+    Returns:
+        dict con: sugerido, base_sugerido, avg_mensual, precio_unit,
+                  perdida_mensual, perdida_pesos, min_diag, min_diag_label.
+
+    Reglas:
+      - Si u12m=0 → sugerido=0 (no proponer compra de productos sin movimiento).
+      - Si dias_cobertura → sugerido = ceil(u12m/365 * dias) - stock, clip ≥ 0.
+      - Si hay máximo > stock → sugerido = maximo - stock.
+      - Si no → sugerido = max(1, minimo - stock).
+      - avg_mensual = u12m / 12.
+      - precio_unit = m12m / u12m (0 si no hay ventas).
+      - factor_falta = clamp((minimo - stock) / minimo, 0, 1).
+      - perdida_mensual = avg_mensual * factor_falta.
+      - perdida_pesos = perdida_mensual * precio_unit.
+      - Diagnóstico de mínimo:
+          - sin_ventas si u12m=0
+          - ratio = minimo / avg_mensual
+          - <0.5 → bajo (cubre <~2 semanas)
+          - >2   → alto (cubre >2 meses)
+          - sino → ok
+    """
+    import math
+    stock = int(stock or 0)
+    minimo = int(minimo or 0)
+    maximo = int(maximo) if maximo is not None else None
+    u12m = int(u12m or 0)
+    m12m = float(m12m or 0)
+    dias_cobertura = int(dias_cobertura) if dias_cobertura else None
+
+    if u12m <= 0:
+        sugerido = 0
+        base_sugerido = 'sin_ventas'
+    elif dias_cobertura and dias_cobertura > 0:
+        target = math.ceil(u12m / 365.0 * dias_cobertura)
+        sugerido = max(0, target - stock)
+        base_sugerido = f'dias-{dias_cobertura}'
+    elif maximo and maximo > stock:
+        sugerido = maximo - stock
+        base_sugerido = 'max-stock'
+    else:
+        sugerido = max(1, minimo - stock)
+        base_sugerido = 'min-stock'
+
+    avg_mensual = u12m / 12.0 if u12m else 0.0
+    precio_unit = (m12m / u12m) if u12m else 0.0
+    factor_falta = min(1.0, max(0.0, (minimo - stock) / minimo)) if minimo else 0.0
+    perdida_mensual = round(avg_mensual * factor_falta, 1)
+    perdida_pesos = round(perdida_mensual * precio_unit, 2)
+
+    if avg_mensual <= 0:
+        min_diag = 'sin_ventas'
+        min_diag_label = 'Sin ventas 12m'
+    else:
+        ratio = minimo / avg_mensual
+        if ratio < 0.5:
+            min_diag = 'bajo'
+            min_diag_label = f'Bajo — cubre ~{int(ratio * 30)}d, sugerido ≥{int(round(avg_mensual))}'
+        elif ratio > 2:
+            min_diag = 'alto'
+            min_diag_label = f'Alto — cubre ~{int(ratio * 30)}d, sugerido ≈{int(round(avg_mensual * 1.5))}'
+        else:
+            min_diag = 'ok'
+            min_diag_label = f'OK — cubre ~{int(ratio * 30)}d'
+
+    return {
+        'sugerido': sugerido,
+        'base_sugerido': base_sugerido,
+        'avg_mensual': round(avg_mensual, 2),
+        'precio_unit': round(precio_unit, 2),
+        'perdida_mensual': perdida_mensual,
+        'perdida_pesos': perdida_pesos,
+        'min_diag': min_diag,
+        'min_diag_label': min_diag_label,
+    }
+
+
+def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_min):
+    """Aplica overrides operativos sobre un sugerido calculado.
+
+    Función pura, sin DB. Sirve para que /pedido/prueba (planificador) muestre
+    los mismos números que después aparecen en /compras/dia/armar (operativo),
+    que ya respeta estos overrides via services/calculo_pedido.py.
+
+    Reglas (orden de precedencia):
+      1. cant_fija (Producto.cantidad_reposicion_fija): hard override. Si
+         stock <= minimo y cant_fija > 0 → sugerido = cant_fija, regardless
+         de lo que diga el cálculo. Decisión explícita del operador.
+      2. oferta_min (OfertaMinimo.unidades_minima): piso. Si sugerido > 0
+         y sugerido < oferta_min → sugerido = oferta_min (subir al mínimo
+         para acceder al descuento TRF). Si sugerido = 0 NO sube (no compro
+         solo por la oferta).
+      3. Sin override → sugerido sin cambios.
+
+    Args:
+        sugerido: int, cantidad calculada antes de override.
+        stock: int, stock actual (usado para regla cant_fija).
+        minimo: int, mínimo configurado (usado para regla cant_fija).
+        cant_fija: int|None, valor de Producto.cantidad_reposicion_fija.
+        oferta_min: int|None, valor de OfertaMinimo.unidades_minima vigente.
+
+    Returns:
+        tuple (sugerido_final, override_slug, override_valor) donde
+        override_slug es 'cant_fija' | 'oferta_min' | None.
+    """
+    sugerido = int(sugerido or 0)
+    stock = int(stock or 0)
+    minimo = int(minimo or 0)
+    cant_fija = int(cant_fija) if cant_fija else 0
+    oferta_min = int(oferta_min) if oferta_min else 0
+
+    if cant_fija > 0 and stock <= minimo:
+        return (cant_fija, 'cant_fija', cant_fija)
+    if oferta_min > 0 and 0 < sugerido < oferta_min:
+        return (oferta_min, 'oferta_min', oferta_min)
+    return (sugerido, None, None)
