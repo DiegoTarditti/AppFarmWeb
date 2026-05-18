@@ -1488,24 +1488,9 @@ def init_app(app):
                 })
             return jsonify({'ok': True, 'labels': labels, 'series': series})
 
-    @app.route('/api/informes/buscar-medico')
-    @login_required
-    def api_informes_buscar_medico():
-        """Autocomplete para el filtro médico. Top 20 por nombre."""
-        from database import ObsMedico
-        q = (request.args.get('q') or '').strip()
-        if len(q) < 2:
-            return jsonify({'items': []})
-        with database.get_db() as session:
-            results = (session.query(ObsMedico)
-                       .filter(ObsMedico.fecha_baja.is_(None),
-                               ObsMedico.nombre.ilike(f'%{q}%'))
-                       .order_by(ObsMedico.nombre)
-                       .limit(20).all())
-            return jsonify({'items': [{'id': m.observer_id,
-                                        'nombre': m.nombre,
-                                        'cuit': m.cuit or ''}
-                                       for m in results]})
+    # /api/informes/buscar-medico eliminado — el JS de informe_ventas_multi
+    # ahora consume /api/consulta-medico/buscar (superset: multi-token AND +
+    # matrícula en el response).
 
     @app.route('/api/informes/buscar-os')
     @login_required
