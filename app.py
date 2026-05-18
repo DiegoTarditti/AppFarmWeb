@@ -58,7 +58,9 @@ def exigir_login():
                       # Panel remoto: auth propia via X-Panel-Token header.
                       'api_panel_proximo', 'api_panel_resultado',
                       # Sync local↔Render: auth propia via X-Panel-Token header.
-                      'api_ofertas_sync_from_local', 'api_ofertas_from_server'}
+                      'api_ofertas_sync_from_local', 'api_ofertas_from_server',
+                      # Push master local→Render: auth propia via X-Auto-Sync-Token.
+                      'push_productos_master'}
     if request.endpoint in rutas_publicas or request.endpoint is None:
         return None
     if not current_user.is_authenticated:
