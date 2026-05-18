@@ -92,44 +92,13 @@ def init_app(app):
                 'clientes': int(kpi_row.clientes or 0),
             }
 
-            # Top 10 productos recetados (sum cantidad).
-            top_rows = (base.with_entities(
-                            database.ObsVentaDetalle.producto_observer,
-                            func.coalesce(func.sum(database.ObsVentaDetalle.cantidad), 0).label('uds'),
-                            func.coalesce(func.sum(database.ObsVentaDetalle.importe), 0).label('imp'),
-                        )
-                        .group_by(database.ObsVentaDetalle.producto_observer)
-                        .order_by(desc('uds'))
-                        .limit(10).all())
-            prod_ids = [r[0] for r in top_rows if r[0]]
-            prod_map = {}
-            prod_cb = {}
-            if prod_ids:
-                for op in (session.query(database.ObsProducto)
-                           .filter(database.ObsProducto.observer_id.in_(prod_ids)).all()):
-                    prod_map[op.observer_id] = op.descripcion or ''
-                # Resolver codigo_barra: primero via productos local (bridge),
-                # fallback a obs_codigos_barras (orden=1).
-                for p in (session.query(database.Producto)
-                          .filter(database.Producto.observer_id.in_(prod_ids)).all()):
-                    if p.codigo_barra:
-                        prod_cb[p.observer_id] = p.codigo_barra
-                sin_cb = [pid for pid in prod_ids if pid not in prod_cb]
-                if sin_cb:
-                    for row in (session.query(database.ObsCodigoBarras.producto_observer,
-                                              database.ObsCodigoBarras.codigo_barras)
-                                .filter(database.ObsCodigoBarras.producto_observer.in_(sin_cb),
-                                        database.ObsCodigoBarras.fecha_baja.is_(None),
-                                        database.ObsCodigoBarras.orden == 1).all()):
-                        if row[1]:
-                            prod_cb[row[0]] = row[1].strip()
-            info['top_productos'] = [{
-                'observer_id': r[0],
-                'codigo_barra': prod_cb.get(r[0]),
-                'nombre':      prod_map.get(r[0], f'#{r[0]}'),
-                'unidades':    float(r[1] or 0),
-                'importe':     float(r[2] or 0),
-            } for r in top_rows if r[0]]
+            # Top 10 productos recetados — helper centralizado (helpers.py).
+            # Reutilizable por otras pantallas que quieran "qué receta este médico".
+            from helpers import top_productos_por_medico
+            info['top_productos'] = top_productos_por_medico(
+                session, medico_ids, desde, hasta,
+                limit=10, resolver_codigo_barra=True,
+            )
 
             # Top OS atendidas (saber para quién receta).
             os_rows = (base.with_entities(

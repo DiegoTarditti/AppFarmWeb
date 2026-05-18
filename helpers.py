@@ -142,6 +142,89 @@ def filtro_solo_medicamentos(query, ObsProducto):
     return query
 
 
+def top_productos_por_medico(session, medico_observer_ids, desde, hasta,
+                              limit=10, resolver_codigo_barra=False,
+                              excluir_no_medicamentos=True):
+    """Top productos vendidos por uno o varios médicos en un rango.
+
+    Devuelve lista de dicts con: observer_id, nombre, unidades, importe.
+    Si `resolver_codigo_barra=True`, agrega `codigo_barra` (busca primero en
+    Producto local por bridge, fallback a obs_codigos_barras orden=1).
+
+    Aplica `ventas_periodo_filter` (suma neta = descuenta devoluciones).
+    Si `excluir_no_medicamentos=True` (default) aplica el filtro de
+    sellado/costo cupón.
+
+    Args:
+        session: SQLAlchemy session.
+        medico_observer_ids: list[int] — IDs del médico. Usar
+            `helpers.medicos_observer_ids_compartidos()` para agrupar
+            variantes por matrícula (mismo médico, múltiples observer_id).
+        desde, hasta: fechas inclusivas.
+        limit: cantidad máxima de productos.
+        resolver_codigo_barra: si True, resuelve el EAN para cada producto.
+        excluir_no_medicamentos: si True (default), excluye sellado/cupón.
+
+    Usado por: routes/consulta_medico.py (top 10 con CB). Disponible para
+    otras pantallas que quieran "qué receta este médico" sin re-implementar.
+    """
+    from sqlalchemy import desc as _desc, func as _func
+    import database as _db
+
+    base = (session.query(_db.ObsVentaDetalle)
+            .filter(_db.ObsVentaDetalle.medico_observer.in_(medico_observer_ids),
+                    ventas_periodo_filter(_db.ObsVentaDetalle, desde, hasta)))
+    if excluir_no_medicamentos:
+        base = base.filter(excluir_no_medicamentos_ovd(
+            _db.ObsVentaDetalle, _db.ObsProducto, session))
+
+    top_rows = (base.with_entities(
+                    _db.ObsVentaDetalle.producto_observer,
+                    _func.coalesce(_func.sum(_db.ObsVentaDetalle.cantidad), 0).label('uds'),
+                    _func.coalesce(_func.sum(_db.ObsVentaDetalle.importe), 0).label('imp'),
+                )
+                .group_by(_db.ObsVentaDetalle.producto_observer)
+                .order_by(_desc('uds'))
+                .limit(limit).all())
+
+    prod_ids = [r[0] for r in top_rows if r[0]]
+    nombre_por_id = {}
+    cb_por_id = {}
+    if prod_ids:
+        for op in (session.query(_db.ObsProducto)
+                   .filter(_db.ObsProducto.observer_id.in_(prod_ids)).all()):
+            nombre_por_id[op.observer_id] = op.descripcion or ''
+        if resolver_codigo_barra:
+            for p in (session.query(_db.Producto)
+                      .filter(_db.Producto.observer_id.in_(prod_ids)).all()):
+                if p.codigo_barra:
+                    cb_por_id[p.observer_id] = p.codigo_barra
+            sin_cb = [pid for pid in prod_ids if pid not in cb_por_id]
+            if sin_cb:
+                for row in (session.query(_db.ObsCodigoBarras.producto_observer,
+                                          _db.ObsCodigoBarras.codigo_barras)
+                            .filter(_db.ObsCodigoBarras.producto_observer.in_(sin_cb),
+                                    _db.ObsCodigoBarras.fecha_baja.is_(None),
+                                    _db.ObsCodigoBarras.orden == 1).all()):
+                    if row[1]:
+                        cb_por_id[row[0]] = row[1].strip()
+
+    out = []
+    for r in top_rows:
+        if not r[0]:
+            continue
+        item = {
+            'observer_id': r[0],
+            'nombre':      nombre_por_id.get(r[0], f'#{r[0]}'),
+            'unidades':    float(r[1] or 0),
+            'importe':     float(r[2] or 0),
+        }
+        if resolver_codigo_barra:
+            item['codigo_barra'] = cb_por_id.get(r[0])
+        out.append(item)
+    return out
+
+
 def excluir_no_medicamentos_ovd(ObsVentaDetalle, ObsProducto, session):
     """Devuelve un filtro SQLAlchemy para queries sobre ObsVentaDetalle que
     excluye filas cuyo producto es 'no-medicamento' (sellado de recetas,
