@@ -352,6 +352,32 @@ def init_app(app):
                 if obs.nombre_droga_observer:
                     droga_map[obs.observer_id] = obs.nombre_droga_observer
 
+            # Flags por producto: cualquiera de sus EANs (master + obs_codigos_barras)
+            # cuenta. Misma logica que en informe_pedido_auto.
+            from database import ProductoFlag, TipoPedidoConfig
+            eans_por_obs = defaultdict(set)
+            for obs, loc in rows:
+                if loc and loc.codigo_barra:
+                    eans_por_obs[obs.observer_id].add(loc.codigo_barra)
+                for ean in ([ean_principal_por_obs.get(obs.observer_id)] +
+                            ean_alts_por_obs.get(obs.observer_id, [])):
+                    if ean:
+                        eans_por_obs[obs.observer_id].add(ean)
+            todos_eans = list({e for eans in eans_por_obs.values() for e in eans})
+            flag_por_ean = {}
+            flag_cfg_por_slug = {}
+            if todos_eans:
+                pf_rows = (session.query(ProductoFlag)
+                           .filter(ProductoFlag.ean.in_(todos_eans)).all())
+                slugs = list({f.flag_slug for f in pf_rows})
+                if slugs:
+                    cfg_rows = (session.query(TipoPedidoConfig)
+                                .filter(TipoPedidoConfig.slug.in_(slugs),
+                                        TipoPedidoConfig.categoria == 'flag').all())
+                    flag_cfg_por_slug = {c.slug: c for c in cfg_rows}
+                for f in pf_rows:
+                    flag_por_ean[f.ean] = f
+
             def _tvc_label(t):
                 if not t:
                     return ''
@@ -362,6 +388,14 @@ def init_app(app):
                 if t in ('1', '2', '3', '4', '5', '6', '7', '8'):
                     return f'Ctrl·{t}'
                 return t
+
+            import json as _json
+            _flag_color_clases = {
+                'red':    'bg-red-100 text-red-800 border-red-300',
+                'violet': 'bg-violet-100 text-violet-800 border-violet-300',
+                'amber':  'bg-amber-100 text-amber-800 border-amber-300',
+                'sky':    'bg-sky-100 text-sky-800 border-sky-300',
+            }
 
             data = []
             for obs, loc in rows:
@@ -374,6 +408,29 @@ def init_app(app):
                     lab_nombre = local_labs_map.get(loc.laboratorio_id, '')
                 if not lab_nombre and obs.laboratorio_observer:
                     lab_nombre = labs_obs.get(obs.laboratorio_observer, '')
+                # Flag: el 1ro que matchee con cualquier EAN del producto
+                flag_dict = None
+                for ean in eans_por_obs.get(obs.observer_id, set()):
+                    fobj = flag_por_ean.get(ean)
+                    if fobj:
+                        cfg = flag_cfg_por_slug.get(fobj.flag_slug)
+                        cfg_d = {}
+                        if cfg and cfg.config_json:
+                            try:
+                                cfg_d = _json.loads(cfg.config_json)
+                            except Exception:
+                                cfg_d = {}
+                        color = cfg_d.get('color', 'sky')
+                        flag_dict = {
+                            'slug': fobj.flag_slug,
+                            'nombre': cfg.nombre if cfg else fobj.flag_slug,
+                            'icono': cfg_d.get('icono', '🚩'),
+                            'color_clases': _flag_color_clases.get(
+                                color, _flag_color_clases['sky']),
+                            'nota': fobj.nota or '',
+                            'ean_reemplazo': fobj.ean_reemplazo or '',
+                        }
+                        break
                 data.append({
                     'id': loc.id if loc else None,
                     'observer_id': obs.observer_id,
@@ -397,6 +454,7 @@ def init_app(app):
                     'stock_obs': stock_obs_map.get(obs.observer_id),
                     'atributos': atributos_map.get(loc.id) if loc else None,
                     'tiene_master': loc is not None,
+                    'flag': flag_dict,
                 })
             return jsonify({'data': data, 'total': total, 'limit': limit, 'offset': offset})
 
