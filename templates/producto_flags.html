@@ -132,13 +132,6 @@
 }
 .pf-ac-item:last-child { border-bottom: none; }
 .pf-ac-item:hover, .pf-ac-item.focused { background: rgba(95,230,188,.10); }
-.pf-ac-item.disabled { opacity: .4; cursor: not-allowed; }
-.pf-ac-item.disabled:hover { background: transparent; }
-.pf-ac-item .ac-noean {
-    background: rgba(239,68,68,.15); color: #fca5a5; border: 1px solid rgba(239,68,68,.3);
-    padding: 1px 6px; border-radius: 999px; font-size: 9px; font-weight: 600;
-    margin-left: 6px;
-}
 .pf-ac-item .ac-nombre { color: var(--ds-text); font-weight: 600; }
 .pf-ac-item .ac-meta { color: var(--ds-text-mute); font-size: 10px; margin-top: 2px;
                        display: flex; gap: 10px; flex-wrap: wrap; }
@@ -430,28 +423,18 @@ function renderResults(items, tokens) {
         acResults.classList.add('open');
         return;
     }
-    acResults.innerHTML = items.map((p, i) => {
-        const sinEan = !p.codigo_barra;
-        return `
-        <div class="pf-ac-item ${sinEan ? 'disabled' : ''}" data-idx="${i}"
-             title="${sinEan ? 'Sin EAN: no se puede asignar flag por producto. Usá el filtro por laboratorio.' : ''}">
-            <div class="ac-nombre">
-                ${highlight(p.descripcion, tokens)}
-                ${sinEan ? '<span class="ac-noean">SIN EAN</span>' : ''}
-            </div>
+    acResults.innerHTML = items.map((p, i) => `
+        <div class="pf-ac-item" data-idx="${i}">
+            <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
             <div class="ac-meta">
-                <code>${escapeHtml(p.codigo_barra || '—')}</code>
+                <code>${escapeHtml(p.codigo_barra)}</code>
                 ${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}
             </div>
-        </div>`;
-    }).join('');
+        </div>
+    `).join('');
     acResults.classList.add('open');
     acResults.querySelectorAll('.pf-ac-item').forEach(el => {
-        el.addEventListener('click', () => {
-            const item = items[+el.dataset.idx];
-            if (!item.codigo_barra) return;  // disabled: sin EAN
-            elegirProducto(item);
-        });
+        el.addEventListener('click', () => elegirProducto(items[+el.dataset.idx]));
     });
 }
 
@@ -484,7 +467,7 @@ inpSearch.addEventListener('input', () => {
     _acDebounce = setTimeout(async () => {
         const seq = ++_acSeq;
         try {
-            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&limit=15`,
+            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&con_ean=1&limit=15`,
                                   {credentials: 'same-origin'});
             if (seq !== _acSeq) return;  // descartar respuesta vieja
             if (!r.ok) { acResults.classList.remove('open'); return; }
@@ -509,7 +492,6 @@ inpSearch.addEventListener('keydown', (e) => {
     } else if (e.key === 'Enter') {
         if (_acFocus >= 0 && _acItems[_acFocus]) {
             e.preventDefault();
-            if (!_acItems[_acFocus].codigo_barra) return;  // sin EAN: no seleccionable
             elegirProducto(_acItems[_acFocus]);
             return;
         }

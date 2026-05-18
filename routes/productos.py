@@ -143,6 +143,10 @@ def init_app(app):
         rubro = (request.args.get('rubro') or '').strip()
         only_alt = request.args.get('only_alt') in ('1', 'true')
         only_pack = request.args.get('only_pack') in ('1', 'true')
+        # con_ean=1: solo productos con al menos un EAN (en obs_codigos_barras
+        # o en master local). Usado por el autocomplete de /productos/flags —
+        # sin EAN no se puede asignar flag, no tiene sentido mostrarlos.
+        con_ean = request.args.get('con_ean') in ('1', 'true')
         venta_tipo = (request.args.get('venta_tipo') or '').strip()
         try:
             limit = min(int(request.args.get('limit') or 100), 500)
@@ -214,6 +218,17 @@ def init_app(app):
             if only_pack:
                 # es_pack es campo del master. Requiere que exista master.
                 base = base.filter(Producto.es_pack == 1)
+
+            if con_ean:
+                # Producto tiene EAN si: tiene entrada en obs_codigos_barras
+                # activa, o tiene un Producto master con codigo_barra no vacio.
+                sub_obs = (session.query(ObsCodigoBarras.producto_observer)
+                           .filter(ObsCodigoBarras.fecha_baja.is_(None))
+                           .subquery())
+                base = base.filter(or_(
+                    ObsProducto.observer_id.in_(sub_obs),
+                    Producto.codigo_barra.isnot(None),
+                ))
 
             if rubro:
                 try:
