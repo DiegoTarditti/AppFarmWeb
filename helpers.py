@@ -1253,7 +1253,8 @@ def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_mi
 
 
 def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
-                                limit_top=8):
+                                limit_top=8, lab_observer_id=None,
+                                incluir_sin_alerta=False):
     """Calcula alertas de reposición para productos con cantidad_reposicion_fija.
 
     Sirve al card "Alertas Repo fija" del home. Lisandro carga manualmente el
@@ -1286,15 +1287,20 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
     dias_rotacion = int(meses_rotacion * _DIAS_PROM_MES)
 
     # 1. Productos con repo fija seteada + linkeados a Observer.
-    rows_prod = (session.query(database.Producto.id,
-                               database.Producto.observer_id,
-                               database.Producto.descripcion,
-                               database.Producto.codigo_barra,
-                               database.Producto.cantidad_reposicion_fija)
-                 .filter(database.Producto.cantidad_reposicion_fija.isnot(None),
-                         database.Producto.cantidad_reposicion_fija > 0,
-                         database.Producto.observer_id.isnot(None))
-                 .all())
+    #    Si lab_observer_id viene, filtramos por laboratorio (vía ObsProducto).
+    q = (session.query(database.Producto.id,
+                       database.Producto.observer_id,
+                       database.Producto.descripcion,
+                       database.Producto.codigo_barra,
+                       database.Producto.cantidad_reposicion_fija)
+         .filter(database.Producto.cantidad_reposicion_fija.isnot(None),
+                 database.Producto.cantidad_reposicion_fija > 0,
+                 database.Producto.observer_id.isnot(None)))
+    if lab_observer_id:
+        q = (q.join(database.ObsProducto,
+                    database.ObsProducto.observer_id == database.Producto.observer_id)
+              .filter(database.ObsProducto.laboratorio_observer == lab_observer_id))
+    rows_prod = q.all()
     if not rows_prod:
         return {'total': 0, 'rojo': 0, 'amarillo': 0, 'verde': 0,
                 'sin_alerta': 0, 'top': []}
@@ -1335,18 +1341,33 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
                    .all())
     u_rot_map = {r[0]: float(r[1] or 0) for r in ventas_rows}
 
-    # 4. Por producto: clasificar nivel.
+    # 4. Por producto: clasificar nivel + punto de pedido + rotación.
+    #    punto_pedido = minimo + (avg_diario × dias_aviso): nivel de stock al
+    #    cual hay que disparar la compra para que llegue antes de tocar el
+    #    mínimo (Diego pidió "una semana antes" → dias_aviso=7 default).
+    import math as _math
+
+    from purchase_engine import rotation_index as _rot_idx
     items = []
     for r in rows_prod:
         stock, minimo = stock_map.get(r.observer_id, (0, 0))
         u_rot = u_rot_map.get(r.observer_id, 0.0)
         avg_diario = (u_rot / dias_rotacion) if dias_rotacion else 0
+        avg_mensual = avg_diario * _DIAS_PROM_MES if avg_diario else 0
+        rotacion = _rot_idx(avg_mensual) if avg_mensual else None  # 'A'|'M'|'B'
+
+        # Punto de pedido + días al punto de pedido.
+        if avg_diario > 0:
+            punto_pedido = minimo + int(_math.ceil(avg_diario * dias_aviso))
+            dias_al_pedido = (stock - punto_pedido) / avg_diario
+        else:
+            punto_pedido = minimo  # sin ritmo → punto = mín
+            dias_al_pedido = None
+
         if stock <= minimo:
             nivel = 'rojo'
             dias_a_min = 0
         elif avg_diario <= 0:
-            # Tiene repo fija pero no rotó → no alerta (capaz lo cargó
-            # Lisandro para preparar el futuro; no urge).
             nivel = None
             dias_a_min = None
         else:
@@ -1366,6 +1387,10 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
             'minimo': minimo,
             'cant_fija': int(r.cantidad_reposicion_fija),
             'avg_diario': round(avg_diario, 2),
+            'avg_mensual': round(avg_mensual, 1),
+            'rotacion': rotacion,
+            'punto_pedido': punto_pedido,
+            'dias_al_pedido': round(dias_al_pedido, 1) if dias_al_pedido is not None else None,
             'dias_a_min': round(dias_a_min, 1) if dias_a_min is not None else None,
             'nivel': nivel,
         })
@@ -1376,15 +1401,23 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
     verde = sum(1 for x in items if x['nivel'] == 'verde')
     sin_alerta = sum(1 for x in items if x['nivel'] is None)
 
-    _orden_nivel = {'rojo': 0, 'amarillo': 1, 'verde': 2}
-    en_alerta = [x for x in items if x['nivel']]
-    en_alerta.sort(key=lambda x: (_orden_nivel[x['nivel']],
-                                   x['dias_a_min'] if x['dias_a_min'] is not None else 999))
+    _orden_nivel = {'rojo': 0, 'amarillo': 1, 'verde': 2, None: 3}
+    if incluir_sin_alerta:
+        # Pantalla detalle: todos los items con cant_fija ordenados por
+        # urgencia (rojo > amarillo > verde > sin_alerta).
+        items.sort(key=lambda x: (_orden_nivel[x['nivel']],
+                                  x['dias_a_min'] if x['dias_a_min'] is not None else 99999))
+        top_items = items[:limit_top] if limit_top else items
+    else:
+        en_alerta = [x for x in items if x['nivel']]
+        en_alerta.sort(key=lambda x: (_orden_nivel[x['nivel']],
+                                       x['dias_a_min'] if x['dias_a_min'] is not None else 999))
+        top_items = en_alerta[:limit_top] if limit_top else en_alerta
     return {
         'total': len(items),
         'rojo': rojo,
         'amarillo': amarillo,
         'verde': verde,
         'sin_alerta': sin_alerta,
-        'top': en_alerta[:limit_top] if limit_top else en_alerta,
+        'top': top_items,
     }

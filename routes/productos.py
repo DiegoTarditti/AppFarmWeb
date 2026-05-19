@@ -13,16 +13,44 @@ def init_app(app):
     @app.route('/productos/repo-alertas')
     @login_required
     def productos_repo_alertas():
-        """Detalle de alertas de Repo fija: productos con cantidad_reposicion_fija
-        seteada, ordenados por urgencia (rojo > amarillo > verde > sin alerta).
+        """Detalle de Repo fija: todos los productos con cantidad_reposicion_fija
+        seteada, ordenados por urgencia. Filtro opcional por laboratorio.
 
-        On-demand (sin tabla persistida). Reusa el helper que alimenta el card
-        del home, pero con `top` ampliado a todos los items para listar completo.
+        Incluye columnas extra: rotación A/M/B, punto de pedido (uds),
+        días al punto de pedido, gráfico histórico.
         """
+        from database import ObsLaboratorio, ObsProducto
+        lab_id = request.args.get('lab', type=int)
         with database.get_db() as session:
-            # limit_top=None → lista completa de productos en alerta.
-            data = calcular_alertas_repo_fija(session, dias_aviso=7, limit_top=None)
-        return render_template('productos_repo_alertas.html', data=data)
+            # Lista de labs que tienen al menos 1 producto con cant_fija.
+            # Para poblar el dropdown del filtro.
+            lab_rows = (session.query(ObsLaboratorio.observer_id,
+                                       ObsLaboratorio.descripcion)
+                        .join(ObsProducto,
+                              ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+                        .join(Producto,
+                              Producto.observer_id == ObsProducto.observer_id)
+                        .filter(Producto.cantidad_reposicion_fija.isnot(None),
+                                Producto.cantidad_reposicion_fija > 0)
+                        .distinct()
+                        .order_by(ObsLaboratorio.descripcion)
+                        .all())
+            labs_disponibles = [{'id': r[0], 'nombre': r[1]} for r in lab_rows]
+            # Items: TODOS los productos con cant_fija (incluso sin alerta),
+            # filtrados por lab si vino el query param.
+            data = calcular_alertas_repo_fija(
+                session, dias_aviso=7, limit_top=None,
+                lab_observer_id=lab_id, incluir_sin_alerta=True)
+            # Nombre del lab seleccionado para el título.
+            lab_nombre = None
+            if lab_id:
+                lab_obs = session.get(ObsLaboratorio, lab_id)
+                lab_nombre = lab_obs.descripcion if lab_obs else None
+        return render_template('productos_repo_alertas.html',
+                               data=data,
+                               labs_disponibles=labs_disponibles,
+                               lab_id=lab_id,
+                               lab_nombre=lab_nombre)
 
     @app.route('/productos/verificar-nuevos')
     @login_required

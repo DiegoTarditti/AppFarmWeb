@@ -147,6 +147,12 @@
         </div>
     </div>
 
+    {# Panel dual de gráficos (Año + Mes) — se actualiza al click en una fila.
+       Mismo patrón que /compras/armar. #}
+    <div class="px-4 pt-3 flex-shrink-0">
+        {% include '_grafico_dual_panel.html' %}
+    </div>
+
     <!-- Loading overlay -->
     <div id="loading-overlay" class="flex-1 flex items-center justify-center py-16">
         <div class="text-center text-[#888]">
@@ -338,14 +344,18 @@ function buildRow(p) {
         ? `<td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="precio_pvp">
             ${p.precio_pvp ? '$' + parseInt(p.precio_pvp) : '<span class="text-[#ccc] placeholder">—</span>'}
            </td>`
-        : `<td class="px-3 py-2 text-right text-[#bbb] text-[11px]">—</td>`;
+        : `<td class="px-3 py-2 text-right text-[#bbb] text-[11px] cursor-pointer hover:bg-emerald-50/40 transition-colors"
+              onclick="materializeAndEdit(${p.observer_id}, 'precio_pvp', this)"
+              title="Click para crear master local y editar precio PVP">—</td>`;
 
     const cantRepCell = hasMaster
         ? `<td class="px-3 py-2 text-right text-[#6f6f6f] editable-cell" data-id="${p.id}" data-field="cantidad_reposicion_fija"
             title="Cantidad fija a pedir al llegar al mínimo. Vacío = cálculo dinámico (default).">
             ${p.cantidad_reposicion_fija ? p.cantidad_reposicion_fija + 'u' : '<span class="text-[#ccc] placeholder">—</span>'}
            </td>`
-        : `<td class="px-3 py-2 text-right text-[#bbb] text-[11px]">—</td>`;
+        : `<td class="px-3 py-2 text-right text-[#bbb] text-[11px] cursor-pointer hover:bg-emerald-50/40 transition-colors"
+              onclick="materializeAndEdit(${p.observer_id}, 'cantidad_reposicion_fija', this)"
+              title="Click para crear master local y editar Repo Fija">—</td>`;
 
     const packCell = hasMaster
         ? `<td class="px-3 py-2 text-center">
@@ -378,9 +388,11 @@ function buildRow(p) {
                 title="Crear master local — habilita edicion de precio, atributos, alts, etc."
                 class="px-1.5 py-1 rounded border border-emerald-400 text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition-colors font-semibold">📥 Local</button>`;
 
-    return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors ${hasMaster ? '' : 'bg-[#fafafa]'}"
+    return `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.025] transition-colors cursor-pointer ${hasMaster ? '' : 'bg-[#fafafa]'}"
+        onclick="seleccionarProductoP(this)"
         data-desc="${escHtml(p.descripcion.toLowerCase())}"
         data-cb="${escHtml(p.codigo_barra)}"
+        data-nombre="${escHtml(p.descripcion)}"
         data-alts="${escHtml(altsList.join(' '))}"
         data-labid="${escHtml(String(p.laboratorio_id))}"
         data-obsid="${p.observer_id}"
@@ -411,6 +423,17 @@ function buildRow(p) {
     </tr>`;
 }
 
+/* Click en fila: carga el dual panel (Año + Mes) usando observer_id.
+   El listener delegado de celdas editables sigue funcionando independiente. */
+function seleccionarProductoP(tr) {
+    const obsid = parseInt(tr.dataset.obsid);
+    const nombre = tr.dataset.nombre;
+    if (!obsid || typeof cargarGraficoDual !== 'function') return;
+    document.querySelectorAll('tr.row-selected').forEach(r => r.classList.remove('row-selected', 'bg-emerald-50'));
+    tr.classList.add('row-selected', 'bg-emerald-50');
+    cargarGraficoDual(obsid, nombre);
+}
+
 async function materializarMaster(observerId, btn) {
     btn.disabled = true; btn.textContent = '⏳';
     try {
@@ -428,6 +451,30 @@ async function materializarMaster(observerId, btn) {
     } catch (e) {
         btn.disabled = false; btn.textContent = '📥 Local';
         alert('Error de red: ' + e.message);
+    }
+}
+
+/* Materializa producto sin master Y abre el editor de la celda clickeada.
+   UX: 1 click hace todo — Lisandro no tiene que primero materializar y
+   después buscar la fila para editar. */
+let _pendingEditAfterLoad = null;  // {observerId, field}
+async function materializeAndEdit(observerId, field, tdEl) {
+    if (tdEl) { tdEl.style.opacity = '0.5'; tdEl.textContent = '⏳'; }
+    try {
+        const r = await fetch(`/producto/materializar/${observerId}`, {
+            method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            alert('Error al materializar: ' + (d.error || 'desconocido'));
+            if (tdEl) { tdEl.style.opacity = ''; tdEl.textContent = '—'; }
+            return;
+        }
+        _pendingEditAfterLoad = { observerId, field };
+        await loadProductos();
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+        if (tdEl) { tdEl.style.opacity = ''; tdEl.textContent = '—'; }
     }
 }
 
@@ -492,6 +539,23 @@ async function loadProductos() {
         setCount(allProductos.length, currentTotal);
         overlay.classList.add('hidden');
         document.getElementById('tabla-wrap').classList.remove('hidden');
+
+        // Si veníamos de materializar + editar, abrir el editor en la celda
+        // correspondiente. tiene_master ahora es true → la celda quedó como
+        // editable-cell, y un click simulado dispara el listener delegado.
+        if (_pendingEditAfterLoad) {
+            const { observerId, field } = _pendingEditAfterLoad;
+            _pendingEditAfterLoad = null;
+            setTimeout(() => {
+                const tr = document.querySelector(`tr[data-obsid="${observerId}"]`);
+                if (!tr) return;
+                const td = tr.querySelector(`td.editable-cell[data-field="${field}"]`);
+                if (td) {
+                    tr.scrollIntoView({behavior: 'smooth', block: 'center'});
+                    td.click();
+                }
+            }, 50);
+        }
     } catch (e) {
         if (seq !== loadSeq) return;
         overlay.innerHTML =
