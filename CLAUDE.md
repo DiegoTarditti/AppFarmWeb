@@ -285,6 +285,17 @@ Fixes críticos históricos:
 
 Antes de `Base.metadata.create_all(engine)` en `init_db` limpiamos tipos huérfanos en `pg_type` para tablas nuevas agregadas recientemente (lista whitelist en database.py). Esto evita `UniqueViolation` cuando un deploy anterior falló mid-stream con `CREATE TABLE`. Al agregar un modelo nuevo, sumá su `__tablename__` a esa lista.
 
+## Deploy Render — gotchas
+
+Reglas duras aprendidas el 2026-05-19 (ver [docs/lecciones_deploy_render.md](docs/lecciones_deploy_render.md) para el detalle):
+
+- **NUNCA agregar `--preload` al CMD de gunicorn**. `init_db()` cuelga al master y Render cancela el deploy con "No open ports detected".
+- **NO migrar a `--worker-class gthread`** sin staging completo — rompió port binding sin razón clara.
+- **`render.yaml` puede ser pisado por config manual del dashboard** (ej. healthCheckPath). Verificar ambos.
+- **Health check**: usar `/ping` (sin DB) y no `/health` (con SELECT 1). Si los workers se cuelgan en queries lentas, /health queda en cola → Render mata el instance.
+- **Plan free**: 512MB RAM. Query patterns como `Producto.all()` en pantallas que iteran ~30k filas → OOM.
+- Si deploy falla con "Port scan timeout" sin output de gunicorn → es preload colgado, no error de código. Rollback inmediato y debug después.
+
 ## LLM matcher (queue de pendientes)
 
 `services/llm_matcher.py` llama a Claude Haiku 4.5 para sugerir match en items que el matcher Python no resolvió. UI on-demand en `/productos/pendientes-revision` (botón "🤖 Analizar con IA").
