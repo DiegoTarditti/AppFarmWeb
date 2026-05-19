@@ -129,8 +129,9 @@ def init_app(app):
         conteos en vivo. Si RENDER_DATABASE_URL no está, columna Render
         queda con guion.
         """
-        import sync_registry
         from collections import defaultdict
+
+        import sync_registry
         tablas = [t for t, _, _ in sync_registry.REGISTRY]
         counts_local  = _contar_tablas_locales(tablas)
         counts_render = _contar_tablas_render(tablas)
