@@ -38,6 +38,16 @@
                     <p class="font-bold text-sm text-[#1e1e1e]">Correcciones de mínimos sugeridas</p>
                     <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos cuyo mínimo en Observer está desfasado del calculado. Agrupado por laboratorio. Para mandar al staff del POS y que actualice manualmente.</p>
                 </a>
+
+                <a href="{{ url_for('informe_cadencias_lab') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-amber-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">📅</div>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Cadencias por laboratorio</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Agrupa los productos de un lab por cadencia natural de compra: alta rotación (≤10d) · media · baja · ocasional. Para decidir si conviene partir el pedido en varias frecuencias.</p>
+                </a>
             </div>
         </div>
 

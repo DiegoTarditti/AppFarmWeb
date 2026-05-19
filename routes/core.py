@@ -5,7 +5,7 @@ import os
 from flask import flash, make_response, redirect, render_template, request, url_for
 
 import database
-from helpers import get_config, get_providers
+from helpers import calcular_alertas_repo_fija, get_config, get_providers
 
 
 def init_app(app):
@@ -49,10 +49,17 @@ def init_app(app):
             (k, cat_labels.get(k, k), cs)
             for k, cs in cards_por_cat.items() if cs
         ]
+        # Alertas Repo fija (cant_fija seteada + cerca de tocar el mínimo).
+        # Cálculo on-demand al cargar home — Diego entra 1-2 veces al día y eso
+        # ya es el "periódico". Sin cron, sin tabla extra. Cuesta ~2-3 queries
+        # bulk, despreciable comparado al resto del home.
+        with database.get_db() as session:
+            alertas_repo = calcular_alertas_repo_fija(session)
         return render_template('index.html',
                                config=get_config(),
                                acciones=cards,
-                               grupos_acciones=grupos_acciones)
+                               grupos_acciones=grupos_acciones,
+                               alertas_repo=alertas_repo)
 
     @app.route('/ingresos')
     def ingresos():

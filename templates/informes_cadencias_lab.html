@@ -1,0 +1,316 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Cadencias por laboratorio — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cl-page { padding: 18px 24px 28px; }
+    .cl-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .cl-head h1 {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0;
+    }
+    .cl-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+
+    .cl-filters {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 10px 14px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 12px;
+        margin-bottom: 14px;
+    }
+    .cl-filters label {
+        font-size: 9px; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase; color: var(--ds-text-mute);
+    }
+    .cl-filters select, .cl-filters input[type="number"] {
+        background: rgba(0,0,0,.3);
+        border: 1px solid var(--ds-line);
+        color: var(--ds-text); color-scheme: dark;
+        border-radius: 4px; padding: 6px 10px;
+        font-size: 12px; outline: none;
+    }
+    .cl-filters select { min-width: 220px; }
+    .cl-filters input[type="number"] { width: 60px; text-align: right; }
+    .cl-filters .hint { font-size: 10px; color: var(--ds-text-mute); }
+
+    /* KPIs totales arriba */
+    .cl-totales {
+        display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .cl-tot {
+        flex: 1 1 auto; min-width: 160px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 10px;
+        padding: 8px 14px;
+        display: flex; flex-direction: column; gap: 2px;
+    }
+    .cl-tot .lbl {
+        font-size: 9px; font-weight: 700; letter-spacing: .06em;
+        text-transform: uppercase; color: var(--ds-text-mute);
+    }
+    .cl-tot .val {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 20px; font-weight: 700; color: var(--ds-text); line-height: 1;
+    }
+    .cl-tot .val.mint { color: var(--ds-mint); }
+
+    /* Bucket card */
+    .cl-bucket {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-left: 4px solid var(--ds-line);
+        border-radius: 12px;
+        margin-bottom: 12px;
+        overflow: hidden;
+    }
+    .cl-bucket.rojo     { border-left-color: #ef4444; }
+    .cl-bucket.amarillo { border-left-color: var(--ds-warn); }
+    .cl-bucket.verde    { border-left-color: var(--ds-mint); }
+    .cl-bucket.azul     { border-left-color: #7dd3fc; }
+    .cl-bucket.mute     { border-left-color: rgba(255,255,255,.2); }
+    .cl-bucket-head {
+        display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+        cursor: pointer; user-select: none;
+        background: rgba(0,0,0,.10);
+    }
+    .cl-bucket-head:hover { background: rgba(95,230,188,.05); }
+    .cl-bucket-icon { font-size: 24px; line-height: 1; }
+    .cl-bucket-title {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 14px; font-weight: 700; color: var(--ds-text);
+    }
+    .cl-bucket-meta {
+        font-size: 11px; color: var(--ds-text-mute);
+        margin-left: auto;
+        font-family: ui-monospace, Consolas, monospace;
+    }
+    .cl-bucket-meta b { color: var(--ds-text); font-weight: 700; }
+    .cl-bucket.empty { opacity: .55; }
+    .cl-bucket.empty .cl-bucket-head { cursor: default; }
+    .cl-bucket-chev {
+        font-size: 10px; color: var(--ds-text-mute);
+        transition: transform .15s;
+    }
+    .cl-bucket.open .cl-bucket-chev { transform: rotate(90deg); color: var(--ds-mint); }
+    .cl-bucket-body { display: none; padding: 0; }
+    .cl-bucket.open .cl-bucket-body { display: block; }
+
+    /* Tabla productos dentro del bucket */
+    .cl-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .cl-table thead th {
+        background: rgba(0,0,0,.20);
+        color: var(--ds-text-mute);
+        font-size: 9px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em;
+        padding: 8px 12px; text-align: right;
+        border-bottom: 1px solid var(--ds-line);
+    }
+    .cl-table thead th.left { text-align: left; }
+    .cl-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; }
+    .cl-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .cl-table tbody tr.cl-selected { background: rgba(95,230,188,.12); }
+    .cl-table tbody td {
+        padding: 7px 12px;
+        color: var(--ds-text);
+        font-family: ui-monospace, Consolas, monospace;
+        text-align: right;
+    }
+    .cl-table tbody td.left { text-align: left; font-family: inherit; }
+    .cl-table tbody td.muted { color: var(--ds-text-mute); }
+    .cl-cf-badge {
+        display: inline-block;
+        font-size: 9px; font-weight: 700;
+        padding: 1px 6px; border-radius: 99px;
+        background: rgba(167,139,250,.16); color: #c4b5fd;
+        margin-left: 4px;
+    }
+
+    .cl-empty {
+        padding: 40px 20px; text-align: center;
+        color: var(--ds-text-mute); font-size: 13px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 12px;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="cl-page">
+    <a href="{{ url_for('informes_index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Mis Informes</a>
+    <div class="cl-head" style="margin-top:6px;">
+        <span style="font-size:24px;">📅</span>
+        <h1>Análisis de cadencias por laboratorio</h1>
+        <span class="sub">
+            Agrupa los productos según cuánto dura una reposición típica al ritmo actual.
+            Útil para decidir si conviene partir el pedido en varias frecuencias.
+        </span>
+    </div>
+
+    <form method="get" action="{{ url_for('informe_cadencias_lab') }}" class="cl-filters">
+        <label for="lab-sel">Laboratorio:</label>
+        <select id="lab-sel" name="lab_id" onchange="this.form.submit()">
+            <option value="">— Elegí un lab —</option>
+            {% for l in labs %}
+            <option value="{{ l.id }}" {% if lab_id == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+            {% endfor %}
+        </select>
+        <label for="cob-input" title="Días de cobertura asumidos para productos sin cantidad_reposicion_fija configurada">Cobertura default (días):</label>
+        <input id="cob-input" type="number" name="cobertura" min="7" max="90" value="{{ cobertura }}"
+               onchange="this.form.submit()" title="7-90 días">
+        <label for="rot-input" title="Cantidad de meses completos previos para calcular avg/día">Meses para avg:</label>
+        <input id="rot-input" type="number" name="meses_rot" min="1" max="12" value="{{ meses_rot }}"
+               onchange="this.form.submit()">
+        <span class="hint">
+            Buckets por <code style="color:var(--ds-mint);">avg mensual</code> (rotación real).
+            La columna "Cadencia" abajo muestra el cálculo individual según cant_repo / avg_diario.
+        </span>
+    </form>
+
+    {% if not lab_id %}
+    <div class="cl-empty">
+        <p style="font-size:24px;">🧪</p>
+        <p>Elegí un laboratorio en el filtro para ver el análisis.</p>
+    </div>
+    {% elif not data or data.totales.productos_con_ventas == 0 %}
+    <div class="cl-empty">
+        <p style="font-size:24px;">📉</p>
+        <p style="font-weight:700; color:var(--ds-text); margin-bottom:4px;">
+            {{ lab_nombre }}: sin productos con ventas en los últimos {{ meses_rot }} meses.
+        </p>
+        {% if data and data.totales.productos_sin_ventas > 0 %}
+        <p>El lab tiene <b>{{ data.totales.productos_sin_ventas }}</b> producto{{ '' if data.totales.productos_sin_ventas == 1 else 's' }} en el catálogo, pero ninguno rotó en este período.</p>
+        {% endif %}
+    </div>
+    {% else %}
+    {# Totales del lab #}
+    <div class="cl-totales">
+        <div class="cl-tot">
+            <div class="lbl">Productos analizados</div>
+            <div class="val">{{ data.totales.productos_con_ventas }}</div>
+        </div>
+        <div class="cl-tot">
+            <div class="lbl">$/mes implícito</div>
+            <div class="val mint">$ {{ '{:,.0f}'.format(data.totales.monto_mensual_total).replace(',', '.') }}</div>
+        </div>
+        <div class="cl-tot">
+            <div class="lbl">Sin ventas (catálogo dormido)</div>
+            <div class="val" style="color:var(--ds-text-mute);">{{ data.totales.productos_sin_ventas }}</div>
+        </div>
+    </div>
+
+    {# Panel dual (Año + Mes) — se actualiza al click en una fila de cualquier bucket #}
+    {% include '_grafico_dual_panel.html' %}
+
+    {# Cards de buckets #}
+    {% for b in data.buckets %}
+    <div class="cl-bucket {{ b.color }} {% if b.n_productos == 0 %}empty{% endif %}" id="bucket-{{ b.slug }}">
+        <div class="cl-bucket-head" onclick="if({{ b.n_productos }}>0)this.parentElement.classList.toggle('open')">
+            <span class="cl-bucket-icon">{{ b.icono }}</span>
+            <div>
+                <div class="cl-bucket-title">{{ b.label }}</div>
+                <div class="cl-bucket-meta" style="margin-left:0; margin-top:2px;">
+                    cadencia sugerida: <b style="color:var(--ds-text);">{{ b.cadencia_sugerida }}</b>
+                </div>
+            </div>
+            <div class="cl-bucket-meta">
+                <b>{{ b.n_productos }}</b> producto{{ '' if b.n_productos == 1 else 's' }}
+                · <b>$ {{ '{:,.0f}'.format(b.monto_mensual).replace(',', '.') }}</b>/mes
+                {% if b.n_productos > 0 %}<span class="cl-bucket-chev" style="margin-left:8px;">▶</span>{% endif %}
+            </div>
+        </div>
+        {% if b.n_productos > 0 %}
+        <div class="cl-bucket-body">
+            <table class="cl-table">
+                <thead>
+                    <tr>
+                        <th class="left">Producto</th>
+                        <th title="Promedio diario sobre últimos {{ meses_rot }} meses">Avg/día</th>
+                        <th title="Promedio mensual (avg/día × 30.42)">Avg/mes</th>
+                        <th title="Cantidad de reposición usada para calcular cadencia">Cant repo</th>
+                        <th title="Cuánto dura la cant_repo al ritmo actual = cant_repo / avg/día">Cadencia</th>
+                        <th title="Precio unitario estimado (monto vendido / unidades vendidas)">PVP</th>
+                        <th title="Monto mensual estimado (avg/mes × PVP)">$/mes</th>
+                        <th title="Stock actual en Observer">Stock</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for it in b.productos %}
+                    <tr data-obsid="{{ it.observer_id }}" data-nombre="{{ it.nombre | e }}"
+                        onclick="seleccionarProductoCL(this)">
+                        <td class="left">
+                            <div style="font-weight:600;">{{ it.nombre }}</div>
+                            {% if it.codigo_alfabeta %}
+                            <div style="font-size:10px; color:var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace;">{{ it.codigo_alfabeta }}</div>
+                            {% endif %}
+                        </td>
+                        <td>{{ '%.2f' % it.avg_diario }}</td>
+                        <td class="muted">{{ '%.1f' % it.avg_mensual }}</td>
+                        <td>
+                            {{ it.cant_repo }}u
+                            {% if it.origen_cant == 'cant_fija' %}
+                            <span class="cl-cf-badge" title="Cantidad fija configurada en Producto.cantidad_reposicion_fija">📦 fija</span>
+                            {% endif %}
+                        </td>
+                        <td><b>{{ '%.1f' % it.cadencia_dias }}d</b></td>
+                        <td class="muted">
+                            {% if it.precio_unit > 0 %}${{ '{:,.0f}'.format(it.precio_unit).replace(',', '.') }}{% else %}—{% endif %}
+                        </td>
+                        <td><b style="color:var(--ds-mint);">${{ '{:,.0f}'.format(it.monto_mensual).replace(',', '.') }}</b></td>
+                        <td class="muted">{{ it.stock }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    {% if data.totales.productos_sin_ventas > 0 %}
+    <details class="cl-bucket mute" style="margin-top:16px;">
+        <summary class="cl-bucket-head" style="cursor:pointer; list-style:none;">
+            <span class="cl-bucket-icon">😴</span>
+            <div>
+                <div class="cl-bucket-title">Catálogo dormido</div>
+                <div class="cl-bucket-meta" style="margin-left:0; margin-top:2px;">
+                    productos del lab sin ventas en {{ meses_rot }} meses
+                </div>
+            </div>
+            <div class="cl-bucket-meta">
+                <b>{{ data.totales.productos_sin_ventas }}</b> producto{{ '' if data.totales.productos_sin_ventas == 1 else 's' }}
+            </div>
+        </summary>
+        <div style="padding: 8px 16px 16px; max-height: 300px; overflow-y: auto;">
+            <ul style="font-size:11px; color:var(--ds-text-soft); margin:0; padding-left:18px; columns:2; column-gap:24px;">
+                {% for p in data.sin_ventas %}
+                <li>{{ p.nombre }}{% if p.codigo_alfabeta %} <span style="color:var(--ds-text-mute); font-family:ui-monospace;">({{ p.codigo_alfabeta }})</span>{% endif %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </details>
+    {% endif %}
+
+    {% endif %}
+</div>
+</div>
+
+<script>
+/* Click en fila: carga el panel dual (Año + Mes) y resalta la fila. */
+function seleccionarProductoCL(tr) {
+    const obsid = parseInt(tr.dataset.obsid);
+    const nombre = tr.dataset.nombre;
+    if (!obsid || typeof cargarGraficoDual !== 'function') return;
+    document.querySelectorAll('tr.cl-selected').forEach(t => t.classList.remove('cl-selected'));
+    tr.classList.add('cl-selected');
+    cargarGraficoDual(obsid, nombre);
+    const panel = document.getElementById('dual-grafico-panel');
+    if (panel) panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+</script>
+{% endblock %}

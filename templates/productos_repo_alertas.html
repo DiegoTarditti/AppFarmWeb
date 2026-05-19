@@ -1,0 +1,506 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Alertas Repo fija — Productos{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ra-page { padding: 18px 24px 28px; }
+    .ra-head {
+        display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+    .ra-head h1 {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 22px; font-weight: 700; color: var(--ds-text);
+        margin: 0;
+    }
+    .ra-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+
+    /* Toprow: filtro + KPIs compactos en una sola fila */
+    .ra-toprow {
+        display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+    .ra-toprow .ra-filters { flex: 0 0 auto; margin-bottom: 0; }
+    .ra-toprow .ra-kpis    { flex: 1 1 auto; margin-bottom: 0; }
+    @media (max-width: 880px) {
+        .ra-toprow { flex-direction: column; }
+    }
+
+    /* Filtros */
+    .ra-filters {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        margin-bottom: 14px;
+        padding: 10px 14px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 12px;
+    }
+    .ra-filters label {
+        font-size: 9px; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase; color: var(--ds-text-mute);
+    }
+    .ra-filters select {
+        background: rgba(0,0,0,.3);
+        border: 1px solid var(--ds-line);
+        color: var(--ds-text);
+        border-radius: 4px;
+        padding: 6px 10px;
+        font-size: 12px; outline: none; color-scheme: dark;
+        min-width: 220px;
+    }
+    .ra-filters select:focus { border-color: var(--ds-mint); }
+    .ra-filters .reset {
+        font-size: 11px; color: var(--ds-text-mute);
+        text-decoration: underline; cursor: pointer;
+    }
+    .ra-filters .reset:hover { color: var(--ds-mint); }
+
+    /* KPIs — compactos, inline, en una sola fila al lado del filtro */
+    .ra-kpis {
+        display: flex; gap: 8px; flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+    .ra-kpi {
+        flex: 1 1 auto; min-width: 110px;
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 10px;
+        padding: 6px 12px;
+        display: flex; align-items: center; gap: 10px;
+    }
+    .ra-kpi .lbl {
+        font-size: 9px; font-weight: 700; letter-spacing: .06em;
+        text-transform: uppercase; color: var(--ds-text-mute);
+        display: flex; align-items: center; gap: 5px;
+        flex: 1; min-width: 0; line-height: 1.15;
+    }
+    .ra-kpi .lbl .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .ra-kpi .lbl .dot.rojo     { background: #ef4444; }
+    .ra-kpi .lbl .dot.amarillo { background: var(--ds-warn); }
+    .ra-kpi .lbl .dot.verde    { background: var(--ds-mint); }
+    .ra-kpi .lbl .dot.mute     { background: var(--ds-text-mute); }
+    .ra-kpi .val {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 18px; font-weight: 700; color: var(--ds-text);
+        line-height: 1; flex-shrink: 0;
+    }
+
+    /* Gráfico de barras por criticidad */
+    .ra-chart {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 14px;
+        padding: 14px 18px 16px;
+        margin-bottom: 14px;
+    }
+    .ra-chart h3 {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 14px; font-weight: 700; color: var(--ds-text);
+        margin: 0 0 4px;
+    }
+    .ra-chart .sub {
+        font-size: 11px; color: var(--ds-text-mute);
+        margin-bottom: 10px;
+    }
+    .ra-chart-wrap { position: relative; }
+
+    /* Tabla */
+    .ra-card {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 14px;
+        overflow: hidden;
+    }
+    .ra-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .ra-table thead th {
+        position: sticky; top: 0; z-index: 10;
+        background: rgba(0,0,0,.25);
+        color: var(--ds-text-mute);
+        font-size: 10px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em;
+        padding: 10px 12px; text-align: right;
+        border-bottom: 1px solid var(--ds-line);
+    }
+    .ra-table thead th.left   { text-align: left; }
+    .ra-table thead th.center { text-align: center; }
+    .ra-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; }
+    .ra-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .ra-table tbody tr.ra-selected { background: rgba(95,230,188,.10); }
+    .ra-table tbody tr.ra-selected td { border-left: none; }
+    .ra-table tbody td {
+        padding: 9px 12px;
+        color: var(--ds-text);
+        font-family: ui-monospace, Consolas, monospace;
+        text-align: right;
+    }
+    .ra-table tbody td.left   { text-align: left; font-family: inherit; }
+    .ra-table tbody td.center { text-align: center; }
+    .ra-table tbody td.muted  { color: var(--ds-text-mute); }
+
+    .ra-nivel {
+        display: inline-block;
+        font-size: 13px; line-height: 1;
+    }
+    .ra-rot {
+        display: inline-block;
+        font-size: 10px; font-weight: 700;
+        padding: 1px 7px; border-radius: 999px;
+    }
+    .ra-rot.A      { background: rgba(95,230,188,.16); color: var(--ds-mint); }
+    .ra-rot.M      { background: rgba(245,158,11,.14); color: var(--ds-warn); }
+    .ra-rot.B      { background: rgba(255,255,255,.06); color: var(--ds-text-mute); }
+    .ra-rot.none   { background: rgba(255,255,255,.04); color: var(--ds-text-mute); }
+
+    .ra-chart-btn {
+        background: rgba(167,139,250,.12);
+        color: #c4b5fd;
+        border: 1px solid rgba(167,139,250,.25);
+        border-radius: 4px;
+        padding: 3px 8px;
+        font-size: 11px; cursor: pointer;
+        text-decoration: none;
+    }
+    .ra-chart-btn:hover { background: rgba(167,139,250,.24); }
+
+    .ra-empty {
+        padding: 40px 20px; text-align: center;
+        color: var(--ds-text-mute); font-size: 13px;
+    }
+    .ra-empty .icon { font-size: 32px; margin-bottom: 8px; }
+
+    /* Dias al pedido pueden ser negativos: usamos color por valor */
+    .ra-dias-negativo { color: #fca5a5; font-weight: 700; }
+    .ra-dias-cero     { color: var(--ds-warn); font-weight: 700; }
+    .ra-dias-pos      { color: var(--ds-text); }
+
+    /* Mini barra inline de criticidad por fila.
+       Visualiza qué tan cerca está dias_al_pedido a 0 (escala 0-14 días). */
+    .ra-mini {
+        display: inline-flex; align-items: center; gap: 6px;
+        width: 100%;
+    }
+    .ra-mini-bar {
+        position: relative; flex: 1;
+        height: 5px; min-width: 50px; max-width: 90px;
+        background: rgba(255,255,255,.06);
+        border-radius: 99px; overflow: hidden;
+    }
+    .ra-mini-bar .fill {
+        position: absolute; top: 0; right: 0; height: 100%;
+        border-radius: 99px;
+    }
+    .ra-mini-bar .fill.rojo     { background: #ef4444; }
+    .ra-mini-bar .fill.amarillo { background: var(--ds-warn); }
+    .ra-mini-bar .fill.verde    { background: var(--ds-mint); }
+    .ra-mini-bar .fill.mute     { background: rgba(255,255,255,.20); }
+    .ra-mini-num {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 11px; font-weight: 700;
+        min-width: 36px; text-align: right;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="ra-page">
+    <a href="{{ url_for('index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Inicio</a>
+    <div class="ra-head" style="margin-top:6px;">
+        <span style="font-size:24px;">📦</span>
+        <h1>Alertas Repo fija</h1>
+        <span class="sub">
+            {{ data.total }} producto{{ '' if data.total == 1 else 's' }}
+            {% if lab_nombre %}de <b style="color:var(--ds-text);">{{ lab_nombre }}</b>{% endif %}
+            con <code style="background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;color:var(--ds-mint);">cantidad_reposicion_fija</code>
+            · ritmo basado en últimos 3 meses · punto de pedido = mín + 7d×avg
+        </span>
+    </div>
+
+    {# Toprow: filtro de lab + KPIs compactos en una sola fila #}
+    <div class="ra-toprow">
+        <form method="get" action="{{ url_for('productos_repo_alertas') }}" class="ra-filters">
+            <label>Laboratorio:</label>
+            <select name="lab" onchange="this.form.submit()" title="Filtrar productos por laboratorio">
+                <option value="">Todos los labs ({{ data.total }})</option>
+                {% for l in labs_disponibles %}
+                <option value="{{ l.id }}" {% if lab_id == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+                {% endfor %}
+            </select>
+            {% if lab_id %}
+            <a href="{{ url_for('productos_repo_alertas') }}" class="reset">Limpiar</a>
+            {% endif %}
+        </form>
+
+        <div class="ra-kpis">
+            <div class="ra-kpi">
+                <div class="lbl"><span class="dot rojo"></span>Ya bajo mínimo</div>
+                <div class="val" style="color:{% if data.rojo > 0 %}#ef4444{% else %}var(--ds-text-mute){% endif %};">{{ data.rojo }}</div>
+            </div>
+            <div class="ra-kpi">
+                <div class="lbl"><span class="dot amarillo"></span>≤ 3 d al mín</div>
+                <div class="val" style="color:{% if data.amarillo > 0 %}var(--ds-warn){% else %}var(--ds-text-mute){% endif %};">{{ data.amarillo }}</div>
+            </div>
+            <div class="ra-kpi">
+                <div class="lbl"><span class="dot verde"></span>4-7 d al mín</div>
+                <div class="val" style="color:{% if data.verde > 0 %}var(--ds-mint){% else %}var(--ds-text-mute){% endif %};">{{ data.verde }}</div>
+            </div>
+            <div class="ra-kpi">
+                <div class="lbl"><span class="dot mute"></span>Sin alerta</div>
+                <div class="val" style="color:var(--ds-text-mute);">{{ data.sin_alerta }}</div>
+            </div>
+        </div>
+    </div>
+
+    {# ────── Gráfico de criticidad ──────
+       Barras horizontales clásicas, ordenadas por urgencia (más crítico arriba).
+       Color por nivel: rojo (ya bajo mín), amarillo (≤3d), verde (4-7d).
+       Solo muestra productos en alerta. #}
+    {% if data.rojo + data.amarillo + data.verde > 0 %}
+    <div class="ra-chart">
+        <h3>📊 Productos en alerta — días al mínimo</h3>
+        <p class="sub">Ordenados por urgencia. Click en una barra para ver el gráfico anual/mensual del producto.</p>
+        <div class="ra-chart-wrap" id="ra-chart-wrap">
+            <canvas id="ra-bar-chart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    {# Panel dual (Año 12m + Mes 30d) — se actualiza al click en una fila o barra #}
+    {% include '_grafico_dual_panel.html' %}
+
+    <div class="ra-card">
+        {% if data.top %}
+        <table class="ra-table">
+            <thead>
+                <tr>
+                    <th class="center" style="width: 36px;">·</th>
+                    <th class="left">Producto</th>
+                    <th class="center" title="Rotación (A/M/B): basada en avg mensual (≥20=A, ≥5=M, <5=B)">Rot</th>
+                    <th title="Promedio mensual u12m/12 (a partir de ventas últimos 3 meses)">Avg/mes</th>
+                    <th title="Stock actual en Observer">Stock</th>
+                    <th title="Mínimo configurado en Observer">Mín</th>
+                    <th title="Punto de pedido = mín + 7d×avg_diario · nivel de stock al que conviene disparar la compra">P. pedido</th>
+                    <th title="Días estimados hasta el punto de pedido. Negativo = ya pasaste el punto (comprar)">Días pedido</th>
+                    <th title="Días estimados hasta tocar el mínimo">Días al mín</th>
+                    <th title="Cantidad fija a pedir cuando toque el mínimo (Producto.cantidad_reposicion_fija)">Repo</th>
+                    <th class="center" style="width:60px;">📊</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in data.top %}
+                <tr data-obsid="{{ it.observer_id }}" data-nombre="{{ it.nombre | e }}"
+                    onclick="seleccionarProductoRA(this)">
+                    <td class="center">
+                        <span class="ra-nivel" title="{% if it.nivel == 'rojo' %}Stock ya bajo mínimo — comprar YA{% elif it.nivel == 'amarillo' %}≤3 días al mínimo — urgente{% elif it.nivel == 'verde' %}4-7 días al mínimo — preparar pedido{% else %}Sin alerta · cubierto{% endif %}">
+                            {% if it.nivel == 'rojo' %}🔴{% elif it.nivel == 'amarillo' %}🟡{% elif it.nivel == 'verde' %}🟢{% else %}⚪{% endif %}
+                        </span>
+                    </td>
+                    <td class="left">
+                        <div style="font-weight:600;">{{ it.nombre }}</div>
+                        <div style="font-size:10px; color:var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace;">
+                            EAN {{ it.codigo_barra or '—' }}
+                        </div>
+                    </td>
+                    <td class="center">
+                        {% if it.rotacion %}
+                        <span class="ra-rot {{ it.rotacion }}">{{ it.rotacion }}</span>
+                        {% else %}
+                        <span class="ra-rot none">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="muted">{{ '%.1f' % it.avg_mensual if it.avg_mensual else '—' }}</td>
+                    <td>{{ it.stock }}</td>
+                    <td class="muted">{{ it.minimo }}</td>
+                    <td class="muted">{{ it.punto_pedido }}</td>
+                    <td>
+                        {% if it.dias_al_pedido is none %}
+                            <span class="muted">—</span>
+                        {% else %}
+                            {# Mini barra inline: fill % proporcional al rango 0-14d.
+                               Color por umbrales del PUNTO DE PEDIDO:
+                                 ≤0d → rojo (ya pasaste), ≤3d → amarillo, ≤7d → verde, sino → gris. #}
+                            {% set d = it.dias_al_pedido %}
+                            {% if d <= 0 %}{% set nivel_bar = 'rojo' %}{% set pct = 4 %}
+                            {% elif d <= 3 %}{% set nivel_bar = 'amarillo' %}{% set pct = (d / 14 * 100) | round %}
+                            {% elif d <= 7 %}{% set nivel_bar = 'verde' %}{% set pct = (d / 14 * 100) | round %}
+                            {% else %}{% set nivel_bar = 'mute' %}{% set pct = 100 if d >= 14 else (d / 14 * 100) | round %}
+                            {% endif %}
+                            <div class="ra-mini">
+                                <span class="ra-mini-num {% if d < 0 %}ra-dias-negativo{% elif d < 1 %}ra-dias-cero{% endif %}">
+                                    {% if d <= 0 %}YA{% else %}{{ '%.1f' % d }}{% endif %}
+                                </span>
+                                <span class="ra-mini-bar" title="Días al punto de pedido: {{ '%.1f' % d }} (escala 0-14d)">
+                                    <span class="fill {{ nivel_bar }}" style="width: {{ pct }}%;"></span>
+                                </span>
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if it.dias_a_min is none %}
+                            <span class="muted">—</span>
+                        {% elif it.dias_a_min == 0 %}
+                            <span class="ra-dias-negativo">0 (ya)</span>
+                        {% else %}
+                            <b>{{ '%.1f' % it.dias_a_min }}</b>
+                        {% endif %}
+                    </td>
+                    <td><b style="color:var(--ds-mint);">{{ it.cant_fija }}u</b></td>
+                    <td class="center" onclick="event.stopPropagation()">
+                        {% if it.codigo_barra %}
+                        <button type="button" onclick="openChart('{{ it.codigo_barra }}')" class="ra-chart-btn" title="Modal histórico (vista expandida)">📊</button>
+                        {% else %}
+                        <span class="muted">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="ra-empty">
+            <div class="icon">✓</div>
+            <p style="font-weight:700; color:var(--ds-mint); margin-bottom:4px;">
+                {% if lab_id %}Sin productos para este laboratorio{% else %}Sin productos con repo fija configurada{% endif %}
+            </p>
+            {% if lab_id %}
+            <p>El laboratorio seleccionado no tiene productos con <code style="background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;">cantidad_reposicion_fija</code> configurada. <a href="{{ url_for('productos_repo_alertas') }}" style="color:var(--ds-mint);">Quitar filtro</a></p>
+            {% else %}
+            <p>Todavía no hay productos con <code style="background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;">cantidad_reposicion_fija</code> configurada. Cargá valores en /productos en la columna "Repo. fija".</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+</div>
+
+{# Modal histórico reusable (Chart.js + endpoint /api/product/<ean>/chart) #}
+{% include '_grafico_historico.html' %}
+
+<script>
+/* Click en fila: carga el dual panel (Año + Mes) + resalta fila. */
+function seleccionarProductoRA(tr) {
+    const obsid = parseInt(tr.dataset.obsid);
+    const nombre = tr.dataset.nombre;
+    if (!obsid || typeof cargarGraficoDual !== 'function') return;
+    document.querySelectorAll('tr.ra-selected').forEach(t => t.classList.remove('ra-selected'));
+    tr.classList.add('ra-selected');
+    cargarGraficoDual(obsid, nombre);
+    // Scroll al panel para que se vea sin perder contexto de la fila clickeada.
+    const panel = document.getElementById('dual-grafico-panel');
+    if (panel) panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+</script>
+
+{# Chart "mecha de dinamita" #}
+{% if data.rojo + data.amarillo + data.verde > 0 %}
+<script>
+(function() {
+    {# Solo items en alerta para la mecha (los sin_alerta saturarían el chart). #}
+    const items = [
+        {%- for it in data.top -%}
+            {%- if it.nivel -%}
+            { nombre: {{ it.nombre | tojson }},
+              dias: {{ it.dias_a_min if it.dias_a_min is not none else 0 }},
+              nivel: {{ it.nivel | tojson }},
+              ean: {{ (it.codigo_barra or '') | tojson }},
+              observer_id: {{ it.observer_id }} },
+            {%- endif -%}
+        {%- endfor -%}
+    ];
+    // Orden: más críticos arriba (días asc = barras más cortas primero).
+    items.sort((a, b) => a.dias - b.dias);
+
+    const COLORS = {
+        rojo:     { bg: 'rgba(239,68,68,.75)',   border: '#dc2626' },
+        amarillo: { bg: 'rgba(245,158,11,.7)',   border: '#d97706' },
+        verde:    { bg: 'rgba(95,230,188,.65)',  border: '#34d399' },
+    };
+    const labels = items.map(it => it.nombre.length > 38 ? it.nombre.slice(0, 38) + '…' : it.nombre);
+    const data   = items.map(it => it.dias);
+    const bgs    = items.map(it => COLORS[it.nivel].bg);
+    const bds    = items.map(it => COLORS[it.nivel].border);
+
+    function go() {
+        const canvas = document.getElementById('ra-bar-chart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        // Altura dinámica: ~24px por barra, mín 120, máx 600.
+        const h = Math.max(120, Math.min(600, items.length * 26 + 40));
+        canvas.parentElement.style.height = h + 'px';
+
+        const maxDias = Math.max(...data, 7);
+        new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Días al mínimo',
+                    data,
+                    backgroundColor: bgs,
+                    borderColor: bds,
+                    borderWidth: 1,
+                    borderRadius: 3,
+                }],
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                onClick: (evt, els) => {
+                    if (!els.length) return;
+                    const it = items[els[0].index];
+                    // Cargar dual panel (Año + Mes) y resaltar fila correspondiente.
+                    if (it && it.observer_id && typeof cargarGraficoDual === 'function') {
+                        cargarGraficoDual(it.observer_id, it.nombre);
+                    }
+                    const tr = document.querySelector(`tr[data-obsid="${it.observer_id}"]`);
+                    if (tr) {
+                        document.querySelectorAll('tr.ra-selected').forEach(t => t.classList.remove('ra-selected'));
+                        tr.classList.add('ra-selected');
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const it = items[ctx.dataIndex];
+                                const d = ctx.parsed.x;
+                                const nivelLabel = {
+                                    rojo:     '🔴 Ya bajo mínimo',
+                                    amarillo: '🟡 ≤ 3 días al mín',
+                                    verde:    '🟢 4-7 días al mín',
+                                }[it.nivel] || '';
+                                return [`${nivelLabel}`, `${d.toFixed(1)} días al mínimo`,
+                                        it.ean ? `EAN ${it.ean}` : ''];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        max: maxDias + 0.5,
+                        title: { display: true, text: 'días al mínimo',
+                                 font: { size: 10 }, color: '#a7b4b0' },
+                        ticks: { font: { size: 10 }, color: '#a7b4b0', stepSize: 1 },
+                        grid:  { color: 'rgba(255,255,255,.04)' },
+                    },
+                    y: {
+                        ticks: { font: { size: 10 }, color: '#a7b4b0',
+                                 autoSkip: false },
+                        grid:  { display: false },
+                    }
+                }
+            }
+        });
+    }
+    if (document.readyState === 'complete') go();
+    else window.addEventListener('load', go);
+})();
+</script>
+{% endif %}
+
+{% endblock %}

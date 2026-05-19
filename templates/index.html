@@ -26,7 +26,10 @@
             min-width: 180px;
             max-width: 260px;
         }
-        .home-toprow .home-hero { flex: 1; margin-bottom: 0; }
+        /* Hero achicado un poco: flex-grow 1 pero con max acotado para dejar
+           lugar al card de alertas a la izquierda. CTA ahora apilado vertical
+           hace que necesite menos ancho. */
+        .home-toprow .home-hero { flex: 1 1 auto; max-width: 580px; margin-bottom: 0; }
         @media (max-width: 980px) {
             .home-toprow { flex-direction: column; gap: 12px; }
             .home-toprow .home-page-header { max-width: none; align-self: flex-start; }
@@ -94,10 +97,59 @@
         .home-hero__body { position: relative; z-index: 1; flex: 1; min-width: 0; }
         .home-hero__title { font-family:'Space Grotesk',sans-serif; font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
         .home-hero__desc { font-size: 12px; color: var(--ds-text-soft); margin-top: 2px; line-height: 1.4; }
-        .home-hero__cta { position: relative; z-index: 2; display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+        /* CTA del hero apilado en columna: botón naranja arriba, "Ver pendientes" debajo. */
+        .home-hero__cta {
+            position: relative; z-index: 2;
+            display: flex; flex-direction: column;
+            align-items: stretch; gap: 6px; flex-shrink: 0;
+        }
+        .home-hero__cta .btn { text-align: center; }
+        .home-hero__cta a:not(.btn) { text-align: center; font-size: 11px; }
         @media (max-width: 720px) {
             .home-hero { flex-direction: column; align-items: flex-start; }
             .home-hero__cta { width: 100%; }
+        }
+
+        /* Card "Alertas Repo fija" — entre el page-header y el hero, ocupa
+           espacio que antes quedaba en blanco. */
+        .home-alertas {
+            flex: 0 1 280px; min-width: 220px; max-width: 320px;
+            background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-surface-2) 100%);
+            border: 1px solid var(--ds-line-2);
+            border-radius: 16px;
+            padding: 12px 14px;
+            display: flex; flex-direction: column; gap: 8px;
+            text-decoration: none; color: inherit;
+            transition: border-color .15s, transform .15s;
+        }
+        .home-alertas:hover { border-color: var(--ds-mint); transform: translateY(-1px); text-decoration: none; }
+        .home-alertas__head { display: flex; align-items: center; gap: 8px; }
+        .home-alertas__title {
+            font-size: 12px; font-weight: 700; color: var(--ds-text);
+            text-transform: uppercase; letter-spacing: .04em;
+        }
+        .home-alertas__total {
+            font-size: 10px; color: var(--ds-text-mute);
+            margin-left: auto;
+        }
+        .home-alertas__niveles { display: flex; flex-direction: column; gap: 4px; }
+        .home-alertas__nivel {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px;
+        }
+        .home-alertas__nivel .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .home-alertas__nivel .dot.rojo     { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+        .home-alertas__nivel .dot.amarillo { background: var(--ds-warn); }
+        .home-alertas__nivel .dot.verde    { background: var(--ds-mint); }
+        .home-alertas__nivel .num { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 16px; }
+        .home-alertas__nivel .lbl { color: var(--ds-text-soft); flex: 1; }
+        .home-alertas__cta {
+            margin-top: 2px; font-size: 11px; color: var(--ds-mint);
+            font-weight: 700; text-align: right;
+        }
+        .home-alertas--ok .home-alertas__cta { color: var(--ds-text-mute); font-weight: 400; }
+        @media (max-width: 980px) {
+            .home-alertas { max-width: none; flex: 1; }
         }
 
         /* Entity cards — más compactas, icon + título en línea */
@@ -144,6 +196,52 @@
                     </div>
                 </header>
 
+                {# Card "Alertas Repo fija": entre el page-header y el hero.
+                   On-demand, sin cron. Visible siempre — incluso sin alertas
+                   muestra estado "todo en orden" como tranquilizador visual. #}
+                {% if alertas_repo and alertas_repo.total > 0 %}
+                {% set _has_alerts = (alertas_repo.rojo + alertas_repo.amarillo + alertas_repo.verde) > 0 %}
+                <a href="{{ url_for('productos_repo_alertas') }}"
+                   class="home-alertas {% if not _has_alerts %}home-alertas--ok{% endif %}"
+                   title="Alertas de reposición fija — productos con cantidad_reposicion_fija configurada">
+                    <div class="home-alertas__head">
+                        <span style="font-size:18px; line-height:1;">📦</span>
+                        <span class="home-alertas__title">Repo fija</span>
+                        <span class="home-alertas__total">{{ alertas_repo.total }} configurado{{ '' if alertas_repo.total == 1 else 's' }}</span>
+                    </div>
+                    <div class="home-alertas__niveles">
+                        {% if alertas_repo.rojo > 0 %}
+                        <div class="home-alertas__nivel">
+                            <span class="dot rojo"></span>
+                            <span class="num">{{ alertas_repo.rojo }}</span>
+                            <span class="lbl">ya bajo mínimo</span>
+                        </div>
+                        {% endif %}
+                        {% if alertas_repo.amarillo > 0 %}
+                        <div class="home-alertas__nivel">
+                            <span class="dot amarillo"></span>
+                            <span class="num">{{ alertas_repo.amarillo }}</span>
+                            <span class="lbl">≤ 3 días al mínimo</span>
+                        </div>
+                        {% endif %}
+                        {% if alertas_repo.verde > 0 %}
+                        <div class="home-alertas__nivel">
+                            <span class="dot verde"></span>
+                            <span class="num">{{ alertas_repo.verde }}</span>
+                            <span class="lbl">4-7 días al mínimo</span>
+                        </div>
+                        {% endif %}
+                        {% if not _has_alerts %}
+                        <div class="home-alertas__nivel">
+                            <span class="dot verde"></span>
+                            <span class="lbl" style="color:var(--ds-text-soft);">Sin alertas · todo cubierto</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="home-alertas__cta">{% if _has_alerts %}Ver detalle →{% else %}Ver productos →{% endif %}</div>
+                </a>
+                {% endif %}
+
                 <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
                     <span class="home-hero__dots" aria-hidden="true"></span>
                     <div class="home-hero__body">
@@ -155,7 +253,7 @@
                         <span class="btn btn-primary">Ir al pedido →</span>
                         <a href="{{ url_for('orders_list') }}"
                            onclick="event.stopPropagation()"
-                           class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);">
+                           class="hover:underline" style="color:var(--ds-text-soft);">
                             Ver pendientes →
                         </a>
                     </div>
