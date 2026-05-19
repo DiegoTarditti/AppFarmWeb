@@ -13,31 +13,33 @@ Categorías:
                       (operacional — pedidos, facturas, rendiciones, etc.)
 """
 
-# Cada entrada: (tabla, categoria, descripcion_corta)
+# Cada entrada: (tabla, categoria, descripcion_corta, entidad_log_opt)
+# - entidad_log_opt: clave usada en obs_sync_log.entidad para buscar la última
+#   sincronización. None si no aplica (independiente / sin log dedicado).
 REGISTRY = [
     # ── Espejo ObServer (push automático local → Render) ──
-    ('obs_laboratorios',         'push_obs', 'Catálogo de laboratorios'),
-    ('obs_rubros',               'push_obs', 'Rubros'),
-    ('obs_subrubros',            'push_obs', 'Subrubros'),
-    ('obs_nombres_drogas',       'push_obs', 'Monodrogas'),
-    ('obs_productos',            'push_obs', 'Productos de ObServer'),
-    ('obs_stock',                'push_obs', 'Stock por producto'),
-    ('obs_ventas_mensuales',     'push_obs', 'Ventas agregadas por mes'),
-    ('obs_ventas_detalle',       'push_obs', 'Detalle de ventas (por receta)'),
-    ('obs_codigos_barras',       'push_obs', 'EANs alternativos'),
-    ('obs_grupos_clientes',      'push_obs', 'Grupos de clientes'),
-    ('obs_categorias_clientes',  'push_obs', 'Categorías de clientes'),
-    ('obs_obras_sociales',       'push_obs', 'Obras sociales'),
-    ('obs_convenios',            'push_obs', 'Convenios OS'),
-    ('obs_planes',               'push_obs', 'Planes OS'),
-    ('obs_clientes',             'push_obs', 'Clientes / afiliados'),
-    ('obs_colegios_medicos',     'push_obs', 'Colegios médicos'),
-    ('obs_medicos',              'push_obs', 'Médicos'),
-    ('obs_medicos_matriculas',   'push_obs', 'Matrículas médicas'),
+    ('obs_laboratorios',         'push_obs', 'Catálogo de laboratorios',          'laboratorios'),
+    ('obs_rubros',               'push_obs', 'Rubros',                            'rubros'),
+    ('obs_subrubros',            'push_obs', 'Subrubros',                         'subrubros'),
+    ('obs_nombres_drogas',       'push_obs', 'Monodrogas',                        'nombres_drogas'),
+    ('obs_productos',            'push_obs', 'Productos de ObServer',             'productos'),
+    ('obs_stock',                'push_obs', 'Stock por producto',                'stock'),
+    ('obs_ventas_mensuales',     'push_obs', 'Ventas agregadas por mes',          'ventas_mensuales'),
+    ('obs_ventas_detalle',       'push_obs', 'Detalle de ventas (por receta)',    'ventas_detalle'),
+    ('obs_codigos_barras',       'push_obs', 'EANs alternativos',                 None),
+    ('obs_grupos_clientes',      'push_obs', 'Grupos de clientes',                'grupos_clientes'),
+    ('obs_categorias_clientes',  'push_obs', 'Categorías de clientes',            'categorias_clientes'),
+    ('obs_obras_sociales',       'push_obs', 'Obras sociales',                    'obras_sociales'),
+    ('obs_convenios',            'push_obs', 'Convenios OS',                      'convenios'),
+    ('obs_planes',               'push_obs', 'Planes OS',                         'planes'),
+    ('obs_clientes',             'push_obs', 'Clientes / afiliados',              'clientes'),
+    ('obs_colegios_medicos',     'push_obs', 'Colegios médicos',                  'colegios_medicos'),
+    ('obs_medicos',              'push_obs', 'Médicos',                           'medicos'),
+    ('obs_medicos_matriculas',   'push_obs', 'Matrículas médicas',                'medicos_matriculas'),
 
     # ── Catálogo MASTER (push manual desde DockerPanel) ──
-    ('laboratorios',             'push_master', 'Lista propia de labs (UPSERT por nombre)'),
-    ('productos',                'push_master', 'Master productos: cant_fija, no_pedir, alts, PVP'),
+    ('laboratorios',             'push_master', 'Lista propia de labs (UPSERT por nombre)',   None),
+    ('productos',                'push_master', 'Master productos: cant_fija, no_pedir, alts, PVP', None),
 
     # ── Operacional — vive en cada lado independiente ──
     ('configuracion',                 'independiente', 'Config singleton por DB'),
@@ -104,6 +106,21 @@ REGISTRY = [
     ('mv_refresh_log',     'render_only', 'Log de refresh de matviews en Render'),
     ('alarmas_notificadas', 'render_only', 'Tracking de alarmas enviadas'),
 ]
+
+
+def iter_registry():
+    """Itera REGISTRY normalizando tuplas a (tabla, categoria, descripcion, entidad_log).
+
+    Permite seguir usando 3-tuplas para entradas sin log de entidad sin tocar
+    todas las filas a la vez.
+    """
+    for entry in REGISTRY:
+        if len(entry) == 3:
+            tabla, categoria, descripcion = entry
+            entidad_log = None
+        else:
+            tabla, categoria, descripcion, entidad_log = entry
+        yield tabla, categoria, descripcion, entidad_log
 
 
 CATEGORIA_LABELS = {

@@ -132,14 +132,32 @@ def init_app(app):
         from collections import defaultdict
 
         import sync_registry
-        tablas = [t for t, _, _ in sync_registry.REGISTRY]
+        entries = list(sync_registry.iter_registry())
+        tablas = [t for t, _, _, _ in entries]
         counts_local  = _contar_tablas_locales(tablas)
         counts_render = _contar_tablas_render(tablas)
         render_disponible = bool(counts_render)
 
+        # Última sync por entidad (de obs_sync_log).
+        ultima_sync_map = {}
+        from database import ObsSyncLog, now_ar
+        with database.get_db() as session:
+            entidades_log = {e for _, _, _, e in entries if e}
+            for ent in entidades_log:
+                log = (session.query(ObsSyncLog)
+                       .filter(ObsSyncLog.entidad == ent)
+                       .order_by(ObsSyncLog.ejecutado_en.desc()).first())
+                if log:
+                    delta_seg = (now_ar() - log.ejecutado_en).total_seconds()
+                    ultima_sync_map[ent] = {
+                        'cuando': log.ejecutado_en,
+                        'seg': int(delta_seg),
+                        'error': log.error,
+                    }
+
         rows = []
         resumen = defaultdict(lambda: {'tablas': 0, 'filas_local': 0, 'filas_render': 0})
-        for tabla, categoria, descripcion in sync_registry.REGISTRY:
+        for tabla, categoria, descripcion, entidad_log in entries:
             cl = counts_local.get(tabla)
             cr = counts_render.get(tabla) if render_disponible else None
             # Diff = "alarma" solo si la tabla debería estar sincronizada y los conteos difieren > 5%.
@@ -156,6 +174,7 @@ def init_app(app):
                 else:
                     diff_pct = abs(cl - cr) / max(cl, cr) * 100
                     alarma = diff_pct > 5
+            sync_info = ultima_sync_map.get(entidad_log) if entidad_log else None
             rows.append({
                 'tabla': tabla,
                 'categoria': categoria,
@@ -164,6 +183,8 @@ def init_app(app):
                 'count_render': cr,
                 'diff_pct': diff_pct,
                 'alarma': alarma,
+                'ultima_sync': sync_info,
+                'entidad_log': entidad_log,
             })
             resumen[categoria]['tablas'] += 1
             if cl is not None:
