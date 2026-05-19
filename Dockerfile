@@ -27,4 +27,7 @@ RUN mkdir -p uploads
 
 EXPOSE 5000
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 2 --preload app:app"]
+# gthread + threads: un worker bloqueado en una query lenta no impide que otros
+# threads del mismo worker atiendan requests rápidas (health check, /api/notifications).
+# Workers=2 alcanza para free tier de Render; threads=4 da paralelismo barato.
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 2 --threads 4 --worker-class gthread --preload app:app"]

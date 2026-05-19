@@ -13,7 +13,7 @@ services:
     region: oregon
     dockerfilePath: ./Dockerfile
     autoDeploy: true
-    healthCheckPath: /health
+    healthCheckPath: /ping
     envVars:
       - key: DATABASE_URL
         fromDatabase:

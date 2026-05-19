@@ -75,6 +75,7 @@
           <th class="px-3 py-2 text-right">Local</th>
           <th class="px-3 py-2 text-right">Render</th>
           <th class="px-3 py-2 text-right">Δ</th>
+          <th class="px-3 py-2 text-left">Última sync</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -112,6 +113,29 @@
               <span class="text-red-700 font-bold">{{ '%.0f' | format(r.diff_pct) }}%</span>
             {% else %}
               <span class="text-green-600">{{ '%.1f' | format(r.diff_pct) }}%</span>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-xs">
+            {% if r.ultima_sync %}
+              {% set seg = r.ultima_sync.seg %}
+              {% if seg < 60 %}
+                <span class="text-green-700 font-semibold" title="{{ r.ultima_sync.cuando }}">{{ seg }}s</span>
+              {% elif seg < 3600 %}
+                <span class="text-green-700" title="{{ r.ultima_sync.cuando }}">{{ (seg // 60) }}min</span>
+              {% elif seg < 86400 %}
+                <span class="text-gray-700" title="{{ r.ultima_sync.cuando }}">{{ (seg // 3600) }}h</span>
+              {% elif seg < 7 * 86400 %}
+                <span class="text-amber-700 font-semibold" title="{{ r.ultima_sync.cuando }}">{{ (seg // 86400) }}d</span>
+              {% else %}
+                <span class="text-red-700 font-bold" title="{{ r.ultima_sync.cuando }}">{{ (seg // 86400) }}d</span>
+              {% endif %}
+              {% if r.ultima_sync.error %}
+                <span class="ml-1 text-red-600" title="{{ r.ultima_sync.error }}">⚠</span>
+              {% endif %}
+            {% elif r.entidad_log %}
+              <span class="text-red-600 font-semibold">nunca</span>
+            {% else %}
+              <span class="text-gray-300">—</span>
             {% endif %}
           </td>
         </tr>
