@@ -171,10 +171,24 @@ def init_app(app):
     @app.route('/health')
     @app.route('/health_web')
     def health():
-        """Healthcheck usado por Render. Hace SELECT 1 para mantener viva la conexión DB."""
+        """Healthcheck con DB — útil para debug, no para Render.
+
+        Si los workers están saturados con queries lentas, este endpoint
+        también queda en cola y timeoutea. Render usa /ping (más liviano).
+        """
         try:
             with database.get_db() as session:
                 session.execute(database.text('SELECT 1'))
             return 'OK', 200
         except Exception as e:
             return f'DB ERROR: {e}', 503
+
+    @app.route('/ping')
+    def ping():
+        """Healthcheck minimalista para Render.
+
+        NO toca la DB ni nada que pueda colgarse. Devuelve 200 instantáneo.
+        Cuando los workers están saturados igual queda en cola — la solución
+        completa es subir el número de workers o atacar las queries lentas.
+        """
+        return 'pong', 200
