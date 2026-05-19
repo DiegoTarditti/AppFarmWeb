@@ -27,4 +27,10 @@ RUN mkdir -p uploads
 
 EXPOSE 5000
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 2 --preload app:app"]
+# Sin --preload: el master abre el puerto INMEDIATO, los workers cargan la app
+# por su cuenta. Antes con --preload, init_db() bloqueaba al master y Render
+# cancelaba el deploy con "No open ports detected" porque el puerto nunca abría
+# a tiempo. Trade-off: cada worker hace su propio init_db() en lugar de
+# compartir uno; aceptable porque las migraciones son idempotentes (ALTER IF
+# NOT EXISTS).
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-5000} --timeout 120 --workers 2 app:app"]
