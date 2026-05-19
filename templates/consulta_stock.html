@@ -133,23 +133,25 @@ input[type=radio]:checked + .cs-tipo-btn {
         </form>
         {% endif %}
     </div>
-    {% elif estado_ventas.estado == 'viejo' %}
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-        <div class="cs-banner warn" style="flex:1;margin-bottom:0;">
-            ⏰ {{ estado_ventas.mensaje }}
-        </div>
-        <button type="button" id="btn-sync-stock" class="cs-cta--alt"
-                style="margin:0;width:auto;padding:10px 14px;font-size:13px;"
-                title="Sincroniza stock con ObServer.">🔄 Sync</button>
-    </div>
     {% else %}
+    {# Desglose stock + ventas: cada uno con su línea. Icon ✓/⏰/⛔ por sub-estado. #}
+    {% macro _sub_line(label, sub) -%}
+      {% if sub.estado == 'nunca' %}
+        <span style="color:var(--ds-danger);font-weight:600;">⛔ {{ label }}: sin sync</span>
+      {% elif sub.estado == 'viejo' %}
+        <span style="color:#f59e0b;font-weight:600;">⏰ {{ label }} hace {{ sub.dias }}d</span>
+      {% elif sub.dias is not none and sub.dias > 1 %}
+        <span style="color:var(--ds-text-mute);">ℹ {{ label }} hace {{ sub.dias }}d</span>
+      {% else %}
+        <span style="color:var(--ds-mint);">✓ {{ label }} al día</span>
+      {% endif %}
+    {%- endmacro %}
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-        <div class="cs-banner {{ 'info' if (estado_ventas.dias is defined and estado_ventas.dias > 1) else 'ok' }}" style="flex:1;margin-bottom:0;">
-            {% if estado_ventas.dias is defined and estado_ventas.dias > 1 %}
-                ℹ Estadísticas de hace {{ estado_ventas.dias }} días
-            {% else %}
-                ✓ Estadísticas al día
-            {% endif %}
+        <div class="cs-banner {{ 'warn' if estado_ventas.estado == 'viejo' else ('info' if estado_ventas.dias and estado_ventas.dias > 1 else 'ok') }}"
+             style="flex:1;margin-bottom:0;display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+            {{ _sub_line('Stock',  estado_ventas.stock) }}
+            <span style="opacity:.3;">|</span>
+            {{ _sub_line('Ventas', estado_ventas.ventas) }}
         </div>
         <button type="button" id="btn-sync-stock" class="cs-cta--alt"
                 style="margin:0;width:auto;padding:10px 14px;font-size:13px;"

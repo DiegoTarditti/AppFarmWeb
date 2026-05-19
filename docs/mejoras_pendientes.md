@@ -4,6 +4,59 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Programación automática de compras + integración con flujo de fondos (2026-05-18)
+
+Diego ya tiene `/flujo_fondos` funcional pero "sin inteligencia" — el operador marca
+manualmente las semanas activas por proveedor (botones 1-8) para distribuir el peso
+de compra. Idea: analizar ventas históricas y proponer un programa de compras
+automático por lab, distribuido en el calendario.
+
+**Inputs disponibles**:
+- `ObsVentaMensual` (ventas por producto/lab por mes, 12m)
+- Compras por proveedor (ya en `flujo_fondos`)
+- `OfertaMinimo` (vigencias y mínimos)
+- `DescuentoBase` (lab × drog)
+
+**MVP propuesto** (1-2 días):
+
+1. **Modelo nuevo `ProgramaCompraLab`**:
+   - `lab_id` (FK)
+   - `cadencia_dias` (15 / 30 / 45)
+   - `monto_mensual_target` ($)
+   - `proxima_fecha_sugerida`
+   - `dia_preferido_del_mes` (opcional, ej. "primer lunes")
+   - `notas`
+
+2. **Algoritmo**:
+   - Para cada lab activo (`u12m > umbral`): `monto_mensual_target = sum(m12m)/12 * margen_meta`
+   - Distribuir en calendario de 8 semanas según cadencia
+   - Asignar semanas evitando colisiones (no juntar todos los labs grandes la
+     misma semana → spike de caja)
+   - Considerar `OfertaMinimo.vigencia_hasta` para forzar compra en última
+     semana antes de vencimiento
+
+3. **Integración con `/flujo_fondos`**:
+   - Botón "🤖 Sugerir distribución" → pre-tilda semanas activas según el plan
+   - El operador puede des-tildar/ajustar (no es atómico)
+   - Diff visual: "lab X: estabas en sem 3+7, te sugiero 2+5+8"
+
+**Ganancias esperadas**:
+- Suaviza cashflow semanal (evita semanas con $5M y otras con $500k)
+- Captura ofertas que vencen al fin de mes
+- Detecta labs sub-comprados (compras < 80% del target → alerta)
+
+**Tradeoffs**:
+- Requiere config inicial por lab (cadencia preferida, día preferido)
+- Feedback loop: si el operador siempre des-tilda lab Y, hay que aprender
+  ese patrón
+
+**Esfuerzo**:
+- MVP simple (cadencia fija + monto basado en u12m/26): 1-2 días
+- Con estacionalidad + optimización de cashflow: 1 semana
+- Con backtesting y ajuste continuo: más
+
+---
+
 ## ⏳ Pendiente — Implementar sistema de Grupos para usuarios (2026-05-18)
 
 Diego mostró el panel de Grupos de ObServer (CAJERO, Facturacion, Farmaceutico,
