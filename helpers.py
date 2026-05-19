@@ -1252,6 +1252,212 @@ def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_mi
     return (sugerido, None, None)
 
 
+# Buckets de rotación de productos (avg_mensual).
+# Usado por /informes/cadencias-lab. La idea no es calcular una cadencia exacta
+# (eso depende de la política del operador) sino agrupar por *qué tan rápido
+# rota* el producto y sugerir cada cuánto conviene reponerlo.
+#
+# Tupla: (slug, label, icono, avg_mensual_min, cadencia_sugerida, color)
+#   avg_mensual_min = umbral inferior (>=) para entrar al bucket
+#   cadencia_sugerida = texto descriptivo para la UI
+CADENCIA_BUCKETS = [
+    ('alta',       'Alta rotación (≥60/mes)',  '🔥', 60.0, '~10 días',     'rojo'),
+    ('media_alta', 'Media-alta (30-60/mes)',   '⚡', 30.0, '~15 días',     'amarillo'),
+    ('media',      'Media (10-30/mes)',        '🐢', 10.0, '~30 días',     'verde'),
+    ('baja',       'Baja (5-10/mes)',          '🐌',  5.0, '~45 días',     'azul'),
+    ('muy_baja',   'Muy baja (<5/mes)',        '💤',  0.0, '~60-90 días',  'mute'),
+]
+
+
+def _bucket_cadencia(avg_mensual):
+    """Devuelve el slug del bucket según el avg mensual de ventas.
+
+    >>> _bucket_cadencia(75)
+    'alta'
+    >>> _bucket_cadencia(40)
+    'media_alta'
+    >>> _bucket_cadencia(15)
+    'media'
+    >>> _bucket_cadencia(7)
+    'baja'
+    >>> _bucket_cadencia(1)
+    'muy_baja'
+    """
+    for slug, _label, _icono, avg_min, _cad, _color in CADENCIA_BUCKETS:
+        if avg_mensual >= avg_min:
+            return slug
+    return 'muy_baja'
+
+
+def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
+                            cobertura_default=30):
+    """Agrupa productos de un lab según su cadencia natural de compra.
+
+    Para cada producto del lab con ventas:
+      cadencia_natural = cant_reposicion / avg_diario
+    donde cant_reposicion = cant_fija si está seteada, sino cobertura_default.
+
+    Args:
+        session: SQLAlchemy session.
+        lab_observer_id: int, observer_id del laboratorio.
+        meses_rotacion: int, meses para calcular avg_diario (default 3).
+        cobertura_default: int, días de cobertura asumida para productos
+            sin cant_fija seteada (default 30 = mensual).
+
+    Returns:
+        dict {
+            'lab_id': int,
+            'meses_rotacion': int,
+            'cobertura_default': int,
+            'buckets': [
+                {slug, label, icono, color, dias_max,
+                 n_productos, monto_mensual, items: [...]}
+            ],
+            'sin_ventas': [...],
+            'totales': {
+                'productos_con_ventas': int,
+                'productos_sin_ventas': int,
+                'monto_mensual_total': float,
+            }
+        }
+    """
+    import database
+
+    _DIAS_PROM_MES = 30.42
+    dias_rotacion = int(meses_rotacion * _DIAS_PROM_MES)
+
+    # 1. Productos del lab (vía ObsProducto.laboratorio_observer).
+    rows_prod = (session.query(database.ObsProducto.observer_id,
+                               database.ObsProducto.descripcion,
+                               database.ObsProducto.codigo_alfabeta)
+                 .filter(database.ObsProducto.laboratorio_observer == lab_observer_id,
+                         database.ObsProducto.fecha_baja.is_(None))
+                 .all())
+    if not rows_prod:
+        return {'lab_id': lab_observer_id, 'meses_rotacion': meses_rotacion,
+                'cobertura_default': cobertura_default, 'buckets': [],
+                'sin_ventas': [], 'totales': {
+                    'productos_con_ventas': 0, 'productos_sin_ventas': 0,
+                    'monto_mensual_total': 0.0}}
+    obs_ids = [r.observer_id for r in rows_prod]
+
+    # 2. Bulk: cant_fija (Producto master local linkeado por observer_id)
+    #          + stock (ObsStock) + ventas/monto (ObsVentaMensual u12m).
+    cant_fija_map = dict(session.query(database.Producto.observer_id,
+                                       database.Producto.cantidad_reposicion_fija)
+                          .filter(database.Producto.observer_id.in_(obs_ids),
+                                  database.Producto.cantidad_reposicion_fija.isnot(None),
+                                  database.Producto.cantidad_reposicion_fija > 0)
+                          .all())
+
+    from sqlalchemy import func as _f
+    stock_rows = (session.query(database.ObsStock.producto_observer,
+                                _f.sum(database.ObsStock.stock_actual))
+                  .filter(database.ObsStock.producto_observer.in_(obs_ids))
+                  .group_by(database.ObsStock.producto_observer).all())
+    stock_map = {r[0]: int(r[1] or 0) for r in stock_rows}
+
+    # u_rot (últimos `meses_rotacion` meses completos) + monto (últimos 12m
+    # para tener el precio histórico estable).
+    from datetime import date as _d
+    hoy = _d.today()
+    end_anio = hoy.year if hoy.month > 1 else hoy.year - 1
+    end_mes = hoy.month - 1 if hoy.month > 1 else 12
+    start_mes = end_mes - (meses_rotacion - 1)
+    start_anio = end_anio
+    while start_mes <= 0:
+        start_mes += 12
+        start_anio -= 1
+    desde_ym = start_anio * 100 + start_mes
+    hasta_ym = end_anio * 100 + end_mes
+    vm = database.ObsVentaMensual
+    urot_rows = (session.query(vm.producto_observer,
+                               _f.sum(vm.unidades),
+                               _f.sum(vm.monto))
+                 .filter(vm.producto_observer.in_(obs_ids),
+                         vm.anio * 100 + vm.mes >= desde_ym,
+                         vm.anio * 100 + vm.mes <= hasta_ym)
+                 .group_by(vm.producto_observer).all())
+    urot_map = {r[0]: (float(r[1] or 0), float(r[2] or 0)) for r in urot_rows}
+
+    # 3. Por producto: calcular cadencia + bucket + monto mensual.
+    # Nota: usamos 'productos' (no 'items') porque en Jinja2 `dict.items`
+    # resuelve al método del dict, no a la key — sería un bug silencioso.
+    buckets_data = {slug: {'slug': slug, 'label': label, 'icono': icono,
+                            'color': color, 'avg_min': avg_min,
+                            'cadencia_sugerida': cad_sug,
+                            'n_productos': 0, 'monto_mensual': 0.0, 'productos': []}
+                    for slug, label, icono, avg_min, cad_sug, color in CADENCIA_BUCKETS}
+    sin_ventas = []
+
+    for r in rows_prod:
+        u_rot, m_rot = urot_map.get(r.observer_id, (0.0, 0.0))
+        if u_rot <= 0:
+            sin_ventas.append({
+                'observer_id': r.observer_id,
+                'nombre': r.descripcion,
+                'codigo_alfabeta': r.codigo_alfabeta,
+            })
+            continue
+        avg_diario = u_rot / dias_rotacion
+        avg_mensual = avg_diario * _DIAS_PROM_MES
+        precio_unit = (m_rot / u_rot) if u_rot else 0  # PVP estimado
+        monto_mensual = avg_mensual * precio_unit
+        cant_fija = cant_fija_map.get(r.observer_id)
+        # Cant de reposición: si tiene cant_fija configurada usa eso;
+        # sino, asume cobertura_default días.
+        if cant_fija:
+            cant_repo = cant_fija
+            origen_cant = 'cant_fija'
+        else:
+            cant_repo = max(1, int(round(avg_diario * cobertura_default)))
+            origen_cant = 'cobertura_default'
+        cadencia_dias = cant_repo / avg_diario if avg_diario else 9999
+        # Bucket por avg_mensual (rotación real), NO por cadencia calculada
+        # — esa quedaba siempre = cobertura_default para productos sin cant_fija.
+        slug = _bucket_cadencia(avg_mensual)
+        bucket = buckets_data[slug]
+        bucket['n_productos'] += 1
+        bucket['monto_mensual'] += monto_mensual
+        bucket['productos'].append({
+            'observer_id': r.observer_id,
+            'nombre': r.descripcion,
+            'codigo_alfabeta': r.codigo_alfabeta,
+            'stock': stock_map.get(r.observer_id, 0),
+            'avg_diario': round(avg_diario, 2),
+            'avg_mensual': round(avg_mensual, 1),
+            'cant_repo': cant_repo,
+            'origen_cant': origen_cant,
+            'cadencia_dias': round(cadencia_dias, 1),
+            'precio_unit': round(precio_unit, 2),
+            'monto_mensual': round(monto_mensual, 2),
+        })
+
+    # Ordenar productos dentro de cada bucket por monto mensual desc (lo que más
+    # plata mueve, primero).
+    for b in buckets_data.values():
+        b['productos'].sort(key=lambda x: -x['monto_mensual'])
+        b['monto_mensual'] = round(b['monto_mensual'], 2)
+
+    # Devolver buckets en el orden definido en CADENCIA_BUCKETS.
+    buckets = [buckets_data[slug] for slug, *_ in CADENCIA_BUCKETS]
+    con_ventas = sum(b['n_productos'] for b in buckets)
+    monto_total = sum(b['monto_mensual'] for b in buckets)
+
+    return {
+        'lab_id': lab_observer_id,
+        'meses_rotacion': meses_rotacion,
+        'cobertura_default': cobertura_default,
+        'buckets': buckets,
+        'sin_ventas': sorted(sin_ventas, key=lambda x: x['nombre']),
+        'totales': {
+            'productos_con_ventas': con_ventas,
+            'productos_sin_ventas': len(sin_ventas),
+            'monto_mensual_total': round(monto_total, 2),
+        }
+    }
+
+
 def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
                                 limit_top=8, lab_observer_id=None,
                                 incluir_sin_alerta=False):

@@ -42,6 +42,44 @@ def init_app(app):
         """Índice con tarjetas para cada informe disponible."""
         return render_template('informes_index.html')
 
+    @app.route('/informes/cadencias-lab')
+    @login_required
+    def informe_cadencias_lab():
+        """Agrupa los productos de un laboratorio según su cadencia natural
+        de compra (cuánto dura una reposición típica al ritmo actual).
+
+        Buckets: alta rotación (≤10d) · media (10-20d) · baja (20-30d) ·
+        muy baja (30-60d) · ocasional (>60d).
+
+        Sin lab seleccionado: solo renderiza la pantalla con el selector.
+        """
+        from helpers import analizar_cadencias_lab
+        lab_id = request.args.get('lab_id', type=int)
+        cobertura = request.args.get('cobertura', type=int) or 30
+        cobertura = max(7, min(cobertura, 90))
+        meses_rot = request.args.get('meses_rot', type=int) or 3
+        meses_rot = max(1, min(meses_rot, 12))
+        data = None
+        lab_nombre = None
+        with database.get_db() as session:
+            # Listar labs con al menos 1 producto activo (para el dropdown).
+            labs = (session.query(ObsLaboratorio.observer_id,
+                                  ObsLaboratorio.descripcion)
+                    .order_by(ObsLaboratorio.descripcion).all())
+            if lab_id:
+                lab = session.get(ObsLaboratorio, lab_id)
+                lab_nombre = lab.descripcion if lab else None
+                data = analizar_cadencias_lab(
+                    session, lab_id,
+                    meses_rotacion=meses_rot,
+                    cobertura_default=cobertura,
+                )
+        return render_template('informes_cadencias_lab.html',
+                               labs=[{'id': r[0], 'nombre': r[1]} for r in labs],
+                               lab_id=lab_id, lab_nombre=lab_nombre,
+                               data=data, cobertura=cobertura,
+                               meses_rot=meses_rot)
+
     @app.route('/informes/labs-por-droga')
     @login_required
     def informe_labs_por_droga():
