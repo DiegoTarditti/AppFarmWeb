@@ -159,16 +159,38 @@
     </div>
 
     <!-- Tabla -->
-    <div class="flex-1 overflow-auto px-4 py-4 hidden" id="tabla-wrap">
+    {# min-h-0 es crítico: sin él, flex-1 no shrinkea en un flex-col y el
+       overflow-auto nunca scrollea (el scroll real lo hace un ancestor),
+       lo que rompe el sticky header.
+       pb-4 sin pt: con padding-top había una hendija de 16px entre el bloque
+       de filtros fijo y el thead sticky, por donde se veía filtrarse una fila
+       al scrollear. #}
+    <div class="flex-1 min-h-0 overflow-auto px-4 pb-4 hidden" id="tabla-wrap">
         <div id="empty-state" class="text-center py-16 text-[#999] hidden">
             <svg class="w-12 h-12 mx-auto mb-3 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
             </svg>
             <p class="text-sm">La tabla se pobla automáticamente al importar facturas y análisis de compra.</p>
         </div>
-        <table class="w-full text-xs border-collapse" id="main-table" style="min-width:900px">
+        {# Sticky header. Necesita border-collapse:separate (con collapse, varios
+           browsers ignoran position:sticky en thead/th). #}
+        <style>
+            #main-table {
+                border-collapse: separate !important;
+                border-spacing: 0;
+            }
+            #main-table thead th {
+                position: -webkit-sticky;
+                position: sticky;
+                top: 0;
+                z-index: 20;
+                background: #f0f0f0;
+                box-shadow: inset 0 -1px 0 #d9d9d9;  /* línea inferior */
+            }
+        </style>
+        <table class="w-full text-xs" id="main-table" style="min-width:900px">
             <thead>
-                <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
+                <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
                     <th class="text-left px-3 py-2 rounded-tl-lg" style="min-width:240px">Descripción</th>
                     <th class="text-left px-3 py-2" style="width:130px">Cód. principal</th>
                     <th class="text-left px-3 py-2" style="width:130px" title="EANs alternativos. Click en un slot vacío para agregar.">EAN alt.</th>

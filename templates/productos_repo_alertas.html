@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Alertas Repo fija — Productos{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ra-page { padding: 18px 24px; }
+    .ra-head {
+        display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+        margin-bottom: 14px;
+    }
+    .ra-head h1 {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 22px; font-weight: 700; color: var(--ds-text);
+        margin: 0;
+    }
+    .ra-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+
+    .ra-kpis {
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px; margin-bottom: 14px;
+    }
+    .ra-kpi {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 12px;
+        padding: 12px 14px;
+    }
+    .ra-kpi .lbl {
+        font-size: 9px; font-weight: 700; letter-spacing: .08em;
+        text-transform: uppercase; color: var(--ds-text-mute);
+        display: flex; align-items: center; gap: 6px;
+    }
+    .ra-kpi .lbl .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .ra-kpi .lbl .dot.rojo     { background: #ef4444; }
+    .ra-kpi .lbl .dot.amarillo { background: var(--ds-warn); }
+    .ra-kpi .lbl .dot.verde    { background: var(--ds-mint); }
+    .ra-kpi .lbl .dot.mute     { background: var(--ds-text-mute); }
+    .ra-kpi .val {
+        font-family:'Space Grotesk',sans-serif;
+        font-size: 22px; font-weight: 700; color: var(--ds-text);
+        line-height: 1.1; margin-top: 4px;
+    }
+
+    .ra-card {
+        background: var(--ds-surface);
+        border: 1px solid var(--ds-line);
+        border-radius: 14px;
+        overflow: hidden;
+    }
+    .ra-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .ra-table thead th {
+        position: sticky; top: 0; z-index: 10;
+        background: rgba(0,0,0,.25);
+        color: var(--ds-text-mute);
+        font-size: 10px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em;
+        padding: 10px 12px; text-align: right;
+        border-bottom: 1px solid var(--ds-line);
+    }
+    .ra-table thead th.left { text-align: left; }
+    .ra-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+    .ra-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .ra-table tbody td {
+        padding: 9px 12px;
+        color: var(--ds-text);
+        font-family: ui-monospace, Consolas, monospace;
+        text-align: right;
+    }
+    .ra-table tbody td.left { text-align: left; font-family: inherit; }
+
+    .ra-nivel {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 10px; font-weight: 700;
+        padding: 3px 8px; border-radius: 4px;
+        text-transform: uppercase; letter-spacing: .04em;
+    }
+    .ra-nivel.rojo     { background: rgba(239,68,68,.18); color: #fca5a5; }
+    .ra-nivel.amarillo { background: rgba(245,158,11,.16); color: var(--ds-warn); }
+    .ra-nivel.verde    { background: rgba(95,230,188,.14); color: var(--ds-mint); }
+
+    .ra-empty {
+        padding: 40px 20px; text-align: center;
+        color: var(--ds-text-mute); font-size: 13px;
+    }
+    .ra-empty .icon { font-size: 32px; margin-bottom: 8px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="ra-page">
+    <a href="{{ url_for('index') }}" class="text-xs text-[#888] hover:text-[#fff]" style="color:var(--ds-text-mute);">← Inicio</a>
+    <div class="ra-head" style="margin-top:6px;">
+        <span style="font-size:24px;">📦</span>
+        <h1>Alertas Repo fija</h1>
+        <span class="sub">
+            {{ data.total }} producto{{ '' if data.total == 1 else 's' }} con
+            <code style="background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;color:var(--ds-mint);">cantidad_reposicion_fija</code>
+            configurada · ritmo basado en últimos 3 meses
+        </span>
+    </div>
+
+    <div class="ra-kpis">
+        <div class="ra-kpi">
+            <div class="lbl"><span class="dot rojo"></span>Ya bajo mínimo</div>
+            <div class="val" style="color:{% if data.rojo > 0 %}#ef4444{% else %}var(--ds-text-mute){% endif %};">{{ data.rojo }}</div>
+        </div>
+        <div class="ra-kpi">
+            <div class="lbl"><span class="dot amarillo"></span>≤ 3 días al mínimo</div>
+            <div class="val" style="color:{% if data.amarillo > 0 %}var(--ds-warn){% else %}var(--ds-text-mute){% endif %};">{{ data.amarillo }}</div>
+        </div>
+        <div class="ra-kpi">
+            <div class="lbl"><span class="dot verde"></span>4-7 días al mínimo</div>
+            <div class="val" style="color:{% if data.verde > 0 %}var(--ds-mint){% else %}var(--ds-text-mute){% endif %};">{{ data.verde }}</div>
+        </div>
+        <div class="ra-kpi">
+            <div class="lbl"><span class="dot mute"></span>Sin alerta</div>
+            <div class="val" style="color:var(--ds-text-mute);">{{ data.sin_alerta }}</div>
+        </div>
+    </div>
+
+    <div class="ra-card">
+        {% if data.top %}
+        <table class="ra-table">
+            <thead>
+                <tr>
+                    <th class="left" style="width: 36px;">Nivel</th>
+                    <th class="left">Producto</th>
+                    <th title="Stock actual en Observer">Stock</th>
+                    <th title="Mínimo configurado en Observer">Mín</th>
+                    <th title="Promedio diario últimos 3 meses (excluye mes parcial actual)">Avg/día</th>
+                    <th title="Días estimados hasta tocar el mínimo">Días al mín</th>
+                    <th title="Cantidad fija a pedir cuando toque el mínimo (Producto.cantidad_reposicion_fija)">Repo fija</th>
+                    <th style="width:90px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for it in data.top %}
+                <tr>
+                    <td class="left">
+                        <span class="ra-nivel {{ it.nivel }}" title="{% if it.nivel == 'rojo' %}Stock ya bajo mínimo — comprar YA{% elif it.nivel == 'amarillo' %}≤3 días al mínimo — urgente{% else %}4-7 días al mínimo — preparar pedido{% endif %}">
+                            {% if it.nivel == 'rojo' %}🔴{% elif it.nivel == 'amarillo' %}🟡{% else %}🟢{% endif %}
+                        </span>
+                    </td>
+                    <td class="left">
+                        <div style="font-weight:600;">{{ it.nombre }}</div>
+                        <div style="font-size:10px; color:var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace;">
+                            EAN {{ it.codigo_barra or '—' }}
+                        </div>
+                    </td>
+                    <td>{{ it.stock }}</td>
+                    <td style="color:var(--ds-text-mute);">{{ it.minimo }}</td>
+                    <td style="color:var(--ds-text-mute);">{{ '%.2f' % it.avg_diario if it.avg_diario else '—' }}</td>
+                    <td>
+                        {% if it.dias_a_min is none %}
+                            <span style="color:var(--ds-text-mute);">—</span>
+                        {% elif it.dias_a_min == 0 %}
+                            <span style="color:#fca5a5; font-weight:700;">0 (ya)</span>
+                        {% else %}
+                            <b>{{ '%.1f' % it.dias_a_min }}</b>
+                        {% endif %}
+                    </td>
+                    <td><b style="color:var(--ds-mint);">{{ it.cant_fija }}u</b></td>
+                    <td>
+                        <a href="{{ url_for('productos_list') }}?q={{ it.codigo_barra }}"
+                           class="text-[10px] px-2 py-1 rounded font-semibold"
+                           style="background:rgba(95,230,188,.12); color:var(--ds-mint); text-decoration:none;">
+                            Ver →
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="ra-empty">
+            <div class="icon">✓</div>
+            <p style="font-weight:700; color:var(--ds-mint); margin-bottom:4px;">Sin alertas activas</p>
+            {% if data.total > 0 %}
+            <p>Tenés <b>{{ data.total }}</b> producto{{ '' if data.total == 1 else 's' }} con repo fija configurada, pero ninguno está cerca de tocar el mínimo.</p>
+            {% else %}
+            <p>Todavía no hay productos con <code style="background:rgba(0,0,0,.25);padding:1px 5px;border-radius:3px;">cantidad_reposicion_fija</code> configurada. Cargá valores en /productos en la columna "Repo. fija".</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+</div>
+{% endblock %}

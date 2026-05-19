@@ -1250,3 +1250,141 @@ def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_mi
     if oferta_min > 0 and 0 < sugerido < oferta_min:
         return (oferta_min, 'oferta_min', oferta_min)
     return (sugerido, None, None)
+
+
+def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
+                                limit_top=8):
+    """Calcula alertas de reposición para productos con cantidad_reposicion_fija.
+
+    Sirve al card "Alertas Repo fija" del home. Lisandro carga manualmente el
+    campo `Producto.cantidad_reposicion_fija`; este helper detecta cuáles de
+    esos productos están a punto de tocar el mínimo (o ya lo tocaron) según
+    el ritmo de venta reciente, para avisar con `dias_aviso` de anticipación.
+
+    Args:
+        session: SQLAlchemy session abierta.
+        dias_aviso: int, ventana de aviso (default 7 = 1 semana antes).
+        meses_rotacion: int, meses para calcular avg_diario (default 3, igual
+            que /pedidos/dia/armar).
+
+    Returns:
+        dict {
+            'total': int,                # productos con repo fija configurada
+            'rojo': int,                 # ya bajo mínimo (urgente)
+            'amarillo': int,             # 1-3 días a mínimo
+            'verde': int,                # 4-7 días a mínimo
+            'sin_alerta': int,           # >7 días o sin ventas
+            'top': [                     # top 8 ordenado por urgencia
+                {producto_id, observer_id, nombre, stock, minimo,
+                 cant_fija, dias_a_min (float|None), nivel ('rojo'|'amarillo'|'verde')}
+            ]
+        }
+    """
+    import database
+
+    _DIAS_PROM_MES = 30.42
+    dias_rotacion = int(meses_rotacion * _DIAS_PROM_MES)
+
+    # 1. Productos con repo fija seteada + linkeados a Observer.
+    rows_prod = (session.query(database.Producto.id,
+                               database.Producto.observer_id,
+                               database.Producto.descripcion,
+                               database.Producto.codigo_barra,
+                               database.Producto.cantidad_reposicion_fija)
+                 .filter(database.Producto.cantidad_reposicion_fija.isnot(None),
+                         database.Producto.cantidad_reposicion_fija > 0,
+                         database.Producto.observer_id.isnot(None))
+                 .all())
+    if not rows_prod:
+        return {'total': 0, 'rojo': 0, 'amarillo': 0, 'verde': 0,
+                'sin_alerta': 0, 'top': []}
+
+    obs_ids = [r.observer_id for r in rows_prod]
+
+    # 2. Stock + mínimo por observer_id (sum si hay multi-farmacia).
+    from sqlalchemy import func as _f
+    stock_rows = (session.query(database.ObsStock.producto_observer,
+                                _f.sum(database.ObsStock.stock_actual),
+                                _f.sum(database.ObsStock.minimo))
+                  .filter(database.ObsStock.producto_observer.in_(obs_ids))
+                  .group_by(database.ObsStock.producto_observer)
+                  .all())
+    stock_map = {r[0]: (int(r[1] or 0), int(r[2] or 0)) for r in stock_rows}
+
+    # 3. Ventas últimos `meses_rotacion` meses completos (avg_diario).
+    #    Mismo cálculo que /pedidos/dia/armar (u_rot / dias_rotacion).
+    from datetime import date as _d
+    hoy = _d.today()
+    # Inclusivo: incluye desde hace `meses_rotacion` meses hasta el mes anterior
+    # al actual (excluye mes parcial actual para no subestimar el promedio).
+    end_anio = hoy.year if hoy.month > 1 else hoy.year - 1
+    end_mes = hoy.month - 1 if hoy.month > 1 else 12
+    start_mes = end_mes - (meses_rotacion - 1)
+    start_anio = end_anio
+    while start_mes <= 0:
+        start_mes += 12
+        start_anio -= 1
+    desde_ym = start_anio * 100 + start_mes
+    hasta_ym = end_anio * 100 + end_mes
+    vm = database.ObsVentaMensual
+    ventas_rows = (session.query(vm.producto_observer, _f.sum(vm.unidades))
+                   .filter(vm.producto_observer.in_(obs_ids),
+                           vm.anio * 100 + vm.mes >= desde_ym,
+                           vm.anio * 100 + vm.mes <= hasta_ym)
+                   .group_by(vm.producto_observer)
+                   .all())
+    u_rot_map = {r[0]: float(r[1] or 0) for r in ventas_rows}
+
+    # 4. Por producto: clasificar nivel.
+    items = []
+    for r in rows_prod:
+        stock, minimo = stock_map.get(r.observer_id, (0, 0))
+        u_rot = u_rot_map.get(r.observer_id, 0.0)
+        avg_diario = (u_rot / dias_rotacion) if dias_rotacion else 0
+        if stock <= minimo:
+            nivel = 'rojo'
+            dias_a_min = 0
+        elif avg_diario <= 0:
+            # Tiene repo fija pero no rotó → no alerta (capaz lo cargó
+            # Lisandro para preparar el futuro; no urge).
+            nivel = None
+            dias_a_min = None
+        else:
+            dias_a_min = (stock - minimo) / avg_diario
+            if dias_a_min <= 3:
+                nivel = 'amarillo'
+            elif dias_a_min <= dias_aviso:
+                nivel = 'verde'
+            else:
+                nivel = None
+        items.append({
+            'producto_id': r.id,
+            'observer_id': r.observer_id,
+            'nombre': r.descripcion,
+            'codigo_barra': r.codigo_barra,
+            'stock': stock,
+            'minimo': minimo,
+            'cant_fija': int(r.cantidad_reposicion_fija),
+            'avg_diario': round(avg_diario, 2),
+            'dias_a_min': round(dias_a_min, 1) if dias_a_min is not None else None,
+            'nivel': nivel,
+        })
+
+    # 5. Counters + top ordenado (rojo > amarillo > verde, dentro de cada nivel por dias asc).
+    rojo = sum(1 for x in items if x['nivel'] == 'rojo')
+    amarillo = sum(1 for x in items if x['nivel'] == 'amarillo')
+    verde = sum(1 for x in items if x['nivel'] == 'verde')
+    sin_alerta = sum(1 for x in items if x['nivel'] is None)
+
+    _orden_nivel = {'rojo': 0, 'amarillo': 1, 'verde': 2}
+    en_alerta = [x for x in items if x['nivel']]
+    en_alerta.sort(key=lambda x: (_orden_nivel[x['nivel']],
+                                   x['dias_a_min'] if x['dias_a_min'] is not None else 999))
+    return {
+        'total': len(items),
+        'rojo': rojo,
+        'amarillo': amarillo,
+        'verde': verde,
+        'sin_alerta': sin_alerta,
+        'top': en_alerta[:limit_top] if limit_top else en_alerta,
+    }

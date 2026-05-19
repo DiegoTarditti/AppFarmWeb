@@ -5,10 +5,24 @@ from flask_login import login_required
 
 import database
 from database import Laboratorio, Producto, ProductoPrecioHist
-from helpers import _find_producto
+from helpers import _find_producto, calcular_alertas_repo_fija
 
 
 def init_app(app):
+
+    @app.route('/productos/repo-alertas')
+    @login_required
+    def productos_repo_alertas():
+        """Detalle de alertas de Repo fija: productos con cantidad_reposicion_fija
+        seteada, ordenados por urgencia (rojo > amarillo > verde > sin alerta).
+
+        On-demand (sin tabla persistida). Reusa el helper que alimenta el card
+        del home, pero con `top` ampliado a todos los items para listar completo.
+        """
+        with database.get_db() as session:
+            # limit_top=None → lista completa de productos en alerta.
+            data = calcular_alertas_repo_fija(session, dias_aviso=7, limit_top=None)
+        return render_template('productos_repo_alertas.html', data=data)
 
     @app.route('/productos/verificar-nuevos')
     @login_required
