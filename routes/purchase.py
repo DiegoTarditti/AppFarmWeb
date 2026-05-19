@@ -1603,21 +1603,57 @@ def init_app(app):
                 'partner_id': pedido.partner_id,
                 'canal_elegido_en': pedido.canal_elegido_en.strftime('%d/%m/%Y %H:%M') if pedido.canal_elegido_en else '',
             }
-            erp_stock_map = {
-                row.codigo_barra: int(row.cantidad or 0)
-                for row in session.query(ErpStock).all()
-            }
-            all_prods = session.query(Producto).all()
-            # Pre-cargar todos los EANs alternativos desde producto_codigos_barra
-            # en un solo query — los alts ya no viven en alt1/2/3.
+            # ── Filtrado: el pedido es por lab, así que solo necesitamos
+            # productos del lab + los que aparecen en el pedido (defensivo).
+            # Antes cargábamos los ~30k del catálogo entero → 30s + OOM en Render.
+            # Con esto bajamos a ~500-1000 productos → <3s.
+            from sqlalchemy import or_ as _or
+            lab_obj = session.query(database.Laboratorio).filter_by(nombre=pedido.laboratorio).first()
+            lab_id = lab_obj.id if lab_obj else None
+            pedido_cbs = {(it.codigo_barra or '').strip()
+                          for it in pedido.items if it.codigo_barra}
+
+            prods_q = session.query(Producto)
+            if lab_id:
+                prods_q = prods_q.filter(_or(
+                    Producto.laboratorio_id == lab_id,
+                    Producto.codigo_barra.in_(pedido_cbs) if pedido_cbs else False,
+                ))
+            elif pedido_cbs:
+                prods_q = prods_q.filter(Producto.codigo_barra.in_(pedido_cbs))
+            else:
+                # Sin lab ni CBs → no hay nada que cargar. Mejor lista vacía
+                # que volver al fetch-all.
+                prods_q = prods_q.filter(Producto.id == -1)
+            all_prods = prods_q.all()
+            all_pids = [p.id for p in all_prods]
+
+            # Alts solo de los productos relevantes
             alts_por_pid = {}
-            for pid, ean in (session.query(database.ProductoCodigoBarra.producto_id,
-                                            database.ProductoCodigoBarra.codigo_barra)
-                              .filter(database.ProductoCodigoBarra.es_principal.is_(False))
-                              .all()):
-                alts_por_pid.setdefault(pid, []).append(ean)
+            if all_pids:
+                for pid, ean in (session.query(database.ProductoCodigoBarra.producto_id,
+                                                database.ProductoCodigoBarra.codigo_barra)
+                                  .filter(database.ProductoCodigoBarra.es_principal.is_(False))
+                                  .filter(database.ProductoCodigoBarra.producto_id.in_(all_pids))
+                                  .all()):
+                    alts_por_pid.setdefault(pid, []).append(ean)
             def _all_eans(p):
                 return [p.codigo_barra] + alts_por_pid.get(p.id, [])
+
+            # erp_stock filtrado por los CBs relevantes (pedido + lab + alts)
+            cbs_relevantes = set(pedido_cbs)
+            for p in all_prods:
+                if p.codigo_barra:
+                    cbs_relevantes.add(p.codigo_barra)
+                cbs_relevantes.update(alts_por_pid.get(p.id, []))
+            if cbs_relevantes:
+                erp_stock_map = {
+                    row.codigo_barra: int(row.cantidad or 0)
+                    for row in session.query(ErpStock)
+                                .filter(ErpStock.codigo_barra.in_(cbs_relevantes)).all()
+                }
+            else:
+                erp_stock_map = {}
             monodroga_by_bc = {}
             for p in all_prods:
                 if not p.monodroga:
@@ -1739,8 +1775,7 @@ def init_app(app):
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
             else:
                 data['analizado_en'] = pedido.analizado_en.strftime('%d/%m/%Y')
-            lab_obj = session.query(database.Laboratorio).filter_by(nombre=pedido.laboratorio).first()
-            data['lab_id'] = lab_obj.id if lab_obj else None
+            data['lab_id'] = lab_id  # ya resuelto arriba
             prov_plantilla = None
             _prov = session.query(database.Provider).filter(
                 database.Provider.razon_social.ilike(f'%{pedido.laboratorio or ""}%')
