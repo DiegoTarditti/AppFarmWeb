@@ -1078,36 +1078,63 @@ def _fmt_delta(horas):
 
 
 def estado_ventas_mensuales(session, dias_fresco=7):
-    """Devuelve dict con estado de frescura de obs_ventas_mensuales.
+    """Estado de frescura de los datos de ObServer (ventas + stock).
+
+    El template muestra dos líneas (stock + ventas) para que se vea cuál de
+    los dos está desfasado. El campo `estado` global toma el peor — sirve
+    para colorear el banner (ok/warn). Se mantiene el nombre por compat con
+    los call-sites (procesos.py / consulta_stock).
 
     {
-      'estado': 'fresco' | 'viejo' | 'nunca',
-      'ultimo_sync': datetime o None,
-      'dias': int,
-      'filas': int,
-      'mensaje': str,
+      'estado': 'fresco' | 'viejo' | 'nunca',   # global = peor de los dos
+      'ultimo_sync': datetime o None,            # del peor
+      'dias': int,                               # del peor
+      'filas': int,                              # filas de ventas_mensuales
+      'mensaje': str,                            # legacy: una línea
+      'stock':  {'estado', 'ultimo_sync', 'dias'},
+      'ventas': {'estado', 'ultimo_sync', 'dias'},
     }
     """
     from database import ObsSyncLog, ObsVentaMensual, now_ar
     filas = session.query(ObsVentaMensual).count()
-    ultimo = (session.query(ObsSyncLog)
-              .filter(ObsSyncLog.entidad == 'ventas_mensuales')
-              .order_by(ObsSyncLog.ejecutado_en.desc()).first())
     if filas == 0:
         return {'estado': 'nunca', 'ultimo_sync': None, 'dias': None, 'filas': 0,
-                'mensaje': 'Todavía no se importaron ventas desde ObServer.'}
-    if not ultimo:
-        # Hay datos pero no hay log (ej. se importaron desde otra máquina vía pull).
+                'mensaje': 'Todavía no se importaron ventas desde ObServer.',
+                'stock':  {'estado': 'nunca', 'ultimo_sync': None, 'dias': None},
+                'ventas': {'estado': 'nunca', 'ultimo_sync': None, 'dias': None}}
+
+    def _sub(entidad):
+        u = (session.query(ObsSyncLog)
+             .filter(ObsSyncLog.entidad == entidad)
+             .order_by(ObsSyncLog.ejecutado_en.desc()).first())
+        if not u:
+            return {'estado': 'nunca', 'ultimo_sync': None, 'dias': None}
+        d = (now_ar() - u.ejecutado_en).days
+        return {'estado': 'fresco' if d <= dias_fresco else 'viejo',
+                'ultimo_sync': u.ejecutado_en, 'dias': d}
+
+    sub_v = _sub('ventas_mensuales')
+    sub_s = _sub('stock')
+
+    # Si ninguno tiene log (datos importados por pull desde otra máquina):
+    # consideramos frescos pero sin medir días.
+    if sub_v['estado'] == 'nunca' and sub_s['estado'] == 'nunca':
         return {'estado': 'fresco', 'ultimo_sync': None, 'dias': 0, 'filas': filas,
-                'mensaje': f'{filas} filas de ventas disponibles (origen externo).'}
-    delta = (now_ar() - ultimo.ejecutado_en).days
-    if delta <= dias_fresco:
-        return {'estado': 'fresco', 'ultimo_sync': ultimo.ejecutado_en, 'dias': delta,
-                'filas': filas,
-                'mensaje': f'Estadísticas al día — última actualización hace {delta} día(s).'}
-    return {'estado': 'viejo', 'ultimo_sync': ultimo.ejecutado_en, 'dias': delta,
-            'filas': filas,
-            'mensaje': f'Estadísticas desactualizadas — última sincronización hace {delta} día(s).'}
+                'mensaje': f'{filas} filas de ventas disponibles (origen externo).',
+                'stock': sub_s, 'ventas': sub_v}
+
+    # Global = peor de los dos (ignorando 'nunca' si el otro tiene dato).
+    ranking = {'fresco': 0, 'viejo': 1, 'nunca': 2}
+    peor = max([sub_v, sub_s], key=lambda x: (ranking[x['estado']], x['dias'] or 0))
+    cual = 'stock' if peor is sub_s else 'ventas'
+    delta = peor['dias'] or 0
+    if peor['estado'] == 'fresco':
+        msg = f'Estadísticas al día — {cual} hace {delta} día(s).'
+    else:
+        msg = f'Estadísticas desactualizadas — {cual} hace {delta} día(s).'
+    return {'estado': peor['estado'], 'ultimo_sync': peor['ultimo_sync'],
+            'dias': delta, 'filas': filas, 'mensaje': msg,
+            'stock': sub_s, 'ventas': sub_v}
 
 
 def listar_obras_sociales_con_ventas(id_farmacia=None, meses_atras=12):

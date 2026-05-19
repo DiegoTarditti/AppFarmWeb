@@ -76,7 +76,106 @@ def _sync_lock_estado():
         }
 
 
+def _contar_tablas_locales(tablas):
+    """Cuenta filas por tabla en la DB local. Devuelve {tabla: int|None}."""
+    out = {}
+    with database.get_db() as session:
+        for t in tablas:
+            try:
+                row = session.execute(_text(f'SELECT COUNT(*) FROM {t}')).fetchone()
+                out[t] = int(row[0]) if row else 0
+            except Exception:
+                out[t] = None  # tabla no existe en local
+    return out
+
+
+def _contar_tablas_render(tablas):
+    """Cuenta filas por tabla en la DB de Render. Devuelve {tabla: int|None}.
+
+    Si RENDER_DATABASE_URL no está configurada, devuelve {} (la UI muestra '—').
+    """
+    render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
+    if not render_url:
+        return {}
+    if render_url.startswith('postgres://'):
+        render_url = render_url.replace('postgres://', 'postgresql://', 1)
+
+    import psycopg2
+    out = {}
+    try:
+        with psycopg2.connect(render_url, connect_timeout=10) as conn:
+            with conn.cursor() as cur:
+                for t in tablas:
+                    try:
+                        cur.execute(f'SELECT COUNT(*) FROM {t}')
+                        row = cur.fetchone()
+                        out[t] = int(row[0]) if row else 0
+                    except Exception:
+                        out[t] = None  # tabla no existe en Render
+                    finally:
+                        conn.rollback()  # evitar quedar en tx abortada
+    except Exception:
+        return {}
+    return out
+
+
 def init_app(app):
+
+    @app.route('/admin/sync-audit')
+    def sync_audit_panel():
+        """Auditoría de sincronización: matriz local vs Render por tabla.
+
+        Lee la matriz declarada en sync_registry.REGISTRY y consulta los
+        conteos en vivo. Si RENDER_DATABASE_URL no está, columna Render
+        queda con guion.
+        """
+        from collections import defaultdict
+
+        import sync_registry
+        tablas = [t for t, _, _ in sync_registry.REGISTRY]
+        counts_local  = _contar_tablas_locales(tablas)
+        counts_render = _contar_tablas_render(tablas)
+        render_disponible = bool(counts_render)
+
+        rows = []
+        resumen = defaultdict(lambda: {'tablas': 0, 'filas_local': 0, 'filas_render': 0})
+        for tabla, categoria, descripcion in sync_registry.REGISTRY:
+            cl = counts_local.get(tabla)
+            cr = counts_render.get(tabla) if render_disponible else None
+            # Diff = "alarma" solo si la tabla debería estar sincronizada y los conteos difieren > 5%.
+            diff_pct = None
+            alarma = False
+            if categoria in ('push_obs', 'push_master') and render_disponible:
+                if cl is None or cr is None:
+                    alarma = True
+                elif cl == 0 and cr == 0:
+                    alarma = False
+                elif cl == 0 or cr == 0:
+                    alarma = True
+                    diff_pct = 100
+                else:
+                    diff_pct = abs(cl - cr) / max(cl, cr) * 100
+                    alarma = diff_pct > 5
+            rows.append({
+                'tabla': tabla,
+                'categoria': categoria,
+                'descripcion': descripcion,
+                'count_local':  cl,
+                'count_render': cr,
+                'diff_pct': diff_pct,
+                'alarma': alarma,
+            })
+            resumen[categoria]['tablas'] += 1
+            if cl is not None:
+                resumen[categoria]['filas_local'] += cl
+            if cr is not None:
+                resumen[categoria]['filas_render'] += cr
+
+        return render_template('admin_sync_audit.html',
+                               rows=rows,
+                               resumen=dict(resumen),
+                               labels=sync_registry.CATEGORIA_LABELS,
+                               render_disponible=render_disponible)
 
     @app.route('/admin/observer-sync')
     def observer_sync_panel():
