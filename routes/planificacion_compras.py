@@ -98,9 +98,12 @@ def init_app(app):
 
             for r in rows:
                 stock = int(r.stock_actual or 0)
+                if stock < 0:
+                    stock = 0
                 total_u = float(r.total_u or 0)
                 consumo_diario = total_u / (meses * 30)
-                if consumo_diario <= 0:
+                # Ignorar productos con consumo menor a 1 unidad/mes
+                if consumo_diario < (1 / 30):
                     continue
                 cobertura_actual = stock / consumo_diario
                 if cobertura_actual >= cobertura:
