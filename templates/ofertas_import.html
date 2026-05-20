@@ -55,6 +55,27 @@
 
         <!-- Toggle de modo: por lab o por drog (multi-lab) -->
         <div class="bg-[#fafafa] border border-surface-border rounded-lg p-3 mb-3">
+            {# Si venimos con lab fijado (?lab_id=N desde /compras/laboratorio),
+               ocultamos el selector de modo y el desplegable: el lab ya está
+               elegido. Los inputs quedan en el DOM (ocultos) para no romper el JS. #}
+            {% if lab_preseleccionado %}
+            <div class="bg-violet-50 border border-violet-200 rounded-lg p-3 mb-3 flex items-center gap-2">
+                <span class="text-lg">🧪</span>
+                <div>
+                    <p class="text-[10px] font-semibold text-violet-700 uppercase tracking-wide">Laboratorio fijado</p>
+                    <p class="text-sm font-bold text-violet-900">{{ lab_nombre_preseleccionado }}</p>
+                </div>
+                <a href="{{ url_for('ofertas_import_page') }}" class="ml-auto text-[11px] text-violet-600 hover:text-violet-900 underline">cambiar</a>
+            </div>
+            {# Inputs ocultos para el JS del wizard. #}
+            <div class="hidden">
+                <input type="radio" name="modo-carga" value="lab" checked>
+                <select id="lab-select-pre">
+                    <option value="{{ lab_preseleccionado }}" selected>{{ lab_nombre_preseleccionado }}</option>
+                </select>
+            </div>
+            <div id="campo-lab" class="hidden"></div>
+            {% else %}
             <p class="text-[11px] font-semibold text-[#555] uppercase tracking-wide mb-2">Modo de carga</p>
             <div class="flex gap-2 mb-3">
                 <label class="flex-1 cursor-pointer">
@@ -85,6 +106,7 @@
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
 
             <!-- Modo por drog (oculto inicialmente) -->
             <div id="campo-drog" class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 hidden">
@@ -222,7 +244,7 @@
                 <select id="lab-select" class="flex-1 bg-white border border-violet-300 rounded px-2 py-1 text-xs">
                     <option value="">— Elegí —</option>
                     {% for l in laboratorios %}
-                    <option value="{{ l.id }}">{{ l.nombre }}</option>
+                    <option value="{{ l.id }}" {% if lab_preseleccionado == l.id %}selected{% endif %}>{{ l.nombre }}</option>
                     {% endfor %}
                 </select>
                 <span id="revalidar-status" class="text-[10px] text-violet-700 whitespace-nowrap"></span>
@@ -739,10 +761,10 @@ function actualizarBotonContinuar() {
         // valor (descuento o precio). Ofertas sin valor no aporta nada.
         const tieneIdent = _mapping.ean != null || _mapping.codigo != null
                         || _mapping.descripcion != null;
-        const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null;
+        const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null || _mapping.unidades_minima != null;
         btn.disabled = !(tieneIdent && tieneValor);
         btn.title = btn.disabled
-            ? 'Mapeá al menos descripción (o EAN/código) y un valor (descuento o precio).'
+            ? 'Mapeá al menos descripción (o EAN/código) y un valor (descuento, precio o mín. unidades).'
             : '';
     }
     btn.classList.toggle('opacity-40', btn.disabled);
@@ -965,9 +987,9 @@ document.getElementById('btn-next-2').addEventListener('click', () => {
     }
     const tieneIdent = _mapping.ean != null || _mapping.codigo != null
                     || _mapping.descripcion != null;
-    const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null;
+    const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null || _mapping.unidades_minima != null;
     if (!tieneIdent || !tieneValor) {
-        alert('Necesitás mapear al menos descripción (o EAN/código) y un valor (descuento o precio).');
+        alert('Necesitás mapear al menos descripción (o EAN/código) y un valor (descuento, precio o mín. unidades).');
         return;
     }
     renderPreview();

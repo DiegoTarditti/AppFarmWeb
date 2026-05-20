@@ -26,10 +26,21 @@
             min-width: 180px;
             max-width: 260px;
         }
-        /* Hero achicado un poco: flex-grow 1 pero con max acotado para dejar
-           lugar al card de alertas a la izquierda. CTA ahora apilado vertical
-           hace que necesite menos ancho. */
-        .home-toprow .home-hero { flex: 1 1 auto; max-width: 580px; margin-bottom: 0; }
+        /* Split de 2 cards de compras (Droguería + Laboratorio) en el lugar
+           que antes ocupaba el hero único. */
+        .home-toprow .home-compras-split {
+            flex: 1 1 auto; display: flex; gap: 12px; min-width: 0; margin-bottom: 0;
+        }
+        .home-compras-split .home-hero { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
+        /* Bloque CTA a la derecha del split (Ir al pedido + Ver pendientes). */
+        .home-compras-cta {
+            flex: 0 0 auto; display: flex; flex-direction: column;
+            justify-content: center; align-items: stretch; gap: 8px;
+        }
+        @media (max-width: 1200px) {
+            .home-compras-split { flex-direction: column; }
+            .home-compras-cta { flex-direction: row; justify-content: flex-start; }
+        }
         @media (max-width: 980px) {
             .home-toprow { flex-direction: column; gap: 12px; }
             .home-toprow .home-page-header { max-width: none; align-self: flex-start; }
@@ -242,22 +253,34 @@
                 </a>
                 {% endif %}
 
-                <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
-                    <span class="home-hero__dots" aria-hidden="true"></span>
-                    <div class="home-hero__body">
-                        <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
-                        <div class="home-hero__title">Pedido de <span class="glow-text">reposición</span></div>
-                        <div class="home-hero__desc">Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria</div>
-                    </div>
-                    <div class="home-hero__cta">
-                        <span class="btn btn-primary">Ir al pedido →</span>
+                <div class="home-compras-split">
+                    {# Card 1: Compras Droguería (click en el card entero → /pedidos/dia) #}
+                    <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
+                        <span class="home-hero__dots" aria-hidden="true"></span>
+                        <div class="home-hero__body">
+                            <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
+                            <div class="home-hero__title">Compras <span class="glow-text">Droguería</span></div>
+                            <div class="home-hero__desc">Armar pedidos a droguerías con countdown de cierre · pantalla operativa diaria</div>
+                        </div>
+                    </a>
+                    {# Card 2: Compras Laboratorio (selector de lab bajo mínimo) #}
+                    <a href="{{ url_for('compras_laboratorio') }}" class="home-hero home-hero--lab hover:no-underline">
+                        <span class="home-hero__dots" aria-hidden="true"></span>
+                        <div class="home-hero__body">
+                            <div class="section-label" style="margin-bottom:4px;">🧪 Por laboratorio</div>
+                            <div class="home-hero__title">Compras <span class="glow-text">Laboratorio</span></div>
+                            <div class="home-hero__desc">Pedido/Canal</div>
+                        </div>
+                    </a>
+                    {# CTA "Ir al pedido" + "Ver pendientes" — a la derecha del split. #}
+                    <div class="home-compras-cta">
+                        <a href="{{ url_for('compras_dia') }}" class="btn btn-primary">Ir al pedido →</a>
                         <a href="{{ url_for('orders_list') }}"
-                           onclick="event.stopPropagation()"
-                           class="hover:underline" style="color:var(--ds-text-soft);">
+                           class="hover:underline" style="color:var(--ds-text-soft); font-size:11px; text-align:center;">
                             Ver pendientes →
                         </a>
                     </div>
-                </a>
+                </div>
 
                 {# Atajo temporal: acceso directo a la UX móvil desde el home
                    mientras la estamos puliendo. Quitar cuando salga estable. #}

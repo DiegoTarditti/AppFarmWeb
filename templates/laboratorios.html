@@ -95,30 +95,38 @@
         {% endif %}
     {% endwith %}
 
-    <!-- Filtro + agregar en una sola fila -->
-    <div class="bg-white border border-surface-border rounded-xl p-4 space-y-3">
-        <div class="relative">
-            <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"/>
-            </svg>
-            <input type="text" id="lab-filter" placeholder='Filtrar por nombre (multi-token: "bayer cons" → tiene ambos)'
-                   oninput="filterLabs()"
-                   class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg pl-10 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-            <button type="button" onclick="clearLabFilter()"
-                    class="absolute right-2 top-1/2 -translate-y-1/2 text-[#999] hover:text-[#1e1e1e] text-sm px-2 py-1 rounded hidden" id="lab-filter-clear">✕</button>
+    <!-- Filtro a la izquierda · Agregar a la derecha (separado para no confundir) -->
+    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-start gap-4 flex-wrap">
+        {# Izquierda: buscador multi-token + checkbox matriz #}
+        <div class="flex-1 min-w-[260px] space-y-2">
+            <div class="relative">
+                <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"/>
+                </svg>
+                <input type="text" id="lab-filter" placeholder='🔎 Buscar laboratorio (multi-token: "bayer cons" → tiene ambos)'
+                       oninput="filterLabs()" autocomplete="off"
+                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg pl-10 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                <button type="button" onclick="clearLabFilter()"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-[#999] hover:text-[#1e1e1e] text-sm px-2 py-1 rounded hidden" id="lab-filter-clear">✕</button>
+            </div>
+            <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none">
+                <input type="checkbox" id="filtro-matriz" class="w-3.5 h-3.5" onchange="filterLabs()">
+                Solo en matriz pedidos
+            </label>
         </div>
-        <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none">
-            <input type="checkbox" id="filtro-matriz" class="w-3.5 h-3.5" onchange="filterLabs()">
-            Solo en matriz pedidos
-        </label>
-        <form method="post" action="{{ url_for('laboratorio_create') }}" class="flex gap-2">
-            <input type="text" name="nombre" placeholder="Agregar nuevo laboratorio" required
-                   class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-            <button type="submit"
-                class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
-                + Agregar
-            </button>
+        {# Derecha: agregar nuevo lab, separado con borde y label propio #}
+        <form method="post" action="{{ url_for('laboratorio_create') }}"
+              class="flex flex-col gap-1.5 border-l border-surface-border pl-4">
+            <span class="text-[10px] uppercase tracking-wide font-semibold text-[#999]">Nuevo laboratorio</span>
+            <div class="flex gap-2">
+                <input type="text" name="nombre" placeholder="Nombre del lab" required
+                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-brand">
+                <button type="submit"
+                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
+                    + Agregar
+                </button>
+            </div>
         </form>
     </div>
 
@@ -134,22 +142,19 @@
                               d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
                     </svg>
                     <span class="font-bold text-sm">{{ lab.nombre }}</span>
+                    {% if lab.usa_packs %}
+                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(95,230,188,.18); color:#5fe6bc;" title="Usa packs — habilita Cargar Packs en Compras Laboratorio">📦 packs</span>
+                    {% endif %}
                     <span class="idtag">#{{ lab.id }}</span>
                 </div>
                 <div class="body">
                     <div class="flex items-center gap-1 flex-wrap">
-                        <a href="{{ url_for('productos_list') }}?lab={{ lab.id }}" class="stat-pill">
-                            <span class="num">{{ lab.prod_count }}</span> productos
-                        </a>
-                        <a href="{{ url_for('orders_list') }}?lab={{ lab.nombre }}" class="stat-pill">
-                            <span class="num">{{ lab.ped_count }}</span> pedidos
-                        </a>
-                        <a href="{{ url_for('dashboard') }}?laboratorio={{ lab.nombre }}" class="stat-pill">
-                            <span class="num">{{ lab.analytics_count }}</span> analytics
-                        </a>
-
-                        <span class="w-px h-4 bg-surface-border mx-2"></span>
-
+                        <label class="flex items-center gap-1 text-xs cursor-pointer select-none px-2 py-1 rounded border border-surface-border hover:bg-black/[0.03] mr-1"
+                               title="Si el lab usa packs, habilita 'Cargar Packs' en Compras Laboratorio.">
+                            <input type="checkbox" class="w-3.5 h-3.5" {% if lab.usa_packs %}checked{% endif %}
+                                   onchange="toggleUsaPacks({{ lab.id }}, this)">
+                            📦 Usa packs
+                        </label>
                         <a href="{{ url_for('modulo_packs_list') }}?lab={{ lab.nombre }}" class="action-link">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
@@ -207,10 +212,15 @@
                     </div>
                 </div>
             </div>
-            <form id="lab-edit-{{ lab.id }}" class="hidden flex gap-2 px-4 py-3"
+            <form id="lab-edit-{{ lab.id }}" class="hidden flex items-center gap-2 px-4 py-3"
                   method="post" action="{{ url_for('laboratorio_edit', lab_id=lab.id) }}">
                 <input type="text" name="nombre" value="{{ lab.nombre }}" required
                        class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+                <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none whitespace-nowrap"
+                       title="Si el lab maneja packs, habilita 'Cargar Packs' en Compras Laboratorio.">
+                    <input type="checkbox" name="usa_packs" value="1" class="w-3.5 h-3.5" {% if lab.usa_packs %}checked{% endif %}>
+                    📦 Usa packs
+                </label>
                 <button type="submit"
                     class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg transition-colors">
                     Guardar
@@ -273,24 +283,56 @@
 </div>
 
 <script>
+// Toggle directo de "usa packs" en cada card (guarda al instante, sin form).
+async function toggleUsaPacks(labId, chk) {
+    const prev = !chk.checked;
+    try {
+        const r = await fetch(`/api/laboratorio/${labId}/usa-packs`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({usa_packs: chk.checked}),
+        });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+    } catch (e) {
+        chk.checked = prev;  // revertir si fall\u00f3
+        alert('No se pudo guardar: ' + e.message);
+    }
+}
+
 function _normFilter(s) {
     return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
 }
+// Cache de filas + nombre normalizado precomputado (evita querySelectorAll +
+// re-normalizar 2000 veces por tecla). Se arma 1 vez (lazy).
+let _labRowsCache = null;
+function _buildLabCache() {
+    _labRowsCache = Array.from(document.querySelectorAll('.lab-row')).map(el => ({
+        el,
+        nombre: _normFilter(el.dataset.nombre),
+        matriz: el.dataset.matriz === 'y',
+    }));
+}
+// Debounce: filtra ~120ms después de la última tecla (no en cada pulsación).
+let _labFilterTimer = null;
 function filterLabs() {
+    clearTimeout(_labFilterTimer);
+    _labFilterTimer = setTimeout(_filterLabsNow, 120);
+}
+function _filterLabsNow() {
+    if (!_labRowsCache) _buildLabCache();
     const raw = document.getElementById('lab-filter').value;
     const tokens = _normFilter(raw).replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
-    const clearBtn = document.getElementById('lab-filter-clear');
-    clearBtn.classList.toggle('hidden', tokens.length === 0);
+    document.getElementById('lab-filter-clear').classList.toggle('hidden', tokens.length === 0);
     const soloMatriz = document.getElementById('filtro-matriz').checked;
     let visible = 0;
-    document.querySelectorAll('.lab-row').forEach(row => {
-        const nombre = _normFilter(row.dataset.nombre);
-        const matchNombre = tokens.length === 0 || tokens.every(t => nombre.includes(t));
-        const matchMatriz = !soloMatriz || row.dataset.matriz === 'y';
-        const match = matchNombre && matchMatriz;
-        row.classList.toggle('hidden', !match);
+    for (const r of _labRowsCache) {
+        const matchNombre = tokens.length === 0 || tokens.every(t => r.nombre.includes(t));
+        const match = matchNombre && (!soloMatriz || r.matriz);
+        // Solo tocar el DOM si el estado cambia (evita reflows innecesarios).
+        if (r.el.classList.contains('hidden') === match) {
+            r.el.classList.toggle('hidden', !match);
+        }
         if (match) visible++;
-    });
+    }
     const filteredEl = document.getElementById('lab-count-filtered');
     if (tokens.length) {
         filteredEl.textContent = `· ${visible} visible${visible !== 1 ? 's' : ''}`;

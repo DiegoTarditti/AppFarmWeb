@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+{% set nav_active = "compras" %}
+{% block title %}Compras Laboratorio — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cl-page { padding: 18px 24px 28px; max-width: 1100px; margin: 0 auto; }
+    .cl-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+    .cl-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+    .cl-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+
+    .cl-search {
+        width: 100%; background: var(--ds-surface-2); border: 1.5px solid var(--ds-line);
+        border-radius: 12px; padding: 12px 14px; font-size: 15px; color: var(--ds-text);
+        margin: 14px 0; outline: none;
+    }
+    .cl-search:focus { border-color: var(--ds-mint); box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+
+    /* Tabla de labs */
+    .cl-card { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; overflow: hidden; }
+    .cl-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+    .cl-table thead th {
+        position: sticky; top: 0; z-index: 10; background: rgba(0,0,0,.25);
+        color: var(--ds-text-mute); font-size: 9px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em; padding: 9px 14px;
+        text-align: left; border-bottom: 1px solid var(--ds-line);
+    }
+    .cl-table thead th.center { text-align: center; }
+    .cl-table thead th.right { text-align: right; }
+    .cl-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; }
+    .cl-table tbody tr:hover { background: rgba(95,230,188,.06); }
+    .cl-table tbody td { padding: 10px 14px; color: var(--ds-text); }
+    .cl-table tbody td.center { text-align: center; }
+    .cl-table tbody td.right { text-align: right; }
+    .cl-nombre { font-weight: 600; }
+    .cl-badge {
+        background: rgba(239,68,68,.14); color: #fca5a5; border: 1px solid rgba(239,68,68,.3);
+        border-radius: 99px; padding: 2px 9px; font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .cl-armar {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
+        color: #0a3a2a; border-radius: 8px; padding: 5px 12px;
+        font-size: 12px; font-weight: 700; text-decoration: none; white-space: nowrap;
+    }
+    .cl-armar:hover { filter: brightness(1.08); text-decoration: none; }
+    .cl-btn-sec {
+        display: inline-flex; align-items: center; gap: 4px;
+        background: rgba(0,0,0,.25); color: var(--ds-text-soft);
+        border: 1px solid var(--ds-line); border-radius: 6px; padding: 4px 10px;
+        font-size: 11px; font-weight: 600; text-decoration: none; white-space: nowrap;
+    }
+    .cl-btn-sec:hover { border-color: var(--ds-mint); color: var(--ds-mint); text-decoration: none; }
+    .cl-btn-sec.cl-btn-ok { background: rgba(95,230,188,.12); color: var(--ds-mint); border-color: rgba(95,230,188,.35); }
+    .cl-fecha { font-family: ui-monospace, Consolas, monospace; font-size: 11px; color: var(--ds-text-soft); white-space: nowrap; }
+    .cl-fecha.vacio { color: var(--ds-text-mute); }
+    .cl-empty { padding: 40px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px;
+                background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; }
+    .cl-empty.ok { color: var(--ds-mint); }
+    #cl-noresults { display: none; padding: 24px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="cl-page">
+    <a href="{{ url_for('index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Inicio</a>
+    <div class="cl-head" style="margin-top:6px;">
+        <span style="font-size:24px;">🧪</span>
+        <h1>Compras Laboratorio</h1>
+        <span class="sub">Elegí un laboratorio con productos bajo mínimo para armar el pedido (eje-lab, sin matriz droguería).</span>
+    </div>
+
+    {% if labs_con_alertas %}
+    <input type="text" id="cl-search" class="cl-search" autofocus
+           placeholder="Buscar laboratorio… (ej: roemmers)">
+    <div class="cl-card">
+        <table class="cl-table">
+            <thead>
+                <tr>
+                    <th>Laboratorio</th>
+                    <th class="center" title="Productos bajo mínimo en ObServer">Bajo mín</th>
+                    <th class="center">Pedido</th>
+                    <th class="center">Plantilla</th>
+                    <th class="center" title="Importar ofertas para este laboratorio">Ofertas</th>
+                    <th class="center" title="Cargar packs (solo labs marcados como 'usa packs')">Cargar Packs</th>
+                    <th class="center" title="Fecha del módulo de descuento activo">Módulos</th>
+                    <th class="center" title="Fecha de la última transfer (oferta) cargada">Transfers</th>
+                </tr>
+            </thead>
+            <tbody id="cl-tbody">
+                {% for l in labs_con_alertas %}
+                <tr data-nombre="{{ l.nombre|lower }}"
+                    onclick="window.location='{{ url_for('compras_dia_armar', lab_id=l.lab_id) }}'">
+                    <td class="cl-nombre">{{ l.nombre }}</td>
+                    <td class="center"><span class="cl-badge">{{ l.n }}</span></td>
+                    <td class="center">
+                        <a href="{{ url_for('compras_dia_armar', lab_id=l.lab_id) }}"
+                           class="cl-armar" onclick="event.stopPropagation()">📦 Armar →</a>
+                    </td>
+                    <td class="center">
+                        {% if l.lab_local_id %}
+                        <a href="{{ url_for('plantillas_list', tipo='laboratorio', id=l.lab_local_id) }}"
+                           class="cl-btn-sec {% if l.tiene_plantilla %}cl-btn-ok{% endif %}"
+                           onclick="event.stopPropagation()"
+                           title="{% if l.tiene_plantilla %}Plantilla: {{ l.plantilla_nombre }} — click para ver/editar{% else %}Configurar plantilla de exportación{% endif %}">
+                            {% if l.tiene_plantilla %}✓ {{ l.plantilla_nombre|truncate(20) }}{% else %}📄 Configurar{% endif %}
+                        </a>
+                        {% else %}
+                        <span class="cl-fecha vacio">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="center">
+                        <a href="{{ url_for('ofertas_import_page') }}{% if l.lab_local_id %}?lab_id={{ l.lab_local_id }}{% endif %}"
+                           class="cl-btn-sec" onclick="event.stopPropagation()"
+                           title="Importar ofertas para {{ l.nombre }}">
+                            📥 Importar
+                        </a>
+                    </td>
+                    <td class="center">
+                        {% if l.usa_packs %}
+                        <a href="{{ url_for('modulo_packs_list') }}?lab={{ l.nombre | urlencode }}"
+                           class="cl-btn-sec cl-btn-ok" onclick="event.stopPropagation()"
+                           title="Cargar packs de {{ l.nombre }}">
+                            📦 Cargar
+                        </a>
+                        {% else %}
+                        <span class="cl-fecha vacio" title="El lab no está marcado como 'usa packs' (editá el lab en /laboratorios)">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="center">
+                        {% if l.modulo_fecha %}
+                        <span class="cl-fecha">{{ l.modulo_fecha }}</span>
+                        {% else %}
+                        <span class="cl-fecha vacio">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="center">
+                        {% if l.transfer_fecha %}
+                        <span class="cl-fecha">{{ l.transfer_fecha }}</span>
+                        {% else %}
+                        <span class="cl-fecha vacio">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p id="cl-noresults">Sin coincidencias.</p>
+    <p style="font-size:11px; color:var(--ds-text-mute); margin-top:14px;">
+        {{ labs_con_alertas|length }} laboratorio{{ 's' if labs_con_alertas|length != 1 }} con productos bajo mínimo.
+    </p>
+    {% else %}
+    <div class="cl-empty ok">
+        <p style="font-size:28px;">✓</p>
+        <p style="font-weight:700;">Sin laboratorios con productos bajo mínimo.</p>
+        <p style="color:var(--ds-text-mute); margin-top:4px;">No hay nada urgente para reponer por laboratorio.</p>
+    </div>
+    {% endif %}
+</div>
+</div>
+
+<script>
+(function() {
+    const inp = document.getElementById('cl-search');
+    const tbody = document.getElementById('cl-tbody');
+    const noRes = document.getElementById('cl-noresults');
+    if (!inp || !tbody) return;
+    const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    inp.addEventListener('input', () => {
+        const tokens = norm(inp.value).split(/\s+/).filter(Boolean);
+        let visibles = 0;
+        tbody.querySelectorAll('tr').forEach(tr => {
+            const n = norm(tr.dataset.nombre);
+            const match = tokens.every(t => n.includes(t));
+            tr.style.display = match ? '' : 'none';
+            if (match) visibles++;
+        });
+        noRes.style.display = visibles === 0 ? 'block' : 'none';
+    });
+})();
+</script>
+{% endblock %}

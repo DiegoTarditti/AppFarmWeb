@@ -77,6 +77,24 @@
     }
     .ar-pill .sync-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(234,88,12,.4); }
 
+    /* Canal de compra (solo modo lab) */
+    .ar-canal {
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 6px 12px; border-radius: var(--ds-r-sm);
+        background: rgba(147,197,253,.08); border: 1px solid rgba(147,197,253,.3);
+    }
+    .ar-canal-lbl {
+        font-size: 9px; font-weight: 700; letter-spacing: .06em;
+        text-transform: uppercase; color: #93C5FD;
+    }
+    .ar-canal-opt { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer; color: var(--ds-text-soft); }
+    .ar-canal-opt input { accent-color: #93C5FD; }
+    .ar-canal select {
+        background: rgba(0,0,0,.3); border: 1px solid var(--ds-line);
+        color: var(--ds-text); border-radius: 4px; padding: 4px 8px;
+        font-size: 12px; outline: none; color-scheme: dark; transition: opacity .15s;
+    }
+
     /* Toggle buttons (filtro Drog: / Libres a:) */
     .toggle-drog {
         display: inline-flex; align-items: center; justify-content: center;
@@ -251,6 +269,32 @@
     <span class="ar-pill ok">
         Próximo cierre: <span style="font-weight: 700;">{{ cierre.hora_str }}</span> hs
     </span>
+    {% endif %}
+
+    {# Canal de compra — solo modo lab. Directo al lab o vía droguería.
+       Reemplaza la asignación por droguería ("Drog:" / "Libres a:") que solo
+       aplica en multi-drog. La droguería elegida acá define el canal del pedido. #}
+    {% if lab_id %}
+    <div class="ar-canal" id="ar-canal">
+        <span class="ar-canal-lbl">Canal:</span>
+        <label class="ar-canal-opt">
+            <input type="radio" name="ar-canal-radio" value="laboratorio" checked
+                   onchange="onArCanalChange()">
+            <span>Directo al lab</span>
+        </label>
+        <label class="ar-canal-opt">
+            <input type="radio" name="ar-canal-radio" value="drogueria"
+                   onchange="onArCanalChange()">
+            <span>Vía droguería</span>
+        </label>
+        <select id="ar-canal-drog" disabled onchange="onArCanalChange()"
+                title="Droguería del canal de compra" style="opacity:.5;">
+            <option value="">— elegí droguería —</option>
+            {% for d in droguerias_canal %}
+            <option value="{{ d.id }}">{{ d.nombre }}</option>
+            {% endfor %}
+        </select>
+    </div>
     {% endif %}
 
     {# Slider "Cubrir por N días" — solo en modo compra a lab. En modo REPO
@@ -442,7 +486,10 @@
         Mostrar ⚠ otra drog
     </label>
     {% endif %}
-    {% if not prov and drog_label %}
+    {# Sección "Drog:" + "Libres a:" solo en modo multi-droguería. En modo lab
+       (?lab_id=N) la droguería se define con el selector de Canal de arriba,
+       así que esta asignación por fila no aplica. #}
+    {% if not prov and not lab_id and drog_label %}
     {% set _siglas_unicas = drog_label.values() | unique | list %}
     <div class="flex items-start gap-4 text-[11px]" style="border-left: 1px solid var(--ds-line-2); padding-left: 12px; margin-left: 4px; color: var(--ds-text-soft);">
         {# Columna 1: filtro Drog (toggle buttons vertical) #}
@@ -734,6 +781,18 @@
 </div>{# /flex-1 overflow-auto wrapper #}
 
 <script>
+// Canal de compra (modo lab): habilita el dropdown de droguería solo cuando
+// se elige "Vía droguería". El valor queda disponible para el armado del pedido.
+function onArCanalChange() {
+    const radio = document.querySelector('input[name="ar-canal-radio"]:checked');
+    const drog = document.getElementById('ar-canal-drog');
+    if (!radio || !drog) return;
+    const esDrog = radio.value === 'drogueria';
+    drog.disabled = !esDrog;
+    drog.style.opacity = esDrog ? '1' : '.5';
+    if (!esDrog) drog.value = '';
+}
+
 // Sincroniza stock contra ObServer y recarga la página al terminar.
 async function sincronizarStockAhora(btn) {
     const original = btn.textContent;
