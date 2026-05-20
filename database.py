@@ -1714,7 +1714,11 @@ def init_engine(database_url=None):
     database_url = database_url or os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db')
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    engine = create_engine(database_url, echo=False, future=True)
+    is_postgres = not database_url.startswith('sqlite')
+    connect_args = {'connect_timeout': 10} if is_postgres else {}
+    engine = create_engine(database_url, echo=False, future=True,
+                           connect_args=connect_args,
+                           pool_timeout=15, pool_pre_ping=True)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
                                expire_on_commit=False)
     return database_url
