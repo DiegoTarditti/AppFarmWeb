@@ -1,0 +1,42 @@
+{# Botón flotante de impresión + CSS print apaisado genérico.
+   Uso: incluir UNA vez dentro del {% block main %} de cualquier informe:
+        {% include '_print_pdf.html' %}
+   No depende de prefijos de clase específicos — sirve para cualquier
+   pantalla theme-emerald con tablas. #}
+<button type="button" onclick="window.print()" class="print-fab no-print"
+        title="Imprimir / Guardar como PDF (apaisado)">🖨️ PDF</button>
+<style>
+.print-fab {
+    position: fixed; top: 54px; right: 18px; z-index: 60;
+    background: rgba(95,230,188,.14); color: var(--ds-mint, #5fe6bc);
+    border: 1px solid var(--ds-mint, #5fe6bc); border-radius: 8px;
+    padding: 7px 13px; font-size: 12px; font-weight: 700; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+.print-fab:hover { background: rgba(95,230,188,.28); }
+
+@media print {
+    @page { size: landscape; margin: 10mm; }
+    /* Ocultar chrome de la app + el propio botón. */
+    aside, .no-print, .print-fab { display: none !important; }
+    /* Liberar el layout h-screen+overflow para que el contenido fluya en
+       varias páginas en vez de cortarse a una pantalla. */
+    html, body { background: #fff !important; height: auto !important; overflow: visible !important; }
+    .flex-1 { height: auto !important; overflow: visible !important; display: block !important; }
+    /* Texto legible en papel. */
+    body * { color: #111 !important; }
+    /* Superficies oscuras → fondo blanco con borde gris. */
+    [class*="surface"], [class*="card"], [class*="-card"], [class*="-bucket"],
+    [class*="-kpi"], [class*="-tot"], [class*="-note"], [class*="-banner"] {
+        background: #fff !important; border-color: #ccc !important;
+        box-shadow: none !important;
+    }
+    /* Tablas. */
+    table { border-collapse: collapse !important; width: 100% !important; }
+    thead th { position: static !important; background: #e8e8e8 !important;
+               border-bottom: 1px solid #999 !important; }
+    th, td { border-color: #ddd !important; }
+    tbody tr { page-break-inside: avoid; }
+    tbody tr:hover { background: transparent !important; }
+}
+</style>

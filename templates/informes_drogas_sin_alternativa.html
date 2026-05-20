@@ -2,6 +2,7 @@
 {% set nav_active = "informes" %}
 {% block title %}Drogas sin alternativa — Informes{% endblock %}
 {% block main %}
+{% include '_print_pdf.html' %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <a href="{{ url_for('informes_index') }}"

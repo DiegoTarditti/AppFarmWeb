@@ -1055,7 +1055,7 @@
 
     {# ── Top bar desktop ── #}
     {% if current_user.is_authenticated %}
-    <div class="hidden lg:flex items-center justify-between gap-3 px-5 h-11 border-b flex-shrink-0 {% if nav_active == 'inicio' %}bg-transparent border-transparent{% else %}bg-white border-[#ececec]{% endif %}">
+    <div class="hidden lg:flex items-center justify-between gap-3 px-5 h-11 border-b flex-shrink-0 no-print {% if nav_active == 'inicio' %}bg-transparent border-transparent{% else %}bg-white border-[#ececec]{% endif %}">
         <p class="text-[12px] font-semibold text-[#6b7280] truncate" title="{{ self.title() }}">
             {{ self.title() | replace(' — Farmacia Badía','') | replace(' — Farmacia','') }}
         </p>

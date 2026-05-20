@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Ranking lab vs nacional — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+{% block extra_head %}{% include '_lab_ref_styles.html' %}{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="lr-page">
+    {% set titulo = 'Mi ranking del lab vs nacional' %}
+    {% set subtitulo = 'Tu top de productos, marcando los que son marca estrella del país.' %}
+    {% set icono = '🏆' %}
+    {% set endpoint = 'informe_lab_ranking_nacional' %}
+    {% include '_lab_ref_header.html' %}
+
+    {% if not lab_id %}
+    <div class="lr-empty"><p style="font-size:24px;">🧪</p><p>Elegí un laboratorio.</p></div>
+    {% elif not data %}
+    <div class="lr-empty"><p style="font-size:24px;">📭</p><p>No hay dataset de referencia para este laboratorio.</p></div>
+    {% else %}
+    <div class="lr-kpis">
+        <div class="lr-kpi"><div class="lbl">Productos en el top</div><div class="val">{{ data.productos|length }}</div></div>
+        <div class="lr-kpi">
+            <div class="lbl">Marcas estrella en tu top</div>
+            <div class="val mint">{{ data.n_estrella_en_top }} / {{ data.n_estrella_total }}</div>
+        </div>
+    </div>
+
+    <div class="lr-note">
+        Si las <span class="lr-star">⭐</span> marcas estrella nacionales aparecen alto en tu ranking,
+        tu mix sigue al mercado. Si están bajas o ausentes, tenés un perfil de venta propio
+        (o un problema de datos: ventas sin sincronizar / producto sin master).
+    </div>
+
+    <div class="lr-card">
+        <table class="lr-table">
+            <thead>
+                <tr>
+                    <th class="center" style="width:36px;">#</th>
+                    <th class="left">Producto</th>
+                    <th class="center" title="Marca estrella nacional (top 10 país)">Estrella</th>
+                    <th title="Unidades vendidas en 12m">u 12m</th>
+                    <th title="Promedio mensual">u/mes</th>
+                    <th title="Monto vendido en 12m">$ 12m</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in data.productos %}
+                <tr>
+                    <td class="center muted">{{ loop.index }}</td>
+                    <td class="left" style="font-weight:600;">{{ p.descripcion }}</td>
+                    <td class="center">
+                        {% if p.marca_estrella %}
+                        <span class="lr-tag roe" title="Marca estrella nacional">⭐ {{ p.marca_estrella }}</span>
+                        {% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                    <td><b>{{ '{:,}'.format(p.u12m).replace(',', '.') }}</b></td>
+                    <td class="muted">{{ p.u_mensual }}</td>
+                    <td>${{ '{:,.0f}'.format(p.monto).replace(',', '.') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+</div>
+{% endblock %}

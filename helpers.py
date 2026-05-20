@@ -1627,3 +1627,217 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
         'sin_alerta': sin_alerta,
         'top': top_items,
     }
+
+
+def _sin_acentos(s):
+    """lowercase + sin acentos, para matching insensible a tildes.
+
+    PostgreSQL ILIKE es case-insensitive pero NO accent-insensitive:
+    '%LOSARTAN%' no matchea 'Losartán'. Por eso normalizamos en Python.
+    """
+    import unicodedata
+    if not s:
+        return ''
+    s = str(s).lower()
+    return ''.join(c for c in unicodedata.normalize('NFKD', s)
+                   if not unicodedata.combining(c))
+
+
+def _ventana_12m_ym(hoy=None):
+    """Devuelve (desde_ym, hasta_ym) como ints YYYYMM para los últimos 12 meses."""
+    from datetime import date as _date
+    if hoy is None:
+        hoy = _date.today()
+    hasta = hoy.year * 100 + hoy.month
+    desde_y = hoy.year - 1
+    desde_m = hoy.month + 1
+    if desde_m > 12:
+        desde_m -= 12
+        desde_y += 1
+    return desde_y * 100 + desde_m, hasta
+
+
+def analizar_gap_marcas(session, lab_observer_id):
+    """Informe 1 — Gap de captura por marca estrella.
+
+    Para cada marca del portfolio de referencia del lab, cruza contra las
+    ventas propias (u12m + monto) de los productos de ese lab cuya descripción
+    matchea el patrón de la marca. Detecta marcas líderes a nivel país que la
+    farmacia vende poco o nada → oportunidad de captura.
+
+    Returns dict {nombre_lab, nota, total_u12m, total_monto, marcas: [...]} o None.
+    """
+    import referencia_mercado
+    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
+    if not ref:
+        return None
+    from sqlalchemy import func as _f
+    desde, hasta = _ventana_12m_ym()
+
+    marcas_out = []
+    total_u, total_m = 0, 0.0
+    for marca, molecula, indicacion, top10, match in ref['marcas']:
+        prods = (session.query(database.ObsProducto.observer_id)
+                 .filter(database.ObsProducto.laboratorio_observer == lab_observer_id,
+                         database.ObsProducto.descripcion.ilike(f'%{match}%'),
+                         database.ObsProducto.fecha_baja.is_(None))
+                 .all())
+        pids = [p[0] for p in prods]
+        u12m, monto = 0, 0.0
+        if pids:
+            vm = database.ObsVentaMensual
+            row = (session.query(_f.sum(vm.unidades), _f.sum(vm.monto))
+                   .filter(vm.producto_observer.in_(pids),
+                           vm.anio * 100 + vm.mes >= desde,
+                           vm.anio * 100 + vm.mes <= hasta)
+                   .first())
+            u12m = int(row[0] or 0)
+            monto = float(row[1] or 0)
+        total_u += u12m
+        total_m += monto
+        marcas_out.append({
+            'marca': marca, 'molecula': molecula, 'indicacion': indicacion,
+            'top10_nacional': top10, 'n_productos': len(pids),
+            'u12m': u12m, 'u_mensual': round(u12m / 12.0, 1),
+            'monto': round(monto, 2), 'vende': u12m > 0,
+        })
+    # Orden: top10 nacional primero, dentro de cada grupo por u12m desc.
+    marcas_out.sort(key=lambda m: (not m['top10_nacional'], -m['u12m']))
+    return {
+        'nombre_lab': ref['nombre'], 'nota': ref.get('nota', ''),
+        'total_u12m': total_u, 'total_monto': round(total_m, 2),
+        'marcas': marcas_out,
+    }
+
+
+def analizar_ranking_vs_nacional(session, lab_observer_id, limit=30):
+    """Informe 2 — Mi ranking del lab vs marcas estrella nacionales.
+
+    Top `limit` productos del lab por unidades 12m, marcando cuáles
+    corresponden a una marca estrella (top 10 nacional). Valida si el mix
+    propio sigue al mercado o tiene perfil distinto.
+
+    Returns dict {nombre_lab, productos: [...], n_estrella_en_top} o None.
+    """
+    import referencia_mercado
+    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
+    if not ref:
+        return None
+    from sqlalchemy import func as _f
+    desde, hasta = _ventana_12m_ym()
+
+    vm = database.ObsVentaMensual
+    op = database.ObsProducto
+    rows = (session.query(op.observer_id, op.descripcion,
+                          _f.coalesce(_f.sum(vm.unidades), 0).label('u12m'),
+                          _f.coalesce(_f.sum(vm.monto), 0).label('m12m'))
+            .outerjoin(vm, (vm.producto_observer == op.observer_id) &
+                       (vm.anio * 100 + vm.mes >= desde) &
+                       (vm.anio * 100 + vm.mes <= hasta))
+            .filter(op.laboratorio_observer == lab_observer_id,
+                    op.fecha_baja.is_(None))
+            .group_by(op.observer_id, op.descripcion)
+            .order_by(_f.coalesce(_f.sum(vm.unidades), 0).desc())
+            .limit(limit)
+            .all())
+
+    # Mapa de marcas estrella (top10) para tag rápido por substring.
+    estrellas = [(marca, match) for marca, _mol, _ind, top10, match
+                 in ref['marcas'] if top10]
+    productos = []
+    n_estrella = 0
+    for r in rows:
+        desc_up = (r.descripcion or '').upper()
+        marca_estrella = None
+        for marca, match in estrellas:
+            if match.upper() in desc_up:
+                marca_estrella = marca
+                break
+        if marca_estrella:
+            n_estrella += 1
+        productos.append({
+            'observer_id': r.observer_id,
+            'descripcion': r.descripcion,
+            'u12m': int(r.u12m or 0),
+            'u_mensual': round(int(r.u12m or 0) / 12.0, 1),
+            'monto': round(float(r.m12m or 0), 2),
+            'marca_estrella': marca_estrella,
+        })
+    return {
+        'nombre_lab': ref['nombre'],
+        'productos': productos,
+        'n_estrella_en_top': n_estrella,
+        'n_estrella_total': len(estrellas),
+    }
+
+
+def analizar_cobertura_moleculas(session, lab_observer_id):
+    """Informe 3 — Cobertura de moléculas líderes nacionales.
+
+    Por cada molécula del ranking nacional: ¿la vende la farmacia? ¿Con la
+    marca del lab de referencia o con competencia/genérico? Detecta dónde se
+    puede migrar a la marca líder o capturar más demanda.
+
+    El cruce de "molécula" es por ObsNombreDroga.descripcion (ILIKE).
+    Ventas separadas: total de la droga vs lo que aporta el lab de referencia.
+
+    Returns dict {nombre_lab, moleculas: [...]} o None.
+    """
+    import referencia_mercado
+    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
+    if not ref:
+        return None
+    from sqlalchemy import func as _f
+    desde, hasta = _ventana_12m_ym()
+    vm = database.ObsVentaMensual
+    op = database.ObsProducto
+    nd = database.ObsNombreDroga
+
+    # Traer todas las drogas una vez y normalizar (sin acentos) para matchear
+    # los patrones de referencia sin depender de ILIKE accent-sensitive.
+    todas_drogas = [(d[0], _sin_acentos(d[1]))
+                    for d in session.query(nd.observer_id, nd.descripcion).all()]
+
+    moleculas_out = []
+    for molecula, ranking, marca_roe, lider, match_droga in ref['moleculas_lideres']:
+        # Match normalizado: el patrón puede tener '%' como separador (ej.
+        # 'AMOXICILINA%CLAVUL' = ambas partes presentes en cualquier orden).
+        partes = [_sin_acentos(p) for p in match_droga.split('%') if p.strip()]
+        droga_ids = [did for did, dnorm in todas_drogas
+                     if all(p in dnorm for p in partes)]
+        u_total, u_lab = 0, 0
+        n_prod_total, n_prod_lab = 0, 0
+        if droga_ids:
+            # Productos de esa droga (cualquier lab) con ventas.
+            prod_rows = (session.query(op.observer_id, op.laboratorio_observer)
+                         .filter(op.nombre_droga_observer.in_(droga_ids),
+                                 op.fecha_baja.is_(None)).all())
+            pids = [p[0] for p in prod_rows]
+            pids_lab = [p[0] for p in prod_rows if p[1] == lab_observer_id]
+            n_prod_total, n_prod_lab = len(pids), len(pids_lab)
+            if pids:
+                row = (session.query(_f.sum(vm.unidades))
+                       .filter(vm.producto_observer.in_(pids),
+                               vm.anio * 100 + vm.mes >= desde,
+                               vm.anio * 100 + vm.mes <= hasta).first())
+                u_total = int(row[0] or 0)
+            if pids_lab:
+                row = (session.query(_f.sum(vm.unidades))
+                       .filter(vm.producto_observer.in_(pids_lab),
+                               vm.anio * 100 + vm.mes >= desde,
+                               vm.anio * 100 + vm.mes <= hasta).first())
+                u_lab = int(row[0] or 0)
+        u_comp = max(0, u_total - u_lab)
+        share_lab = round(u_lab / u_total * 100, 1) if u_total else 0.0
+        moleculas_out.append({
+            'molecula': molecula, 'ranking': ranking,
+            'marca_roemmers': marca_roe, 'lider_mercado': lider,
+            'vende': u_total > 0,
+            'u12m_total': u_total, 'u12m_lab': u_lab, 'u12m_competencia': u_comp,
+            'share_lab_pct': share_lab,
+            'n_productos_total': n_prod_total, 'n_productos_lab': n_prod_lab,
+        })
+    return {
+        'nombre_lab': ref['nombre'],
+        'moleculas': moleculas_out,
+    }

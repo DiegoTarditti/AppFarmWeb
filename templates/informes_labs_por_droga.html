@@ -2,6 +2,7 @@
 {% set nav_active = "informes" %}
 {% block title %}Labs por droga — Informes{% endblock %}
 {% block main %}
+{% include '_print_pdf.html' %}
 {# Modal de gráfico histórico (mismo de order_detail) #}
 {% include '_grafico_historico.html' %}
 

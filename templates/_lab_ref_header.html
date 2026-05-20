@@ -1,0 +1,28 @@
+{# Header + selector de lab para los informes de comparación portfolio-líder.
+   Espera: titulo, subtitulo, icono, endpoint (nombre de ruta), labs_ref, lab_id, data.
+   Estilos con prefijo lr- definidos en cada template padre (compartidos). #}
+<a href="{{ url_for('informes_index') }}" class="text-xs no-print" style="color:var(--ds-text-mute);">← Mis Informes</a>
+<div class="lr-head" style="margin-top:6px;">
+    <span style="font-size:24px;">{{ icono }}</span>
+    <h1>{{ titulo }}</h1>
+    <span class="sub">{{ subtitulo }}</span>
+    {% if data %}
+    <button type="button" onclick="window.print()" class="lr-print-btn no-print"
+            title="Imprimir / Guardar como PDF (apaisado)">🖨️ Imprimir / PDF</button>
+    {% endif %}
+</div>
+
+<form method="get" action="{{ url_for(endpoint) }}" class="lr-filters no-print">
+    <label for="lab-sel">Laboratorio:</label>
+    <select id="lab-sel" name="lab_id" onchange="this.form.submit()">
+        <option value="">— Elegí un lab —</option>
+        {% for l in labs_ref %}
+        <option value="{{ l.id }}" {% if lab_id == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+        {% endfor %}
+    </select>
+    {% if not labs_ref %}
+    <span class="hint">No hay laboratorios con dataset de referencia cargado.</span>
+    {% else %}
+    <span class="hint">Cruza el portfolio líder (IQVIA) contra tus ventas reales de los últimos 12 meses.</span>
+    {% endif %}
+</form>

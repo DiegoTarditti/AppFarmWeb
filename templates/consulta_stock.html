@@ -7,9 +7,9 @@
 {% block extra_head %}
 <style>
 /* Mobile-first: hit targets grandes, padding generoso, sin overflow horizontal. */
-.cs-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
-.cs-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
-.cs-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+.cs-screen { max-width: 560px; margin: 0 auto; padding: 12px 14px; }
+.cs-h1 { font-size: 18px; font-weight: 700; color: var(--ds-text); margin-bottom: 1px; }
+.cs-sub { font-size: 11.5px; color: var(--ds-text-mute); margin-bottom: 10px; line-height: 1.3; }
 
 .cs-banner { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
 .cs-banner.ok { background: rgba(95,230,188,.12); color: var(--ds-mint); border: 1px solid rgba(95,230,188,.3); }
@@ -21,7 +21,7 @@
 .cs-label { font-size: 11px; font-weight: 700; color: var(--ds-text-soft);
             text-transform: uppercase; letter-spacing: .06em;
             margin-bottom: 6px; display: block; }
-.cs-group { margin-bottom: 18px; }
+.cs-group { margin-bottom: 12px; }
 
 /* Tipo: 2 botones tipo "segmented control" grandes para touch (Prov se removió: sin flujo). */
 .cs-tipo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -43,10 +43,16 @@ input[type=radio]:checked + .cs-tipo-btn {
 .cs-input:focus { outline: none; border-color: var(--ds-mint);
                   box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
 
-/* CTA sticky abajo. */
+/* CTA sticky abajo. Fondo SÓLIDO (no gradiente transparente) para que al
+   pegarse abajo en mobile NO se transparente el slider que queda detrás
+   → antes se veía "encimado" el thumb del slider con el botón. El fade
+   visual lo da un pseudo-elemento de 16px por encima de la barra. */
 .cs-cta-bar { position: sticky; bottom: 0; padding: 12px 0 16px;
-              background: linear-gradient(to top, var(--ds-bg) 60%, transparent);
+              background: var(--ds-bg);
               margin-top: 16px; }
+.cs-cta-bar::before { content: ''; position: absolute; left: 0; right: 0;
+              top: -16px; height: 16px; pointer-events: none;
+              background: linear-gradient(to top, var(--ds-bg), transparent); }
 .cs-cta { display: block; width: 100%; padding: 16px;
           background: linear-gradient(135deg, var(--ds-mint), var(--ds-mint-deep));
           color: #0a3a2a; font-size: 16px; font-weight: 700;
@@ -107,8 +113,8 @@ input[type=radio]:checked + .cs-tipo-btn {
 
 {% block main %}
 <div class="cs-screen">
-    <h1 class="cs-h1">📦 Consulta de stock</h1>
-    <p class="cs-sub">Análisis rápido de inventario por laboratorio, droguería o proveedor.</p>
+    <h1 class="cs-h1">📱 UX - Mobile</h1>
+    <p class="cs-sub">Análisis Rápido</p>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% for cat, msg in messages %}
@@ -146,15 +152,15 @@ input[type=radio]:checked + .cs-tipo-btn {
         <span style="color:var(--ds-mint);">✓ {{ label }} al día</span>
       {% endif %}
     {%- endmacro %}
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
         <div class="cs-banner {{ 'warn' if estado_ventas.estado == 'viejo' else ('info' if estado_ventas.dias and estado_ventas.dias > 1 else 'ok') }}"
-             style="flex:1;margin-bottom:0;display:flex;gap:14px;flex-wrap:wrap;align-items:center;">
+             style="flex:1;margin-bottom:0;padding:6px 10px;font-size:11.5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
             {{ _sub_line('Stock',  estado_ventas.stock) }}
             <span style="opacity:.3;">|</span>
             {{ _sub_line('Ventas', estado_ventas.ventas) }}
         </div>
         <button type="button" id="btn-sync-stock" class="cs-cta--alt"
-                style="margin:0;width:auto;padding:10px 14px;font-size:13px;"
+                style="margin:0;width:auto;padding:7px 12px;font-size:12px;"
                 title="Sincroniza stock con ObServer.">🔄 Sync</button>
     </div>
     {% endif %}
