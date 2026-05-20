@@ -33,43 +33,22 @@ def init_app(app):
 
     @app.route('/laboratorios')
     def laboratorios_list():
-        from sqlalchemy import func as _func
         with database.get_db() as session:
             labs = (session.query(Laboratorio)
                     .filter(Laboratorio.activo == True)
                     .order_by(Laboratorio.nombre).all())
-            lab_ids   = [l.id     for l in labs]
-            lab_names = [l.nombre for l in labs]
 
-            prod_map = dict(
-                session.query(Producto.laboratorio_id, _func.count(Producto.id))
-                .filter(Producto.laboratorio_id.in_(lab_ids))
-                .group_by(Producto.laboratorio_id).all()
-            ) if lab_ids else {}
-
-            ped_map = dict(
-                session.query(database.Pedido.laboratorio, _func.count(database.Pedido.id))
-                .filter(database.Pedido.laboratorio.in_(lab_names))
-                .group_by(database.Pedido.laboratorio).all()
-            ) if lab_names else {}
-
-            analytics_map = dict(
-                session.query(database.ProductAnalytics.laboratorio,
-                              _func.count(database.ProductAnalytics.codigo_barra))
-                .filter(database.ProductAnalytics.laboratorio.in_(lab_names))
-                .group_by(database.ProductAnalytics.laboratorio).all()
-            ) if lab_names else {}
-
+            # Los chips "N productos / N pedidos / N analytics" se sacaron: con
+            # ~2000 labs esas 3 agregaciones hacían lenta la pantalla y no
+            # aportaban. Solo necesitamos saber qué labs están en la matriz.
             from database import LaboratorioDrogueria
             labs_en_matriz = set(
                 r[0] for r in session.query(LaboratorioDrogueria.laboratorio_id).distinct().all()
             )
             data = [{
                 'id': l.id, 'nombre': l.nombre,
-                'prod_count':      prod_map.get(l.id, 0),
-                'ped_count':       ped_map.get(l.nombre, 0),
-                'analytics_count': analytics_map.get(l.nombre, 0),
                 'en_matriz':       l.id in labs_en_matriz,
+                'usa_packs':       bool(l.usa_packs),
             } for l in labs]
         import observer_source
         return render_template('laboratorios.html', laboratorios=data,
@@ -95,6 +74,21 @@ def init_app(app):
             session.commit()
         return redirect(next_url)
 
+    @app.route('/api/laboratorio/<int:lab_id>/usa-packs', methods=['POST'])
+    @login_required
+    def laboratorio_toggle_packs(lab_id):
+        """Togglea Laboratorio.usa_packs (check directo en el ABM de labs).
+        Body JSON: {usa_packs: bool}."""
+        data = request.get_json(silent=True) or {}
+        valor = bool(data.get('usa_packs'))
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Lab inexistente'}), 404
+            lab.usa_packs = valor
+            session.commit()
+        return jsonify({'ok': True, 'usa_packs': valor})
+
     @app.route('/laboratorio/<int:lab_id>/edit', methods=['POST'])
     @login_required
     def laboratorio_edit(lab_id):
@@ -114,6 +108,7 @@ def init_app(app):
                     flash(f'Ya existe otro laboratorio: "{c.nombre}". No se renombró para evitar duplicado.')
                     return redirect(url_for('laboratorios_list'))
             lab.nombre = nombre
+            lab.usa_packs = request.form.get('usa_packs') == '1'
             session.commit()
         return redirect(url_for('laboratorios_list'))
 

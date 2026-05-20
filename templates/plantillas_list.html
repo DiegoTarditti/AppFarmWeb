@@ -46,6 +46,11 @@
 <main class="flex-1 p-6">
 <div class="max-w-6xl mx-auto">
 
+  <button type="button" onclick="if(history.length>1){history.back()}else{location.href='/'}"
+          class="mb-3 inline-flex items-center gap-1.5 text-sm font-semibold text-[#1F5D40] hover:text-[#2E7D5B] hover:underline">
+    ← Volver
+  </button>
+
   <div class="text-xs text-[#5f6c64] mb-3">
     <a href="/" class="hover:text-[#1F5D40]">Inicio</a> ›
     <span>{{ entidad_label_plural }}</span> ›

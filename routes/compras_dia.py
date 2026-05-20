@@ -29,6 +29,43 @@ DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 TARGET_DIAS_COBERTURA_DEFAULT = 7
 
 
+def _calcular_labs_con_alertas(session):
+    """Labs con al menos 1 producto bajo mínimo en ObServer.
+
+    Lo usa la pantalla /compras/laboratorio (selector de lab para armar
+    pedido por laboratorio). Devuelve [{lab_id, nombre, n}, ...] orden alfa.
+    """
+    from sqlalchemy import distinct as _distinct
+    from sqlalchemy import func as _func2
+
+    from database import ObsLaboratorio, ObsProducto, ObsStock
+    _stock_lab = (
+        session.query(
+            ObsStock.producto_observer.label('pid'),
+            _func2.sum(ObsStock.stock_actual).label('stock'),
+            _func2.sum(ObsStock.minimo).label('minimo'),
+        )
+        .filter(ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
+        .group_by(ObsStock.producto_observer)
+        .subquery()
+    )
+    q = (
+        session.query(
+            ObsLaboratorio.observer_id,
+            ObsLaboratorio.descripcion,
+            _func2.count(_distinct(ObsProducto.observer_id)).label('n'),
+        )
+        .join(ObsProducto,
+              ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
+        .join(_stock_lab, _stock_lab.c.pid == ObsProducto.observer_id)
+        .filter(ObsProducto.fecha_baja.is_(None))
+        .filter(_stock_lab.c.stock < _stock_lab.c.minimo)
+        .group_by(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
+        .order_by(ObsLaboratorio.descripcion.asc())
+    )
+    return [{'lab_id': r[0], 'nombre': r[1], 'n': int(r[2])} for r in q.all()]
+
+
 def _sigla_drog(nombre):
     """Genera sigla corta para una droguería: 'Kellerhoff' → 'Kel',
     '20 de Junio' → '20J'. Para mostrar como badge en el armado."""
@@ -167,49 +204,14 @@ def init_app(app):
             sin_horarios = [{'id': p.id, 'nombre': p.razon_social}
                             for p in drogerias_sin_horarios]
 
-            # Labs con al menos 1 producto bajo mínimo (para el dropdown
-            # "🧪 Laboratorio" del top bar), así no presentamos labs vacíos
-            # al usuario.
-            from sqlalchemy import distinct as _distinct
-            from sqlalchemy import func as _func2
-
-            from database import ObsLaboratorio, ObsProducto, ObsStock
-            _stock_lab = (
-                session.query(
-                    ObsStock.producto_observer.label('pid'),
-                    _func2.sum(ObsStock.stock_actual).label('stock'),
-                    _func2.sum(ObsStock.minimo).label('minimo'),
-                )
-                .filter(ObsStock.minimo.isnot(None),
-                        ObsStock.minimo > 0)
-                .group_by(ObsStock.producto_observer)
-                .subquery()
-            )
-            _labs_alertas_q = (
-                session.query(
-                    ObsLaboratorio.observer_id,
-                    ObsLaboratorio.descripcion,
-                    _func2.count(_distinct(ObsProducto.observer_id)).label('n'),
-                )
-                .join(ObsProducto,
-                      ObsProducto.laboratorio_observer == ObsLaboratorio.observer_id)
-                .join(_stock_lab, _stock_lab.c.pid == ObsProducto.observer_id)
-                .filter(ObsProducto.fecha_baja.is_(None))
-                .filter(_stock_lab.c.stock < _stock_lab.c.minimo)
-                .group_by(ObsLaboratorio.observer_id, ObsLaboratorio.descripcion)
-                .order_by(ObsLaboratorio.descripcion.asc())
-            )
-            labs_con_alertas = [
-                {'lab_id': r[0], 'nombre': r[1], 'n': int(r[2])}
-                for r in _labs_alertas_q.all()
-            ]
-
             # Card "Comportamientos activos": resumen de ProductoFlag vigentes,
             # agrupado por slug. Se muestra arriba para que el operador vea al
             # toque qué productos tienen reglas especiales hoy (sin tener que
             # entrar al armado para descubrirlos).
             import json as _json_cb
             from datetime import date as _date_cb
+
+            from sqlalchemy import func as _func2
 
             from database import ProductoFlag, TipoPedidoConfig
             _hoy = _date_cb.today()
@@ -249,9 +251,90 @@ def init_app(app):
                                proveedores=proveedores,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS,
-                               labs_con_alertas=labs_con_alertas,
                                comportamientos=comportamientos,
                                comportamientos_total=comportamientos_total)
+
+    @app.route('/compras/laboratorio')
+    @login_required
+    def compras_laboratorio():
+        """Selector de laboratorio para armar pedido por lab (entrada desde el
+        card "Compras Laboratorio" del home). Lista labs con productos bajo
+        mínimo; al elegir uno → /pedidos/dia/armar?lab_id=N.
+
+        Cada fila se enriquece con: lab local id, si tiene plantilla de export
+        configurada, fecha del módulo activo y fecha de la última transfer
+        (OfertaMinimo) — para que el operador vea de un vistazo qué tan
+        actualizado está cada lab.
+        """
+        from sqlalchemy import func as _f
+
+        from database import (
+            Laboratorio,
+            Modulo,
+            OfertaMinimo,
+            Plantilla,
+        )
+        with get_db() as session:
+            labs = _calcular_labs_con_alertas(session)
+            obs_ids = [l['lab_id'] for l in labs]
+
+            # Map observer_id → Laboratorio local id (los módulos/ofertas/
+            # plantillas se relacionan por el id LOCAL del lab).
+            local_por_obs = {}
+            usa_packs_por_local = {}
+            if obs_ids:
+                for obs_id, loc_id, up in (session.query(
+                        Laboratorio.observer_id, Laboratorio.id, Laboratorio.usa_packs)
+                        .filter(Laboratorio.observer_id.in_(obs_ids)).all()):
+                    local_por_obs[obs_id] = loc_id
+                    usa_packs_por_local[loc_id] = bool(up)
+            local_ids = list(local_por_obs.values())
+
+            # Plantillas configuradas (tabla unificada Plantilla, entidad lab).
+            # Guardamos el nombre de la plantilla por lab (la default primero;
+            # si no hay default, la primera alfabética) para mostrarlo en la fila.
+            plantilla_nombre = {}
+            if local_ids:
+                for ent_id, nombre, es_def in (session.query(
+                        Plantilla.entidad_id, Plantilla.nombre, Plantilla.es_default)
+                        .filter(Plantilla.entidad_tipo == 'laboratorio',
+                                Plantilla.entidad_id.in_(local_ids))
+                        .order_by(Plantilla.es_default.desc(), Plantilla.nombre).all()):
+                    # Primera aparición por lab gana (default > alfabético).
+                    if ent_id not in plantilla_nombre:
+                        plantilla_nombre[ent_id] = nombre
+
+            # Módulo activo más reciente por lab (Modulo.activo, creado_en).
+            modulo_fecha = {}
+            if local_ids:
+                for lab_local_id, fmax in (session.query(
+                        Modulo.laboratorio_id, _f.max(Modulo.creado_en))
+                        .filter(Modulo.laboratorio_id.in_(local_ids),
+                                Modulo.activo.is_(True))
+                        .group_by(Modulo.laboratorio_id).all()):
+                    modulo_fecha[lab_local_id] = fmax
+
+            # Última transfer (OfertaMinimo) por lab — fecha de actualización.
+            transfer_fecha = {}
+            if local_ids:
+                for lab_local_id, fmax in (session.query(
+                        OfertaMinimo.laboratorio_id, _f.max(OfertaMinimo.actualizado_en))
+                        .filter(OfertaMinimo.laboratorio_id.in_(local_ids))
+                        .group_by(OfertaMinimo.laboratorio_id).all()):
+                    transfer_fecha[lab_local_id] = fmax
+
+            for l in labs:
+                lid = local_por_obs.get(l['lab_id'])
+                l['lab_local_id'] = lid
+                l['usa_packs'] = usa_packs_por_local.get(lid, False)
+                l['plantilla_nombre'] = plantilla_nombre.get(lid)
+                l['tiene_plantilla'] = lid in plantilla_nombre
+                mf = modulo_fecha.get(lid)
+                tf = transfer_fecha.get(lid)
+                l['modulo_fecha'] = mf.strftime('%d/%m/%Y') if mf else None
+                l['transfer_fecha'] = tf.strftime('%d/%m/%Y') if tf else None
+
+        return render_template('compras_laboratorio.html', labs_con_alertas=labs)
 
     @app.route('/api/drogueria/<int:prov_id>/pedidos-emitidos')
     @login_required
@@ -1155,6 +1238,18 @@ def init_app(app):
                 lab_ofertas.sort(key=lambda x: (-x['descuento_psl'],
                                                 x['drogueria_nombre'] or ''))
 
+            # Modo lab: droguerías activas para el selector de "Canal de compra"
+            # (Directo al lab / Vía droguería). Sugerimos la más usada con ese
+            # lab según historial de pedidos (igual criterio que el viejo flujo).
+            droguerias_canal = []
+            if lab_id:
+                provs_drog = (session.query(Provider)
+                              .filter(Provider.tipo == 'drogueria',
+                                      Provider.activo.is_(True))
+                              .order_by(Provider.razon_social).all())
+                droguerias_canal = [{'id': p.id, 'nombre': p.razon_social}
+                                    for p in provs_drog]
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
@@ -1178,6 +1273,7 @@ def init_app(app):
                                    usar_oferta=usar_oferta,
                                    lab_id=lab_id,
                                    lab_nombre=lab_nombre,
+                                   droguerias_canal=droguerias_canal,
                                    lab_ofertas=lab_ofertas if lab_id else [])
 
     @app.route('/compras/multi-lab')

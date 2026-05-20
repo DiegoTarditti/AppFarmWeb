@@ -584,9 +584,19 @@ def init_app(app):
                              Provider.activo == True)  # noqa: E712
                      .order_by(Provider.razon_social).all())
             drogs_data = [{'id': d.id, 'razon_social': d.razon_social} for d in drogs]
+        # Pre-seleccionar lab si viene ?lab_id=N (ej. desde /compras/laboratorio).
+        # En ese caso fijamos modo=lab + el lab, y ocultamos los selectores
+        # (el operador ya eligió el lab en la pantalla anterior).
+        lab_preseleccionado = request.args.get('lab_id', type=int)
+        lab_nombre_preseleccionado = None
+        if lab_preseleccionado:
+            lab_nombre_preseleccionado = next(
+                (l['nombre'] for l in labs_data if l['id'] == lab_preseleccionado), None)
         return render_template('ofertas_import.html',
                                laboratorios=labs_data,
                                droguerias=drogs_data,
+                               lab_preseleccionado=lab_preseleccionado,
+                               lab_nombre_preseleccionado=lab_nombre_preseleccionado,
                                ruta_excels=cfg.get('ruta_excels', ''))
 
     @app.route('/api/ofertas/import-preview', methods=['POST'])

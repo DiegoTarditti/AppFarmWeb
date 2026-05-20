@@ -77,6 +77,9 @@ class Laboratorio(Base):
     # Descuento base de la compra directa al laboratorio (cuando no se compra
     # vía droguería). Se aplica al monto estimado del flujo de fondos. NULL = 0.
     descuento_base = Column(DECIMAL(5, 2), nullable=True)
+    # Si el lab maneja packs (blísters/displays) → habilita "Cargar Packs"
+    # en /compras/laboratorio (lleva al import de módulo_packs del lab).
+    usa_packs = Column(Boolean, nullable=False, default=False, server_default='false')
     creado_en = Column(DateTime, default=now_ar)
 
 
@@ -612,6 +615,8 @@ class Provider(Base):
     descuento_sin_transfer  = Column(DECIMAL(5, 2), nullable=True)
     matriz_visible = Column(Boolean, nullable=False, default=True)
     matriz_orden   = Column(Integer, nullable=True)
+    # Si el proveedor maneja packs (blísters/displays) → habilita "Cargar Packs".
+    usa_packs = Column(Boolean, nullable=False, default=False, server_default='false')
     claims = relationship('Claim', back_populates='provider')
 
 
@@ -2513,6 +2518,9 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_con_transfer DECIMAL(5, 2)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_sin_transfer DECIMAL(5, 2)"))
+    # usa_packs: habilita "Cargar Packs" en /compras/laboratorio (lab y prov).
+    conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS usa_packs BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS usa_packs BOOLEAN NOT NULL DEFAULT FALSE"))
     # OfertaMinimo: campos nuevos Fase 2 compra rápida
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS drogueria_id INTEGER REFERENCES proveedores(id)"))
     conn.execute(text("ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS vigencia_desde DATE"))
