@@ -204,6 +204,7 @@
 {% endblock %}
 
 {% block main %}
+{% include '_print_pdf.html' %}
 <div class="flex-1 overflow-auto">
 <div class="ra-page">
     <a href="{{ url_for('index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Inicio</a>

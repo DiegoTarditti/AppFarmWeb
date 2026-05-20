@@ -80,6 +80,45 @@ def init_app(app):
                                data=data, cobertura=cobertura,
                                meses_rot=meses_rot)
 
+    # ── Comparación portfolio líder de un lab vs ventas propias ──
+    # Datasets de referencia (IQVIA/IMS) en referencia_mercado.py. Por ahora
+    # solo Roemmers (152). El selector lista los labs con dataset cargado.
+    def _ctx_referencia(funcion_analisis, template):
+        """Helper común a los 3 informes: resuelve lab, corre el análisis."""
+        import referencia_mercado
+        lab_id = request.args.get('lab_id', type=int)
+        labs_ref = [{'id': lid, 'nombre': nom}
+                    for lid, nom in referencia_mercado.labs_con_referencia()]
+        # Default: si hay un solo lab con referencia, lo pre-selecciona.
+        if not lab_id and len(labs_ref) == 1:
+            lab_id = labs_ref[0]['id']
+        data = None
+        if lab_id:
+            with database.get_db() as session:
+                data = funcion_analisis(session, lab_id)
+        return render_template(template, labs_ref=labs_ref, lab_id=lab_id, data=data)
+
+    @app.route('/informes/lab-gap-marcas')
+    @login_required
+    def informe_lab_gap_marcas():
+        """Informe — Gap de captura por marca estrella del lab."""
+        from helpers import analizar_gap_marcas
+        return _ctx_referencia(analizar_gap_marcas, 'informes_lab_gap_marcas.html')
+
+    @app.route('/informes/lab-ranking-nacional')
+    @login_required
+    def informe_lab_ranking_nacional():
+        """Informe — Mi ranking del lab vs marcas estrella nacionales."""
+        from helpers import analizar_ranking_vs_nacional
+        return _ctx_referencia(analizar_ranking_vs_nacional, 'informes_lab_ranking_nacional.html')
+
+    @app.route('/informes/lab-cobertura-moleculas')
+    @login_required
+    def informe_lab_cobertura_moleculas():
+        """Informe — Cobertura de moléculas líderes nacionales."""
+        from helpers import analizar_cobertura_moleculas
+        return _ctx_referencia(analizar_cobertura_moleculas, 'informes_lab_cobertura_moleculas.html')
+
     @app.route('/informes/labs-por-droga')
     @login_required
     def informe_labs_por_droga():

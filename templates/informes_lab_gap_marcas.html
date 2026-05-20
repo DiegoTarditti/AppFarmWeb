@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Gap de captura por marca — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+{% block extra_head %}{% include '_lab_ref_styles.html' %}{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="lr-page">
+    {% set titulo = 'Gap de captura por marca estrella' %}
+    {% set subtitulo = '¿Cuánto vendés de las marcas líderes nacionales del lab?' %}
+    {% set icono = '🎯' %}
+    {% set endpoint = 'informe_lab_gap_marcas' %}
+    {% include '_lab_ref_header.html' %}
+
+    {% if not lab_id %}
+    <div class="lr-empty"><p style="font-size:24px;">🧪</p><p>Elegí un laboratorio.</p></div>
+    {% elif not data %}
+    <div class="lr-empty"><p style="font-size:24px;">📭</p><p>No hay dataset de referencia para este laboratorio.</p></div>
+    {% else %}
+    {% if data.nota %}<div class="lr-note">{{ data.nota }}</div>{% endif %}
+
+    <div class="lr-kpis">
+        <div class="lr-kpi"><div class="lbl">Marcas del portfolio</div><div class="val">{{ data.marcas|length }}</div></div>
+        <div class="lr-kpi"><div class="lbl">Unidades 12m (todas)</div><div class="val mint">{{ '{:,}'.format(data.total_u12m).replace(',', '.') }}</div></div>
+        <div class="lr-kpi"><div class="lbl">$ 12m (todas)</div><div class="val mint">$ {{ '{:,.0f}'.format(data.total_monto).replace(',', '.') }}</div></div>
+        {% set sin_vender = data.marcas | rejectattr('vende') | list | length %}
+        <div class="lr-kpi"><div class="lbl">Marcas sin vender</div><div class="val {% if sin_vender > 0 %}warn{% endif %}">{{ sin_vender }}</div></div>
+    </div>
+
+    <div class="lr-card">
+        <table class="lr-table">
+            <thead>
+                <tr>
+                    <th class="left">Marca</th>
+                    <th class="left">Molécula</th>
+                    <th class="left">Indicación</th>
+                    <th class="center" title="Entre los 10 medicamentos más vendidos del país (IQVIA)">Top 10 país</th>
+                    <th title="Productos de tu catálogo que matchean la marca">Prod.</th>
+                    <th title="Unidades vendidas en 12m">u 12m</th>
+                    <th title="Promedio mensual">u/mes</th>
+                    <th title="Monto vendido en 12m">$ 12m</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in data.marcas %}
+                <tr class="{% if not m.vende %}lr-novende{% endif %}">
+                    <td class="left" style="font-weight:600;">{{ m.marca }}</td>
+                    <td class="left muted">{{ m.molecula }}</td>
+                    <td class="left muted" style="font-size:11px;">{{ m.indicacion }}</td>
+                    <td class="center">{% if m.top10_nacional %}<span class="lr-star">⭐</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                    <td class="muted">{{ m.n_productos }}</td>
+                    <td>
+                        {% if m.vende %}<b>{{ '{:,}'.format(m.u12m).replace(',', '.') }}</b>
+                        {% else %}<span class="lr-tag no">no vendés</span>{% endif %}
+                    </td>
+                    <td class="muted">{{ m.u_mensual if m.vende else '—' }}</td>
+                    <td>{% if m.vende %}${{ '{:,.0f}'.format(m.monto).replace(',', '.') }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <p style="font-size:11px; color:var(--ds-text-mute); margin-top:10px;">
+        ⭐ = entre los 10 más vendidos del país. Marcas atenuadas = sin ventas en 12m
+        (oportunidad de captura si tienen demanda local).
+    </p>
+    {% endif %}
+</div>
+</div>
+{% endblock %}

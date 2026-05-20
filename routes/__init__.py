@@ -42,6 +42,7 @@ from routes import (
     partners,
     pedido_prueba,
     pedidos_log,
+    planificacion_compras,
     plantillas,
     procesos,
     producto_flags,
@@ -106,6 +107,7 @@ _modules = [
     flujo_fondos,
     estacionalidad,
     pedido_prueba,
+    planificacion_compras,
 ]
 
 

@@ -1,0 +1,98 @@
+{# Estilos compartidos por los 3 informes de comparación portfolio-líder. #}
+<style>
+    .lr-page { padding: 18px 24px 28px; }
+    .lr-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .lr-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+    .lr-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+
+    .lr-filters {
+        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        padding: 10px 14px; background: var(--ds-surface);
+        border: 1px solid var(--ds-line); border-radius: 12px; margin-bottom: 14px;
+    }
+    .lr-filters label { font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ds-text-mute); }
+    .lr-filters select { background: rgba(0,0,0,.3); border: 1px solid var(--ds-line); color: var(--ds-text); color-scheme: dark; border-radius: 4px; padding: 6px 10px; font-size: 12px; outline: none; min-width: 220px; }
+    .lr-filters .hint { font-size: 10px; color: var(--ds-text-mute); }
+
+    .lr-note {
+        background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.22);
+        border-radius: 10px; padding: 10px 14px; margin-bottom: 14px;
+        font-size: 12px; color: var(--ds-text-soft); line-height: 1.45;
+    }
+
+    .lr-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .lr-kpi { flex: 1 1 auto; min-width: 150px; background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 10px; padding: 8px 14px; }
+    .lr-kpi .lbl { font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--ds-text-mute); }
+    .lr-kpi .val { font-family:'Space Grotesk',sans-serif; font-size: 20px; font-weight: 700; color: var(--ds-text); line-height: 1; margin-top: 3px; }
+    .lr-kpi .val.mint { color: var(--ds-mint); }
+    .lr-kpi .val.warn { color: var(--ds-warn); }
+
+    .lr-card { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 14px; overflow: hidden; }
+    .lr-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .lr-table thead th {
+        position: sticky; top: 0; z-index: 10; background: rgba(0,0,0,.25);
+        color: var(--ds-text-mute); font-size: 9px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .06em; padding: 9px 12px;
+        text-align: right; border-bottom: 1px solid var(--ds-line);
+    }
+    .lr-table thead th.left { text-align: left; }
+    .lr-table thead th.center { text-align: center; }
+    .lr-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+    .lr-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .lr-table tbody tr.lr-novende { opacity: .5; }
+    .lr-table tbody td { padding: 8px 12px; color: var(--ds-text); font-family: ui-monospace, Consolas, monospace; text-align: right; }
+    .lr-table tbody td.left { text-align: left; font-family: inherit; }
+    .lr-table tbody td.center { text-align: center; }
+    .lr-table tbody td.muted { color: var(--ds-text-mute); }
+
+    .lr-star { color: var(--ds-warn); font-weight: 700; }
+    .lr-tag { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 7px; border-radius: 99px; }
+    .lr-tag.si  { background: rgba(95,230,188,.16); color: var(--ds-mint); }
+    .lr-tag.no  { background: rgba(239,68,68,.14); color: #fca5a5; }
+    .lr-tag.roe { background: rgba(167,139,250,.16); color: #c4b5fd; }
+
+    /* Barra de share (cobertura moléculas) */
+    .lr-share { display: inline-flex; align-items: center; gap: 6px; width: 100%; }
+    .lr-share-bar { position: relative; flex: 1; height: 6px; min-width: 60px; max-width: 120px; background: rgba(255,255,255,.08); border-radius: 99px; overflow: hidden; }
+    .lr-share-bar .fill { position: absolute; top: 0; left: 0; height: 100%; background: var(--ds-mint); border-radius: 99px; }
+    .lr-share-num { font-family: ui-monospace, Consolas, monospace; font-size: 11px; font-weight: 700; min-width: 42px; text-align: right; }
+
+    .lr-empty { padding: 40px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; }
+
+    /* Botón imprimir */
+    .lr-print-btn {
+        margin-left: auto;
+        background: rgba(95,230,188,.12); color: var(--ds-mint);
+        border: 1px solid var(--ds-mint); border-radius: 8px;
+        padding: 7px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+    .lr-print-btn:hover { background: rgba(95,230,188,.24); }
+
+    /* ── Impresión / PDF apaisado ── */
+    @media print {
+        @page { size: landscape; margin: 10mm; }
+        aside, .no-print { display: none !important; }
+        body { background: #fff !important; color: #000 !important; }
+        /* El layout de la app usa h-screen + overflow-hidden; en print hay
+           que liberar la altura para que la tabla fluya en varias páginas. */
+        body, .flex-1 { height: auto !important; overflow: visible !important; display: block !important; }
+        .lr-page { padding: 0 !important; }
+        .lr-head h1 { color: #000 !important; }
+        .lr-head .sub { color: #444 !important; }
+        /* Tablas/cards en blanco y negro legible. */
+        .lr-card { border: 1px solid #ccc !important; border-radius: 0 !important; background: #fff !important; }
+        .lr-table thead th { position: static !important; background: #eee !important; color: #000 !important; border-bottom: 1px solid #999 !important; }
+        .lr-table tbody td { color: #000 !important; }
+        .lr-table tbody tr { border-bottom: 1px solid #ddd !important; }
+        .lr-table tbody tr:hover { background: transparent !important; }
+        .lr-table tbody tr.lr-novende { opacity: .6 !important; }
+        .lr-kpi, .lr-note { background: #f5f5f5 !important; border: 1px solid #ccc !important; color: #000 !important; }
+        .lr-kpi .lbl, .lr-note { color: #333 !important; }
+        .lr-kpi .val, .lr-kpi .val.mint, .lr-kpi .val.warn { color: #000 !important; }
+        .lr-tag, .lr-star { color: #000 !important; }
+        /* Evitar cortar filas a la mitad entre páginas. */
+        .lr-table tbody tr { page-break-inside: avoid; }
+        .lr-share-bar { border: 1px solid #999 !important; }
+        .lr-share-bar .fill { background: #666 !important; }
+    }
+</style>

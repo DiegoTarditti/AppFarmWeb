@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% set nav_active = "bi" %}
+{% set hide_sidebar = True %}
+{% block title %}Planificación de compras — {{ cobertura }}d{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .pc-topbar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 24px;
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+    .pc-topbar h1 {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
+    }
+    .pc-topbar .sub { font-size: 11px; color: var(--ds-text-mute); }
+    .pc-filters {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border-bottom: 1px solid var(--ds-line);
+        padding: 12px 24px;
+        display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+    }
+    .pc-filters label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); display: block; margin-bottom: 4px; }
+    .pc-filters input, .pc-filters select { font-size: 13px; }
+    .pc-kpi-bar {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+        padding: 16px 24px;
+    }
+    .pc-kpi {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        padding: 12px 16px; text-align: center;
+    }
+    .pc-kpi .num { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; color: var(--ds-text); }
+    .pc-kpi .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); margin-top: 2px; }
+    .pc-kpi.urgente { border-color: rgba(239,68,68,.4); background: rgba(239,68,68,.08); }
+    .pc-kpi.urgente .num { color: #FCA5A5; }
+    .pc-kpi.urgente .lbl { color: #FCA5A5; opacity: .7; }
+    .pc-kpi.medio { border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.08); }
+    .pc-kpi.medio .num { color: #FCD34D; }
+    .pc-kpi.medio .lbl { color: #FCD34D; opacity: .7; }
+    .pc-card {
+        margin: 0 24px 24px;
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        overflow: hidden;
+    }
+    .pc-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+    .pc-table thead th {
+        padding: 8px 12px;
+        font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+        font-weight: 600; color: var(--ds-text-mute);
+        background: rgba(0,0,0,.18);
+        border-bottom: 1px solid var(--ds-line);
+    }
+    .pc-table thead th.r { text-align: right; }
+    .pc-table tbody tr { border-top: 1px solid var(--ds-line); transition: background .1s; }
+    .pc-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .pc-table tbody td { padding: 7px 12px; color: var(--ds-text); }
+    .pc-table tbody td.mono { font-family: ui-monospace, Consolas, monospace; text-align: right; }
+    .pc-table tbody td.mute { color: var(--ds-text-mute); }
+    .badge-urg { color: #FCA5A5; font-weight: 700; }
+    .badge-med { color: #FCD34D; font-weight: 700; }
+    .badge-ok  { color: var(--ds-text-mute); }
+    .badge-buy { color: var(--ds-mint); font-weight: 700; }
+    .pc-empty {
+        padding: 48px 24px; text-align: center;
+        color: var(--ds-text-mute); font-size: 13px;
+    }
+    .pc-fase { margin: 0 24px 24px; }
+</style>
+{% endblock %}
+
+{% block main %}
+
+{# ── Topbar ── #}
+<div class="pc-topbar">
+    <div>
+        <h1>🛒 Planificación de compras del mes</h1>
+        <p class="sub">¿Qué comprar, cuánto y a quién? — ordenado por urgencia.</p>
+    </div>
+    <a href="{{ url_for('bi_tablero') }}" class="ml-auto text-xs" style="color:var(--ds-text-mute)">← BI</a>
+</div>
+
+{# ── Filtros ── #}
+<form method="get" class="pc-filters">
+    {% if farmacias | length > 1 %}
+    <div>
+        <label>Farmacia</label>
+        <select name="farmacia_id" class="ds-select">
+            {% for f in farmacias %}
+            <option value="{{ f }}" {% if f == farmacia_id %}selected{% endif %}>Farmacia {{ f }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% else %}
+    <input type="hidden" name="farmacia_id" value="{{ farmacia_id }}">
+    {% endif %}
+
+    <div>
+        <label>Capital disponible $</label>
+        <input type="text" id="capital-display" placeholder="ej: 500.000" autocomplete="off"
+               class="ds-input" style="width:140px">
+        <input type="hidden" name="capital" id="capital-value" value="{{ capital if capital else '' }}">
+    </div>
+
+    <div>
+        <label>Cobertura objetivo (días)</label>
+        <input type="number" name="cobertura" value="{{ cobertura }}" min="7" max="90"
+               class="ds-input" style="width:70px">
+    </div>
+
+    <div>
+        <label>Meses historial</label>
+        <input type="number" name="meses" value="{{ meses }}" min="1" max="12"
+               class="ds-input" style="width:60px">
+    </div>
+
+    <button type="submit" class="btn btn-mint btn-sm">Calcular</button>
+</form>
+
+{% if items %}
+
+{# ── KPIs ── #}
+<div class="pc-kpi-bar">
+    <div class="pc-kpi">
+        <div class="num">{{ n_total }}</div>
+        <div class="lbl">productos a reponer</div>
+    </div>
+    <div class="pc-kpi urgente">
+        <div class="num">{{ items | selectattr('cobertura_actual', 'lt', 7) | list | length }}</div>
+        <div class="lbl">urgentes &lt; 7 días</div>
+    </div>
+    <div class="pc-kpi medio">
+        <div class="num">{{ items | selectattr('cobertura_actual', 'ge', 7) | selectattr('cobertura_actual', 'lt', 15) | list | length }}</div>
+        <div class="lbl">esta semana 7–15d</div>
+    </div>
+    <div class="pc-kpi">
+        <div class="num" style="color:var(--ds-text-mute)">{{ items | selectattr('cobertura_actual', 'ge', 15) | list | length }}</div>
+        <div class="lbl">pueden esperar ≥ 15d</div>
+    </div>
+</div>
+
+{# ── Tabla ── #}
+<div class="pc-card">
+    <table class="pc-table">
+        <thead>
+            <tr>
+                <th style="width:36px">#</th>
+                <th style="text-align:left">Producto</th>
+                <th style="text-align:left">Lab</th>
+                <th class="r">Stock</th>
+                <th class="r">Cob. actual</th>
+                <th class="r">Consumo/día</th>
+                <th class="r">A comprar</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for it in items %}
+            {% set urg = it.cobertura_actual < 7 %}
+            {% set med = it.cobertura_actual >= 7 and it.cobertura_actual < 15 %}
+            <tr>
+                <td class="mono mute" style="text-align:center">{{ loop.index }}</td>
+                <td style="font-weight:500; max-width:300px">
+                    <span title="{{ it.nombre }}">{{ it.nombre | truncate(50) }}</span>
+                </td>
+                <td class="mute" style="max-width:160px; font-size:12px">{{ it.lab | truncate(28) }}</td>
+                <td class="mono mute">{{ it.stock }}</td>
+                <td class="mono {% if urg %}badge-urg{% elif med %}badge-med{% else %}badge-ok{% endif %}">
+                    {{ it.cobertura_actual }}d
+                </td>
+                <td class="mono mute">{{ it.consumo_diario }}</td>
+                <td class="mono badge-buy">{{ it.unidades }} u</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% else %}
+<div class="pc-card">
+    <div class="pc-empty">
+        {% if n_total == 0 %}
+        No hay productos con stock y ventas en los últimos {{ meses }} meses.
+        {% else %}
+        Todos los productos tienen cobertura ≥ {{ cobertura }} días.
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="pc-fase">
+    <p style="font-size:11px; color:var(--ds-text-mute)">
+        <strong>Fase 1</strong> — predicción plana sin estacionalidad ni costo de compra.
+        Próximo paso: integrar precio por lab y distribuir por semanas del mes.
+    </p>
+</div>
+
+<script>
+(function() {
+    const display = document.getElementById('capital-display');
+    const hidden  = document.getElementById('capital-value');
+    function fmt(n) { return Math.round(n).toLocaleString('es-AR'); }
+    function parse(s) { return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0; }
+    if (hidden.value) display.value = fmt(parseFloat(hidden.value));
+    display.addEventListener('input', () => { hidden.value = parse(display.value) || ''; });
+    display.addEventListener('blur',  () => { const r = parse(display.value); if (r) display.value = fmt(r); });
+})();
+</script>
+
+{% endblock %}

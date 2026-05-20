@@ -51,6 +51,46 @@
             </div>
         </div>
 
+        {# ═══════════════════ POSICIONAMIENTO DE MERCADO ═══════════════════ #}
+        <div class="mb-6">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
+                <span class="text-base">🎯</span> Posicionamiento de mercado
+            </h2>
+            <p class="text-[11px] text-[#6f6f6f] mb-3">Cruza el portfolio líder de un laboratorio (ranking IQVIA nacional) contra tus ventas reales.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <a href="{{ url_for('informe_lab_gap_marcas') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-amber-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">🎯</div>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Gap de captura por marca</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Marcas líderes nacionales del lab (Lotrial, Losacor, Amoxidal…) y cuánto vendés de cada una. Detecta marcas top que no estás capturando.</p>
+                </a>
+
+                <a href="{{ url_for('informe_lab_ranking_nacional') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">🏆</div>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Mi ranking vs nacional</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tu top de productos del lab, marcando cuáles son marca estrella del país. Valida si tu mix sigue al mercado.</p>
+                </a>
+
+                <a href="{{ url_for('informe_lab_cobertura_moleculas') }}"
+                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-violet-500 hover:shadow-md transition-all">
+                    <div class="flex items-start gap-2 mb-2">
+                        <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">🧬</div>
+                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
+                    </div>
+                    <p class="font-bold text-sm text-[#1e1e1e]">Cobertura de moléculas líderes</p>
+                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Por molécula del ranking nacional (enalapril, losartán…): ¿la vendés con la marca del lab o con competencia? Share por marca.</p>
+                </a>
+            </div>
+        </div>
+
         {# ═══════════════════ OFERTAS ═══════════════════ #}
         <div class="mb-6">
             <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">

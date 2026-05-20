@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Cobertura de moléculas líderes — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+{% block extra_head %}{% include '_lab_ref_styles.html' %}{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="lr-page">
+    {% set titulo = 'Cobertura de moléculas líderes' %}
+    {% set subtitulo = 'Por molécula del ranking nacional: ¿la vendés? ¿con la marca del lab o competencia?' %}
+    {% set icono = '🧬' %}
+    {% set endpoint = 'informe_lab_cobertura_moleculas' %}
+    {% include '_lab_ref_header.html' %}
+
+    {% if not lab_id %}
+    <div class="lr-empty"><p style="font-size:24px;">🧪</p><p>Elegí un laboratorio.</p></div>
+    {% elif not data %}
+    <div class="lr-empty"><p style="font-size:24px;">📭</p><p>No hay dataset de referencia para este laboratorio.</p></div>
+    {% else %}
+    <div class="lr-note">
+        Para cada molécula del ranking nacional de recetadas, cuánto vendés en total vs cuánto
+        con la marca de <b>{{ data.nombre_lab }}</b>. <b>Share lab bajo</b> = oportunidad de
+        migrar prescripción a la marca líder (más rentabilidad / mejor disponibilidad).
+    </div>
+
+    <div class="lr-card">
+        <table class="lr-table">
+            <thead>
+                <tr>
+                    <th class="center" title="Posición en el ranking nacional de drogas más recetadas (IQVIA)">Rank</th>
+                    <th class="left">Molécula</th>
+                    <th class="left" title="Marca del lab de referencia en esta molécula">Marca {{ data.nombre_lab }}</th>
+                    <th class="left">Líder mercado</th>
+                    <th title="Unidades totales que vendés de esta molécula (todos los labs)">u total</th>
+                    <th title="Unidades con la marca del lab de referencia">u {{ data.nombre_lab }}</th>
+                    <th title="Unidades con competencia / genéricos">u comp.</th>
+                    <th title="% de tus ventas de esa molécula que son del lab de referencia">Share lab</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in data.moleculas %}
+                <tr class="{% if not m.vende %}lr-novende{% endif %}">
+                    <td class="center muted">{% if m.ranking %}{{ m.ranking }}º{% else %}—{% endif %}</td>
+                    <td class="left" style="font-weight:600;">{{ m.molecula }}</td>
+                    <td class="left">
+                        {% if m.marca_roemmers %}<span class="lr-tag roe">{{ m.marca_roemmers }}</span>
+                        {% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                    <td class="left muted" style="font-size:11px;">{{ m.lider_mercado }}</td>
+                    <td>
+                        {% if m.vende %}<b>{{ '{:,}'.format(m.u12m_total).replace(',', '.') }}</b>
+                        {% else %}<span class="lr-tag no">no vendés</span>{% endif %}
+                    </td>
+                    <td class="{% if m.u12m_lab > 0 %}{% else %}muted{% endif %}">
+                        {% if m.u12m_lab > 0 %}{{ '{:,}'.format(m.u12m_lab).replace(',', '.') }}{% else %}—{% endif %}
+                    </td>
+                    <td class="muted">{% if m.u12m_competencia > 0 %}{{ '{:,}'.format(m.u12m_competencia).replace(',', '.') }}{% else %}—{% endif %}</td>
+                    <td>
+                        {% if m.vende and m.marca_roemmers %}
+                        <div class="lr-share">
+                            <span class="lr-share-bar"><span class="fill" style="width: {{ m.share_lab_pct }}%;"></span></span>
+                            <span class="lr-share-num">{{ m.share_lab_pct }}%</span>
+                        </div>
+                        {% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+</div>
+{% endblock %}
