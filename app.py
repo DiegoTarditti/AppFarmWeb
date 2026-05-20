@@ -43,25 +43,14 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db')
 
-# init_db en background: corre las migraciones idempotentes (ALTER IF NOT
-# EXISTS + create_all) sin bloquear el bind del puerto. Con sync workers de
-# gunicorn, init_db en module-level colgaba los workers ~30-60s al boot →
-# Render veía workers "vivos" pero sin responder HTTP → cancelaba el deploy.
-# Daemon thread = muere automático cuando termina el worker.
-#
-# Para correr init_db sincrónico (CLI/scripts manuales): setear
-# RUN_INIT_DB_SYNC=1 antes de importar app.
-if os.environ.get('RUN_INIT_DB_SYNC') == '1':
+# init_db deshabilitado por default en startup. Migraciones se corren
+# explícitamente fuera del path crítico de deploy (ver docs/lecciones_deploy_render.md
+# punto "DB locks zombie"). Para correr migraciones:
+#   - CLI: RUN_INIT_DB_ON_STARTUP=1 python -c "import app"
+#   - Render: setear RUN_INIT_DB_ON_STARTUP=1 temporalmente en Environment,
+#     deployar, verificar, y volver a desetear para futuros deploys.
+if os.environ.get('RUN_INIT_DB_ON_STARTUP') == '1':
     init_db(DATABASE_URL)
-else:
-    import threading as _threading
-    def _init_db_bg():
-        try:
-            init_db(DATABASE_URL)
-        except Exception:
-            import traceback
-            traceback.print_exc()
-    _threading.Thread(target=_init_db_bg, daemon=True, name='init_db_bg').start()
 
 
 @app.before_request
