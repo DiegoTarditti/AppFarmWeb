@@ -10,7 +10,7 @@ from flask_cors import CORS
 from sentry_sdk.integrations.flask import FlaskIntegration
 
 import database
-from database import init_db
+from database import init_db, init_engine
 
 _sentry_dsn = os.environ.get('SENTRY_DSN', '').strip()
 if _sentry_dsn:
@@ -49,6 +49,7 @@ DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db')
 #   - CLI: RUN_INIT_DB_ON_STARTUP=1 python -c "import app"
 #   - Render: setear RUN_INIT_DB_ON_STARTUP=1 temporalmente en Environment,
 #     deployar, verificar, y volver a desetear para futuros deploys.
+init_engine(DATABASE_URL)
 if os.environ.get('RUN_INIT_DB_ON_STARTUP') == '1':
     init_db(DATABASE_URL)
 
