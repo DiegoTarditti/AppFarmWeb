@@ -49,6 +49,12 @@ services:
       OBSERVER_DATABASE_URL: postgresql://observer:observer@observer_db:5432/observer
       SECRET_KEY: replace-this-secret
       TZ: America/Argentina/Buenos_Aires
+      # Solo LOCAL: corre las migraciones (ALTER TABLE IF NOT EXISTS) en cada
+      # arranque del contenedor, así tras un `git pull` con columnas/tablas
+      # nuevas no hace falta correr init_db a mano. En Render esta var NO se
+      # setea — allá init_db en startup colgaba el bind del puerto (ver
+      # docs/lecciones_deploy_render.md).
+      RUN_INIT_DB_ON_STARTUP: "1"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       # Conexión a DB real de ObServer (SQL Server 2014). Si no seteás OBSERVER_HOST,
       # observer_source.observer_disponible() devuelve False y el sync queda deshabilitado.
