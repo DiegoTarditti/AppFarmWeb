@@ -25,6 +25,18 @@
     </div>
   </div>
 
+  {# Flash messages — sin esto el operador no veía "ya existía / creada / error". #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="px-3 py-2 rounded text-sm border
+              {% if cat == 'error' %}bg-red-50 border-red-300 text-red-800
+              {% elif cat == 'info' %}bg-blue-50 border-blue-300 text-blue-800
+              {% else %}bg-green-50 border-green-300 text-green-800{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+  {% endwith %}
+
   {% if items %}
   <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full text-sm">

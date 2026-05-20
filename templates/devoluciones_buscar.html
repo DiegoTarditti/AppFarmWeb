@@ -120,7 +120,7 @@
     {% endif %}
 
     {% if resultados %}
-    <form method="post" action="{{ url_for('devoluciones_guardar') }}">
+    <form method="post" action="{{ url_for('devoluciones_guardar') }}" id="form-guardar" onsubmit="return validarLote(event)">
       <input type="hidden" name="vendedor_id" value="{{ vendedor_id }}">
       <input type="hidden" name="vendedor_nombre" value="{{ vendedor_nombre or '' }}">
       <input type="hidden" name="nro_presentacion" value="{{ nro_presentacion }}">
@@ -146,13 +146,14 @@
             {% for r in resultados %}
             {% set ya = r.id_operacion in ya_devueltas %}
             <tr class="{% if ya %}bg-gray-50 opacity-70{% else %}hover:bg-gray-50{% endif %}">
-              {# Hidden de snapshot (van en cualquier celda del form). #}
-              <input type="hidden" name="fop_{{ r.id_operacion }}" value="{{ r.fecha_operacion.isoformat() if r.fecha_operacion else '' }}">
-              <input type="hidden" name="os_{{ r.id_operacion }}" value="{{ r.obra_social }}">
-              <input type="hidden" name="imp_{{ r.id_operacion }}" value="{{ '%.2f'|format(r.importe_total) }}">
-              <input type="hidden" name="imp_os_{{ r.id_operacion }}" value="{{ '%.2f'|format(r.importe_a_cargo_os) }}">
-              {% if not ya %}<input type="hidden" name="op_all" value="{{ r.id_operacion }}">{% endif %}
               <td class="px-2 py-2 align-top text-xs whitespace-nowrap">
+                {# Hidden de snapshot DENTRO de la celda (como hijos directos de
+                   <tr> el navegador los saca de la tabla → no se enviaban). #}
+                <input type="hidden" name="fop_{{ r.id_operacion }}" value="{{ r.fecha_operacion.isoformat() if r.fecha_operacion else '' }}">
+                <input type="hidden" name="os_{{ r.id_operacion }}" value="{{ r.obra_social }}">
+                <input type="hidden" name="imp_{{ r.id_operacion }}" value="{{ '%.2f'|format(r.importe_total) }}">
+                <input type="hidden" name="imp_os_{{ r.id_operacion }}" value="{{ '%.2f'|format(r.importe_a_cargo_os) }}">
+                {% if not ya %}<input type="hidden" name="op_all" value="{{ r.id_operacion }}">{% endif %}
                 {{ r.fecha_operacion.strftime('%d/%m/%y %H:%M') if r.fecha_operacion else '—' }}
               </td>
               <td class="px-2 py-2 align-top text-xs">{{ r.operador_nombre or '—' }}</td>
@@ -279,6 +280,38 @@ window.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('sel-lote');
   if (sel && sel.value) aplicarPeriodoLote(sel);
 });
+
+// Validación antes de registrar el lote: TODAS las recetas deben estar
+// revisadas (Rendida marcada, o motivo, o observación). Resalta las que
+// faltan y no envía (no se pierde lo cargado).
+function validarLote(e) {
+  const ops = [...document.querySelectorAll('input[name="op_all"]')].map(i => i.value);
+  let faltan = 0;
+  ops.forEach(op => {
+    const rendida = document.querySelector('input[name="marcar"][value="' + op + '"]');
+    const motivo = document.querySelector('select[name="motivo_' + op + '"]');
+    const obs = document.querySelector('input[name="obs_' + op + '"]');
+    const ok = (rendida && rendida.checked) ||
+               (motivo && motivo.value) ||
+               (obs && obs.value.trim());
+    // Resaltar la fila si falta.
+    const row = (motivo || rendida || obs)?.closest('tr');
+    if (!ok) {
+      faltan++;
+      if (row) row.classList.add('bg-red-50');
+    } else if (row) {
+      row.classList.remove('bg-red-50');
+    }
+  });
+  if (faltan > 0) {
+    e.preventDefault();
+    alert('Faltan ' + faltan + ' receta(s) sin revisar.\n\n' +
+          'Marcá "Rendida" o agregá motivo/observación a TODAS antes de registrar.\n' +
+          '(quedaron resaltadas en rojo)');
+    return false;
+  }
+  return true;
+}
 
 // Mostrar sub-checkboxes cuando se elige el motivo "AGREGAR DATOS".
 // Match por texto del option (nombre del motivo) para no hardcodear IDs.

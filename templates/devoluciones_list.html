@@ -33,6 +33,9 @@
       <a href="{{ url_for('rendir_os') }}"
          class="px-3 py-1.5 rounded border border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-800 text-sm font-semibold"
          title="Rendir las recetas OK a las obras sociales">🏥 Rendición a OS</a>
+      <a href="{{ url_for('rendir_os', ver='rendidas') }}"
+         class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm"
+         title="Recetas ya rendidas a las obras sociales">📚 Históricas</a>
       {% endif %}
       {% if current_user.rol not in ('rendicion',) %}
       <a href="{{ url_for('devoluciones_filtros_os') }}"
@@ -278,13 +281,23 @@
                 <div class="text-[10px] text-purple-500 mt-0.5">
                   ✓ {{ d.auditor_user or '—' }} · {{ d.auditor_fecha.strftime('%d/%m %H:%M') if d.auditor_fecha else '' }}
                 </div>
-              {% else %}
+              {% elif d.en_auditoria %}
                 <span class="text-xs text-gray-400 italic">esperando auditor</span>
+              {% else %}
+                <span class="text-xs text-gray-400 italic">en tu poder</span>
               {% endif %}
             {% endif %}
           </td>
           <td class="px-2 py-1.5">
-            {% if d.estado == 'pendiente' %}
+            {% if rol_actual == 'rendicion' %}
+              {# El vendedor trabaja en "Traer recetas" (motivo/obs/rendir).
+                 Acá solo ve el estado de cada receta. #}
+              {% if d.en_auditoria %}
+                <span class="text-xs text-blue-700 font-semibold">en auditoría</span>
+              {% else %}
+                <span class="text-xs text-gray-400">en tu poder</span>
+              {% endif %}
+            {% elif d.estado == 'pendiente' %}
               <div class="flex items-center gap-1.5">
                 {# OK = todo bien, sin observaciones. Submit directo (no necesita
                    nota de cierre). Es la acción más común → grande y a la izq. #}

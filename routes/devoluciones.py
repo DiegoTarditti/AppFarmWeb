@@ -350,8 +350,11 @@ def init_app(app):
             existe = (session.query(database.RendicionLote)
                       .filter_by(nro=nro, vendedor_observer_id=vendedor_id).first())
             if existe:
-                flash(f'Ya existe una rendición #{nro} para este vendedor.', 'error')
-                return redirect(url_for('rendicion_lotes_list'))
+                # Idempotente: si ya existe, la abrimos (en vez de dar error y
+                # dejar al operador sin saber qué pasó). "Crear y abrir" =
+                # "abrir si existe".
+                flash(f'Rendición #{nro} ya existía — la abrimos.', 'info')
+                return redirect(url_for('devoluciones_buscar', lote_id=existe.id))
             creador = (getattr(current_user, 'nombre_completo', None)
                        or getattr(current_user, 'username', None))
             lote = database.RendicionLote(
@@ -778,6 +781,11 @@ def init_app(app):
                                    .filter_by(activo=True)
                                    .filter(database.MotivoDevolucion.uso_rol.in_(['auditor', 'ambos']))
                                    .order_by(database.MotivoDevolucion.nombre).all())
+            # Motivos para el vendedor (edición inline en su listado).
+            motivos_rendicion = (session.query(database.MotivoDevolucion)
+                                 .filter_by(activo=True)
+                                 .filter(database.MotivoDevolucion.uso_rol.in_(['rendicion', 'ambos']))
+                                 .order_by(database.MotivoDevolucion.nombre).all())
 
             # Vendedores únicos que tienen devoluciones cargadas — para el
             # filtro dropdown del header.
@@ -888,6 +896,7 @@ def init_app(app):
                                    cuentas_estado=cuentas_estado,
                                    pend_auditor=pend_auditor,
                                    motivos_auditor=motivos_auditor,
+                                   motivos_rendicion=motivos_rendicion,
                                    rol_actual=rol_actual_lista,
                                    alertas=alertas,
                                    lote_activo_id=lote_activo_id,
@@ -1200,6 +1209,23 @@ def init_app(app):
             flash('No hay recetas para guardar.', 'error')
             return redirect(url_for('devoluciones_buscar'))
 
+        # Validación del primer control: cada receta del lote debe estar
+        # "revisada" → marcada Rendida, o con motivo, o con observación. Si
+        # alguna queda sin tocar, no se registra (obliga a revisar todas).
+        sin_revisar = 0
+        for op_id_str in todas_op:
+            rendida = op_id_str in marcados
+            tiene_obs = bool((request.form.get(f'obs_{op_id_str}') or '').strip())
+            tiene_motivo = bool(request.form.get(f'motivo_{op_id_str}'))
+            if not (rendida or tiene_obs or tiene_motivo):
+                sin_revisar += 1
+        if sin_revisar:
+            flash(f'{sin_revisar} receta(s) sin revisar. Marcá "Rendida" o '
+                  'agregá motivo/observación a TODAS antes de registrar.', 'error')
+            _lote = request.form.get('lote_id', type=int)
+            return redirect(url_for('devoluciones_buscar', lote_id=_lote) if _lote
+                            else url_for('devoluciones_buscar'))
+
         # Preferimos el nombre completo (display name del operador en pantalla),
         # luego username, después email. NO caemos en id numérico — preferimos
         # '?' a un número sin contexto (data inutilizable en reportes).
@@ -1376,6 +1402,48 @@ def init_app(app):
             flash(f'Devolución #{id} → {nuevo}.', 'success')
         return redirect(url_for('devoluciones_list'))
 
+
+    @app.route('/rend-recetas/<int:id>/set-motivo-vendedor', methods=['POST'])
+    @login_required
+    def set_motivo_vendedor(id):
+        """Autosave del motivo + obs por parte del vendedor, sobre recetas que
+        todavía tiene (en_auditoria=False). Si el motivo nuevo bloquea Rendida,
+        además des-marca en_auditoria por las dudas."""
+        with database.get_db() as session:
+            d = session.get(database.DevolucionReceta, id)
+            if not d:
+                return jsonify({'ok': False, 'error': 'no encontrada'}), 404
+            if d.en_auditoria:
+                return jsonify({'ok': False, 'error': 'ya está en auditoría'}), 400
+            # Solo tocar los campos que vienen en el form (motivo y obs se
+            # guardan por separado; no pisar uno al guardar el otro).
+            if 'motivo_id' in request.form:
+                d.motivo_id = request.form.get('motivo_id', type=int) or None
+            if 'obs' in request.form:
+                d.observaciones = (request.form.get('obs') or '').strip() or None
+            session.commit()
+        return jsonify({'ok': True})
+
+    @app.route('/rend-recetas/<int:id>/marcar-rendida', methods=['POST'])
+    @login_required
+    def marcar_rendida_vendedor(id):
+        """El vendedor marca una receta como Rendida → pasa al auditor
+        (en_auditoria=True). Bloqueado si el motivo no lo permite."""
+        with database.get_db() as session:
+            d = (session.query(database.DevolucionReceta)
+                 .options(joinedload(database.DevolucionReceta.motivo))
+                 .filter_by(id=id).first())
+            if not d:
+                flash('Receta no encontrada.', 'error')
+                return redirect(url_for('devoluciones_list'))
+            if d.motivo and d.motivo.bloquea_rendida:
+                flash(f'El motivo "{d.motivo.nombre}" no permite rendir '
+                      '(receta no disponible).', 'error')
+                return redirect(url_for('devoluciones_list'))
+            d.en_auditoria = True
+            session.commit()
+            flash(f'Receta #{d.id_operacion_observer} marcada Rendida → al auditor.', 'success')
+        return redirect(url_for('devoluciones_list'))
 
     @app.route('/rend-recetas/rendir-os')
     @login_required
