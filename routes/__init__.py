@@ -3,7 +3,6 @@
 from routes import (
     admin,
     auth_routes,
-    planificacion_compras,
     batch,
     bi,
     claims,
@@ -43,6 +42,7 @@ from routes import (
     partners,
     pedido_prueba,
     pedidos_log,
+    planificacion_compras,
     plantillas,
     procesos,
     producto_flags,
