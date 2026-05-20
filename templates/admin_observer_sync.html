@@ -12,6 +12,9 @@
         <span class="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 font-semibold border border-sky-300"
               title="Sin conexión a ObServer. Típico desde Render — solo lectura de las tablas obs_* ya replicadas.">● modo lectura (remoto)</span>
     {% endif %}
+    <a href="{{ url_for('sync_audit_panel') }}"
+       class="{% if not disponible %}ml-auto {% endif %}text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-white font-semibold text-[#1e1e1e]"
+       title="Matriz de tablas: conteos local vs Render + última sync">🔍 Auditoría de sync</a>
     {% if disponible %}
     <div class="ml-auto">
         <form method="post" action="{{ url_for('observer_sync_run', entidad='todo') }}"
