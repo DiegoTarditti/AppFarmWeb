@@ -22,6 +22,16 @@ from sqlalchemy.orm import joinedload
 import database
 import observer_source
 
+# Carga incremental de recetas (ver devoluciones_buscar):
+# - Al rendir traemos TODO desde la última carga del vendedor hasta hoy.
+# - MARGEN_REZAGADAS_DIAS: retrocedemos N días de la última op para pescar
+#   recetas que ObServer registró tarde (rezagadas). El dedup por
+#   id_operacion (badge "ya en rend #N") evita re-cargar las que ya están.
+# - DEFAULT_PRIMERA_VEZ_DIAS: cuando el vendedor nunca cargó (sin bookmark),
+#   arrancamos N días atrás.
+MARGEN_REZAGADAS_DIAS = 20
+DEFAULT_PRIMERA_VEZ_DIAS = 30
+
 
 def _estado_consolidado(n_total, n_audit, n_pend, entregada):
     """Devuelve dict {label, color, prio} con el estado más relevante.
@@ -319,17 +329,11 @@ def init_app(app):
         # que "35227" y "035227" se traten como lotes distintos.
         if nro.isdigit():
             nro = str(int(nro))
-        etiqueta = (request.form.get('etiqueta') or '').strip() or None
-        periodo_desde = (request.form.get('periodo_desde') or '').strip()
-        periodo_hasta = (request.form.get('periodo_hasta') or '').strip()
-        try:
-            pd = datetime.strptime(periodo_desde, '%Y-%m-%d').date() if periodo_desde else None
-        except ValueError:
-            pd = None
-        try:
-            ph = datetime.strptime(periodo_hasta, '%Y-%m-%d').date() if periodo_hasta else None
-        except ValueError:
-            ph = None
+        # Sin período manual: las recetas se traen incrementalmente desde la
+        # última carga del vendedor (ver devoluciones_buscar). El período del
+        # lote se rellena solo cuando se cargan recetas (min/max fecha_op).
+        pd = ph = None
+        etiqueta = f'Rendición #{nro}'
 
         # Resolver vendedor: si rol=rendicion, forzar al matcheado por nombre.
         rol = getattr(current_user, 'rol', None)
@@ -701,7 +705,8 @@ def init_app(app):
                 base = base.filter(database.DevolucionReceta.auditor_motivo_id.isnot(None))
 
             # Rol rendicion solo ve sus propias devoluciones (matchea por
-            # vendedor_nombre con nombre_completo del user).
+            # vendedor_nombre con nombre_completo del user). Además, deja de ver
+            # las que el auditor ya marcó 'ok' (el ciclo del vendedor terminó).
             if rol_actual_lista == 'rendicion':
                 nombre_user = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
                 if nombre_user:
@@ -709,6 +714,7 @@ def init_app(app):
                     base = base.filter(
                         _fu.upper(database.DevolucionReceta.vendedor_nombre) == nombre_user
                     )
+                base = base.filter(database.DevolucionReceta.estado != 'ok')
 
             total = base.count()
             devoluciones = (base.order_by(database.DevolucionReceta.creado_en.desc())
@@ -739,17 +745,30 @@ def init_app(app):
                         int(row.nt or 0), int(row.na or 0), int(row.np or 0),
                         bool(lote.entregada) if lote else False)
 
-            # Conteos por estado para chips
+            # Conteos por estado para chips. DEBEN respetar el mismo scope que
+            # la tabla (rol rendicion = solo sus propias + filtros de vendedor/
+            # nro), sino los chips mostraban totales globales mientras la tabla
+            # filtrada quedaba vacía. NO aplicamos q_estado/q_auditoria acá
+            # porque los chips SON el selector de estado.
             from sqlalchemy import func as _f
+            _scope = session.query(database.DevolucionReceta)
+            if q_presentacion:
+                _scope = _scope.filter(database.DevolucionReceta.nro_presentacion.ilike(f'%{q_presentacion}%'))
+            if q_vendedor:
+                _scope = _scope.filter(database.DevolucionReceta.vendedor_nombre.ilike(f'%{q_vendedor}%'))
+            if rol_actual_lista == 'rendicion':
+                _nu = (getattr(current_user, 'nombre_completo', '') or '').strip().upper()
+                if _nu:
+                    _scope = _scope.filter(_f.upper(database.DevolucionReceta.vendedor_nombre) == _nu)
+                _scope = _scope.filter(database.DevolucionReceta.estado != 'ok')
+            _scope_sub = _scope.subquery()
             cuentas_estado = dict(session.query(
-                database.DevolucionReceta.estado,
-                _f.count(database.DevolucionReceta.id)
-            ).group_by(database.DevolucionReceta.estado).all())
+                _scope_sub.c.estado, _f.count(_scope_sub.c.id)
+            ).group_by(_scope_sub.c.estado).all())
 
-            # Conteo pendientes de auditor (sin chip propio en el doc, pero
-            # útil para el chip "Pend. auditar").
-            pend_auditor = (session.query(_f.count(database.DevolucionReceta.id))
-                            .filter(database.DevolucionReceta.auditor_motivo_id.is_(None))
+            # Conteo pendientes de auditor (mismo scope).
+            pend_auditor = (session.query(_f.count(_scope_sub.c.id))
+                            .filter(_scope_sub.c.auditor_motivo_id.is_(None))
                             .scalar() or 0)
 
             # Motivos disponibles para el auditor (uso_rol = auditor o ambos).
@@ -951,15 +970,37 @@ def init_app(app):
         # Bookmark del vendedor: si existe, usamos su ultima_fecha_op como
         # 'desde' default (evita re-procesar recetas ya cargadas). Solo
         # aplica para GET inicial sin filtros explícitos en URL.
-        desde_default = (hoy - timedelta(days=7)).isoformat()
+        # Rango automático: el operador NO elige fechas. Traemos desde la
+        # última carga del vendedor (− margen rezagadas) hasta hoy.
+        desde_default = (hoy - timedelta(days=DEFAULT_PRIMERA_VEZ_DIAS)).isoformat()
         if vendedor_sugerido:
             with database.get_db() as _s_bm:
                 _bm = (_s_bm.query(database.VendedorBookmark)
                        .filter_by(vendedor_observer_id=vendedor_sugerido).first())
                 if _bm and _bm.ultima_fecha_op:
-                    from datetime import timedelta as _td
-                    # Arrancamos al día siguiente de la última op procesada.
-                    desde_default = (_bm.ultima_fecha_op.date() + _td(days=1)).isoformat()
+                    # Retrocedemos MARGEN_REZAGADAS_DIAS de la última op para
+                    # pescar rezagadas; el dedup marca las ya cargadas.
+                    desde_default = (_bm.ultima_fecha_op.date()
+                                     - timedelta(days=MARGEN_REZAGADAS_DIAS)).isoformat()
+
+        # Última receta procesada del vendedor (para mostrar en el encabezado
+        # de dónde venimos). Es la de mayor creado_en (la última que se cargó).
+        ultima_procesada = None
+        if vendedor_sugerido:
+            with database.get_db() as _s_up:
+                _u = (_s_up.query(database.DevolucionReceta)
+                      .filter_by(vendedor_observer_id=vendedor_sugerido)
+                      .order_by(database.DevolucionReceta.creado_en.desc())
+                      .first())
+                if _u:
+                    ultima_procesada = {
+                        'fecha_op': _u.fecha_operacion.strftime('%d/%m/%y %H:%M') if _u.fecha_operacion else '—',
+                        'op': _u.id_operacion_observer,
+                        'os': _u.obra_social_nombre or '—',
+                        'importe': float(_u.importe_total or 0),
+                        'nro': _u.nro_presentacion or '',
+                        'cargada_en': _u.creado_en.strftime('%d/%m/%y %H:%M') if _u.creado_en else '',
+                    }
 
         if request.method == 'GET':
             return render_template('devoluciones_buscar.html',
@@ -976,6 +1017,7 @@ def init_app(app):
                                    motivos=[], destinos=[],
                                    rol_actual=rol_actual_get,
                                    lotes_abiertos=lotes_abiertos,
+                                   ultima_procesada=ultima_procesada,
                                    lote_id=lote_id_preselect or '')
 
         # POST: buscar
@@ -1041,11 +1083,9 @@ def init_app(app):
                 resultados = [r for r in resultados
                               if (r.get('obra_social') or '').upper() not in nombres_ocultas]
 
-        # Orden requerido: por OS (alfa) → fecha+hora ascendente.
-        resultados.sort(key=lambda r: (
-            (r.get('obra_social') or '').upper(),
-            r.get('fecha_operacion') or 0,
-        ))
+        # Orden: por fecha+hora de operación ascendente (cronológico). Al traer
+        # recetas nuevas conviene verlas en el orden en que se vendieron.
+        resultados.sort(key=lambda r: r.get('fecha_operacion') or 0)
 
         # Snapshots de labels
         vendedor_nombre = (next((v['nombre'] for v in vendedores
@@ -1145,10 +1185,19 @@ def init_app(app):
                 _lote = _s.get(database.RendicionLote, lote_id)
                 if _lote:
                     nro_presentacion = _lote.nro
-        # IDs marcados como devolución
-        marcados = request.form.getlist('marcar')
-        if not marcados:
-            flash('No marcaste ninguna receta.', 'error')
+        # Modelo nuevo: se guarda TODO el lote (todas las recetas traídas), no
+        # solo las marcadas. `op_all` = todas las op de la pantalla; `marcar` =
+        # las que el vendedor marcó "Rendida" (en_auditoria=True → pasan al
+        # auditor). Las no marcadas quedan del lado del vendedor (en_auditoria=
+        # False). Las ya cargadas (en cualquier lote, no descartadas) se saltean.
+        todas_op = request.form.getlist('op_all')
+        marcados = set(request.form.getlist('marcar'))
+        if not todas_op:
+            # Fallback compat: si el template viejo no mandó op_all, usar marcar.
+            todas_op = request.form.getlist('marcar')
+            marcados = set(todas_op)
+        if not todas_op:
+            flash('No hay recetas para guardar.', 'error')
             return redirect(url_for('devoluciones_buscar'))
 
         # Preferimos el nombre completo (display name del operador en pantalla),
@@ -1168,13 +1217,26 @@ def init_app(app):
             pass  # si ObServer no responde, guardamos solo UUID sin nombre
 
         n_creadas = 0
+        n_rendidas = 0
         errores = []
         with database.get_db() as session:
-            for op_id_str in marcados:
+            # Op ya cargadas (en cualquier lote, no descartadas) → no duplicar.
+            ya_cargadas = set()
+            _ids_int = [int(x) for x in todas_op if x.isdigit()]
+            if _ids_int:
+                for (oid,) in (session.query(database.DevolucionReceta.id_operacion_observer)
+                               .filter(database.DevolucionReceta.id_operacion_observer.in_(_ids_int))
+                               .filter(database.DevolucionReceta.estado != 'descartada').all()):
+                    ya_cargadas.add(oid)
+
+            for op_id_str in todas_op:
                 try:
                     op_id = int(op_id_str)
                 except ValueError:
                     continue
+                if op_id in ya_cargadas:
+                    continue  # ya está en un lote — no re-crear
+                es_rendida = op_id_str in marcados
                 motivo_id = request.form.get(f'motivo_{op_id}', type=int)
                 # destino_vendedor_* quedó deprecado (2026-05-18) — ya no se
                 # captura en el form. Lo dejamos como None para mantener
@@ -1188,9 +1250,9 @@ def init_app(app):
                 ad_list = request.form.getlist(f'ad_{op_id}')  # múltiples checkboxes
                 import json as _json
                 ad_json = _json.dumps(ad_list) if ad_list else None
-                if not motivo_id:
-                    errores.append(f'Receta #{op_id}: motivo es obligatorio.')
-                    continue
+                # Motivo ya NO es obligatorio: una receta OK se guarda sin motivo.
+                # Solo si la marcan "Rendida" con observación conviene motivo,
+                # pero no lo forzamos (el auditor puede completar).
                 # Snapshot de datos de la receta
                 fop = request.form.get(f'fop_{op_id}')
                 fop_dt = None
@@ -1227,10 +1289,13 @@ def init_app(app):
                     observaciones=obs,
                     observaciones_rendicion=obs_rend,
                     agregar_datos_json=ad_json,
+                    en_auditoria=es_rendida,  # marcada "Rendida" → pasa al auditor
                     creado_por=str(creador) if creador else None,
                 )
                 session.add(dev)
                 n_creadas += 1
+                if es_rendida:
+                    n_rendidas += 1
             if n_creadas:
                 session.commit()
 
@@ -1263,14 +1328,21 @@ def init_app(app):
             for e in errores:
                 flash(e, 'error')
         if n_creadas:
-            flash(f'{n_creadas} devolución(es) registrada(s).', 'success')
+            msg = f'{n_creadas} receta(s) registrada(s) en el lote'
+            if n_rendidas:
+                msg += f' · {n_rendidas} marcada(s) "Rendida" (al auditor)'
+            flash(msg + '.', 'success')
+        else:
+            flash('No se registraron recetas nuevas (ya estaban cargadas).', 'info')
         return redirect(url_for('devoluciones_list'))
 
     @app.route('/rend-recetas/<int:id>/estado', methods=['POST'])
     @login_required
     def devolucion_cambiar_estado(id):
         nuevo = (request.form.get('estado') or '').strip()
-        if nuevo not in ('pendiente', 'resuelta', 'descartada', 'devuelta'):
+        # 'ok' = receta sin observaciones, todo bien (el auditor solo confirma).
+        # 'resuelta' = tuvo observación (emisor/auditor) y se corrigió.
+        if nuevo not in ('pendiente', 'ok', 'resuelta', 'descartada', 'devuelta'):
             flash('Estado inválido.', 'error')
             return redirect(url_for('devoluciones_list'))
         nota = (request.form.get('nota_cierre') or '').strip() or None
@@ -1281,11 +1353,20 @@ def init_app(app):
                 return redirect(url_for('devoluciones_list'))
             dev.estado = nuevo
             dev.nota_cierre = nota
+            # Posesión según la decisión:
+            #  - devuelta → vuelve al vendedor (en_auditoria=False) para recorregir
+            #  - ok/resuelta/descartada → queda del lado del auditor (Rendida X)
+            #  - pendiente (reabrir) → vuelve al vendedor
+            if nuevo == 'devuelta':
+                dev.en_auditoria = False
+            elif nuevo in ('ok', 'resuelta', 'descartada'):
+                dev.en_auditoria = True
+            elif nuevo == 'pendiente':
+                dev.en_auditoria = False
             if nuevo == 'pendiente':
                 dev.cerrada_en = None
                 dev.cerrada_por = None
             else:
-                from datetime import datetime as _dt
                 dev.cerrada_en = database.now_ar()
                 dev.cerrada_por = (getattr(current_user, 'nombre_completo', None)
                                    or getattr(current_user, 'username', None)
@@ -1295,6 +1376,166 @@ def init_app(app):
             flash(f'Devolución #{id} → {nuevo}.', 'success')
         return redirect(url_for('devoluciones_list'))
 
+
+    @app.route('/rend-recetas/rendir-os')
+    @login_required
+    def rendir_os():
+        """Pantalla "Rendición a Obras Sociales": lista las recetas en estado
+        'ok' que todavía no se rindieron a la OS (rendida_os=False), ordenadas
+        por fecha+hora. Filtro multitoken por obra social. Al marcarlas como
+        rendidas pasan a histórico (salen de esta vista)."""
+        q_os = (request.args.get('os') or '').strip()
+        # Filtro de estado de rendición a OS: 'sin' (default) | 'rendidas' | 'todas'.
+        ver = (request.args.get('ver') or 'sin').strip()
+        with database.get_db() as session:
+            query = (session.query(database.DevolucionReceta)
+                     .filter(database.DevolucionReceta.estado == 'ok'))
+            if ver == 'sin':
+                query = query.filter(database.DevolucionReceta.rendida_os.is_(False))
+            elif ver == 'rendidas':
+                query = query.filter(database.DevolucionReceta.rendida_os.is_(True))
+            # 'todas' → sin filtro de rendida_os
+            # Filtro multitoken AND sobre el nombre de la OS.
+            for tok in q_os.split():
+                query = query.filter(
+                    database.DevolucionReceta.obra_social_nombre.ilike(f'%{tok}%'))
+            recetas = (query.order_by(database.DevolucionReceta.fecha_operacion.asc()).all())
+            data = [{
+                'id': r.id,
+                'fecha_op': r.fecha_operacion,
+                'op': r.id_operacion_observer,
+                'os': r.obra_social_nombre or '—',
+                'vendedor': r.vendedor_nombre or '—',
+                'nro': r.nro_presentacion or '',
+                'importe_os': float(r.importe_a_cargo_os or 0),
+                'importe_total': float(r.importe_total or 0),
+                'rendida_os': r.rendida_os,
+                'rendida_os_en': r.rendida_os_en,
+            } for r in recetas]
+            total_os = sum(d['importe_os'] for d in data)
+            total_100 = sum(d['importe_total'] for d in data)
+        return render_template('devoluciones_rendir_os.html',
+                               recetas=data, q_os=q_os, ver=ver,
+                               total_os=total_os, total_100=total_100)
+
+    @app.route('/rend-recetas/rendir-os/marcar', methods=['POST'])
+    @login_required
+    def rendir_os_marcar():
+        """Marca como rendidas a la OS las recetas seleccionadas → pasan a
+        histórico. Solo aplica a recetas en estado 'ok'."""
+        ids = request.form.getlist('marcar')
+        ids_int = [int(x) for x in ids if x.isdigit()]
+        if not ids_int:
+            flash('No seleccionaste ninguna receta.', 'error')
+            return redirect(url_for('rendir_os'))
+        quien = (getattr(current_user, 'nombre_completo', None)
+                 or getattr(current_user, 'username', None) or '?')
+        n = 0
+        with database.get_db() as session:
+            for rid in ids_int:
+                r = session.get(database.DevolucionReceta, rid)
+                if r and r.estado == 'ok' and not r.rendida_os:
+                    r.rendida_os = True
+                    r.rendida_os_en = database.now_ar()
+                    r.rendida_os_por = str(quien)
+                    n += 1
+            session.commit()
+        flash(f'{n} receta(s) rendida(s) a la OS — pasaron a histórico.', 'success')
+        return redirect(url_for('rendir_os', os=request.form.get('os', '')))
+
+    def _rendir_os_data(session, q_os):
+        """Helper: recetas OK no rendidas a OS, filtro multitoken, orden fecha."""
+        query = (session.query(database.DevolucionReceta)
+                 .filter(database.DevolucionReceta.estado == 'ok')
+                 .filter(database.DevolucionReceta.rendida_os.is_(False)))
+        for tok in (q_os or '').split():
+            query = query.filter(
+                database.DevolucionReceta.obra_social_nombre.ilike(f'%{tok}%'))
+        return query.order_by(database.DevolucionReceta.fecha_operacion.asc()).all()
+
+    @app.route('/rend-recetas/rendir-os/export.xlsx')
+    @login_required
+    def rendir_os_export_xlsx():
+        import io as _io
+        import openpyxl
+        from flask import send_file
+        from openpyxl.styles import Font, PatternFill
+        q_os = (request.args.get('os') or '').strip()
+        with database.get_db() as session:
+            recetas = _rendir_os_data(session, q_os)
+            rows = [(r.fecha_operacion, r.vendedor_nombre or '', r.nro_presentacion or '',
+                     r.obra_social_nombre or '', float(r.importe_a_cargo_os or 0),
+                     float(r.importe_total or 0)) for r in recetas]
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Rendición a OS'
+        hdr = ['Fecha', 'Vendedor', 'Rendición', 'Obra Social', 'Total a cargo O.Social', 'Total al 100']
+        ws.append(hdr)
+        for c in ws[1]:
+            c.font = Font(bold=True, color='FFFFFF')
+            c.fill = PatternFill('solid', fgColor='1E3A5F')
+        for f, vend, nro, os_n, imp_os, imp_t in rows:
+            ws.append([f.strftime('%d/%m/%y %H:%M') if f else '', vend, nro, os_n, imp_os, imp_t])
+        ws.append(['', '', '', 'TOTALES', sum(r[4] for r in rows), sum(r[5] for r in rows)])
+        for col, w in zip('ABCDEF', (16, 20, 12, 32, 14, 14)):
+            ws.column_dimensions[col].width = w
+        buf = _io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return send_file(buf, as_attachment=True,
+                         download_name='rendicion_obras_sociales.xlsx',
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    @app.route('/rend-recetas/rendir-os/export.pdf')
+    @login_required
+    def rendir_os_export_pdf():
+        import io as _io
+        from flask import send_file
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer,
+                                        Table, TableStyle)
+        from reportlab.lib.styles import getSampleStyleSheet
+        q_os = (request.args.get('os') or '').strip()
+        with database.get_db() as session:
+            recetas = _rendir_os_data(session, q_os)
+            rows = [(r.fecha_operacion, r.vendedor_nombre or '', r.nro_presentacion or '',
+                     r.obra_social_nombre or '', float(r.importe_a_cargo_os or 0),
+                     float(r.importe_total or 0)) for r in recetas]
+        buf = _io.BytesIO()
+        doc = SimpleDocTemplate(buf, pagesize=landscape(A4),
+                                topMargin=1*cm, bottomMargin=1*cm,
+                                leftMargin=1*cm, rightMargin=1*cm)
+        styles = getSampleStyleSheet()
+        story = [Paragraph('Rendición a Obras Sociales', styles['Title'])]
+        if q_os:
+            story.append(Paragraph(f'Filtro OS: {q_os}', styles['Normal']))
+        story.append(Spacer(1, 8))
+        data = [['Fecha', 'Vendedor', 'Rendición', 'Obra Social', 'Total a cargo O.Social', 'Total al 100']]
+        def _m(v):
+            return '$' + f'{int(round(v)):,}'.replace(',', '.')
+        for f, vend, nro, os_n, imp_os, imp_t in rows:
+            data.append([f.strftime('%d/%m/%y %H:%M') if f else '', vend,
+                         f'#{nro}' if nro else '', os_n, _m(imp_os), _m(imp_t)])
+        data.append(['', '', '', 'TOTALES', _m(sum(r[4] for r in rows)), _m(sum(r[5] for r in rows))])
+        t = Table(data, colWidths=[3*cm, 4*cm, 2.5*cm, 9*cm, 3.5*cm, 3.5*cm])
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a5f')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('ALIGN', (4, 0), (-1, -1), 'RIGHT'),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#f3f4f6')]),
+            ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#d1d5db')),
+        ]))
+        story.append(t)
+        doc.build(story)
+        buf.seek(0)
+        return send_file(buf, as_attachment=True,
+                         download_name='rendicion_obras_sociales.pdf',
+                         mimetype='application/pdf')
 
     @app.route('/rend-recetas/<int:id>/timeline')
     @login_required
@@ -1614,6 +1855,18 @@ def init_app(app):
             m = session.get(database.MotivoDevolucion, id)
             if m:
                 m.uso_rol = nuevo
+                session.commit()
+        return redirect(url_for('devoluciones_motivos'))
+
+    @app.route('/rend-recetas/motivos/<int:id>/bloquea-rendida', methods=['POST'])
+    @login_required
+    def devoluciones_motivo_bloquea_rendida(id):
+        """Toggle: si el motivo bloquea el check 'Rendida' (receta no disponible
+        para rendir — ej. EXTRAVIADA, la tiene el cadete)."""
+        with database.get_db() as session:
+            m = session.get(database.MotivoDevolucion, id)
+            if m:
+                m.bloquea_rendida = not m.bloquea_rendida
                 session.commit()
         return redirect(url_for('devoluciones_motivos'))
 

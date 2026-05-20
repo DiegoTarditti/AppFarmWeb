@@ -1470,6 +1470,10 @@ class MotivoDevolucion(Base):
     # 1ra etapa (operador de mostrador), 'auditor' = 2da etapa (revisión),
     # 'ambos' = visible para los dos. Default 'ambos' para compat con datos viejos.
     uso_rol = Column(String(20), nullable=False, default='ambos')
+    # Si True, al elegir este motivo el check "Rendida" se desmarca y bloquea
+    # (la receta no está físicamente disponible para rendir — ej. EXTRAVIADA,
+    # "la tiene el cadete"). Configurable desde el ABM de motivos.
+    bloquea_rendida = Column(Boolean, nullable=False, default=False)
 
 
 class RendicionLote(Base):
@@ -1611,9 +1615,20 @@ class DevolucionReceta(Base):
     auditor_observaciones = Column(Text, nullable=True)
     auditor_user = Column(String(100), nullable=True)
     auditor_fecha = Column(DateTime, nullable=True)
+    # Posesión / etapa del flujo. False = la tiene el vendedor (la está
+    # rindiendo). True = el vendedor la marcó "Rendida" → pasa al auditor.
+    # El auditor al accionar OK/Resuelta deja en_auditoria=True ("Rendida OK");
+    # Devuelta la vuelve a poner en False (regresa al vendedor a recorregir).
+    en_auditoria = Column(Boolean, nullable=False, default=False, index=True)
+    # Rendida a la obra social: el auditor la presentó/rindió a la OS para
+    # cobrar. Solo aplica a recetas en estado 'ok'. Al marcarse True, la receta
+    # pasa a histórico (sale de la pantalla "Rendición a Obras Sociales").
+    rendida_os = Column(Boolean, nullable=False, default=False, index=True)
+    rendida_os_en = Column(DateTime, nullable=True)
+    rendida_os_por = Column(String(100), nullable=True)
     # Cierre del ciclo
     estado = Column(String(20), nullable=False, default='pendiente', index=True)
-                                                               # pendiente | resuelta | descartada
+                                                               # pendiente | ok | resuelta | descartada | devuelta
     nota_cierre = Column(Text, nullable=True)
     cerrada_en = Column(DateTime, nullable=True)
     cerrada_por = Column(String(100), nullable=True)
@@ -3246,6 +3261,8 @@ def _pg_add_columns(conn):
     # estructurado + observaciones exclusivas del operador rendicion.
     for stmt in [
         "ALTER TABLE motivo_devolucion ADD COLUMN IF NOT EXISTS uso_rol VARCHAR(20) NOT NULL DEFAULT 'ambos'",
+        # Motivo que bloquea el check "Rendida" (receta no disponible físicamente).
+        "ALTER TABLE motivo_devolucion ADD COLUMN IF NOT EXISTS bloquea_rendida BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS observaciones_rendicion TEXT",
         "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS agregar_datos_json TEXT",
         "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_motivo_id INTEGER REFERENCES motivo_devolucion(id)",
@@ -3253,6 +3270,12 @@ def _pg_add_columns(conn):
         "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_user VARCHAR(100)",
         "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS auditor_fecha TIMESTAMP",
         "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS rendicion_lote_id INTEGER REFERENCES rendicion_lote(id)",
+        # Posesión / etapa: False = la tiene el vendedor, True = "Rendida" (pasó al auditor).
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS en_auditoria BOOLEAN NOT NULL DEFAULT FALSE",
+        # Rendida a la obra social (solo recetas OK). True → pasa a histórico.
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS rendida_os BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS rendida_os_en TIMESTAMP",
+        "ALTER TABLE devolucion_receta ADD COLUMN IF NOT EXISTS rendida_os_por VARCHAR(100)",
         # Cleanup 2026-05-18: DestinoDevolucion deprecado completamente.
         "ALTER TABLE devolucion_receta DROP COLUMN IF EXISTS destino_id",
         "DROP TABLE IF EXISTS destino_devolucion CASCADE",

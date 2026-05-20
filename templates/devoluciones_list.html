@@ -15,17 +15,25 @@
   <div class="flex items-center justify-between flex-wrap gap-2">
     <h1 class="text-2xl font-bold">{{ _titulo }}</h1>
     <div class="flex gap-2">
+      {# El alta de recetas entra SIEMPRE por "Rendiciones" → abrir/crear lote →
+         buscar (así toda receta queda atada a un lote). Antes había acá un
+         "+ Nueva búsqueda" suelto que permitía cargar sin lote → generaba
+         recetas huérfanas. Removido a propósito. #}
       {% if _rol != 'auditor' %}
-      <a href="{{ url_for('devoluciones_buscar', lote_id=lote_activo_id) if lote_activo_id else url_for('devoluciones_buscar') }}"
-         class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold"
-         title="{% if lote_activo_id %}Pre-cargado con tu rendición abierta más reciente{% endif %}">
-        + Nueva búsqueda{% if lote_activo_id %} <span class="text-[10px] opacity-75">(con lote)</span>{% endif %}
+      <a href="{{ url_for('rendicion_lotes_list') }}"
+         class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">
+        + Nueva rendición
       </a>
       {% endif %}
       <a href="{{ url_for('devoluciones_por_vendedor') }}"
          class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">👥 Por vendedor</a>
       <a href="{{ url_for('rendicion_lotes_list') }}"
          class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">📋 Rendiciones</a>
+      {% if _rol in ('auditor', 'admin', 'dev') %}
+      <a href="{{ url_for('rendir_os') }}"
+         class="px-3 py-1.5 rounded border border-blue-400 bg-blue-50 hover:bg-blue-100 text-blue-800 text-sm font-semibold"
+         title="Rendir las recetas OK a las obras sociales">🏥 Rendición a OS</a>
+      {% endif %}
       {% if current_user.rol not in ('rendicion',) %}
       <a href="{{ url_for('devoluciones_filtros_os') }}"
          class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">🚫 Filtros OS</a>
@@ -152,6 +160,12 @@
     {% if q_presentacion or q_vendedor or q_estado %}
     <a href="{{ url_for('devoluciones_list') }}" class="px-3 py-1.5 rounded border border-gray-300 text-sm">Limpiar</a>
     {% endif %}
+    {# Procesar: oculta/muestra las ya despachadas (OK + resueltas) para
+       enfocarse en lo que falta accionar. Toggle visual, no toca la DB. #}
+    <button type="button" id="btn-procesar" onclick="toggleProcesar()"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-semibold">
+      Procesar
+    </button>
     <span class="ml-auto text-xs text-gray-500 self-center">{{ total }} registro(s)</span>
   </form>
 
@@ -176,10 +190,13 @@
       </thead>
       <tbody class="divide-y divide-gray-200">
         {% for d in devoluciones %}
-        <tr class="hover:bg-gray-50 {% if d.estado == 'descartada' %}opacity-60{% endif %}">
+        <tr class="dev-row hover:bg-gray-50 {% if d.estado == 'descartada' %}opacity-60{% endif %}"
+            data-estado="{{ d.estado }}">
           <td class="px-2 py-1.5">
             {% if d.estado == 'pendiente' %}
               <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">PEND.</span>
+            {% elif d.estado == 'ok' %}
+              <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">OK</span>
             {% elif d.estado == 'resuelta' %}
               <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800">RES.</span>
             {% elif d.estado == 'devuelta' %}
@@ -268,12 +285,23 @@
           </td>
           <td class="px-2 py-1.5">
             {% if d.estado == 'pendiente' %}
-              <button type="button" onclick="abrirCierre({{ d.id }}, 'resuelta')"
-                      class="text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2 py-0.5 rounded font-semibold">✓ Resuelta</button>
-              <button type="button" onclick="abrirCierre({{ d.id }}, 'devuelta')"
-                      class="text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-semibold ml-1">↩ Devuelta</button>
-              <button type="button" onclick="abrirCierre({{ d.id }}, 'descartada')"
-                      class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded font-semibold ml-1">Descartar</button>
+              <div class="flex items-center gap-1.5">
+                {# OK = todo bien, sin observaciones. Submit directo (no necesita
+                   nota de cierre). Es la acción más común → grande y a la izq. #}
+                <form method="post" action="{{ url_for('devolucion_cambiar_estado', id=d.id) }}" class="inline">
+                  <input type="hidden" name="estado" value="ok">
+                  <button type="submit"
+                          class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded font-bold text-sm shadow-sm">
+                    ✓ OK
+                  </button>
+                </form>
+                <button type="button" onclick="abrirCierre({{ d.id }}, 'resuelta')"
+                        class="text-xs bg-green-100 hover:bg-green-200 text-green-800 px-2 py-0.5 rounded font-semibold">Resuelta</button>
+                <button type="button" onclick="abrirCierre({{ d.id }}, 'devuelta')"
+                        class="text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-semibold">↩ Devuelta</button>
+                <button type="button" onclick="abrirCierre({{ d.id }}, 'descartada')"
+                        class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded font-semibold">Descartar</button>
+              </div>
             {% else %}
               <form method="post" action="{{ url_for('devolucion_cambiar_estado', id=d.id) }}" class="inline">
                 <input type="hidden" name="estado" value="pendiente">
@@ -317,6 +345,31 @@
     </form>
   </div>
   <script>
+    // Procesar: toggle que oculta las filas ya despachadas (OK + resueltas)
+    // para enfocarse en lo que falta accionar. No toca la DB.
+    let _procesarOn = false;
+    function toggleProcesar() {
+      _procesarOn = !_procesarOn;
+      const btn = document.getElementById('btn-procesar');
+      document.querySelectorAll('.dev-row').forEach(tr => {
+        const est = tr.dataset.estado;
+        if (_procesarOn && (est === 'ok' || est === 'resuelta')) {
+          tr.style.display = 'none';
+        } else {
+          tr.style.display = '';
+        }
+      });
+      if (_procesarOn) {
+        btn.textContent = 'Ver todas';
+        btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        btn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+      } else {
+        btn.textContent = 'Procesar';
+        btn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+      }
+    }
+
     function abrirCierre(devId, estado) {
       const form = document.getElementById('form-cierre');
       form.action = '/rend-recetas/' + devId + '/estado';
