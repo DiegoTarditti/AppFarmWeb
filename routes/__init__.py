@@ -3,6 +3,7 @@
 from routes import (
     admin,
     auth_routes,
+    planificacion_compras,
     batch,
     bi,
     claims,
@@ -106,6 +107,7 @@ _modules = [
     flujo_fondos,
     estacionalidad,
     pedido_prueba,
+    planificacion_compras,
 ]
 
 

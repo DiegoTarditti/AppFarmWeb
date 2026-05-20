@@ -151,6 +151,19 @@
 
         </div>
 
+        {# ───── Card 5: Planificación de compras ───── #}
+        <a href="{{ url_for('planificacion_compras_mes') }}"
+           class="block bg-indigo-50 border border-indigo-200 rounded-xl p-5 mt-3 hover:shadow-md transition-all">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-lg bg-indigo-200 text-indigo-800 flex items-center justify-center text-xl flex-shrink-0">🛒</div>
+                <div>
+                    <p class="text-xs uppercase font-bold text-indigo-700">Planificación de compras del mes</p>
+                    <p class="text-sm text-indigo-900 mt-0.5">¿Qué comprar este mes, cuánto y a quién? — ingresá capital disponible y cobertura objetivo.</p>
+                </div>
+                <span class="ml-auto text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded font-medium flex-shrink-0">Fase 1</span>
+            </div>
+        </a>
+
         <div class="bg-violet-50 border border-violet-200 rounded-xl p-3 mt-4 text-xs text-violet-900">
             <strong>👀 Esto es Fase 1.</strong> Próximamente: vencimientos, caídas de venta detectadas, comparación vs año pasado, y un asistente al que le podés preguntar "¿cómo viene mayo?". Charlemos para ajustarlo a lo que más necesitás.
         </div>
