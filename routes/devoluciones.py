@@ -1012,6 +1012,48 @@ def init_app(app):
                     }
 
         if request.method == 'GET':
+            # Si se abre un lote, mostramos sus recetas YA GUARDADAS en la
+            # misma tabla editable (sin re-bajar de ObServer). Las que el
+            # vendedor todavía tiene quedan editables; las rendidas, readonly.
+            resultados_g = None
+            cargadas_g = {}
+            motivos_g = []
+            if lote_id_preselect:
+                import json as _jg
+                with database.get_db() as _sg:
+                    recs = (_sg.query(database.DevolucionReceta)
+                            .filter_by(rendicion_lote_id=lote_id_preselect)
+                            .filter(database.DevolucionReceta.estado != 'descartada')
+                            .order_by(database.DevolucionReceta.fecha_operacion.asc()).all())
+                    resultados_g = []
+                    for d in recs:
+                        resultados_g.append({
+                            'id_operacion': d.id_operacion_observer,
+                            'fecha_operacion': d.fecha_operacion,
+                            'operador_nombre': d.vendedor_nombre or '—',
+                            'comprobante': d.nro_presentacion or '',
+                            'obra_social': d.obra_social_nombre or '—',
+                            'items': [],
+                            'importe_a_cargo_os': float(d.importe_a_cargo_os or 0),
+                            'importe_total': float(d.importe_total or 0),
+                        })
+                        try:
+                            ad = _jg.loads(d.agregar_datos_json) if d.agregar_datos_json else []
+                        except (ValueError, TypeError):
+                            ad = []
+                        cargadas_g[d.id_operacion_observer] = {
+                            'dev_id': d.id, 'nro': d.nro_presentacion or '',
+                            'motivo_id': d.motivo_id, 'obs': d.observaciones or '',
+                            'agregar_datos': ad, 'en_auditoria': d.en_auditoria,
+                            'estado': d.estado,
+                            'editable': (not d.en_auditoria and d.estado == 'pendiente'),
+                        }
+                    q_m = _sg.query(database.MotivoDevolucion).filter_by(activo=True)
+                    if rol_actual_get == 'rendicion':
+                        q_m = q_m.filter(database.MotivoDevolucion.uso_rol.in_(['rendicion', 'ambos']))
+                    elif rol_actual_get == 'auditor':
+                        q_m = q_m.filter(database.MotivoDevolucion.uso_rol.in_(['auditor', 'ambos']))
+                    motivos_g = q_m.order_by(database.MotivoDevolucion.nombre).all()
             return render_template('devoluciones_buscar.html',
                                    obras_sociales=obras_sociales,
                                    vendedores=vendedores,
@@ -1022,8 +1064,9 @@ def init_app(app):
                                    vendedor_id=vendedor_sugerido,
                                    obra_social_id='',
                                    solo_a_cargo_os=False,
-                                   resultados=None,
-                                   motivos=[], destinos=[],
+                                   resultados=(resultados_g or None),
+                                   cargadas=cargadas_g,
+                                   motivos=motivos_g, destinos=[],
                                    rol_actual=rol_actual_get,
                                    lotes_abiertos=lotes_abiertos,
                                    ultima_procesada=ultima_procesada,
@@ -1123,16 +1166,35 @@ def init_app(app):
             # IDs de operaciones ya devueltas (para mostrar badge).
             # Mapeamos id_operacion → nro_rendicion para indicar EN QUÉ lote
             # ya está cargada (ayuda al operador a no re-cargarla).
-            ya_devueltas = {}
+            # cargadas: op_id → datos de la receta ya guardada. Las que están
+            # EN PODER DEL VENDEDOR (en_auditoria=False, pendiente) se muestran
+            # EDITABLES con sus datos precargados; el resto, readonly con badge.
+            ya_devueltas = {}   # compat: op_id → nro (badge)
+            cargadas = {}       # op_id → dict con datos para edición
+            import json as _json_cg
             ids = [r['id_operacion'] for r in resultados]
             if ids:
-                qd = (session.query(database.DevolucionReceta.id_operacion_observer,
-                                     database.DevolucionReceta.nro_presentacion)
+                qd = (session.query(database.DevolucionReceta)
                       .filter(database.DevolucionReceta.id_operacion_observer.in_(ids))
                       .filter(database.DevolucionReceta.estado != 'descartada')
                       .all())
-                for op_id, nro in qd:
-                    ya_devueltas[op_id] = nro or ''
+                for d in qd:
+                    ya_devueltas[d.id_operacion_observer] = d.nro_presentacion or ''
+                    try:
+                        ad = _json_cg.loads(d.agregar_datos_json) if d.agregar_datos_json else []
+                    except (ValueError, TypeError):
+                        ad = []
+                    cargadas[d.id_operacion_observer] = {
+                        'dev_id': d.id,
+                        'nro': d.nro_presentacion or '',
+                        'motivo_id': d.motivo_id,
+                        'obs': d.observaciones or '',
+                        'agregar_datos': ad,
+                        'en_auditoria': d.en_auditoria,
+                        'estado': d.estado,
+                        # Editable solo si la tiene el vendedor (no rendida, pendiente).
+                        'editable': (not d.en_auditoria and d.estado == 'pendiente'),
+                    }
 
         return render_template('devoluciones_buscar.html',
                                obras_sociales=obras_sociales,
@@ -1148,6 +1210,7 @@ def init_app(app):
                                resultados=resultados,
                                motivos=motivos, destinos=destinos,
                                ya_devueltas=ya_devueltas,
+                               cargadas=cargadas,
                                rol_actual=rol_actual,
                                lotes_abiertos=lotes_abiertos,
                                lote_id=request.form.get('lote_id', type=int) or '')
@@ -1246,22 +1309,28 @@ def init_app(app):
         n_rendidas = 0
         errores = []
         with database.get_db() as session:
-            # Op ya cargadas (en cualquier lote, no descartadas) → no duplicar.
-            ya_cargadas = set()
+            # Op ya cargadas: las que el vendedor todavía tiene (en_auditoria=
+            # False, pendiente) se ACTUALIZAN (edición). Las ya rendidas o con
+            # estado cambiado se saltean (no se tocan).
+            existentes = {}     # op_id → DevolucionReceta editable
+            no_editables = set()
             _ids_int = [int(x) for x in todas_op if x.isdigit()]
             if _ids_int:
-                for (oid,) in (session.query(database.DevolucionReceta.id_operacion_observer)
-                               .filter(database.DevolucionReceta.id_operacion_observer.in_(_ids_int))
-                               .filter(database.DevolucionReceta.estado != 'descartada').all()):
-                    ya_cargadas.add(oid)
+                for d in (session.query(database.DevolucionReceta)
+                          .filter(database.DevolucionReceta.id_operacion_observer.in_(_ids_int))
+                          .filter(database.DevolucionReceta.estado != 'descartada').all()):
+                    if not d.en_auditoria and d.estado == 'pendiente':
+                        existentes[d.id_operacion_observer] = d
+                    else:
+                        no_editables.add(d.id_operacion_observer)
 
             for op_id_str in todas_op:
                 try:
                     op_id = int(op_id_str)
                 except ValueError:
                     continue
-                if op_id in ya_cargadas:
-                    continue  # ya está en un lote — no re-crear
+                if op_id in no_editables:
+                    continue  # ya rendida / estado cambiado — no tocar
                 es_rendida = op_id_str in marcados
                 motivo_id = request.form.get(f'motivo_{op_id}', type=int)
                 # destino_vendedor_* quedó deprecado (2026-05-18) — ya no se
@@ -1276,6 +1345,19 @@ def init_app(app):
                 ad_list = request.form.getlist(f'ad_{op_id}')  # múltiples checkboxes
                 import json as _json
                 ad_json = _json.dumps(ad_list) if ad_list else None
+
+                # Si ya existe y la tiene el vendedor → ACTUALIZAR (edición).
+                if op_id in existentes:
+                    d = existentes[op_id]
+                    d.motivo_id = motivo_id or None
+                    d.observaciones = obs
+                    d.agregar_datos_json = ad_json
+                    d.en_auditoria = es_rendida
+                    n_creadas += 1
+                    if es_rendida:
+                        n_rendidas += 1
+                    continue
+
                 # Motivo ya NO es obligatorio: una receta OK se guarda sin motivo.
                 # Solo si la marcan "Rendida" con observación conviene motivo,
                 # pero no lo forzamos (el auditor puede completar).
