@@ -1607,6 +1607,7 @@ def init_app(app):
     @login_required
     def rendir_os_export_xlsx():
         import io as _io
+
         import openpyxl
         from flask import send_file
         from openpyxl.styles import Font, PatternFill
@@ -1640,13 +1641,13 @@ def init_app(app):
     @login_required
     def rendir_os_export_pdf():
         import io as _io
+
         from flask import send_file
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4, landscape
-        from reportlab.lib.units import cm
-        from reportlab.platypus import (Paragraph, SimpleDocTemplate, Spacer,
-                                        Table, TableStyle)
         from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
         q_os = (request.args.get('os') or '').strip()
         with database.get_db() as session:
             recetas = _rendir_os_data(session, q_os)
