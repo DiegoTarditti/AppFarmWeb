@@ -10,6 +10,14 @@
         Matriz local ↔ Render. Las marcadas como <em>Independiente</em> no se sincronizan
         (operacional). Las <em>Push</em> deberían tener conteos similares.
       </p>
+      <p class="text-xs text-gray-500 mt-1 bg-gray-50 border border-gray-200 rounded px-2 py-1.5 inline-block">
+        ↻ Doble salto de los datos de ObServer:
+        <strong>ObServer</strong> <span class="text-gray-400">—(sync)→</span>
+        <strong>obs_* local</strong> <span class="text-gray-400">—(push)→</span>
+        <strong>obs_* Render</strong>.
+        El <strong>sync</strong> (de ObServer) se ve en la columna <em>Última sync</em>;
+        el <strong>push</strong> (a Render) es lo que compara <em>Local</em> vs <em>Render</em>.
+      </p>
     </div>
     <div class="flex gap-2">
       <a href="{{ url_for('observer_sync_panel') }}"

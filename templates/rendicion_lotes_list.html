@@ -25,6 +25,18 @@
     </div>
   </div>
 
+  {# Flash messages — sin esto el operador no veía "ya existía / creada / error". #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="px-3 py-2 rounded text-sm border
+              {% if cat == 'error' %}bg-red-50 border-red-300 text-red-800
+              {% elif cat == 'info' %}bg-blue-50 border-blue-300 text-blue-800
+              {% else %}bg-green-50 border-green-300 text-green-800{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+  {% endwith %}
+
   {% if items %}
   <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-x-auto">
     <table class="w-full text-sm">
@@ -165,27 +177,17 @@
       <h3 class="font-semibold mb-3">Nueva rendición</h3>
       <div class="space-y-3">
         <div>
-          <label class="block text-xs uppercase text-gray-500 mb-1">Nro</label>
+          <label class="block text-xs uppercase text-gray-500 mb-1">Nro de rendición</label>
           <input name="nro" required autofocus type="number" min="1" placeholder="Ej: 35227"
                  class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
+          <p class="text-xs text-gray-400 mt-1">
+            Poné el último número de comprobante que tengas a mano.
+          </p>
         </div>
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="block text-xs uppercase text-gray-500 mb-1">Período desde</label>
-            <input name="periodo_desde" type="date"
-                   class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
-          </div>
-          <div>
-            <label class="block text-xs uppercase text-gray-500 mb-1">Período hasta</label>
-            <input name="periodo_hasta" type="date"
-                   class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
-          </div>
-        </div>
-        <div>
-          <label class="block text-xs uppercase text-gray-500 mb-1">Etiqueta (opcional)</label>
-          <input name="etiqueta" placeholder="Ej: Mayo 1ra quincena"
-                 class="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" />
-        </div>
+        <p class="text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded p-2">
+          Las recetas se traen solas desde la última carga del vendedor hasta hoy.
+          No hace falta poner fechas.
+        </p>
       </div>
       <div class="flex justify-end gap-2 mt-4">
         <button type="button" onclick="document.getElementById('modal-nuevo').classList.add('hidden')"

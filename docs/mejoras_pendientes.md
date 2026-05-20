@@ -96,7 +96,13 @@ equivalente a admin, "VENTAS" equivalente a rendicion, etc.
 
 ---
 
-## ⏳ Pendiente — Alerta para productos con `cantidad_reposicion_fija` seteada (2026-05-18)
+## ✅ HECHO 2026-05-19 — Alerta para productos con `cantidad_reposicion_fija` seteada
+
+Implementado en `routes/productos.py:14` + `templates/index.html:202-243` (card home "📦 Repo fija" con desglose rojo/amarillo/verde) + `templates/productos_repo_alertas.html` (pantalla detalle con todos los productos incluso sin alerta activa, filtro por lab).
+
+---
+
+## ⏳ Pendiente original — Alerta para productos con `cantidad_reposicion_fija` seteada (2026-05-18)
 
 Cuando un producto tiene `Producto.cantidad_reposicion_fija` cargado, debería
 disparar una alerta en algún panel (alarmas / dashboard / lugar a definir) que
@@ -114,7 +120,18 @@ Prioridad: baja — anotado para revisar más adelante.
 
 ---
 
-## ⏳ Pendiente — Planificadores deben respetar `unidades_minima` y `cantidad_reposicion_fija` (2026-05-17)
+## ✅ HECHO 2026-05-19 — Planificadores respetan `unidades_minima` y `cantidad_reposicion_fija`
+
+Implementado en commit `39975e2` ("feat(planificadores): borrar /informes/pedido-auto + migrar a /pedido/prueba + chips override + card comportamientos").
+
+- `helpers.aplicar_overrides_planificador()` aplica precedencia cant_fija > oferta_min
+- `routes/pedido_prueba.py` hace bulk-load de cant_fija_por_obs / oferta_min_por_obs y aplica overrides a ambos sugeridos (estacional + día actual)
+- UI muestra chips 📦 Repo y 🎁 Mín oferta con tooltip explicando cuándo se activa
+- `/informes/pedido-auto` borrado, migrado a `/pedido/prueba`
+
+---
+
+## ⏳ Pendiente original — Planificadores deben respetar `unidades_minima` y `cantidad_reposicion_fija` (2026-05-17)
 
 Hoy ambos conceptos están desacoplados entre el armado táctico y los
 planificadores. Resultado: el operador ve una sugerencia en `/pedido/prueba`

@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% set nav_active = "productos" %}
+{# Esta pantalla maneja su propio scroll interno (thead sticky en #tabla-wrap).
+   Sin esto, el wrapper de scroll default de base.html rompería el sticky. #}
+{% set main_scroll_propio = true %}
 
 {% block title %}Productos — Farmacia{% endblock %}
 {% block body_class %}theme-emerald{% endblock %}

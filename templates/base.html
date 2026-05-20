@@ -1110,7 +1110,15 @@
     </div>
     {% endif %}
 
-    {% block main %}{% endblock %}
+    {# Wrapper de scroll: por default el contenido scrollea acá dentro (el padre
+       es h-screen overflow-hidden). Las pantallas que manejan su PROPIO scroll
+       interno (ej. /productos con thead sticky) setean main_scroll_propio=true
+       y el wrapper se vuelve `contents` (transparente al layout). Sin esto, las
+       pantallas planas que dependían del scroll del body quedaban cortadas
+       cuando se cambió min-h-screen → h-screen. #}
+    <div class="{% if main_scroll_propio|default(false) %}contents{% else %}flex-1 min-h-0 overflow-y-auto{% endif %}">
+        {% block main %}{% endblock %}
+    </div>
 </div>
 
 {% block after_main %}{% endblock %}
