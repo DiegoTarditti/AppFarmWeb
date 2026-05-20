@@ -1709,7 +1709,7 @@ def get_db():
         session.close()
 
 
-def init_db(database_url=None):
+def init_engine(database_url=None):
     global engine, SessionLocal
     database_url = database_url or os.environ.get('DATABASE_URL', 'sqlite:///farmacia.db')
     if database_url.startswith('postgres://'):
@@ -1717,6 +1717,11 @@ def init_db(database_url=None):
     engine = create_engine(database_url, echo=False, future=True)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
                                expire_on_commit=False)
+    return database_url
+
+
+def init_db(database_url=None):
+    database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
         # Limpia zombies en pg_type / pg_class que bloquean CREATE TABLE con
         # "duplicate key ... pg_type_typname_nsp_index". Puede pasar en Render
