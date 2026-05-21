@@ -4,6 +4,68 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Unidad de venta vs unidad de pedido (fraccionados) (2026-05-21)
+
+**Problema**: hay productos que se **venden de a 1 unidad** (ej. ALIKAL sobre suelto)
+pero se **piden por envase** (caja de 30 sobres). Hoy el "a pedir" cuenta unidades
+vendidas (sobres) y **no** las convierte a envases → si vendiste 45 sobres y la caja
+trae 30, el sistema sugiere 45 en vez de 2 cajas.
+
+**Qué ya existe**:
+- Dato `cantidad_envase` (= unidades de venta por envase). Viene de
+  `DW.Productos.CantidadDelEnvase` → `ObsProducto.cantidad_envase`, también en
+  `ProductoAtributo.cantidad_envase`.
+- Se ve y se edita en la **ficha de producto** (`producto_detalle.html`: bloque
+  "Datos de ObServer" + atributo editable).
+- Puente venta↔pack solo vía `ModuloPack` (ean_pack ↔ ean_unidad × cantidad),
+  pero solo aplica a labs `usa_packs` y al flujo de módulos/ofertas, no al
+  "a pedir" general.
+
+**Qué falta**:
+- El cálculo de "a pedir" (`compras_dia.py`, `purchase.py`) **no usa**
+  `cantidad_envase` ni distingue fraccionados.
+- No sincronizamos el flag "Es Fraccionado" de `DW.Productos` (el SELECT de
+  `sync_productos` no lo trae).
+
+**Decisión (2026-05-21)**: NO auto-sincronizar el flag. Se configura **producto
+por producto, a mano**, desde `/productos/flags` (tarjeta Presentación).
+
+**✅ Fase 1 (2026-05-21)**: hecho.
+- Columna `Producto.fraccionado` (bool) + migración PG inline.
+- En `/productos/flags`, tarjeta "📦 Presentación": buscás producto → toggle
+  fraccionado + editar cantidad de envase (guarda en `ProductoAtributo`,
+  fuente=manual). Endpoints `GET/POST /api/producto/presentacion`. No se tocó la
+  tarjeta "Asignar flag" (comportamiento sigue igual).
+
+**⏳ Fase 2 (pendiente)**: que el "a pedir" use `fraccionado` + `cantidad_envase`
+para convertir unidades vendidas → envases (redondeo a múltiplos del envase).
+Afecta `compras_dia.py` / `purchase.py` / `services/pedido_estacional.py`.
+
+---
+
+## ⏳ Pendiente — Progreso en vivo del sync ObServer (2026-05-21)
+
+En `/admin/observer-sync`, al correr "Sync todo" mostrar **dinámicamente qué
+tabla se está procesando** (y filas), actualizándose, para ver si avanza. Hoy
+el botón es síncrono y bloquea sin feedback hasta terminar (el sync completo
+tarda minutos, sobre todo `ventas_detalle` con millones de filas).
+
+**Infra que ya existe**:
+- `sync_lock.paso_actual` (se setea con `_sync_lock_set_paso` en cada entidad,
+  pero solo en el flujo `/api/auto-sync` del DockerPanel, no en el botón web).
+- `GET /api/auto-sync/status` devuelve `{en_curso, paso_actual, ultimo_resultado}`.
+
+**Falta**:
+1. Que el "Sync todo" web (`observer_sync_run` con entidad='todo') corra async
+   o vaya actualizando `paso_actual` por entidad (igual que el flujo DockerPanel).
+2. Frontend: al disparar el sync, hacer polling a `/api/auto-sync/status` cada
+   ~2s y mostrar "Sincronizando: <tabla> (<n> de <total>)" con barra de progreso,
+   en vez del submit bloqueante actual.
+
+Esfuerzo: 2-3h (refactor del botón a async + polling JS + barra).
+
+---
+
 ## 🎯 Objetivo (no urgente) — Motor de pantallas de pedido dirigido por config (fábrica) (2026-05-20)
 
 NO es una pantalla única gigante: es un **motor que genera pantallas** desde

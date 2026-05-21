@@ -2427,6 +2427,13 @@ def init_app(app):
                 'lab': it.lab_nombre or '',
             } for it in ped.items]
 
+            # Equivalencia Kellerhoff: resuelve EAN → CodKellerhoff (catálogo
+            # directo → equivalencia). Para la columna cod_kellerhoff de la plantilla.
+            from routes.kellerhoff import resolver_codigos
+            _kelmap = resolver_codigos(session, [r['ean'] for r in rows])
+            for r in rows:
+                r['cod_kellerhoff'] = _kelmap.get(r['ean'], '')
+
             try:
                 cfg = _json.loads(plant.config_json or '{}')
             except Exception:
@@ -2475,6 +2482,7 @@ def init_app(app):
                 # ("Código de barra (EAN)" / "Cantidad total (mod+oferta+sin deal)").
                 _HEADER_LABEL = {
                     'codigo_barra':     'CodigoBarra',
+                    'cod_kellerhoff':   'CodKellerhoff',
                     'descripcion':      'Descripcion',
                     'cantidad':         'Cantidad',
                     'cant_modulo':      'CantModulo',
@@ -2490,17 +2498,21 @@ def init_app(app):
                 if not cols:
                     cols = ['codigo_barra', 'descripcion', 'cantidad']
 
-                # Encabezado: fila con valor por columna desde header_por_columna.
-                # Si no hay valores per-col pero hay texto legacy (multilínea),
-                # respetamos ese fallback.
+                # Headers cortos por droguería (CodigoBarra, Cantidad, …).
+                headers = [_HEADER_LABEL.get(c, _CAMPO_LABEL.get(c, c)) for c in cols]
+                # Encabezado libre opcional ARRIBA de los headers de columna
+                # (CUIT, código de cliente, etiqueta libre). Si el usuario tipeó
+                # justo los mismos nombres que los headers de columna (caso
+                # Kellerhoff: "CodigoBarra"/"Cantidad"), NO lo duplicamos — los
+                # headers de columna ya los emiten igual.
                 if _header_on:
                     if _header_por_col:
-                        ws.append([str(_header_por_col.get(c, '') or '') for c in cols])
+                        hdr_row = [str(_header_por_col.get(c, '') or '') for c in cols]
+                        if hdr_row != headers:
+                            ws.append(hdr_row)
                     elif _header_legacy_txt:
                         for line in _header_legacy_txt.splitlines():
                             ws.append([line])
-                # Headers cortos por droguería (CodigoBarra, Cantidad, …).
-                headers = [_HEADER_LABEL.get(c, _CAMPO_LABEL.get(c, c)) for c in cols]
                 ws.append(headers)
                 # Filas de datos + formato de celda por columna.
                 for row in rows:
@@ -2554,6 +2566,7 @@ def init_app(app):
                 for c in campos:
                     cs = c.get('campo_sistema', '')
                     val = str(row.get('ean', '')) if cs == 'codigo_barra' else \
+                          str(row.get('cod_kellerhoff', '')) if cs == 'cod_kellerhoff' else \
                           str(row.get('nombre', '')) if cs == 'descripcion' else \
                           str(int(row.get('cantidad', 0) or 0)) if cs == 'cantidad' else \
                           (c.get('valor_fijo') or '') if cs == 'fijo' else ''

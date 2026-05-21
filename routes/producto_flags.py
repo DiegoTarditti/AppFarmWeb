@@ -1,12 +1,37 @@
 """CRUD de flags de comportamiento por producto (EAN) o laboratorio."""
 import json
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
-from flask import flash, redirect, render_template, request, url_for
+from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 import database
-from database import Laboratorio, Producto, ProductoFlag, TipoPedidoConfig, get_db
+from database import (
+    Laboratorio,
+    Producto,
+    ProductoAtributo,
+    ProductoCodigoBarra,
+    ProductoFlag,
+    TipoPedidoConfig,
+    get_db,
+)
+
+
+def _resolver_producto_por_ean(session, ean):
+    """Producto master por cualquier EAN: principal, alt1/2/3 o tabla 1-a-N."""
+    prod = session.query(Producto).filter_by(codigo_barra=ean).first()
+    if prod:
+        return prod
+    prod = (session.query(Producto)
+            .filter((Producto.codigo_barra_alt1 == ean)
+                    | (Producto.codigo_barra_alt2 == ean)
+                    | (Producto.codigo_barra_alt3 == ean)).first())
+    if prod:
+        return prod
+    pcb = (session.query(ProductoCodigoBarra)
+           .filter_by(codigo_barra=ean).first())
+    return pcb.producto if pcb else None
 
 
 def _flag_configs(session):
@@ -166,10 +191,87 @@ def init_app(app):
     @app.route('/api/producto-nombre')
     @login_required
     def api_producto_nombre():
-        from flask import jsonify
         ean = request.args.get('ean', '').strip()
         if not ean:
             return jsonify({'nombre': None})
         with get_db() as session:
             prod = session.query(Producto).filter_by(codigo_barra=ean).first()
             return jsonify({'nombre': prod.descripcion if prod else None})
+
+    @app.route('/api/producto/presentacion')
+    @login_required
+    def api_producto_presentacion():
+        """Datos de presentación de un producto por EAN (para la tarjeta de
+        config en /productos/flags): fraccionado + cantidad de envase. El envase
+        sale de ProductoAtributo (editable) con fallback al de ObServer."""
+        ean = request.args.get('ean', '').strip()
+        if not ean:
+            return jsonify({'ok': False, 'error': 'Falta EAN'}), 400
+        with get_db() as session:
+            prod = _resolver_producto_por_ean(session, ean)
+            if not prod:
+                return jsonify({'ok': False, 'existe_master': False,
+                                'error': 'Producto sin ficha master local. '
+                                         'Cataloga el producto primero.'})
+            atr = session.get(ProductoAtributo, prod.id)
+            cant = float(atr.cantidad_envase) if (atr and atr.cantidad_envase is not None) else None
+            cant_obs = None
+            if prod.observer_id:
+                from database import ObsProducto
+                obs = session.get(ObsProducto, prod.observer_id)
+                if obs and obs.cantidad_envase is not None:
+                    cant_obs = float(obs.cantidad_envase)
+            # Estado de equivalencia Kellerhoff (sobre el EAN que el export emite).
+            from routes.kellerhoff import ean_export_de_producto, estado_equivalencia
+            kel_ean = ean_export_de_producto(session, prod)
+            kel = estado_equivalencia(session, kel_ean)
+            return jsonify({
+                'ok': True,
+                'existe_master': True,
+                'ean': prod.codigo_barra,
+                'descripcion': prod.descripcion or '',
+                'lab': prod.laboratorio.nombre if prod.laboratorio else '',
+                'fraccionado': bool(prod.fraccionado),
+                'cantidad_envase': cant,
+                'cantidad_envase_obs': cant_obs,
+                'kellerhoff': kel,
+            })
+
+    @app.route('/api/producto/presentacion', methods=['POST'])
+    @login_required
+    def api_producto_presentacion_guardar():
+        """Guarda fraccionado (Producto) + cantidad_envase (ProductoAtributo,
+        fuente=manual). Body JSON: {ean, fraccionado: bool, cantidad_envase}."""
+        body = request.get_json(silent=True) or {}
+        ean = str(body.get('ean', '')).strip()
+        if not ean:
+            return jsonify({'ok': False, 'error': 'Falta EAN'}), 400
+        with get_db() as session:
+            prod = _resolver_producto_por_ean(session, ean)
+            if not prod:
+                return jsonify({'ok': False, 'error': 'Producto sin ficha master local.'}), 404
+
+            prod.fraccionado = bool(body.get('fraccionado'))
+
+            # cantidad_envase → ProductoAtributo (1-a-1). Vacío = no tocar / limpiar.
+            raw = body.get('cantidad_envase')
+            raw = str(raw).strip() if raw is not None else ''
+            atr = session.get(ProductoAtributo, prod.id)
+            if raw:
+                try:
+                    val = Decimal(raw.replace(',', '.'))
+                except (InvalidOperation, ValueError):
+                    return jsonify({'ok': False, 'error': 'Cantidad de envase inválida.'}), 400
+                if atr is None:
+                    atr = ProductoAtributo(producto_id=prod.id)
+                    session.add(atr)
+                atr.cantidad_envase = val
+                atr.fuente = 'manual'
+            elif atr is not None and atr.cantidad_envase is not None:
+                atr.cantidad_envase = None
+                atr.fuente = 'manual'
+
+            session.commit()
+            return jsonify({'ok': True, 'fraccionado': prod.fraccionado,
+                            'cantidad_envase': float(atr.cantidad_envase)
+                            if (atr and atr.cantidad_envase is not None) else None})
