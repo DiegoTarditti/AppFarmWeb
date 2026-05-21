@@ -4,6 +4,16 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🎯 Objetivo (no urgente) — Pantalla de pedido única dirigida por config (2026-05-20)
+
+Unificar las 4 pantallas de armado/sugerencia de pedido (`/compras/dia/armar`,
+`/informes/pedido-auto`, `/pedido/prueba`, `/compras/laboratorio`) en UNA sola
+configurable vía `TipoPedidoConfig`. Plan completo: `docs/plan_pantalla_pedido_unica.md`.
+Prerequisitos: source-of-truth de métricas (HECHO) + cerrar gap oferta-min/estacionalidad
+en el motor de cálculo (pendiente, ver entrada más abajo).
+
+---
+
 ## ⏳ Pendiente — Programación automática de compras + integración con flujo de fondos (2026-05-18)
 
 Diego ya tiene `/flujo_fondos` funcional pero "sin inteligencia" — el operador marca

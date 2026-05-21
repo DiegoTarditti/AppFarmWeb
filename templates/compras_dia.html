@@ -74,6 +74,22 @@
         font-family: ui-monospace, Consolas, monospace;
     }
     .cd-table tbody td .empty { color: var(--ds-text-mute); }
+    /* Chips de "Comportamientos activos" — esquema rgba para buen contraste en
+       dark (las clases Tailwind bg-*-50/text-*-800 quedaban con rojo sobre bordó). */
+    .cb-chip-red    { background: rgba(239,68,68,.16);  color:#fca5a5; border-color: rgba(239,68,68,.45); }
+    .cb-chip-violet { background: rgba(167,139,250,.16); color:#c4b5fd; border-color: rgba(167,139,250,.45); }
+    .cb-chip-amber  { background: rgba(245,158,11,.16);  color:#fcd34d; border-color: rgba(245,158,11,.45); }
+    .cb-chip-sky    { background: rgba(56,189,248,.16);  color:#7dd3fc; border-color: rgba(56,189,248,.45); }
+    /* Tabla "Próximos cierres": todo a la misma altura (vertical centrado) */
+    .cd-table-hoy tbody td { vertical-align: middle; padding: 10px 12px; }
+    .cd-table-hoy .cierre-cell { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .cd-table-hoy .cierre-cell .faltan-lbl { font-size: 11px; color: var(--ds-text-mute); font-family: inherit; }
+    /* Countdown: grande y en color de acento para que salte a la vista */
+    .cd-table-hoy .slot-cd {
+        font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+        font-size: 22px; font-weight: 700; line-height: 1;
+        color: var(--ds-mint); letter-spacing: .02em;
+    }
     /* Modales (overlay base) */
     .cd-modal-back { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
     .cd-modal-card {
@@ -142,11 +158,11 @@
     </div>
     {% if sin_horarios %}
     <div class="flex items-center gap-2">
-        <select id="select-prov-nuevo" title="Elegí una droguería para cargar sus horarios de cierre"
+        <select id="select-prov-nuevo" title="Droguerías activas en la matriz (botón Columnas de droguería). Elegí una para cargar o editar sus horarios."
                 class="ds-select" style="font-size:12px; padding: 6px 10px;">
-            <option value="">+ Cargar horarios de droguería…</option>
+            <option value="">+ Cargar/editar horarios de droguería…</option>
             {% for d in sin_horarios %}
-            <option value="{{ d.id }}" data-nombre="{{ d.nombre }}">{{ d.nombre }}</option>
+            <option value="{{ d.id }}" data-nombre="{{ d.nombre }}">{{ d.nombre }}{% if d.tiene_horarios %} ✓{% endif %}</option>
             {% endfor %}
         </select>
         <button type="button" onclick="abrirEdicionDesdeSelect()" class="btn btn-mint btn-sm">
@@ -176,10 +192,10 @@
        para editar/agregar/quitar. #}
     {% if comportamientos %}
     {% set _cb_color_clases = {
-        'red':    'bg-red-50 text-red-800 border-red-200',
-        'violet': 'bg-violet-50 text-violet-800 border-violet-200',
-        'amber':  'bg-amber-50 text-amber-800 border-amber-200',
-        'sky':    'bg-sky-50 text-sky-800 border-sky-200',
+        'red':    'cb-chip-red',
+        'violet': 'cb-chip-violet',
+        'amber':  'cb-chip-amber',
+        'sky':    'cb-chip-sky',
     } %}
     <div class="bg-surface border border-surface-border rounded-xl p-4">
         <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
@@ -202,107 +218,97 @@
                   title="{{ c.nombre }}{% if c.efecto_armado != 'ninguno' %} — efecto: {{ c.efecto_armado }}{% endif %}">
                 <span class="text-sm leading-none">{{ c.icono }}</span>
                 <span>{{ c.nombre }}</span>
-                <span class="bg-white/70 px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums">{{ c.count }}</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums" style="background: rgba(0,0,0,.35); color:#fff;">{{ c.count }}</span>
             </span>
             {% endfor %}
         </div>
     </div>
     {% endif %}
 
-    {% for prov in proveedores %}
-    <div class="cd-prov-card" data-prov-id="{{ prov.id }}">
+    {# ─── Tabla ÚNICA: cierres de HOY, todas las droguerías intercaladas en
+         orden cronológico. "Pedir" arma en modo matriz con los libres a la
+         droguería de la fila (editable luego desde el encabezado del pedido). #}
+    <div class="cd-prov-card">
         <div class="cd-prov-head">
             <div>
-                <h2>{{ prov.nombre }}</h2>
-                <div class="flex items-center gap-2">
-                    <p class="sub">Tope de pedido / próximo reparto</p>
-                    {% if prov.plantilla %}
-                    <a href="{{ url_for('plantillas_list', tipo='drogueria', id=prov.id) }}"
-                       class="badge"
-                       style="background: rgba(139,92,246,.15); color: #C4B5FD; border: 1px solid rgba(139,92,246,.25); font-size:10px;"
-                       title="{{ prov.plantilla.nombre }}">
-                        {{ prov.plantilla.formato }} · {{ prov.plantilla.n_campos }} campos
-                    </a>
-                    {% else %}
-                    <a href="{{ url_for('plantillas_list', tipo='drogueria', id=prov.id) }}"
-                       class="badge badge-mute"
-                       style="border: 1px dashed var(--ds-line-2); font-size: 10px;">
-                        sin plantilla
-                    </a>
-                    {% endif %}
-                </div>
+                <h2>Próximos cierres</h2>
+                <p class="sub">Cierres de todas las droguerías en orden cronológico (últimos 3 + próximos 4). "Pedir" arma respetando la matriz lab×drog y manda los libres a esa droguería.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-                {% if prov.urgencia %}
-                <span class="cd-urgencia {{ prov.urgencia.nivel }}" data-urgencia
-                      title="Determina cuántas unidades pedir: con cierre cercano pedimos menos, con cierre lejano más.">
-                    <span data-urgencia-label>{{ prov.urgencia.label }}</span>
-                    <span class="horas" data-urgencia-horas>· {{ prov.urgencia.horas }}h</span>
-                </span>
-                {% endif %}
-                <div class="cd-cierre-pill">
-                    {% if prov.proximo_cierre %}
-                    <p class="label">Cierre próximo reparto</p>
-                    <p class="hora" data-cierre-hora>{{ prov.proximo_cierre.hora_str }} hs</p>
-                    <p class="countdown-text">
-                        Faltan <span class="num" data-countdown>--:--:--</span>
-                    </p>
-                    {% else %}
-                    <p style="font-size:12px; color: var(--ds-text-mute);">Sin horarios cargados</p>
-                    {% endif %}
-                </div>
-                <a href="{{ url_for('compras_dia_armar', prov=prov.id) }}" class="btn btn-secondary btn-sm">
-                    Armar pedido →
-                </a>
-                <button type="button"
-                        onclick="abrirModalPedidos({{ prov.id }}, '{{ prov.nombre }}')"
-                        class="btn btn-secondary btn-sm"
-                        {% if prov.pedidos_activos %}style="border-color: rgba(245,158,11,.4); background: rgba(245,158,11,.1); color: var(--ds-warn);"{% endif %}>
-                    📋 Ver Pedidos{% if prov.pedidos_activos %}
-                        <span class="badge badge-warn badge-pill" style="margin-left:4px;">{{ prov.pedidos_activos }}</span>
-                    {% endif %}
-                </button>
-                <button type="button" onclick="abrirEdicionHorarios({{ prov.id }}, this)" class="btn btn-ghost btn-sm">
-                    Editar horarios
+                <button type="button" onclick="abrirModalPedidos(0, 'Todas')" class="btn btn-secondary btn-sm">
+                    📋 Ver Pedidos
                 </button>
             </div>
         </div>
 
-        <table class="cd-table">
+        {% if slots_hoy %}
+        <table class="cd-table cd-table-hoy">
             <thead>
                 <tr>
-                    {% for d in dias %}
-                    <th>{{ d }}</th>
-                    {% endfor %}
+                    <th style="text-align:left; width:190px;">Cierre</th>
+                    <th style="text-align:left; width:80px;">Hora</th>
+                    <th style="text-align:left;">Droguería</th>
+                    <th style="text-align:right; width:230px;">Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                {# Calculamos cuántas filas necesitamos: max horarios entre todos los días. #}
-                {% set max_filas = (prov.horarios_por_dia | map('length') | max) if prov.horarios_por_dia else 0 %}
-                {% for fila in range(max_filas) %}
-                <tr>
-                    {% for horarios_dia in prov.horarios_por_dia %}
+                {% for s in slots_hoy %}
+                <tr class="slot-row{% if s.pasado %} slot-pasado{% endif %}"
+                    data-slot-falta="{{ s.falta_segundos }}"
+                    {% if s.pasado %}style="opacity:.45;"{% endif %}>
                     <td>
-                        {% if fila < horarios_dia | length %}{{ horarios_dia[fila] }}{% else %}<span class="empty">—</span>{% endif %}
+                        {% if s.pasado %}
+                            <div class="cierre-cell">
+                                <span class="badge badge-mute" style="font-size:10px;">cerrado</span>
+                                {% if s.tuvo_pedido %}
+                                <span class="badge" style="font-size:10px; background:rgba(95,230,188,.15); color:var(--ds-mint); border:1px solid rgba(95,230,188,.35);" title="Se emitió un pedido para este cierre">✓ pedido</span>
+                                {% else %}
+                                <span class="badge" style="font-size:10px; background:rgba(245,158,11,.12); color:var(--ds-warn); border:1px solid rgba(245,158,11,.3);" title="No se emitió pedido para este cierre">✗ sin pedido</span>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <div class="cierre-cell">
+                                <span class="cd-urgencia {{ s.urgencia.nivel }}" data-slot-urgencia
+                                      title="Cuanto más lejos el cierre, más unidades conviene pedir.">
+                                    <span data-slot-urg-label>{{ s.urgencia.label }}</span>
+                                </span>
+                                <span class="faltan-lbl">faltan</span>
+                                <span class="slot-cd" data-slot-countdown>--:--:--</span>
+                            </div>
+                        {% endif %}
                     </td>
-                    {% endfor %}
+                    <td>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <button type="button" onclick="abrirEdicionHorarios({{ s.prov_id }}, this, '{{ s.prov_nombre | e }}')"
+                                    class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Editar horarios">✎</button>
+                            <span style="font-family:'JetBrains Mono',monospace; font-weight:600;{% if s.pasado %} text-decoration:line-through;{% endif %}">
+                                {{ s.hora }}
+                                {% if not s.es_hoy %}<span style="font-family:inherit; font-weight:500; font-size:10px; color:var(--ds-text-mute); display:block;">{{ s.dia_label }}</span>{% endif %}
+                            </span>
+                        </div>
+                    </td>
+                    <td style="text-align:left;">
+                        <span style="font-weight:600; color:var(--ds-text);">{{ s.prov_nombre }}</span>
+                        {% if s.pedidos_activos %}
+                        <span class="badge badge-warn badge-pill" style="margin-left:6px;" title="Pedidos activos">{{ s.pedidos_activos }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:right; white-space:nowrap;">
+                        <a href="{{ url_for('compras_dia_armar', libres_a=s.prov_id) }}"
+                           class="btn btn-primary btn-sm" style="font-weight:700;">
+                            Pedir →
+                        </a>
+                    </td>
                 </tr>
                 {% endfor %}
-                {% if max_filas == 0 %}
-                <tr>
-                    <td colspan="7" style="padding: 24px; color: var(--ds-text-mute); font-family: inherit;">
-                        Sin horarios cargados. Tocá "Editar horarios" para agregar.
-                    </td>
-                </tr>
-                {% endif %}
             </tbody>
         </table>
+        {% else %}
+        <div style="padding: 24px; color: var(--ds-text-mute); font-size: 13px;">
+            No hay cierres próximos. {% if not proveedores %}Agregá horarios desde el selector de arriba.{% endif %}
+        </div>
+        {% endif %}
     </div>
-    {% else %}
-    <div class="card" style="border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); color: var(--ds-warn);">
-        No hay proveedores con horarios cargados. Agregá horarios desde acá o desde el panel de proveedores.
-    </div>
-    {% endfor %}
 </div>
 
 <!-- Modal edición horarios -->
@@ -343,13 +349,42 @@
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 let _provActual = null;
 
-async function abrirEdicionHorarios(provId, btn) {
+async function abrirEdicionHorarios(provId, btn, nombre) {
     _provActual = provId;
+    const card = btn.closest('[data-prov-id]');
     document.getElementById('modal-prov-nombre').textContent =
-        btn.closest('[data-prov-id]').querySelector('h2').textContent;
+        nombre || (card ? card.querySelector('h2').textContent : '');
     await refrescarGrilla();
     document.getElementById('modal-horarios').classList.remove('hidden');
 }
+
+// ── Countdown por fila de la tabla de cierres de hoy ──────────────────────
+// Cada fila trae data-slot-falta = segundos al cierre (calculado en server al
+// render). Decrementamos client-side desde ese baseline.
+const _slotBase = Date.now();
+const _slotRows = Array.from(document.querySelectorAll('.slot-row[data-slot-falta]')).map(tr => ({
+    cd: tr.querySelector('[data-slot-countdown]'),
+    urg: tr.querySelector('[data-slot-urgencia]'),
+    urgLbl: tr.querySelector('[data-slot-urg-label]'),
+    falta0: parseInt(tr.dataset.slotFalta, 10),
+}));
+function tickSlots() {
+    const elapsed = (Date.now() - _slotBase) / 1000;
+    _slotRows.forEach(s => {
+        if (!s.cd) return;
+        const secs = s.falta0 - elapsed;
+        if (secs <= 0) { s.cd.textContent = '—'; return; }
+        s.cd.textContent = _formatHHMMSS(secs);
+        s.cd.style.color = secs <= 600 ? 'var(--ds-danger)' : '';
+        if (s.urg) {
+            const u = _urgenciaDesdeSecs(secs);
+            s.urg.classList.remove('corto', 'medio', 'largo');
+            s.urg.classList.add(u.nivel);
+            if (s.urgLbl) s.urgLbl.textContent = u.label;
+        }
+    });
+}
+if (_slotRows.length) { tickSlots(); setInterval(tickSlots, 1000); }
 
 async function abrirEdicionDesdeSelect() {
     const sel = document.getElementById('select-prov-nuevo');

@@ -192,17 +192,27 @@ def init_app(app):
                     'pedidos_activos': pedidos_activos.get(p.id, 0),
                     'plantilla': _plant_map.get(p.id),
                 })
-            # Drogerías activas que NO tienen horarios todavía — para el dropdown
-            # "agregar nueva al flujo".
-            drogerias_sin_horarios = (
+            # Dropdown "Cargar/editar horarios": las droguerías ACTIVAS EN LA
+            # MATRIZ (matriz_visible=True, definidas con el botón "Columnas de
+            # droguería" de la matriz), tengan o no horarios. Selecccionar una
+            # abre el modal de edición (carga las existentes o arranca vacía).
+            # No usamos "las que no tienen horarios": eso mostraba droguerías que
+            # no van a la matriz (Ciafarma/PHARMOS) y ocultaba las que sí.
+            from sqlalchemy import case as _case_dh
+            _con_hor = set(prov_ids)
+            _drogs_matriz = (
                 session.query(Provider)
                 .filter(Provider.tipo == 'drogueria',
                         Provider.activo.is_(True),
-                        ~Provider.id.in_(prov_ids if prov_ids else [-1]))
-                .order_by(Provider.razon_social).all()
+                        Provider.matriz_visible.is_(True))
+                .order_by(
+                    _case_dh((Provider.matriz_orden.isnot(None), Provider.matriz_orden), else_=9999),
+                    Provider.razon_social)
+                .all()
             )
-            sin_horarios = [{'id': p.id, 'nombre': p.razon_social}
-                            for p in drogerias_sin_horarios]
+            sin_horarios = [{'id': p.id, 'nombre': p.razon_social,
+                             'tiene_horarios': p.id in _con_hor}
+                            for p in _drogs_matriz]
 
             # Card "Comportamientos activos": resumen de ProductoFlag vigentes,
             # agrupado por slug. Se muestra arriba para que el operador vea al
@@ -247,8 +257,95 @@ def init_app(app):
                         'count': int(cnt),
                     })
                     comportamientos_total += int(cnt)
+
+            # ── Tabla única de cierres: ventana deslizante centrada en AHORA ──
+            # Todas las droguerías intercaladas en orden cronológico, cruzando
+            # días: mostramos los 3 cierres más recientes ya pasados (gris) + los
+            # próximos N futuros. Así siempre hay 3-4 cierres "hacia adelante"
+            # visibles aunque cambie el día. Dinámico: sale de `proveedores`.
+            from datetime import datetime as _dt_h
+            from datetime import time as _time_h
+            from datetime import timedelta as _td_h
+
+            from services.horarios import _parse_hhmm
+            _PASADOS_N = 3
+            _FUTUROS_N = 4
+            _DIAS_ATRAS = 4    # ventana de búsqueda hacia atrás (cubre fin de semana)
+            _DIAS_ADELANTE = 8  # hacia adelante
+            _ahora = _dt_h.now()
+            _hoy_d = _ahora.date()
+            _todos = []
+            for _p in proveedores:
+                _matriz = _p['horarios_por_dia'] or []
+                if not _matriz:
+                    continue
+                for _delta in range(-_DIAS_ATRAS, _DIAS_ADELANTE + 1):
+                    _d = _hoy_d + _td_h(days=_delta)
+                    for _hora_str in _matriz[_d.weekday()]:
+                        _hm = _parse_hhmm(_hora_str)
+                        if not _hm:
+                            continue
+                        _dt = _dt_h.combine(_d, _time_h(_hm[0], _hm[1]))
+                        _falta = int((_dt - _ahora).total_seconds())
+                        # Etiqueta de día relativa.
+                        _dd = _delta if _delta in (-1, 0, 1) else None
+                        if _dd == 0:
+                            _dia_lbl = 'hoy'
+                        elif _dd == 1:
+                            _dia_lbl = 'mañana'
+                        elif _dd == -1:
+                            _dia_lbl = 'ayer'
+                        else:
+                            _dia_lbl = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'][_d.weekday()] + f' {_d.day}'
+                        _todos.append({
+                            'prov_id': _p['id'],
+                            'prov_nombre': _p['nombre'],
+                            'hora': _hora_str,
+                            'dia_label': _dia_lbl,
+                            'es_hoy': _delta == 0,
+                            'dt': _dt,
+                            'falta_segundos': _falta,
+                            'pasado': _falta < 0,
+                            'urgencia': urgencia_cierre(_falta) if _falta >= 0 else None,
+                            'plantilla': _p['plantilla'],
+                            'pedidos_activos': _p['pedidos_activos'],
+                        })
+            _todos.sort(key=lambda s: s['dt'])
+            _pasados = [s for s in _todos if s['falta_segundos'] < 0]
+            _futuros = [s for s in _todos if s['falta_segundos'] >= 0]
+            slots_hoy = _pasados[-_PASADOS_N:] + _futuros[:_FUTUROS_N]
+
+            # ── ¿Hubo pedido emitido para cada slot YA PASADO? ──
+            # Un pedido "cuenta" para un cierre si se emitió a esa droguería en la
+            # ventana (cierre anterior de la misma drog, este cierre]. Sirve para
+            # ver de un vistazo si se respondió o se dejó pasar un reparto.
+            from collections import defaultdict as _dd_h
+            _dt_por_drog = _dd_h(list)
+            for _t in _todos:
+                _dt_por_drog[_t['prov_id']].append(_t['dt'])
+            for _lst in _dt_por_drog.values():
+                _lst.sort()
+            for _s in slots_hoy:
+                _s['tuvo_pedido'] = None  # solo aplica a pasados
+                if _s['falta_segundos'] >= 0:
+                    continue
+                _cierre = _s['dt']
+                # Cierre anterior de la MISMA droguería (ventana del reparto).
+                _previos = [d for d in _dt_por_drog[_s['prov_id']] if d < _cierre]
+                _ini = _previos[-1] if _previos else (_cierre - _td_h(days=7))
+                _n_ped = (session.query(PedidoEmitido)
+                          .filter(PedidoEmitido.drogueria_id == _s['prov_id'],
+                                  PedidoEmitido.fecha > _ini,
+                                  PedidoEmitido.fecha <= _cierre)
+                          .count())
+                _s['tuvo_pedido'] = _n_ped > 0
+
+            for _s in slots_hoy:
+                _s.pop('dt', None)  # no serializable / no se usa en template
+
         return render_template('compras_dia.html',
                                proveedores=proveedores,
+                               slots_hoy=slots_hoy,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS,
                                comportamientos=comportamientos,
@@ -527,6 +624,11 @@ def init_app(app):
         # Filtra el universo a productos del lab y desactiva la matriz lab×drog
         # (el user eligió un solo lab, no hace falta resolver qué drog cubre).
         lab_id = request.args.get('lab_id', type=int)
+        # libres_a: cuando se entra desde la tabla de cierres de hoy (/pedidos/dia).
+        # Es el id de la droguería del renglón elegido. Modo matriz (sin prov):
+        # los productos libres (sin asignación lab×drog) se preasignan a esta
+        # droguería en el front (editable después). Solo aplica en modo matriz.
+        libres_a = request.args.get('libres_a', type=int)
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
@@ -1273,6 +1375,7 @@ def init_app(app):
                                    usar_oferta=usar_oferta,
                                    lab_id=lab_id,
                                    lab_nombre=lab_nombre,
+                                   libres_a=libres_a,
                                    droguerias_canal=droguerias_canal,
                                    lab_ofertas=lab_ofertas if lab_id else [])
 
@@ -1750,8 +1853,21 @@ def init_app(app):
                     'count': r.cnt,
                     'fecha': fecha.strftime('%d/%m/%y') if fecha else '',
                 }
+            # Droguerías que tienen plantilla de pedido configurada (set-once;
+            # se muestra como indicador "con/sin plantilla" bajo cada columna).
+            from database import Plantilla as _Plant
+            _drog_ids = [d.id for d in drogs]
+            _con_plantilla = set()
+            if _drog_ids:
+                _con_plantilla = set(
+                    r[0] for r in session.query(_Plant.entidad_id)
+                    .filter(_Plant.entidad_tipo == 'drogueria',
+                            _Plant.tipo_doc == 'pedido',
+                            _Plant.entidad_id.in_(_drog_ids)).distinct().all()
+                )
             labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
-            drogs_data = [{'id': d.id, 'nombre': d.razon_social} for d in drogs]
+            drogs_data = [{'id': d.id, 'nombre': d.razon_social,
+                           'tiene_plantilla': d.id in _con_plantilla} for d in drogs]
             todas_drogs_data = [{'id': d.id, 'nombre': d.razon_social,
                                   'visible': d.matriz_visible, 'orden': d.matriz_orden,
                                   'activo': d.activo} for d in todas_drogs]

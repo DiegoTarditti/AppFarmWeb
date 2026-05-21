@@ -1480,71 +1480,31 @@ def init_app(app):
         el observer_id. Útil para informes/listados que cruzan con ObServer
         directo y no pasan por Producto local.
         """
-        from datetime import date as _date
+        from services.producto_metrics import metricas_producto
         with database.get_db() as session:
             obs = session.get(ObsProducto, observer_id)
             if not obs:
                 return jsonify({'ok': False, 'error': 'Producto ObServer no encontrado'}), 404
 
-            # Construir array de 12 valores mensuales (mes -11 al mes actual).
-            hoy = _date.today()
-            ventas_arr = [0] * 12
-            start_y = hoy.year
-            start_m = hoy.month - 11
-            while start_m <= 0:
-                start_m += 12
-                start_y -= 1
-            ventas_rows = (session.query(ObsVentaMensual)
-                           .filter(ObsVentaMensual.producto_observer == observer_id)
-                           .all())
-            for v in ventas_rows:
-                # Calcular el slot 0..11 del array.
-                offset = (v.anio - start_y) * 12 + (v.mes - start_m)
-                if 0 <= offset <= 11:
-                    ventas_arr[offset] += int(v.unidades or 0)
-
-            # Stock + mínimo: sumamos sobre todas las farmacias si hay datos.
-            from database import ObsStock
-            stock_row = (session.query(
-                            func.coalesce(func.sum(ObsStock.stock_actual), 0),
-                            func.coalesce(func.sum(ObsStock.minimo), 0),
-                         )
-                         .filter(ObsStock.producto_observer == observer_id).first())
-            stock_total = int(stock_row[0] or 0) if stock_row else 0
-            minimo_total = int(stock_row[1] or 0) if stock_row else 0
-
-            no_cero = [v for v in ventas_arr if v > 0]
-            avg = sum(no_cero) / len(no_cero) if no_cero else 0
-            # Tendencia simple: pendiente lineal sobre los 12 meses.
-            n = len(ventas_arr)
-            xs = list(range(n))
-            mean_x = sum(xs) / n
-            mean_y = sum(ventas_arr) / n
-            num = sum((xs[i] - mean_x) * (ventas_arr[i] - mean_y) for i in range(n))
-            den = sum((x - mean_x) ** 2 for x in xs)
-            slope = num / den if den else 0
-            # Rotación rough: A si avg>=20, M si >=5, B si menos.
-            if avg >= 20:
-                rot = 'A'
-            elif avg >= 5:
-                rot = 'M'
-            else:
-                rot = 'B'
-
+            # Source of truth unico: stock/min de 1 farmacia, avg_3m + avg_12m,
+            # rotacion via rotation_index. Ver services/producto_metrics.py.
+            m = metricas_producto(session, observer_id)
             return jsonify({
                 'ok': True,
                 'nombre': obs.descripcion or '',
                 'codigo_barra': obs.codigo_alfabeta or str(observer_id),
-                'ventas': ventas_arr,
-                'avg_monthly': float(avg),
-                'slope': float(slope),
-                'stock': stock_total,
-                'minimo': minimo_total,
-                'rotacion': rot,
+                'ventas': m['ventas12'],
+                'avg_monthly': m['avg_monthly'],   # alias de avg_12m (backcompat)
+                'avg_3m': m['avg_3m'],
+                'avg_12m': m['avg_12m'],
+                'slope': m['slope'],
+                'stock': m['stock'],
+                'minimo': m['minimo'],
+                'rotacion': m['rotacion'],
                 'tipo': 'N',
-                'start_month': start_m,
+                'start_month': m['start_month'],
                 'n_days': 35,
-                'sin_historial': not no_cero,
+                'sin_historial': m['sin_historial'],
                 'analizado_en': None,
             })
 

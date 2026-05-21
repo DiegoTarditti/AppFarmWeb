@@ -1087,16 +1087,24 @@ function _actualizarBulkLibresCount() {
     if (multi.length)  partes.push(`${multi.length} multi-drog`);
     el.textContent = partes.length ? `(${partes.join(' · ')})` : '(sin Libres ni multi-drog visibles)';
 }
-function asignarLibresA(drogId, drogNombre, drogSigla) {
+function asignarLibresA(drogId, drogNombre, drogSigla, silent) {
     // Asigna `drogSigla` a:
     //   1. Filas Libres visibles (sin matriz) → set incondicional.
     //   2. Filas multi-drog visibles que tengan esa sigla en su matriz → set.
     // Solo toca filas VISIBLES (respeta filtros activos de producto/lab/etc).
+    // silent=true: sin confirm ni alert (usado por el preset auto de ?libres_a).
     const libres = _libresVisibles();
     const multi  = _multiDrogVisibles().filter(r =>
         (r.dataset.drogs || '').split(',').includes(drogSigla));
     if (!libres.length && !multi.length) {
-        alert(`No hay filas Libres ni multi-drog con ${drogSigla} visibles.`);
+        if (!silent) alert(`No hay filas Libres ni multi-drog con ${drogSigla} visibles.`);
+        return;
+    }
+    if (silent) {
+        // Preset automático: aplica sin preguntar (el usuario lo cambia con los
+        // botones "Libres a:" si quiere otra droguería).
+        libres.forEach(row => { row.dataset.drogElegida = drogSigla; _repintarDrogCell(row); });
+        multi.forEach(row => { row.dataset.drogElegida = drogSigla; _repintarDrogCell(row); });
         return;
     }
     // Detectar si hay filtros activos para avisar.
@@ -1128,6 +1136,14 @@ function asignarLibresA(drogId, drogNombre, drogSigla) {
 const _origAplicar = aplicarFiltros;
 aplicarFiltros = function() { _origAplicar(); _actualizarBulkLibresCount(); };
 _actualizarBulkLibresCount();
+
+{% if libres_a and not prov and not lab_id and drog_label and libres_a in drog_label %}
+// Preset automático de "Libres a:" cuando se entra desde /pedidos/dia con
+// ?libres_a=N (la droguería del renglón de cierres de hoy). Modo matriz: los
+// libres van a esta droguería por default, editable con los botones "Libres a:".
+asignarLibresA({{ libres_a }}, '{{ drog_nombre_full[libres_a] | e }}', '{{ drog_label[libres_a] }}', true);
+_actualizarBulkLibresCount();
+{% endif %}
 
 // Orden urgentes arriba: reordena DOM moviendo los `data-sug=up` al inicio del tbody.
 let _ordenSugActivo = false;

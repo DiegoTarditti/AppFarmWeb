@@ -207,10 +207,11 @@
         document.getElementById('kpi-minimo').textContent = fmtNum(d.minimo);
         document.getElementById('kpi-avg').textContent = fmtNum(d.avg_monthly);
 
-        // Cobertura: stock / (avg_monthly / 30)
+        // Cobertura: stock / (avg_monthly / 30.4). Divisor unico en toda la app
+        // (mismo que _grafico_dual_panel y _grafico_historico): 365.25/12.
         let cob = null;
         if (d.avg_monthly > 0) {
-            cob = (d.stock || 0) / (d.avg_monthly / 30);
+            cob = (d.stock || 0) / (d.avg_monthly / 30.4);
             const cobEl = document.getElementById('kpi-cob');
             cobEl.textContent = Math.round(cob) + 'd';
             if (cob < 7) cobEl.classList.add('danger');
