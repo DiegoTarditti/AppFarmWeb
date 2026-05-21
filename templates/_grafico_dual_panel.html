@@ -162,11 +162,12 @@
             ]},
             options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
                 plugins:{legend:{labels:{color:_T.soft,font:{size:10,weight:'600'},boxWidth:14,padding:8}},tooltip:{backgroundColor:_T.surface,titleColor:_T.text,bodyColor:_T.soft,borderColor:_T.line2,borderWidth:1,padding:8}},
-                scales:{x:{grid:{color:_T.line},ticks:{color:_T.soft,font:{size:9}}},y:{grid:{color:_T.line},ticks:{color:_T.soft,font:{size:9}},beginAtZero:true}}}
+                scales:{x:{stacked:true,grid:{color:_T.line},ticks:{color:_T.soft,font:{size:9}}},y:{stacked:true,grid:{color:_T.line},ticks:{color:_T.soft,font:{size:9}},beginAtZero:true}}}
         });
         const ss = slope>0.05?'↑':slope<-0.05?'↓':'→', sc = slope>0.05?_T.slopeUp:slope<-0.05?_T.slopeDown:_T.mute;
         const stats = [
             {l:'Prom/mes',v:Math.round(avg),c:_T.text},
+            {l:'Anual (12m)',v:Math.round(ventas.slice(0,12).reduce((a,b)=>a+(b||0),0)),c:_T.text},
             {l:'Rotación',v:rL[rot]||rot,c:rC[rot]||_T.mute},
             {l:'Tendencia',v:`${ss} ${Math.abs(slope).toFixed(1)}/m`,c:sc},
             {l:'Stock',v:p.stock<=0?'agotado':p.stock,c:stockBajoMin?_T.danger:(p.stock<=0?_T.danger:_T.text)},
