@@ -129,9 +129,10 @@ def metricas_producto(session, observer_id, id_farmacia=None, hoy=None):
     }
 
 
-def cobertura_dias(stock, avg_mensual, divisor=30.0):
+def cobertura_dias(stock, avg_mensual, divisor=30.4):
     """Dias de cobertura = stock / (avg_mensual / divisor). Helper unico para
-    estandarizar el divisor (antes unos usaban 30 y otros 30.4).
+    estandarizar el divisor: 30.4 = 365.25/12 (mismo que usa el front en
+    _grafico_dual_panel / _grafico_historico / consulta_producto).
 
     Devuelve None si no hay demanda (avg<=0) — el consumidor decide como mostrarlo.
     """
