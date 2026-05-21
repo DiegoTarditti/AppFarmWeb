@@ -17,6 +17,7 @@ from flask_login import login_required
 
 import database
 from database import Laboratorio, OfertaMinimo, Provider
+from helpers import normalizar_unidades_minima
 
 
 def _to_int(v):
@@ -115,8 +116,8 @@ def _guardar_modo_drog(data):
             if not ean and not codigo:
                 saltados += 1
                 continue
-            um = _to_int(it.get('unidades_minima'))
-            tipo_desc = 'con_minimo' if (um is not None and um > 1) else 'simple'
+            um = normalizar_unidades_minima(it.get('unidades_minima'))
+            tipo_desc = 'con_minimo' if um > 1 else 'simple'
             lab_id_item = ean_to_lab.get(ean) if ean else None
             if not lab_id_item:
                 sin_lab += 1
@@ -1184,9 +1185,9 @@ def init_app(app):
                     q = q.filter(OfertaMinimo.codigo == codigo)
                 existing = q.first()
 
-                # Catalogar tipo: si tiene mínimo > 1 → 'con_minimo', sino 'simple'.
-                um = _to_int(it.get('unidades_minima'))
-                tipo_desc = 'con_minimo' if (um is not None and um > 1) else 'simple'
+                # Toda oferta importada tiene mínimo >= 1 (simple = mínimo 1).
+                um = normalizar_unidades_minima(it.get('unidades_minima'))
+                tipo_desc = 'con_minimo' if um > 1 else 'simple'
 
                 if existing:
                     if it.get('descripcion'):

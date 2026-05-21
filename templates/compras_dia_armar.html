@@ -373,10 +373,14 @@
         {% else %}
         <span>Sin sync registrado</span>
         {% endif %}
+        {# Sync en vivo: solo en local (ObServer en la LAN). En Render la data
+           obs_* se replica con "Push a Render", no se sincroniza desde acá. #}
+        {% if entorno.codigo != 'render' %}
         <button type="button" onclick="sincronizarStockAhora(this)" class="sync-btn"
                 title="Sincronizar stock con ObServer ahora">
             Sincronizar ahora
         </button>
+        {% endif %}
     </span>
 
     <span class="meta">
@@ -573,6 +577,30 @@
     </div>
 </div>
 
+{# ── Paso de módulos (solo labs con usa_packs) ──────────────────────────
+   El lab compra por módulos de descuento: cada módulo es un combo de packs
+   con una cantidad fija y un %. El cálculo (cuántos módulos comprar para
+   cubrir el bajo-mínimo) es el mismo floor/min de order_detail, acá embebido.
+   "Aplicar" siembra las cantidades de la tabla; después se refina con las
+   ofertas c/mín (botón → de cada fila) y se emite. #}
+{% if usa_packs and modulos_lab %}
+<div class="px-4 sm:px-6 pt-4">
+    <div id="modulos-panel" class="rounded-xl border border-amber-300 bg-amber-50/60 overflow-hidden">
+        <div class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
+             onclick="toggleModulosPanel()">
+            <span class="text-lg">📦</span>
+            <div class="flex-1">
+                <p class="font-semibold text-sm text-amber-900">Este laboratorio compra por módulos de descuento</p>
+                <p class="text-xs text-amber-700">{{ modulos_lab | length }} módulo{{ 's' if modulos_lab|length != 1 }} activo{{ 's' if modulos_lab|length != 1 }} ·
+                    el sugerido se calcula sobre las cantidades a pedir de abajo. Revisá y aplicá antes de las ofertas c/mín.</p>
+            </div>
+            <span id="modulos-chevron" class="text-amber-700 text-sm transition-transform">▾</span>
+        </div>
+        <div id="modulos-body" class="hidden border-t border-amber-200 p-4 space-y-4 bg-white"></div>
+    </div>
+</div>
+{% endif %}
+
 <div class="px-4 sm:px-6 py-4">
     <div class="ar-table-wrap">
         <table class="tabla-armar">
@@ -607,6 +635,7 @@
                     data-oferta-min="{{ it.oferta_min or '' }}"
                     data-drogs="{{ (it.drogs_siglas or []) | join(',') }}"
                     data-lab-id="{{ it.lab_local_id or '' }}"
+                    data-ean="{{ it.ean or '' }}"
                     onclick="seleccionarProducto(this)">
                     <td class="px-3 py-1">
                         {% if it.tipo == 'C' %}
@@ -1457,6 +1486,129 @@ function subirAMinOferta(btn, minimo) {
     if (input) {
         input.value = minimo;
         btn.remove();
+    }
+}
+
+// ── Paso de módulos (labs con usa_packs) ────────────────────────────────
+// Cálculo idéntico a order_detail.procesarModulos: por pack del módulo,
+// unidades_por_slot = cant_modulo × cantidad; cant_calc = floor(a_pedir/ups);
+// módulos sugeridos = min(cant_calc) (pack limitante). "Aplicar" siembra la
+// tabla: qty del producto unidad = N módulos × ups.
+const MODULOS_LAB = {{ modulos_lab | tojson }};
+
+function _rowPorEan(ean) {
+    if (!ean) return null;
+    return document.querySelector(`tr.producto-row[data-ean="${ean}"]`);
+}
+function _aPedirDe(ean) {
+    const row = _rowPorEan(ean);
+    if (!row) return null;  // null = el producto no está bajo mínimo en la tabla
+    const inp = row.querySelector('input[type="number"]');
+    return inp ? (parseInt(inp.value) || 0) : 0;
+}
+function _calcModulo(mod) {
+    let sugerido = null;
+    const packs = mod.packs.map(p => {
+        const ups = (p.cant_modulo || 1) * (p.cantidad || 1);
+        const aped = _aPedirDe(p.ean_unidad);          // null si no está en tabla
+        const enTabla = aped !== null;
+        const calc = (enTabla && ups > 0) ? Math.floor(aped / ups) : 0;
+        if (enTabla) sugerido = (sugerido === null) ? calc : Math.min(sugerido, calc);
+        return { ...p, ups, aped: aped || 0, enTabla, calc };
+    });
+    if (sugerido === null) sugerido = 0;
+    return { sugerido, packs };
+}
+
+function toggleModulosPanel() {
+    const body = document.getElementById('modulos-body');
+    const chev = document.getElementById('modulos-chevron');
+    if (!body) return;
+    const abierto = !body.classList.contains('hidden');
+    if (abierto) {
+        body.classList.add('hidden');
+        if (chev) chev.style.transform = '';
+    } else {
+        renderModulosPanel();   // recalcula sobre las cantidades actuales
+        body.classList.remove('hidden');
+        if (chev) chev.style.transform = 'rotate(180deg)';
+    }
+}
+
+function renderModulosPanel() {
+    const body = document.getElementById('modulos-body');
+    if (!body) return;
+    let html = '';
+    MODULOS_LAB.forEach((mod, idx) => {
+        const r = _calcModulo(mod);
+        const faltantes = r.packs.filter(p => !p.enTabla).length;
+        html += `<div class="border border-[#e8e8e8] rounded-lg overflow-hidden">
+            <div class="flex flex-wrap items-center gap-3 px-3 py-2 bg-[#faf7f0] border-b border-[#eee]">
+                <span class="font-semibold text-sm text-[#1e1e1e]">${mod.nombre || ('Módulo ' + (idx+1))}</span>
+                <span class="text-xs text-[#888]">${mod.packs.length} producto${mod.packs.length!=1?'s':''}${faltantes ? ' · '+faltantes+' fuera de bajo-mínimo' : ''}</span>
+                <div class="ml-auto flex items-center gap-2">
+                    <label class="text-xs text-[#666]">Módulos a comprar:</label>
+                    <input type="number" min="0" value="${r.sugerido}" id="modN-${idx}"
+                           class="w-16 text-right bg-white border border-amber-300 rounded px-1.5 py-0.5 text-sm font-mono text-amber-800 font-bold">
+                    <span class="text-[10px] text-[#999]">sug. ${r.sugerido}</span>
+                    <button onclick="aplicarModulo(${idx})"
+                            class="text-xs font-semibold px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white">
+                        Aplicar a la tabla
+                    </button>
+                </div>
+            </div>
+            <table class="w-full text-xs border-collapse">
+                <thead><tr class="bg-[#f5f5f5] text-[#777] uppercase text-[10px]">
+                    <th class="text-left px-2 py-1.5">Producto (unidad)</th>
+                    <th class="text-left px-2 py-1.5">EAN unidad</th>
+                    <th class="text-right px-2 py-1.5">u/módulo</th>
+                    <th class="text-right px-2 py-1.5 text-emerald-700">Dto%</th>
+                    <th class="text-right px-2 py-1.5 text-amber-700">A pedir actual</th>
+                    <th class="text-right px-2 py-1.5">Calc.</th>
+                </tr></thead><tbody>`;
+        r.packs.forEach(p => {
+            const cls = p.enTabla ? '' : 'opacity-50';
+            html += `<tr class="border-b border-[#f0f0f0] ${cls}">
+                <td class="px-2 py-1 font-medium">${p.desc_unidad || '<span class="text-[#bbb]">—</span>'}</td>
+                <td class="px-2 py-1 font-mono text-[10px] text-[#999]">${p.ean_unidad}</td>
+                <td class="px-2 py-1 text-right">${p.ups}</td>
+                <td class="px-2 py-1 text-right text-emerald-700">${p.desc_pct ? p.desc_pct + '%' : '—'}</td>
+                <td class="px-2 py-1 text-right text-amber-700">${p.enTabla ? p.aped : '<span class="text-[#bbb]">fuera</span>'}</td>
+                <td class="px-2 py-1 text-right font-semibold">${p.enTabla ? p.calc : '—'}</td>
+            </tr>`;
+        });
+        html += '</tbody></table></div>';
+    });
+    body.innerHTML = html;
+}
+
+function aplicarModulo(idx) {
+    const mod = MODULOS_LAB[idx];
+    if (!mod) return;
+    const N = Math.max(0, parseInt(document.getElementById('modN-' + idx)?.value) || 0);
+    let aplicados = 0, fuera = 0;
+    mod.packs.forEach(p => {
+        const row = _rowPorEan(p.ean_unidad);
+        if (!row) { fuera++; return; }
+        const inp = row.querySelector('input[type="number"]');
+        if (!inp) { fuera++; return; }
+        const ups = (p.cant_modulo || 1) * (p.cantidad || 1);
+        inp.value = N * ups;
+        row.classList.add('bg-amber-50');
+        aplicados++;
+    });
+    const body = document.getElementById('modulos-body');
+    if (body) {
+        let fb = document.getElementById('modulos-feedback');
+        if (!fb) {
+            fb = document.createElement('p');
+            fb.id = 'modulos-feedback';
+            fb.className = 'text-xs font-semibold text-emerald-700';
+            body.prepend(fb);
+        }
+        fb.textContent = `✓ ${N} módulo(s) aplicado(s): ${aplicados} producto(s) actualizados en la tabla` +
+            (fuera ? ` · ${fuera} fuera de bajo-mínimo (no se tocaron)` : '') +
+            '. Ajustá ofertas c/mín con el botón → de cada fila y emití.';
     }
 }
 

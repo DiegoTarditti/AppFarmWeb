@@ -80,7 +80,7 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 | `pick_fields.html` | Field picker: texto PDF a la izquierda, campos a la derecha. Selección con mouse + `window.getSelection()` |
 | `invoice_items.html` | Tabla de todos los ítems de una factura (codigo_barra, descripcion, cantidad, precio_unitario, importe, lote, vencimiento) |
 | `orders_list.html` | Lista de pedidos guardados con `<details>` colapsable por pedido. Key de ítems usa `'productos'` (no `'items'` — colisiona con `dict.items()` en Jinja) |
-| `order_detail.html` | Análisis de módulos/ofertas en 3 pasos (step-card): módulos → confirmar → ofertas → resumen. Export XLSX/PDF por paso. Panel "Match manual" dos columnas estilo compare.html |
+| `order_detail.html` | Análisis de módulos/ofertas en 3 pasos (step-card): módulos → ofertas c/mín → resumen. (El viejo paso "Productos en oferta"/oferta simple se eliminó el 2026-05-21: una oferta simple = oferta con mínimo 1.) Export XLSX/PDF por paso. Panel "Match manual" dos columnas estilo compare.html |
 | `productos.html` | Tabla master de productos con filtro por descripción/código/alts y toggle "solo con EAN alt". Ordenada por descripción |
 
 ## Rutas
@@ -119,9 +119,8 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 - `POST /order/<id>/delete` → elimina pedido en cascada
 - `GET /order/<id>` → pantalla análisis módulos/ofertas
 - `POST /order/<id>/parse-modules` → parsea Excel de módulos, devuelve JSON
-- `POST /order/<id>/parse-offers` → parsea Excel de ofertas, devuelve JSON
 - `POST /order/<id>/save-module-matches` → recibe `{matches: [{module_ean, pedido_barcode, pedido_nombre}]}` y crea equivalencias en tabla Producto
-- `POST /order/<id>/export/<step>/<fmt>` → export XLSX (step: modules|offers|summary)
+- `POST /order/<id>/export/<step>/<fmt>` → export XLSX (step: modules|nodeal|summary)
 - `GET /productos` → tabla master con filtro
 
 ### API
@@ -263,7 +262,7 @@ Dos sistemas separados, **intencionalmente NO unificados**:
 
 En order_detail.html (resumen) aparecen botones separados "Plantilla laboratorio" y "Plantilla proveedor" solo cuando la plantilla correspondiente existe.
 
-`CAMPOS_SISTEMA` (database.py) y `EXPORT_FIELDS` (routes/laboratorios.py) tienen el mismo set de campos (ean/codigo_barra, nombre/descripcion, total/cantidad, cant_modulo, cant_oferta, cant_oferta_min, cant_nodeal, precio/precio_pvp, erp_qty, rotacion, avg_monthly + fijo/espacio en proveedor).
+`CAMPOS_SISTEMA` (database.py) y `EXPORT_FIELDS` (routes/laboratorios.py) tienen el mismo set de campos (ean/codigo_barra, nombre/descripcion, total/cantidad, cant_modulo, cant_oferta_min, cant_nodeal, precio/precio_pvp, erp_qty, rotacion, avg_monthly + fijo/espacio en proveedor). El campo `cant_oferta` ("Cantidad oferta") se quitó el 2026-05-21 junto con el paso de oferta simple. Era solo un campo de UI/export (calculado en JS, nunca columna en DB); plantillas viejas que aún lo referencien exportan vacío (fallback `else: val = ''`).
 
 ## Conversor de facturas (learn + verify)
 

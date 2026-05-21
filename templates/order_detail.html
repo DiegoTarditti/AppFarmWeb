@@ -228,7 +228,7 @@
                 <!-- Confirmar (hidden until processed) -->
                 <button id="btn-confirmar-modulos" onclick="confirmarModulos()"
                         class="hidden flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
-                    &#x2713; Confirmar y pasar a Ofertas
+                    &#x2713; Confirmar y pasar a Ofertas c/mín
                 </button>
                 <!-- Re-editar módulos (visible solo tras confirmar) -->
                 <button id="btn-reeditar-modulos" onclick="reeditarModulos()"
@@ -241,7 +241,7 @@
                 <!-- Saltar paso 1 -->
                 <button id="btn-saltar-modulos" onclick="saltarModulos()"
                         class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#d0d0d0] text-[#888] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                        title="Ir directo a ofertas sin módulos">
+                        title="Ir directo a ofertas c/mín sin módulos">
                     Saltar →
                 </button>
                 <!-- Exports (hidden until processed) -->
@@ -327,57 +327,12 @@
         </div>
     </div>
 
-    <!-- PASO 2 — PRODUCTOS EN OFERTA -->
-    <div class="step-card opacity-40 pointer-events-none" id="card-ofertas">
-        <div class="step-header">
-            <span class="step-badge waiting" id="badge-2">2</span>
-            <span class="text-sm font-semibold text-[#1e1e1e]">Productos en oferta</span>
-            <span class="text-xs text-[#999] ml-1" id="ofertas-status">Disponible después de confirmar módulos</span>
-            <div class="ml-auto flex items-center gap-2 no-print" id="ofertas-actions">
-                <label class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                    </svg>
-                    Importar Excel
-                    <input type="file" id="input-ofertas" accept=".xlsx,.xls" class="hidden" onchange="uploadOfertas(this)">
-                </label>
-                <button id="btn-procesar-ofertas" onclick="procesarOfertas()"
-                        class="hidden flex items-center gap-1.5 bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
-                    Procesar
-                </button>
-                <button id="btn-saltar-ofertas" onclick="saltarOfertas()"
-                        class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#d0d0d0] text-[#888] text-xs font-medium px-3 py-1.5 rounded-lg transition-colors"
-                        title="Ir directo al resumen sin ofertas">
-                    Saltar →
-                </button>
-                <button id="btn-export-off-pdf" onclick="printStep('ofertas')"
-                        class="hidden btn btn-secondary btn-sm" title="Exportar a PDF">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
-                    PDF
-                </button>
-                <form id="form-export-off-xlsx" method="POST"
-                      action="{{ url_for('order_export', pedido_id=pedido.id, step='offers', fmt='xlsx') }}">
-                    <input type="hidden" name="data" id="h-off-data">
-                    <input type="hidden" name="laboratorio" value="{{ pedido.laboratorio }}">
-                    <input type="hidden" name="periodo" value="{{ pedido.periodo }}">
-                    <button type="button" id="btn-export-off-xlsx" onclick="exportOfertas()"
-                            class="hidden btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                        XLSX
-                    </button>
-                </form>
-            </div>
-        </div>
-        <div id="ofertas-body" class="p-4 overflow-x-auto hidden"></div>
-    </div>
-
-    <!-- PASO 3 — OFERTAS CON MÍNIMO -->
+    <!-- PASO 2 — OFERTAS CON MÍNIMO -->
     <div class="step-card opacity-40 pointer-events-none" id="card-ofertas-min">
         <div class="step-header">
-            <span class="step-badge waiting" id="badge-3">3</span>
+            <span class="step-badge waiting" id="badge-2">2</span>
             <span class="text-sm font-semibold text-[#1e1e1e]">Ofertas con mínimo</span>
-            <span class="text-xs text-[#999] ml-1" id="ofertas-min-status">Disponible después de procesar ofertas</span>
+            <span class="text-xs text-[#999] ml-1" id="ofertas-min-status">Disponible después de confirmar módulos</span>
             <div class="ml-auto flex items-center gap-2 no-print" id="ofertas-min-actions">
                 <label class="flex items-center gap-1.5 bg-[#f5f5f5] hover:bg-[#ececec] border border-[#e0e0e0] text-[#555] text-xs font-medium px-3 py-1.5 rounded-lg cursor-pointer transition-colors">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -405,10 +360,10 @@
         <div id="ofertas-min-body" class="p-4 overflow-x-auto hidden"></div>
     </div>
 
-    <!-- PASO 4 — SIN DEAL + RESUMEN -->
+    <!-- PASO 3 — SIN DEAL + RESUMEN -->
     <div class="step-card opacity-40 pointer-events-none" id="card-resumen">
         <div class="step-header">
-            <span class="step-badge waiting" id="badge-4">4</span>
+            <span class="step-badge waiting" id="badge-3">3</span>
             <span class="text-sm font-semibold text-[#1e1e1e]">Resumen final</span>
             <span class="text-xs text-[#999] ml-1" id="resumen-status">Disponible después de procesar ofertas con mínimo</span>
             <span id="canal-badge" class="ml-2 hidden text-[10px] font-semibold px-2 py-0.5 rounded"></span>
@@ -590,7 +545,6 @@ function onDrogueriaChange() {
     }
 })();
 const PROD_URL_MODULES  = "{{ url_for('order_parse_modules',        pedido_id=pedido.id) }}";
-const PROD_URL_OFFERS   = "{{ url_for('order_parse_offers',         pedido_id=pedido.id) }}";
 const PROD_URL_MATCHES      = "{{ url_for('order_save_module_matches',  pedido_id=pedido.id) }}";
 const PROD_URL_OFERTAS_MIN  = "/api/ofertas/preview-con-minimo";
 const PEDIDO_LAB_ID = {{ pedido.lab_id | tojson }};
@@ -652,8 +606,6 @@ EQUIV_GROUPS.forEach(g => {
 
 let modulesData    = [];
 let saldosPostMod  = {};
-let ofertasData    = [];
-let offResult      = [];
 let nodealResult   = [];
 let ofertasMinData = [];
 let offMinResult   = [];
@@ -685,7 +637,7 @@ async function saveAnalysisState() {
     status.textContent = 'Guardando…';
     const snap = {
         v: 1,
-        modulesData, saldosPostMod, ofertasData, offResult, nodealResult,
+        modulesData, saldosPostMod, nodealResult,
         ofertasMinData, offMinResult,
         resumenAgr, resumenAgrEans,
         manualQtys: _collectManualQtys(),
@@ -728,9 +680,9 @@ function restoreAnalysisState() {
 
     modulesData    = snap.modulesData    || [];
     saldosPostMod  = snap.saldosPostMod  || {};
-    ofertasData    = snap.ofertasData    || [];
-    offResult      = snap.offResult      || [];
-    nodealResult   = snap.nodealResult   || [];
+    // El paso "ofertas simples" se eliminó (2026-05-21). Snapshots viejos que
+    // tengan snap.offResult: lo plegamos a "sin deal" para no perder el producto.
+    nodealResult   = (snap.nodealResult || []).concat(snap.offResult || []);
     ofertasMinData = snap.ofertasMinData || [];
     offMinResult   = snap.offMinResult   || [];
     resumenAgr     = snap.resumenAgr     || {};
@@ -754,21 +706,15 @@ function restoreAnalysisState() {
         hide('modulos-body');
         show('btn-reeditar-modulos');
         hide('btn-confirmar-modulos'); hide('btn-saltar-modulos');
-        enable('card-ofertas');
+        enable('card-ofertas-min');
         document.getElementById('badge-1')?.classList.add('done');
         document.getElementById('badge-2')?.classList.remove('waiting');
         document.getElementById('modulos-status').textContent = '✓ Restaurado';
     }
-    if (offResult.length || nodealResult.length || ofertasData.length) {
-        try { renderOfertasTable(); } catch (_) {}
+    if (offMinResult.length || ofertasMinData.length || nodealResult.length) {
+        try { renderOfertasConMinimoTable(); } catch (_) {}
         enable('card-ofertas-min');
         document.getElementById('badge-2')?.classList.add('done');
-        document.getElementById('badge-3')?.classList.remove('waiting');
-        document.getElementById('ofertas-status').textContent = '✓ Restaurado';
-    }
-    if (offMinResult.length || ofertasMinData.length) {
-        try { renderOfertasConMinimoTable(); } catch (_) {}
-        document.getElementById('badge-3')?.classList.add('done');
         document.getElementById('ofertas-min-status').textContent = '✓ Restaurado';
     }
     if (resumenAgrEans.length) {
@@ -776,7 +722,7 @@ function restoreAnalysisState() {
         show('btn-export-sum-pdf'); show('btn-export-sum-xlsx');
         show('btn-export-plantillas-wrap'); show('btn-sin-plantillas');
         enable('card-resumen');
-        document.getElementById('badge-4')?.classList.remove('waiting');
+        document.getElementById('badge-3')?.classList.remove('waiting');
         document.getElementById('resumen-status').textContent = '✓ Restaurado';
     }
     _applyManualQtys(snap.manualQtys);
@@ -1345,15 +1291,23 @@ function confirmarModulos() {
             }
         });
     });
-    enable('card-ofertas');
+    // Saldo restante tras módulos → base "sin deal"; el paso de ofertas c/mín
+    // lo reclasifica contra el Excel / las ofertas guardadas del sistema.
+    nodealResult = [];
+    Object.entries(saldosPostMod).forEach(([ean, saldo]) => {
+        if (saldo <= 0) return;
+        nodealResult.push({ ean, nombre: pedidoNom[ean] || ean, cantidad: saldo });
+    });
+    nodealResult.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', {sensitivity: 'base'}));
+    enable('card-ofertas-min');
     document.getElementById('badge-1').classList.add('done');
     document.getElementById('badge-2').classList.remove('waiting');
     hide('btn-confirmar-modulos');
     hide('btn-saltar-modulos');
     show('btn-reeditar-modulos');
     document.getElementById('modulos-status').textContent = '✓ Confirmado';
-    document.getElementById('ofertas-status').textContent = 'Importá el Excel de ofertas';
-    document.getElementById('card-ofertas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    autocargarOfertasMinimo();
+    document.getElementById('card-ofertas-min').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function reeditarModulos() {
@@ -1369,95 +1323,6 @@ function reeditarModulos() {
     });
 }
 
-async function uploadOfertas(input) {
-    const file = input.files[0];
-    if (!file) return;
-    document.getElementById('ofertas-status').textContent = 'Procesando…';
-    const fd = new FormData();
-    fd.append('offers_file', file);
-    try {
-        const r = await fetch(PROD_URL_OFFERS, { method: 'POST', body: fd });
-        const d = await r.json();
-        if (d.error) { alert('Error: ' + d.error); return; }
-        ofertasData = d.ofertas;
-        show('btn-procesar-ofertas');
-        document.getElementById('ofertas-status').textContent =
-            `${ofertasData.length} productos en oferta`;
-    } catch(e) { alert('Error al subir: ' + e); }
-    input.value = '';
-}
-
-function procesarOfertas() {
-    const ofertasByEan = {};
-    ofertasData.forEach(o => { ofertasByEan[o.ean] = o; });
-    EQUIV_GROUPS.forEach(g => {
-        let oferta = null;
-        for (const bc of g.barcodes) { if (ofertasByEan[bc]) { oferta = ofertasByEan[bc]; break; } }
-        if (oferta) { g.barcodes.forEach(bc => { if (!ofertasByEan[bc]) ofertasByEan[bc] = oferta; }); }
-    });
-    Object.entries(MODULO_PACKS).forEach(([eanPack, pack]) => {
-        if (ofertasByEan[eanPack] && !ofertasByEan[pack.ean_unidad])
-            ofertasByEan[pack.ean_unidad] = ofertasByEan[eanPack];
-        if (ofertasByEan[pack.ean_unidad] && !ofertasByEan[eanPack])
-            ofertasByEan[eanPack] = ofertasByEan[pack.ean_unidad];
-    });
-    offResult   = [];
-    nodealResult = [];
-    Object.entries(saldosPostMod).forEach(([ean, saldo]) => {
-        if (saldo <= 0) return;
-        const entry = { ean, nombre: pedidoNom[ean] || ean, cantidad: saldo };
-        if (ofertasByEan[ean]) {
-            offResult.push({ ...entry, descripcion_oferta: ofertasByEan[ean].descripcion });
-        } else {
-            nodealResult.push(entry);
-        }
-    });
-    // A→Z por nombre (regla global del proyecto).
-    const _byName = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', {sensitivity: 'base'});
-    offResult.sort(_byName);
-    nodealResult.sort(_byName);
-    renderOfertasTable();
-    show('btn-export-off-pdf');
-    show('btn-export-off-xlsx');
-    hide('btn-saltar-ofertas');
-    document.getElementById('ofertas-status').textContent =
-        `${offResult.length} en oferta · ${nodealResult.length} sin deal`;
-    enable('card-ofertas-min');
-    document.getElementById('badge-2').classList.add('done');
-    document.getElementById('badge-3').classList.remove('waiting');
-    document.getElementById('card-ofertas-min').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    autocargarOfertasMinimo();
-}
-
-function renderOfertasTable() {
-    const body = document.getElementById('ofertas-body');
-    if (!offResult.length && !nodealResult.length) {
-        body.innerHTML = '<p class="text-sm text-[#999]">No quedan saldos después de los módulos.</p>';
-        show('ofertas-body');
-        return;
-    }
-    let html = '';
-    if (offResult.length) {
-        html += `<p class="text-xs font-semibold text-emerald-700 mb-2">EN OFERTA (${offResult.length})</p>`;
-        html += `<table class="w-full text-xs border-collapse mb-4 min-w-[500px]">
-        <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
-            <th class="text-left px-2 py-2">EAN</th>
-            <th class="text-left px-2 py-2">Producto</th>
-            <th class="text-right px-2 py-2 text-brand">Cant. a pedir</th>
-        </tr></thead><tbody>`;
-        offResult.forEach(it => {
-            html += `<tr class="data-row">
-                <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
-                <td class="px-2 text-right font-bold text-brand">${it.cantidad}</td>
-            </tr>`;
-        });
-        html += '</tbody></table>';
-    }
-    show('ofertas-body');
-    body.innerHTML = html;
-}
-
 let resumenRows    = [];
 let resumenAgrEans = [];
 let resumenAgr     = {};
@@ -1469,7 +1334,7 @@ function buildResumenAgrupado() {
         if (!resumenAgr[ean]) {
             resumenAgrEans.push(ean);
             resumenAgr[ean] = {
-                nombre: pedidoNom[ean] || nombre || ean, cant_mod: 0, cant_oferta: 0, cant_oferta_min: 0, cant_nodeal: 0,
+                nombre: pedidoNom[ean] || nombre || ean, cant_mod: 0, cant_oferta_min: 0, cant_nodeal: 0,
                 cant_pedida: pedidoQty[ean] ?? 0, pvp: pedidoPvp[ean] || PRODUCT_PRICES[ean] || 0,
                 rot: pedidoRot[ean] || {}, erp_qty: pedidoErp[ean] ?? null,
                 monodroga: pedidoMono[ean] || '',
@@ -1485,7 +1350,6 @@ function buildResumenAgrupado() {
             get(ean, it.descripcion).cant_mod += (it.propuesta || 0) * (it._unidadesPorSlot ?? it.cant);
         });
     });
-    offResult.forEach(it    => { get(it.ean, it.nombre).cant_oferta     = it.cantidad; });
     offMinResult.forEach(it => { get(it.ean, it.nombre).cant_oferta_min += it.cantidad; });
     nodealResult.forEach(it => { get(it.ean, it.nombre).cant_nodeal     = it.cantidad; });
     // Orden alfabético por nombre (case-insensitive). Default A→Z para todas las
@@ -1501,8 +1365,8 @@ function buildResumenRows() {
     buildResumenAgrupado();
     return resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
-        const total = d.cant_mod + d.cant_oferta + d.cant_oferta_min + d.cant_nodeal;
-        return { ean, nombre: d.nombre, cant_modulo: d.cant_mod || null, cant_oferta: d.cant_oferta || null,
+        const total = d.cant_mod + d.cant_oferta_min + d.cant_nodeal;
+        return { ean, nombre: d.nombre, cant_modulo: d.cant_mod || null,
                  cant_oferta_min: d.cant_oferta_min || null, cant_nodeal: d.cant_nodeal || null,
                  cant_pedida: d.cant_pedida, total, saldo: d.cant_pedida - total };
     });
@@ -1512,8 +1376,8 @@ function renderResumen() {
     buildResumenAgrupado();
     resumenRows = resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
-        const total = d.cant_mod + d.cant_oferta + d.cant_oferta_min + d.cant_nodeal;
-        return { ean, nombre: d.nombre, cant_modulo: d.cant_mod, cant_oferta: d.cant_oferta,
+        const total = d.cant_mod + d.cant_oferta_min + d.cant_nodeal;
+        return { ean, nombre: d.nombre, cant_modulo: d.cant_mod,
                  cant_oferta_min: d.cant_oferta_min, cant_nodeal: d.cant_nodeal,
                  cant_pedida: d.cant_pedida, total, saldo: d.cant_pedida - total };
     });
@@ -1537,7 +1401,7 @@ function renderResumen() {
         <span id="resumen-count" class="text-xs text-[#999]">${total_prods} productos</span>
     </div>
     <div class="overflow-x-auto">
-    <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:1080px">
+    <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:1000px">
     <thead>
         <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
             <th class="text-left px-2 py-2" style="min-width:150px">Producto</th>
@@ -1546,7 +1410,6 @@ function renderResumen() {
             <th class="text-right px-2 py-2 text-purple-700" style="width:90px">Rot./Prom.mes</th>
             <th class="text-right px-2 py-2 text-rose-700" style="width:70px">Precio</th>
             <th class="text-right px-2 py-2 text-amber-700" style="width:70px" title="Unidades de módulos">Módulo</th>
-            <th class="text-right px-2 py-2 text-emerald-700" style="width:80px" title="Editable">Oferta</th>
             <th class="text-right px-2 py-2 text-purple-600" style="width:80px" title="Editable">Oferta c/mín</th>
             <th class="text-right px-2 py-2 text-sky-700" style="width:80px" title="Editable">Sin Deal</th>
             <th class="text-right px-2 py-2 text-brand font-bold" style="width:70px">Total</th>
@@ -1558,10 +1421,9 @@ function renderResumen() {
     const fmtPvp = n => n > 0 ? '$' + n.toLocaleString('es-AR', {maximumFractionDigits:0}) : '<span class="text-[#ccc]">—</span>';
     resumenAgrEans.forEach(ean => {
         const d = resumenAgr[ean];
-        const initOff    = d.cant_oferta;
         const initOffMin = d.cant_oferta_min;
         const initNodeal = d.cant_nodeal;
-        const initTotal  = d.cant_mod + initOff + initOffMin + initNodeal;
+        const initTotal  = d.cant_mod + initOffMin + initNodeal;
         const initSaldo  = d.cant_pedida - initTotal;
         const saldoCls   = initSaldo > 0 ? 'text-red-600 font-bold' : initSaldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]';
         const totalCls   = initTotal > 0 ? 'font-bold text-brand' : 'text-[#ccc]';
@@ -1589,11 +1451,6 @@ function renderResumen() {
             <td class="px-2 py-1.5 text-right text-rose-700">${fmtPvp(d.pvp)}</td>
             <td class="px-2 py-1.5 text-right font-semibold text-amber-700">${d.cant_mod > 0 ? d.cant_mod : '<span class="text-[#ccc]">—</span>'}</td>
             <td class="px-2 py-1.5 text-right">
-                <input type="number" min="0" value="${initOff}"
-                       class="res-inp w-14 text-right bg-white border border-emerald-300 rounded px-1 py-0.5 text-emerald-700 font-semibold focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                       data-ean="${ean}" data-field="oferta" oninput="recalcResumenRow('${ean}')">
-            </td>
-            <td class="px-2 py-1.5 text-right">
                 <input type="number" min="0" value="${initOffMin}"
                        class="res-inp w-14 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400"
                        data-ean="${ean}" data-field="oferta_min" oninput="recalcResumenRow('${ean}')">
@@ -1616,14 +1473,13 @@ function renderResumen() {
 function recalcResumenRow(ean) {
     const d = resumenAgr[ean];
     if (!d) return;
-    let oferta = 0, oferta_min = 0, nodeal = 0;
+    let oferta_min = 0, nodeal = 0;
     document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
         const v = parseInt(inp.value) || 0;
-        if (inp.dataset.field === 'oferta')      oferta     = v;
         if (inp.dataset.field === 'oferta_min')  oferta_min = v;
         if (inp.dataset.field === 'nodeal')      nodeal     = v;
     });
-    const total = d.cant_mod + oferta + oferta_min + nodeal;
+    const total = d.cant_mod + oferta_min + nodeal;
     const saldo = d.cant_pedida - total;
     const totalEl = document.getElementById(`res-total-${ean}`);
     const saldoEl = document.getElementById(`res-saldo-${ean}`);
@@ -1636,7 +1492,7 @@ function recalcResumenRow(ean) {
         saldoEl.className = `px-2 py-1.5 text-right ${saldo > 0 ? 'text-red-600 font-bold' : saldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]'}`;
     }
     const row = resumenRows.find(r => r.ean === ean);
-    if (row) { row.cant_oferta = oferta; row.cant_oferta_min = oferta_min; row.cant_nodeal = nodeal; row.total = total; row.saldo = saldo; }
+    if (row) { row.cant_oferta_min = oferta_min; row.cant_nodeal = nodeal; row.total = total; row.saldo = saldo; }
 }
 
 function filterResumen() {
@@ -1671,26 +1527,19 @@ function exportModulos() {
     document.getElementById('form-export-mod-xlsx').submit();
 }
 
-function exportOfertas() {
-    const exportData = offResult.map(it => ({ ean: it.ean, nombre: it.nombre, cantidad: it.cantidad }));
-    document.getElementById('h-off-data').value = JSON.stringify(exportData);
-    document.getElementById('form-export-off-xlsx').submit();
-}
-
 function _buildResumenRows() {
     return resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
-        let oferta = d.cant_oferta, oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
+        let oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
         document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
             const v = parseInt(inp.value) || 0;
-            if (inp.dataset.field === 'oferta')      oferta     = v;
             if (inp.dataset.field === 'oferta_min')  oferta_min = v;
             if (inp.dataset.field === 'nodeal')      nodeal     = v;
         });
-        const total = d.cant_mod + oferta + oferta_min + nodeal;
+        const total = d.cant_mod + oferta_min + nodeal;
         return { ean, nombre: d.nombre,
                  cantidad: total, total,
-                 cant_modulo: d.cant_mod, cant_oferta: oferta,
+                 cant_modulo: d.cant_mod,
                  cant_oferta_min: oferta_min, cant_nodeal: nodeal,
                  precio_pvp: d.pvp,
                  erp_qty: d.erp_qty ?? '',
@@ -1740,17 +1589,16 @@ async function exportPlantillaUnificada(plantillaId, formato) {
 function exportResumen() {
     const exportData = resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
-        let oferta = d.cant_oferta, oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
+        let oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
         document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
             const v = parseInt(inp.value) || 0;
-            if (inp.dataset.field === 'oferta')      oferta     = v;
             if (inp.dataset.field === 'oferta_min')  oferta_min = v;
             if (inp.dataset.field === 'nodeal')      nodeal     = v;
         });
-        const total = d.cant_mod + oferta + oferta_min + nodeal;
+        const total = d.cant_mod + oferta_min + nodeal;
         return { ean, nombre: d.nombre, erp_qty: d.erp_qty, rotacion: d.rot.rotacion || '',
                  avg_monthly: d.rot.avg, precio_pvp: d.pvp, cant_modulo: d.cant_mod,
-                 cant_oferta: oferta, cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
+                 cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
                  cant_pedida: d.cant_pedida, saldo: d.cant_pedida - total };
     });
     document.getElementById('h-sum-data').value = JSON.stringify(exportData);
@@ -2177,8 +2025,8 @@ function confirmarOfertasConMinimo() {
     document.getElementById('ofertas-min-status').textContent =
         `${offMinResult.length} en oferta c/mín · ${nodealResult.length} sin deal`;
     enable('card-resumen');
-    document.getElementById('badge-3').classList.add('done');
-    document.getElementById('badge-4').classList.remove('waiting');
+    document.getElementById('badge-2').classList.add('done');
+    document.getElementById('badge-3').classList.remove('waiting');
     document.getElementById('resumen-status').textContent = 'Resumen completo';
     document.getElementById('card-resumen').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -2192,44 +2040,32 @@ function saltarOfertasConMinimo() {
     show('btn-sin-plantillas');
     document.getElementById('ofertas-min-status').textContent = 'Omitido';
     enable('card-resumen');
-    document.getElementById('badge-3').classList.add('waiting');
-    document.getElementById('badge-4').classList.remove('waiting');
+    document.getElementById('badge-2').classList.add('waiting');
+    document.getElementById('badge-3').classList.remove('waiting');
     document.getElementById('resumen-status').textContent = 'Resumen completo';
     document.getElementById('card-resumen').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function saltarModulos() {
     Object.keys(pedidoQty).forEach(ean => { saldosPostMod[ean] = pedidoQty[ean]; });
-    enable('card-ofertas');
-    document.getElementById('badge-1').classList.add('waiting');
-    document.getElementById('badge-2').classList.remove('waiting');
-    hide('btn-saltar-modulos');
-    document.getElementById('modulos-status').textContent = 'Omitido';
-    document.getElementById('ofertas-status').textContent = 'Importá el Excel de ofertas';
-    document.getElementById('card-ofertas').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function saltarOfertas() {
-    if (Object.keys(saldosPostMod).length === 0) {
-        Object.keys(pedidoQty).forEach(ean => { saldosPostMod[ean] = pedidoQty[ean]; });
-    }
-    offResult = [];
+    // Sin módulos: todo el pedido entra como base "sin deal"; ofertas c/mín lo reclasifica.
     nodealResult = [];
     Object.entries(saldosPostMod).forEach(([ean, saldo]) => {
         if (saldo <= 0) return;
         nodealResult.push({ ean, nombre: pedidoNom[ean] || ean, cantidad: saldo });
     });
-    hide('btn-saltar-ofertas');
-    document.getElementById('ofertas-status').textContent = 'Omitido';
+    nodealResult.sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', {sensitivity: 'base'}));
     enable('card-ofertas-min');
-    document.getElementById('badge-3').classList.remove('waiting');
+    document.getElementById('badge-1').classList.add('waiting');
+    document.getElementById('badge-2').classList.remove('waiting');
+    hide('btn-saltar-modulos');
+    document.getElementById('modulos-status').textContent = 'Omitido';
     autocargarOfertasMinimo();
-    document.getElementById('ofertas-min-status').textContent = 'Importá el Excel de ofertas con mínimo';
     document.getElementById('card-ofertas-min').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function printStep(step) {
-    const cards = { modulos: 'card-modulos', ofertas: 'card-ofertas', resumen: 'card-resumen' };
+    const cards = { modulos: 'card-modulos', resumen: 'card-resumen' };
     const hide_cards = Object.entries(cards)
         .filter(([k]) => k !== step)
         .map(([, v]) => document.getElementById(v));

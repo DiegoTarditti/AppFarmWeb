@@ -562,10 +562,13 @@ class OfertaMinimo(Base):
     """Tabla de descuentos por producto + lab.
 
     El nombre histórico es 'minimo' pero hoy contiene los DOS tipos:
-    - tipo_descuento='simple': descuento sin mínimo de unidades (unidades_minima=NULL).
+    - tipo_descuento='simple': oferta con mínimo 1 (unidades_minima=1). Una
+      oferta "simple sin mínimo" es equivalente a mínimo 1.
     - tipo_descuento='con_minimo': el descuento solo aplica si se compra >= unidades_minima.
 
-    El análisis de pedido (`/order/<id>`) lee de acá y filtra por lab + tipo.
+    Toda oferta importada se normaliza a unidades_minima >= 1 (ver
+    `helpers.normalizar_unidades_minima`). El análisis de pedido (`/order/<id>`)
+    lee de acá y filtra por lab + tipo.
     """
     __tablename__ = 'ofertas_minimo'
     id              = Column(Integer, primary_key=True)
@@ -1702,7 +1705,6 @@ CAMPOS_SISTEMA = [
     ('descripcion',     'Descripción del producto'),
     ('cantidad',        'Cantidad total (mod+oferta+sin deal)'),
     ('cant_modulo',     'Cantidad módulo'),
-    ('cant_oferta',     'Cantidad oferta'),
     ('cant_oferta_min', 'Cantidad oferta c/mín'),
     ('cant_nodeal',     'Cantidad sin deal'),
     ('precio',          'Precio PVP'),

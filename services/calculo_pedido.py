@@ -70,6 +70,18 @@ def invalidar_cache():
     """No-op — sin cache en memoria. Se mantiene por compatibilidad con callers."""
 
 
+def _redondear(x, modo):
+    """Redondea según el modo configurado en el tipo de pedido.
+
+    'round' → al entero más cercano. Resto ('ceil'/'unidad'/'multiplo_pack')
+    → hacia arriba (ceil) — comportamiento histórico del motor. El múltiplo de
+    pack se aplica aparte, después; acá solo decide ceil vs round del valor base.
+    """
+    if modo == 'round':
+        return int(round(x))
+    return int(math.ceil(x))
+
+
 def calcular_a_pedir(cfg, ctx):
     """Calcula ideal + a_pedir según la matriz de config.
 
@@ -116,22 +128,26 @@ def calcular_a_pedir(cfg, ctx):
         return {'a_pedir': int(cant_fija), 'ideal': int(cant_fija),
                 'regla_usada': 'override_cantidad_fija', 'override_aplicado': True}
 
+    # Modo de redondeo del tipo de pedido. 'ceil' (default) = comportamiento
+    # histórico; 'round' = al entero más cercano (configurable por tipo).
+    redondeo = cfg.get('redondeo', 'ceil')
+
     # 1) Piso: a qué nivel apuntar como mínimo objetivo.
     piso_kind = cfg.get('piso_ideal', 'min_efectivo')
     if piso_kind == 'min_efectivo':
         piso = min_efectivo
     elif piso_kind == 'daily_rate_x_cubrir_dias':
         _dias = cfg.get('dias_cobertura_fijo') or cubrir_dias
-        piso = math.ceil(daily_rate * _dias)
+        piso = _redondear(daily_rate * _dias, redondeo)
     else:  # 'cero' u otro
         piso = 0
 
     # 2) Target: cuántos más, para cubrir un horizonte adelante.
     tgt_kind = cfg.get('target_horizonte', 'factor_h')
     if tgt_kind == 'factor_h':
-        target_unid = math.ceil(daily_rate * factor_h)
+        target_unid = _redondear(daily_rate * factor_h, redondeo)
     elif tgt_kind == 'cubrir_dias_config':
-        target_unid = math.ceil(daily_rate * cubrir_dias)
+        target_unid = _redondear(daily_rate * cubrir_dias, redondeo)
     else:  # 'none'
         target_unid = 0
 
@@ -144,12 +160,10 @@ def calcular_a_pedir(cfg, ctx):
     if buffer_pct:
         ideal = math.ceil(ideal * (1 + buffer_pct / 100))
 
-    # 5) Redondeo final.
-    redondeo = cfg.get('redondeo', 'ceil')
+    # 5) Redondeo final a múltiplo de pack (si aplica). El ceil/round del valor
+    #    base ya se aplicó en piso/target vía _redondear.
     if redondeo == 'multiplo_pack' and pack_qty and pack_qty > 1:
-        # Redondear hacia arriba al múltiplo de pack más cercano.
         ideal = math.ceil(ideal / pack_qty) * pack_qty
-    # 'ceil' y 'unidad' ya están enteros desde math.ceil de arriba.
 
     a_pedir = max(0, int(ideal) - int(stock))
     return {'a_pedir': a_pedir, 'ideal': int(ideal),

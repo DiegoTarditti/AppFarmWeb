@@ -1853,7 +1853,7 @@ def init_app(app):
         import requests
 
         from database import Laboratorio, OfertaMinimo
-        from helpers import _normalizar_nombre_entidad
+        from helpers import _normalizar_nombre_entidad, normalizar_unidades_minima
         render_url = _os.environ.get('RENDER_BASE_URL', '').rstrip('/')
         token = _os.environ.get('PANEL_REMOTO_TOKEN', '')
         if not render_url or not token:
@@ -1944,7 +1944,7 @@ def init_app(app):
                     if existente:
                         existente.descripcion     = o.get('descripcion')
                         existente.codigo          = o.get('codigo')
-                        existente.unidades_minima = o.get('unidades_minima')
+                        existente.unidades_minima = normalizar_unidades_minima(o.get('unidades_minima'))
                         existente.descuento_psl   = o.get('descuento_psl')
                         existente.rentabilidad    = o.get('rentabilidad')
                         existente.plazo_pago      = o.get('plazo_pago')
@@ -1959,7 +1959,7 @@ def init_app(app):
                             ean             = ean,
                             descripcion     = o.get('descripcion'),
                             codigo          = o.get('codigo'),
-                            unidades_minima = o.get('unidades_minima'),
+                            unidades_minima = normalizar_unidades_minima(o.get('unidades_minima')),
                             descuento_psl   = o.get('descuento_psl'),
                             rentabilidad    = o.get('rentabilidad'),
                             plazo_pago      = o.get('plazo_pago'),

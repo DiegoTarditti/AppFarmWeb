@@ -12,14 +12,13 @@ from flask_login import login_required
 
 import database
 from database import ExportTemplate, Laboratorio, OfertaMinimo, Producto
-from helpers import now_ar
+from helpers import normalizar_unidades_minima, now_ar
 
 EXPORT_FIELDS = [
     ('ean',           'Código de Barra'),
     ('nombre',        'Descripción'),
     ('total',         'Cantidad'),
     ('cant_modulo',   'Cant. Módulo'),
-    ('cant_oferta',   'Cant. Oferta'),
     ('cant_oferta_min','Cant. Oferta c/Mín'),
     ('cant_nodeal',   'Sin Deal'),
     ('precio_pvp',    'Precio PVP'),
@@ -515,7 +514,7 @@ def init_app(app):
                 changed = True
             if 'unidades_minima' in data:
                 try:
-                    o.unidades_minima = int(data['unidades_minima']) if data['unidades_minima'] not in (None, '') else None
+                    o.unidades_minima = normalizar_unidades_minima(data['unidades_minima'])
                 except (ValueError, TypeError):
                     return jsonify({'ok': False, 'error': 'Mín. inválido'}), 400
                 changed = True
@@ -568,7 +567,7 @@ def init_app(app):
                     ean             = it.get('ean', ''),
                     descripcion     = it.get('descripcion'),
                     codigo          = it.get('codigo'),
-                    unidades_minima = it.get('unidades_minima'),
+                    unidades_minima = normalizar_unidades_minima(it.get('unidades_minima')),
                     descuento_psl   = it.get('descuento_psl'),
                     rentabilidad    = it.get('rentabilidad'),
                     plazo_pago      = it.get('plazo_pago'),
@@ -709,7 +708,7 @@ def init_app(app):
                 if existente:
                     existente.descripcion     = o.get('descripcion')
                     existente.codigo          = o.get('codigo')
-                    existente.unidades_minima = o.get('unidades_minima')
+                    existente.unidades_minima = normalizar_unidades_minima(o.get('unidades_minima'))
                     existente.descuento_psl   = o.get('descuento_psl')
                     existente.rentabilidad    = o.get('rentabilidad')
                     existente.plazo_pago      = o.get('plazo_pago')
@@ -725,7 +724,7 @@ def init_app(app):
                         ean             = ean,
                         descripcion     = o.get('descripcion'),
                         codigo          = o.get('codigo'),
-                        unidades_minima = o.get('unidades_minima'),
+                        unidades_minima = normalizar_unidades_minima(o.get('unidades_minima')),
                         descuento_psl   = o.get('descuento_psl'),
                         rentabilidad    = o.get('rentabilidad'),
                         plazo_pago      = o.get('plazo_pago'),
@@ -882,7 +881,7 @@ def init_app(app):
                 if existente:
                     existente.descripcion     = o.get('descripcion')
                     existente.codigo          = o.get('codigo')
-                    existente.unidades_minima = o.get('unidades_minima')
+                    existente.unidades_minima = normalizar_unidades_minima(o.get('unidades_minima'))
                     existente.descuento_psl   = o.get('descuento_psl')
                     existente.rentabilidad    = o.get('rentabilidad')
                     existente.plazo_pago      = o.get('plazo_pago')
@@ -898,7 +897,7 @@ def init_app(app):
                         ean             = ean,
                         descripcion     = o.get('descripcion'),
                         codigo          = o.get('codigo'),
-                        unidades_minima = o.get('unidades_minima'),
+                        unidades_minima = normalizar_unidades_minima(o.get('unidades_minima')),
                         descuento_psl   = o.get('descuento_psl'),
                         rentabilidad    = o.get('rentabilidad'),
                         plazo_pago      = o.get('plazo_pago'),

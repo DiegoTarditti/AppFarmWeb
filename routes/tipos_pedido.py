@@ -35,6 +35,7 @@ ENUMS_PEDIDO = {
     ],
     'redondeo': [
         ('ceil',         'Hacia arriba al entero'),
+        ('round',        'Al entero más cercano'),
         ('multiplo_pack','Hacia arriba al múltiplo de pack'),
         ('unidad',       'Sin redondeo extra (unidad)'),
     ],

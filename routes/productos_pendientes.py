@@ -30,6 +30,7 @@ from database import (
     get_db,
     now_ar,
 )
+from helpers import normalizar_unidades_minima
 
 
 def enqueue_pendiente(session, descripcion, supplier_id=None, supplier_nombre=None,
@@ -261,7 +262,7 @@ def _aplicar_oferta_a_producto(session, item, producto, usuario):
     if existente:
         # Actualizar (refresh)
         existente.descuento_psl = od.get('descuento_psl') or existente.descuento_psl
-        existente.unidades_minima = od.get('unidades_minima') or existente.unidades_minima
+        existente.unidades_minima = normalizar_unidades_minima(od.get('unidades_minima') or existente.unidades_minima)
         existente.plazo_pago = od.get('plazo_pago') or existente.plazo_pago
         existente.rentabilidad = od.get('rentabilidad') or existente.rentabilidad
         if vig_date:
@@ -279,7 +280,7 @@ def _aplicar_oferta_a_producto(session, item, producto, usuario):
         laboratorio_id=lab_id,
         drogueria_id=drog_id,
         descuento_psl=od.get('descuento_psl'),
-        unidades_minima=od.get('unidades_minima'),
+        unidades_minima=normalizar_unidades_minima(od.get('unidades_minima')),
         plazo_pago=od.get('plazo_pago'),
         rentabilidad=od.get('rentabilidad'),
         vigencia_hasta=vig_date,

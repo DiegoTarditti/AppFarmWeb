@@ -1307,6 +1307,8 @@ def init_app(app):
             # un resumen en el header con: total, por drog/directo, vigencia,
             # mejor descuento.
             lab_ofertas = []
+            usa_packs = False
+            modulos_lab = []
             if lab_id and lab_local:
                 from datetime import date as _date_lo
                 hoy_lo = _date_lo.today()
@@ -1339,6 +1341,43 @@ def init_app(app):
                 # Orden: descuento DESC, después por droguería.
                 lab_ofertas.sort(key=lambda x: (-x['descuento_psl'],
                                                 x['drogueria_nombre'] or ''))
+
+            # Módulos activos del lab — SOLO si el lab está marcado usa_packs.
+            # Mismo dataset que /modulo-packs/activos pero filtrado al lab, para
+            # el paso de módulos single-page en el armar. El cálculo (floor/min)
+            # se hace en el front (ver order_detail.html → procesarModulos).
+            usa_packs = bool(lab_local and getattr(lab_local, 'usa_packs', False))
+            modulos_lab = []
+            if usa_packs:
+                from database import Modulo
+                mods = (session.query(Modulo)
+                        .filter(Modulo.laboratorio_id == lab_local.id,
+                                Modulo.activo.is_(True))
+                        .order_by(Modulo.lista_nombre, Modulo.nombre).all())
+                unidad_eans = {mp.ean_unidad for m in mods for mp in m.packs}
+                prod_desc = {}
+                if unidad_eans:
+                    for cb, desc in (session.query(Producto.codigo_barra,
+                                                   Producto.descripcion)
+                                     .filter(Producto.codigo_barra.in_(
+                                         list(unidad_eans)[:1000])).all()):
+                        prod_desc[cb] = desc or ''
+                for m in mods:
+                    # Saltar la fila "header" de la lista (nombre == lista_nombre).
+                    if m.lista_nombre and m.nombre == m.lista_nombre:
+                        continue
+                    packs = [{'ean_pack': mp.ean_pack,
+                              'ean_unidad': mp.ean_unidad,
+                              'cantidad': mp.cantidad or 1,
+                              'cant_modulo': (mp.cant_modulo if mp.cant_modulo is not None
+                                              else (mp.cantidad or 1)),
+                              'desc_pct': float(mp.desc_pct) if mp.desc_pct is not None else 0.0,
+                              'desc_unidad': prod_desc.get(mp.ean_unidad, mp.descripcion or '')}
+                             for mp in m.packs]
+                    if packs:
+                        modulos_lab.append({'id': m.id, 'nombre': m.nombre,
+                                            'lista_nombre': m.lista_nombre or m.nombre,
+                                            'packs': packs})
 
             # Modo lab: droguerías activas para el selector de "Canal de compra"
             # (Directo al lab / Vía droguería). Sugerimos la más usada con ese
@@ -1377,6 +1416,8 @@ def init_app(app):
                                    lab_nombre=lab_nombre,
                                    libres_a=libres_a,
                                    droguerias_canal=droguerias_canal,
+                                   usa_packs=usa_packs,
+                                   modulos_lab=modulos_lab,
                                    lab_ofertas=lab_ofertas if lab_id else [])
 
     @app.route('/compras/multi-lab')
@@ -2437,7 +2478,6 @@ def init_app(app):
                     'descripcion':      'Descripcion',
                     'cantidad':         'Cantidad',
                     'cant_modulo':      'CantModulo',
-                    'cant_oferta':      'CantOferta',
                     'cant_oferta_min':  'CantOfertaMin',
                     'cant_nodeal':      'CantSinDeal',
                     'precio':           'Precio',
