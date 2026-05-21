@@ -51,6 +51,13 @@
                     {% for d in drogs %}
                     <th class="px-3 py-2 text-center text-[11px] uppercase font-semibold text-[#6f6f6f] min-w-[120px]">
                         {{ d.nombre }}
+                        {% if d.tiene_plantilla %}
+                        <span class="block normal-case font-medium text-[9px] text-emerald-600 mt-0.5" title="Tiene plantilla de pedido configurada">✓ con plantilla</span>
+                        {% else %}
+                        <a href="{{ url_for('plantillas_list', tipo='drogueria', id=d.id) }}"
+                           class="block normal-case font-medium text-[9px] text-amber-600 hover:underline mt-0.5"
+                           title="No tiene plantilla — click para configurar">⚠ sin plantilla</a>
+                        {% endif %}
                     </th>
                     {% endfor %}
                 </tr>

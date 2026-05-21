@@ -74,6 +74,12 @@
         font-family: ui-monospace, Consolas, monospace;
     }
     .cd-table tbody td .empty { color: var(--ds-text-mute); }
+    /* Chips de "Comportamientos activos" — esquema rgba para buen contraste en
+       dark (las clases Tailwind bg-*-50/text-*-800 quedaban con rojo sobre bordó). */
+    .cb-chip-red    { background: rgba(239,68,68,.16);  color:#fca5a5; border-color: rgba(239,68,68,.45); }
+    .cb-chip-violet { background: rgba(167,139,250,.16); color:#c4b5fd; border-color: rgba(167,139,250,.45); }
+    .cb-chip-amber  { background: rgba(245,158,11,.16);  color:#fcd34d; border-color: rgba(245,158,11,.45); }
+    .cb-chip-sky    { background: rgba(56,189,248,.16);  color:#7dd3fc; border-color: rgba(56,189,248,.45); }
     /* Tabla "Próximos cierres": todo a la misma altura (vertical centrado) */
     .cd-table-hoy tbody td { vertical-align: middle; padding: 10px 12px; }
     .cd-table-hoy .cierre-cell { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
@@ -186,10 +192,10 @@
        para editar/agregar/quitar. #}
     {% if comportamientos %}
     {% set _cb_color_clases = {
-        'red':    'bg-red-50 text-red-800 border-red-200',
-        'violet': 'bg-violet-50 text-violet-800 border-violet-200',
-        'amber':  'bg-amber-50 text-amber-800 border-amber-200',
-        'sky':    'bg-sky-50 text-sky-800 border-sky-200',
+        'red':    'cb-chip-red',
+        'violet': 'cb-chip-violet',
+        'amber':  'cb-chip-amber',
+        'sky':    'cb-chip-sky',
     } %}
     <div class="bg-surface border border-surface-border rounded-xl p-4">
         <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
@@ -212,7 +218,7 @@
                   title="{{ c.nombre }}{% if c.efecto_armado != 'ninguno' %} — efecto: {{ c.efecto_armado }}{% endif %}">
                 <span class="text-sm leading-none">{{ c.icono }}</span>
                 <span>{{ c.nombre }}</span>
-                <span class="bg-white/70 px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums">{{ c.count }}</span>
+                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold tabular-nums" style="background: rgba(0,0,0,.35); color:#fff;">{{ c.count }}</span>
             </span>
             {% endfor %}
         </div>
@@ -252,7 +258,14 @@
                     {% if s.pasado %}style="opacity:.45;"{% endif %}>
                     <td>
                         {% if s.pasado %}
-                            <span class="badge badge-mute" style="font-size:10px;">cerrado</span>
+                            <div class="cierre-cell">
+                                <span class="badge badge-mute" style="font-size:10px;">cerrado</span>
+                                {% if s.tuvo_pedido %}
+                                <span class="badge" style="font-size:10px; background:rgba(95,230,188,.15); color:var(--ds-mint); border:1px solid rgba(95,230,188,.35);" title="Se emitió un pedido para este cierre">✓ pedido</span>
+                                {% else %}
+                                <span class="badge" style="font-size:10px; background:rgba(245,158,11,.12); color:var(--ds-warn); border:1px solid rgba(245,158,11,.3);" title="No se emitió pedido para este cierre">✗ sin pedido</span>
+                                {% endif %}
+                            </div>
                         {% else %}
                             <div class="cierre-cell">
                                 <span class="cd-urgencia {{ s.urgencia.nivel }}" data-slot-urgencia
@@ -264,20 +277,20 @@
                             </div>
                         {% endif %}
                     </td>
-                    <td style="font-family:'JetBrains Mono',monospace; font-weight:600;{% if s.pasado %} text-decoration:line-through;{% endif %}">
-                        {{ s.hora }}
-                        {% if not s.es_hoy %}<span style="font-family:inherit; font-weight:500; font-size:10px; color:var(--ds-text-mute); display:block;">{{ s.dia_label }}</span>{% endif %}
-                    </td>
                     <td>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <button type="button" onclick="abrirEdicionHorarios({{ s.prov_id }}, this, '{{ s.prov_nombre | e }}')"
+                                    class="btn btn-ghost btn-sm" style="padding:2px 6px;" title="Editar horarios">✎</button>
+                            <span style="font-family:'JetBrains Mono',monospace; font-weight:600;{% if s.pasado %} text-decoration:line-through;{% endif %}">
+                                {{ s.hora }}
+                                {% if not s.es_hoy %}<span style="font-family:inherit; font-weight:500; font-size:10px; color:var(--ds-text-mute); display:block;">{{ s.dia_label }}</span>{% endif %}
+                            </span>
+                        </div>
+                    </td>
+                    <td style="text-align:left;">
                         <span style="font-weight:600; color:var(--ds-text);">{{ s.prov_nombre }}</span>
-                        {% if s.plantilla %}
-                        <span class="badge" style="background: rgba(139,92,246,.15); color:#C4B5FD; border:1px solid rgba(139,92,246,.25); font-size:10px; margin-left:6px;"
-                              title="{{ s.plantilla.nombre }}">{{ s.plantilla.formato }} · {{ s.plantilla.n_campos }}c</span>
-                        {% else %}
-                        <span class="badge badge-mute" style="border:1px dashed var(--ds-line-2); font-size:10px; margin-left:6px;">sin plantilla</span>
-                        {% endif %}
                         {% if s.pedidos_activos %}
-                        <span class="badge badge-warn badge-pill" style="margin-left:4px;" title="Pedidos activos">{{ s.pedidos_activos }}</span>
+                        <span class="badge badge-warn badge-pill" style="margin-left:6px;" title="Pedidos activos">{{ s.pedidos_activos }}</span>
                         {% endif %}
                     </td>
                     <td style="text-align:right; white-space:nowrap;">
@@ -285,8 +298,6 @@
                            class="btn btn-primary btn-sm" style="font-weight:700;">
                             Pedir →
                         </a>
-                        <button type="button" onclick="abrirEdicionHorarios({{ s.prov_id }}, this, '{{ s.prov_nombre | e }}')"
-                                class="btn btn-ghost btn-sm" title="Editar horarios">✎</button>
                     </td>
                 </tr>
                 {% endfor %}

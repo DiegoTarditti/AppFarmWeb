@@ -314,6 +314,32 @@ def init_app(app):
             _pasados = [s for s in _todos if s['falta_segundos'] < 0]
             _futuros = [s for s in _todos if s['falta_segundos'] >= 0]
             slots_hoy = _pasados[-_PASADOS_N:] + _futuros[:_FUTUROS_N]
+
+            # ── ¿Hubo pedido emitido para cada slot YA PASADO? ──
+            # Un pedido "cuenta" para un cierre si se emitió a esa droguería en la
+            # ventana (cierre anterior de la misma drog, este cierre]. Sirve para
+            # ver de un vistazo si se respondió o se dejó pasar un reparto.
+            from collections import defaultdict as _dd_h
+            _dt_por_drog = _dd_h(list)
+            for _t in _todos:
+                _dt_por_drog[_t['prov_id']].append(_t['dt'])
+            for _lst in _dt_por_drog.values():
+                _lst.sort()
+            for _s in slots_hoy:
+                _s['tuvo_pedido'] = None  # solo aplica a pasados
+                if _s['falta_segundos'] >= 0:
+                    continue
+                _cierre = _s['dt']
+                # Cierre anterior de la MISMA droguería (ventana del reparto).
+                _previos = [d for d in _dt_por_drog[_s['prov_id']] if d < _cierre]
+                _ini = _previos[-1] if _previos else (_cierre - _td_h(days=7))
+                _n_ped = (session.query(PedidoEmitido)
+                          .filter(PedidoEmitido.drogueria_id == _s['prov_id'],
+                                  PedidoEmitido.fecha > _ini,
+                                  PedidoEmitido.fecha <= _cierre)
+                          .count())
+                _s['tuvo_pedido'] = _n_ped > 0
+
             for _s in slots_hoy:
                 _s.pop('dt', None)  # no serializable / no se usa en template
 
@@ -1827,8 +1853,21 @@ def init_app(app):
                     'count': r.cnt,
                     'fecha': fecha.strftime('%d/%m/%y') if fecha else '',
                 }
+            # Droguerías que tienen plantilla de pedido configurada (set-once;
+            # se muestra como indicador "con/sin plantilla" bajo cada columna).
+            from database import Plantilla as _Plant
+            _drog_ids = [d.id for d in drogs]
+            _con_plantilla = set()
+            if _drog_ids:
+                _con_plantilla = set(
+                    r[0] for r in session.query(_Plant.entidad_id)
+                    .filter(_Plant.entidad_tipo == 'drogueria',
+                            _Plant.tipo_doc == 'pedido',
+                            _Plant.entidad_id.in_(_drog_ids)).distinct().all()
+                )
             labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
-            drogs_data = [{'id': d.id, 'nombre': d.razon_social} for d in drogs]
+            drogs_data = [{'id': d.id, 'nombre': d.razon_social,
+                           'tiene_plantilla': d.id in _con_plantilla} for d in drogs]
             todas_drogs_data = [{'id': d.id, 'nombre': d.razon_social,
                                   'visible': d.matriz_visible, 'orden': d.matriz_orden,
                                   'activo': d.activo} for d in todas_drogs]
