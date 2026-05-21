@@ -1,18 +1,24 @@
 # Equivalencias Kellerhoff — diseño (2026-05-21)
 
-> **Estado: PROPUESTA, sin implementar.** Para revisión de Diego antes de codear.
+> **Estado: IMPLEMENTADO.** Ver historial de corrección abajo.
 
 ## Problema
 
-El pedido a Kellerhoff se exporta con **nuestro EAN** (plantilla `CodigoBarra`/`Cantidad`).
-Pero Kellerhoff identifica sus productos por su **código interno `CodKellerhoff`**, y
-**los EANs no siempre coinciden** aunque sea el mismo producto. Resultado: filas
-"REGISTRO ERRONEO" / $0 en el pedido.
+El pedido a Kellerhoff se importa **por EAN** (columna tipo `CodigoBarra`). Kellerhoff
+NO entiende su propio `CodKellerhoff` en la importación (es solo su ID interno en el
+catálogo). El problema real: **algunos EANs nuestros no coinciden con el EAN que
+Kellerhoff tiene** para el mismo producto → esas filas dan "REGISTRO ERRONEO".
 
-Evidencia (export real, muestra de 10 EANs que fallaron):
-- 7/10 son el mismo producto en Kellerhoff con **otro EAN** → recuperables por **Alfabeta**.
-- 3/10 no: Alfabeta desalineado (ACEMUK 200), producto que Kellerhoff no trae
-  (AZATIOPRINA RAFFO), o PACK con EAN malformado y sin Alfabeta (TERMOFREN).
+**Solución:** mandar el EAN que Kellerhoff reconoce. Si nuestro EAN ya está en su
+catálogo, se manda igual. Si no, se corrige al EAN de Kellerhoff (`CodBarraPrinc`) del
+mismo producto, vía una equivalencia. **NUNCA se manda `CodKellerhoff`** (Kellerhoff lo
+rechaza — probado: manda los 243 a REGISTRO ERRONEO).
+
+> ⚠ **Corrección 2026-05-21:** la primera versión mandaba `CodKellerhoff` en una columna
+> nueva → Kellerhoff rechazó TODO el pedido. Y el matching por Alfabeta/Troquel daba
+> ~31% de falsos positivos (ej. LACTATO RINGER → DAXAS) → pediría el producto
+> equivocado. Ambos corregidos: se manda EAN corregido, y el matching es solo por **EAN
+> alternativo del mismo producto + guarda de nombre** (descarta los incoherentes).
 
 ## Catálogo de origen (`productos.csv` de Kellerhoff)
 
@@ -59,32 +65,34 @@ Evidencia (export real, muestra de 10 EANs que fallaron):
 - **Solo guarda los rescatados** (EAN nuestro que NO matchea directo por EAN en el catálogo).
   Los directos se resuelven al vuelo (no se persisten → tabla chica y mantenible).
 
-## Cascada de resolución (export-time)
+## Cascada de resolución (export-time) — `corregir_eans`
 
-Para cada ítem del pedido (nuestro EAN):
-1. **EAN en `kellerhoff_catalogo`** → `codigo_kellerhoff`. (mayoría)
-2. **`kellerhoff_equivalencia[ean]`** → `codigo_kellerhoff`. (rescatados)
-3. **Sin resolver** → marca "REGISTRO ERRONEO" (no rompe el export; queda flag para resolver).
+Para cada ítem del pedido devuelve el **EAN a mandar**:
+1. Nuestro EAN está en `kellerhoff_catalogo` → se manda **igual** (Kellerhoff lo reconoce).
+2. No está, pero hay `kellerhoff_equivalencia[ean]` → se manda el **EAN de Kellerhoff**
+   (`CodBarraPrinc`) de ese `codigo_kellerhoff`.
+3. No hay arreglo → se manda **nuestro EAN** (falla igual que antes, nunca vacío).
 
-## Construcción de equivalencias (batch de matching)
+La columna de la plantilla es **`ean_kellerhoff`** (chip "EAN-Kellerhoff", header
+`CodigoBarra`). Reemplaza a la columna EAN en la plantilla de Kellerhoff.
 
-Sobre los EANs que NO matchean directo por EAN, resolver vía `ObsProducto`
-(alfabeta/troquel/nombre) contra el catálogo:
+## Construcción de equivalencias (batch de matching) — `_recalcular_equivalencias`
 
-La equivalencia se clava sobre el **EAN principal** (el que el export emite:
-`ObsCodigoBarras` orden mínimo). Solo se crea si el principal NO está directo en
-el catálogo. Cada paso exige candidato único.
+Solo **EAN alternativo + guarda de nombre**. La equivalencia se clava sobre el EAN
+principal (el que el export emite). Solo se crea si el principal NO está directo en
+el catálogo:
 
-0. **EAN alternativo** → otro EAN del mismo producto que SÍ está en el catálogo
-   (caso ACCU-CHEK: principal `4015630980505` no está, alt `4015630981960` sí →
-   CodKel 1000003240). **El de mayor recuperación** (~1540 de 1701 reales). ALTA.
-1. **Alfabeta** → 1 candidato: auto ALTA. Varios: ambiguo → manual.
-2. **Troquel** → idem (backup cuando no hay alfabeta).
-3. **Nombre + presentación** → **NO implementado aún**; manual desde Presentación
-   (Fase 3), por seguridad (auto-match por nombre mete equivalencias falsas).
-4. **Sin candidato** → cola manual (incluye lo que Kellerhoff no trae).
+- **EAN alternativo**: otro EAN del mismo producto ObServer que SÍ está en el catálogo
+  (caso ACCU-CHEK: principal `4015630980505` no está, alt `4015630981960` sí). Exige
+  **candidato único** (1 solo `codigo_kellerhoff`) Y **primer token del nombre coincide**
+  (descarta falsos como LACTATO→DAXAS). Confianza ALTA.
+- **Alfabeta / Troquel: NO se usan.** ~31% de falsos positivos contra el catálogo de
+  Kellerhoff (códigos que no alinean). Regla: preferir falso negativo a falso positivo.
+- **Nombre + presentación**: manual desde Presentación.
+- **Sin candidato / incoherente**: cola manual (incluye lo que Kellerhoff no trae).
 
-Auto-aplica solo ALTA. MEDIA/BAJA y ambiguos van a una **cola de revisión manual**.
+No pisa `revisado=True`. Idempotente. En la corrida real: 1387 equivalencias, 155
+descartadas por la guarda de nombre.
 
 ## UI
 
@@ -105,17 +113,15 @@ Auto-aplica solo ALTA. MEDIA/BAJA y ambiguos van a una **cola de revisión manua
 3. **Tablero de pendientes** (opcional, fase posterior): un listado de los productos
    que un pedido a Kellerhoff dejó "sin resolver", cada uno con link a su Presentación.
    Evita tener que buscarlos uno por uno.
-4. **Integración con la entidad `Plantilla` (existente)**: NO hacer swap mágico.
-   Se agrega un **tipo de columna nuevo `cod_kellerhoff`** al editor de plantillas
-   (`Plantilla` / `plantilla_editor.html`), de modo que el usuario define en la
-   plantilla qué columna exporta el código de Kellerhoff. Al exportar, esa columna
-   resuelve EAN → `codigo_kellerhoff` por la cascada (catálogo directo →
-   equivalencia → sin resolver). Tocar:
-   - `FIELD_DEFS` (plantilla_editor.html), `CAMPOS_SISTEMA` (database.py),
-     `EXPORT_FIELDS` (routes/laboratorios.py) — sumar `cod_kellerhoff`.
-   - el resolver de export en `compras_dia.py` (`_HEADER_LABEL` + armado de filas)
-     para que la columna `cod_kellerhoff` traiga el código resuelto.
-   - filas sin resolver → exportan vacío o flag "REGISTRO ERRONEO" según convenga.
+4. **Integración con la entidad `Plantilla` (existente)**: columna nueva
+   **`ean_kellerhoff`** (chip "EAN-Kellerhoff", header `CodigoBarra`). El usuario la usa
+   en la plantilla de Kellerhoff en lugar de la columna EAN. Al exportar, `corregir_eans`
+   le pone el EAN corregido (catálogo directo → EAN de equivalencia → nuestro EAN como
+   fallback). Tocado:
+   - `FIELD_DEFS` (plantilla_editor.html), `CAMPOS_SISTEMA` (database.py) — campo `ean_kellerhoff`.
+   - export en `compras_dia.py`: `_HEADER_LABEL['ean_kellerhoff']='CodigoBarra'`, formato
+     entero, y `r['ean_kellerhoff']=corregir_eans(...)` en el armado de filas (xlsx + txt).
+   - **nunca vacío** (fallback al EAN nuestro) → no convierte filas buenas en error.
 
 ### Las 3 categorías de "sin resolver" (validadas con datos reales)
 

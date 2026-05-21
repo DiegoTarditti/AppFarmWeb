@@ -77,7 +77,7 @@
     {# Reporte de cobertura (on-demand) #}
     <div class="kc-card">
         <h3>Cobertura contra nuestros productos</h3>
-        <p class="kc-help mb-3">Cuántos de <b>todo</b> nuestro master resuelven a un código Kellerhoff por EAN directo, y cuántos más se rescatan por Alfabeta/Troquel. Nota: el "sin match" es mayormente productos que Kellerhoff <b>no vende</b> (su catálogo es ~22k vs nuestro master ~60k); el número clave es el rescate. La cobertura real importa medida sobre un pedido concreto (fase posterior).</p>
+        <p class="kc-help mb-3">De los productos ObServer: cuántos manda Kellerhoff por EAN directo (su EAN principal está en el catálogo) y cuántos más son corregibles por EAN alternativo del mismo producto. El "sin match" es mayormente lo que Kellerhoff <b>no vende</b>.</p>
         <button type="button" id="btn-cobertura" class="btn btn-mint text-xs">Analizar cobertura</button>
         <div id="cobertura-status" class="kc-help mt-2"></div>
         <div id="cobertura-stats" class="kc-stats mt-3" style="display:none;"></div>
@@ -88,7 +88,7 @@
         <h3>Equivalencias automáticas
             <span class="kc-help">· {{ resumen.equivalencias }} guardadas{% if resumen.equivalencias_manual %} ({{ resumen.equivalencias_manual }} manuales){% endif %}</span>
         </h3>
-        <p class="kc-help mb-3">Para los productos que NO matchean por EAN directo, busca el código de Kellerhoff por <b>Alfabeta</b> y, si no, por <b>Troquel</b>. Solo guarda matches sin ambigüedad (confianza ALTA). No pisa los resueltos a mano. El match por nombre se hace manual desde Presentación.</p>
+        <p class="kc-help mb-3">Para los productos cuyo EAN NO está en el catálogo de Kellerhoff, si otro EAN del mismo producto sí está (<b>EAN alternativo</b>) y el nombre coincide, guarda la equivalencia. El export manda el EAN que Kellerhoff reconoce. Solo matches sin ambigüedad y con nombre coherente (descarta los dudosos). No pisa los resueltos a mano. Alfabeta/Troquel NO se usan (daban falsos positivos).</p>
         <button type="button" id="btn-recalcular" class="btn btn-mint text-xs">Recalcular equivalencias</button>
         <div id="recalc-status" class="kc-help mt-2"></div>
         <div id="recalc-stats" class="kc-stats mt-3" style="display:none;"></div>
@@ -112,14 +112,12 @@ if (btn) {
             const fmt = n => n.toLocaleString('es-AR');
             const pct = n => d.total ? (n / d.total * 100).toFixed(1) + '%' : '—';
             box.innerHTML = `
-                <div class="kc-stat"><div class="v">${fmt(d.total)}</div><div class="l">Nuestros productos</div></div>
-                <div class="kc-stat ok"><div class="v">${fmt(d.por_ean)}</div><div class="l">Match EAN · ${pct(d.por_ean)}</div></div>
-                <div class="kc-stat ok"><div class="v">${fmt(d.por_alfabeta)}</div><div class="l">+Alfabeta</div></div>
-                <div class="kc-stat ok"><div class="v">${fmt(d.por_troquel)}</div><div class="l">+Troquel</div></div>
+                <div class="kc-stat"><div class="v">${fmt(d.total)}</div><div class="l">Productos ObServer</div></div>
+                <div class="kc-stat ok"><div class="v">${fmt(d.por_ean)}</div><div class="l">EAN directo · ${pct(d.por_ean)}</div></div>
+                <div class="kc-stat ok"><div class="v">${fmt(d.por_ean_alt)}</div><div class="l">Corregible x EAN-alt</div></div>
                 <div class="kc-stat bad"><div class="v">${fmt(d.sin_match)}</div><div class="l">Sin match · ${pct(d.sin_match)}</div></div>`;
             box.style.display = 'grid';
-            const rescatados = d.por_alfabeta + d.por_troquel;
-            st.textContent = `EAN directo: ${fmt(d.por_ean)}. Rescatados por Alfabeta/Troquel: ${fmt(rescatados)}. Sin match: ${fmt(d.sin_match)} (mayoría = Kellerhoff no los vende; los que sí trae van a resolución manual desde Presentación).`;
+            st.textContent = `EAN directo: ${fmt(d.por_ean)}. Corregibles por EAN alternativo: ${fmt(d.por_ean_alt)}. Sin match: ${fmt(d.sin_match)} (mayoría = Kellerhoff no los vende; los que sí trae van a resolución manual desde Presentación).`;
         } catch { st.textContent = 'Error de red.'; }
         finally { btn.disabled = false; }
     });
@@ -142,8 +140,8 @@ if (btnR) {
                 <div class="kc-stat ok"><div class="v">${fmt(s.nuevas)}</div><div class="l">Nuevas</div></div>
                 <div class="kc-stat"><div class="v">${fmt(s.actualizadas)}</div><div class="l">Actualizadas</div></div>
                 <div class="kc-stat warn"><div class="v">${fmt(s.ambiguas)}</div><div class="l">Ambiguas (manual)</div></div>
-                <div class="kc-stat"><div class="v">${fmt(s.ya_directo)}</div><div class="l">Ya directo x EAN</div></div>
-                <div class="kc-stat"><div class="v">${fmt(s.sin_candidato)}</div><div class="l">Sin candidato</div></div>`;
+                <div class="kc-stat bad"><div class="v">${fmt(s.incoherentes || 0)}</div><div class="l">Descartadas x nombre</div></div>
+                <div class="kc-stat"><div class="v">${fmt(s.ya_directo)}</div><div class="l">Ya directo x EAN</div></div>`;
             box.style.display = 'grid';
             st.textContent = `Total equivalencias guardadas: ${fmt(d.total_equivalencias)}${d.manuales ? ' (' + fmt(d.manuales) + ' manuales)' : ''}. Las ambiguas y las que Kellerhoff no trae se resuelven a mano desde Presentación.`;
         } catch { st.textContent = 'Error de red.'; }

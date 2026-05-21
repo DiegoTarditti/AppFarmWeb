@@ -107,32 +107,37 @@ def _resumen_catalogo(session):
     }
 
 
-def _recalcular_equivalencias(session):
-    """Matching automático nuestro EAN → codigo_kellerhoff por el puente
-    Alfabeta → Troquel, SOLO para productos que no resuelven por EAN directo.
+def _tok_nombre(s):
+    """Primer token normalizado del nombre (para guarda de coherencia)."""
+    import unicodedata
+    s = ''.join(c for c in unicodedata.normalize('NFKD', (s or '').upper())
+                if not unicodedata.combining(c))
+    parts = s.replace('-', ' ').replace('.', ' ').split()
+    return parts[0] if parts else ''
 
-    - Solo persiste candidatos NO ambiguos (1 solo codigo_kellerhoff) → confianza ALTA.
-    - NO pisa equivalencias con revisado=True (resueltas a mano).
-    - El match por nombre queda para resolución manual (Fase 3), por seguridad.
-    Devuelve stats. La equivalencia se clava sobre el EAN principal del producto
-    (el que el export del pedido emite: ObsCodigoBarras orden mínimo, activo).
+
+def _recalcular_equivalencias(session):
+    """Matching automático SOLO por EAN alternativo + guarda de nombre.
+
+    Para un producto cuyo EAN principal NO está en el catálogo de Kellerhoff:
+    si OTRO EAN del mismo producto ObServer SÍ está (candidato único) y el primer
+    token del nombre coincide, guarda nuestro EAN principal → codigo_kellerhoff.
+    De ahí el export deriva el EAN de Kellerhoff (CodBarraPrinc) para mandar el
+    EAN que ellos reconocen.
+
+    Alfabeta/Troquel NO se usan: ~31% de falsos positivos (ej. LACTATO→DAXAS) y
+    Kellerhoff pediría el producto equivocado. Regla: preferir falso negativo.
+    No pisa revisado=True. Idempotente.
     """
     from collections import defaultdict
 
-    by_ean = defaultdict(set)
-    by_alfa = defaultdict(set)
-    by_troq = defaultdict(set)
-    for codkel, ean, alfa, troq in session.query(
+    cat_by_ean = defaultdict(list)  # ean del catálogo → [(codkel, descripcion)]
+    for codkel, ean, desc in session.query(
             KellerhoffCatalogo.codigo_kellerhoff, KellerhoffCatalogo.ean,
-            KellerhoffCatalogo.alfabeta, KellerhoffCatalogo.troquel):
+            KellerhoffCatalogo.descripcion):
         if ean:
-            by_ean[ean].add(codkel)
-        if alfa:
-            by_alfa[alfa].add(codkel)
-        if troq:
-            by_troq[troq].add(codkel)
+            cat_by_ean[ean].append((codkel, desc or ''))
 
-    # EANs activos por producto ObServer (orden mínimo = principal).
     obs_eans = defaultdict(list)
     for oid, ean, orden in session.query(
             ObsCodigoBarras.producto_observer, ObsCodigoBarras.codigo_barras,
@@ -142,68 +147,45 @@ def _recalcular_equivalencias(session):
 
     existing = {e.ean: e for e in session.query(KellerhoffEquivalencia).all()}
     st = {'nuevas': 0, 'actualizadas': 0, 'ambiguas': 0,
-          'sin_candidato': 0, 'ya_directo': 0}
+          'incoherentes': 0, 'sin_candidato': 0, 'ya_directo': 0}
 
-    def _unico(candidatos):
-        """1 solo codkel → ese; varios → 'AMBIGUO'; ninguno → None."""
-        if not candidatos:
-            return None
-        return next(iter(candidatos)) if len(candidatos) == 1 else 'AMBIGUO'
-
-    for oid, alfa, troq in session.query(
-            ObsProducto.observer_id, ObsProducto.codigo_alfabeta, ObsProducto.troquel):
+    for oid, desc in session.query(ObsProducto.observer_id, ObsProducto.descripcion):
         eans = obs_eans.get(oid)
         if not eans:
             continue
         eans.sort()
         principal = eans[0][1]
-        # El export emite el EAN principal. Si ESE está en el catálogo, Kellerhoff
-        # resuelve directo → no hace falta equivalencia.
-        if principal in by_ean:
+        if principal in cat_by_ean:
             st['ya_directo'] += 1
             continue
-
-        # Cascada: EAN alternativo (otro EAN del mismo producto que sí está en el
-        # catálogo) → Alfabeta → Troquel. Cada paso exige candidato único.
-        codkel = metodo = None
-        for fuente, key in (
-                ('ean_alt', None),  # especial: une todos los alts
-                ('alfabeta', alfa),
-                ('troquel', str(troq) if troq else None)):
-            if fuente == 'ean_alt':
-                cands = set()
-                for (_, e) in eans:
-                    cands |= by_ean.get(e, set())
-            elif fuente == 'alfabeta':
-                cands = by_alfa.get(key, set()) if key else set()
-            else:
-                cands = by_troq.get(key, set()) if key else set()
-            u = _unico(cands)
-            if u == 'AMBIGUO':
-                metodo = 'AMBIGUO'
-                break
-            if u:
-                codkel, metodo = u, fuente
-                break
-
-        if metodo == 'AMBIGUO':
+        # Candidatos: filas del catálogo cuyo EAN es un EAN alternativo nuestro.
+        cands = []
+        for (_, e) in eans:
+            cands.extend(cat_by_ean.get(e, []))
+        if not cands:
+            st['sin_candidato'] += 1
+            continue
+        codkels = {c for c, _ in cands}
+        if len(codkels) != 1:
             st['ambiguas'] += 1
             continue
-        if not codkel:
-            st['sin_candidato'] += 1
+        codkel = next(iter(codkels))
+        # Guarda de nombre: descarta matches de producto distinto.
+        if _tok_nombre(desc) != _tok_nombre(cands[0][1]):
+            st['incoherentes'] += 1
             continue
 
         ex = existing.get(principal)
         if ex is not None and ex is not True:
             if ex.revisado:
                 continue  # no pisar resolución manual
-            if ex.codigo_kellerhoff == codkel and ex.metodo == metodo:
+            if ex.codigo_kellerhoff == codkel and ex.metodo == 'ean_alt':
                 continue
-            ex.codigo_kellerhoff, ex.metodo, ex.confianza = codkel, metodo, 'ALTA'
+            ex.codigo_kellerhoff, ex.metodo, ex.confianza = codkel, 'ean_alt', 'ALTA'
             st['actualizadas'] += 1
         else:
             nuevo = KellerhoffEquivalencia(
-                ean=principal, codigo_kellerhoff=codkel, metodo=metodo,
+                ean=principal, codigo_kellerhoff=codkel, metodo='ean_alt',
                 confianza='ALTA', revisado=False, creado_por='auto')
             session.add(nuevo)
             existing[principal] = nuevo
@@ -250,24 +232,35 @@ def estado_equivalencia(session, ean):
     return {'estado': 'sin_resolver', 'ean': ean}
 
 
-def resolver_codigos(session, eans):
-    """{ean: codigo_kellerhoff} para exportar el pedido. Cascada: catálogo
-    directo por EAN → equivalencia guardada. Sin resolver o 'no lo trae' → ''."""
-    eans = [e for e in {e for e in eans if e}]
+def corregir_eans(session, eans):
+    """{ean_nuestro: ean_a_mandar}. Kellerhoff importa por EAN (no por su código
+    interno). Si nuestro EAN ya está en su catálogo, se manda igual. Si NO está
+    pero hay equivalencia, se manda el EAN de Kellerhoff (CodBarraPrinc) de ese
+    producto — el que ellos reconocen. Si no hay arreglo, se manda el nuestro
+    (falla igual que antes, no peor). Nunca vacío."""
+    eans = list({e for e in eans if e})
+    out = {e: e for e in eans}  # default: el mismo EAN
     if not eans:
-        return {}
-    out = {}
-    for ean, codkel in session.query(
-            KellerhoffCatalogo.ean, KellerhoffCatalogo.codigo_kellerhoff).filter(
-            KellerhoffCatalogo.ean.in_(eans)):
-        if ean and ean not in out:
-            out[ean] = codkel
-    faltan = [e for e in eans if e not in out]
-    if faltan:
-        for ean, codkel in session.query(
-                KellerhoffEquivalencia.ean, KellerhoffEquivalencia.codigo_kellerhoff).filter(
-                KellerhoffEquivalencia.ean.in_(faltan)):
-            out[ean] = '' if codkel == KEL_NO_DISPONIBLE else codkel
+        return out
+    cat_eans = {e for (e,) in session.query(KellerhoffCatalogo.ean).filter(
+        KellerhoffCatalogo.ean.in_(eans))}
+    faltan = [e for e in eans if e not in cat_eans]
+    if not faltan:
+        return out
+    eq = {x.ean: x.codigo_kellerhoff for x in session.query(KellerhoffEquivalencia).filter(
+        KellerhoffEquivalencia.ean.in_(faltan))}
+    codkels = [c for c in eq.values() if c and c != KEL_NO_DISPONIBLE]
+    ck2ean = {}
+    if codkels:
+        for ck, cean in session.query(
+                KellerhoffCatalogo.codigo_kellerhoff, KellerhoffCatalogo.ean).filter(
+                KellerhoffCatalogo.codigo_kellerhoff.in_(codkels)):
+            if cean:
+                ck2ean[ck] = cean
+    for e in faltan:
+        cean = ck2ean.get(eq.get(e))
+        if cean:
+            out[e] = cean
     return out
 
 
@@ -308,76 +301,48 @@ def init_app(app):
     @app.route('/kellerhoff/catalogo/cobertura')
     @login_required
     def kellerhoff_catalogo_cobertura():
-        """Reporte on-demand: de nuestros productos, cuántos resuelven contra el
-        catálogo por EAN directo y cuántos más se rescatarían por Alfabeta/Troquel."""
+        """Reporte on-demand sobre los productos ObServer: cuántos resuelven con
+        Kellerhoff por EAN directo (su EAN principal está en el catálogo) y
+        cuántos más son corregibles por EAN alternativo del mismo producto."""
+        from collections import defaultdict
         with get_db() as session:
             if not session.query(KellerhoffCatalogo).first():
                 return jsonify({'ok': False, 'error': 'No hay catálogo cargado.'})
 
-            # Índices del catálogo.
-            cat_ean = set()
-            cat_alfa = set()
-            cat_troq = set()
-            for ean, alfa, troq in session.query(
-                    KellerhoffCatalogo.ean, KellerhoffCatalogo.alfabeta,
-                    KellerhoffCatalogo.troquel):
+            cat_ean = {e for (e,) in session.query(KellerhoffCatalogo.ean) if e}
+            obs_eans = defaultdict(list)
+            for oid, ean, orden in session.query(
+                    ObsCodigoBarras.producto_observer, ObsCodigoBarras.codigo_barras,
+                    ObsCodigoBarras.orden).filter(ObsCodigoBarras.fecha_baja.is_(None)):
                 if ean:
-                    cat_ean.add(ean)
-                if alfa:
-                    cat_alfa.add(alfa)
-                if troq:
-                    cat_troq.add(troq)
+                    obs_eans[oid].append((orden if orden is not None else 999, ean))
 
-            # EAN → (alfabeta, troquel) de NUESTROS productos vía ObServer.
-            obs_attrs = {}
-            for oid, alfa, troq in session.query(
-                    ObsProducto.observer_id, ObsProducto.codigo_alfabeta,
-                    ObsProducto.troquel):
-                obs_attrs[oid] = (alfa, str(troq) if troq else None)
-            ean_to_obs = {}
-            for ean, oid in session.query(ObsCodigoBarras.codigo_barras,
-                                          ObsCodigoBarras.producto_observer):
-                if ean and ean not in ean_to_obs:
-                    ean_to_obs[ean] = oid
-
-            por_ean = por_alfa = por_troq = sin = 0
+            directo = corregible = sin = 0
             total = 0
-            for (cb, a1, a2, a3) in session.query(
-                    Producto.codigo_barra, Producto.codigo_barra_alt1,
-                    Producto.codigo_barra_alt2, Producto.codigo_barra_alt3):
+            for oid, eans in obs_eans.items():
                 total += 1
-                eans = [e for e in (cb, a1, a2, a3) if e]
-                if any(e in cat_ean for e in eans):
-                    por_ean += 1
-                    continue
-                # puente alfabeta/troquel via obs
-                alfa = troq = None
-                for e in eans:
-                    oid = ean_to_obs.get(e)
-                    if oid and oid in obs_attrs:
-                        alfa, troq = obs_attrs[oid]
-                        break
-                if alfa and alfa in cat_alfa:
-                    por_alfa += 1
-                elif troq and troq in cat_troq:
-                    por_troq += 1
+                eans.sort()
+                principal = eans[0][1]
+                if principal in cat_ean:
+                    directo += 1
+                elif any(e in cat_ean for (_, e) in eans):
+                    corregible += 1
                 else:
                     sin += 1
 
         return jsonify({
             'ok': True,
             'total': total,
-            'por_ean': por_ean,
-            'por_alfabeta': por_alfa,
-            'por_troquel': por_troq,
+            'por_ean': directo,
+            'por_ean_alt': corregible,
             'sin_match': sin,
-            'resueltos': por_ean + por_alfa + por_troq,
+            'resueltos': directo + corregible,
         })
 
     @app.route('/kellerhoff/equivalencias/recalcular', methods=['POST'])
     @login_required
     def kellerhoff_equivalencias_recalcular():
-        """Corre el matching automático (Alfabeta→Troquel) y persiste equivalencias."""
+        """Corre el matching automático (EAN-alt + guarda de nombre) y persiste."""
         with get_db() as session:
             if not session.query(KellerhoffCatalogo).first():
                 return jsonify({'ok': False, 'error': 'No hay catálogo cargado.'})

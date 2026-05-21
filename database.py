@@ -1747,7 +1747,7 @@ class EstacionalidadProducto(Base):
 CAMPOS_SISTEMA = [
     ('fijo',            'Valor fijo / constante'),
     ('codigo_barra',    'Código de barra (EAN)'),
-    ('cod_kellerhoff',  'Código Kellerhoff (equivalencia)'),
+    ('ean_kellerhoff',  'EAN-Kellerhoff (corregido si difiere)'),
     ('descripcion',     'Descripción del producto'),
     ('cantidad',        'Cantidad total (mod+oferta+sin deal)'),
     ('cant_modulo',     'Cantidad módulo'),

@@ -2427,12 +2427,14 @@ def init_app(app):
                 'lab': it.lab_nombre or '',
             } for it in ped.items]
 
-            # Equivalencia Kellerhoff: resuelve EAN → CodKellerhoff (catálogo
-            # directo → equivalencia). Para la columna cod_kellerhoff de la plantilla.
-            from routes.kellerhoff import resolver_codigos
-            _kelmap = resolver_codigos(session, [r['ean'] for r in rows])
+            # Columna EAN-Kellerhoff: el EAN que Kellerhoff reconoce. Si el nuestro
+            # ya está en su catálogo se manda igual; si no, se corrige al EAN de
+            # Kellerhoff vía la equivalencia. Kellerhoff importa por EAN, no por su
+            # código interno.
+            from routes.kellerhoff import corregir_eans
+            _kelmap = corregir_eans(session, [r['ean'] for r in rows])
             for r in rows:
-                r['cod_kellerhoff'] = _kelmap.get(r['ean'], '')
+                r['ean_kellerhoff'] = _kelmap.get(r['ean'], r['ean'])
 
             try:
                 cfg = _json.loads(plant.config_json or '{}')
@@ -2474,6 +2476,7 @@ def init_app(app):
                 # de datos. Los headers + encabezado libre quedan en General.
                 _FORMAT_BY_FIELD = {
                     'codigo_barra':     '0',       # EAN: entero sin decimales
+                    'ean_kellerhoff':   '0',       # EAN Kellerhoff: idem
                     'precio':           '0.00',    # PVP: 2 decimales
                     'avg_monthly':      '0.0',     # Promedio mensual: 1 decimal
                 }
@@ -2482,7 +2485,7 @@ def init_app(app):
                 # ("Código de barra (EAN)" / "Cantidad total (mod+oferta+sin deal)").
                 _HEADER_LABEL = {
                     'codigo_barra':     'CodigoBarra',
-                    'cod_kellerhoff':   'CodKellerhoff',
+                    'ean_kellerhoff':   'CodigoBarra',
                     'descripcion':      'Descripcion',
                     'cantidad':         'Cantidad',
                     'cant_modulo':      'CantModulo',
@@ -2520,7 +2523,7 @@ def init_app(app):
                     for field in cols:
                         v = row.get(_FIELD_ALIAS.get(field, field), '')
                         # EAN: convertir a int para que Excel lo trate numérico.
-                        if field == 'codigo_barra' and v not in (None, ''):
+                        if field in ('codigo_barra', 'ean_kellerhoff') and v not in (None, ''):
                             try:
                                 v = int(str(v).strip())
                             except (ValueError, TypeError):
@@ -2566,7 +2569,7 @@ def init_app(app):
                 for c in campos:
                     cs = c.get('campo_sistema', '')
                     val = str(row.get('ean', '')) if cs == 'codigo_barra' else \
-                          str(row.get('cod_kellerhoff', '')) if cs == 'cod_kellerhoff' else \
+                          str(row.get('ean_kellerhoff', '')) if cs == 'ean_kellerhoff' else \
                           str(row.get('nombre', '')) if cs == 'descripcion' else \
                           str(int(row.get('cantidad', 0) or 0)) if cs == 'cantidad' else \
                           (c.get('valor_fijo') or '') if cs == 'fijo' else ''
