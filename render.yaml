@@ -2,7 +2,9 @@ databases:
   - name: farmacia-db
     databaseName: farmacia
     user: farmacia
-    plan: free
+    # Instancia real: Basic-4gb (4 GB RAM, 2 CPU, 20 GB). El yaml decía 'free'
+    # (stale) — alineado para que un sync del Blueprint no intente bajarla a free.
+    plan: basic_4gb
     region: oregon
 
 services:
