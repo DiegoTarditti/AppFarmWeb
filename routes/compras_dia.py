@@ -192,17 +192,27 @@ def init_app(app):
                     'pedidos_activos': pedidos_activos.get(p.id, 0),
                     'plantilla': _plant_map.get(p.id),
                 })
-            # Drogerías activas que NO tienen horarios todavía — para el dropdown
-            # "agregar nueva al flujo".
-            drogerias_sin_horarios = (
+            # Dropdown "Cargar/editar horarios": las droguerías ACTIVAS EN LA
+            # MATRIZ (matriz_visible=True, definidas con el botón "Columnas de
+            # droguería" de la matriz), tengan o no horarios. Selecccionar una
+            # abre el modal de edición (carga las existentes o arranca vacía).
+            # No usamos "las que no tienen horarios": eso mostraba droguerías que
+            # no van a la matriz (Ciafarma/PHARMOS) y ocultaba las que sí.
+            from sqlalchemy import case as _case_dh
+            _con_hor = set(prov_ids)
+            _drogs_matriz = (
                 session.query(Provider)
                 .filter(Provider.tipo == 'drogueria',
                         Provider.activo.is_(True),
-                        ~Provider.id.in_(prov_ids if prov_ids else [-1]))
-                .order_by(Provider.razon_social).all()
+                        Provider.matriz_visible.is_(True))
+                .order_by(
+                    _case_dh((Provider.matriz_orden.isnot(None), Provider.matriz_orden), else_=9999),
+                    Provider.razon_social)
+                .all()
             )
-            sin_horarios = [{'id': p.id, 'nombre': p.razon_social}
-                            for p in drogerias_sin_horarios]
+            sin_horarios = [{'id': p.id, 'nombre': p.razon_social,
+                             'tiene_horarios': p.id in _con_hor}
+                            for p in _drogs_matriz]
 
             # Card "Comportamientos activos": resumen de ProductoFlag vigentes,
             # agrupado por slug. Se muestra arriba para que el operador vea al

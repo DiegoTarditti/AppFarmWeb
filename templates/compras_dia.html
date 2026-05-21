@@ -142,11 +142,11 @@
     </div>
     {% if sin_horarios %}
     <div class="flex items-center gap-2">
-        <select id="select-prov-nuevo" title="Elegí una droguería para cargar sus horarios de cierre"
+        <select id="select-prov-nuevo" title="Droguerías activas en la matriz (botón Columnas de droguería). Elegí una para cargar o editar sus horarios."
                 class="ds-select" style="font-size:12px; padding: 6px 10px;">
-            <option value="">+ Cargar horarios de droguería…</option>
+            <option value="">+ Cargar/editar horarios de droguería…</option>
             {% for d in sin_horarios %}
-            <option value="{{ d.id }}" data-nombre="{{ d.nombre }}">{{ d.nombre }}</option>
+            <option value="{{ d.id }}" data-nombre="{{ d.nombre }}">{{ d.nombre }}{% if d.tiene_horarios %} ✓{% endif %}</option>
             {% endfor %}
         </select>
         <button type="button" onclick="abrirEdicionDesdeSelect()" class="btn btn-mint btn-sm">
