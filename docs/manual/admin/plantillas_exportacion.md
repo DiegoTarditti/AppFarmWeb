@@ -36,7 +36,7 @@ Campos disponibles (`EXPORT_FIELDS` en `routes/laboratorios.py`):
 - `ean` / `codigo_barra`
 - `nombre` / `descripcion`
 - `total` / `cantidad`
-- `cant_modulo`, `cant_oferta`, `cant_oferta_min`, `cant_nodeal`
+- `cant_modulo`, `cant_oferta_min`, `cant_nodeal`
 - `precio` / `precio_pvp`
 - `erp_qty`, `rotacion`, `avg_monthly`
 

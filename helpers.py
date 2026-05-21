@@ -1629,6 +1629,21 @@ def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
     }
 
 
+def normalizar_unidades_minima(valor):
+    """Toda oferta (OfertaMinimo) debe tener unidades_minima >= 1.
+
+    Una "oferta simple" (sin mínimo) es equivalente a una oferta con mínimo 1.
+    Unificando esto, el flujo de pedido tiene un solo paso de ofertas ("con
+    mínimo") que cubre ambos casos — el paso de "ofertas simples" se eliminó
+    (2026-05-21). None / 0 / negativos → 1.
+    """
+    try:
+        v = int(valor)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, v)
+
+
 def _sin_acentos(s):
     """lowercase + sin acentos, para matching insensible a tildes.
 

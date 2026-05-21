@@ -2047,23 +2047,6 @@ def init_app(app):
             session.commit()
         return jsonify({'guardados': guardados, 'actualizados': actualizados})
 
-    @app.route('/order/<int:pedido_id>/parse-offers', methods=['POST'])
-    def order_parse_offers(pedido_id):
-        from parsers.ofertas_xlsx import parse_ofertas_xlsx
-        f = request.files.get('offers_file')
-        if not f or not f.filename:
-            return jsonify({'error': 'No se recibió archivo'}), 400
-        tmp = os.path.join(UPLOAD_FOLDER, f'off_{pedido_id}_{secure_filename(f.filename)}')
-        f.save(tmp)
-        try:
-            ofertas = parse_ofertas_xlsx(tmp)
-            return jsonify({'ofertas': ofertas})
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-        finally:
-            try: os.remove(tmp)
-            except OSError: pass
-
     @app.route('/order/<int:pedido_id>/export/plantilla', methods=['POST'])
     def order_export_plantilla(pedido_id):
         """Exporta el resumen usando la plantilla configurada para el laboratorio."""
@@ -2172,8 +2155,6 @@ def init_app(app):
                         val = str(int(row.get('cantidad', 0) or 0))
                     elif cs == 'cant_modulo':
                         val = str(int(row.get('cant_modulo', 0) or 0))
-                    elif cs == 'cant_oferta':
-                        val = str(int(row.get('cant_oferta', 0) or 0))
                     elif cs == 'cant_oferta_min':
                         val = str(int(row.get('cant_oferta_min', 0) or 0))
                     elif cs == 'cant_nodeal':
@@ -2313,7 +2294,6 @@ def init_app(app):
             if field in ('descripcion',):  return str(row.get('nombre', '') or '')
             if field == 'cantidad':        return str(int(row.get('cantidad', row.get('total', 0)) or 0))
             if field == 'cant_modulo':     return str(int(row.get('cant_modulo', 0) or 0))
-            if field == 'cant_oferta':     return str(int(row.get('cant_oferta', 0) or 0))
             if field == 'cant_oferta_min': return str(int(row.get('cant_oferta_min', 0) or 0))
             if field == 'cant_nodeal':     return str(int(row.get('cant_nodeal', 0) or 0))
             if field == 'precio':          return str(row.get('precio_pvp', '') or '')
@@ -2454,12 +2434,6 @@ def init_app(app):
                         it.get('desc_pct', ''),
                     ])
 
-        elif step == 'offers':
-            hrow(ws, ['EAN', 'Descripción', 'Cant. a pedir'])
-            ws.column_dimensions['B'].width = 42
-            for it in data:
-                ws.append([it.get('ean', ''), it.get('nombre', ''), it.get('cantidad', '')])
-
         elif step == 'nodeal':
             hrow(ws, ['EAN', 'Descripción', 'Cant. a pedir'])
             ws.column_dimensions['B'].width = 42
@@ -2470,7 +2444,7 @@ def init_app(app):
             rows = data if isinstance(data, list) else []
 
             hrow(ws, ['EAN', 'Producto', 'Stock ERP', 'Rot.', 'Prom.mes',
-                      'Precio PVP', 'Cant. módulo', 'Cant. oferta', 'Oferta c/mín', 'Sin Deal',
+                      'Precio PVP', 'Cant. módulo', 'Oferta c/mín', 'Sin Deal',
                       'Total', 'Cant. pedida', 'Saldo'])
             ws.column_dimensions['A'].width = 16
             ws.column_dimensions['B'].width = 40
@@ -2480,11 +2454,10 @@ def init_app(app):
             ws.column_dimensions['F'].width = 12
             ws.column_dimensions['G'].width = 12
             ws.column_dimensions['H'].width = 12
-            ws.column_dimensions['I'].width = 12
+            ws.column_dimensions['I'].width = 10
             ws.column_dimensions['J'].width = 10
-            ws.column_dimensions['K'].width = 10
-            ws.column_dimensions['L'].width = 12
-            ws.column_dimensions['M'].width = 10
+            ws.column_dimensions['K'].width = 12
+            ws.column_dimensions['L'].width = 10
 
             for row in rows:
                 saldo = row.get('saldo', '')
@@ -2496,7 +2469,6 @@ def init_app(app):
                     row.get('avg_monthly', '') if row.get('avg_monthly') is not None else '',
                     row.get('precio_pvp', '') if row.get('precio_pvp') else '',
                     row.get('cant_modulo', '') if row.get('cant_modulo') else '',
-                    row.get('cant_oferta', '') if row.get('cant_oferta') else '',
                     row.get('cant_oferta_min', '') if row.get('cant_oferta_min') else '',
                     row.get('cant_nodeal', '') if row.get('cant_nodeal') else '',
                     row.get('total', ''),
@@ -2507,15 +2479,15 @@ def init_app(app):
                 if saldo_val is not None:
                     from openpyxl.styles import PatternFill as _PF
                     if saldo_val > 0:
-                        ws.cell(row=ws.max_row, column=13).fill = _PF(fill_type='solid', fgColor='FEE2E2')
+                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='FEE2E2')
                     elif saldo_val < 0:
-                        ws.cell(row=ws.max_row, column=13).fill = _PF(fill_type='solid', fgColor='D1FAE5')
+                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='D1FAE5')
 
         if fmt == 'xlsx':
             buf = BytesIO()
             wb.save(buf)
             buf.seek(0)
-            step_names = {'modules': 'Modulos', 'offers': 'Ofertas',
+            step_names = {'modules': 'Modulos',
                           'nodeal': 'SinDeal', 'summary': 'Resumen'}
             fname = f"{lab}_{step_names.get(step, step)}.xlsx"
             resp = make_response(buf.read())

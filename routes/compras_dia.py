@@ -2321,7 +2321,6 @@ def init_app(app):
                     'descripcion':      'Descripcion',
                     'cantidad':         'Cantidad',
                     'cant_modulo':      'CantModulo',
-                    'cant_oferta':      'CantOferta',
                     'cant_oferta_min':  'CantOfertaMin',
                     'cant_nodeal':      'CantSinDeal',
                     'precio':           'Precio',
