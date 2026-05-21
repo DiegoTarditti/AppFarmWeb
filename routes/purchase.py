@@ -935,8 +935,11 @@ def init_app(app):
 
         from routes.compras_dia import _sigla_drog
         with database.get_db() as session:
+            # Excluir borradores de módulos (aún no confirmados). NULL = PENDIENTE viejo.
+            from sqlalchemy import or_ as _or_b
             pedidos = (session.query(Pedido)
                        .options(joinedload(Pedido.items))
+                       .filter(_or_b(Pedido.estado.is_(None), Pedido.estado != 'BORRADOR'))
                        .order_by(Pedido.creado_en.desc()).all())
 
             # Construir mapas de items emitidos PENDIENTES (no recibidos):
@@ -1594,6 +1597,8 @@ def init_app(app):
                 'laboratorio': pedido.laboratorio,
                 'farmacia': pedido.farmacia,
                 'periodo': pedido.periodo,
+                'estado': pedido.estado,
+                'es_borrador': pedido.estado == 'BORRADOR',
                 'n_days': pedido.n_days,
                 'creado_en': pedido.creado_en.strftime('%d/%m/%Y %H:%M') if pedido.creado_en else '',
                 'dias_desde_analisis': dias_desde,
@@ -1843,6 +1848,21 @@ def init_app(app):
                                    lab_plantilla=lab_plantilla,
                                    plantillas_entidad=plantillas_entidad,
                                    droguerias=droguerias)
+
+    @app.route('/order/<int:pedido_id>/confirmar', methods=['POST'])
+    def order_confirmar(pedido_id):
+        """Confirma un borrador de módulos: BORRADOR → PENDIENTE. Recién acá el
+        pedido pasa a ser 'real' (aparece en /orders)."""
+        with database.get_db() as session:
+            pedido = session.get(Pedido, pedido_id)
+            if not pedido:
+                flash('Pedido no encontrado.')
+                return redirect(url_for('orders_list'))
+            if pedido.estado == 'BORRADOR':
+                pedido.estado = 'PENDIENTE'
+                session.commit()
+                flash(f'Pedido de {pedido.laboratorio} guardado.', 'success')
+            return redirect(url_for('order_detail', pedido_id=pedido_id))
 
     @app.route('/order/<int:pedido_id>/save-state', methods=['POST'])
     def order_save_state(pedido_id):

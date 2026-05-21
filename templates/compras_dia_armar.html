@@ -582,23 +582,8 @@
    cubrir el bajo-mínimo) es el mismo floor/min de order_detail, acá embebido.
    "Aplicar" siembra las cantidades de la tabla; después se refina con las
    ofertas c/mín (botón → de cada fila) y se emite. #}
-{% if usa_packs and modulos_lab %}
-<div class="px-4 sm:px-6 pt-4">
-    <div id="modulos-panel" class="rounded-xl border border-amber-300 bg-amber-50/60 overflow-hidden">
-        <div class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-             onclick="toggleModulosPanel()">
-            <span class="text-lg">📦</span>
-            <div class="flex-1">
-                <p class="font-semibold text-sm text-amber-900">Este laboratorio compra por módulos de descuento</p>
-                <p class="text-xs text-amber-700">{{ modulos_lab | length }} módulo{{ 's' if modulos_lab|length != 1 }} activo{{ 's' if modulos_lab|length != 1 }} ·
-                    el sugerido se calcula sobre las cantidades a pedir de abajo. Revisá y aplicá antes de las ofertas c/mín.</p>
-            </div>
-            <span id="modulos-chevron" class="text-amber-700 text-sm transition-transform">▾</span>
-        </div>
-        <div id="modulos-body" class="hidden border-t border-amber-200 p-4 space-y-4 bg-white"></div>
-    </div>
-</div>
-{% endif %}
+{# El paso de módulos se movió al flujo "Comprar módulos" (/compras/laboratorio →
+   crea pedido → análisis order_detail). El armar común ya no muestra el panel. #}
 
 <div class="px-4 sm:px-6 py-4">
     <div class="ar-table-wrap">

@@ -11,7 +11,7 @@ from datetime import date as _date
 from datetime import datetime
 from datetime import timedelta as _td
 
-from flask import jsonify, redirect, render_template, request, url_for
+from flask import flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_, text
 
@@ -370,6 +370,7 @@ def init_app(app):
             Modulo,
             OfertaMinimo,
             Plantilla,
+            Provider,
         )
         with get_db() as session:
             labs = _calcular_labs_con_alertas(session)
@@ -431,7 +432,135 @@ def init_app(app):
                 l['modulo_fecha'] = mf.strftime('%d/%m/%Y') if mf else None
                 l['transfer_fecha'] = tf.strftime('%d/%m/%Y') if tf else None
 
-        return render_template('compras_laboratorio.html', labs_con_alertas=labs)
+            droguerias = [{'id': p.id, 'nombre': p.razon_social}
+                          for p in (session.query(Provider)
+                                    .filter(Provider.tipo == 'drogueria',
+                                            Provider.activo.is_(True))
+                                    .order_by(Provider.razon_social).all())]
+
+        return render_template('compras_laboratorio.html', labs_con_alertas=labs,
+                               droguerias=droguerias)
+
+    @app.route('/compras/laboratorio/<int:obs_lab_id>/comprar-modulos', methods=['POST'])
+    @login_required
+    def compras_laboratorio_comprar_modulos(obs_lab_id):
+        """Crea un Pedido nuevo con el universo bajo-mínimo del lab y abre el
+        análisis de módulos (/order/<id>). Solo para labs usa_packs. El sugerido
+        sembrado es el gap (mínimo − stock); el análisis lo refina con módulos."""
+        from sqlalchemy import func as _f
+
+        from database import (
+            Laboratorio,
+            ObsCodigoBarras,
+            ObsLaboratorio,
+            ObsProducto,
+            ObsStock,
+            ObsVentaMensual,
+            Pedido,
+            PedidoItem,
+        )
+        from helpers import now_ar as _now
+
+        # Días de cobertura + canal (lo elige el operador en el modal, al inicio).
+        dias = request.form.get('dias', type=int) or 30
+        dias = max(1, min(dias, 180))
+        canal = (request.form.get('canal') or 'laboratorio').strip()
+        if canal not in ('laboratorio', 'drogueria'):
+            canal = 'laboratorio'
+        partner_id = request.form.get('partner_id', type=int) if canal == 'drogueria' else None
+        with get_db() as session:
+            lab_obs = session.get(ObsLaboratorio, obs_lab_id)
+            if not lab_obs:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('compras_laboratorio'))
+            lab_local = (session.query(Laboratorio)
+                         .filter_by(observer_id=obs_lab_id).first())
+            if not (lab_local and lab_local.usa_packs):
+                flash('Ese laboratorio no está marcado como "compra por módulos".', 'error')
+                return redirect(url_for('compras_laboratorio'))
+
+            # Bajo mínimo del lab (stock < mínimo) desde obs_stock.
+            rows = (session.query(
+                        ObsStock.producto_observer.label('pid'),
+                        _f.sum(ObsStock.stock_actual).label('stock'),
+                        _f.sum(ObsStock.minimo).label('minimo'))
+                    .join(ObsProducto, ObsProducto.observer_id == ObsStock.producto_observer)
+                    .filter(ObsProducto.laboratorio_observer == obs_lab_id,
+                            ObsStock.minimo.isnot(None), ObsStock.minimo > 0)
+                    .group_by(ObsStock.producto_observer).all())
+            bajo = [(r.pid, int(r.stock or 0), int(r.minimo or 0)) for r in rows
+                    if int(r.stock or 0) < int(r.minimo or 0)]
+            if not bajo:
+                flash(f'{lab_obs.descripcion}: no hay productos bajo mínimo.', 'info')
+                return redirect(url_for('compras_laboratorio'))
+
+            pids = [b[0] for b in bajo]
+            nombres = {o.observer_id: o.descripcion for o in session.query(ObsProducto)
+                       .filter(ObsProducto.observer_id.in_(pids))}
+            ean_por_pid = {}
+            for oid, cb in (session.query(ObsCodigoBarras.producto_observer,
+                                          ObsCodigoBarras.codigo_barras)
+                            .filter(ObsCodigoBarras.producto_observer.in_(pids),
+                                    ObsCodigoBarras.fecha_baja.is_(None),
+                                    ObsCodigoBarras.orden == 1)):
+                ean_por_pid.setdefault(oid, cb)
+            v12 = {}
+            for oid, u, m in (session.query(ObsVentaMensual.producto_observer,
+                                            _f.sum(ObsVentaMensual.unidades),
+                                            _f.sum(ObsVentaMensual.monto))
+                              .filter(ObsVentaMensual.producto_observer.in_(pids))
+                              .group_by(ObsVentaMensual.producto_observer)):
+                v12[oid] = (int(u or 0), float(m or 0))
+
+            items = []
+            for pid, stock, minimo in bajo:
+                u12, m12 = v12.get(pid, (0, 0.0))
+                pvp = round(m12 / u12, 2) if u12 else 0.0
+                # Sugerido = cubrir `dias` de venta (venta diaria × días) − stock.
+                # Piso: el gap al mínimo. Mínimo 1 (está bajo mínimo).
+                diaria = (u12 / 365.0) if u12 else 0.0
+                objetivo = math.ceil(diaria * dias)
+                sugerido = max(1, minimo - stock, objetivo - stock)
+                items.append(PedidoItem(
+                    codigo_barra=(ean_por_pid.get(pid) or f'OBS:{pid}'),
+                    nombre=nombres.get(pid, ''),
+                    cantidad=sugerido,
+                    precio_pvp=pvp,
+                    subtotal=round(sugerido * pvp, 2),
+                    avg_monthly=round(u12 / 12, 1) if u12 else None,
+                ))
+            _farmacia = getattr(current_user, 'username', None) or 'Administrador'
+            _periodo = f"{_now().strftime('%d-%m')} · módulos {dias}d"
+            # Reusar el borrador de módulos del lab (no acumula): si ya hay uno,
+            # le regeneramos los ítems; si no, lo creamos. Recién es pedido real
+            # cuando el operador confirma en el análisis (BORRADOR → PENDIENTE).
+            pedido = (session.query(Pedido)
+                      .filter(Pedido.laboratorio == lab_obs.descripcion,
+                              Pedido.estado == 'BORRADOR',
+                              Pedido.origen == 'Modulos').first())
+            if pedido:
+                for it in list(pedido.items):
+                    session.delete(it)
+                session.flush()
+                pedido.items = items
+                pedido.farmacia = _farmacia
+                pedido.periodo = _periodo
+                pedido.n_days = dias
+            else:
+                pedido = Pedido(
+                    laboratorio=lab_obs.descripcion, farmacia=_farmacia,
+                    periodo=_periodo, n_days=dias, items=items, origen='Modulos',
+                    estado='BORRADOR',
+                )
+                session.add(pedido)
+            pedido.estado = 'BORRADOR'
+            pedido.canal = canal
+            pedido.partner_id = partner_id
+            pedido.canal_elegido_en = _now()
+            session.flush()
+            pedido_id = pedido.id
+            session.commit()
+        return redirect(url_for('order_detail', pedido_id=pedido_id))
 
     @app.route('/api/drogueria/<int:prov_id>/pedidos-emitidos')
     @login_required
