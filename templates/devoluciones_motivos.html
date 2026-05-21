@@ -26,6 +26,7 @@
         <tr>
           <th class="px-3 py-2 text-left">Nombre</th>
           <th class="px-3 py-2 w-40">Rol permitido</th>
+          <th class="px-3 py-2 w-36" title="Si bloquea el check Rendida (receta no disponible)">Bloquea Rendida</th>
           <th class="px-3 py-2 w-28">Estado</th>
           <th class="px-3 py-2 w-12"></th>
         </tr>
@@ -44,6 +45,14 @@
               </select>
             </form>
           </td>
+          <td class="px-3 py-2 text-xs text-center">
+            <form method="post" action="{{ url_for('devoluciones_motivo_bloquea_rendida', id=m.id) }}">
+              <button type="submit" class="px-2 py-0.5 rounded text-xs {% if m.bloquea_rendida %}bg-red-100 text-red-800 font-semibold{% else %}bg-gray-100 text-gray-500{% endif %}"
+                      title="Click para cambiar. Si está ON, este motivo bloquea el check Rendida.">
+                {{ '🔒 Sí' if m.bloquea_rendida else 'No' }}
+              </button>
+            </form>
+          </td>
           <td class="px-3 py-2 text-xs">
             <form method="post" action="{{ url_for('devoluciones_motivo_toggle', id=m.id) }}">
               <button type="submit" class="px-2 py-0.5 rounded text-xs {% if m.activo %}bg-green-100 text-green-800{% else %}bg-gray-200 text-gray-600{% endif %}">
@@ -59,7 +68,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="px-4 py-6 text-center text-gray-500 text-sm">Sin motivos cargados.</td></tr>
+        <tr><td colspan="5" class="px-4 py-6 text-center text-gray-500 text-sm">Sin motivos cargados.</td></tr>
         {% endfor %}
       </tbody>
     </table>

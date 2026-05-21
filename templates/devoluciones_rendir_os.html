@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% set _rol = rol_actual %}
+{% block title %}Rendición a Obras Sociales{% endblock %}
+{% block main %}
+<div class="max-w-7xl mx-auto p-4 space-y-4">
+  <div class="flex items-center justify-between flex-wrap gap-2">
+    <div>
+      <h1 class="text-2xl font-bold">Rendición a Obras Sociales</h1>
+      <p class="text-sm text-gray-600">
+        Recetas OK pendientes de rendir a la obra social. Al marcarlas, pasan a histórico.
+      </p>
+    </div>
+    <div class="flex gap-2">
+      <a href="{{ url_for('devoluciones_list') }}" class="px-3 py-1.5 rounded border border-gray-300 hover:bg-white text-sm">← Listado</a>
+      <a href="{{ url_for('rendir_os_export_xlsx', os=q_os) }}"
+         class="px-3 py-1.5 rounded border border-green-400 bg-green-50 hover:bg-green-100 text-green-800 text-sm font-semibold">⬇ XLSX</a>
+      <a href="{{ url_for('rendir_os_export_pdf', os=q_os) }}"
+         class="px-3 py-1.5 rounded border border-red-400 bg-red-50 hover:bg-red-100 text-red-800 text-sm font-semibold">⬇ PDF</a>
+    </div>
+  </div>
+
+  {# Filtro estado RendidaOS: todas / rendidas / sin rendir #}
+  <div class="flex gap-2">
+    {% for val, lbl in [('sin', 'Sin rendir'), ('rendidas', 'Rendidas'), ('todas', 'Ver todas')] %}
+    <a href="{{ url_for('rendir_os', os=q_os, ver=val) }}"
+       class="px-3 py-1 rounded-full text-xs font-semibold border
+              {% if ver == val %}bg-blue-600 text-white border-blue-600{% else %}bg-white text-gray-600 border-gray-300 hover:bg-gray-50{% endif %}">
+      {{ lbl }}
+    </a>
+    {% endfor %}
+  </div>
+
+  {# Filtro multitoken por OS #}
+  <form method="get" class="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-3 flex items-center gap-3 flex-wrap">
+    <input type="hidden" name="ver" value="{{ ver }}">
+    <label class="text-xs uppercase text-gray-500 font-semibold">Obra social</label>
+    <input name="os" value="{{ q_os }}" placeholder="Ej: osde · 2da circ"
+           class="border border-gray-300 rounded px-2 py-1.5 text-sm min-w-[260px]" />
+    <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-3 py-1.5 rounded text-sm font-semibold">Filtrar</button>
+    {% if q_os %}<a href="{{ url_for('rendir_os', ver=ver) }}" class="px-3 py-1.5 rounded border border-gray-300 text-sm">Limpiar</a>{% endif %}
+    <span class="ml-auto text-xs text-gray-600">
+      <strong class="text-gray-900">{{ recetas|length }}</strong> receta(s)
+      · Total a cargo O.Social <strong class="text-gray-900">${{ '{:,.0f}'.format(total_os).replace(',', '.') }}</strong>
+      · Total al 100 <strong class="text-gray-900">${{ '{:,.0f}'.format(total_100).replace(',', '.') }}</strong>
+    </span>
+  </form>
+
+  {% if recetas %}
+  <form method="post" action="{{ url_for('rendir_os_marcar') }}">
+    <input type="hidden" name="os" value="{{ q_os }}">
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="sticky top-0 z-10 bg-gray-800 text-white">
+            <tr>
+              <th class="px-2 py-2 text-left">Fecha</th>
+              <th class="px-2 py-2 text-left">Vendedor</th>
+              <th class="px-2 py-2 text-left">Rendición</th>
+              <th class="px-2 py-2 text-left">Obra Social</th>
+              <th class="px-2 py-2 text-right">A cargo O.Social</th>
+              <th class="px-2 py-2 text-right">Al 100</th>
+              <th class="px-2 py-2 w-20 text-center" title="Marcá las que rendís a la OS">RendidaOS</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for r in recetas %}
+            <tr class="hover:bg-gray-50">
+              <td class="px-2 py-2 text-xs whitespace-nowrap">{{ r.fecha_op.strftime('%d/%m/%y %H:%M') if r.fecha_op else '—' }}</td>
+              <td class="px-2 py-2 text-xs">{{ r.vendedor }}</td>
+              <td class="px-2 py-2 text-xs font-mono">{% if r.nro %}#{{ r.nro }}{% else %}—{% endif %}</td>
+              <td class="px-2 py-2 text-xs">{{ r.os }}</td>
+              <td class="px-2 py-2 text-right font-mono text-xs">${{ '{:,.0f}'.format(r.importe_os).replace(',', '.') }}</td>
+              <td class="px-2 py-2 text-right font-mono text-xs">${{ '{:,.0f}'.format(r.importe_total).replace(',', '.') }}</td>
+              <td class="px-2 py-2 text-center">
+                {% if r.rendida_os %}
+                <span class="text-green-700 text-xs font-semibold" title="Rendida {{ r.rendida_os_en.strftime('%d/%m/%y') if r.rendida_os_en else '' }}">✓ rendida</span>
+                {% else %}
+                <label class="inline-flex flex-col items-center gap-0.5 cursor-pointer">
+                  <input type="checkbox" name="marcar" value="{{ r.id }}" class="w-4 h-4 row-check-os" />
+                  <span class="text-[9px] text-gray-500 uppercase">Rendir</span>
+                </label>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+        <label class="text-xs text-gray-600 flex items-center gap-1.5">
+          <input type="checkbox" id="check-all-os"> Seleccionar todas
+        </label>
+        <button type="submit"
+                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded text-sm font-semibold">
+          Marcar rendidas a OS → histórico
+        </button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <div class="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500 text-sm">
+    No hay recetas OK pendientes de rendir a la obra social{% if q_os %} para "{{ q_os }}"{% endif %}.
+  </div>
+  {% endif %}
+</div>
+
+<script>
+  const _ca = document.getElementById('check-all-os');
+  if (_ca) {
+    _ca.addEventListener('change', () => {
+      document.querySelectorAll('.row-check-os').forEach(cb => { cb.checked = _ca.checked; });
+    });
+  }
+</script>
+{% endblock %}
