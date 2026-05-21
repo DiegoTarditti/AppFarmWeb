@@ -151,70 +151,30 @@ def init_app(app):
     def api_product_chart(barcode):
         """Devuelve datos de ventas históricas de un producto.
 
-        Fuente principal: ProductAnalytics (poblado desde análisis de ventas
-        del usuario). Fallback: obs_productos + obs_ventas_mensuales (cuando
-        el barcode es un IdProducto numérico de ObServer o pseudo-EAN OBS:N
-        — caso típico de pedidos generados desde ObServer sin factura aún).
-        """
-        import os as _os
-        from datetime import datetime
-        with database.get_db() as session:
-            pa = session.get(database.ProductAnalytics, barcode)
-            if pa:
-                ventas = []
-                if pa.ventas_json:
-                    try:
-                        ventas = json.loads(pa.ventas_json)
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-                # Si la fila de PA quedó stale (sin ventas), no cortamos acá:
-                # caemos al fallback de Observer para aprovechar obs_ventas_mensuales.
-                if ventas and any(v for v in ventas):
-                    # ProductAnalytics no almacena el mínimo. Lo buscamos en
-                    # paralelo en obs_stock vía bridge productos.observer_id.
-                    minimo = 0
-                    from helpers import _find_producto
-                    prod_local = _find_producto(session, barcode)
-                    if prod_local and prod_local.observer_id:
-                        from sqlalchemy import func as _f
-                        m_row = (session.query(_f.coalesce(_f.sum(database.ObsStock.minimo), 0))
-                                 .filter(database.ObsStock.producto_observer == prod_local.observer_id)
-                                 .scalar())
-                        minimo = int(m_row or 0)
-                    return jsonify({
-                        'ok': True,
-                        'nombre': pa.descripcion or '',
-                        'codigo_barra': barcode,
-                        'ventas': ventas,
-                        'avg_monthly': float(pa.avg_monthly or 0),
-                        'slope': float(pa.slope or 0),
-                        'stock': pa.stock or 0,
-                        'minimo': minimo,
-                        'rotacion': pa.rotacion or '',
-                        'tipo': pa.tipo or 'N',
-                        'start_month': pa.start_month or 4,
-                        'n_days': pa.n_days or 35,
-                        'sin_historial': False,
-                        'analizado_en': pa.actualizado_en.strftime('%d/%m/%Y') if pa.actualizado_en else None,
-                        'fuente': 'analisis',
-                    })
+        Calcula EN VIVO desde obs_stock + obs_ventas_mensuales vía el source of
+        truth unico (services.producto_metrics). NO usa ProductAnalytics: esa
+        tabla queda stale (~1 mes) y producia divergencias con el resto de la app
+        (mismo producto con stock/prom distintos segun la pantalla).
 
-            # Fallback: resolver barcode → observer_id y traer del mirror.
+        Resuelve barcode → observer_id (OBS:N, EAN real vía bridge, EAN en
+        obs_codigos_barras, o IdProducto numerico directo). Si no resuelve,
+        responde sin_historial=True con el nombre del Producto local si existe.
+        """
+        from helpers import _find_producto
+        from purchase_engine import tipo_producto
+        from services.producto_metrics import metricas_producto
+        with database.get_db() as session:
+            # Resolver barcode → observer_id.
             obs_id = None
             if barcode.startswith('OBS:'):
                 try:
                     obs_id = int(barcode[4:])
                 except (ValueError, TypeError):
                     pass
-            # Bridge vía productos local primero (cascada legacy + 1-a-N + obs).
-            # Esto cubre el caso típico (barcode = EAN real, no IdProducto Observer).
             if obs_id is None:
-                from helpers import _find_producto
                 prod = _find_producto(session, barcode)
                 if prod and prod.observer_id:
                     obs_id = prod.observer_id
-            # Resolución directa via obs_codigos_barras: cubre el caso donde el
-            # EAN está en Observer pero NO hay Producto local con bridge.
             if obs_id is None:
                 row = (session.query(database.ObsCodigoBarras.producto_observer)
                        .filter(database.ObsCodigoBarras.codigo_barras == barcode,
@@ -222,72 +182,41 @@ def init_app(app):
                        .first())
                 if row:
                     obs_id = row[0]
-            # Último recurso: el barcode YA es un IdProducto numérico de Observer.
             if obs_id is None:
                 try:
                     obs_id = int(barcode)
                 except (ValueError, TypeError):
                     pass
 
-            # Si no resolvimos obs_id o no hay ObsProducto, igual respondemos
-            # OK con sin_historial=True usando el Producto local (si existe).
             obs_p = session.get(database.ObsProducto, obs_id) if obs_id else None
             if not obs_p:
-                from helpers import _find_producto
                 prod_local = _find_producto(session, barcode)
                 nombre = (prod_local.descripcion if prod_local else '') or barcode
                 return jsonify({
                     'ok': True, 'nombre': nombre, 'codigo_barra': barcode,
-                    'ventas': [], 'avg_monthly': 0, 'slope': 0,
-                    'stock': 0, 'minimo': 0, 'rotacion': '', 'tipo': 'N',
+                    'ventas': [], 'avg_monthly': 0, 'avg_3m': 0, 'avg_12m': 0,
+                    'slope': 0, 'stock': 0, 'minimo': 0, 'rotacion': '', 'tipo': 'N',
                     'start_month': 4, 'n_days': 35, 'sin_historial': True,
                     'fuente': 'sin_datos',
                 })
 
-            id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
-            hoy = datetime.now()
-            # Construir lista de los últimos 12 meses como (anio, mes)
-            meses = []
-            y, m = hoy.year, hoy.month
-            for _ in range(12):
-                meses.append((y, m))
-                m -= 1
-                if m == 0:
-                    m, y = 12, y - 1
-            meses.reverse()
-            # Stock actual + mínimo configurado en ObServer
-            stock_row = (session.query(
-                            database.ObsStock.stock_actual,
-                            database.ObsStock.minimo,
-                         )
-                         .filter(database.ObsStock.id_farmacia == id_farmacia,
-                                 database.ObsStock.producto_observer == obs_id).first())
-            stock = int(stock_row[0]) if stock_row else 0
-            minimo = int(stock_row[1] or 0) if stock_row else 0
-            # Ventas por mes
-            rows = (session.query(database.ObsVentaMensual.anio,
-                                   database.ObsVentaMensual.mes,
-                                   database.ObsVentaMensual.unidades)
-                    .filter(database.ObsVentaMensual.id_farmacia == id_farmacia,
-                            database.ObsVentaMensual.producto_observer == obs_id).all())
-            ventas_map = {(int(r[0]), int(r[1])): float(r[2] or 0) for r in rows}
-            ventas = [round(ventas_map.get((y, m), 0.0), 2) for (y, m) in meses]
-            n_full = max(1, len(ventas) - 1)  # excluye mes actual parcial
-            avg_monthly = sum(ventas[:n_full]) / n_full
+            m = metricas_producto(session, obs_id)
             return jsonify({
                 'ok': True,
                 'nombre': obs_p.descripcion or '',
                 'codigo_barra': barcode,
-                'ventas': ventas,
-                'avg_monthly': round(avg_monthly, 2),
-                'slope': 0,
-                'stock': stock,
-                'minimo': minimo,
-                'rotacion': '',
-                'tipo': 'N',
-                'start_month': meses[0][1],
+                'ventas': m['ventas12'],
+                'avg_monthly': m['avg_monthly'],   # alias de avg_12m (backcompat)
+                'avg_3m': m['avg_3m'],
+                'avg_12m': m['avg_12m'],
+                'slope': m['slope'],
+                'stock': m['stock'],
+                'minimo': m['minimo'],
+                'rotacion': m['rotacion'],
+                'tipo': tipo_producto(m['ventas12']),
+                'start_month': m['start_month'],
                 'n_days': 30,
-                'sin_historial': sum(ventas) == 0,
+                'sin_historial': m['sin_historial'],
                 'analizado_en': None,
                 'fuente': 'observer',
             })
