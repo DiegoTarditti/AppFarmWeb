@@ -98,6 +98,12 @@
                     <td class="center">
                         <a href="{{ url_for('compras_dia_armar', lab_id=l.lab_id) }}"
                            class="cl-armar" onclick="event.stopPropagation()">📦 Armar →</a>
+                        {% if l.usa_packs %}
+                        <button type="button" class="cl-armar" style="margin-top:6px; background:linear-gradient(135deg,#f59e0b,#d97706);"
+                                onclick="event.stopPropagation(); abrirModalModulos({{ l.lab_id }}, this.dataset.nombre)"
+                                data-nombre="{{ l.nombre }}"
+                                title="Crear pedido y analizar por módulos de descuento">🧩 Comprar módulos</button>
+                        {% endif %}
                     </td>
                     <td class="center">
                         {% if l.lab_local_id %}
@@ -162,7 +168,57 @@
 </div>
 </div>
 
+<!-- Modal: días + canal antes de crear el borrador de módulos -->
+<div id="modal-modulos" style="display:none; position:fixed; inset:0; z-index:200; background:rgba(0,0,0,.6); align-items:center; justify-content:center;">
+    <div style="background:var(--ds-surface); border:1px solid var(--ds-line); border-radius:14px; width:min(440px,92vw); padding:20px;">
+        <h3 style="font-size:16px; font-weight:700; color:var(--ds-text); margin:0 0 4px;">🧩 Comprar módulos</h3>
+        <p id="mm-lab" style="font-size:12px; color:var(--ds-text-mute); margin:0 0 16px;"></p>
+        <form id="mm-form" method="post">
+            <label style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ds-text-mute); font-weight:600; display:block; margin-bottom:4px;">¿Para cuántos días comprar?</label>
+            <input type="number" name="dias" value="30" min="1" max="180" required
+                   style="width:100%; background:var(--ds-surface-2); border:1px solid var(--ds-line); border-radius:8px; padding:9px 11px; font-size:14px; color:var(--ds-text); margin-bottom:16px;">
+
+            <label style="font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ds-text-mute); font-weight:600; display:block; margin-bottom:6px;">Canal de compra</label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:var(--ds-text); margin-bottom:6px; cursor:pointer;">
+                <input type="radio" name="canal" value="laboratorio" checked onchange="mmToggleDrog()"> Directo al laboratorio
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:var(--ds-text); margin-bottom:8px; cursor:pointer;">
+                <input type="radio" name="canal" value="drogueria" onchange="mmToggleDrog()"> Vía droguería
+            </label>
+            <select name="partner_id" id="mm-drog" disabled
+                    style="width:100%; background:var(--ds-surface-2); border:1px solid var(--ds-line); border-radius:8px; padding:9px 11px; font-size:14px; color:var(--ds-text); opacity:.5;">
+                <option value="">— elegí droguería —</option>
+                {% for d in droguerias %}<option value="{{ d.id }}">{{ d.nombre }}</option>{% endfor %}
+            </select>
+
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+                <button type="button" onclick="cerrarModalModulos()" style="background:transparent; border:1px solid var(--ds-line); color:var(--ds-text-mute); border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer;">Cancelar</button>
+                <button type="submit" class="cl-armar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">Crear y analizar →</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
+const MM_BASE = "{{ url_for('compras_laboratorio_comprar_modulos', obs_lab_id=0) }}";
+function abrirModalModulos(obsLabId, nombre) {
+    const f = document.getElementById('mm-form');
+    f.action = MM_BASE.replace('/0/comprar-modulos', '/' + obsLabId + '/comprar-modulos');
+    document.getElementById('mm-lab').textContent = nombre || '';
+    document.getElementById('modal-modulos').style.display = 'flex';
+}
+function cerrarModalModulos() { document.getElementById('modal-modulos').style.display = 'none'; }
+function mmToggleDrog() {
+    const drog = document.getElementById('mm-drog');
+    const viaDrog = document.querySelector('#mm-form input[name="canal"]:checked').value === 'drogueria';
+    drog.disabled = !viaDrog;
+    drog.style.opacity = viaDrog ? '1' : '.5';
+    drog.required = viaDrog;
+}
+document.getElementById('modal-modulos').addEventListener('click', e => {
+    if (e.target.id === 'modal-modulos') cerrarModalModulos();
+});
+
 (function() {
     const inp = document.getElementById('cl-search');
     const tbody = document.getElementById('cl-tbody');

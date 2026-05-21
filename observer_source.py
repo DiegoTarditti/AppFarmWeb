@@ -963,16 +963,21 @@ def sync_ventas_mensuales(session, meses=None, id_farmacia=None):
     ts = now_ar()
     try:
         with conn.cursor(as_dict=True) as cur:
+            # Ventas NETAS: incluimos 'V' (venta) y 'D' (devolución / nota de
+            # crédito). Las 'D' vienen con Cantidad e ImporteNeto NEGATIVOS, así
+            # que el SUM resta automáticamente lo devuelto. Antes solo contaba
+            # 'V' → las ventas quedaban infladas por las devoluciones no restadas.
+            # Trx cuenta solo ventas reales (no las devoluciones).
             cur.execute("""
                 SELECT IdProducto,
                        Anio = [Año],
                        Mes,
                        Unidades = SUM(Cantidad),
                        Monto    = SUM(ImporteNeto),
-                       Trx      = COUNT(*)
+                       Trx      = SUM(CASE WHEN IdTipoOperacion = 'V' THEN 1 ELSE 0 END)
                 FROM DW.ProductosVendidos
                 WHERE IdFarmacia = %d
-                  AND IdTipoOperacion = 'V'
+                  AND IdTipoOperacion IN ('V', 'D')
                   AND ([Año] * 100 + Mes) BETWEEN %d AND %d
                 GROUP BY IdProducto, [Año], Mes
             """, (int(id_farmacia), int(desde_key), int(hasta_key)))

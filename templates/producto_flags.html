@@ -351,7 +351,82 @@
                 <button type="submit" class="btn btn-mint text-xs w-full mt-2">Asignar flag</button>
             </form>
         </div>
+
+        {# ── Presentación: fraccionado + cantidad de envase ── #}
+        <div class="pf-card" style="margin-top: 16px;">
+            <div class="pf-card-head">
+                <h3>📦 Presentación</h3>
+            </div>
+            <div style="padding: 16px 18px;">
+                <div class="pf-field">
+                    <label class="pf-label">Producto (buscar por nombre)</label>
+                    <div class="pf-ac-wrap" id="pr-ac-wrap">
+                        <input type="text" class="pf-input" id="pr-search"
+                               placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
+                        <div class="pf-ac-results" id="pr-ac-results"></div>
+                    </div>
+                    <div class="pf-help">Buscá el producto para configurar su envase.</div>
+                </div>
+
+                <div id="pr-config" style="display:none;">
+                    <div class="pf-chosen" style="margin-bottom: 13px;">
+                        <div class="chosen-info">
+                            <div class="chosen-nombre" id="pr-nombre"></div>
+                            <div class="chosen-ean" id="pr-ean-lbl"></div>
+                        </div>
+                        <button type="button" class="chosen-clear" id="pr-clear" title="Cambiar producto">×</button>
+                    </div>
+
+                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--ds-text);">
+                        <input type="checkbox" id="pr-fraccionado" style="width:16px;height:16px;">
+                        Se vende fraccionado (suelto, pero se pide por envase)
+                    </label>
+
+                    <div class="pf-field" style="margin-top:13px;">
+                        <label class="pf-label">Cantidad por envase</label>
+                        <input type="text" class="pf-input" id="pr-cant" inputmode="decimal" placeholder="ej: 30">
+                        <div class="pf-help" id="pr-cant-help">Unidades de venta por envase de compra.</div>
+                    </div>
+
+                    <button type="button" class="btn btn-mint text-xs w-full mt-1" id="pr-save">Guardar presentación</button>
+                    <div id="pr-status" class="text-[11px] mt-2"></div>
+
+                    {# ── Equivalencia Kellerhoff ── #}
+                    <div style="border-top:1px solid var(--ds-line); margin-top:14px; padding-top:12px;">
+                        <label class="pf-label" style="margin-bottom:6px;">🏷 Equivalencia Kellerhoff</label>
+                        <div id="kel-estado" class="text-[11px] mb-2"></div>
+
+                        <div class="pf-ac-wrap" id="kel-ac-wrap">
+                            <input type="text" class="pf-input" id="kel-search"
+                                   placeholder="Buscar en catálogo Kellerhoff…" autocomplete="off">
+                            <div class="pf-ac-results" id="kel-ac-results"></div>
+                        </div>
+                        <div id="kel-elegido" class="text-[11px] mt-2" style="display:none;"></div>
+
+                        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                            <button type="button" class="btn btn-mint text-xs" id="kel-asignar" disabled>Asignar código</button>
+                            <button type="button" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-amber-500" id="kel-nodisp">Kellerhoff no lo trae</button>
+                            <button type="button" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-rose-500" id="kel-limpiar">Limpiar</button>
+                        </div>
+                        <div id="kel-status" class="text-[11px] mt-2"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+</div>
+
+{# Acceso al catálogo Kellerhoff (importar CSV + recalcular equivalencias) #}
+<div style="padding: 4px 24px 28px;">
+    <a href="{{ url_for('kellerhoff_catalogo') }}"
+       style="display:inline-flex; align-items:center; gap:8px; padding:10px 16px;
+              background:linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+              border:1px solid var(--ds-line); border-radius:var(--ds-r-md);
+              color:var(--ds-text); font-size:13px; font-weight:600; text-decoration:none;"
+       onmouseover="this.style.borderColor='var(--ds-mint)'"
+       onmouseout="this.style.borderColor='var(--ds-line)'">
+        📦 Catálogo Kellerhoff — importar CSV + recalcular equivalencias →
+    </a>
 </div>
 
 <script>
@@ -507,5 +582,196 @@ inpSearch.addEventListener('keydown', (e) => {
 document.addEventListener('click', (e) => {
     if (!acWrap.contains(e.target)) acResults.classList.remove('open');
 });
+
+// ─── Presentación: buscar producto → fraccionado + cantidad de envase ───
+(function() {
+    const sInput   = document.getElementById('pr-search');
+    const sWrap    = document.getElementById('pr-ac-wrap');
+    const sRes     = document.getElementById('pr-ac-results');
+    const cfgBox   = document.getElementById('pr-config');
+    const nom      = document.getElementById('pr-nombre');
+    const eanLbl   = document.getElementById('pr-ean-lbl');
+    const chk      = document.getElementById('pr-fraccionado');
+    const cant     = document.getElementById('pr-cant');
+    const cantHelp = document.getElementById('pr-cant-help');
+    const status   = document.getElementById('pr-status');
+    const btnSave  = document.getElementById('pr-save');
+    const btnClear = document.getElementById('pr-clear');
+    let _deb = null, _seq = 0, _items = [], _focus = -1, _ean = '';
+    let _kelEan = '', _kelPick = null, _kelDeb = null, _kelSeq = 0;
+
+    function setStatus(msg, cls) {
+        status.textContent = msg || '';
+        status.className = 'text-[11px] mt-2 ' + (cls || '');
+    }
+
+    function renderRes(items, tokens) {
+        _items = items; _focus = -1;
+        if (!items.length) {
+            sRes.innerHTML = '<div class="pf-ac-empty">Ningún producto coincide</div>';
+            sRes.classList.add('open'); return;
+        }
+        sRes.innerHTML = items.map((p, i) => `
+            <div class="pf-ac-item" data-idx="${i}">
+                <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
+                <div class="ac-meta"><code>${escapeHtml(p.codigo_barra)}</code>
+                ${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}</div>
+            </div>`).join('');
+        sRes.classList.add('open');
+        sRes.querySelectorAll('.pf-ac-item').forEach(el =>
+            el.addEventListener('click', () => elegir(_items[+el.dataset.idx])));
+    }
+
+    async function elegir(p) {
+        sRes.classList.remove('open'); sInput.value = ''; setStatus('Cargando…', '');
+        try {
+            const r = await fetch('/api/producto/presentacion?ean=' + encodeURIComponent(p.codigo_barra),
+                                  {credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { setStatus(d.error || 'No se pudo cargar', 'text-rose-400'); return; }
+            _ean = d.ean;
+            nom.textContent = d.descripcion;
+            eanLbl.textContent = (d.ean || '—') + (d.lab ? ' · ' + d.lab : '');
+            chk.checked = !!d.fraccionado;
+            cant.value = d.cantidad_envase != null ? d.cantidad_envase : '';
+            cantHelp.textContent = (d.cantidad_envase == null && d.cantidad_envase_obs != null)
+                ? 'Sugerido ObServer: ' + d.cantidad_envase_obs + '. Unidades de venta por envase.'
+                : 'Unidades de venta por envase de compra.';
+            sWrap.style.display = 'none'; cfgBox.style.display = 'block'; setStatus('', '');
+            renderKel(d.kellerhoff);
+        } catch { setStatus('Error de red', 'text-rose-400'); }
+    }
+
+    btnClear.addEventListener('click', () => {
+        _ean = ''; cfgBox.style.display = 'none'; sWrap.style.display = ''; setStatus('', ''); sInput.focus();
+    });
+
+    sInput.addEventListener('input', () => {
+        const q = sInput.value.trim();
+        if (q.length < 2) { sRes.classList.remove('open'); return; }
+        clearTimeout(_deb);
+        _deb = setTimeout(async () => {
+            const seq = ++_seq;
+            try {
+                const r = await fetch('/api/productos?q=' + encodeURIComponent(q) + '&con_ean=1&limit=15',
+                                      {credentials: 'same-origin'});
+                if (seq !== _seq) return;
+                if (!r.ok) { sRes.classList.remove('open'); return; }
+                const d = await r.json();
+                renderRes(d.data || [], q.split(/\s+/));
+            } catch { sRes.classList.remove('open'); }
+        }, 250);
+    });
+
+    sInput.addEventListener('keydown', (e) => {
+        const items = sRes.querySelectorAll('.pf-ac-item');
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); _focus = (_focus + 1) % items.length; }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); _focus = (_focus - 1 + items.length) % items.length; }
+        else if (e.key === 'Enter') { if (_focus >= 0 && _items[_focus]) { e.preventDefault(); elegir(_items[_focus]); return; } }
+        else if (e.key === 'Escape') { sRes.classList.remove('open'); return; }
+        else { return; }
+        items.forEach((el, i) => el.classList.toggle('focused', i === _focus));
+        if (_focus >= 0) items[_focus].scrollIntoView({block: 'nearest'});
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!sWrap.contains(e.target)) sRes.classList.remove('open');
+    });
+
+    btnSave.addEventListener('click', async () => {
+        if (!_ean) return;
+        btnSave.disabled = true; setStatus('Guardando…', '');
+        try {
+            const r = await fetch('/api/producto/presentacion', {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ean: _ean, fraccionado: chk.checked, cantidad_envase: cant.value.trim()}),
+            });
+            const d = await r.json();
+            setStatus(d.ok ? '✓ Guardado' : (d.error || 'Error al guardar'),
+                      d.ok ? 'text-[color:var(--ds-mint)]' : 'text-rose-400');
+        } catch { setStatus('Error de red', 'text-rose-400'); }
+        finally { btnSave.disabled = false; }
+    });
+
+    // ── Equivalencia Kellerhoff ──
+    const kelEstado  = document.getElementById('kel-estado');
+    const kelSearch  = document.getElementById('kel-search');
+    const kelRes     = document.getElementById('kel-ac-results');
+    const kelWrap    = document.getElementById('kel-ac-wrap');
+    const kelElegido = document.getElementById('kel-elegido');
+    const kelStatus  = document.getElementById('kel-status');
+    const btnKelAsig = document.getElementById('kel-asignar');
+    const btnKelND   = document.getElementById('kel-nodisp');
+    const btnKelLimp = document.getElementById('kel-limpiar');
+
+    function renderKel(k) {
+        _kelEan = (k && k.ean) || '';
+        _kelPick = null;
+        kelElegido.style.display = 'none'; kelElegido.textContent = '';
+        kelStatus.textContent = ''; kelSearch.value = '';
+        btnKelAsig.disabled = true;
+        const map = {
+            sin_catalogo:  ['Catálogo Kellerhoff no cargado.', 'text-[color:var(--ds-text-mute)]'],
+            directo:       ['✓ Resuelve directo por EAN → CodKel ' + (k.codigo || ''), 'text-[color:var(--ds-mint)]'],
+            equivalencia:  ['Equivalencia: CodKel ' + (k.codigo || '') + ' (' + (k.metodo || '') + (k.revisado ? ', manual' : '') + ')', 'text-[color:var(--ds-mint)]'],
+            no_disponible: ['⚠ Marcado: Kellerhoff no lo trae.', 'text-amber-400'],
+            sin_resolver:  ['Sin resolver — elegí el código abajo o marcá que no lo trae.', 'text-rose-400'],
+        };
+        const m = map[(k && k.estado) || 'sin_resolver'] || map.sin_resolver;
+        kelEstado.textContent = m[0]; kelEstado.className = 'text-[11px] mb-2 ' + m[1];
+        const hayCat = k && k.estado !== 'sin_catalogo';
+        kelSearch.disabled = !hayCat; btnKelND.disabled = !hayCat; btnKelLimp.disabled = !hayCat;
+    }
+
+    kelSearch.addEventListener('input', () => {
+        const q = kelSearch.value.trim();
+        if (q.length < 2) { kelRes.classList.remove('open'); return; }
+        clearTimeout(_kelDeb);
+        _kelDeb = setTimeout(async () => {
+            const seq = ++_kelSeq;
+            try {
+                const r = await fetch('/api/kellerhoff/catalogo/buscar?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+                if (seq !== _kelSeq) return;
+                const d = await r.json();
+                const items = d.data || [];
+                if (!items.length) { kelRes.innerHTML = '<div class="pf-ac-empty">Sin coincidencias</div>'; kelRes.classList.add('open'); return; }
+                kelRes.innerHTML = items.map((c, i) => `
+                    <div class="pf-ac-item" data-i="${i}">
+                        <div class="ac-nombre">${highlight(c.descripcion, q.split(/\s+/))}</div>
+                        <div class="ac-meta"><code>${escapeHtml(c.codigo_kellerhoff)}</code>${c.ean ? '<span>EAN ' + escapeHtml(c.ean) + '</span>' : ''}${c.precio != null ? '<span>$' + c.precio.toLocaleString('es-AR') + '</span>' : ''}</div>
+                    </div>`).join('');
+                kelRes.classList.add('open');
+                kelRes.querySelectorAll('.pf-ac-item').forEach(el => el.addEventListener('click', () => {
+                    const c = items[+el.dataset.i];
+                    _kelPick = c;
+                    kelElegido.innerHTML = 'Elegido: <b>' + escapeHtml(c.descripcion) + '</b> · CodKel ' + escapeHtml(c.codigo_kellerhoff);
+                    kelElegido.style.display = 'block';
+                    btnKelAsig.disabled = false;
+                    kelRes.classList.remove('open'); kelSearch.value = '';
+                }));
+            } catch { kelRes.classList.remove('open'); }
+        }, 250);
+    });
+    document.addEventListener('click', (e) => { if (!kelWrap.contains(e.target)) kelRes.classList.remove('open'); });
+
+    async function kelGuardar(accion, codkel) {
+        if (!_kelEan) return;
+        kelStatus.textContent = 'Guardando…'; kelStatus.className = 'text-[11px] mt-2';
+        try {
+            const r = await fetch('/api/producto/kellerhoff-equivalencia', {
+                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ean: _kelEan, accion, codigo_kellerhoff: codkel || ''}),
+            });
+            const d = await r.json();
+            if (d.ok) { renderKel(d.kellerhoff); kelStatus.textContent = '✓ Guardado'; kelStatus.className = 'text-[11px] mt-2 text-[color:var(--ds-mint)]'; }
+            else { kelStatus.textContent = d.error || 'Error'; kelStatus.className = 'text-[11px] mt-2 text-rose-400'; }
+        } catch { kelStatus.textContent = 'Error de red'; kelStatus.className = 'text-[11px] mt-2 text-rose-400'; }
+    }
+    btnKelAsig.addEventListener('click', () => { if (_kelPick) kelGuardar('asignar', _kelPick.codigo_kellerhoff); });
+    btnKelND.addEventListener('click', () => kelGuardar('no_disponible'));
+    btnKelLimp.addEventListener('click', () => kelGuardar('limpiar'));
+})();
 </script>
 {% endblock %}

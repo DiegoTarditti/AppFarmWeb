@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% set nav_active = "compras_dia" %}
 {% set hide_sidebar = True %}
+{# main_scroll_propio: base.html NO envuelve el contenido en su scroll. Así la
+   .scroll-wrapper de abajo es el contenedor de scroll real (flex hijo del
+   flex-col h-screen) y el sticky del panel + thead funciona. Sin esto hay doble
+   scroll anidado y el sticky no se activa nunca. #}
+{% set main_scroll_propio = True %}
 {% block title %}Armar pedido{% if prov %} — {{ prov.razon_social }}{% endif %}{% endblock %}
 {% block body_class %}theme-emerald{% endblock %}
 
@@ -11,11 +16,12 @@
     body > div.flex-1.flex.flex-col { height: 100%; min-height: 0; }
     .scroll-wrapper { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-    /* === Panel gráfico sticky + thead sticky (alturas fijas) === */
-    /* Ambos quedan pegados al tope cuando scrolleás. La altura del panel es
-       FIJA (no medida con JS) para que el offset del thead sea predecible.
-       Si el chart no llega a esa altura, sobra espacio; si la pasa, queda
-       oculto detrás del scroll. */
+    /* === Panel gráfico sticky + thead sticky === */
+    /* Ambos quedan pegados al tope al scrollear. El thead se pega JUSTO debajo
+       del panel usando --panel-h, una variable que JS actualiza con la altura
+       REAL del panel (sincronizarThead) en cada cambio de estado/resize. Así
+       nunca se desfasa por más que el panel cambie de alto (chart/colapsado/
+       sin selección/mobile). NO volver a hardcodear top en px. */
     #panel-grafico {
         position: sticky; top: 0; z-index: 30;
         background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
@@ -25,19 +31,12 @@
     }
     #panel-grafico.colapsado { max-height: 44px; overflow: hidden; padding-top: 6px; padding-bottom: 6px; }
     #panel-grafico.colapsado #grafico-body { display: none; }
-    /* Thead sticky pegado al borde inferior del panel.
-       300px chart activo · 44px colapsado · 60px sin seleccion. */
-    table.tabla-armar thead { position: sticky; top: 300px; z-index: 20; }
-    .scroll-wrapper:has(#panel-grafico.colapsado) table.tabla-armar thead { top: 44px; }
-    /* Cuando ningún producto está seleccionado, el panel muestra el placeholder
-       de 1 línea — bajamos su altura para no ocupar espacio innecesario. */
     #panel-grafico:not(.chart-active) { max-height: 60px; }
-    .scroll-wrapper:has(#panel-grafico:not(.chart-active)) table.tabla-armar thead { top: 60px; }
+    /* Thead sticky pegado al borde inferior real del panel (medido por JS). */
+    table.tabla-armar thead { position: sticky; top: var(--panel-h, 300px); z-index: 20; }
 
     @media (max-width: 1280px) {
         #panel-grafico { max-height: 220px; }
-        table.tabla-armar thead { top: 220px; }
-        .scroll-wrapper:has(#panel-grafico.colapsado) table.tabla-armar thead { top: 44px; }
         #dual-grafico-panel .chart-canvas-wrap,
         #dual-grafico-panel > div > div > div > div.relative { height: 140px !important; }
     }
@@ -583,29 +582,15 @@
    cubrir el bajo-mínimo) es el mismo floor/min de order_detail, acá embebido.
    "Aplicar" siembra las cantidades de la tabla; después se refina con las
    ofertas c/mín (botón → de cada fila) y se emite. #}
-{% if usa_packs and modulos_lab %}
-<div class="px-4 sm:px-6 pt-4">
-    <div id="modulos-panel" class="rounded-xl border border-amber-300 bg-amber-50/60 overflow-hidden">
-        <div class="flex items-center gap-3 px-4 py-3 cursor-pointer select-none"
-             onclick="toggleModulosPanel()">
-            <span class="text-lg">📦</span>
-            <div class="flex-1">
-                <p class="font-semibold text-sm text-amber-900">Este laboratorio compra por módulos de descuento</p>
-                <p class="text-xs text-amber-700">{{ modulos_lab | length }} módulo{{ 's' if modulos_lab|length != 1 }} activo{{ 's' if modulos_lab|length != 1 }} ·
-                    el sugerido se calcula sobre las cantidades a pedir de abajo. Revisá y aplicá antes de las ofertas c/mín.</p>
-            </div>
-            <span id="modulos-chevron" class="text-amber-700 text-sm transition-transform">▾</span>
-        </div>
-        <div id="modulos-body" class="hidden border-t border-amber-200 p-4 space-y-4 bg-white"></div>
-    </div>
-</div>
-{% endif %}
+{# El paso de módulos se movió al flujo "Comprar módulos" (/compras/laboratorio →
+   crea pedido → análisis order_detail). El armar común ya no muestra el panel. #}
 
 <div class="px-4 sm:px-6 py-4">
     <div class="ar-table-wrap">
         <table class="tabla-armar">
             <thead>
                 <tr>
+                    <th style="text-align:right; color: var(--ds-mint) !important;">A pedir</th>
                     <th>Producto</th>
                     <th>Lab</th>
                     {% if not prov %}<th style="text-align:center; color: #F0ABFC !important;">Drog</th>{% endif %}
@@ -617,7 +602,6 @@
                     <th style="text-align:right;">Ayer</th>
                     <th style="text-align:right;">Semana</th>
                     <th style="text-align:center; color: #FCA5A5 !important;" title="Productos pendientes en pedidos previos (NO_VINO)">Pend.</th>
-                    <th style="text-align:right;">A pedir</th>
                     <th style="text-align:center;">Acciones</th>
                 </tr>
             </thead>
@@ -637,6 +621,15 @@
                     data-lab-id="{{ it.lab_local_id or '' }}"
                     data-ean="{{ it.ean or '' }}"
                     onclick="seleccionarProducto(this)">
+                    <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
+                        {% if it.override_aplicado and it.a_pedir_sin_override is not none and it.a_pedir_sin_override != it.a_pedir %}
+                        <span class="text-[10px] text-[#888] line-through mr-1"
+                              title="Cálculo sin override habría pedido {{ it.a_pedir_sin_override }}u. El override 'cantidad_reposicion_fija' lo subió/bajó a {{ it.a_pedir }}u.">{{ it.a_pedir_sin_override }}</span>
+                        {% endif %}
+                        <input type="number" min="0" value="{{ it.a_pedir }}"
+                               {% if prov and not it.cubre_lab %}disabled{% endif %}
+                               class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
+                    </td>
                     <td class="px-3 py-1">
                         {% if it.tipo == 'C' %}
                         <span class="text-[9px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded mr-1 font-bold" title="Va por promedio de ventas (consumo estable)">Prom Vtas</span>
@@ -756,15 +749,6 @@
                         {% if not it.pendientes_count and not it.pedidos_guardados %}
                             <span class="text-[10px] text-[#ddd]">—</span>
                         {% endif %}
-                    </td>
-                    <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
-                        {% if it.override_aplicado and it.a_pedir_sin_override is not none and it.a_pedir_sin_override != it.a_pedir %}
-                        <span class="text-[10px] text-[#888] line-through mr-1"
-                              title="Cálculo sin override habría pedido {{ it.a_pedir_sin_override }}u. El override 'cantidad_reposicion_fija' lo subió/bajó a {{ it.a_pedir }}u.">{{ it.a_pedir_sin_override }}</span>
-                        {% endif %}
-                        <input type="number" min="0" value="{{ it.a_pedir }}"
-                               {% if prov and not it.cubre_lab %}disabled{% endif %}
-                               class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
                     </td>
                     <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
                         {% if it.producto_id_local %}
@@ -901,7 +885,7 @@ function seleccionarProducto(row) {
     _selectedPid = row.dataset.pid;
     // Marca el panel como activo para que CSS le aplique altura completa.
     const panel = document.getElementById('panel-grafico');
-    if (panel) panel.classList.add('chart-active');
+    if (panel) { panel.classList.add('chart-active'); sincronizarThead(); }
     const titulo = document.getElementById('panel-chart-titulo');
     if (titulo) titulo.textContent = row.dataset.nombre;
     cargarGraficoDual(_selectedPid, row.dataset.nombre);
@@ -1225,6 +1209,24 @@ aplicarFiltros();
 // ── Toggle gráfico colapsable (persiste en localStorage) ────────────────
 const _GRAFICO_LS_KEY = 'compras_dia_grafico_collapsed';
 
+// Mide la altura REAL del panel y la publica como --panel-h para que el thead
+// sticky se pegue justo debajo. Se llama en cada cambio de estado del panel.
+// El panel tiene transición de max-height (0.18s) → medimos al terminar y
+// también ahora mismo (raf) para el caso sin transición.
+function sincronizarThead() {
+    const panel = document.getElementById('panel-grafico');
+    if (!panel) return;
+    const set = () => document.documentElement.style.setProperty('--panel-h', panel.offsetHeight + 'px');
+    requestAnimationFrame(set);
+    setTimeout(set, 200);  // > duración de la transición max-height
+}
+// El panel ya escucha transitionend igual, por si cambia por CSS puro.
+document.addEventListener('DOMContentLoaded', () => {
+    const panel = document.getElementById('panel-grafico');
+    if (panel) panel.addEventListener('transitionend', sincronizarThead);
+});
+window.addEventListener('resize', sincronizarThead);
+
 function _aplicarEstadoGrafico(colapsado) {
     const panel = document.getElementById('panel-grafico');
     const lbl = document.getElementById('btn-toggle-grafico-label');
@@ -1236,6 +1238,7 @@ function _aplicarEstadoGrafico(colapsado) {
         panel.classList.remove('colapsado');
         lbl.textContent = '▾ Ocultar gráfico';
     }
+    sincronizarThead();
 }
 
 function toggleGrafico() {
@@ -1256,6 +1259,7 @@ function toggleGrafico() {
         colapsado = window.innerWidth < 1024;
     }
     _aplicarEstadoGrafico(colapsado);
+    sincronizarThead();
 })();
 
 // ── Scroll manual que descuenta panel sticky + thead sticky ─────────
@@ -1414,6 +1418,11 @@ function agregarFila(it) {
     tr.dataset.ofertaMin = it.oferta_min || '';
     tr.onclick = () => seleccionarProducto(tr);
     tr.innerHTML = `
+        <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
+            <input type="number" min="0" value="${it.a_pedir}"
+                   ${it.cubre_lab ? '' : 'disabled'}
+                   class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
+        </td>
         <td class="px-3 py-1">
             <span class="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded mr-1 font-bold">+ NUEVO</span>
             ${it.desc}
@@ -1459,11 +1468,6 @@ function agregarFila(it) {
         }</td>
         <td class="px-3 py-1 text-right font-mono text-[#666]">${it.u24h || '—'}</td>
         <td class="px-3 py-1 text-right font-mono text-[#666]">${it.u7d || '—'}</td>
-        <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
-            <input type="number" min="0" value="${it.a_pedir}"
-                   ${it.cubre_lab ? '' : 'disabled'}
-                   class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
-        </td>
         <td class="px-3 py-1 text-center" onclick="event.stopPropagation()">
             <button onclick="this.closest('tr').remove()"
                     class="text-[10px] px-2 py-0.5 rounded border border-rose-300 text-rose-800 bg-rose-50 hover:bg-rose-100">

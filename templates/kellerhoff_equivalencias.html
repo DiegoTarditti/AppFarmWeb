@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% set nav_active = "droguerias" %}
+{% block title %}Equivalencias Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.ke-topbar { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line); padding: 12px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ke-topbar h1 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.ke-wrap { padding: 16px 24px; }
+.ke-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.ke-input { background: var(--ds-surface-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm);
+    padding: 7px 10px; font-size: 13px; color: var(--ds-text); min-width: 240px; }
+.ke-input:focus { outline: none; border-color: var(--ds-mint); }
+.ke-pill { padding: 4px 11px; border-radius: 999px; font-size: 11px; cursor: pointer; border: 1px solid var(--ds-line);
+    color: var(--ds-text-mute); background: var(--ds-surface); transition: border-color .15s, color .15s; }
+.ke-pill.active { border-color: var(--ds-mint); color: var(--ds-mint); background: rgba(95,230,188,.10); }
+.ke-card { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); overflow: hidden; }
+.ke-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ke-table th { padding: 8px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ds-text-mute); font-weight: 600; border-bottom: 1px solid var(--ds-line); background: rgba(0,0,0,.08); position: sticky; top: 0; }
+.ke-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
+.ke-table tr:hover td { background: rgba(255,255,255,.03); }
+.ke-table code { font-family: 'JetBrains Mono', monospace; color: var(--ds-text-mute); }
+.ke-badge { display: inline-flex; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; }
+.ke-badge.manual { background: rgba(95,230,188,.15); color: var(--ds-mint); border: 1px solid rgba(95,230,188,.3); }
+.ke-badge.auto   { background: rgba(120,120,120,.15); color: var(--ds-text-mute); border: 1px solid rgba(120,120,120,.3); }
+.ke-badge.nd     { background: rgba(245,158,11,.15); color: #fbbf24; border: 1px solid rgba(245,158,11,.3); }
+.ke-flash { padding: 10px 14px; border-radius: var(--ds-r-sm); font-size: 12px; margin: 8px 24px 0; border: 1px solid;
+    background: rgba(95,230,188,.10); border-color: rgba(95,230,188,.4); color: var(--ds-mint); }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="ke-topbar">
+    <a href="{{ url_for('kellerhoff_catalogo') }}" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Catálogo</a>
+    <h1>🔗 Equivalencias EAN-Kellerhoff</h1>
+    <span class="text-[11px] text-[color:var(--ds-text-mute)]">{{ total }} total · {{ manuales }} manuales</span>
+</div>
+
+{% with messages = get_flashed_messages() %}{% if messages %}{% for m in messages %}<div class="ke-flash">{{ m }}</div>{% endfor %}{% endif %}{% endwith %}
+
+<div class="ke-wrap">
+    <div class="ke-tools">
+        <input type="text" id="ke-filtro" class="ke-input" placeholder="Filtrar por producto o EAN… (multi-token)">
+        <div class="ke-pill active" data-f="todas" onclick="setFiltro(this)">Todas</div>
+        <div class="ke-pill" data-f="pedido" onclick="setFiltro(this)">Pedido</div>
+        <div class="ke-pill" data-f="factura" onclick="setFiltro(this)">Factura</div>
+        <div class="ke-pill" data-f="manual" onclick="setFiltro(this)">Manuales</div>
+        <div class="ke-pill" data-f="nd" onclick="setFiltro(this)">No lo trae</div>
+        <span id="ke-count" class="text-[11px] text-[color:var(--ds-text-mute)]"></span>
+    </div>
+
+    <div class="ke-card">
+        {% if filas %}
+        <table class="ke-table">
+            <thead><tr>
+                <th>Tipo</th><th>Nuestro producto</th><th>Nuestro EAN</th><th>→ Destino</th><th>EAN destino</th><th>Método</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for f in filas %}
+            <tr class="ke-row" data-tipo="{{ f.tipo }}"
+                data-sub="{{ 'nd' if f.no_disponible else ('manual' if f.revisado else 'auto') }}"
+                data-txt="{{ (f.nombre ~ ' ' ~ f.ean ~ ' ' ~ f.kel_desc ~ ' ' ~ f.kel_ean) | lower }}">
+                <td><span class="ke-badge {{ 'manual' if f.tipo == 'pedido' else 'auto' }}">{{ 'Pedido' if f.tipo == 'pedido' else 'Factura' }}</span></td>
+                <td class="text-[color:var(--ds-text-soft)]">{{ f.nombre }}</td>
+                <td><code>{{ f.ean }}</code></td>
+                <td>{% if f.no_disponible %}<span class="ke-badge nd">Kellerhoff no lo trae</span>{% else %}{{ f.kel_desc }}{% endif %}</td>
+                <td>{% if f.kel_ean %}<code>{{ f.kel_ean }}</code>{% else %}<span class="text-[color:var(--ds-text-mute)]">—</span>{% endif %}</td>
+                <td><span class="ke-badge {{ 'manual' if f.revisado else 'auto' }}">{{ 'manual' if f.revisado else f.metodo }}</span></td>
+                <td>
+                    {% if f.tipo == 'pedido' %}
+                    <form method="post" action="{{ url_for('kellerhoff_equivalencia_eliminar', eid=f.id) }}" onsubmit="return confirm('¿Eliminar esta equivalencia?')">
+                        <button type="submit" class="text-[11px] text-rose-500 hover:text-rose-300 px-1 py-0.5 rounded hover:bg-rose-900/20">✕</button>
+                    </form>
+                    {% elif kel_prov_id %}
+                    <form method="post" action="{{ url_for('delete_mapping', provider_id=kel_prov_id, mapping_id=f.id) }}" onsubmit="return confirm('¿Eliminar este mapping de factura?')">
+                        <button type="submit" class="text-[11px] text-rose-500 hover:text-rose-300 px-1 py-0.5 rounded hover:bg-rose-900/20">✕</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div style="padding: 40px; text-align: center; color: var(--ds-text-mute); font-size: 13px;">
+            No hay equivalencias. Corré "Recalcular equivalencias" en el catálogo o resolvé a mano desde Presentación.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+let _f = 'todas';
+function setFiltro(el) {
+    document.querySelectorAll('.ke-pill').forEach(p => p.classList.remove('active'));
+    el.classList.add('active'); _f = el.dataset.f; aplicar();
+}
+function aplicar() {
+    const q = document.getElementById('ke-filtro').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let n = 0;
+    document.querySelectorAll('.ke-row').forEach(r => {
+        const okTipo = _f === 'todas' || r.dataset.tipo === _f || r.dataset.sub === _f;
+        const okTxt = q.every(t => r.dataset.txt.includes(t));
+        const show = okTipo && okTxt;
+        r.style.display = show ? '' : 'none';
+        if (show) n++;
+    });
+    document.getElementById('ke-count').textContent = n + ' visibles';
+}
+document.getElementById('ke-filtro').addEventListener('input', aplicar);
+aplicar();
+</script>
+{% endblock %}

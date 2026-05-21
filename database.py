@@ -851,6 +851,46 @@ class ProductoFlag(Base):
     laboratorio     = relationship('Laboratorio')
 
 
+class KellerhoffCatalogo(Base):
+    """Snapshot del catálogo de productos de Kellerhoff (CSV que ellos exportan).
+
+    `codigo_kellerhoff` es la llave estable con la que Kellerhoff identifica sus
+    SKUs (los EANs nuestros no siempre coinciden). Se reemplaza por completo en
+    cada import. Puentes para resolver equivalencias: ean, alfabeta, troquel.
+    Ver docs/kellerhoff_equivalencias.md.
+    """
+    __tablename__ = 'kellerhoff_catalogo'
+    codigo_kellerhoff = Column(String(20), primary_key=True)
+    tipo              = Column(String(1), nullable=True)        # D (ético) / P (perfumería)
+    descripcion       = Column(String(200), nullable=True)
+    alfabeta          = Column(String(15), nullable=True, index=True)
+    troquel           = Column(String(15), nullable=True, index=True)
+    ean               = Column(String(20), nullable=True, index=True)  # 212 sin EAN
+    laboratorio       = Column(String(120), nullable=True)
+    precio            = Column(DECIMAL(14, 2), nullable=True)
+    neto              = Column(Boolean, nullable=False, default=False)
+    cadena_frio       = Column(Boolean, nullable=False, default=False)
+    requiere_vale     = Column(Boolean, nullable=False, default=False)
+    trazable          = Column(Boolean, nullable=False, default=False)
+    importado_en      = Column(DateTime, default=now_ar)
+
+
+class KellerhoffEquivalencia(Base):
+    """Puente nuestro EAN → codigo_kellerhoff para los casos que NO matchean
+    directo por EAN contra el catálogo. Solo guarda los rescatados (alfabeta/
+    troquel/nombre) y los resueltos a mano. Los directos se resuelven al vuelo.
+    """
+    __tablename__ = 'kellerhoff_equivalencia'
+    id                = Column(Integer, primary_key=True)
+    ean               = Column(String(30), nullable=False, unique=True, index=True)
+    codigo_kellerhoff = Column(String(20), nullable=False)
+    metodo            = Column(String(12), nullable=True)   # alfabeta / troquel / nombre / manual
+    confianza         = Column(String(8), nullable=True)    # ALTA / MEDIA / BAJA
+    revisado          = Column(Boolean, nullable=False, default=False)
+    creado_en         = Column(DateTime, default=now_ar)
+    creado_por        = Column(String(80), nullable=True)
+
+
 class PedidoBorrador(Base):
     """Borrador de pedido en armado por usuario y droguería.
 
@@ -1076,6 +1116,11 @@ class Producto(Base):
     # Compra rápida v2: exclusiones manuales del armado de pedido.
     excluido_armado_actual = Column(Boolean, nullable=False, default=False)
     no_pedir               = Column(Boolean, nullable=False, default=False)
+    # Fraccionado: se vende de a unidad suelta (ej. 1 sobre) pero se pide por
+    # envase completo (caja de N). El "a pedir" debe convertir unidades vendidas
+    # → envases usando ProductoAtributo.cantidad_envase. Se configura a mano
+    # producto por producto desde /productos/flags (tarjeta Presentación).
+    fraccionado            = Column(Boolean, nullable=False, default=False)
     # Cronograma de pedidos: cantidad fija a pedir cuando se llega al punto
     # de pedido. NULL = cálculo dinámico (default). Útil para productos donde
     # el operador ya sabe la dosis óptima de reposición.
@@ -1702,6 +1747,7 @@ class EstacionalidadProducto(Base):
 CAMPOS_SISTEMA = [
     ('fijo',            'Valor fijo / constante'),
     ('codigo_barra',    'Código de barra (EAN)'),
+    ('ean_kellerhoff',  'EAN-Kellerhoff (corregido si difiere)'),
     ('descripcion',     'Descripción del producto'),
     ('cantidad',        'Cantidad total (mod+oferta+sin deal)'),
     ('cant_modulo',     'Cantidad módulo'),
@@ -1785,6 +1831,8 @@ def init_db(database_url=None):
                         'proveedor_cronograma',
                         'tipo_pedido_config',
                         'producto_flags',
+                        'kellerhoff_catalogo',
+                        'kellerhoff_equivalencia',
                         'estacionalidad_escenarios',
                         'estacionalidad_productos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
@@ -2368,6 +2416,9 @@ def _pg_add_columns(conn):
     ))
     conn.execute(text(
         "CREATE INDEX IF NOT EXISTS idx_prod_no_pedir ON productos (no_pedir) WHERE no_pedir = TRUE"
+    ))
+    conn.execute(text(
+        "ALTER TABLE productos ADD COLUMN IF NOT EXISTS fraccionado BOOLEAN NOT NULL DEFAULT FALSE"
     ))
     # Multi-tenant Fase 2: farmacia_id en tablas transaccionales (pedidos,
     # pedido_items, procesos_compra). Default=1 hace el backfill automático

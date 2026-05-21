@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% set nav_active = "droguerias" %}
+{% block title %}Catálogo Kellerhoff{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.kc-topbar {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line);
+    padding: 12px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+}
+.kc-topbar h1 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.kc-wrap { padding: 18px 24px; max-width: 760px; display: flex; flex-direction: column; gap: 16px; }
+.kc-card {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); padding: 16px 18px;
+}
+.kc-card h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0 0 10px; }
+.kc-help { font-size: 11px; color: var(--ds-text-mute); }
+.kc-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.kc-stat { background: var(--ds-surface-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm); padding: 10px 12px; }
+.kc-stat .v { font-size: 20px; font-weight: 700; color: var(--ds-text); font-family: 'JetBrains Mono', monospace; }
+.kc-stat .l { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); margin-top: 2px; }
+.kc-stat.ok .v { color: var(--ds-mint); }
+.kc-stat.warn .v { color: #fbbf24; }
+.kc-stat.bad .v { color: #f87171; }
+.kc-file { width: 100%; background: var(--ds-surface-2); border: 1px solid var(--ds-line);
+           border-radius: var(--ds-r-sm); padding: 8px 10px; font-size: 13px; color: var(--ds-text); }
+.kc-flash { padding: 10px 14px; border-radius: var(--ds-r-sm); font-size: 12px; margin-bottom: 8px; border: 1px solid; }
+.kc-flash-success, .kc-flash-message { background: rgba(95,230,188,.10); border-color: rgba(95,230,188,.4); color: var(--ds-mint); }
+.kc-flash-error { background: rgba(239,68,68,.10); border-color: rgba(239,68,68,.4); color: #fca5a5; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="kc-topbar">
+    <a href="{{ url_for('providers_list') }}"
+       class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Proveedores</a>
+    <h1>📦 Catálogo Kellerhoff</h1>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div style="padding: 8px 24px 0 24px;">
+        {% for category, msg in messages %}
+        <div class="kc-flash kc-flash-{{ category }}">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+{% endwith %}
+
+<div class="kc-wrap">
+    {# Import #}
+    <div class="kc-card">
+        <h3>Importar catálogo</h3>
+        <p class="kc-help mb-3">CSV que exporta Kellerhoff (columnas <code>Tipo;Producto;AlfaBeta;Troquel;CodBarraPrinc;Laboratorio;Precio;…;CodKellerhoff</code>).
+           Reemplaza el catálogo completo en cada carga.</p>
+        <form method="post" action="{{ url_for('kellerhoff_catalogo_importar') }}" enctype="multipart/form-data"
+              style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <input type="file" name="archivo" accept=".csv,text/csv" class="kc-file" style="flex:1; min-width:220px;" required>
+            <button type="submit" class="btn btn-mint text-xs">Importar</button>
+        </form>
+    </div>
+
+    {# Resumen #}
+    {% if resumen %}
+    <div class="kc-card">
+        <h3>Catálogo cargado <span class="kc-help">· última carga {{ resumen.importado_en }}</span></h3>
+        <div class="kc-stats">
+            <div class="kc-stat"><div class="v">{{ '{:,}'.format(resumen.total).replace(',', '.') }}</div><div class="l">Productos</div></div>
+            <div class="kc-stat ok"><div class="v">{{ '{:,}'.format(resumen.con_ean).replace(',', '.') }}</div><div class="l">Con EAN</div></div>
+            <div class="kc-stat warn"><div class="v">{{ resumen.sin_ean }}</div><div class="l">Sin EAN</div></div>
+        </div>
+    </div>
+
+    {# Reporte de cobertura (on-demand) #}
+    <div class="kc-card">
+        <h3>Cobertura contra nuestros productos</h3>
+        <p class="kc-help mb-3">De los productos ObServer: cuántos manda Kellerhoff por EAN directo (su EAN principal está en el catálogo) y cuántos más son corregibles por EAN alternativo del mismo producto. El "sin match" es mayormente lo que Kellerhoff <b>no vende</b>.</p>
+        <button type="button" id="btn-cobertura" class="btn btn-mint text-xs">Analizar cobertura</button>
+        <div id="cobertura-status" class="kc-help mt-2"></div>
+        <div id="cobertura-stats" class="kc-stats mt-3" style="display:none;"></div>
+    </div>
+
+    {# Equivalencias automáticas (cascada Alfabeta → Troquel) #}
+    <div class="kc-card">
+        <h3>Equivalencias automáticas
+            <span class="kc-help">· {{ resumen.equivalencias }} guardadas{% if resumen.equivalencias_manual %} ({{ resumen.equivalencias_manual }} manuales){% endif %}</span>
+        </h3>
+        <p class="kc-help mb-3">Para los productos cuyo EAN NO está en el catálogo de Kellerhoff, si otro EAN del mismo producto sí está (<b>EAN alternativo</b>) y el nombre coincide, guarda la equivalencia. El export manda el EAN que Kellerhoff reconoce. Solo matches sin ambigüedad y con nombre coherente (descarta los dudosos). No pisa los resueltos a mano. Alfabeta/Troquel NO se usan (daban falsos positivos).</p>
+        <button type="button" id="btn-recalcular" class="btn btn-mint text-xs">Recalcular equivalencias</button>
+        <a href="{{ url_for('kellerhoff_equivalencias_list') }}" class="text-xs text-sky-400 hover:underline" style="margin-left:10px;">Ver equivalencias guardadas →</a>
+        <div id="recalc-status" class="kc-help mt-2"></div>
+        <div id="recalc-stats" class="kc-stats mt-3" style="display:none;"></div>
+    </div>
+    {% else %}
+    <div class="kc-card"><p class="kc-help">No hay catálogo cargado todavía. Importá el CSV arriba.</p></div>
+    {% endif %}
+</div>
+
+<script>
+const btn = document.getElementById('btn-cobertura');
+if (btn) {
+    btn.addEventListener('click', async () => {
+        const st = document.getElementById('cobertura-status');
+        const box = document.getElementById('cobertura-stats');
+        btn.disabled = true; st.textContent = 'Analizando… (puede tardar unos segundos)'; box.style.display = 'none';
+        try {
+            const r = await fetch('{{ url_for("kellerhoff_catalogo_cobertura") }}', {credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { st.textContent = d.error || 'Error'; return; }
+            const fmt = n => n.toLocaleString('es-AR');
+            const pct = n => d.total ? (n / d.total * 100).toFixed(1) + '%' : '—';
+            box.innerHTML = `
+                <div class="kc-stat"><div class="v">${fmt(d.total)}</div><div class="l">Productos ObServer</div></div>
+                <div class="kc-stat ok"><div class="v">${fmt(d.por_ean)}</div><div class="l">EAN directo · ${pct(d.por_ean)}</div></div>
+                <div class="kc-stat ok"><div class="v">${fmt(d.por_ean_alt)}</div><div class="l">Corregible x EAN-alt</div></div>
+                <div class="kc-stat bad"><div class="v">${fmt(d.sin_match)}</div><div class="l">Sin match · ${pct(d.sin_match)}</div></div>`;
+            box.style.display = 'grid';
+            st.textContent = `EAN directo: ${fmt(d.por_ean)}. Corregibles por EAN alternativo: ${fmt(d.por_ean_alt)}. Sin match: ${fmt(d.sin_match)} (mayoría = Kellerhoff no los vende; los que sí trae van a resolución manual desde Presentación).`;
+        } catch { st.textContent = 'Error de red.'; }
+        finally { btn.disabled = false; }
+    });
+}
+
+const btnR = document.getElementById('btn-recalcular');
+if (btnR) {
+    btnR.addEventListener('click', async () => {
+        const st = document.getElementById('recalc-status');
+        const box = document.getElementById('recalc-stats');
+        btnR.disabled = true; st.textContent = 'Recalculando…'; box.style.display = 'none';
+        try {
+            const r = await fetch('{{ url_for("kellerhoff_equivalencias_recalcular") }}',
+                                  {method: 'POST', credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { st.textContent = d.error || 'Error'; return; }
+            const fmt = n => n.toLocaleString('es-AR');
+            const s = d.stats;
+            box.innerHTML = `
+                <div class="kc-stat ok"><div class="v">${fmt(s.nuevas)}</div><div class="l">Nuevas</div></div>
+                <div class="kc-stat"><div class="v">${fmt(s.actualizadas)}</div><div class="l">Actualizadas</div></div>
+                <div class="kc-stat warn"><div class="v">${fmt(s.ambiguas)}</div><div class="l">Ambiguas (manual)</div></div>
+                <div class="kc-stat bad"><div class="v">${fmt(s.incoherentes || 0)}</div><div class="l">Descartadas x nombre</div></div>
+                <div class="kc-stat"><div class="v">${fmt(s.ya_directo)}</div><div class="l">Ya directo x EAN</div></div>`;
+            box.style.display = 'grid';
+            st.textContent = `Total equivalencias guardadas: ${fmt(d.total_equivalencias)}${d.manuales ? ' (' + fmt(d.manuales) + ' manuales)' : ''}. Las ambiguas y las que Kellerhoff no trae se resuelven a mano desde Presentación.`;
+        } catch { st.textContent = 'Error de red.'; }
+        finally { btnR.disabled = false; }
+    });
+}
+</script>
+{% endblock %}
