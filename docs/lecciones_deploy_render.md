@@ -107,6 +107,36 @@ Tres veces esta sesión hice cambios y mergeé sin probarlos a fondo, generando 
 
 ---
 
+## 8. Migraciones que no corren en el deploy → 500 por columna inexistente (2026-05-21)
+
+**Síntoma**: deploy "verde" (la app levanta), pero rutas que usan una columna
+nueva tiran 500 `ProgrammingError` (`column ... does not exist`, sqlalche.me/e/20/f405).
+Ej: se mergeó código que usa `usa_packs` pero la migración que crea la columna
+nunca corrió en Render. Pasó 2 veces.
+
+**Causa raíz**: `init_db()` (que tiene las migraciones inline `ALTER ... IF NOT
+EXISTS`) está apagado en el arranque (`RUN_INIT_DB_ON_STARTUP`, ver lección 1 —
+se sacó del startup para no colgar el bind). Resultado: el código nuevo deploya
+con el schema viejo.
+
+**Fix (instancia paga)**: `preDeployCommand: python scripts/migrate.py` en
+`render.yaml`. Render lo corre DESPUÉS del build y ANTES de que la versión nueva
+reciba tráfico, en la imagen nueva → el schema queda al día antes de que arranquen
+los workers. `scripts/migrate.py` solo llama `init_db()` (idempotente, segundos;
+los backfills pesados están gateados con `RUN_BACKFILLS=1`, async aparte).
+- Corre UNA vez por deploy (no per-worker como el viejo flag).
+- No toca el arranque de gunicorn → no reintroduce el port-scan timeout (lección 1).
+
+**preDeploy NO está disponible en instancia FREE** (depende del *instance type*
+del servicio, no del plan del workspace). Fallback para free: start-script que
+corra `python scripts/migrate.py` y después `exec gunicorn` (acepta el pequeño
+delay de bind; init_db es rápido). No re-meter `--preload`.
+
+**Manual de emergencia** (si preDeploy no corrió y hay 500 por columna):
+setear `RUN_INIT_DB_ON_STARTUP=1` en Environment, redeploy, verificar, desetear.
+
+---
+
 ## Resumen pragmático
 
 Si volvés a ver "Port scan timeout reached, no open ports detected":

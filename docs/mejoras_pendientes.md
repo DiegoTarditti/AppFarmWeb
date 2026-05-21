@@ -4,13 +4,19 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
-## 🎯 Objetivo (no urgente) — Pantalla de pedido única dirigida por config (2026-05-20)
+## 🎯 Objetivo (no urgente) — Motor de pantallas de pedido dirigido por config (fábrica) (2026-05-20)
 
-Unificar las 4 pantallas de armado/sugerencia de pedido (`/compras/dia/armar`,
-`/informes/pedido-auto`, `/pedido/prueba`, `/compras/laboratorio`) en UNA sola
-configurable vía `TipoPedidoConfig`. Plan completo: `docs/plan_pantalla_pedido_unica.md`.
-Prerequisitos: source-of-truth de métricas (HECHO) + cerrar gap oferta-min/estacionalidad
-en el motor de cálculo (pendiente, ver entrada más abajo).
+NO es una pantalla única gigante: es un **motor que genera pantallas** desde
+config (`TipoPedidoConfig`). Una fila de config = una pantalla de pedido con su
+comportamiento (columnas, base de demanda, modificadores de cálculo). Hoy hay 4
+pantallas con lógica duplicada (`/compras/dia/armar`, `/informes/pedido-auto`,
+`/pedido/prueba`, `/compras/laboratorio`) — son el ground truth del que se extrae
+el motor. Plan completo: `docs/plan_motor_pantallas_pedido.md`.
+
+Camino corto accionable ya: **extraer componentes compartidos** (builder de filas,
+chip de flag, filtros) — mata el 80% de la duplicación sin construir el motor.
+Prerequisitos del motor: source-of-truth de métricas (HECHO) + cerrar gap
+oferta-min/estacionalidad en el motor de cálculo (pendiente, ver entrada más abajo).
 
 ---
 

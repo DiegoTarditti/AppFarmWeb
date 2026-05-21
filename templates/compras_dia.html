@@ -171,9 +171,6 @@
     </div>
     {% endif %}
     <div class="ml-auto flex items-center gap-3">
-        <a href="{{ url_for('compras_dia_armar') }}" class="btn btn-primary" style="font-size:14px; font-weight:700; padding:10px 20px; box-shadow:0 4px 12px rgba(245,158,11,.3);">
-            📦 Crear Pedido Nuevo
-        </a>
         {% if current_user.rol != 'pedidos' %}
         <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-secondary btn-sm">🔗 Matriz lab × drog</a>
         <a href="{{ url_for('index') }}" class="btn-inicio" title="Volver al inicio">
