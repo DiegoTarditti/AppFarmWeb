@@ -215,8 +215,8 @@
     <div class="cd-prov-card">
         <div class="cd-prov-head">
             <div>
-                <h2>Cierres de hoy</h2>
-                <p class="sub">Todas las droguerías en orden de hora. "Pedir" arma respetando la matriz lab×drog y manda los libres a esa droguería.</p>
+                <h2>Próximos cierres</h2>
+                <p class="sub">Cierres de todas las droguerías en orden cronológico (últimos 3 + próximos 4). "Pedir" arma respetando la matriz lab×drog y manda los libres a esa droguería.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
                 <button type="button" onclick="abrirModalPedidos(0, 'Todas')" class="btn btn-secondary btn-sm">
@@ -251,7 +251,10 @@
                             <span class="countdown-text" style="margin-left:8px;">faltan <span class="num" data-slot-countdown>--:--:--</span></span>
                         {% endif %}
                     </td>
-                    <td style="font-family:'JetBrains Mono',monospace; font-weight:600;{% if s.pasado %} text-decoration:line-through;{% endif %}">{{ s.hora }}</td>
+                    <td style="font-family:'JetBrains Mono',monospace; font-weight:600;{% if s.pasado %} text-decoration:line-through;{% endif %}">
+                        {{ s.hora }}
+                        {% if not s.es_hoy %}<span style="font-family:inherit; font-weight:500; font-size:10px; color:var(--ds-text-mute); display:block;">{{ s.dia_label }}</span>{% endif %}
+                    </td>
                     <td>
                         <span style="font-weight:600; color:var(--ds-text);">{{ s.prov_nombre }}</span>
                         {% if s.plantilla %}
@@ -278,7 +281,7 @@
         </table>
         {% else %}
         <div style="padding: 24px; color: var(--ds-text-mute); font-size: 13px;">
-            No hay cierres de droguería para hoy. {% if proveedores %}Las droguerías cargadas no reparten hoy.{% else %}Agregá horarios desde el selector de arriba.{% endif %}
+            No hay cierres próximos. {% if not proveedores %}Agregá horarios desde el selector de arriba.{% endif %}
         </div>
         {% endif %}
     </div>

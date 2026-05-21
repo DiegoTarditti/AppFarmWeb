@@ -248,39 +248,64 @@ def init_app(app):
                     })
                     comportamientos_total += int(cnt)
 
-            # ── Tabla única de horarios de HOY (lista plana, ordenada por hora) ──
-            # Una fila por cada cierre de hoy, intercalando droguerías. Cada fila
-            # tiene su countdown propio al cierre de hoy. Los pasados se marcan
-            # `pasado=True` (se muestran en gris). Dinámico: sale de `proveedores`
-            # (las drogs con horarios), no hay set fijo.
+            # ── Tabla única de cierres: ventana deslizante centrada en AHORA ──
+            # Todas las droguerías intercaladas en orden cronológico, cruzando
+            # días: mostramos los 3 cierres más recientes ya pasados (gris) + los
+            # próximos N futuros. Así siempre hay 3-4 cierres "hacia adelante"
+            # visibles aunque cambie el día. Dinámico: sale de `proveedores`.
             from datetime import datetime as _dt_h
             from datetime import time as _time_h
+            from datetime import timedelta as _td_h
 
             from services.horarios import _parse_hhmm
+            _PASADOS_N = 3
+            _FUTUROS_N = 4
+            _DIAS_ATRAS = 4    # ventana de búsqueda hacia atrás (cubre fin de semana)
+            _DIAS_ADELANTE = 8  # hacia adelante
             _ahora = _dt_h.now()
-            _hoy_idx = _ahora.weekday()  # 0=Lun..6=Dom
-            slots_hoy = []
+            _hoy_d = _ahora.date()
+            _todos = []
             for _p in proveedores:
-                _horarios_hoy = (_p['horarios_por_dia'][_hoy_idx]
-                                 if _p['horarios_por_dia'] else [])
-                for _hora_str in _horarios_hoy:
-                    _hm = _parse_hhmm(_hora_str)
-                    if not _hm:
-                        continue
-                    _cand = _dt_h.combine(_ahora.date(), _time_h(_hm[0], _hm[1]))
-                    _falta = int((_cand - _ahora).total_seconds())
-                    slots_hoy.append({
-                        'prov_id': _p['id'],
-                        'prov_nombre': _p['nombre'],
-                        'hora': _hora_str,
-                        'falta_segundos': _falta,
-                        'pasado': _falta < 0,
-                        'urgencia': urgencia_cierre(_falta) if _falta >= 0 else None,
-                        'plantilla': _p['plantilla'],
-                        'pedidos_activos': _p['pedidos_activos'],
-                    })
-            # Orden cronológico por hora; los pasados quedan en su lugar natural.
-            slots_hoy.sort(key=lambda s: s['hora'])
+                _matriz = _p['horarios_por_dia'] or []
+                if not _matriz:
+                    continue
+                for _delta in range(-_DIAS_ATRAS, _DIAS_ADELANTE + 1):
+                    _d = _hoy_d + _td_h(days=_delta)
+                    for _hora_str in _matriz[_d.weekday()]:
+                        _hm = _parse_hhmm(_hora_str)
+                        if not _hm:
+                            continue
+                        _dt = _dt_h.combine(_d, _time_h(_hm[0], _hm[1]))
+                        _falta = int((_dt - _ahora).total_seconds())
+                        # Etiqueta de día relativa.
+                        _dd = _delta if _delta in (-1, 0, 1) else None
+                        if _dd == 0:
+                            _dia_lbl = 'hoy'
+                        elif _dd == 1:
+                            _dia_lbl = 'mañana'
+                        elif _dd == -1:
+                            _dia_lbl = 'ayer'
+                        else:
+                            _dia_lbl = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'][_d.weekday()] + f' {_d.day}'
+                        _todos.append({
+                            'prov_id': _p['id'],
+                            'prov_nombre': _p['nombre'],
+                            'hora': _hora_str,
+                            'dia_label': _dia_lbl,
+                            'es_hoy': _delta == 0,
+                            'dt': _dt,
+                            'falta_segundos': _falta,
+                            'pasado': _falta < 0,
+                            'urgencia': urgencia_cierre(_falta) if _falta >= 0 else None,
+                            'plantilla': _p['plantilla'],
+                            'pedidos_activos': _p['pedidos_activos'],
+                        })
+            _todos.sort(key=lambda s: s['dt'])
+            _pasados = [s for s in _todos if s['falta_segundos'] < 0]
+            _futuros = [s for s in _todos if s['falta_segundos'] >= 0]
+            slots_hoy = _pasados[-_PASADOS_N:] + _futuros[:_FUTUROS_N]
+            for _s in slots_hoy:
+                _s.pop('dt', None)  # no serializable / no se usa en template
 
         return render_template('compras_dia.html',
                                proveedores=proveedores,
