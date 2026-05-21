@@ -74,6 +74,16 @@
         font-family: ui-monospace, Consolas, monospace;
     }
     .cd-table tbody td .empty { color: var(--ds-text-mute); }
+    /* Tabla "Próximos cierres": todo a la misma altura (vertical centrado) */
+    .cd-table-hoy tbody td { vertical-align: middle; padding: 10px 12px; }
+    .cd-table-hoy .cierre-cell { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+    .cd-table-hoy .cierre-cell .faltan-lbl { font-size: 11px; color: var(--ds-text-mute); font-family: inherit; }
+    /* Countdown: grande y en color de acento para que salte a la vista */
+    .cd-table-hoy .slot-cd {
+        font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+        font-size: 22px; font-weight: 700; line-height: 1;
+        color: var(--ds-mint); letter-spacing: .02em;
+    }
     /* Modales (overlay base) */
     .cd-modal-back { background: rgba(0,0,0,.55); backdrop-filter: blur(4px); }
     .cd-modal-card {
@@ -244,11 +254,14 @@
                         {% if s.pasado %}
                             <span class="badge badge-mute" style="font-size:10px;">cerrado</span>
                         {% else %}
-                            <span class="cd-urgencia {{ s.urgencia.nivel }}" data-slot-urgencia
-                                  title="Cuanto más lejos el cierre, más unidades conviene pedir.">
-                                <span data-slot-urg-label>{{ s.urgencia.label }}</span>
-                            </span>
-                            <span class="countdown-text" style="margin-left:8px;">faltan <span class="num" data-slot-countdown>--:--:--</span></span>
+                            <div class="cierre-cell">
+                                <span class="cd-urgencia {{ s.urgencia.nivel }}" data-slot-urgencia
+                                      title="Cuanto más lejos el cierre, más unidades conviene pedir.">
+                                    <span data-slot-urg-label>{{ s.urgencia.label }}</span>
+                                </span>
+                                <span class="faltan-lbl">faltan</span>
+                                <span class="slot-cd" data-slot-countdown>--:--:--</span>
+                            </div>
                         {% endif %}
                     </td>
                     <td style="font-family:'JetBrains Mono',monospace; font-weight:600;{% if s.pasado %} text-decoration:line-through;{% endif %}">
