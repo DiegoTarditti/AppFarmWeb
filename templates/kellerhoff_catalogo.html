@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% set nav_active = "providers" %}
+{% set nav_active = "droguerias" %}
 {% block title %}Catálogo Kellerhoff{% endblock %}
 {% block body_class %}theme-emerald{% endblock %}
 
@@ -90,6 +90,7 @@
         </h3>
         <p class="kc-help mb-3">Para los productos cuyo EAN NO está en el catálogo de Kellerhoff, si otro EAN del mismo producto sí está (<b>EAN alternativo</b>) y el nombre coincide, guarda la equivalencia. El export manda el EAN que Kellerhoff reconoce. Solo matches sin ambigüedad y con nombre coherente (descarta los dudosos). No pisa los resueltos a mano. Alfabeta/Troquel NO se usan (daban falsos positivos).</p>
         <button type="button" id="btn-recalcular" class="btn btn-mint text-xs">Recalcular equivalencias</button>
+        <a href="{{ url_for('kellerhoff_equivalencias_list') }}" class="text-xs text-sky-400 hover:underline" style="margin-left:10px;">Ver equivalencias guardadas →</a>
         <div id="recalc-status" class="kc-help mt-2"></div>
         <div id="recalc-stats" class="kc-stats mt-3" style="display:none;"></div>
     </div>

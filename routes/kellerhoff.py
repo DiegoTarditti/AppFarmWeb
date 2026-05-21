@@ -273,6 +273,87 @@ def init_app(app):
             resumen = _resumen_catalogo(session)
         return render_template('kellerhoff_catalogo.html', resumen=resumen)
 
+    @app.route('/kellerhoff/equivalencias')
+    @login_required
+    def kellerhoff_equivalencias_list():
+        """Lista de equivalencias EAN nuestro → producto Kellerhoff (distinta del
+        barcode_mappings de facturas). Resuelve nombres para que se entienda."""
+        with get_db() as session:
+            eqs = (session.query(KellerhoffEquivalencia)
+                   .order_by(KellerhoffEquivalencia.revisado.desc(),
+                             KellerhoffEquivalencia.id.desc()).all())
+            eans = [e.ean for e in eqs]
+            ean_oid = {}
+            if eans:
+                for cb, oid in session.query(
+                        ObsCodigoBarras.codigo_barras, ObsCodigoBarras.producto_observer).filter(
+                        ObsCodigoBarras.codigo_barras.in_(eans),
+                        ObsCodigoBarras.fecha_baja.is_(None)):
+                    if cb not in ean_oid:
+                        ean_oid[cb] = oid
+            obs_desc = {}
+            oids = list(set(ean_oid.values()))
+            if oids:
+                for oid, desc in session.query(
+                        ObsProducto.observer_id, ObsProducto.descripcion).filter(
+                        ObsProducto.observer_id.in_(oids)):
+                    obs_desc[oid] = desc
+            codkels = [e.codigo_kellerhoff for e in eqs
+                       if e.codigo_kellerhoff != KEL_NO_DISPONIBLE]
+            cat = {}
+            if codkels:
+                for ck, desc, cean in session.query(
+                        KellerhoffCatalogo.codigo_kellerhoff, KellerhoffCatalogo.descripcion,
+                        KellerhoffCatalogo.ean).filter(
+                        KellerhoffCatalogo.codigo_kellerhoff.in_(codkels)):
+                    cat[ck] = (desc or '', cean or '')
+            filas = []
+            for e in eqs:
+                nd = obs_desc.get(ean_oid.get(e.ean), '') or '—'
+                if e.codigo_kellerhoff == KEL_NO_DISPONIBLE:
+                    kd, kean = 'Kellerhoff no lo trae', ''
+                else:
+                    kd, kean = cat.get(e.codigo_kellerhoff, ('(no está en el catálogo)', ''))
+                filas.append({
+                    'tipo': 'pedido', 'id': e.id, 'ean': e.ean, 'nombre': nd,
+                    'metodo': e.metodo or '', 'revisado': e.revisado,
+                    'codigo': e.codigo_kellerhoff, 'kel_desc': kd, 'kel_ean': kean,
+                    'no_disponible': e.codigo_kellerhoff == KEL_NO_DISPONIBLE,
+                })
+
+            # Mappings de FACTURA de Kellerhoff (otra tabla, otro propósito).
+            from database import BarcodeMapping, Provider
+            kel_prov = (session.query(Provider)
+                        .filter(Provider.razon_social.ilike('%keller%')).first())
+            kel_prov_id = kel_prov.id if kel_prov else None
+            facturas = []
+            if kel_prov_id:
+                facturas = (session.query(BarcodeMapping)
+                            .filter_by(proveedor_id=kel_prov_id)
+                            .order_by(BarcodeMapping.creado_en.desc()).all())
+            for m in facturas:
+                filas.append({
+                    'tipo': 'factura', 'id': m.id, 'ean': m.codigo_barra_factura,
+                    'nombre': '—', 'metodo': 'factura', 'revisado': False,
+                    'codigo': '', 'kel_desc': 'EAN en ERP', 'kel_ean': m.codigo_barra_erp,
+                    'no_disponible': False,
+                })
+            manuales = sum(1 for f in filas if f['revisado'])
+        return render_template('kellerhoff_equivalencias.html',
+                               filas=filas, total=len(filas), manuales=manuales,
+                               kel_prov_id=kel_prov_id)
+
+    @app.route('/kellerhoff/equivalencias/<int:eid>/eliminar', methods=['POST'])
+    @login_required
+    def kellerhoff_equivalencia_eliminar(eid):
+        with get_db() as session:
+            e = session.get(KellerhoffEquivalencia, eid)
+            if e:
+                session.delete(e)
+                session.commit()
+                flash('Equivalencia eliminada.')
+        return redirect(url_for('kellerhoff_equivalencias_list'))
+
     @app.route('/kellerhoff/catalogo/importar', methods=['POST'])
     @login_required
     def kellerhoff_catalogo_importar():

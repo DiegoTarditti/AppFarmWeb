@@ -416,6 +416,19 @@
     </div>
 </div>
 
+{# Acceso al catálogo Kellerhoff (importar CSV + recalcular equivalencias) #}
+<div style="padding: 4px 24px 28px;">
+    <a href="{{ url_for('kellerhoff_catalogo') }}"
+       style="display:inline-flex; align-items:center; gap:8px; padding:10px 16px;
+              background:linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+              border:1px solid var(--ds-line); border-radius:var(--ds-r-md);
+              color:var(--ds-text); font-size:13px; font-weight:600; text-decoration:none;"
+       onmouseover="this.style.borderColor='var(--ds-mint)'"
+       onmouseout="this.style.borderColor='var(--ds-line)'">
+        📦 Catálogo Kellerhoff — importar CSV + recalcular equivalencias →
+    </a>
+</div>
+
 <script>
 const FLAG_CONFIGS = {{ flag_configs | tojson }};
 
