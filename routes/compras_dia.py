@@ -247,8 +247,44 @@ def init_app(app):
                         'count': int(cnt),
                     })
                     comportamientos_total += int(cnt)
+
+            # ── Tabla única de horarios de HOY (lista plana, ordenada por hora) ──
+            # Una fila por cada cierre de hoy, intercalando droguerías. Cada fila
+            # tiene su countdown propio al cierre de hoy. Los pasados se marcan
+            # `pasado=True` (se muestran en gris). Dinámico: sale de `proveedores`
+            # (las drogs con horarios), no hay set fijo.
+            from datetime import datetime as _dt_h
+            from datetime import time as _time_h
+
+            from services.horarios import _parse_hhmm
+            _ahora = _dt_h.now()
+            _hoy_idx = _ahora.weekday()  # 0=Lun..6=Dom
+            slots_hoy = []
+            for _p in proveedores:
+                _horarios_hoy = (_p['horarios_por_dia'][_hoy_idx]
+                                 if _p['horarios_por_dia'] else [])
+                for _hora_str in _horarios_hoy:
+                    _hm = _parse_hhmm(_hora_str)
+                    if not _hm:
+                        continue
+                    _cand = _dt_h.combine(_ahora.date(), _time_h(_hm[0], _hm[1]))
+                    _falta = int((_cand - _ahora).total_seconds())
+                    slots_hoy.append({
+                        'prov_id': _p['id'],
+                        'prov_nombre': _p['nombre'],
+                        'hora': _hora_str,
+                        'falta_segundos': _falta,
+                        'pasado': _falta < 0,
+                        'urgencia': urgencia_cierre(_falta) if _falta >= 0 else None,
+                        'plantilla': _p['plantilla'],
+                        'pedidos_activos': _p['pedidos_activos'],
+                    })
+            # Orden cronológico por hora; los pasados quedan en su lugar natural.
+            slots_hoy.sort(key=lambda s: s['hora'])
+
         return render_template('compras_dia.html',
                                proveedores=proveedores,
+                               slots_hoy=slots_hoy,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS,
                                comportamientos=comportamientos,
@@ -527,6 +563,11 @@ def init_app(app):
         # Filtra el universo a productos del lab y desactiva la matriz lab×drog
         # (el user eligió un solo lab, no hace falta resolver qué drog cubre).
         lab_id = request.args.get('lab_id', type=int)
+        # libres_a: cuando se entra desde la tabla de cierres de hoy (/pedidos/dia).
+        # Es el id de la droguería del renglón elegido. Modo matriz (sin prov):
+        # los productos libres (sin asignación lab×drog) se preasignan a esta
+        # droguería en el front (editable después). Solo aplica en modo matriz.
+        libres_a = request.args.get('libres_a', type=int)
         # Cobertura objetivo configurable por query param. Default 7 días.
         target_dias = request.args.get('target', type=int) or TARGET_DIAS_COBERTURA_DEFAULT
         target_dias = max(1, min(target_dias, 90))  # clamp 1-90
@@ -1273,6 +1314,7 @@ def init_app(app):
                                    usar_oferta=usar_oferta,
                                    lab_id=lab_id,
                                    lab_nombre=lab_nombre,
+                                   libres_a=libres_a,
                                    droguerias_canal=droguerias_canal,
                                    lab_ofertas=lab_ofertas if lab_id else [])
 
