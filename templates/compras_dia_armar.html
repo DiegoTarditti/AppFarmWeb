@@ -373,10 +373,14 @@
         {% else %}
         <span>Sin sync registrado</span>
         {% endif %}
+        {# Sync en vivo: solo en local (ObServer en la LAN). En Render la data
+           obs_* se replica con "Push a Render", no se sincroniza desde acá. #}
+        {% if entorno.codigo != 'render' %}
         <button type="button" onclick="sincronizarStockAhora(this)" class="sync-btn"
                 title="Sincronizar stock con ObServer ahora">
             Sincronizar ahora
         </button>
+        {% endif %}
     </span>
 
     <span class="meta">

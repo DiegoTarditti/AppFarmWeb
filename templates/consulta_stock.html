@@ -159,9 +159,13 @@ input[type=radio]:checked + .cs-tipo-btn {
             <span style="opacity:.3;">|</span>
             {{ _sub_line('Ventas', estado_ventas.ventas) }}
         </div>
+        {# Sync en vivo: solo desde la LAN de la farmacia (ObServer disponible).
+           Desde Render no sirve — la data se replica con "Push a Render". #}
+        {% if observer_disponible %}
         <button type="button" id="btn-sync-stock" class="cs-cta--alt"
                 style="margin:0;width:auto;padding:7px 12px;font-size:12px;"
                 title="Sincroniza stock con ObServer.">🔄 Sync</button>
+        {% endif %}
     </div>
     {% endif %}
 
