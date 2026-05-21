@@ -9,10 +9,17 @@ services:
   - type: web
     name: farmacia-web
     runtime: docker
-    plan: free
+    plan: starter
     region: oregon
     dockerfilePath: ./Dockerfile
     autoDeploy: true
+    # Corre las migraciones inline (init_db) ANTES de que la versión nueva
+    # reciba tráfico → el schema queda al día y no hay 500 por columna nueva
+    # inexistente (ej. usa_packs). Idempotente y rápido (solo DDL; los backfills
+    # pesados están gateados con RUN_BACKFILLS=1 y corren async aparte).
+    # Requiere instance type pago (no free). Si fuera free, Render lo ignora →
+    # usar el fallback del start-script (ver docs/lecciones_deploy_render.md).
+    preDeployCommand: python scripts/migrate.py
     healthCheckPath: /ping
     envVars:
       - key: DATABASE_URL
