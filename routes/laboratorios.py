@@ -12,7 +12,7 @@ from flask_login import login_required
 
 import database
 from database import ExportTemplate, Laboratorio, OfertaMinimo, Producto
-from helpers import now_ar, normalizar_unidades_minima
+from helpers import normalizar_unidades_minima, now_ar
 
 EXPORT_FIELDS = [
     ('ean',           'Código de Barra'),
