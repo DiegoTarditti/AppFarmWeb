@@ -1357,6 +1357,7 @@ class ProductAnalytics(Base):
     codigo_barra = Column(String(20), primary_key=True)
     descripcion = Column(String(200))
     laboratorio = Column(String(150), nullable=True)
+    rubro = Column(String(150), nullable=True)   # rubro ObServer (filtro stats; default Medicamentos)
     stock = Column(Integer, nullable=False, default=0)
     avg_monthly = Column(DECIMAL(10, 2), nullable=False, default=0)
     rotacion = Column(String(1), nullable=True)     # A/M/B
@@ -2988,6 +2989,10 @@ def _pg_add_columns(conn):
          'Comentario libre sobre el producto o laboratorio.',
          {'efecto_armado': 'ninguno', 'icono': '📝', 'color': 'sky',
           'permite_reemplazo': False, 'permite_vigencia': False}),
+        ('SOLO_UNO', 'Pedir solo 1 unidad', 'flag',
+         'Al armar el pedido, la cantidad de este producto se topea en 1 unidad.',
+         {'efecto_armado': 'tope_uno', 'icono': '1️⃣', 'color': 'sky',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
     ]
     for slug, nombre, cat, desc, cfg in _seed_tipos:
         try:
@@ -3114,6 +3119,9 @@ def _pg_add_columns(conn):
     ))
     conn.execute(text(
         "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS n_days INTEGER"
+    ))
+    conn.execute(text(
+        "ALTER TABLE product_analytics ADD COLUMN IF NOT EXISTS rubro VARCHAR(150)"
     ))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS export_templates (
