@@ -53,6 +53,8 @@
     font-size: 13px; color: var(--ds-text);
     font-family: inherit;
 }
+/* Popup nativo del <select> en oscuro, no blanco (mismo patrón que cadencias_lab) */
+.tp-select option, .tp-sim-row select option { background: var(--ds-surface-2); color: var(--ds-text); }
 .tp-select { background-image: linear-gradient(45deg, transparent 50%, var(--ds-text-mute) 50%),
                                  linear-gradient(135deg, var(--ds-text-mute) 50%, transparent 50%);
              background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
@@ -77,6 +79,14 @@
     font-size: 12px; color: var(--ds-text);
     font-family: ui-monospace, Consolas, monospace;
     text-align: right;
+}
+.tp-sim-row select {
+    background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm);
+    padding: 4px 8px;
+    font-size: 12px; color: var(--ds-text);
+    width: 100%;
 }
 .tp-sim-result {
     margin-top: 14px;
@@ -341,19 +351,30 @@
             </div>
 
             <div class="tp-sim-row">
-                <label>Tasa diaria</label>
+                <label title="Unidades que se venden por día, según el promedio histórico (ventas del mes ÷ 30,4). Es el ritmo de venta con el que se calcula cuánto pedir.">Venta por día</label>
                 <input type="number" id="sim-daily" value="4" step="0.5" oninput="simular()">
                 <span style="font-size:10px;color:var(--ds-text-mute);">u/día</span>
             </div>
             <div class="tp-sim-row">
-                <label>Mín efectivo</label>
+                <label title="El mínimo que cargaste en ObServer. Está pensado para cubrir ~un mes: cuando el stock cae a este nivel, hay que reponer.">Mínimo mensual</label>
                 <input type="number" id="sim-min" value="40" oninput="simular()">
                 <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
             </div>
+            <div class="tp-sim-row" id="sim-min-corto-row"
+                 title="El mínimo mensual prorrateado a los días que cubre este pedido: mínimo × días / 30. Para un pedido corto no hace falta el mínimo de todo el mes. Solo informativo — el motor usa el mínimo mensual.">
+                <label style="opacity:.7;">↳ Mínimo corto</label>
+                <span id="sim-min-corto" style="font-size:12px;color:var(--ds-text-mute);font-style:italic;text-align:right;font-family:ui-monospace,Consolas,monospace;">—</span>
+                <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
+            </div>
             <div class="tp-sim-row">
-                <label>Factor h</label>
-                <input type="number" id="sim-factor" value="0.5" step="0.1" oninput="simular()">
-                <span style="font-size:10px;color:var(--ds-text-mute);">×</span>
+                <label title="Cuánto falta para el próximo cierre de la droguería. Solo aplica si la cobertura adicional es 'Hasta el próximo cierre'.">Cierre en</label>
+                <select id="sim-factor" onchange="simular()">
+                    <option value="2.0">~2 días (finde)</option>
+                    <option value="1.0">~24 h (1 día)</option>
+                    <option value="0.5" selected>~12 h (medio día)</option>
+                    <option value="0.25">~6 h o menos</option>
+                </select>
+                <span style="font-size:10px;color:var(--ds-text-mute);">factor</span>
             </div>
             <div class="tp-sim-row">
                 <label>Cubrir días</label>
@@ -472,6 +493,19 @@ function aplicarPreset(slug) {
     simular();
 }
 
+// Mínimo corto = mínimo mensual prorrateado a los días que cubre el pedido.
+// Solo informativo (el motor usa el mínimo mensual tal cual). Acerca el concepto:
+// para un pedido de pocos días no hace falta el mínimo de todo el mes.
+function _actualizarMinCorto(minMensual, dias) {
+    const el = document.getElementById('sim-min-corto');
+    if (!el) return;
+    minMensual = minMensual || 0;
+    dias = dias || 30;
+    if (!minMensual) { el.textContent = '—'; return; }
+    const corto = Math.round(minMensual * dias / 30);
+    el.textContent = `${corto}  (${minMensual}×${dias}/30)`;
+}
+
 function toggleAvanzado() {
     const b = document.getElementById('avanzado-block');
     const btn = document.getElementById('btn-avanzado');
@@ -503,6 +537,7 @@ async function simular() {
         cantidad_reposicion_fija: fijaRaw === '' ? null : parseInt(fijaRaw),
         u12m: 48, sin_mov: false,
     };
+    _actualizarMinCorto(ctx.min_efectivo, ctx.cubrir_dias);
     try {
         const r = await fetch(`/config/tipos-pedido/${SLUG}/probar`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},
