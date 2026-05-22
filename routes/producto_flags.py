@@ -79,6 +79,30 @@ def _row_to_dict(r, productos_map, flag_configs):
 
 def init_app(app):
 
+    @app.route('/productos/presentaciones')
+    @login_required
+    def productos_presentaciones():
+        """Pantalla dedicada: arriba el buscador para configurar presentación
+        (fraccionado + envase + equivalencia Kellerhoff); abajo la lista de los
+        productos que ya tienen presentación configurada."""
+        from sqlalchemy import or_ as _or
+        with get_db() as session:
+            q = (session.query(Producto, ProductoAtributo)
+                 .outerjoin(ProductoAtributo, ProductoAtributo.producto_id == Producto.id)
+                 .filter(_or(Producto.fraccionado.is_(True),
+                             ProductoAtributo.cantidad_envase.isnot(None)))
+                 .order_by(Producto.descripcion))
+            filas = []
+            for prod, atr in q.limit(2000).all():
+                ce = atr.cantidad_envase if (atr and atr.cantidad_envase is not None) else None
+                filas.append({
+                    'ean': prod.codigo_barra,
+                    'nombre': prod.descripcion or '',
+                    'fraccionado': bool(prod.fraccionado),
+                    'cantidad_envase': int(ce) if ce is not None else None,
+                })
+        return render_template('productos_presentaciones.html', filas=filas)
+
     @app.route('/productos/flags')
     @login_required
     def producto_flags_list():
