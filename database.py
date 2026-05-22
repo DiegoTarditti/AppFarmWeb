@@ -2943,6 +2943,16 @@ def _pg_add_columns(conn):
          {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
           'buffer_pct': 0, 'universo': 'lab_x',
           'override_producto': 'none', 'redondeo': 'ceil'}),
+        ('PRUEBA', 'Planificación estacional', 'pedido',
+         'Planificación grande con estacionalidad. Base = ventas 12m × índice '
+         'estacional de la droga × cobertura. El mínimo de oferta solo informa '
+         '(chip), no sube la cantidad. La cantidad fija del producto gana.',
+         {'piso_ideal': 'min_efectivo', 'target_horizonte': 'none',
+          'buffer_pct': 0, 'universo': 'manual',
+          'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
+          'base_demanda': 'u12m_estacional',
+          'cant_fija_efecto': 'override',
+          'oferta_min_efecto': 'indicador'}),
         ('DISCONTINUADO', 'Discontinuado', 'flag',
          'Producto fuera de línea. Vender hasta agotar stock, no reponer.',
          {'efecto_armado': 'badge_cero', 'icono': '🚫', 'color': 'red',

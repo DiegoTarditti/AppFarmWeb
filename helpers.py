@@ -1211,29 +1211,26 @@ def calcular_metricas_pedido_auto(stock, minimo, maximo, u12m, m12m,
     }
 
 
-def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_min):
+def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_min,
+                                   cant_fija_efecto='override',
+                                   oferta_min_efecto='piso'):
     """Aplica overrides operativos sobre un sugerido calculado.
 
     Función pura, sin DB. Sirve para que /pedido/prueba (planificador) muestre
     los mismos números que después aparecen en /compras/dia/armar (operativo),
     que ya respeta estos overrides via services/calculo_pedido.py.
 
-    Reglas (orden de precedencia):
-      1. cant_fija (Producto.cantidad_reposicion_fija): hard override. Si
-         stock <= minimo y cant_fija > 0 → sugerido = cant_fija, regardless
-         de lo que diga el cálculo. Decisión explícita del operador.
-      2. oferta_min (OfertaMinimo.unidades_minima): piso. Si sugerido > 0
-         y sugerido < oferta_min → sugerido = oferta_min (subir al mínimo
-         para acceder al descuento TRF). Si sugerido = 0 NO sube (no compro
-         solo por la oferta).
-      3. Sin override → sugerido sin cambios.
+    La POLÍTICA de cada override viene del TipoPedidoConfig (configurable desde
+    /config/tipos-pedido). Los defaults reproducen el comportamiento histórico.
 
-    Args:
-        sugerido: int, cantidad calculada antes de override.
-        stock: int, stock actual (usado para regla cant_fija).
-        minimo: int, mínimo configurado (usado para regla cant_fija).
-        cant_fija: int|None, valor de Producto.cantidad_reposicion_fija.
-        oferta_min: int|None, valor de OfertaMinimo.unidades_minima vigente.
+    cant_fija_efecto:
+      - 'override' (default): si stock<=minimo y cant_fija>0 → sugerido=cant_fija.
+      - 'piso':     sugerido = max(sugerido, cant_fija) (nunca menos), si cant_fija>0.
+      - 'ninguno':  ignora cant_fija.
+    oferta_min_efecto:
+      - 'piso' (default): si 0 < sugerido < oferta_min → sube a oferta_min (TRF).
+      - 'indicador': NO toca la cantidad (solo se muestra el chip aparte).
+      - 'ninguno':  ignora oferta_min.
 
     Returns:
         tuple (sugerido_final, override_slug, override_valor) donde
@@ -1245,9 +1242,14 @@ def aplicar_overrides_planificador(sugerido, stock, minimo, cant_fija, oferta_mi
     cant_fija = int(cant_fija) if cant_fija else 0
     oferta_min = int(oferta_min) if oferta_min else 0
 
-    if cant_fija > 0 and stock <= minimo:
-        return (cant_fija, 'cant_fija', cant_fija)
-    if oferta_min > 0 and 0 < sugerido < oferta_min:
+    # 1) Cantidad fija del producto.
+    if cant_fija > 0 and cant_fija_efecto != 'ninguno':
+        if cant_fija_efecto == 'override' and stock <= minimo:
+            return (cant_fija, 'cant_fija', cant_fija)
+        if cant_fija_efecto == 'piso' and cant_fija > sugerido:
+            return (cant_fija, 'cant_fija', cant_fija)
+    # 2) Mínimo de oferta (solo 'piso' toca la cantidad; 'indicador'/'ninguno' no).
+    if oferta_min_efecto == 'piso' and oferta_min > 0 and 0 < sugerido < oferta_min:
         return (oferta_min, 'oferta_min', oferta_min)
     return (sugerido, None, None)
 

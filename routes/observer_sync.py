@@ -458,14 +458,17 @@ def init_app(app):
           - skip_push=1    → no pushear a Render (solo sync local)
           - skip_match=1   → no correr auto-matcher
 
-        Header opcional de autenticación:
-          - X-Auto-Sync-Token    → si está seteada AUTO_SYNC_TOKEN env var
+        Autenticación: acepta CUALQUIERA de las dos —
+          - X-Auto-Sync-Token (machine-to-machine, DockerPanel) si AUTO_SYNC_TOKEN está seteada, o
+          - usuario logueado (botón "Sincronizar todo" de /pedidos/dia).
         """
-        # Autenticación simple por token (evita que cualquiera invoque el sync)
+        # Token para llamadas máquina-a-máquina (DockerPanel). Si además hay un
+        # usuario logueado en sesión, también se permite (el botón del navegador).
         expected = os.environ.get('AUTO_SYNC_TOKEN', '').strip()
         if expected:
+            from flask_login import current_user
             sent = request.headers.get('X-Auto-Sync-Token', '').strip()
-            if sent != expected:
+            if sent != expected and not current_user.is_authenticated:
                 return jsonify({'ok': False, 'error': 'token inválido'}), 401
 
         # Lock atómico en DB — coordina entre workers de gunicorn.

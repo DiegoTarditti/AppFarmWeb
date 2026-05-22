@@ -53,6 +53,8 @@
     font-size: 13px; color: var(--ds-text);
     font-family: inherit;
 }
+/* Popup nativo del <select> en oscuro, no blanco (mismo patrón que cadencias_lab) */
+.tp-select option, .tp-sim-row select option { background: var(--ds-surface-2); color: var(--ds-text); }
 .tp-select { background-image: linear-gradient(45deg, transparent 50%, var(--ds-text-mute) 50%),
                                  linear-gradient(135deg, var(--ds-text-mute) 50%, transparent 50%);
              background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
@@ -77,6 +79,14 @@
     font-size: 12px; color: var(--ds-text);
     font-family: ui-monospace, Consolas, monospace;
     text-align: right;
+}
+.tp-sim-row select {
+    background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line);
+    border-radius: var(--ds-r-sm);
+    padding: 4px 8px;
+    font-size: 12px; color: var(--ds-text);
+    width: 100%;
 }
 .tp-sim-result {
     margin-top: 14px;
@@ -188,78 +198,131 @@
         </div>
 
         {% else %}
-        {# ── Campos de tipo de pedido ── #}
+        {# ── Campos de tipo de pedido (UI legible) ── #}
         <div class="tp-card mt-4" style="margin-top: 14px;">
-            <h3>Reglas de cálculo</h3>
+            <h3>Comportamiento del pedido</h3>
 
-            <div class="tp-field">
-                <label class="tp-field-label">Piso del ideal</label>
-                <select name="piso_ideal" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.piso_ideal %}
-                    <option value="{{ opt }}" {% if tipo.config.piso_ideal == opt %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
+            {# Preset quick-fill #}
+            <div class="tp-field" style="background:rgba(95,230,188,.06); border:1px solid rgba(95,230,188,.25); border-radius:8px; padding:10px 12px;">
+                <label class="tp-field-label">⚡ Arrancar desde un preset</label>
+                <select id="preset-select" class="tp-select" onchange="aplicarPreset(this.value)">
+                    <option value="">— Elegí un preset para autocompletar —</option>
+                    <option value="chico">Pedido Chico — solo cubrir faltantes</option>
+                    <option value="semanal">Pedido Semanal — ~7 días</option>
+                    <option value="quincenal">Pedido Quincenal — ~15 días</option>
+                    <option value="mensual">Pedido Mensual — ~30 días</option>
                 </select>
-                <div class="tp-field-help">Cantidad mínima a la que apuntar (suelo del cálculo).</div>
+                <div class="tp-field-help">Rellena los campos de abajo con valores típicos. Después ajustás a mano.</div>
             </div>
 
+            {# ── BÁSICO ── #}
             <div class="tp-field">
-                <label class="tp-field-label">Target / Horizonte</label>
-                <select name="target_horizonte" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.target_horizonte %}
-                    <option value="{{ opt }}" {% if tipo.config.target_horizonte == opt %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-                <div class="tp-field-help">Cobertura adicional sobre el piso. El motor toma el mayor de piso vs target.</div>
-            </div>
-
-            <div class="tp-field">
-                <label class="tp-field-label">Días de cobertura fijos (piso)</label>
-                <input type="number" name="dias_cobertura_fijo" min="1" max="365"
-                       value="{{ tipo.config.dias_cobertura_fijo or '' }}" class="tp-input"
-                       placeholder="Vacío = usa slider" oninput="simular()">
-                <div class="tp-field-help">Solo aplica cuando piso = tasa diaria × días. Reemplaza el slider del armado. Dejá vacío para que el slider controle.</div>
-            </div>
-
-            <div class="tp-field">
-                <label class="tp-field-label">Buffer (% sobre ideal)</label>
-                <input type="number" name="buffer_pct" min="0" max="100"
-                       value="{{ tipo.config.buffer_pct or 0 }}" class="tp-input"
-                       oninput="simular()">
-                <div class="tp-field-help">Margen de seguridad. 20 = +20% sobre el ideal calculado.</div>
-            </div>
-
-            <div class="tp-field">
-                <label class="tp-field-label">Universo (informativo)</label>
+                <label class="tp-field-label">¿Qué productos entran?</label>
                 <select name="universo" class="tp-select" onchange="simular()">
                     {% for opt, label in enums.universo %}
                     <option value="{{ opt }}" {% if tipo.config.universo == opt %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <div class="tp-field-help">Qué productos entran al listado de este tipo. No afecta el cálculo de cantidad, solo documenta.</div>
             </div>
 
             <div class="tp-field">
-                <label class="tp-field-label">Override por producto</label>
-                <select name="override_producto" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.override_producto %}
-                    <option value="{{ opt }}" {% if tipo.config.override_producto == opt %}selected{% endif %}>{{ label }}</option>
+                <label class="tp-field-label">¿Cuánto querés tener en stock como base?</label>
+                <select name="piso_ideal" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.piso_ideal %}
+                    <option value="{{ opt }}" {% if tipo.config.piso_ideal == opt %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <div class="tp-field-help">Campo de Producto que pisa el cálculo si está seteado (ej. cantidad fija).</div>
             </div>
 
             <div class="tp-field">
-                <label class="tp-field-label">Redondeo</label>
-                <select name="redondeo" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.redondeo %}
-                    <option value="{{ opt }}" {% if tipo.config.redondeo == opt %}selected{% endif %}>{{ label }}</option>
+                <label class="tp-field-label">¿Para cuántos días de venta comprás?</label>
+                <input type="number" name="dias_cobertura_fijo" min="1" max="365"
+                       value="{{ tipo.config.dias_cobertura_fijo or '' }}" class="tp-input"
+                       placeholder="Vacío = usa el slider del armado" oninput="simular()">
+                <div class="tp-field-help">Solo aplica si arriba elegiste "lo que se vende en N días".</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">¿Qué ventas miro para calcular el ritmo?</label>
+                <select name="base_demanda" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.base_demanda %}
+                    <option value="{{ opt }}" {% if (tipo.config.base_demanda or 'u3m') == opt %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
+            </div>
+
+            {# ── AVANZADO (colapsable) ── #}
+            <button type="button" onclick="toggleAvanzado()" id="btn-avanzado"
+                    style="margin:8px 0; font-size:12px; color:var(--ds-text-mute); background:none; border:none; cursor:pointer;">
+                ⚙ Avanzado ▾
+            </button>
+            <div id="avanzado-block" style="display:none; border-left:2px solid var(--ds-line); padding-left:12px;">
+                <div class="tp-field">
+                    <label class="tp-field-label">Si el producto tiene cantidad fija seteada…</label>
+                    <select name="cant_fija_efecto" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.cant_fija_efecto %}
+                        <option value="{{ opt }}" {% if (tipo.config.cant_fija_efecto or 'override') == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Si hay mínimo de oferta (TRF)…</label>
+                    <select name="oferta_min_efecto" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.oferta_min_efecto %}
+                        <option value="{{ opt }}" {% if (tipo.config.oferta_min_efecto or 'piso') == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Cobertura adicional (target)</label>
+                    <select name="target_horizonte" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.target_horizonte %}
+                        <option value="{{ opt }}" {% if tipo.config.target_horizonte == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="tp-field-help">El motor toma el mayor entre la base y este horizonte.</div>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Margen de seguridad (%)</label>
+                    <input type="number" name="buffer_pct" min="0" max="100"
+                           value="{{ tipo.config.buffer_pct or 0 }}" class="tp-input"
+                           oninput="simular()">
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Override por producto</label>
+                    <select name="override_producto" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.override_producto %}
+                        <option value="{{ opt }}" {% if tipo.config.override_producto == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="tp-field-help">Habilita qué campo del producto puede pisar el cálculo (la política la elegís arriba).</div>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Redondeo</label>
+                    <select name="redondeo" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.redondeo %}
+                        <option value="{{ opt }}" {% if tipo.config.redondeo == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
         </div>
         {% endif %}
 
         <div class="tp-actions">
+            {% if tipo.categoria != 'flag' %}
+            <button type="button" onclick="restaurarBase()"
+                    class="text-[12px] px-3 py-1.5 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-amber-400 transition"
+                    style="color:var(--ds-warn); margin-right:auto;"
+                    title="Vuelve esta config a sus valores de fábrica (red de seguridad)">
+                ↺ Restaurar a base
+            </button>
+            {% endif %}
             <a href="{{ url_for('tipos_pedido_list') }}"
                class="text-[12px] px-3 py-1.5 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-line-2)] transition">
                 Cancelar
@@ -274,24 +337,44 @@
         <div class="tp-card" style="position: sticky; top: 18px;">
             <h3>🧪 Simulador</h3>
             <p class="tp-field-help" style="margin-bottom: 12px;">
-                Cambiá los valores para ver qué pediría el motor con la config actual del form.
-                <b>No guarda nada</b>, solo previsualiza.
+                Probá con un producto real o con números a mano. <b>No guarda nada.</b>
             </p>
 
+            {# Buscador de producto real → llena los valores de abajo #}
+            <div style="position:relative; margin-bottom:12px;">
+                <input type="text" id="sim-prod-search" autocomplete="off"
+                       placeholder='🔍 Probar con un producto real (ej. "amoxidal")'
+                       class="tp-input" style="width:100%;"
+                       oninput="buscarProdSim(this.value)">
+                <div id="sim-prod-results" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:30; background:var(--ds-surface-2); border:1px solid var(--ds-line); border-radius:6px; max-height:200px; overflow-y:auto; box-shadow:0 6px 18px rgba(0,0,0,.35);"></div>
+                <div id="sim-prod-elegido" class="tp-field-help" style="margin-top:4px;"></div>
+            </div>
+
             <div class="tp-sim-row">
-                <label>Tasa diaria</label>
+                <label title="Unidades que se venden por día, según el promedio histórico (ventas del mes ÷ 30,4). Es el ritmo de venta con el que se calcula cuánto pedir.">Venta por día</label>
                 <input type="number" id="sim-daily" value="4" step="0.5" oninput="simular()">
                 <span style="font-size:10px;color:var(--ds-text-mute);">u/día</span>
             </div>
             <div class="tp-sim-row">
-                <label>Mín efectivo</label>
+                <label title="El mínimo que cargaste en ObServer. Está pensado para cubrir ~un mes: cuando el stock cae a este nivel, hay que reponer.">Mínimo mensual</label>
                 <input type="number" id="sim-min" value="40" oninput="simular()">
                 <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
             </div>
+            <div class="tp-sim-row" id="sim-min-corto-row"
+                 title="El mínimo mensual prorrateado a los días que cubre este pedido: mínimo × días / 30. Para un pedido corto no hace falta el mínimo de todo el mes. Solo informativo — el motor usa el mínimo mensual.">
+                <label style="opacity:.7;">↳ Mínimo corto</label>
+                <span id="sim-min-corto" style="font-size:12px;color:var(--ds-text-mute);font-style:italic;text-align:right;font-family:ui-monospace,Consolas,monospace;">—</span>
+                <span style="font-size:10px;color:var(--ds-text-mute);">u</span>
+            </div>
             <div class="tp-sim-row">
-                <label>Factor h</label>
-                <input type="number" id="sim-factor" value="0.5" step="0.1" oninput="simular()">
-                <span style="font-size:10px;color:var(--ds-text-mute);">×</span>
+                <label title="Cuánto falta para el próximo cierre de la droguería. Solo aplica si la cobertura adicional es 'Hasta el próximo cierre'.">Cierre en</label>
+                <select id="sim-factor" onchange="simular()">
+                    <option value="2.0">~2 días (finde)</option>
+                    <option value="1.0">~24 h (1 día)</option>
+                    <option value="0.5" selected>~12 h (medio día)</option>
+                    <option value="0.25">~6 h o menos</option>
+                </select>
+                <span style="font-size:10px;color:var(--ds-text-mute);">factor</span>
             </div>
             <div class="tp-sim-row">
                 <label>Cubrir días</label>
@@ -324,14 +407,125 @@
 {% if tipo.categoria != 'flag' %}
 const SLUG = '{{ tipo.slug }}';
 
+function _val(name) { const e = document.querySelector(`[name="${name}"]`); return e ? e.value : ''; }
+
+// ── Simulador con producto real ──────────────────────────────────────────
+let _simSearchT = null;
+function buscarProdSim(q) {
+    q = (q || '').trim();
+    const box = document.getElementById('sim-prod-results');
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    clearTimeout(_simSearchT);
+    _simSearchT = setTimeout(async () => {
+        try {
+            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&con_ean=1&limit=10`,
+                                  {credentials: 'same-origin'});
+            const d = await r.json();
+            const items = d.data || [];
+            if (!items.length) { box.innerHTML = '<div style="padding:8px;color:var(--ds-text-mute);font-size:11px;">Sin resultados</div>'; box.style.display = 'block'; return; }
+            box.innerHTML = items.map(p => `
+                <div onclick="elegirProdSim(${p.observer_id}, '${(p.descripcion||'').replace(/'/g,'')}')"
+                     style="padding:7px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid rgba(255,255,255,.04);"
+                     onmouseover="this.style.background='rgba(95,230,188,.10)'" onmouseout="this.style.background=''">
+                    ${escSim(p.descripcion)} <span style="color:var(--ds-text-mute);font-size:10px;">${escSim(p.codigo_barra||'')}</span>
+                </div>`).join('');
+            box.style.display = 'block';
+        } catch (e) { box.style.display = 'none'; }
+    }, 250);
+}
+function escSim(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function elegirProdSim(obsId, nombre) {
+    document.getElementById('sim-prod-results').style.display = 'none';
+    document.getElementById('sim-prod-search').value = '';
+    try {
+        const r = await fetch(`/config/tipos-pedido/sim-producto?observer_id=${obsId}`,
+                              {credentials: 'same-origin'});
+        const d = await r.json();
+        if (!d.ok) { document.getElementById('sim-prod-elegido').textContent = d.error || 'error'; return; }
+        // daily_rate según la base de demanda elegida en el form.
+        const base = _val('base_demanda') || 'u3m';
+        const avgMensual = (base === 'u3m') ? d.avg_3m : d.avg_12m;
+        const daily = avgMensual ? (avgMensual / 30.4) : 0;
+        document.getElementById('sim-daily').value = daily.toFixed(2);
+        document.getElementById('sim-min').value = d.minimo;
+        document.getElementById('sim-stock').value = d.stock;
+        document.getElementById('sim-fija').value = d.cant_fija != null ? d.cant_fija : '';
+        document.getElementById('sim-prod-elegido').innerHTML =
+            `✓ <b>${escSim(d.nombre)}</b> — stock ${d.stock}, mín ${d.minimo}, ${base}=${avgMensual}/mes` +
+            (d.sin_historial ? ' <span style="color:var(--ds-warn)">(sin ventas)</span>' : '');
+        simular();
+    } catch (e) { document.getElementById('sim-prod-elegido').textContent = 'error de red'; }
+}
+document.addEventListener('click', e => {
+    if (!e.target.closest('#sim-prod-search') && !e.target.closest('#sim-prod-results')) {
+        const box = document.getElementById('sim-prod-results');
+        if (box) box.style.display = 'none';
+    }
+});
+
+async function restaurarBase() {
+    if (!confirm('¿Restaurar esta config a sus valores de fábrica? Se descartan los cambios guardados de este tipo.')) return;
+    try {
+        const r = await fetch(`/config/tipos-pedido/${SLUG}/restaurar`, {
+            method: 'POST', credentials: 'same-origin'});
+        const d = await r.json();
+        if (d.ok) { location.reload(); }
+        else { alert('No se pudo restaurar: ' + (d.error || 'error')); }
+    } catch (e) { alert('Error de red: ' + e.message); }
+}
+
+function aplicarPreset(slug) {
+    if (!slug) return;
+    // Cada preset rellena los campos básicos. Después se ajusta a mano.
+    const P = {
+        chico:      {piso_ideal: 'min_efectivo',             target_horizonte: 'none', dias_cobertura_fijo: '',  base_demanda: 'u3m'},
+        semanal:    {piso_ideal: 'daily_rate_x_cubrir_dias', target_horizonte: 'none', dias_cobertura_fijo: '7',  base_demanda: 'u3m'},
+        quincenal:  {piso_ideal: 'daily_rate_x_cubrir_dias', target_horizonte: 'none', dias_cobertura_fijo: '15', base_demanda: 'u3m'},
+        mensual:    {piso_ideal: 'daily_rate_x_cubrir_dias', target_horizonte: 'none', dias_cobertura_fijo: '30', base_demanda: 'u12m'},
+    };
+    const cfg = P[slug];
+    if (!cfg) return;
+    for (const [name, v] of Object.entries(cfg)) {
+        const el = document.querySelector(`[name="${name}"]`);
+        if (el) el.value = v;
+    }
+    simular();
+}
+
+// Mínimo corto = mínimo mensual prorrateado a los días que cubre el pedido.
+// Solo informativo (el motor usa el mínimo mensual tal cual). Acerca el concepto:
+// para un pedido de pocos días no hace falta el mínimo de todo el mes.
+function _actualizarMinCorto(minMensual, dias) {
+    const el = document.getElementById('sim-min-corto');
+    if (!el) return;
+    minMensual = minMensual || 0;
+    dias = dias || 30;
+    if (!minMensual) { el.textContent = '—'; return; }
+    const corto = Math.round(minMensual * dias / 30);
+    el.textContent = `${corto}  (${minMensual}×${dias}/30)`;
+}
+
+function toggleAvanzado() {
+    const b = document.getElementById('avanzado-block');
+    const btn = document.getElementById('btn-avanzado');
+    const open = b.style.display === 'none';
+    b.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '⚙ Avanzado ▴' : '⚙ Avanzado ▾';
+}
+
 async function simular() {
     const cfg = {
-        piso_ideal:        document.querySelector('[name="piso_ideal"]').value,
-        target_horizonte:  document.querySelector('[name="target_horizonte"]').value,
-        buffer_pct:        parseInt(document.querySelector('[name="buffer_pct"]').value || 0),
-        universo:          document.querySelector('[name="universo"]').value,
-        override_producto: document.querySelector('[name="override_producto"]').value,
-        redondeo:          document.querySelector('[name="redondeo"]').value,
+        piso_ideal:          _val('piso_ideal'),
+        target_horizonte:    _val('target_horizonte'),
+        buffer_pct:          parseInt(_val('buffer_pct') || 0),
+        universo:            _val('universo'),
+        override_producto:   _val('override_producto'),
+        redondeo:            _val('redondeo'),
+        dias_cobertura_fijo: _val('dias_cobertura_fijo') ? parseInt(_val('dias_cobertura_fijo')) : null,
+        base_demanda:        _val('base_demanda'),
+        cant_fija_efecto:    _val('cant_fija_efecto'),
+        oferta_min_efecto:   _val('oferta_min_efecto'),
     };
     const fijaRaw = document.getElementById('sim-fija').value;
     const ctx = {
@@ -343,6 +537,7 @@ async function simular() {
         cantidad_reposicion_fija: fijaRaw === '' ? null : parseInt(fijaRaw),
         u12m: 48, sin_mov: false,
     };
+    _actualizarMinCorto(ctx.min_efectivo, ctx.cubrir_dias);
     try {
         const r = await fetch(`/config/tipos-pedido/${SLUG}/probar`, {
             method: 'POST', headers: {'Content-Type': 'application/json'},

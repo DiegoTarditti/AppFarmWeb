@@ -39,6 +39,42 @@ ENUMS_PEDIDO = {
         ('multiplo_pack','Hacia arriba al múltiplo de pack'),
         ('unidad',       'Sin redondeo extra (unidad)'),
     ],
+    # ── Ejes nuevos (boceto config_pedidos) ──
+    'base_demanda': [
+        ('u3m',             'Recientes (últimos 3 meses)'),
+        ('u12m',            'Año completo (12 meses)'),
+        ('u12m_estacional', 'Estacional (12m × índice de la droga)'),
+    ],
+    'cant_fija_efecto': [
+        ('override', 'Gana: pide esa cantidad fija'),
+        ('piso',     'Es un piso (nunca pide menos)'),
+        ('ninguno',  'Ignorar la cantidad fija'),
+    ],
+    'oferta_min_efecto': [
+        ('piso',      'Subir al mínimo de oferta'),
+        ('indicador', 'Solo avisar (chip), no toca cantidad'),
+        ('ninguno',   'Ignorar el mínimo de oferta'),
+    ],
+}
+
+# Config base por tipo (espejo del seed en database.py::init_db _seed_tipos).
+# Usado por "Restaurar a base". Si cambiás el seed, actualizá acá también.
+BASE_CONFIGS = {
+    'REPOSICION': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+                   'buffer_pct': 0, 'universo': 'bajo_min_o_cobertura',
+                   'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
+                   'dias_cobertura_fijo': 4, 'base_demanda': 'u3m',
+                   'cant_fija_efecto': 'override', 'oferta_min_efecto': 'piso'},
+    'COMPRA_LAB': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+                   'buffer_pct': 0, 'universo': 'lab_x',
+                   'override_producto': 'none', 'redondeo': 'ceil',
+                   'base_demanda': 'u3m', 'cant_fija_efecto': 'override',
+                   'oferta_min_efecto': 'piso'},
+    'PRUEBA':     {'piso_ideal': 'min_efectivo', 'target_horizonte': 'none',
+                   'buffer_pct': 0, 'universo': 'manual',
+                   'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
+                   'base_demanda': 'u12m_estacional', 'cant_fija_efecto': 'override',
+                   'oferta_min_efecto': 'indicador'},
 }
 
 ENUMS_FLAG = {
@@ -122,6 +158,10 @@ def init_app(app):
                         'override_producto':   request.form.get('override_producto') or cfg_actual.get('override_producto', 'none'),
                         'redondeo':            request.form.get('redondeo') or cfg_actual.get('redondeo', 'ceil'),
                         'dias_cobertura_fijo': _dias,
+                        # Ejes nuevos (defaults = comportamiento histórico).
+                        'base_demanda':        request.form.get('base_demanda') or cfg_actual.get('base_demanda', 'u3m'),
+                        'cant_fija_efecto':    request.form.get('cant_fija_efecto') or cfg_actual.get('cant_fija_efecto', 'override'),
+                        'oferta_min_efecto':   request.form.get('oferta_min_efecto') or cfg_actual.get('oferta_min_efecto', 'piso'),
                     }
                 row.nombre      = (request.form.get('nombre') or row.nombre).strip()
                 row.descripcion = (request.form.get('descripcion') or '').strip() or None
@@ -168,3 +208,49 @@ def init_app(app):
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 400
         return jsonify({'ok': True, 'result': result, 'ctx_usado': ctx})
+
+    @app.route('/config/tipos-pedido/sim-producto')
+    @login_required
+    def tipos_pedido_sim_producto():
+        """Datos reales de un producto para alimentar el simulador con un caso
+        concreto en vez de números inventados. Devuelve stock/mínimo/ventas
+        reales (de ObServer vía producto_metrics) + cantidad fija del master."""
+        from database import ObsProducto, Producto
+        from services.producto_metrics import metricas_producto
+        obs_id = request.args.get('observer_id', type=int)
+        if not obs_id:
+            return jsonify({'ok': False, 'error': 'falta observer_id'}), 400
+        with get_db() as session:
+            op = session.get(ObsProducto, obs_id)
+            if not op:
+                return jsonify({'ok': False, 'error': 'producto no encontrado'}), 404
+            m = metricas_producto(session, obs_id)
+            prod = session.query(Producto).filter_by(observer_id=obs_id).first()
+            cant_fija = (int(prod.cantidad_reposicion_fija)
+                         if prod and prod.cantidad_reposicion_fija else None)
+            return jsonify({
+                'ok': True,
+                'nombre': op.descripcion or str(obs_id),
+                'avg_3m': m['avg_3m'], 'avg_12m': m['avg_12m'],
+                'stock': m['stock'], 'minimo': m['minimo'],
+                'cant_fija': cant_fija,
+                'u12m': int(sum(m['ventas12'])),
+                'sin_historial': m['sin_historial'],
+            })
+
+    @app.route('/config/tipos-pedido/<slug>/restaurar', methods=['POST'])
+    @login_required
+    def tipos_pedido_restaurar(slug):
+        """Restaura la config de un tipo a su BASE conocida-buena (red de
+        seguridad si alguien dejó valores raros)."""
+        base = BASE_CONFIGS.get(slug)
+        if base is None:
+            return jsonify({'ok': False, 'error': f'sin base definida para {slug}'}), 400
+        with get_db() as session:
+            row = session.query(TipoPedidoConfig).filter_by(slug=slug).first()
+            if not row:
+                return jsonify({'ok': False, 'error': 'no encontrado'}), 404
+            row.config_json = json.dumps(base)
+            session.commit()
+            invalidar_cache()
+        return jsonify({'ok': True, 'config': base})
