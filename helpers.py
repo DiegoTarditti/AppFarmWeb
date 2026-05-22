@@ -1429,6 +1429,29 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
                 .group_by(vm.producto_observer).all())
     u12_map = {r[0]: float(r[1] or 0) for r in u12_rows}
 
+    # Precio para valorizar el stock dormido. Prioridad:
+    #   1. Precio ACTUAL = ProductAnalytics.precio_pvp (snapshot, PVP reciente —
+    #      el mismo que usa el dashboard). Es lo que más se acerca al precio de hoy.
+    #   2. Fallback: precio histórico de venta (monto/unidades sobre toda la
+    #      historia). NOTA: el "precio de última compra" no se usa porque
+    #      Producto.ultima_compra y las facturas están vacíos en la práctica.
+    pa_price = {}
+    for oid, pvp in (session.query(database.Producto.observer_id,
+                                   database.ProductAnalytics.precio_pvp)
+                     .join(database.ProductAnalytics,
+                           database.ProductAnalytics.codigo_barra == database.Producto.codigo_barra)
+                     .filter(database.Producto.observer_id.in_(obs_ids),
+                             database.ProductAnalytics.precio_pvp.isnot(None),
+                             database.ProductAnalytics.precio_pvp > 0)):
+        pa_price[oid] = float(pvp)
+
+    precio_rows = (session.query(vm.producto_observer, _f.sum(vm.unidades),
+                                 _f.sum(vm.monto))
+                   .filter(vm.producto_observer.in_(obs_ids))
+                   .group_by(vm.producto_observer).all())
+    precio_hist = {r[0]: (float(r[2] or 0) / float(r[1]))
+                   for r in precio_rows if r[1] and float(r[1]) > 0}
+
     hoy_idx = hoy.year * 12 + hoy.month
 
     def _meses_desde(ym):
@@ -1463,6 +1486,13 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
 
         u_rot, m_rot = urot_map.get(r.observer_id, (0.0, 0.0))
         if u_rot <= 0:
+            if r.observer_id in pa_price:
+                precio_v, precio_origen = pa_price[r.observer_id], 'actual'
+            elif r.observer_id in precio_hist:
+                precio_v, precio_origen = precio_hist[r.observer_id], 'venta'
+            else:
+                precio_v, precio_origen = 0.0, None
+            valor = round(st * precio_v, 2) if st > 0 else 0.0
             sin_ventas.append({
                 'observer_id': r.observer_id,
                 'nombre': r.descripcion,
@@ -1470,6 +1500,9 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
                 'meses_ult_venta': meses_ult,
                 'rfm': rfm,
                 'stock': st,
+                'precio_unit': round(precio_v, 2),
+                'precio_origen': precio_origen,
+                'valor': valor,
             })
             continue
         avg_diario = u_rot / dias_rotacion
@@ -1524,6 +1557,15 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
         m['monto_mensual'] = round(m['monto_mensual'], 2)
     matriz_list = [matriz[slug] for slug, *_ in RFM_QUADRANTS]
 
+    # Catálogo dormido: orden descendente por última venta (la más reciente
+    # primero; los "nunca" al final) y stats de stock parado valorizado.
+    sin_ventas.sort(key=lambda x: (x['meses_ult_venta'] is None,
+                                   x['meses_ult_venta'] if x['meses_ult_venta'] is not None else 9999,
+                                   -x['valor']))
+    dormido_con_stock = sum(1 for x in sin_ventas if x['stock'] > 0)
+    dormido_stock_u = sum(x['stock'] for x in sin_ventas if x['stock'] > 0)
+    dormido_valor = round(sum(x['valor'] for x in sin_ventas), 2)
+
     return {
         'lab_id': lab_observer_id,
         'meses_rotacion': meses_rotacion,
@@ -1532,11 +1574,14 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
         'matriz': matriz_list,
         'rfm_rec_meses': RFM_REC_MESES,
         'rfm_freq_min': RFM_FREQ_MIN,
-        'sin_ventas': sorted(sin_ventas, key=lambda x: x['nombre']),
+        'sin_ventas': sin_ventas,
         'totales': {
             'productos_con_ventas': con_ventas,
             'productos_sin_ventas': len(sin_ventas),
             'monto_mensual_total': round(monto_total, 2),
+            'dormido_con_stock': dormido_con_stock,
+            'dormido_stock_u': dormido_stock_u,
+            'dormido_valor': dormido_valor,
         }
     }
 

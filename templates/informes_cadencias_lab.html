@@ -356,20 +356,31 @@
             </div>
             <div class="cl-bucket-meta">
                 <b>{{ data.totales.productos_sin_ventas }}</b> producto{{ '' if data.totales.productos_sin_ventas == 1 else 's' }}
+                {% if data.totales.dormido_con_stock > 0 %}
+                · <b style="color:var(--ds-warn);">{{ data.totales.dormido_con_stock }}</b> con stock
+                · <b style="color:var(--ds-warn);">$ {{ '{:,.0f}'.format(data.totales.dormido_valor).replace(',', '.') }}</b> parado
+                {% endif %}
             </div>
         </summary>
-        <div style="padding: 8px 16px 16px; max-height: 300px; overflow-y: auto;">
+        <div style="padding: 8px 16px 16px; max-height: 320px; overflow-y: auto;">
             <ul style="font-size:11px; color:var(--ds-text-soft); margin:0; padding-left:18px; columns:2; column-gap:24px;">
                 {% for p in data.sin_ventas %}
-                <li>
+                <li style="{% if p.stock > 0 %}margin-bottom:2px;{% endif %}">
                     {% if p.rfm == 'caida' %}<span class="rfm-badge caida">En caída</span> {% endif %}
                     {{ p.nombre }}
                     {% if p.meses_ult_venta is none %}<span style="color:var(--ds-text-mute);">· nunca</span>
-                    {% else %}<span class="{% if p.meses_ult_venta > 5 %}uv-old{% else %}uv-stale{% endif %}">· últ. venta hace {{ p.meses_ult_venta }}m</span>{% endif %}
+                    {% else %}<span class="{% if p.meses_ult_venta > 5 %}uv-old{% else %}uv-stale{% endif %}">· hace {{ p.meses_ult_venta }}m</span>{% endif %}
+                    {% if p.stock > 0 %}
+                    <span style="color:var(--ds-warn); font-family:ui-monospace;">· 📦 {{ p.stock }}u
+                        {% if p.valor > 0 %}· $ {{ '{:,.0f}'.format(p.valor).replace(',', '.') }}{% if p.precio_origen == 'venta' %}*{% endif %}{% endif %}</span>
+                    {% else %}<span style="color:var(--ds-text-mute);">· sin stock</span>{% endif %}
                     {% if p.codigo_alfabeta %} <span style="color:var(--ds-text-mute); font-family:ui-monospace;">({{ p.codigo_alfabeta }})</span>{% endif %}
                 </li>
                 {% endfor %}
             </ul>
+            <div style="font-size:9px; color:var(--ds-text-mute); margin-top:8px;">
+                Valorizado a precio actual (PVP del snapshot). <b>*</b> = sin precio actual, estimado al último precio de venta.
+            </div>
         </div>
     </details>
     {% endif %}
