@@ -343,11 +343,30 @@ def init_app(app):
             for _s in slots_hoy:
                 _s.pop('dt', None)  # no serializable / no se usa en template
 
+            # ── Frescura de datos para el banner "Sincronizar todo" ──
+            # Tomamos la MÁS VIEJA de las max(sync_en) de las tablas críticas para
+            # el armado (stock + ventas). Así el "hace Xh" garantiza que TODO lo
+            # que alimenta el pedido está al menos así de fresco. /pedidos/dia es
+            # local-only → siempre hay ObServer, no hace falta gatear.
+            from sqlalchemy import func as _func_sync
+
+            from database import ObsStock, ObsVentaMensual
+            _maxes = []
+            for _modelo in (ObsStock, ObsVentaMensual):
+                _mx = session.query(_func_sync.max(_modelo.sync_en)).scalar()
+                if _mx is not None:
+                    _maxes.append(_mx)
+            sync_age_min = None
+            if _maxes:
+                _viejo = min(_maxes)  # la tabla menos fresca manda
+                sync_age_min = int((datetime.now() - _viejo).total_seconds() // 60)
+
         return render_template('compras_dia.html',
                                proveedores=proveedores,
                                slots_hoy=slots_hoy,
                                sin_horarios=sin_horarios,
                                dias=DIAS_LABELS,
+                               sync_age_min=sync_age_min,
                                comportamientos=comportamientos,
                                comportamientos_total=comportamientos_total)
 

@@ -171,6 +171,21 @@
     </div>
     {% endif %}
     <div class="ml-auto flex items-center gap-3">
+        {# Frescura de datos + sync completo (local-only; /pedidos/dia no corre en Render) #}
+        <div class="flex items-center gap-2">
+            {% if sync_age_min is not none %}
+            <span id="sync-age-badge"
+                  class="text-[11px] px-2 py-1 rounded border"
+                  style="{% if sync_age_min < 120 %}background:rgba(95,230,188,.12); color:var(--ds-mint); border-color:rgba(95,230,188,.35){% else %}background:rgba(245,158,11,.12); color:var(--ds-warn); border-color:rgba(245,158,11,.35){% endif %}"
+                  title="Antigüedad de los datos de stock/ventas que alimentan el pedido">
+                {% if sync_age_min < 120 %}🟢{% else %}🟡{% endif %} datos hace
+                {% if sync_age_min < 60 %}{{ sync_age_min }} min{% elif sync_age_min < 1440 %}{{ sync_age_min // 60 }} h{% else %}{{ sync_age_min // 1440 }} d{% endif %}
+            </span>
+            {% endif %}
+            <button type="button" onclick="sincronizarTodo()" class="btn btn-mint btn-sm" title="Sincroniza TODAS las tablas desde ObServer (productos, stock, ventas…). Tarda unos minutos.">
+                🔄 Sincronizar todo
+            </button>
+        </div>
         {% if current_user.rol != 'pedidos' %}
         <a href="{{ url_for('labs_drogerias_matriz') }}" class="btn btn-secondary btn-sm">🔗 Matriz lab × drog</a>
         <a href="{{ url_for('index') }}" class="btn-inicio" title="Volver al inicio">
@@ -342,9 +357,73 @@
     </div>
 </div>
 
+<!-- Overlay de "Sincronizar todo" -->
+<div id="sync-overlay" class="hidden fixed inset-0 z-[95] flex items-center justify-center cd-modal-back">
+    <div class="cd-modal-card" style="max-width: 420px; width: 90%; text-align: center; padding: 28px 24px;">
+        <div id="sync-ov-spinner" style="font-size: 38px; margin-bottom: 10px; animation: cd-spin 1.1s linear infinite; display:inline-block;">🔄</div>
+        <h2 style="font-size: 16px; font-weight: 700; color: var(--ds-text); margin-bottom: 6px;">Sincronizando todas las tablas</h2>
+        <p id="sync-ov-msg" style="font-size: 13px; color: var(--ds-text-mute); min-height: 20px;">Iniciando…</p>
+        <p style="font-size: 11px; color: var(--ds-text-mute); margin-top: 10px;">Trae productos, stock y ventas desde ObServer. Puede tardar unos minutos — esperá a que termine.</p>
+        <button type="button" id="sync-ov-close" onclick="document.getElementById('sync-overlay').classList.add('hidden')"
+                class="btn btn-ghost btn-sm hidden" style="margin-top: 14px;">Cerrar</button>
+    </div>
+</div>
+<style>@keyframes cd-spin { to { transform: rotate(360deg); } }</style>
+
 <script>
 const DIAS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 let _provActual = null;
+
+// ── Sincronizar todo (full sync ObServer → local) ────────────────────────
+// /pedidos/dia es local-only, así que siempre hay ObServer. Reusa /api/auto-sync
+// (skip_push: no pushea a Render porque se pide en local) + /api/auto-sync/status
+// para mostrar el paso actual. Una sola acción, esperás, todo queda fresco.
+const SYNC_PASO_LABELS = {
+    laboratorios: 'laboratorios', rubros: 'rubros', subrubros: 'subrubros',
+    nombres_drogas: 'drogas', productos: 'productos (~50s)', stock: 'stock',
+    ventas_mensuales: 'ventas mensuales', match_productos: 'match EAN ↔ producto',
+    push_render: 'replicando',
+};
+let _syncPoll = null;
+function _setSyncMsg(t) { const e = document.getElementById('sync-ov-msg'); if (e) e.textContent = t; }
+async function _pollSyncStatus() {
+    try {
+        const r = await fetch('/api/auto-sync/status', {credentials: 'same-origin'});
+        const s = await r.json();
+        if (s.paso_actual && SYNC_PASO_LABELS[s.paso_actual]) {
+            _setSyncMsg('Trayendo ' + SYNC_PASO_LABELS[s.paso_actual] + '…');
+        }
+    } catch (e) { /* ignore */ }
+}
+async function sincronizarTodo() {
+    const ov = document.getElementById('sync-overlay');
+    const spin = document.getElementById('sync-ov-spinner');
+    const closeBtn = document.getElementById('sync-ov-close');
+    ov.classList.remove('hidden');
+    closeBtn.classList.add('hidden');
+    spin.style.animation = 'cd-spin 1.1s linear infinite';
+    _setSyncMsg('Iniciando…');
+    _syncPoll = setInterval(_pollSyncStatus, 1500);
+    try {
+        const r = await fetch('/api/auto-sync?skip_push=1', {method: 'POST', credentials: 'same-origin'});
+        const d = await r.json();
+        clearInterval(_syncPoll);
+        if (d.ok) {
+            spin.textContent = '✓'; spin.style.animation = '';
+            _setSyncMsg('Todo actualizado. Recargando…');
+            setTimeout(() => location.reload(), 900);
+        } else {
+            spin.textContent = '⚠'; spin.style.animation = '';
+            _setSyncMsg('No se pudo sincronizar: ' + (d.error || 'error desconocido'));
+            closeBtn.classList.remove('hidden');
+        }
+    } catch (e) {
+        clearInterval(_syncPoll);
+        spin.textContent = '⚠'; spin.style.animation = '';
+        _setSyncMsg('Error de red: ' + (e.message || e));
+        closeBtn.classList.remove('hidden');
+    }
+}
 
 async function abrirEdicionHorarios(provId, btn, nombre) {
     _provActual = provId;
