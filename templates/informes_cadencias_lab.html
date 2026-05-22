@@ -14,13 +14,19 @@
     .cl-head .sub { font-size: 11px; color: var(--ds-text-mute); }
 
     .cl-filters {
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+        display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
         padding: 7px 14px;
         background: var(--ds-surface);
         border: 1px solid var(--ds-line);
         border-radius: 12px;
         margin-bottom: 10px;
     }
+    .cl-h1 { font-family:'Space Grotesk',sans-serif; font-size: 15px; font-weight: 700;
+        color: var(--ds-text); margin: 0; white-space: nowrap; }
+    .cl-div { width: 1px; height: 18px; background: var(--ds-line); }
+    /* margin-right reserva el hueco del FAB de PDF (position:fixed, right:18px). */
+    .cl-volver { margin-left: auto; margin-right: 80px; color: var(--ds-text-mute);
+        font-size: 11px; white-space: nowrap; }
     .cl-filters label {
         font-size: 9px; font-weight: 700; letter-spacing: .08em;
         text-transform: uppercase; color: var(--ds-text-mute);
@@ -65,8 +71,8 @@
         background: var(--ds-surface);
         border: 1px solid var(--ds-line);
         border-left: 4px solid var(--ds-line);
-        border-radius: 12px;
-        margin-bottom: 12px;
+        border-radius: 10px;
+        margin-bottom: 6px;
         overflow: hidden;
     }
     .cl-bucket.rojo     { border-left-color: #ef4444; }
@@ -75,15 +81,15 @@
     .cl-bucket.azul     { border-left-color: #7dd3fc; }
     .cl-bucket.mute     { border-left-color: rgba(255,255,255,.2); }
     .cl-bucket-head {
-        display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+        display: flex; align-items: center; gap: 10px; padding: 6px 14px;
         cursor: pointer; user-select: none;
         background: rgba(0,0,0,.10);
     }
     .cl-bucket-head:hover { background: rgba(95,230,188,.05); }
-    .cl-bucket-icon { font-size: 24px; line-height: 1; }
+    .cl-bucket-icon { font-size: 17px; line-height: 1; }
     .cl-bucket-title {
         font-family:'Space Grotesk',sans-serif;
-        font-size: 14px; font-weight: 700; color: var(--ds-text);
+        font-size: 13px; font-weight: 700; color: var(--ds-text);
     }
     .cl-bucket-meta {
         font-size: 11px; color: var(--ds-text-mute);
@@ -180,31 +186,24 @@
 {% include '_print_pdf.html' %}
 <div class="flex-1 overflow-auto">
 <div class="cl-page">
-    <div class="cl-head">
-        <span style="font-size:16px;">📅</span>
-        <h1>Cadencias por laboratorio</h1>
-        <span class="sub">cuánto dura una reposición típica al ritmo actual</span>
-        <a href="{{ url_for('informes_index') }}" style="margin-left:auto; color:var(--ds-text-mute); font-size:11px; white-space:nowrap;">← Informes</a>
-    </div>
-
     <form method="get" action="{{ url_for('informe_cadencias_lab') }}" class="cl-filters">
-        <label for="lab-sel">Laboratorio:</label>
+        <span style="font-size:15px;">📅</span>
+        <h1 class="cl-h1">Cadencias por laboratorio</h1>
+        <span class="cl-div"></span>
+        <label for="lab-sel">Lab:</label>
         <select id="lab-sel" name="lab_id" onchange="this.form.submit()">
-            <option value="">— Elegí un lab —</option>
+            <option value="">— Elegí —</option>
             {% for l in labs %}
             <option value="{{ l.id }}" {% if lab_id == l.id %}selected{% endif %}>{{ l.nombre }}</option>
             {% endfor %}
         </select>
-        <label for="cob-input" title="Días de cobertura asumidos para productos sin cantidad_reposicion_fija configurada">Cobertura default (días):</label>
+        <label for="cob-input" title="Días de cobertura asumidos para productos sin cantidad_reposicion_fija configurada">Cobertura:</label>
         <input id="cob-input" type="number" name="cobertura" min="7" max="90" value="{{ cobertura }}"
                onchange="this.form.submit()" title="7-90 días">
-        <label for="rot-input" title="Cantidad de meses completos previos para calcular avg/día">Meses para avg:</label>
+        <label for="rot-input" title="Meses completos previos para calcular avg/día. Buckets por avg mensual (rotación real); la columna Cadencia abajo es cant_repo / avg_diario.">Meses avg:</label>
         <input id="rot-input" type="number" name="meses_rot" min="1" max="12" value="{{ meses_rot }}"
                onchange="this.form.submit()">
-        <span class="hint">
-            Buckets por <code style="color:var(--ds-mint);">avg mensual</code> (rotación real).
-            La columna "Cadencia" abajo muestra el cálculo individual según cant_repo / avg_diario.
-        </span>
+        <a href="{{ url_for('informes_index') }}" class="cl-volver">← Informes</a>
     </form>
 
     {% if not lab_id %}
@@ -276,12 +275,10 @@
     <div class="cl-bucket {{ b.color }} {% if b.n_productos == 0 %}empty{% endif %}" id="bucket-{{ b.slug }}">
         <div class="cl-bucket-head" onclick="if({{ b.n_productos }}>0)this.parentElement.classList.toggle('open')">
             <span class="cl-bucket-icon">{{ b.icono }}</span>
-            <div>
-                <div class="cl-bucket-title">{{ b.label }}</div>
-                <div class="cl-bucket-meta" style="margin-left:0; margin-top:2px;">
-                    cadencia sugerida: <b style="color:var(--ds-text);">{{ b.cadencia_sugerida }}</b>
-                </div>
-            </div>
+            <span class="cl-bucket-title">{{ b.label }}</span>
+            <span class="cl-bucket-meta" style="margin-left:8px;">
+                cadencia <b style="color:var(--ds-text);">{{ b.cadencia_sugerida }}</b>
+            </span>
             <div class="cl-bucket-meta">
                 <b>{{ b.n_productos }}</b> producto{{ '' if b.n_productos == 1 else 's' }}
                 · <b>$ {{ '{:,.0f}'.format(b.monto_mensual).replace(',', '.') }}</b>/mes
