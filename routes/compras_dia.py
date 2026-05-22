@@ -17,8 +17,8 @@ from sqlalchemy import or_, text
 
 import database
 from database import ProveedorHorarioReparto, Provider, get_db
-from purchase_engine import AVG_DAYS_PER_MONTH
-from purchase_helpers import calcular_min_sugerido, clasificar_min
+from purchase_engine import AVG_DAYS_PER_MONTH, rotation_index
+from purchase_helpers import calcular_min_sugerido, clasificar_min, pvp_reciente
 from services.horarios import horarios_por_dia, proximo_cierre, urgencia_cierre
 
 DIAS_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
@@ -985,22 +985,27 @@ def init_app(app):
                         .filter(ObsProducto.observer_id.in_(obs_pids)).all())
                 sub_de_prod = dict(rows)
 
-            # Cargar ventas mes-a-mes para los productos en juego.
+            # Cargar ventas mes-a-mes para los productos en juego. Unidades para
+            # rotación/forecast; montos para derivar el PVP del último mes con
+            # ventas (más fiel que el promedio 12m bajo inflación).
             ventas_por_pid = {pid: [0]*12 for pid in [r.pid for r in base]}
+            montos_por_pid = {pid: [0.0]*12 for pid in ventas_por_pid}
             if ventas_por_pid:
                 rows_vm = (session.query(ObsVentaMensual.producto_observer,
                                           ObsVentaMensual.anio,
                                           ObsVentaMensual.mes,
-                                          func.sum(ObsVentaMensual.unidades))
+                                          func.sum(ObsVentaMensual.unidades),
+                                          func.sum(ObsVentaMensual.monto))
                            .filter(ObsVentaMensual.producto_observer.in_(list(ventas_por_pid.keys())))
                            .group_by(ObsVentaMensual.producto_observer,
                                      ObsVentaMensual.anio, ObsVentaMensual.mes)
                            .all())
-                for pid_v, anio, mes, uds in rows_vm:
+                for pid_v, anio, mes, uds, mto in rows_vm:
                     # Slot 0..11: ventas[0]=start_month, ventas[11]=end_month
                     offset = (anio - start_year) * 12 + (mes - start_month)
                     if 0 <= offset <= 11 and pid_v in ventas_por_pid:
                         ventas_por_pid[pid_v][offset] += int(uds or 0)
+                        montos_por_pid[pid_v][offset] += float(mto or 0)
 
             # Resolver Producto local + flags excluido / no_pedir +
             # cantidad_reposicion_fija (override del cálculo dinámico).
@@ -1102,6 +1107,12 @@ def init_app(app):
                     if not prev or dto > prev['oferta_dto']:
                         ofertas_por_ean[of.ean] = {'oferta_dto': dto, 'oferta_min': um}
 
+            # Umbrales de rotación (Settings → Config singleton) para clasificar
+            # A/M/B. Se usan para la regla "caro + rotación baja" del motor.
+            _rcfg = session.get(database.Config, 1)
+            _rot_alta = float(getattr(_rcfg, 'rot_alta_min', 20.0) or 20.0) if _rcfg else 20.0
+            _rot_media = float(getattr(_rcfg, 'rot_media_min', 5.0) or 5.0) if _rcfg else 5.0
+
             items = []
             for r in base:
                 # Filtro rubro: aplica el set elegido vía ?rubros=… (default 12 Medicamentos).
@@ -1120,21 +1131,22 @@ def init_app(app):
                                 or local_lab_por_norm.get(obs_lab_norm.get(r.lab_obs_id, ''))
                 cubre_lab = lab_local_id in labs_cubiertos
                 u12m_int = int(r.u12m or 0)
-                m12m_val = float(r.m12m or 0)
-                # PVP estimado = monto/unidades sobre 12 meses. Aproxima el
-                # precio efectivo de venta. 0 si nunca se vendió.
-                pvp_est  = (m12m_val / u12m_int) if u12m_int else 0.0
                 u24h_val = int(v24h_rows.get(r.pid, 0) or 0)
                 u7d_val  = int(v7d_rows.get(r.pid, 0) or 0)
                 min_actual = int(r.minimo or 0)
                 stock_actual = int(r.stock or 0)
                 ventas_arr = ventas_por_pid.get(r.pid, [0]*12)
+                montos_arr = montos_por_pid.get(r.pid, [0.0]*12)
+                # PVP del ÚLTIMO MES con ventas (monto/unidades de ese mes).
+                # Más fiel que el promedio 12m bajo inflación. 0 si nunca vendió.
+                pvp_est = pvp_reciente(ventas_arr, montos_arr)
 
                 # Forecast a 7 días + promedio mensual con prorrateo.
                 min_sugerido, avg_m, sin_mov, tipo = calcular_min_sugerido(
                     ventas_arr, stock_actual, start_month, end_month,
                 )
                 avg_diario = avg_m / AVG_DAYS_PER_MONTH if avg_m else 0
+                rotacion_cls = rotation_index(avg_m, _rot_alta, _rot_media)
                 cobertura_d = (round(min_actual / avg_diario)
                                if avg_diario > 0 and min_actual > 0 else None)
                 # Sugerencia up/down/ok comparando contra el forecast 7d.
@@ -1195,6 +1207,8 @@ def init_app(app):
                     'cantidad_reposicion_fija': cant_fija,
                     'u12m': u12m_int,
                     'sin_mov': sin_mov,
+                    'pvp': pvp_est,
+                    'rotacion': rotacion_cls,
                 }
                 _result = calcular_a_pedir(_cfg, _ctx_base)
                 a_pedir = _result['a_pedir']

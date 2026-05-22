@@ -97,6 +97,45 @@ class TestOverrideYGuards:
         assert r['override_aplicado'] is False
 
 
+class TestCaroRotacionBaja:
+    """Regla: producto caro (PVP>=valor_piso) + rotación 'B' → a_pedir tope 1.
+    valor_piso=0 (default) la apaga. 'sin ventas → 0' ya lo cubre sin_rotacion."""
+
+    def _cfg(self, valor_piso=50000):
+        # piso daily_rate×4 → con daily 2.3 da 10, suficiente para ver el tope.
+        return {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
+                'dias_cobertura_fijo': 4, 'valor_piso': valor_piso}
+
+    def _ctx(self, **kw):
+        base = {'daily_rate': 2.3, 'stock_actual': 0, 'u12m': 100, 'sin_mov': False,
+                'pvp': 60000, 'rotacion': 'B'}
+        base.update(kw)
+        return base
+
+    def test_caro_baja_con_venta_topea_en_1(self):
+        r = calcular_a_pedir(self._cfg(), self._ctx())
+        assert r['a_pedir'] == 1
+        assert 'caro_baja_cap1' in r['regla_usada']
+
+    def test_caro_baja_sin_movimiento_da_cero(self):
+        # El guard sin_rotacion gana → 0 (no llega al tope de 1).
+        r = calcular_a_pedir(self._cfg(), self._ctx(sin_mov=True))
+        assert r['a_pedir'] == 0
+        assert r['regla_usada'] == 'sin_rotacion'
+
+    def test_caro_rotacion_alta_no_topea(self):
+        r = calcular_a_pedir(self._cfg(), self._ctx(rotacion='A'))
+        assert r['a_pedir'] == 10  # ceil(2.3×4)=10, sin tope
+
+    def test_barato_baja_no_topea(self):
+        r = calcular_a_pedir(self._cfg(), self._ctx(pvp=100))
+        assert r['a_pedir'] == 10
+
+    def test_valor_piso_cero_desactiva_regla(self):
+        r = calcular_a_pedir(self._cfg(valor_piso=0), self._ctx())
+        assert r['a_pedir'] == 10
+
+
 class TestCantFijaEfecto:
     """Eje nuevo cant_fija_efecto (override/piso/ninguno) en el motor."""
 
