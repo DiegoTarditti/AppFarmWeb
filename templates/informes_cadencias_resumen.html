@@ -58,6 +58,11 @@
     .cr-c-core { color: #fca5a5; } .cr-c-ocasional { color: #7dd3fc; }
     .cr-c-caida { color: #fcd34d; font-weight: 700; } .cr-c-dormido { color: var(--ds-text-mute); }
     .cr-zero { color: rgba(255,255,255,.18); }
+    /* Toggle Cantidad ⇄ Monto */
+    .cm { display: none; }
+    #cr-tabla.show-monto .cc { display: none; }
+    #cr-tabla.show-monto .cm { display: inline; }
+    .cr-toggle.on { background: var(--ds-warn); color: #1c1c1e; border-color: var(--ds-warn); }
     .cr-val { color: var(--ds-warn); font-weight: 700; }
     .cr-table tfoot td { padding: 8px 10px; text-align: right; font-weight: 700;
         font-family: ui-monospace, Consolas, monospace; color: var(--ds-text);
@@ -82,6 +87,8 @@
         </span>
         {% endif %}
         <span class="cr-div"></span>
+        <button type="button" id="cr-toggle" class="cr-btn cr-toggle" onclick="toggleMonto()">$ Ver montos</button>
+        <span class="cr-div"></span>
         <label class="cr-meta" for="rc-cob">Cob.</label>
         <input id="rc-cob" type="number" class="cr-num" min="7" max="90" value="{{ meta.cobertura if meta else 30 }}">
         <label class="cr-meta" for="rc-rot">Avg(m)</label>
@@ -97,6 +104,9 @@
         <p>Todavía no hay snapshot. Tocá <b>↻ Recalcular</b> para analizar todos los laboratorios (~25s).</p>
     </div>
     {% else %}
+    {% macro cel(cant, monto, cls='') %}
+        <td class="{{ cls }}"><span class="cc {% if not cant %}cr-zero{% endif %}">{{ cant }}</span><span class="cm">{% if monto and monto > 0 %}$ {{ '{:,.0f}'.format(monto).replace(',', '.') }}{% else %}—{% endif %}</span></td>
+    {% endmacro %}
     <div class="cr-tablewrap">
         <table class="cr-table" id="cr-tabla">
             <thead>
@@ -126,19 +136,22 @@
                     data-core="{{ f.core }}" data-ocasional="{{ f.ocasional }}" data-caida="{{ f.caida }}"
                     data-dormido="{{ f.dormido }}" data-alta="{{ f.alta }}" data-media_alta="{{ f.media_alta }}"
                     data-media="{{ f.media }}" data-baja="{{ f.baja }}" data-muy_baja="{{ f.muy_baja }}"
+                    data-core_m="{{ f.core_monto }}" data-ocasional_m="{{ f.ocasional_monto }}" data-caida_m="{{ f.caida_monto }}"
+                    data-dormido_m="{{ f.dormido_monto }}" data-alta_m="{{ f.alta_monto }}" data-media_alta_m="{{ f.media_alta_monto }}"
+                    data-media_m="{{ f.media_monto }}" data-baja_m="{{ f.baja_monto }}" data-muy_baja_m="{{ f.muy_baja_monto }}"
                     data-monto_mensual="{{ f.monto_mensual }}" data-dormido_valor="{{ f.dormido_valor }}"
                     onclick="window.location='{{ url_for('informe_cadencias_lab', lab_id=f.lab_id, cobertura=(meta.cobertura if meta else 30), meses_rot=(meta.meses_rot if meta else 3)) }}'"
                     title="Ver detalle de {{ f.nombre }}">
                     <td class="left">{{ f.nombre }}</td>
-                    <td class="sep cr-c-core {% if not f.core %}cr-zero{% endif %}">{{ f.core }}</td>
-                    <td class="cr-c-ocasional {% if not f.ocasional %}cr-zero{% endif %}">{{ f.ocasional }}</td>
-                    <td class="cr-c-caida {% if not f.caida %}cr-zero{% endif %}">{{ f.caida }}</td>
-                    <td class="cr-c-dormido {% if not f.dormido %}cr-zero{% endif %}">{{ f.dormido }}</td>
-                    <td class="sep {% if not f.alta %}cr-zero{% endif %}">{{ f.alta }}</td>
-                    <td class="{% if not f.media_alta %}cr-zero{% endif %}">{{ f.media_alta }}</td>
-                    <td class="{% if not f.media %}cr-zero{% endif %}">{{ f.media }}</td>
-                    <td class="{% if not f.baja %}cr-zero{% endif %}">{{ f.baja }}</td>
-                    <td class="{% if not f.muy_baja %}cr-zero{% endif %}">{{ f.muy_baja }}</td>
+                    {{ cel(f.core, f.core_monto, 'sep cr-c-core') }}
+                    {{ cel(f.ocasional, f.ocasional_monto, 'cr-c-ocasional') }}
+                    {{ cel(f.caida, f.caida_monto, 'cr-c-caida') }}
+                    {{ cel(f.dormido, f.dormido_monto, 'cr-c-dormido') }}
+                    {{ cel(f.alta, f.alta_monto, 'sep') }}
+                    {{ cel(f.media_alta, f.media_alta_monto) }}
+                    {{ cel(f.media, f.media_monto) }}
+                    {{ cel(f.baja, f.baja_monto) }}
+                    {{ cel(f.muy_baja, f.muy_baja_monto) }}
                     <td class="sep">$ {{ '{:,.0f}'.format(f.monto_mensual).replace(',', '.') }}</td>
                     <td class="cr-val">{% if f.dormido_valor > 0 %}$ {{ '{:,.0f}'.format(f.dormido_valor).replace(',', '.') }}{% else %}—{% endif %}</td>
                 </tr>
@@ -147,10 +160,15 @@
             <tfoot>
                 <tr>
                     <td class="left">Total ({{ filas | length }} labs)</td>
-                    <td class="sep">{{ totales.core }}</td><td>{{ totales.ocasional }}</td>
-                    <td>{{ totales.caida }}</td><td>{{ totales.dormido }}</td>
-                    <td class="sep">{{ totales.alta }}</td><td>{{ totales.media_alta }}</td>
-                    <td>{{ totales.media }}</td><td>{{ totales.baja }}</td><td>{{ totales.muy_baja }}</td>
+                    {{ cel(totales.core, totales.core_monto, 'sep') }}
+                    {{ cel(totales.ocasional, totales.ocasional_monto) }}
+                    {{ cel(totales.caida, totales.caida_monto) }}
+                    {{ cel(totales.dormido, totales.dormido_monto) }}
+                    {{ cel(totales.alta, totales.alta_monto, 'sep') }}
+                    {{ cel(totales.media_alta, totales.media_alta_monto) }}
+                    {{ cel(totales.media, totales.media_monto) }}
+                    {{ cel(totales.baja, totales.baja_monto) }}
+                    {{ cel(totales.muy_baja, totales.muy_baja_monto) }}
                     <td class="sep">$ {{ '{:,.0f}'.format(totales.monto_mensual).replace(',', '.') }}</td>
                     <td class="cr-val">$ {{ '{:,.0f}'.format(totales.dormido_valor).replace(',', '.') }}</td>
                 </tr>
@@ -174,26 +192,45 @@ document.getElementById('cr-search').addEventListener('input', function() {
     });
 });
 
+// Toggle Cantidad ⇄ Monto: cambia qué muestran las celdas de RFM y rotación.
+const TOGGLEABLE = ['core','ocasional','caida','dormido','alta','media_alta','media','baja','muy_baja'];
+let _monto = false;
+function toggleMonto() {
+    _monto = !_monto;
+    const tabla = document.getElementById('cr-tabla'), btn = document.getElementById('cr-toggle');
+    tabla.classList.toggle('show-monto', _monto);
+    btn.classList.toggle('on', _monto);
+    btn.textContent = _monto ? '# Ver cantidades' : '$ Ver montos';
+    if (_sortKey && TOGGLEABLE.includes(_sortKey)) _aplicarOrden();  // re-ordena por el valor visible
+}
+
 // Orden por columna (click en th con data-sort).
-let _sortKey = null, _sortAsc = false;
+let _sortKey = null, _sortAsc = false, _sortTh = null;
+function _aplicarOrden() {
+    const key = _sortKey, isStr = _sortTh && _sortTh.dataset.type === 'str';
+    const useMonto = _monto && TOGGLEABLE.includes(key);
+    const attr = useMonto ? key + '_m' : key;
+    const tbody = document.querySelector('#cr-tabla tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        let av = a.dataset[attr], bv = b.dataset[attr];
+        if (!isStr) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
+        if (av < bv) return _sortAsc ? -1 : 1;
+        if (av > bv) return _sortAsc ? 1 : -1;
+        return 0;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+    document.querySelectorAll('#cr-tabla thead th .arr').forEach(s => s.remove());
+    const arr = document.createElement('span');
+    arr.className = 'arr'; arr.textContent = _sortAsc ? ' ▲' : ' ▼';
+    _sortTh.appendChild(arr);
+}
 document.querySelectorAll('#cr-tabla thead th[data-sort]').forEach(th => {
     th.addEventListener('click', () => {
         const key = th.dataset.sort, isStr = th.dataset.type === 'str';
         if (_sortKey === key) { _sortAsc = !_sortAsc; } else { _sortKey = key; _sortAsc = isStr; }
-        const tbody = document.querySelector('#cr-tabla tbody');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        rows.sort((a, b) => {
-            let av = a.dataset[key], bv = b.dataset[key];
-            if (!isStr) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
-            if (av < bv) return _sortAsc ? -1 : 1;
-            if (av > bv) return _sortAsc ? 1 : -1;
-            return 0;
-        });
-        rows.forEach(r => tbody.appendChild(r));
-        document.querySelectorAll('#cr-tabla thead th .arr').forEach(s => s.remove());
-        const arr = document.createElement('span');
-        arr.className = 'arr'; arr.textContent = _sortAsc ? ' ▲' : ' ▼';
-        th.appendChild(arr);
+        _sortTh = th;
+        _aplicarOrden();
     });
 });
 

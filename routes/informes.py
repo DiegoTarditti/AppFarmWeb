@@ -87,9 +87,14 @@ def init_app(app):
         y lo renderiza para filtrar/ordenar client-side. El cálculo pesado se
         hace en /recalcular (todos los labs de una). Drill-down por lab en vivo."""
         from database import CadenciaLabSnapshot
-        keys = ('core', 'ocasional', 'caida', 'dormido', 'alta', 'media_alta',
-                'media', 'baja', 'muy_baja', 'con_ventas', 'monto_mensual',
-                'dormido_valor', 'dormido_con_stock', 'dormido_stock_u')
+        int_keys = ('core', 'ocasional', 'caida', 'dormido', 'alta', 'media_alta',
+                    'media', 'baja', 'muy_baja', 'con_ventas',
+                    'dormido_con_stock', 'dormido_stock_u')
+        float_keys = ('monto_mensual', 'dormido_valor',
+                      'core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
+                      'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
+                      'muy_baja_monto')
+        keys = int_keys + float_keys
         tot = {k: 0 for k in keys}
         filas = []
         meta = None
@@ -100,7 +105,7 @@ def init_app(app):
                 fila = {'lab_id': r.lab_id, 'nombre': r.lab_nombre or str(r.lab_id)}
                 for k in keys:
                     v = getattr(r, k) or 0
-                    v = float(v) if k in ('monto_mensual', 'dormido_valor') else int(v)
+                    v = float(v) if k in float_keys else int(v)
                     fila[k] = v
                     tot[k] += v
                 filas.append(fila)
@@ -145,7 +150,9 @@ def init_app(app):
                 if t['productos_con_ventas'] == 0 and t['productos_sin_ventas'] == 0:
                     continue
                 rfm = {m['slug']: m['n'] for m in d['matriz']}
+                rfm_m = {m['slug']: m['monto_mensual'] for m in d['matriz']}
                 bk = {b['slug']: b['n_productos'] for b in d['buckets']}
+                bk_m = {b['slug']: b['monto_mensual'] for b in d['buckets']}
                 rows.append({
                     'lab_id': lid, 'lab_nombre': lab_nombre.get(lid, str(lid)),
                     'core': rfm.get('core', 0), 'ocasional': rfm.get('ocasional', 0),
@@ -153,6 +160,11 @@ def init_app(app):
                     'alta': bk.get('alta', 0), 'media_alta': bk.get('media_alta', 0),
                     'media': bk.get('media', 0), 'baja': bk.get('baja', 0),
                     'muy_baja': bk.get('muy_baja', 0),
+                    'core_monto': rfm_m.get('core', 0), 'ocasional_monto': rfm_m.get('ocasional', 0),
+                    'caida_monto': rfm_m.get('caida', 0), 'dormido_monto': rfm_m.get('dormido', 0),
+                    'alta_monto': bk_m.get('alta', 0), 'media_alta_monto': bk_m.get('media_alta', 0),
+                    'media_monto': bk_m.get('media', 0), 'baja_monto': bk_m.get('baja', 0),
+                    'muy_baja_monto': bk_m.get('muy_baja', 0),
                     'con_ventas': t['productos_con_ventas'],
                     'sin_ventas': t['productos_sin_ventas'],
                     'monto_mensual': t['monto_mensual_total'],

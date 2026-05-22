@@ -1393,6 +1393,16 @@ class CadenciaLabSnapshot(Base):
     media = Column(Integer, nullable=False, default=0)
     baja = Column(Integer, nullable=False, default=0)
     muy_baja = Column(Integer, nullable=False, default=0)
+    # $/mes por cuadrante/bucket (para el toggle Cantidad ⇄ Monto)
+    core_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    ocasional_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    caida_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    dormido_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    alta_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    media_alta_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    media_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    baja_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    muy_baja_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
     # Negocio
     con_ventas = Column(Integer, nullable=False, default=0)
     sin_ventas = Column(Integer, nullable=False, default=0)
@@ -2455,6 +2465,13 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS observer_id INTEGER UNIQUE"
     ))
+    # cadencia_lab_snapshot: columnas de $/mes por cuadrante/bucket (toggle Cant⇄Monto).
+    for _cm in ('core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
+                'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
+                'muy_baja_monto'):
+        conn.execute(text(
+            f"ALTER TABLE cadencia_lab_snapshot ADD COLUMN IF NOT EXISTS {_cm} DECIMAL(16,2) NOT NULL DEFAULT 0"
+        ))
     # Compra rápida v2 (Kel/20j): columna nueva en descuentos_base + tablas
     # proveedor_horarios_reparto y pedido_borrador.
     conn.execute(text(
