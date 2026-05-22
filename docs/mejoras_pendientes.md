@@ -4,6 +4,31 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Precio de última compra (para valorizar) (2026-05-22)
+
+**Contexto**: en el informe de cadencias, el "Catálogo dormido" valoriza el stock
+parado. Se pidió valorizar **a precio actual si tiene, sino al precio de última
+compra**.
+
+**Problema de datos**: ambos campos del master están **vacíos**:
+- `Producto.precio_pvp`: 0 de 60.211 poblados.
+- `Producto.ultima_compra`: 0 poblados.
+- Facturas cargadas: solo 3 (23 productos) → no sirve como fuente general.
+
+**Workaround actual (a26ffd0)**: se valoriza al **precio actual =
+`ProductAnalytics.precio_pvp`** (snapshot, el que usa el dashboard; cubre ~70%);
+fallback al **último precio de venta** histórico (monto/unidades de ObsVentaMensual),
+marcado con `*`. NO se usa última compra porque no existe.
+
+**Qué falta para "precio de última compra" de verdad**:
+- Poblar `Producto.ultima_compra` (+ precio) desde una fuente real. Opciones:
+  (a) cargar las compras como facturas (hoy casi no se hace), o
+  (b) ver si ObServer expone una vista de compras (`DW.Compras` / similar) para
+  sincronizar y derivar última compra + precio por producto.
+- Una vez que exista, sumar como fallback intermedio: actual → última compra → venta.
+
+---
+
 ## ⏳ Pendiente — Unidad de venta vs unidad de pedido (fraccionados) (2026-05-21)
 
 **Problema**: hay productos que se **venden de a 1 unidad** (ej. ALIKAL sobre suelto)
