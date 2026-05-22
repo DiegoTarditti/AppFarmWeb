@@ -1270,6 +1270,32 @@ CADENCIA_BUCKETS = [
     ('muy_baja',   'Muy baja (<5/mes)',        '💤',  0.0, '~60-90 días',  'mute'),
 ]
 
+# Matriz Recencia × Rotación (mini-RFM): cruza CUÁNTO vende (avg 12m) con
+# HACE CUÁNTO vendió por última vez. Desambigua el avg: un producto con avg
+# bajo puede ser "vende poco pero seguido" (vivo) o "vendió fuerte hace un año
+# y nada desde entonces" (muerto arrastrando promedio).
+RFM_REC_MESES = 2     # "reciente" = vendió algo en los últimos 2 meses
+RFM_FREQ_MIN  = 5.0   # "vende seguido" = avg 12m ≥ 5 u/mes
+RFM_QUADRANTS = [
+    ('core',      '🟢 Core',             'rojo',     'Vende seguido y reciente — reponer normal'),
+    ('caida',     '🔻 En caída',          'amarillo', 'Vendía seguido pero hace rato no vende — revisar faltante / discontinuado'),
+    ('ocasional', '🔵 Ocasional vivo',    'azul',     'Esporádico pero con venta reciente — reponer poco'),
+    ('dormido',   '💤 Dormido / revisar', 'mute',     'Esporádico y sin ventas recientes — candidato a no reponer / devolver'),
+]
+
+
+def _clasif_rfm(avg12, meses_ult):
+    """Cuadrante RFM según avg 12m (frecuencia) y meses desde última venta."""
+    seguido = avg12 >= RFM_FREQ_MIN
+    reciente = meses_ult is not None and meses_ult <= RFM_REC_MESES
+    if seguido and reciente:
+        return 'core'
+    if seguido and not reciente:
+        return 'caida'
+    if not seguido and reciente:
+        return 'ocasional'
+    return 'dormido'
+
 
 def _bucket_cadencia(avg_mensual):
     """Devuelve el slug del bucket según el avg mensual de ventas.
@@ -1382,6 +1408,40 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
                  .group_by(vm.producto_observer).all())
     urot_map = {r[0]: (float(r[1] or 0), float(r[2] or 0)) for r in urot_rows}
 
+    # 2b. Última venta (mes más reciente con unidades > 0, sin límite de ventana)
+    #     + avg de 12 meses completos (eje "frecuencia" de la matriz RFM —
+    #     más largo que la ventana de rotación para detectar caídas).
+    ult_rows = (session.query(vm.producto_observer,
+                              _f.max(vm.anio * 100 + vm.mes))
+                .filter(vm.producto_observer.in_(obs_ids), vm.unidades > 0)
+                .group_by(vm.producto_observer).all())
+    ult_map = {r[0]: int(r[1]) for r in ult_rows if r[1]}
+
+    s12_mes, s12_anio = end_mes - 11, end_anio
+    while s12_mes <= 0:
+        s12_mes += 12
+        s12_anio -= 1
+    desde12_ym = s12_anio * 100 + s12_mes
+    u12_rows = (session.query(vm.producto_observer, _f.sum(vm.unidades))
+                .filter(vm.producto_observer.in_(obs_ids),
+                        vm.anio * 100 + vm.mes >= desde12_ym,
+                        vm.anio * 100 + vm.mes <= hasta_ym)
+                .group_by(vm.producto_observer).all())
+    u12_map = {r[0]: float(r[1] or 0) for r in u12_rows}
+
+    hoy_idx = hoy.year * 12 + hoy.month
+
+    def _meses_desde(ym):
+        if not ym:
+            return None
+        return hoy_idx - ((ym // 100) * 12 + (ym % 100))
+
+    # Matriz Recencia × Rotación: acumula sobre TODOS los productos del lab
+    # (con y sin ventas recientes), no solo los de los buckets.
+    matriz = {slug: {'slug': slug, 'label': label, 'color': color, 'desc': desc,
+                     'n': 0, 'monto_mensual': 0.0, 'stock_u': 0}
+              for slug, label, color, desc in RFM_QUADRANTS}
+
     # 3. Por producto: calcular cadencia + bucket + monto mensual.
     # Nota: usamos 'productos' (no 'items') porque en Jinja2 `dict.items`
     # resuelve al método del dict, no a la key — sería un bug silencioso.
@@ -1393,18 +1453,30 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
     sin_ventas = []
 
     for r in rows_prod:
+        # Recencia × rotación (sobre todos los productos del lab).
+        avg12 = u12_map.get(r.observer_id, 0.0) / 12.0
+        meses_ult = _meses_desde(ult_map.get(r.observer_id))
+        rfm = _clasif_rfm(avg12, meses_ult)
+        st = stock_map.get(r.observer_id, 0)
+        matriz[rfm]['n'] += 1
+        matriz[rfm]['stock_u'] += st
+
         u_rot, m_rot = urot_map.get(r.observer_id, (0.0, 0.0))
         if u_rot <= 0:
             sin_ventas.append({
                 'observer_id': r.observer_id,
                 'nombre': r.descripcion,
                 'codigo_alfabeta': r.codigo_alfabeta,
+                'meses_ult_venta': meses_ult,
+                'rfm': rfm,
+                'stock': st,
             })
             continue
         avg_diario = u_rot / dias_rotacion
         avg_mensual = avg_diario * _DIAS_PROM_MES
         precio_unit = (m_rot / u_rot) if u_rot else 0  # PVP estimado
         monto_mensual = avg_mensual * precio_unit
+        matriz[rfm]['monto_mensual'] += monto_mensual
         cant_fija = cant_fija_map.get(r.observer_id)
         # Cant de reposición: si tiene cant_fija configurada usa eso;
         # sino, asume cobertura_default días.
@@ -1425,7 +1497,7 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
             'observer_id': r.observer_id,
             'nombre': r.descripcion,
             'codigo_alfabeta': r.codigo_alfabeta,
-            'stock': stock_map.get(r.observer_id, 0),
+            'stock': st,
             'avg_diario': round(avg_diario, 2),
             'avg_mensual': round(avg_mensual, 1),
             'cant_repo': cant_repo,
@@ -1433,6 +1505,8 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
             'cadencia_dias': round(cadencia_dias, 1),
             'precio_unit': round(precio_unit, 2),
             'monto_mensual': round(monto_mensual, 2),
+            'meses_ult_venta': meses_ult,
+            'rfm': rfm,
         })
 
     # Ordenar productos dentro de cada bucket por monto mensual desc (lo que más
@@ -1446,11 +1520,18 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
     con_ventas = sum(b['n_productos'] for b in buckets)
     monto_total = sum(b['monto_mensual'] for b in buckets)
 
+    for m in matriz.values():
+        m['monto_mensual'] = round(m['monto_mensual'], 2)
+    matriz_list = [matriz[slug] for slug, *_ in RFM_QUADRANTS]
+
     return {
         'lab_id': lab_observer_id,
         'meses_rotacion': meses_rotacion,
         'cobertura_default': cobertura_default,
         'buckets': buckets,
+        'matriz': matriz_list,
+        'rfm_rec_meses': RFM_REC_MESES,
+        'rfm_freq_min': RFM_FREQ_MIN,
         'sin_ventas': sorted(sin_ventas, key=lambda x: x['nombre']),
         'totales': {
             'productos_con_ventas': con_ventas,
