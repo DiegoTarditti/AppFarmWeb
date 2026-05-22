@@ -50,6 +50,10 @@
     .cr-table tbody td { padding: 7px 10px; text-align: right;
         font-family: ui-monospace, Consolas, monospace; color: var(--ds-text); }
     .cr-table tbody td.left { text-align: left; font-family: inherit; font-weight: 600; }
+    .cr-table th.left, .cr-table td.left {
+        width: 150px; max-width: 150px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .cr-table td.sep, .cr-table th.sep { border-left: 1px solid rgba(255,255,255,.07); }
     .cr-c-core { color: #fca5a5; } .cr-c-ocasional { color: #7dd3fc; }
     .cr-c-caida { color: #fcd34d; font-weight: 700; } .cr-c-dormido { color: var(--ds-text-mute); }
