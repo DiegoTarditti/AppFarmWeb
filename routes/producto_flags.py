@@ -85,26 +85,63 @@ def init_app(app):
         """Pantalla dedicada: arriba el buscador para configurar presentación
         (fraccionado + envase + equivalencia Kellerhoff); abajo la lista de los
         productos que ya tienen presentación configurada."""
-        from sqlalchemy import or_ as _or, and_ as _and
+        from routes.kellerhoff import (ean_export_de_producto, estado_equivalencia,
+                                       corregir_eans)
         with get_db() as session:
-            # Solo lo que el usuario configuró a mano: fraccionado=True o un envase
-            # editado manualmente (fuente='manual'). NO el cantidad_envase
-            # auto-parseado en catalogación (fuente observer/regex/llm/mixto), que
-            # está en ~60k productos y no es una "presentación" configurada.
+            # "Presentación configurada" = fraccionado=True (se vende suelto, se
+            # pide por envase). El cantidad_envase suelto NO alcanza: está
+            # auto-parseado en ~60k productos en catalogación, y un envase editado
+            # a mano sin marcar fraccionado tampoco es una presentación (confunde).
             q = (session.query(Producto, ProductoAtributo)
                  .outerjoin(ProductoAtributo, ProductoAtributo.producto_id == Producto.id)
-                 .filter(_or(Producto.fraccionado.is_(True),
-                             _and(ProductoAtributo.fuente == 'manual',
-                                  ProductoAtributo.cantidad_envase.isnot(None))))
+                 .filter(Producto.fraccionado.is_(True))
                  .order_by(Producto.descripcion))
+            prod_rows = q.limit(2000).all()
+
+            # EAN que el export emite por producto + su equivalencia Kellerhoff.
+            export_eans = {p.id: ean_export_de_producto(session, p)
+                           for p, _ in prod_rows}
+            corr = corregir_eans(session, list(export_eans.values()))
+
+            # Laboratorio: master (Producto.laboratorio) o, si no, vía ObServer
+            # (observer_id → ObsProducto.laboratorio_observer → ObsLaboratorio).
+            from database import ObsProducto, ObsLaboratorio
+            obs_ids = [p.observer_id for p, _ in prod_rows if p.observer_id]
+            lab_by_oid = {}
+            if obs_ids:
+                for oid, labdesc in (session.query(
+                        ObsProducto.observer_id, ObsLaboratorio.descripcion)
+                        .outerjoin(ObsLaboratorio,
+                                   ObsLaboratorio.observer_id == ObsProducto.laboratorio_observer)
+                        .filter(ObsProducto.observer_id.in_(obs_ids))):
+                    lab_by_oid[oid] = labdesc or ''
+
             filas = []
-            for prod, atr in q.limit(2000).all():
+            for prod, atr in prod_rows:
                 ce = atr.cantidad_envase if (atr and atr.cantidad_envase is not None) else None
+                eean = export_eans[prod.id]
+                est = estado_equivalencia(session, eean)
+                estado = est.get('estado')
+                if estado in ('directo', 'equivalencia'):
+                    kel_desc = est.get('desc') or ''
+                    kel_codigo = est.get('codigo') or ''
+                    kel_ean_eq = corr.get(eean) or ''
+                elif estado == 'no_disponible':
+                    kel_desc, kel_codigo, kel_ean_eq = 'Kellerhoff no lo trae', '', ''
+                else:  # sin_resolver / sin_catalogo
+                    kel_desc, kel_codigo, kel_ean_eq = '', '', ''
                 filas.append({
                     'ean': prod.codigo_barra,
+                    'export_ean': eean,
                     'nombre': prod.descripcion or '',
+                    'lab': (prod.laboratorio.nombre if prod.laboratorio
+                            else lab_by_oid.get(prod.observer_id, '')),
                     'fraccionado': bool(prod.fraccionado),
                     'cantidad_envase': int(ce) if ce is not None else None,
+                    'kel_estado': estado,
+                    'kel_desc': kel_desc,
+                    'kel_codigo': kel_codigo,
+                    'kel_ean_eq': kel_ean_eq,
                 })
         return render_template('productos_presentaciones.html', filas=filas)
 

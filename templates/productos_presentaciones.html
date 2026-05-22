@@ -150,21 +150,45 @@
 
     {# ── Lista de productos con presentación (abajo) ── #}
     <div class="pf-card">
-        <div class="pf-card-head" style="display:flex; align-items:center; justify-content:space-between;">
+        <div class="pf-card-head" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
             <h3>Productos con presentación</h3>
-            <input type="text" id="pp-filtro" class="pp-input" placeholder="Filtrar…" style="width:220px;">
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="text" id="pp-filtro-lab" class="pp-input" placeholder="Filtrar laboratorio…" style="width:200px;">
+                <input type="text" id="pp-filtro" class="pp-input" placeholder="Filtrar…" style="width:200px;">
+            </div>
         </div>
         {% if filas %}
         <div style="overflow-x:auto;">
         <table class="pp-table">
-            <thead><tr><th>Producto</th><th>EAN</th><th>Fraccionado</th><th style="text-align:right;">Envase</th></tr></thead>
+            <thead><tr>
+                <th>Producto</th><th>EAN</th><th>Laboratorio</th>
+                <th>Fraccionado</th><th style="text-align:right;">Envase</th>
+                <th>Producto equivalente (Kellerhoff)</th><th>EAN equivalente</th><th></th>
+            </tr></thead>
             <tbody>
             {% for f in filas %}
-            <tr class="pp-row" data-txt="{{ (f.nombre ~ ' ' ~ f.ean) | lower }}">
+            <tr class="pp-row" data-txt="{{ (f.nombre ~ ' ' ~ f.ean ~ ' ' ~ f.lab) | lower }}"
+                data-lab="{{ f.lab | lower }}" data-pean="{{ f.ean }}">
                 <td class="text-[color:var(--ds-text-soft)]">{{ f.nombre }}</td>
                 <td><code>{{ f.ean }}</code></td>
+                <td class="text-[color:var(--ds-text-mute)]">{% if f.lab %}{{ f.lab }}{% else %}—{% endif %}</td>
                 <td>{% if f.fraccionado %}<span class="pp-badge si">Sí</span>{% else %}<span class="pp-badge no">No</span>{% endif %}</td>
                 <td style="text-align:right;">{% if f.cantidad_envase %}×{{ f.cantidad_envase }}{% else %}<span class="text-[#888]">—</span>{% endif %}</td>
+                {# Buscador inline de equivalencia Kellerhoff por fila #}
+                <td class="kq-cell" data-ean="{{ f.export_ean }}" style="min-width:240px;">
+                    <div class="kq-current text-[11px] mb-1 {% if f.kel_estado == 'no_disponible' %}text-amber-400{% elif f.kel_desc %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">
+                        {% if f.kel_desc %}{{ f.kel_desc }}{% else %}(sin resolver){% endif %}
+                    </div>
+                    <div class="pf-ac-wrap">
+                        <input type="text" class="pf-input kq-search" placeholder="Buscar en Kellerhoff…" autocomplete="off" style="padding:4px 8px; font-size:12px;">
+                        <div class="pf-ac-results kq-res"></div>
+                    </div>
+                    <div class="kq-status text-[10px] mt-1"></div>
+                </td>
+                <td class="kq-ean"><code class="text-[11px] font-mono text-[color:var(--ds-text-mute)]">{% if f.kel_ean_eq %}{{ f.kel_ean_eq }}{% else %}—{% endif %}</code></td>
+                <td class="whitespace-nowrap">
+                    <button type="button" class="pp-edit text-[11px] text-[color:var(--ds-mint)] hover:text-emerald-300 px-2 py-0.5 rounded hover:bg-emerald-900/20 transition border border-[color:var(--ds-line)]">✏ Editar</button>
+                </td>
             </tr>
             {% endfor %}
             </tbody>
@@ -177,15 +201,100 @@
 </div>
 
 <script>
-// Filtro de la lista de abajo
+// Filtros de la lista (general + laboratorio, ambos multi-token, AND entre sí).
 (function() {
     const inp = document.getElementById('pp-filtro');
-    if (!inp) return;
-    inp.addEventListener('input', () => {
-        const toks = inp.value.toLowerCase().split(/\s+/).filter(Boolean);
+    const lab = document.getElementById('pp-filtro-lab');
+    if (!inp && !lab) return;
+    function aplicar() {
+        const tx = (inp ? inp.value : '').toLowerCase().split(/\s+/).filter(Boolean);
+        const tl = (lab ? lab.value : '').toLowerCase().split(/\s+/).filter(Boolean);
         document.querySelectorAll('.pp-row').forEach(r => {
-            r.style.display = toks.every(t => r.dataset.txt.includes(t)) ? '' : 'none';
+            const okTxt = tx.every(t => r.dataset.txt.includes(t));
+            const okLab = tl.every(t => (r.dataset.lab || '').includes(t));
+            r.style.display = (okTxt && okLab) ? '' : 'none';
         });
+    }
+    if (inp) inp.addEventListener('input', aplicar);
+    if (lab) lab.addEventListener('input', aplicar);
+})();
+
+// Buscador inline de equivalencia Kellerhoff por fila + botón Editar.
+(function() {
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => (
+            {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function highlight(text, tokens) {
+        let out = escapeHtml(text);
+        tokens.filter(t => t && t.length >= 2).forEach(t => {
+            const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+            out = out.replace(re, '<mark>$1</mark>');
+        });
+        return out;
+    }
+    const debs = new WeakMap();
+    let seq = 0;
+
+    document.addEventListener('input', (e) => {
+        const inp = e.target.closest('.kq-search');
+        if (!inp) return;
+        const cell = inp.closest('.kq-cell');
+        const res = cell.querySelector('.kq-res');
+        const q = inp.value.trim();
+        if (q.length < 2) { res.classList.remove('open'); return; }
+        clearTimeout(debs.get(inp));
+        debs.set(inp, setTimeout(async () => {
+            const mySeq = ++seq;
+            try {
+                const r = await fetch('/api/kellerhoff/catalogo/buscar?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+                if (mySeq !== seq) return;
+                const d = await r.json();
+                const items = d.data || [];
+                if (!items.length) { res.innerHTML = '<div class="pf-ac-empty">Sin coincidencias</div>'; res.classList.add('open'); return; }
+                res.innerHTML = items.map((c, i) => `
+                    <div class="pf-ac-item" data-i="${i}">
+                        <div class="ac-nombre">${highlight(c.descripcion, q.split(/\s+/))}</div>
+                        <div class="ac-meta"><code>${escapeHtml(c.codigo_kellerhoff)}</code>${c.ean ? '<span>EAN ' + escapeHtml(c.ean) + '</span>' : ''}${c.precio != null ? '<span>$' + c.precio.toLocaleString('es-AR') + '</span>' : ''}</div>
+                    </div>`).join('');
+                res.classList.add('open');
+                res.querySelectorAll('.pf-ac-item').forEach(el => el.addEventListener('click', () => asignar(cell, items[+el.dataset.i])));
+            } catch { res.classList.remove('open'); }
+        }, 250));
+    });
+
+    async function asignar(cell, c) {
+        const ean = cell.dataset.ean;
+        const status = cell.querySelector('.kq-status');
+        status.textContent = 'Guardando…'; status.className = 'kq-status text-[10px] mt-1 text-[#9ca3af]';
+        try {
+            const r = await fetch('/api/producto/kellerhoff-equivalencia', {
+                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ean, accion: 'asignar', codigo_kellerhoff: c.codigo_kellerhoff}),
+            });
+            const d = await r.json();
+            if (!d.ok) { status.textContent = d.error || 'Error'; status.className = 'kq-status text-[10px] mt-1 text-rose-400'; return; }
+            cell.querySelector('.kq-current').textContent = c.descripcion;
+            cell.querySelector('.kq-current').className = 'kq-current text-[11px] mb-1 text-[color:var(--ds-mint)]';
+            cell.querySelector('.kq-search').value = '';
+            cell.querySelector('.kq-res').classList.remove('open');
+            const row = cell.closest('tr');
+            const eanCell = row.querySelector('.kq-ean code');
+            if (eanCell) eanCell.textContent = c.ean || '—';
+            status.textContent = '✓ Guardado'; status.className = 'kq-status text-[10px] mt-1 text-[color:var(--ds-mint)]';
+        } catch { status.textContent = 'Error de red'; status.className = 'kq-status text-[10px] mt-1 text-rose-400'; }
+    }
+
+    document.addEventListener('click', (e) => {
+        const item = e.target.closest('.kq-res');
+        if (!item) document.querySelectorAll('.kq-res.open').forEach(r => {
+            if (!r.parentElement.contains(e.target)) r.classList.remove('open');
+        });
+        const btn = e.target.closest('.pp-edit');
+        if (btn && window.ppEditar) {
+            const row = btn.closest('tr');
+            window.ppEditar(row.dataset.pean);
+        }
     });
 })();
 
@@ -434,6 +543,14 @@
     btnKelAsig.addEventListener('click', () => { if (_kelPick) kelGuardar('asignar', _kelPick.codigo_kellerhoff); });
     btnKelND.addEventListener('click', () => kelGuardar('no_disponible'));
     btnKelLimp.addEventListener('click', () => kelGuardar('limpiar'));
+
+    // Editar una fila de la lista → carga ese producto en la card de arriba.
+    window.ppEditar = function(ean) {
+        if (!ean) return;
+        sRes.classList.remove('open'); sInput.value = '';
+        cargarPresentacion({codigo_barra: ean, descripcion: ''});
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    };
 })();
 </script>
 {% endblock %}
