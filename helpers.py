@@ -1593,8 +1593,9 @@ def recalcular_snapshot_cadencias(session, cobertura=30, meses_rot=3):
     Reusado por el endpoint web /informes/cadencias-resumen/recalcular y por el
     push a Render (computa local, después se copia la tabla). ~5s para ~400 labs.
     """
-    import database
     from sqlalchemy import func as _f
+
+    import database
     lab_ids = [r[0] for r in (session.query(database.ObsProducto.laboratorio_observer)
                .join(database.ObsVentaMensual,
                      database.ObsVentaMensual.producto_observer == database.ObsProducto.observer_id)

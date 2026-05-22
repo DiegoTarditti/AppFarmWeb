@@ -85,8 +85,7 @@ def init_app(app):
         """Pantalla dedicada: arriba el buscador para configurar presentación
         (fraccionado + envase + equivalencia Kellerhoff); abajo la lista de los
         productos que ya tienen presentación configurada."""
-        from routes.kellerhoff import (ean_export_de_producto, estado_equivalencia,
-                                       corregir_eans)
+        from routes.kellerhoff import corregir_eans, ean_export_de_producto, estado_equivalencia
         with get_db() as session:
             # "Presentación configurada" = fraccionado=True (se vende suelto, se
             # pide por envase). El cantidad_envase suelto NO alcanza: está
@@ -105,7 +104,7 @@ def init_app(app):
 
             # Laboratorio: master (Producto.laboratorio) o, si no, vía ObServer
             # (observer_id → ObsProducto.laboratorio_observer → ObsLaboratorio).
-            from database import ObsProducto, ObsLaboratorio
+            from database import ObsLaboratorio, ObsProducto
             obs_ids = [p.observer_id for p, _ in prod_rows if p.observer_id]
             lab_by_oid = {}
             if obs_ids:

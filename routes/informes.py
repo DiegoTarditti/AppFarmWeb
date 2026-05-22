@@ -126,6 +126,7 @@ def init_app(app):
         """Materializa el análisis de cadencias para TODOS los labs con ventas
         y reemplaza el snapshot. ~25s. Params cobertura/meses_rot baked in."""
         import time
+
         from helpers import recalcular_snapshot_cadencias
         data = request.get_json(silent=True) or {}
         cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
