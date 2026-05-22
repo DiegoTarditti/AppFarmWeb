@@ -15,9 +15,13 @@
     font-family: 'Space Grotesk', sans-serif;
     font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0;
 }
-.pf-content { padding: 18px 24px; display: grid;
-              grid-template-columns: 1fr 340px; gap: 18px; }
-@media (max-width: 960px) { .pf-content { grid-template-columns: 1fr; } }
+/* Formularios (Asignar flag + Presentación) arriba, lado a lado y a la vista;
+   la lista de flags va abajo a todo el ancho (antes Presentación quedaba al
+   fondo de la columna derecha y había que scrollear). */
+.pf-content { padding: 18px 24px; display: flex; flex-direction: column; gap: 18px; }
+.pf-forms { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; order: 1; }
+.pf-list  { order: 2; }
+@media (max-width: 960px) { .pf-forms { grid-template-columns: 1fr; } }
 
 .pf-card {
     background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
@@ -186,8 +190,8 @@
 {% endwith %}
 
 <div class="pf-content">
-    {# ── Tabla de flags asignados ── #}
-    <div>
+    {# ── Tabla de flags asignados (abajo, ancho completo vía order:2) ── #}
+    <div class="pf-list">
         {# Filtro por tipo #}
         <div class="pf-pills mb-3">
             <a href="{{ url_for('producto_flags_list') }}"
@@ -277,9 +281,9 @@
         </div>
     </div>
 
-    {# ── Form de asignación (sticky) ── #}
-    <div>
-        <div class="pf-card" style="position: sticky; top: 18px;">
+    {# ── Formularios arriba, lado a lado (order:1) ── #}
+    <div class="pf-forms">
+        <div class="pf-card">
             <div class="pf-card-head">
                 <h3>➕ Asignar flag</h3>
             </div>
@@ -358,7 +362,7 @@
         </div>
 
         {# ── Presentación: fraccionado + cantidad de envase ── #}
-        <div class="pf-card" style="margin-top: 16px;">
+        <div class="pf-card">
             <div class="pf-card-head">
                 <h3>📦 Presentación</h3>
             </div>
@@ -371,6 +375,9 @@
                         <div class="pf-ac-results" id="pr-ac-results"></div>
                     </div>
                     <div class="pf-help">Buscá el producto para configurar su envase.</div>
+                    {# Mensaje visible (fuera de #pr-config, que arranca oculto): errores y
+                       el prompt de "catalogar" cuando el producto no tiene master local. #}
+                    <div id="pr-search-msg" class="mt-2 text-[12px]"></div>
                 </div>
 
                 <div id="pr-config" style="display:none;">
@@ -600,8 +607,14 @@ document.addEventListener('click', (e) => {
     const cant     = document.getElementById('pr-cant');
     const cantHelp = document.getElementById('pr-cant-help');
     const status   = document.getElementById('pr-status');
+    const msg      = document.getElementById('pr-search-msg');
     const btnSave  = document.getElementById('pr-save');
     const btnClear = document.getElementById('pr-clear');
+
+    function setMsg(html, cls) {
+        msg.innerHTML = html || '';
+        msg.className = 'mt-2 text-[12px] ' + (cls || '');
+    }
     let _deb = null, _seq = 0, _items = [], _focus = -1, _ean = '';
     let _kelEan = '', _kelPick = null, _kelDeb = null, _kelSeq = 0;
 
@@ -628,12 +641,29 @@ document.addEventListener('click', (e) => {
     }
 
     async function elegir(p) {
-        sRes.classList.remove('open'); sInput.value = ''; setStatus('Cargando…', '');
+        sRes.classList.remove('open'); sInput.value = '';
+        await cargarPresentacion(p);
+    }
+
+    async function cargarPresentacion(p) {
+        setMsg('Cargando…', 'text-[#9ca3af]');
         try {
             const r = await fetch('/api/producto/presentacion?ean=' + encodeURIComponent(p.codigo_barra),
                                   {credentials: 'same-origin'});
             const d = await r.json();
-            if (!d.ok) { setStatus(d.error || 'No se pudo cargar', 'text-rose-400'); return; }
+            if (!d.ok) {
+                // Producto sin ficha master local → ofrecer catalogarlo ahí mismo.
+                if (d.existe_master === false && p.observer_id) {
+                    setMsg(`<span class="text-amber-600">«${escapeHtml(p.descripcion)}» todavía no está catalogado localmente.</span> `
+                        + `<button type="button" id="pr-catalogar" class="ml-1 underline font-semibold text-[color:var(--ds-mint)] hover:opacity-80">Catalogar y configurar</button>`,
+                        '');
+                    document.getElementById('pr-catalogar').addEventListener('click', () => catalogar(p));
+                } else {
+                    setMsg(escapeHtml(d.error || 'No se pudo cargar'), 'text-rose-500');
+                }
+                return;
+            }
+            setMsg('', '');
             _ean = d.ean;
             nom.textContent = d.descripcion;
             eanLbl.textContent = (d.ean || '—') + (d.lab ? ' · ' + d.lab : '');
@@ -644,11 +674,25 @@ document.addEventListener('click', (e) => {
                 : 'Unidades de venta por envase de compra.';
             sWrap.style.display = 'none'; cfgBox.style.display = 'block'; setStatus('', '');
             renderKel(d.kellerhoff);
-        } catch { setStatus('Error de red', 'text-rose-400'); }
+            // Si la config quedara fuera de vista, traerla; con los forms arriba
+            // normalmente ya está visible, así que 'nearest' no salta de más.
+            cfgBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch { setMsg('Error de red', 'text-rose-500'); }
+    }
+
+    async function catalogar(p) {
+        setMsg('Catalogando…', 'text-[#9ca3af]');
+        try {
+            const r = await fetch('/producto/materializar/' + p.observer_id,
+                                  {method: 'POST', credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { setMsg(escapeHtml(d.error || 'No se pudo catalogar'), 'text-rose-500'); return; }
+            await cargarPresentacion(p);   // ahora ya tiene master → carga la config
+        } catch { setMsg('Error de red', 'text-rose-500'); }
     }
 
     btnClear.addEventListener('click', () => {
-        _ean = ''; cfgBox.style.display = 'none'; sWrap.style.display = ''; setStatus('', ''); sInput.focus();
+        _ean = ''; cfgBox.style.display = 'none'; sWrap.style.display = ''; setStatus('', ''); setMsg('', ''); sInput.focus();
     });
 
     sInput.addEventListener('input', () => {

@@ -97,6 +97,12 @@ def calcular_a_pedir(cfg, ctx):
         - pack_quantity (int|None): tamaño de pack si aplica
         - u12m (int): ventas 12m (para validar si rota)
         - sin_mov (bool): True si sin movimiento 60d
+        - pvp (float): precio venta público (para la regla caro+rotación baja)
+        - rotacion (str): 'A'|'M'|'B' (clasificación por Config.rot_alta/media_min)
+
+    cfg key relevante extra:
+        - valor_piso (number): PVP desde el cual un producto es "caro". Si está
+          seteado (>0) y rotacion=='B', el a_pedir se topea en 1. Default 0 = off.
 
     Returns:
       dict {a_pedir, ideal, regla_usada, override_aplicado}
@@ -180,10 +186,22 @@ def calcular_a_pedir(cfg, ctx):
         ideal = math.ceil(ideal / pack_qty) * pack_qty
 
     a_pedir = max(0, int(ideal) - int(stock))
+    regla = (f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%'
+             + (' +cant_fija_piso' if override_piso else ''))
+
+    # Producto caro + rotación baja → reponer como MÁXIMO 1. No inmovilizar
+    # capital en caros que apenas giran. Lo dispara `valor_piso` (PVP a partir
+    # del cual el producto es "caro") + rotación 'B'. El "sin ventas → 0" ya lo
+    # cubre el guard sin_rotacion de arriba; acá topeamos el "con venta".
+    # valor_piso=0 (default) → regla apagada, comportamiento idéntico al previo.
+    valor_piso = float(cfg.get('valor_piso') or 0)
+    pvp = float(ctx.get('pvp') or 0)
+    if valor_piso > 0 and pvp >= valor_piso and ctx.get('rotacion') == 'B' and a_pedir > 1:
+        a_pedir = 1
+        regla += ' +caro_baja_cap1'
+
     return {'a_pedir': a_pedir, 'ideal': int(ideal),
-            'regla_usada': f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%'
-                           + (' +cant_fija_piso' if override_piso else ''),
-            'override_aplicado': override_piso}
+            'regla_usada': regla, 'override_aplicado': override_piso}
 
 
 def shadow_compare(slug, ctx, a_pedir_actual, log_threshold=0):

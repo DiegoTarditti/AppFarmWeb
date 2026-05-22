@@ -64,17 +64,18 @@ BASE_CONFIGS = {
                    'buffer_pct': 0, 'universo': 'bajo_min_o_cobertura',
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'dias_cobertura_fijo': 4, 'base_demanda': 'u3m',
-                   'cant_fija_efecto': 'override', 'oferta_min_efecto': 'piso'},
+                   'cant_fija_efecto': 'override', 'oferta_min_efecto': 'piso',
+                   'valor_piso': 0},
     'COMPRA_LAB': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
                    'buffer_pct': 0, 'universo': 'lab_x',
                    'override_producto': 'none', 'redondeo': 'ceil',
                    'base_demanda': 'u3m', 'cant_fija_efecto': 'override',
-                   'oferta_min_efecto': 'piso'},
+                   'oferta_min_efecto': 'piso', 'valor_piso': 0},
     'PRUEBA':     {'piso_ideal': 'min_efectivo', 'target_horizonte': 'none',
                    'buffer_pct': 0, 'universo': 'manual',
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'base_demanda': 'u12m_estacional', 'cant_fija_efecto': 'override',
-                   'oferta_min_efecto': 'indicador'},
+                   'oferta_min_efecto': 'indicador', 'valor_piso': 0},
 }
 
 ENUMS_FLAG = {
@@ -150,6 +151,11 @@ def init_app(app):
                 else:
                     _dias_raw = request.form.get('dias_cobertura_fijo', '').strip()
                     _dias = int(_dias_raw) if _dias_raw.isdigit() else None
+                    _vp_raw = (request.form.get('valor_piso') or '').strip().replace('.', '').replace(',', '.')
+                    try:
+                        _valor_piso = max(0.0, float(_vp_raw)) if _vp_raw else float(cfg_actual.get('valor_piso') or 0)
+                    except ValueError:
+                        _valor_piso = float(cfg_actual.get('valor_piso') or 0)
                     cfg_nuevo = {
                         'piso_ideal':          request.form.get('piso_ideal') or cfg_actual.get('piso_ideal', 'min_efectivo'),
                         'target_horizonte':    request.form.get('target_horizonte') or cfg_actual.get('target_horizonte', 'factor_h'),
@@ -162,6 +168,8 @@ def init_app(app):
                         'base_demanda':        request.form.get('base_demanda') or cfg_actual.get('base_demanda', 'u3m'),
                         'cant_fija_efecto':    request.form.get('cant_fija_efecto') or cfg_actual.get('cant_fija_efecto', 'override'),
                         'oferta_min_efecto':   request.form.get('oferta_min_efecto') or cfg_actual.get('oferta_min_efecto', 'piso'),
+                        # Precio desde el cual el producto es "caro": si rota bajo, repone máx 1. 0 = off.
+                        'valor_piso':          _valor_piso,
                     }
                 row.nombre      = (request.form.get('nombre') or row.nombre).strip()
                 row.descripcion = (request.form.get('descripcion') or '').strip() or None
@@ -203,6 +211,8 @@ def init_app(app):
         ctx.setdefault('pack_quantity', None)
         ctx.setdefault('u12m', 48)
         ctx.setdefault('sin_mov', False)
+        ctx.setdefault('pvp', 0)
+        ctx.setdefault('rotacion', None)
         try:
             result = calcular_a_pedir(cfg, ctx)
         except Exception as e:
@@ -228,6 +238,7 @@ def init_app(app):
             prod = session.query(Producto).filter_by(observer_id=obs_id).first()
             cant_fija = (int(prod.cantidad_reposicion_fija)
                          if prod and prod.cantidad_reposicion_fija else None)
+            _pvp = float(prod.precio_pvp) if (prod and prod.precio_pvp) else 0.0
             return jsonify({
                 'ok': True,
                 'nombre': op.descripcion or str(obs_id),
@@ -236,6 +247,8 @@ def init_app(app):
                 'cant_fija': cant_fija,
                 'u12m': int(sum(m['ventas12'])),
                 'sin_historial': m['sin_historial'],
+                'pvp': _pvp,
+                'rotacion': m.get('rotacion'),  # 'A'|'M'|'B' (para la regla caro+baja)
             })
 
     @app.route('/config/tipos-pedido/<slug>/restaurar', methods=['POST'])

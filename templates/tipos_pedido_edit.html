@@ -310,6 +310,14 @@
                         {% endfor %}
                     </select>
                 </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Valor piso — productos "caros" ($)</label>
+                    <input type="number" name="valor_piso" min="0" step="1000"
+                           value="{{ tipo.config.valor_piso or '' }}" class="tp-input"
+                           placeholder="0 = desactivado (ej: 50000)" oninput="simular()">
+                    <div class="tp-field-help">Si el PVP es ≥ este valor y el producto es de <b>rotación baja</b>, repone como máximo <b>1</b> (no inmoviliza plata en caros que casi no giran). 0 = apagado.</div>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -435,6 +443,9 @@ function buscarProdSim(q) {
 }
 function escSim(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// PVP y rotación del producto elegido en el simulador (para la regla caro+baja).
+let _simPvp = 0, _simRot = null;
+
 async function elegirProdSim(obsId, nombre) {
     document.getElementById('sim-prod-results').style.display = 'none';
     document.getElementById('sim-prod-search').value = '';
@@ -451,8 +462,13 @@ async function elegirProdSim(obsId, nombre) {
         document.getElementById('sim-min').value = d.minimo;
         document.getElementById('sim-stock').value = d.stock;
         document.getElementById('sim-fija').value = d.cant_fija != null ? d.cant_fija : '';
+        _simPvp = d.pvp || 0;
+        _simRot = d.rotacion || null;
+        const rotTxt = {A: 'alta', M: 'media', B: 'baja'}[_simRot] || '—';
+        const pvpTxt = _simPvp ? '$' + Math.round(_simPvp).toLocaleString('es-AR') : 's/precio';
         document.getElementById('sim-prod-elegido').innerHTML =
             `✓ <b>${escSim(d.nombre)}</b> — stock ${d.stock}, mín ${d.minimo}, ${base}=${avgMensual}/mes` +
+            ` · rot. <b>${rotTxt}</b> · PVP ${pvpTxt}` +
             (d.sin_historial ? ' <span style="color:var(--ds-warn)">(sin ventas)</span>' : '');
         simular();
     } catch (e) { document.getElementById('sim-prod-elegido').textContent = 'error de red'; }
@@ -526,6 +542,7 @@ async function simular() {
         base_demanda:        _val('base_demanda'),
         cant_fija_efecto:    _val('cant_fija_efecto'),
         oferta_min_efecto:   _val('oferta_min_efecto'),
+        valor_piso:          parseFloat(_val('valor_piso') || 0),
     };
     const fijaRaw = document.getElementById('sim-fija').value;
     const ctx = {
@@ -535,6 +552,8 @@ async function simular() {
         cubrir_dias:              parseInt(document.getElementById('sim-cubrir').value) || 30,
         stock_actual:             parseInt(document.getElementById('sim-stock').value) || 0,
         cantidad_reposicion_fija: fijaRaw === '' ? null : parseInt(fijaRaw),
+        pvp:       _simPvp || 0,
+        rotacion:  _simRot || null,
         u12m: 48, sin_mov: false,
     };
     _actualizarMinCorto(ctx.min_efectivo, ctx.cubrir_dias);
