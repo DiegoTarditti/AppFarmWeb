@@ -61,6 +61,7 @@
     .pc-table thead th.r { text-align: right; }
     .pc-table tbody tr { border-top: 1px solid var(--ds-line); transition: background .1s; }
     .pc-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .pc-table tbody tr.pc-selected { background: rgba(95,230,188,.12); }
     .pc-table tbody td { padding: 7px 12px; color: var(--ds-text); }
     .pc-table tbody td.mono { font-family: ui-monospace, Consolas, monospace; text-align: right; }
     .pc-table tbody td.mute { color: var(--ds-text-mute); }
@@ -73,6 +74,49 @@
         color: var(--ds-text-mute); font-size: 13px;
     }
     .pc-fase { margin: 0 24px 24px; }
+
+    /* Tabs */
+    .pc-tabs { display: flex; gap: 4px; padding: 0 24px 0; margin-bottom: 0; }
+    .pc-tab {
+        padding: 7px 18px; font-size: 12px; font-weight: 600;
+        border-radius: 8px 8px 0 0;
+        border: 1px solid var(--ds-line); border-bottom: none;
+        background: var(--ds-bg); color: var(--ds-text-mute);
+        cursor: pointer; transition: background .1s;
+    }
+    .pc-tab.active { background: var(--ds-surface); color: var(--ds-text); }
+    .pc-tab:hover:not(.active) { background: rgba(95,230,188,.04); }
+
+    /* Vista semanas */
+    .pc-sem-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding: 16px 24px 0; }
+    .pc-sem-card {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); overflow: hidden;
+    }
+    .pc-sem-card.actual { border-color: rgba(95,230,188,.35); }
+    .pc-sem-head {
+        padding: 10px 14px; background: rgba(0,0,0,.15);
+        border-bottom: 1px solid var(--ds-line);
+        display: flex; align-items: center; gap: 8px;
+    }
+    .pc-sem-head .sem-num { font-family:'Space Grotesk',sans-serif; font-size: 18px; font-weight: 700; color: var(--ds-text); }
+    .pc-sem-head .sem-label { font-size: 11px; color: var(--ds-text-mute); }
+    .pc-sem-head .sem-badge { margin-left: auto; font-size: 10px; font-weight: 700; }
+    .pc-sem-lab { padding: 8px 14px; border-top: 1px solid rgba(255,255,255,.04); }
+    .pc-sem-lab-name { font-size: 12px; font-weight: 600; color: var(--ds-text); }
+    .pc-sem-lab-meta { font-size: 10px; color: var(--ds-text-mute); margin-top: 1px; }
+    .pc-sem-empty { padding: 24px 14px; text-align: center; font-size: 12px; color: var(--ds-text-mute); }
+    .pc-sem-nocron {
+        margin: 12px 24px 0; padding: 0;
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); overflow: hidden;
+    }
+    .pc-sem-nocron-head {
+        padding: 10px 14px; background: rgba(0,0,0,.15);
+        border-bottom: 1px solid var(--ds-line);
+        font-size: 12px; font-weight: 600; color: var(--ds-text-mute);
+        display: flex; align-items: center; gap: 8px; cursor: pointer;
+    }
 </style>
 {% endblock %}
 
@@ -126,6 +170,20 @@
 
 {% if items %}
 
+{# ── Panel gráfico dual (se activa al clickear una fila) ── #}
+<div style="padding: 0 24px; margin-bottom: 4px;">
+    {% include '_grafico_dual_panel.html' %}
+</div>
+
+{# ── Tabs ── #}
+<div class="pc-tabs">
+    <button class="pc-tab active" id="tab-lista" onclick="switchTab('lista')">Lista de urgentes</button>
+    <button class="pc-tab" id="tab-semanas" onclick="switchTab('semanas')">Por semana</button>
+</div>
+
+{# ── Vista lista ── #}
+<div id="view-lista">
+
 {# ── KPIs ── #}
 <div class="pc-kpi-bar">
     <div class="pc-kpi">
@@ -164,7 +222,8 @@
             {% for it in items %}
             {% set urg = it.cobertura_actual < 7 %}
             {% set med = it.cobertura_actual >= 7 and it.cobertura_actual < 15 %}
-            <tr>
+            <tr data-obsid="{{ it.producto_id }}" data-nombre="{{ it.nombre | e }}"
+                onclick="seleccionarProductoPC(this)" style="cursor:pointer">
                 <td class="mono mute" style="text-align:center">{{ loop.index }}</td>
                 <td style="font-weight:500; max-width:300px">
                     <span title="{{ it.nombre }}">{{ it.nombre | truncate(50) }}</span>
@@ -194,6 +253,58 @@
 </div>
 {% endif %}
 
+</div>{# /view-lista #}
+
+{# ── Vista por semana ── #}
+<div id="view-semanas" style="display:none">
+    {% if semanas is defined %}
+    <div class="pc-sem-grid">
+        {% for sem in semanas %}
+        <div class="pc-sem-card {% if sem.es_actual %}actual{% endif %}">
+            <div class="pc-sem-head">
+                <span class="sem-num">S{{ sem.num }}</span>
+                <span class="sem-label">{{ sem.label }}</span>
+                {% if sem.n_urgentes > 0 %}
+                <span class="sem-badge" style="color:#FCA5A5;">{{ sem.n_urgentes }} urg.</span>
+                {% endif %}
+                <span class="sem-badge" style="color:var(--ds-text-mute); font-weight:400;">{{ sem.n_productos }} prod.</span>
+            </div>
+            {% if sem.labs %}
+                {% for lab in sem.labs %}
+                <div class="pc-sem-lab">
+                    <div class="pc-sem-lab-name">{{ lab.lab }}</div>
+                    <div class="pc-sem-lab-meta">
+                        {{ lab.n }} producto{{ '' if lab.n == 1 else 's' }} · {{ lab.unidades }} u
+                        {% if lab.urgentes > 0 %} · <span style="color:#FCA5A5;">{{ lab.urgentes }} urgente{{ '' if lab.urgentes == 1 else 's' }}</span>{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="pc-sem-empty">Sin pedidos esta semana</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if sin_cronograma %}
+    <details class="pc-sem-nocron">
+        <summary class="pc-sem-nocron-head">
+            Sin cronograma configurado — {{ sin_cronograma | length }} lab{{ '' if sin_cronograma|length == 1 else 's' }}
+            <span style="margin-left:auto; font-size:10px;">▶</span>
+        </summary>
+        <div style="padding: 4px 0;">
+            {% for lab in sin_cronograma %}
+            <div class="pc-sem-lab">
+                <div class="pc-sem-lab-name">{{ lab.lab }}</div>
+                <div class="pc-sem-lab-meta">{{ lab.n }} producto{{ '' if lab.n == 1 else 's' }} · {{ lab.unidades }} u</div>
+            </div>
+            {% endfor %}
+        </div>
+    </details>
+    {% endif %}
+    {% endif %}
+</div>
+
 <div class="pc-fase">
     <p style="font-size:11px; color:var(--ds-text-mute)">
         <strong>Fase 1</strong> — predicción plana sin estacionalidad ni costo de compra.
@@ -202,6 +313,24 @@
 </div>
 
 <script>
+function seleccionarProductoPC(tr) {
+    const obsid = parseInt(tr.dataset.obsid);
+    const nombre = tr.dataset.nombre;
+    if (!obsid || typeof cargarGraficoDual !== 'function') return;
+    document.querySelectorAll('tr.pc-selected').forEach(t => t.classList.remove('pc-selected'));
+    tr.classList.add('pc-selected');
+    cargarGraficoDual(obsid, nombre);
+    const panel = document.getElementById('dual-grafico-panel');
+    if (panel) panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+function switchTab(tab) {
+    document.getElementById('view-lista').style.display   = tab === 'lista'   ? '' : 'none';
+    document.getElementById('view-semanas').style.display = tab === 'semanas' ? '' : 'none';
+    document.getElementById('tab-lista').classList.toggle('active',   tab === 'lista');
+    document.getElementById('tab-semanas').classList.toggle('active', tab === 'semanas');
+}
+
 (function() {
     const display = document.getElementById('capital-display');
     const hidden  = document.getElementById('capital-value');

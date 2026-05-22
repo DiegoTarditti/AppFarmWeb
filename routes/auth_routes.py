@@ -175,7 +175,7 @@ def init_app(app):
             } for u in users]
         return render_template('usuarios_list.html', usuarios=data,
                                modulos=MODULOS, niveles=NIVELES,
-                               roles=['farmacia', 'dev', 'remoto', 'admin'])
+                               roles=['farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion'])
 
     @app.route('/usuarios/crear', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
@@ -270,4 +270,4 @@ def init_app(app):
 
 
 # Lista de roles válidos usada en crear/editar
-PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos'}
+PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion'}

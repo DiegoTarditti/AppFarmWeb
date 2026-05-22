@@ -3,16 +3,17 @@
 Dado capital disponible + días de cobertura objetivo, calcula qué comprar,
 cuánto y a qué lab, priorizando por urgencia (menor cobertura primero).
 
-Fase 1: cálculo plano sin estacionalidad ni cronograma.
+Fase 1: lista priorizada por urgencia.
+Fase 2: agrupado por semana según cronograma de cada lab.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from flask import render_template, request
 from flask_login import login_required
 from sqlalchemy import func
 
 import database
-from database import Laboratorio, ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual
+from database import Laboratorio, ObsLaboratorio, ObsProducto, ObsStock, ObsVentaMensual, ProveedorCronograma
 
 
 def _keys_ultimos_n_meses(n):
@@ -83,6 +84,7 @@ def init_app(app):
                 ObsProducto.descripcion,
                 ObsProducto.descripcion_custom,
                 ObsLaboratorio.descripcion.label('lab_nombre'),
+                Laboratorio.id.label('lab_id'),
                 Laboratorio.descuento_base,
                 stock_q.c.stock_actual,
                 ventas_q.c.total_u)
@@ -114,6 +116,7 @@ def init_app(app):
                     'producto_id': r.observer_id,
                     'nombre': r.descripcion_custom or r.descripcion,
                     'lab': r.lab_nombre or '—',
+                    'lab_id': r.lab_id,
                     'stock': stock,
                     'cobertura_actual': round(cobertura_actual, 1),
                     'consumo_diario': round(consumo_diario, 2),
@@ -123,11 +126,64 @@ def init_app(app):
 
         items.sort(key=lambda x: x['cobertura_actual'])
 
-        # Marcar cuáles caben en el capital (sin precio exacto, marcamos todos si capital=0)
-        acum = 0.0
+        # ── Fase 2: agrupar por semana de cronograma ────────────────────────
+        hoy = date.today()
+        lunes_base = hoy - timedelta(days=hoy.weekday())
+
+        lab_ids = {it['lab_id'] for it in items if it.get('lab_id')}
+        crons_lab = session.query(ProveedorCronograma).filter(
+            ProveedorCronograma.partner_tipo == 'laboratorio',
+            ProveedorCronograma.proveedor_id.in_(lab_ids),
+            ProveedorCronograma.activo.is_(True),
+        ).all() if lab_ids else []
+
+        def _proxima_futura(cron):
+            if not cron.proxima_fecha:
+                return None
+            if not cron.cadencia_dias or cron.cadencia_dias <= 0:
+                return cron.proxima_fecha
+            d = cron.proxima_fecha
+            while d < hoy:
+                d += timedelta(days=cron.cadencia_dias)
+            return d
+
+        lab_semana = {}  # lab_id -> semana 1-4
+        for cron in crons_lab:
+            fecha = _proxima_futura(cron)
+            if fecha is None:
+                continue
+            sem = (fecha - lunes_base).days // 7 + 1
+            if 1 <= sem <= 4:
+                lab_semana[cron.proveedor_id] = sem
+
+        # Agrupar: semanas_raw[sem][lab_name] = [items]
+        semanas_raw = {i: {} for i in range(5)}  # 0 = sin cronograma
         for it in items:
-            it['entra'] = True  # sin precio no podemos filtrar por capital aún
-            it['acum'] = acum
+            sem = lab_semana.get(it.get('lab_id'), 0)
+            semanas_raw[sem].setdefault(it['lab'], []).append(it)
+
+        def _labs_list(d):
+            return sorted([
+                {'lab': k, 'items': v, 'n': len(v),
+                 'unidades': sum(x['unidades'] for x in v),
+                 'urgentes': sum(1 for x in v if x['cobertura_actual'] < 7)}
+                for k, v in d.items()
+            ], key=lambda x: -x['urgentes'])
+
+        semanas = []
+        for i in range(1, 5):
+            lunes_sem = lunes_base + timedelta(days=(i - 1) * 7)
+            domingo_sem = lunes_sem + timedelta(days=6)
+            labs = _labs_list(semanas_raw[i])
+            semanas.append({
+                'num': i,
+                'label': f"{lunes_sem.strftime('%d/%m')} – {domingo_sem.strftime('%d/%m')}",
+                'labs': labs,
+                'n_productos': sum(x['n'] for x in labs),
+                'n_urgentes': sum(x['urgentes'] for x in labs),
+                'es_actual': i == 1,
+            })
+        sin_cronograma = _labs_list(semanas_raw[0])
 
         return render_template('planificacion_compras_mes.html',
                                items=items,
@@ -136,4 +192,6 @@ def init_app(app):
                                meses=meses,
                                farmacia_id=farmacia_id,
                                farmacias=farmacias,
-                               n_total=len(items))
+                               n_total=len(items),
+                               semanas=semanas,
+                               sin_cronograma=sin_cronograma)
