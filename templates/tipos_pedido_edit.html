@@ -305,6 +305,14 @@
         {% endif %}
 
         <div class="tp-actions">
+            {% if tipo.categoria != 'flag' %}
+            <button type="button" onclick="restaurarBase()"
+                    class="text-[12px] px-3 py-1.5 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-amber-400 transition"
+                    style="color:var(--ds-warn); margin-right:auto;"
+                    title="Vuelve esta config a sus valores de fábrica (red de seguridad)">
+                ↺ Restaurar a base
+            </button>
+            {% endif %}
             <a href="{{ url_for('tipos_pedido_list') }}"
                class="text-[12px] px-3 py-1.5 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-line-2)] transition">
                 Cancelar
@@ -319,9 +327,18 @@
         <div class="tp-card" style="position: sticky; top: 18px;">
             <h3>🧪 Simulador</h3>
             <p class="tp-field-help" style="margin-bottom: 12px;">
-                Cambiá los valores para ver qué pediría el motor con la config actual del form.
-                <b>No guarda nada</b>, solo previsualiza.
+                Probá con un producto real o con números a mano. <b>No guarda nada.</b>
             </p>
+
+            {# Buscador de producto real → llena los valores de abajo #}
+            <div style="position:relative; margin-bottom:12px;">
+                <input type="text" id="sim-prod-search" autocomplete="off"
+                       placeholder='🔍 Probar con un producto real (ej. "amoxidal")'
+                       class="tp-input" style="width:100%;"
+                       oninput="buscarProdSim(this.value)">
+                <div id="sim-prod-results" style="display:none; position:absolute; top:100%; left:0; right:0; z-index:30; background:var(--ds-surface-2); border:1px solid var(--ds-line); border-radius:6px; max-height:200px; overflow-y:auto; box-shadow:0 6px 18px rgba(0,0,0,.35);"></div>
+                <div id="sim-prod-elegido" class="tp-field-help" style="margin-top:4px;"></div>
+            </div>
 
             <div class="tp-sim-row">
                 <label>Tasa diaria</label>
@@ -370,6 +387,72 @@
 const SLUG = '{{ tipo.slug }}';
 
 function _val(name) { const e = document.querySelector(`[name="${name}"]`); return e ? e.value : ''; }
+
+// ── Simulador con producto real ──────────────────────────────────────────
+let _simSearchT = null;
+function buscarProdSim(q) {
+    q = (q || '').trim();
+    const box = document.getElementById('sim-prod-results');
+    if (q.length < 2) { box.style.display = 'none'; return; }
+    clearTimeout(_simSearchT);
+    _simSearchT = setTimeout(async () => {
+        try {
+            const r = await fetch(`/api/productos?q=${encodeURIComponent(q)}&con_ean=1&limit=10`,
+                                  {credentials: 'same-origin'});
+            const d = await r.json();
+            const items = d.data || [];
+            if (!items.length) { box.innerHTML = '<div style="padding:8px;color:var(--ds-text-mute);font-size:11px;">Sin resultados</div>'; box.style.display = 'block'; return; }
+            box.innerHTML = items.map(p => `
+                <div onclick="elegirProdSim(${p.observer_id}, '${(p.descripcion||'').replace(/'/g,'')}')"
+                     style="padding:7px 9px; cursor:pointer; font-size:12px; border-bottom:1px solid rgba(255,255,255,.04);"
+                     onmouseover="this.style.background='rgba(95,230,188,.10)'" onmouseout="this.style.background=''">
+                    ${escSim(p.descripcion)} <span style="color:var(--ds-text-mute);font-size:10px;">${escSim(p.codigo_barra||'')}</span>
+                </div>`).join('');
+            box.style.display = 'block';
+        } catch (e) { box.style.display = 'none'; }
+    }, 250);
+}
+function escSim(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function elegirProdSim(obsId, nombre) {
+    document.getElementById('sim-prod-results').style.display = 'none';
+    document.getElementById('sim-prod-search').value = '';
+    try {
+        const r = await fetch(`/config/tipos-pedido/sim-producto?observer_id=${obsId}`,
+                              {credentials: 'same-origin'});
+        const d = await r.json();
+        if (!d.ok) { document.getElementById('sim-prod-elegido').textContent = d.error || 'error'; return; }
+        // daily_rate según la base de demanda elegida en el form.
+        const base = _val('base_demanda') || 'u3m';
+        const avgMensual = (base === 'u3m') ? d.avg_3m : d.avg_12m;
+        const daily = avgMensual ? (avgMensual / 30.4) : 0;
+        document.getElementById('sim-daily').value = daily.toFixed(2);
+        document.getElementById('sim-min').value = d.minimo;
+        document.getElementById('sim-stock').value = d.stock;
+        document.getElementById('sim-fija').value = d.cant_fija != null ? d.cant_fija : '';
+        document.getElementById('sim-prod-elegido').innerHTML =
+            `✓ <b>${escSim(d.nombre)}</b> — stock ${d.stock}, mín ${d.minimo}, ${base}=${avgMensual}/mes` +
+            (d.sin_historial ? ' <span style="color:var(--ds-warn)">(sin ventas)</span>' : '');
+        simular();
+    } catch (e) { document.getElementById('sim-prod-elegido').textContent = 'error de red'; }
+}
+document.addEventListener('click', e => {
+    if (!e.target.closest('#sim-prod-search') && !e.target.closest('#sim-prod-results')) {
+        const box = document.getElementById('sim-prod-results');
+        if (box) box.style.display = 'none';
+    }
+});
+
+async function restaurarBase() {
+    if (!confirm('¿Restaurar esta config a sus valores de fábrica? Se descartan los cambios guardados de este tipo.')) return;
+    try {
+        const r = await fetch(`/config/tipos-pedido/${SLUG}/restaurar`, {
+            method: 'POST', credentials: 'same-origin'});
+        const d = await r.json();
+        if (d.ok) { location.reload(); }
+        else { alert('No se pudo restaurar: ' + (d.error || 'error')); }
+    } catch (e) { alert('Error de red: ' + e.message); }
+}
 
 function aplicarPreset(slug) {
     if (!slug) return;
