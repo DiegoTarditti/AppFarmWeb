@@ -20,6 +20,17 @@ import time
 import psycopg2
 
 TABLA = 'cadencia_lab_snapshot'
+# Lista EXPLÍCITA de columnas: el orden físico difiere entre local y Render
+# (local agregó los *_monto al final vía ALTER; Render los creó en el orden del
+# modelo). Sin lista explícita, COPY desalinea las columnas.
+COLS = (
+    'lab_id, lab_nombre, core, ocasional, caida, dormido, '
+    'alta, media_alta, media, baja, muy_baja, '
+    'core_monto, ocasional_monto, caida_monto, dormido_monto, '
+    'alta_monto, media_alta_monto, media_monto, baja_monto, muy_baja_monto, '
+    'con_ventas, sin_ventas, monto_mensual, dormido_valor, '
+    'dormido_con_stock, dormido_stock_u, cobertura, meses_rot, actualizado_en'
+)
 
 
 def _normalize_url(url):
@@ -41,9 +52,9 @@ def push(local_url=None, render_url=None, log=print):
         with local.cursor() as lc, remote.cursor() as rc:
             rc.execute(f'TRUNCATE TABLE {TABLA}')
             buf = io.StringIO()
-            lc.copy_expert(f'COPY {TABLA} TO STDOUT', buf)
+            lc.copy_expert(f'COPY {TABLA} ({COLS}) TO STDOUT', buf)
             buf.seek(0)
-            rc.copy_expert(f'COPY {TABLA} FROM STDIN', buf)
+            rc.copy_expert(f'COPY {TABLA} ({COLS}) FROM STDIN', buf)
             rc.execute(f'SELECT COUNT(*) FROM {TABLA}')
             n = rc.fetchone()[0]
         remote.commit()
