@@ -139,34 +139,25 @@
     }
 
     /* Matriz Recencia × Rotación */
-    .rfm-wrap { margin-bottom: 16px; }
-    .rfm-title { font-size: 12px; font-weight: 700; color: var(--ds-text); margin-bottom: 8px;
+    .rfm-wrap { margin-bottom: 12px; }
+    .rfm-title { font-size: 11px; font-weight: 700; color: var(--ds-text); margin-bottom: 5px;
         display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
     .rfm-title .sub { font-size: 10px; font-weight: 400; color: var(--ds-text-mute); }
-    .rfm-grid {
-        display: grid;
-        grid-template-columns: auto 1fr 1fr;
-        grid-template-rows: auto auto auto;
-        gap: 8px; align-items: stretch;
-    }
-    .rfm-axis-x { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-        color: var(--ds-text-mute); text-align: center; padding-bottom: 2px; }
-    .rfm-axis-y { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
-        color: var(--ds-text-mute); writing-mode: vertical-rl; transform: rotate(180deg);
-        display: flex; align-items: center; justify-content: center; }
+    .rfm-grid { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
     .rfm-cell {
+        flex: 1 1 0; min-width: 150px;
         background: var(--ds-surface); border: 1px solid var(--ds-line);
-        border-left: 4px solid var(--ds-line);
-        border-radius: 10px; padding: 10px 14px;
+        border-left: 3px solid var(--ds-line);
+        border-radius: 8px; padding: 6px 11px;
+        display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
     }
     .rfm-cell.rojo     { border-left-color: #ef4444; }
     .rfm-cell.amarillo { border-left-color: var(--ds-warn); }
     .rfm-cell.azul     { border-left-color: #7dd3fc; }
     .rfm-cell.mute     { border-left-color: rgba(255,255,255,.2); }
-    .rfm-cell .lbl { font-size: 13px; font-weight: 700; color: var(--ds-text); }
-    .rfm-cell .n { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; line-height: 1.1; }
-    .rfm-cell .meta { font-size: 10px; color: var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace; margin-top: 2px; }
-    .rfm-cell .desc { font-size: 10px; color: var(--ds-text-mute); margin-top: 4px; }
+    .rfm-cell .lbl { font-size: 12px; font-weight: 700; color: var(--ds-text); }
+    .rfm-cell .n { font-family:'Space Grotesk',sans-serif; font-size: 17px; font-weight: 700; line-height: 1; }
+    .rfm-cell .meta { font-size: 10px; color: var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace; margin-left: auto; }
 
     /* Badge RFM + última venta en las filas */
     .rfm-badge { display:inline-block; font-size:9px; font-weight:700; padding:1px 6px; border-radius:99px; }
@@ -251,31 +242,20 @@
     {% set q = {} %}
     {% for m in data.matriz %}{% set _ = q.__setitem__(m.slug, m) %}{% endfor %}
     {% macro rfm_cell(m) %}
-        <div class="rfm-cell {{ m.color }}">
-            <div class="lbl">{{ m.label }}</div>
-            <div class="n">{{ m.n }}</div>
-            <div class="meta">
-                {% if m.monto_mensual > 0 %}$ {{ '{:,.0f}'.format(m.monto_mensual).replace(',', '.') }}/mes · {% endif %}
-                {{ m.stock_u }}u stock
-            </div>
-            <div class="desc">{{ m.desc }}</div>
+        <div class="rfm-cell {{ m.color }}" title="{{ m.desc }}">
+            <span class="lbl">{{ m.label }}</span>
+            <span class="n">{{ m.n }}</span>
+            <span class="meta">{% if m.monto_mensual > 0 %}$ {{ '{:,.0f}'.format(m.monto_mensual).replace(',', '.') }}/mes · {% endif %}{{ m.stock_u }}u</span>
         </div>
     {% endmacro %}
     <div class="rfm-wrap">
         <div class="rfm-title">
             🎯 Recencia × Rotación
-            <span class="sub">cruza cuánto vende (avg 12m) con hace cuánto vendió por última vez · "vende seguido" ≥ {{ data.rfm_freq_min|int }}/mes · "reciente" ≤ {{ data.rfm_rec_meses }} meses</span>
+            <span class="sub">cuánto vende (avg 12m) × hace cuánto vendió · "seguido" ≥ {{ data.rfm_freq_min|int }}/mes · "reciente" ≤ {{ data.rfm_rec_meses }}m</span>
         </div>
         <div class="rfm-grid">
-            <div></div>
-            <div class="rfm-axis-x">Vende seguido (≥{{ data.rfm_freq_min|int }}/mes)</div>
-            <div class="rfm-axis-x">Esporádico (&lt;{{ data.rfm_freq_min|int }}/mes)</div>
-
-            <div class="rfm-axis-y">Venta reciente (≤{{ data.rfm_rec_meses }}m)</div>
             {{ rfm_cell(q['core']) }}
             {{ rfm_cell(q['ocasional']) }}
-
-            <div class="rfm-axis-y">Sin venta +{{ data.rfm_rec_meses }}m</div>
             {{ rfm_cell(q['caida']) }}
             {{ rfm_cell(q['dormido']) }}
         </div>
