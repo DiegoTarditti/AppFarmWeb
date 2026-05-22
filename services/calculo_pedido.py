@@ -99,10 +99,14 @@ def calcular_a_pedir(cfg, ctx):
         - sin_mov (bool): True si sin movimiento 60d
         - pvp (float): precio venta público (para la regla caro+rotación baja)
         - rotacion (str): 'A'|'M'|'B' (clasificación por Config.rot_alta/media_min)
+        - ventas_mensuales (list[int]): unidades por mes (slot 11 = actual) — la
+          regla caro+baja evalúa si vendió en la ventana `dias_valor_piso`.
 
-    cfg key relevante extra:
+    cfg keys relevantes extra:
         - valor_piso (number): PVP desde el cual un producto es "caro". Si está
           seteado (>0) y rotacion=='B', el a_pedir se topea en 1. Default 0 = off.
+        - dias_valor_piso (int): ventana (días) para decidir si el caro+baja
+          vendió algo. Sin venta en la ventana → 0. Default 60.
 
     Returns:
       dict {a_pedir, ideal, regla_usada, override_aplicado}
@@ -121,8 +125,27 @@ def calcular_a_pedir(cfg, ctx):
     u12m = ctx.get('u12m') or 0
     sin_mov = bool(ctx.get('sin_mov'))
 
-    # Sin rotación → nada que pedir, independiente del tipo.
-    if u12m == 0 or sin_mov:
+    # ── Caro + rotación baja: ventana de venta PROPIA ────────────────────────
+    # Para productos caros (PVP >= valor_piso) de rotación 'B', la decisión
+    # "comprar o no" usa `dias_valor_piso` (default 60), NO el sin_mov global:
+    #   - si no vendió nada en esa ventana → 0 (no inmovilizar plata).
+    #   - si vendió → sigue el cálculo y al final se topea en 1 unidad.
+    # Las ventas son mensuales → la ventana se evalúa en meses (ceil(N/30.42)).
+    valor_piso = float(cfg.get('valor_piso') or 0)
+    pvp = float(ctx.get('pvp') or 0)
+    es_caro_baja = valor_piso > 0 and pvp >= valor_piso and ctx.get('rotacion') == 'B'
+    if es_caro_baja:
+        dias_vp = int(cfg.get('dias_valor_piso') or 60)
+        meses_vp = max(1, math.ceil(dias_vp / 30.42))
+        vm = ctx.get('ventas_mensuales') or []
+        vendio = (sum(vm[-meses_vp:]) > 0) if vm else (u12m > 0 and not sin_mov)
+        if not vendio:
+            return {'a_pedir': 0, 'ideal': 0,
+                    'regla_usada': f'caro_baja_sin_venta_{dias_vp}d',
+                    'override_aplicado': False}
+    # Sin rotación → nada que pedir (no aplica a caros, ya resueltos arriba con
+    # su ventana propia).
+    elif u12m == 0 or sin_mov:
         return {'a_pedir': 0, 'ideal': 0,
                 'regla_usada': 'sin_rotacion', 'override_aplicado': False}
 
@@ -189,14 +212,9 @@ def calcular_a_pedir(cfg, ctx):
     regla = (f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%'
              + (' +cant_fija_piso' if override_piso else ''))
 
-    # Producto caro + rotación baja → reponer como MÁXIMO 1. No inmovilizar
-    # capital en caros que apenas giran. Lo dispara `valor_piso` (PVP a partir
-    # del cual el producto es "caro") + rotación 'B'. El "sin ventas → 0" ya lo
-    # cubre el guard sin_rotacion de arriba; acá topeamos el "con venta".
-    # valor_piso=0 (default) → regla apagada, comportamiento idéntico al previo.
-    valor_piso = float(cfg.get('valor_piso') or 0)
-    pvp = float(ctx.get('pvp') or 0)
-    if valor_piso > 0 and pvp >= valor_piso and ctx.get('rotacion') == 'B' and a_pedir > 1:
+    # Caro + rotación baja (ya pasó el chequeo de ventana arriba): topear en 1.
+    # No inmovilizar capital en caros que apenas giran. valor_piso=0 → apagado.
+    if es_caro_baja and a_pedir > 1:
         a_pedir = 1
         regla += ' +caro_baja_cap1'
 

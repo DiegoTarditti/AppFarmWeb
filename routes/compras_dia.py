@@ -1217,6 +1217,7 @@ def init_app(app):
                     'sin_mov': sin_mov,
                     'pvp': pvp_est,
                     'rotacion': rotacion_cls,
+                    'ventas_mensuales': ventas_arr,
                 }
                 _result = calcular_a_pedir(_cfg, _ctx_base)
                 a_pedir = _result['a_pedir']
@@ -1366,6 +1367,10 @@ def init_app(app):
                             'nota': fobj.nota or '',
                             'ean_reemplazo': fobj.ean_reemplazo or '',
                         }
+                        # Efecto sobre la cantidad: tope_uno → máximo 1 unidad.
+                        if cfg_d.get('efecto_armado') == 'tope_uno' and it.get('a_pedir', 0) > 1:
+                            it['a_pedir'] = 1
+                            it['tope_uno'] = True
                         break
             else:
                 for it in items:

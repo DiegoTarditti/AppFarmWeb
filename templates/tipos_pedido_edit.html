@@ -318,6 +318,14 @@
                            placeholder="0 = desactivado (ej: 50000)" oninput="simular()">
                     <div class="tp-field-help">Si el PVP es ≥ este valor y el producto es de <b>rotación baja</b>, repone como máximo <b>1</b> (no inmoviliza plata en caros que casi no giran). 0 = apagado.</div>
                 </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Días para valor piso</label>
+                    <input type="number" name="dias_valor_piso" min="1" max="365"
+                           value="{{ tipo.config.dias_valor_piso or 60 }}" class="tp-input"
+                           placeholder="60" oninput="simular()">
+                    <div class="tp-field-help">Ventana de venta del caro+baja: si no vendió nada en estos días → <b>no se compra</b> (0); si vendió → repone 1. Default 60. Se evalúa por mes.</div>
+                </div>
             </div>
         </div>
         {% endif %}
