@@ -23,12 +23,17 @@
     background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
     border: 1px solid var(--ds-line);
     border-radius: var(--ds-r-lg);
-    overflow: hidden;
+    /* overflow visible para que el autocomplete (.pf-ac-results, position:absolute)
+       no se recorte contra el borde de la card. El header redondea sus esquinas
+       superiores aparte, así su fondo no sobresale del borde redondeado. */
+    overflow: visible;
 }
 .pf-card-head {
     padding: 12px 16px;
     border-bottom: 1px solid var(--ds-line);
     background: rgba(0,0,0,.10);
+    border-top-left-radius: var(--ds-r-lg);
+    border-top-right-radius: var(--ds-r-lg);
     display: flex; align-items: center; justify-content: space-between;
 }
 .pf-card-head h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0; }
