@@ -275,3 +275,60 @@ def init_app(app):
             return jsonify({'ok': True, 'fraccionado': prod.fraccionado,
                             'cantidad_envase': float(atr.cantidad_envase)
                             if (atr and atr.cantidad_envase is not None) else None})
+
+    @app.route('/api/producto/presentacion-bulk', methods=['POST'])
+    @login_required
+    def api_producto_presentacion_bulk():
+        """Marca fraccionado + cantidad_envase en VARIOS productos a la vez.
+
+        Body: {observer_ids: [...], fraccionado: bool, cantidad_envase: num|null}.
+        Envase: si viene `cantidad_envase` → común para todos; si no → el de
+        ObServer de cada producto. Materializa el master si no existe.
+        """
+        from database import ObsProducto
+        from helpers import materializar_producto
+        body = request.get_json(silent=True) or {}
+        obs_ids = [int(x) for x in (body.get('observer_ids') or [])
+                   if str(x).strip().lstrip('-').isdigit()]
+        if not obs_ids:
+            return jsonify({'ok': False, 'error': 'No seleccionaste productos.'}), 400
+        fraccionado = bool(body.get('fraccionado', True))
+        raw = body.get('cantidad_envase')
+        envase_comun = None
+        if raw not in (None, ''):
+            try:
+                envase_comun = Decimal(str(raw).replace('.', '').replace(',', '.'))
+            except (InvalidOperation, ValueError):
+                return jsonify({'ok': False, 'error': 'Envase común inválido.'}), 400
+
+        aplicados = materializados = sin_envase = errores = 0
+        with get_db() as session:
+            for oid in obs_ids:
+                ya_existia = (session.query(Producto)
+                              .filter_by(observer_id=oid).first() is not None)
+                prod, err = materializar_producto(session, oid)
+                if not prod:
+                    errores += 1
+                    continue
+                if not ya_existia:
+                    materializados += 1
+                prod.fraccionado = fraccionado
+                # Envase: común si lo mandaron; sino el de ObServer del producto.
+                env = envase_comun
+                if env is None:
+                    obs = session.get(ObsProducto, oid)
+                    env = obs.cantidad_envase if (obs and obs.cantidad_envase) else None
+                if env is not None and env > 0:
+                    atr = session.get(ProductoAtributo, prod.id)
+                    if atr is None:
+                        atr = ProductoAtributo(producto_id=prod.id)
+                        session.add(atr)
+                    atr.cantidad_envase = env
+                    atr.fuente = 'manual'
+                else:
+                    sin_envase += 1
+                aplicados += 1
+            session.commit()
+        return jsonify({'ok': True, 'aplicados': aplicados,
+                        'materializados': materializados,
+                        'sin_envase': sin_envase, 'errores': errores})
