@@ -120,11 +120,18 @@ def calcular_a_pedir(cfg, ctx):
         return {'a_pedir': 0, 'ideal': 0,
                 'regla_usada': 'sin_rotacion', 'override_aplicado': False}
 
-    # Override por producto. Solo si el override está habilitado en el tipo
-    # Y el valor está seteado en el producto Y stock cayó al mínimo.
+    # Override por producto. `cant_fija_efecto` (default 'override') decide la
+    # POLÍTICA cuando override_producto='cantidad_reposicion_fija' y el producto
+    # tiene cantidad fija seteada:
+    #   - 'override': si stock<=mínimo, la cantidad fija MANDA (histórico).
+    #   - 'piso':     no corta acá; abajo el ideal nunca baja de cant_fija.
+    #   - 'ninguno':  se ignora la cantidad fija.
     override_kind = cfg.get('override_producto', 'none')
-    if override_kind == 'cantidad_reposicion_fija' and cant_fija and cant_fija > 0 \
-            and stock <= min_efectivo:
+    cant_fija_efecto = cfg.get('cant_fija_efecto', 'override')
+    _cant_fija_activa = (override_kind == 'cantidad_reposicion_fija'
+                         and cant_fija and cant_fija > 0
+                         and cant_fija_efecto != 'ninguno')
+    if _cant_fija_activa and cant_fija_efecto == 'override' and stock <= min_efectivo:
         return {'a_pedir': int(cant_fija), 'ideal': int(cant_fija),
                 'regla_usada': 'override_cantidad_fija', 'override_aplicado': True}
 
@@ -155,6 +162,13 @@ def calcular_a_pedir(cfg, ctx):
     # piso ya contiene la cobertura completa, target_unid=0 no aporta.
     ideal = max(piso, target_unid)
 
+    # 3b) cant_fija como PISO (cant_fija_efecto='piso'): el ideal nunca baja de
+    #     la cantidad fija. Distinto de 'override' (que ya cortó arriba).
+    override_piso = False
+    if _cant_fija_activa and cant_fija_efecto == 'piso' and int(cant_fija) > ideal:
+        ideal = int(cant_fija)
+        override_piso = True
+
     # 4) Buffer (%) — margen sobre el ideal para no quedar en 0.
     buffer_pct = int(cfg.get('buffer_pct', 0) or 0)
     if buffer_pct:
@@ -167,8 +181,9 @@ def calcular_a_pedir(cfg, ctx):
 
     a_pedir = max(0, int(ideal) - int(stock))
     return {'a_pedir': a_pedir, 'ideal': int(ideal),
-            'regla_usada': f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%',
-            'override_aplicado': False}
+            'regla_usada': f'piso={piso_kind} target={tgt_kind} buffer={buffer_pct}%'
+                           + (' +cant_fija_piso' if override_piso else ''),
+            'override_aplicado': override_piso}
 
 
 def shadow_compare(slug, ctx, a_pedir_actual, log_threshold=0):

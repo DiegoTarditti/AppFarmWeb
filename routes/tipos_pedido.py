@@ -39,6 +39,22 @@ ENUMS_PEDIDO = {
         ('multiplo_pack','Hacia arriba al múltiplo de pack'),
         ('unidad',       'Sin redondeo extra (unidad)'),
     ],
+    # ── Ejes nuevos (boceto config_pedidos) ──
+    'base_demanda': [
+        ('u3m',             'Recientes (últimos 3 meses)'),
+        ('u12m',            'Año completo (12 meses)'),
+        ('u12m_estacional', 'Estacional (12m × índice de la droga)'),
+    ],
+    'cant_fija_efecto': [
+        ('override', 'Gana: pide esa cantidad fija'),
+        ('piso',     'Es un piso (nunca pide menos)'),
+        ('ninguno',  'Ignorar la cantidad fija'),
+    ],
+    'oferta_min_efecto': [
+        ('piso',      'Subir al mínimo de oferta'),
+        ('indicador', 'Solo avisar (chip), no toca cantidad'),
+        ('ninguno',   'Ignorar el mínimo de oferta'),
+    ],
 }
 
 ENUMS_FLAG = {
@@ -122,6 +138,10 @@ def init_app(app):
                         'override_producto':   request.form.get('override_producto') or cfg_actual.get('override_producto', 'none'),
                         'redondeo':            request.form.get('redondeo') or cfg_actual.get('redondeo', 'ceil'),
                         'dias_cobertura_fijo': _dias,
+                        # Ejes nuevos (defaults = comportamiento histórico).
+                        'base_demanda':        request.form.get('base_demanda') or cfg_actual.get('base_demanda', 'u3m'),
+                        'cant_fija_efecto':    request.form.get('cant_fija_efecto') or cfg_actual.get('cant_fija_efecto', 'override'),
+                        'oferta_min_efecto':   request.form.get('oferta_min_efecto') or cfg_actual.get('oferta_min_efecto', 'piso'),
                     }
                 row.nombre      = (request.form.get('nombre') or row.nombre).strip()
                 row.descripcion = (request.form.get('descripcion') or '').strip() or None

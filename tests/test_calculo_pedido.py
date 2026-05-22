@@ -95,3 +95,40 @@ class TestOverrideYGuards:
                                    'stock_actual': 50, 'cantidad_reposicion_fija': 30,
                                    'u12m': 100, 'sin_mov': False})
         assert r['override_aplicado'] is False
+
+
+class TestCantFijaEfecto:
+    """Eje nuevo cant_fija_efecto (override/piso/ninguno) en el motor."""
+
+    def _ctx(self, stock):
+        return {'daily_rate': 1, 'min_efectivo': 20, 'stock_actual': stock,
+                'cantidad_reposicion_fija': 30, 'u12m': 100, 'sin_mov': False}
+
+    def test_efecto_override_default_igual_que_historico(self):
+        cfg = {'override_producto': 'cantidad_reposicion_fija', 'piso_ideal': 'min_efectivo'}
+        r = calcular_a_pedir(cfg, self._ctx(stock=5))  # stock<min
+        assert r['a_pedir'] == 30 and r['override_aplicado'] is True
+
+    def test_efecto_piso_floorea_ideal(self):
+        # piso: ideal normal sería min_efectivo=20; cant_fija=30 lo sube a 30.
+        # stock=0 → a_pedir = 30 - 0 = 30.
+        cfg = {'override_producto': 'cantidad_reposicion_fija', 'piso_ideal': 'min_efectivo',
+               'target_horizonte': 'none', 'cant_fija_efecto': 'piso'}
+        r = calcular_a_pedir(cfg, self._ctx(stock=0))
+        assert r['ideal'] == 30 and r['a_pedir'] == 30
+        assert r['override_aplicado'] is True
+
+    def test_efecto_piso_no_corta_temprano_resta_stock(self):
+        # piso (a diferencia de override) resta el stock: ideal=30, stock=10 → 20.
+        cfg = {'override_producto': 'cantidad_reposicion_fija', 'piso_ideal': 'min_efectivo',
+               'target_horizonte': 'none', 'cant_fija_efecto': 'piso'}
+        r = calcular_a_pedir(cfg, self._ctx(stock=10))
+        assert r['ideal'] == 30 and r['a_pedir'] == 20
+
+    def test_efecto_ninguno_ignora_cant_fija(self):
+        # ninguno: cant_fija no influye; ideal = min_efectivo=20, stock=5 → 15.
+        cfg = {'override_producto': 'cantidad_reposicion_fija', 'piso_ideal': 'min_efectivo',
+               'target_horizonte': 'none', 'cant_fija_efecto': 'ninguno'}
+        r = calcular_a_pedir(cfg, self._ctx(stock=5))
+        assert r['ideal'] == 20 and r['a_pedir'] == 15
+        assert r['override_aplicado'] is False

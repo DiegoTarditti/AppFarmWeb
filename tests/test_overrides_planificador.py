@@ -96,3 +96,42 @@ class TestSinOverride:
         res, slug, valor = aplicar_overrides_planificador(
             sugerido=None, stock=None, minimo=None, cant_fija=None, oferta_min=None)
         assert (res, slug, valor) == (0, None, None)
+
+
+class TestEfectosConfigurables:
+    """Ejes nuevos cant_fija_efecto / oferta_min_efecto (configurables por tipo)."""
+
+    def test_cant_fija_piso_floor_aunque_stock_mayor_minimo(self):
+        # stock>minimo: en 'override' no aplicaría; en 'piso' floorea a cant_fija
+        # porque cant_fija(30) > sugerido(8).
+        res, slug, valor = aplicar_overrides_planificador(
+            sugerido=8, stock=20, minimo=10, cant_fija=30, oferta_min=None,
+            cant_fija_efecto='piso')
+        assert (res, slug, valor) == (30, 'cant_fija', 30)
+
+    def test_cant_fija_piso_no_baja_si_sugerido_mayor(self):
+        # piso: si el sugerido ya es mayor que cant_fija, NO lo baja (a diferencia
+        # de 'override' que sí lo bajaría).
+        res, slug, valor = aplicar_overrides_planificador(
+            sugerido=50, stock=20, minimo=10, cant_fija=30, oferta_min=None,
+            cant_fija_efecto='piso')
+        assert (res, slug, valor) == (50, None, None)
+
+    def test_cant_fija_ninguno_ignora(self):
+        res, slug, valor = aplicar_overrides_planificador(
+            sugerido=8, stock=2, minimo=10, cant_fija=30, oferta_min=None,
+            cant_fija_efecto='ninguno')
+        assert (res, slug, valor) == (8, None, None)
+
+    def test_oferta_min_indicador_no_toca_cantidad(self):
+        # 'indicador': el chip se muestra aparte, pero NO sube la cantidad.
+        res, slug, valor = aplicar_overrides_planificador(
+            sugerido=4, stock=2, minimo=10, cant_fija=None, oferta_min=6,
+            oferta_min_efecto='indicador')
+        assert (res, slug, valor) == (4, None, None)
+
+    def test_oferta_min_ninguno_no_toca_cantidad(self):
+        res, slug, valor = aplicar_overrides_planificador(
+            sugerido=4, stock=2, minimo=10, cant_fija=None, oferta_min=6,
+            oferta_min_efecto='ninguno')
+        assert (res, slug, valor) == (4, None, None)
