@@ -1372,6 +1372,40 @@ class ProductAnalytics(Base):
     actualizado_en = Column(DateTime, default=now_ar)
 
 
+class CadenciaLabSnapshot(Base):
+    """Snapshot del análisis de cadencias por laboratorio (1 fila por lab).
+
+    Materializa `analizar_cadencias_lab` para TODOS los labs de una vez (botón
+    Recalcular, ~25s), para que la plataforma de análisis cross-lab lea al
+    instante y filtre/ordene client-side. Los params (cobertura, meses_rot)
+    están baked en el snapshot: cambiarlos = recalcular."""
+    __tablename__ = 'cadencia_lab_snapshot'
+    lab_id = Column(Integer, primary_key=True, autoincrement=False)
+    lab_nombre = Column(String(150))
+    # RFM (recencia × rotación, sobre todos los productos del lab)
+    core = Column(Integer, nullable=False, default=0)
+    ocasional = Column(Integer, nullable=False, default=0)
+    caida = Column(Integer, nullable=False, default=0)
+    dormido = Column(Integer, nullable=False, default=0)
+    # Buckets de rotación (solo productos con ventas en la ventana)
+    alta = Column(Integer, nullable=False, default=0)
+    media_alta = Column(Integer, nullable=False, default=0)
+    media = Column(Integer, nullable=False, default=0)
+    baja = Column(Integer, nullable=False, default=0)
+    muy_baja = Column(Integer, nullable=False, default=0)
+    # Negocio
+    con_ventas = Column(Integer, nullable=False, default=0)
+    sin_ventas = Column(Integer, nullable=False, default=0)
+    monto_mensual = Column(DECIMAL(16, 2), nullable=False, default=0)
+    dormido_valor = Column(DECIMAL(16, 2), nullable=False, default=0)
+    dormido_con_stock = Column(Integer, nullable=False, default=0)
+    dormido_stock_u = Column(Integer, nullable=False, default=0)
+    # Params usados + timestamp
+    cobertura = Column(Integer, nullable=True)
+    meses_rot = Column(Integer, nullable=True)
+    actualizado_en = Column(DateTime, default=now_ar)
+
+
 class Usuario(Base):
     """Usuarios de la aplicación con rol y permisos."""
     __tablename__ = 'usuarios'
@@ -1854,6 +1888,7 @@ def init_db(database_url=None):
                         'kellerhoff_equivalencia',
                         'estacionalidad_escenarios',
                         'estacionalidad_productos',
+                        'cadencia_lab_snapshot',
                         'archivos_compartidos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:

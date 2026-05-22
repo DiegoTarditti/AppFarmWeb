@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Resumen de cadencias por lab — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cr-page { padding: 10px 24px 24px; }
+    .cr-bar {
+        display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+        padding: 7px 14px; background: var(--ds-surface);
+        border: 1px solid var(--ds-line); border-radius: 12px; margin-bottom: 10px;
+    }
+    .cr-h1 { font-family:'Space Grotesk',sans-serif; font-size: 15px; font-weight: 700;
+        color: var(--ds-text); margin: 0; white-space: nowrap; }
+    .cr-div { width: 1px; height: 18px; background: var(--ds-line); }
+    .cr-meta { font-size: 10px; color: var(--ds-text-mute); }
+    .cr-search { background: rgba(0,0,0,.3); border: 1px solid var(--ds-line);
+        color: var(--ds-text); border-radius: 6px; padding: 5px 10px; font-size: 12px;
+        width: 200px; outline: none; }
+    .cr-btn { background: rgba(95,230,188,.14); color: var(--ds-mint);
+        border: 1px solid var(--ds-mint); border-radius: 8px; padding: 6px 12px;
+        font-size: 12px; font-weight: 700; cursor: pointer; }
+    .cr-btn:hover { background: rgba(95,230,188,.28); }
+    .cr-btn:disabled { opacity: .5; cursor: default; }
+    .cr-num { background: rgba(0,0,0,.3); border: 1px solid var(--ds-line);
+        color: var(--ds-text); color-scheme: dark; border-radius: 4px;
+        padding: 5px 8px; font-size: 12px; width: 52px; text-align: right; outline: none; }
+    .cr-volver { margin-left: auto; color: var(--ds-text-mute); font-size: 11px; white-space: nowrap; }
+
+    .cr-tablewrap { background: var(--ds-surface); border: 1px solid var(--ds-line);
+        border-radius: 12px; overflow-x: auto; }
+    .cr-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .cr-table thead th {
+        position: sticky; top: 0; background: #103d31; z-index: 2;
+        color: var(--ds-text-mute); font-size: 9px; font-weight: 700;
+        text-transform: uppercase; letter-spacing: .05em;
+        padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--ds-line);
+        white-space: nowrap; cursor: pointer; user-select: none;
+    }
+    .cr-table thead th.left { text-align: left; }
+    .cr-table thead th.grp { text-align: center; font-size: 9px; padding: 4px 10px;
+        border-bottom: 1px solid var(--ds-line); cursor: default; }
+    .cr-table thead th.grp.rfm { color: #5fe6bc; }
+    .cr-table thead th.grp.rot { color: #fbbf24; }
+    .cr-table thead th.grp.val { color: var(--ds-text-mute); }
+    .cr-table thead th .arr { color: var(--ds-mint); font-size: 8px; }
+    .cr-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; }
+    .cr-table tbody tr:hover td { background: rgba(95,230,188,.05); }
+    .cr-table tbody td { padding: 7px 10px; text-align: right;
+        font-family: ui-monospace, Consolas, monospace; color: var(--ds-text); }
+    .cr-table tbody td.left { text-align: left; font-family: inherit; font-weight: 600; }
+    .cr-table td.sep, .cr-table th.sep { border-left: 1px solid rgba(255,255,255,.07); }
+    .cr-c-core { color: #fca5a5; } .cr-c-ocasional { color: #7dd3fc; }
+    .cr-c-caida { color: #fcd34d; font-weight: 700; } .cr-c-dormido { color: var(--ds-text-mute); }
+    .cr-zero { color: rgba(255,255,255,.18); }
+    .cr-val { color: var(--ds-warn); font-weight: 700; }
+    .cr-table tfoot td { padding: 8px 10px; text-align: right; font-weight: 700;
+        font-family: ui-monospace, Consolas, monospace; color: var(--ds-text);
+        border-top: 2px solid var(--ds-line); background: rgba(0,0,0,.15); }
+    .cr-table tfoot td.left { text-align: left; }
+    .cr-empty { padding: 48px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="cr-page">
+    <div class="cr-bar">
+        <span style="font-size:15px;">📊</span>
+        <h1 class="cr-h1">Cadencias — plataforma por laboratorio</h1>
+        <span class="cr-div"></span>
+        <input type="text" id="cr-search" class="cr-search" placeholder="Filtrar laboratorio…">
+        {% if meta %}
+        <span class="cr-meta">
+            {{ meta.n_labs }} labs · actualizado {{ meta.actualizado_en.strftime('%d/%m %H:%M') if meta.actualizado_en else '—' }}
+            · cobertura {{ meta.cobertura }}d · avg {{ meta.meses_rot }}m
+        </span>
+        {% endif %}
+        <span class="cr-div"></span>
+        <label class="cr-meta" for="rc-cob">Cob.</label>
+        <input id="rc-cob" type="number" class="cr-num" min="7" max="90" value="{{ meta.cobertura if meta else 30 }}">
+        <label class="cr-meta" for="rc-rot">Avg(m)</label>
+        <input id="rc-rot" type="number" class="cr-num" min="1" max="12" value="{{ meta.meses_rot if meta else 3 }}">
+        <button type="button" id="cr-recalc" class="cr-btn" onclick="recalcular()">↻ Recalcular (todos)</button>
+        <span id="cr-status" class="cr-meta"></span>
+        <a href="{{ url_for('informes_index') }}" class="cr-volver">← Informes</a>
+    </div>
+
+    {% if not filas %}
+    <div class="cr-empty">
+        <p style="font-size:24px;">📊</p>
+        <p>Todavía no hay snapshot. Tocá <b>↻ Recalcular</b> para analizar todos los laboratorios (~25s).</p>
+    </div>
+    {% else %}
+    <div class="cr-tablewrap">
+        <table class="cr-table" id="cr-tabla">
+            <thead>
+                <tr>
+                    <th class="left" rowspan="2" data-sort="nombre" data-type="str">Laboratorio</th>
+                    <th class="grp rfm sep" colspan="4">Recencia × Rotación</th>
+                    <th class="grp rot sep" colspan="5">Rotación (con ventas)</th>
+                    <th class="grp val sep" colspan="2">Negocio</th>
+                </tr>
+                <tr>
+                    <th class="sep" data-sort="core" title="Vende seguido y reciente">🟢 Core</th>
+                    <th data-sort="ocasional" title="Esporádico pero reciente">🔵 Ocas.</th>
+                    <th data-sort="caida" title="Vendía seguido, hace rato no — revisar">🔻 Caída</th>
+                    <th data-sort="dormido" title="Esporádico y sin ventas recientes">💤 Dorm.</th>
+                    <th class="sep" data-sort="alta" title="≥60/mes">🔥 Alta</th>
+                    <th data-sort="media_alta" title="30-60/mes">⚡ M-alta</th>
+                    <th data-sort="media" title="10-30/mes">🐢 Media</th>
+                    <th data-sort="baja" title="5-10/mes">🐌 Baja</th>
+                    <th data-sort="muy_baja" title="<5/mes">💤 M.baja</th>
+                    <th class="sep" data-sort="monto_mensual" title="Monto mensual estimado a PVP">$/mes</th>
+                    <th data-sort="dormido_valor" title="Stock dormido valorizado (precio actual)">$ Dormido</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in filas %}
+                <tr data-nombre="{{ f.nombre|lower }}"
+                    data-core="{{ f.core }}" data-ocasional="{{ f.ocasional }}" data-caida="{{ f.caida }}"
+                    data-dormido="{{ f.dormido }}" data-alta="{{ f.alta }}" data-media_alta="{{ f.media_alta }}"
+                    data-media="{{ f.media }}" data-baja="{{ f.baja }}" data-muy_baja="{{ f.muy_baja }}"
+                    data-monto_mensual="{{ f.monto_mensual }}" data-dormido_valor="{{ f.dormido_valor }}"
+                    onclick="window.location='{{ url_for('informe_cadencias_lab', lab_id=f.lab_id, cobertura=(meta.cobertura if meta else 30), meses_rot=(meta.meses_rot if meta else 3)) }}'"
+                    title="Ver detalle de {{ f.nombre }}">
+                    <td class="left">{{ f.nombre }}</td>
+                    <td class="sep cr-c-core {% if not f.core %}cr-zero{% endif %}">{{ f.core }}</td>
+                    <td class="cr-c-ocasional {% if not f.ocasional %}cr-zero{% endif %}">{{ f.ocasional }}</td>
+                    <td class="cr-c-caida {% if not f.caida %}cr-zero{% endif %}">{{ f.caida }}</td>
+                    <td class="cr-c-dormido {% if not f.dormido %}cr-zero{% endif %}">{{ f.dormido }}</td>
+                    <td class="sep {% if not f.alta %}cr-zero{% endif %}">{{ f.alta }}</td>
+                    <td class="{% if not f.media_alta %}cr-zero{% endif %}">{{ f.media_alta }}</td>
+                    <td class="{% if not f.media %}cr-zero{% endif %}">{{ f.media }}</td>
+                    <td class="{% if not f.baja %}cr-zero{% endif %}">{{ f.baja }}</td>
+                    <td class="{% if not f.muy_baja %}cr-zero{% endif %}">{{ f.muy_baja }}</td>
+                    <td class="sep">$ {{ '{:,.0f}'.format(f.monto_mensual).replace(',', '.') }}</td>
+                    <td class="cr-val">{% if f.dormido_valor > 0 %}$ {{ '{:,.0f}'.format(f.dormido_valor).replace(',', '.') }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr>
+                    <td class="left">Total ({{ filas | length }} labs)</td>
+                    <td class="sep">{{ totales.core }}</td><td>{{ totales.ocasional }}</td>
+                    <td>{{ totales.caida }}</td><td>{{ totales.dormido }}</td>
+                    <td class="sep">{{ totales.alta }}</td><td>{{ totales.media_alta }}</td>
+                    <td>{{ totales.media }}</td><td>{{ totales.baja }}</td><td>{{ totales.muy_baja }}</td>
+                    <td class="sep">$ {{ '{:,.0f}'.format(totales.monto_mensual).replace(',', '.') }}</td>
+                    <td class="cr-val">$ {{ '{:,.0f}'.format(totales.dormido_valor).replace(',', '.') }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <p style="font-size:10px; color:var(--ds-text-mute); margin-top:8px;">
+        Click en una fila → detalle del lab. Click en un encabezado → ordenar.
+        RFM sobre todos los productos; Rotación solo sobre los con ventas. $ Dormido = stock sin ventas recientes a precio actual.
+    </p>
+    {% endif %}
+</div>
+</div>
+
+<script>
+// Búsqueda por nombre.
+document.getElementById('cr-search').addEventListener('input', function() {
+    const toks = this.value.toLowerCase().split(/\s+/).filter(Boolean);
+    document.querySelectorAll('#cr-tabla tbody tr').forEach(tr => {
+        tr.style.display = toks.every(t => tr.dataset.nombre.includes(t)) ? '' : 'none';
+    });
+});
+
+// Orden por columna (click en th con data-sort).
+let _sortKey = null, _sortAsc = false;
+document.querySelectorAll('#cr-tabla thead th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const key = th.dataset.sort, isStr = th.dataset.type === 'str';
+        if (_sortKey === key) { _sortAsc = !_sortAsc; } else { _sortKey = key; _sortAsc = isStr; }
+        const tbody = document.querySelector('#cr-tabla tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+            let av = a.dataset[key], bv = b.dataset[key];
+            if (!isStr) { av = parseFloat(av) || 0; bv = parseFloat(bv) || 0; }
+            if (av < bv) return _sortAsc ? -1 : 1;
+            if (av > bv) return _sortAsc ? 1 : -1;
+            return 0;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+        document.querySelectorAll('#cr-tabla thead th .arr').forEach(s => s.remove());
+        const arr = document.createElement('span');
+        arr.className = 'arr'; arr.textContent = _sortAsc ? ' ▲' : ' ▼';
+        th.appendChild(arr);
+    });
+});
+
+async function recalcular() {
+    const btn = document.getElementById('cr-recalc');
+    const st = document.getElementById('cr-status');
+    const cob = document.getElementById('rc-cob').value;
+    const rot = document.getElementById('rc-rot').value;
+    btn.disabled = true; st.textContent = 'Analizando todos los labs… (~25s)';
+    try {
+        const r = await fetch('{{ url_for("informe_cadencias_resumen_recalcular") }}', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({cobertura: parseInt(cob), meses_rot: parseInt(rot)}),
+        });
+        const d = await r.json();
+        if (!d.ok) { st.textContent = 'Error: ' + (d.error || '?'); btn.disabled = false; return; }
+        st.textContent = `✓ ${d.filas} labs en ${d.segundos}s. Recargando…`;
+        setTimeout(() => location.reload(), 600);
+    } catch (e) { st.textContent = 'Error de red'; btn.disabled = false; }
+}
+</script>
+{% endblock %}
