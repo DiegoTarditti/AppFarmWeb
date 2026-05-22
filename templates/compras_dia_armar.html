@@ -143,7 +143,7 @@
         padding: 5px 16px;
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     }
-    .ar-filter-bar input[type="text"], .ar-filter-bar select {
+    .ar-filter-bar input[type="text"], .ar-filter-bar input[type="number"], .ar-filter-bar select {
         background: var(--ds-surface);
         border: 1px solid var(--ds-line-2);
         color: var(--ds-text);
@@ -152,11 +152,11 @@
         font-size: 12px;
         font-family: inherit;
     }
-    .ar-filter-bar input[type="text"]:focus, .ar-filter-bar select:focus {
+    .ar-filter-bar input[type="text"]:focus, .ar-filter-bar input[type="number"]:focus, .ar-filter-bar select:focus {
         outline: none; border-color: var(--ds-mint);
         box-shadow: 0 0 0 2px rgba(95,230,188,.15);
     }
-    .ar-filter-bar input[type="text"]::placeholder { color: var(--ds-text-mute); }
+    .ar-filter-bar input::placeholder { color: var(--ds-text-mute); }
     .ar-filter-bar label { color: var(--ds-text-soft); font-size: 11px; }
     .ar-filter-bar .filt-count, .ar-filter-bar .sug-count { color: var(--ds-text-mute); font-size: 10.5px; }
 
@@ -549,6 +549,27 @@
         ▲ Urgentes
     </button>
 
+    {# Filtros numéricos — PVP caro, sin ventas, rotación (a la derecha de Urgentes) #}
+    <div class="flex flex-col gap-1 text-xs">
+        <label class="flex items-center gap-1" title="Mostrar solo productos con PVP mayor a este valor (precargado del Valor piso · productos caros)">
+            PVP &gt; $
+            <input type="number" id="filtro-pvp" min="0" step="500"
+                   value="{% if valor_piso %}{{ valor_piso | round | int }}{% endif %}"
+                   placeholder="0" style="width: 84px;">
+        </label>
+        <label class="flex items-center gap-1" title="Solo productos sin ventas en los últimos N meses (1-12)">
+            Sin ventas en
+            <input type="number" id="filtro-sinventas" min="1" max="12" placeholder="—" style="width: 48px;">
+            m
+        </label>
+    </div>
+    <select id="filtro-rotacion" style="width: 132px;" title="Filtrar por rotación">
+        <option value="">Rotación: todas</option>
+        <option value="A">Alta</option>
+        <option value="M">Media</option>
+        <option value="B">Baja</option>
+    </select>
+
     <div class="relative ml-auto">
         <input type="text" id="agregar-q" placeholder="+ Agregar producto…" autocomplete="off"
                style="width: 280px; border-color: var(--ds-mint) !important; border-width: 2px;">
@@ -591,6 +612,7 @@
             <thead>
                 <tr>
                     <th style="text-align:right; color: var(--ds-mint) !important;">A pedir</th>
+                    <th style="text-align:center;" title="Producto fraccionado: se vende suelto pero se compra por envase. Conversión unidades → cajas para controlar.">Fracc.</th>
                     <th>Producto</th>
                     <th>Lab</th>
                     {% if not prov %}<th style="text-align:center; color: #F0ABFC !important;">Drog</th>{% endif %}
@@ -620,6 +642,9 @@
                     data-drogs="{{ (it.drogs_siglas or []) | join(',') }}"
                     data-lab-id="{{ it.lab_local_id or '' }}"
                     data-ean="{{ it.ean or '' }}"
+                    data-pvp="{{ it.pvp or 0 }}"
+                    data-rotacion="{{ it.rotacion or '' }}"
+                    data-ventas="{{ (it.ventas_arr or []) | join(',') }}"
                     onclick="seleccionarProducto(this)">
                     <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
                         {% if it.override_aplicado and it.a_pedir_sin_override is not none and it.a_pedir_sin_override != it.a_pedir %}
@@ -627,16 +652,23 @@
                               title="Cálculo sin override habría pedido {{ it.a_pedir_sin_override }}u. El override 'cantidad_reposicion_fija' lo subió/bajó a {{ it.a_pedir }}u.">{{ it.a_pedir_sin_override }}</span>
                         {% endif %}
                         {% set _frac = it.fraccionado and it.cantidad_envase and it.cantidad_envase > 1 %}
-                        <input type="number" min="0" value="{{ it.a_pedir }}"
+                        {% set _cajas = (it.a_pedir / it.cantidad_envase) | round(0, 'ceil') | int if _frac else 0 %}
+                        <input type="number" min="0" value="{{ _cajas if _frac else it.a_pedir }}"
                                {% if prov and not it.cubre_lab %}disabled{% endif %}
-                               {% if _frac %}data-envase="{{ it.cantidad_envase }}" oninput="recalcCajas(this)"{% endif %}
+                               {% if _frac %}data-envase="{{ it.cantidad_envase }}" oninput="recalcCajas(this)"
+                               title="Cantidad en CAJAS — este producto se compra por envase de {{ it.cantidad_envase }} unidades"{% endif %}
                                class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
+                        {% if _frac %}<div class="text-[9px] text-emerald-700 mt-0.5">cajas</div>{% endif %}
+                    </td>
+                    {# Columna Fraccionado: a pedir es en CAJAS; acá el total en unidades. #}
+                    <td class="px-2 py-1 text-center whitespace-nowrap">
                         {% if _frac %}
-                        <div class="caja-eq text-[10px] text-emerald-700 mt-0.5 whitespace-nowrap"
-                             title="Se vende suelto pero se compra por envase de {{ it.cantidad_envase }}. Equivalente en cajas (redondeo arriba).">
-                            {{ (it.a_pedir / it.cantidad_envase) | round(0, 'ceil') | int }} caja{{ 's' if (it.a_pedir / it.cantidad_envase) | round(0, 'ceil') | int != 1 else '' }}
-                            <span class="text-[#999]">×{{ it.cantidad_envase }}</span>
+                        <div class="caja-eq text-[10px] text-emerald-700"
+                             title="Cada caja trae {{ it.cantidad_envase }} unidades. Total de unidades que entran en el pedido.">
+                            ×{{ it.cantidad_envase }} = <b>{{ _cajas * it.cantidad_envase }}</b> u
                         </div>
+                        {% else %}
+                        <span class="text-[#ccc]">—</span>
                         {% endif %}
                     </td>
                     <td class="px-3 py-1">
@@ -914,12 +946,18 @@ const _filtroDrogChks = Array.from(document.querySelectorAll('.filtro-drog-chk')
 const _filtroDrogLibre = document.getElementById('filtro-drog-libre');
 
 const _contadorSug = document.getElementById('contador-sug');
+const _filtroPvp       = document.getElementById('filtro-pvp');
+const _filtroSinVentas = document.getElementById('filtro-sinventas');
+const _filtroRotacion  = document.getElementById('filtro-rotacion');
 function aplicarFiltros() {
     const fnProd      = window.MultiTokenFilter.build(_filtroProd.value);
     const fnLab       = window.MultiTokenFilter.build(_filtroLab.value);
     const fnDroga     = window.MultiTokenFilter.build(_filtroDroga.value);
     const soloLibre   = _filtroLibre.checked;
     const soloSug     = _filtroSug.checked;
+    const pvpMin      = parseFloat(_filtroPvp && _filtroPvp.value) || 0;
+    const sinVentasN  = parseInt(_filtroSinVentas && _filtroSinVentas.value) || 0;
+    const rotSel      = (_filtroRotacion && _filtroRotacion.value) || '';
     // En multi-drog no existe el checkbox "otra drog" → asumimos true (mostrar).
     const mostraOtra  = !_filtroOtraDrog || _filtroOtraDrog.checked;
     // Drog filter: set de siglas tildadas + flag "Libre" (sin drog).
@@ -938,13 +976,26 @@ function aplicarFiltros() {
         // así no se esconden los ~58% que no están sincronizados con Observer.
         const drogaVal = row.dataset.droga || '';
         const drogaOk = !drogaVal || fnDroga(drogaVal);
+        // PVP > X (caros)
+        const pvpOk = pvpMin <= 0 || (parseFloat(row.dataset.pvp) || 0) > pvpMin;
+        // Sin ventas en los últimos N meses (suma de los últimos N == 0)
+        let sinVentasOk = true;
+        if (sinVentasN > 0) {
+            const raw = (row.dataset.ventas || '').split(',').filter(s => s !== '');
+            if (raw.length) {
+                const ult = raw.map(Number).slice(Math.max(0, raw.length - sinVentasN));
+                sinVentasOk = ult.reduce((a, b) => a + (b || 0), 0) === 0;
+            }  // sin datos de ventas (fila agregada a mano) → no se esconde
+        }
+        // Rotación
+        const rotOk = !rotSel || (row.dataset.rotacion || '') === rotSel;
         const ok = fnProd(row.dataset.nombre)
             && fnLab(row.dataset.lab || '')
             && drogaOk
             && (!soloLibre || row.dataset.tvc === 'L')
             && (!soloSug || sug === 'up' || sug === 'down')
             && (mostraOtra || row.dataset.cubre !== 'n')
-            && drogOk;
+            && drogOk && pvpOk && sinVentasOk && rotOk;
         row.style.display = ok ? '' : 'none';
         if (ok) {
             visibles++;
@@ -976,6 +1027,9 @@ function aplicarZebra() {
 _filtroProd.addEventListener('input', aplicarFiltros);
 _filtroLab.addEventListener('input', aplicarFiltros);
 _filtroDroga.addEventListener('input', aplicarFiltros);
+if (_filtroPvp) _filtroPvp.addEventListener('input', aplicarFiltros);
+if (_filtroSinVentas) _filtroSinVentas.addEventListener('input', aplicarFiltros);
+if (_filtroRotacion) _filtroRotacion.addEventListener('change', aplicarFiltros);
 _filtroLibre.addEventListener('change', aplicarFiltros);
 _filtroSug.addEventListener('change', aplicarFiltros);
 if (_filtroOtraDrog) _filtroOtraDrog.addEventListener('change', aplicarFiltros);
@@ -1423,14 +1477,26 @@ function agregarFila(it) {
     tr.dataset.cubre = it.cubre_lab ? 'y' : 'n';
     tr.dataset.nombre = it.desc;
     tr.dataset.lab = it.lab_nombre;
+    tr.dataset.pvp = it.pvp || 0;
+    tr.dataset.rotacion = it.rotacion || '';
+    tr.dataset.ventas = (it.ventas_arr || []).join(',');
     tr.dataset.ofertaDto = it.oferta_dto || '';
     tr.dataset.ofertaMin = it.oferta_min || '';
     tr.onclick = () => seleccionarProducto(tr);
+    const _fracDin = it.fraccionado && it.cantidad_envase > 1;
+    const _cajasDin = _fracDin ? Math.ceil((it.a_pedir || 0) / it.cantidad_envase) : 0;
     tr.innerHTML = `
         <td class="px-3 py-1 text-right" onclick="event.stopPropagation()">
-            <input type="number" min="0" value="${it.a_pedir}"
+            <input type="number" min="0" value="${_fracDin ? _cajasDin : it.a_pedir}"
                    ${it.cubre_lab ? '' : 'disabled'}
+                   ${_fracDin ? `data-envase="${it.cantidad_envase}" oninput="recalcCajas(this)" title="Cantidad en CAJAS (envase de ${it.cantidad_envase})"` : ''}
                    class="w-20 text-right bg-white border border-surface-border rounded px-1.5 py-0.5 text-sm font-mono">
+            ${_fracDin ? '<div class="text-[9px] text-emerald-700 mt-0.5">cajas</div>' : ''}
+        </td>
+        <td class="px-2 py-1 text-center whitespace-nowrap">
+            ${_fracDin
+                ? `<div class="caja-eq text-[10px] text-emerald-700">×${it.cantidad_envase} = <b>${_cajasDin * it.cantidad_envase}</b> u</div>`
+                : '<span class="text-[#ccc]">—</span>'}
         </td>
         <td class="px-3 py-1">
             <span class="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded mr-1 font-bold">+ NUEVO</span>
@@ -1503,15 +1569,14 @@ function subirAMinOferta(btn, minimo) {
     }
 }
 
-// Equivalencia en cajas para productos fraccionados (vende suelto, compra por
-// envase). No toca la cantidad en unidades; solo actualiza el "N cajas ×envase".
+// Fraccionados: el input "A pedir" es la cantidad de CAJAS; la columna "Fracc."
+// muestra el total en unidades (cajas × envase). Se actualiza al editar las cajas.
 function recalcCajas(input) {
     const envase = parseInt(input.dataset.envase) || 0;
     if (!envase) return;
-    const u = parseInt(input.value) || 0;
-    const cajas = Math.ceil(u / envase);
-    const eq = input.closest('td').querySelector('.caja-eq');
-    if (eq) eq.innerHTML = `${cajas} caja${cajas !== 1 ? 's' : ''} <span class="text-[#999]">×${envase}</span>`;
+    const cajas = parseInt(input.value) || 0;
+    const eq = input.closest('tr').querySelector('.caja-eq');
+    if (eq) eq.innerHTML = `×${envase} = <b>${cajas * envase}</b> u`;
 }
 
 // ── Paso de módulos (labs con usa_packs) ────────────────────────────────

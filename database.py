@@ -2993,6 +2993,14 @@ def _pg_add_columns(conn):
          'Al armar el pedido, la cantidad de este producto se topea en 1 unidad.',
          {'efecto_armado': 'tope_uno', 'icono': '1️⃣', 'color': 'sky',
           'permite_reemplazo': False, 'permite_vigencia': False}),
+        ('AGOTAR_TODO', 'Agotar stock', 'flag',
+         'Nunca repone (discontinuar). a_pedir = 0 siempre.',
+         {'efecto_armado': 'agotar_todo', 'icono': '📉', 'color': 'amber',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
+        ('AGOTAR_HASTA_1', 'Agotar hasta 1', 'flag',
+         'No repone mientras tenga stock; repone 1 solo cuando llega a 0 (mantiene 1 unidad).',
+         {'efecto_armado': 'agotar_hasta_1', 'icono': '📉', 'color': 'amber',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
     ]
     for slug, nombre, cat, desc, cfg in _seed_tipos:
         try:
