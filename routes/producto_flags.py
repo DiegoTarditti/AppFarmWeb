@@ -85,12 +85,17 @@ def init_app(app):
         """Pantalla dedicada: arriba el buscador para configurar presentación
         (fraccionado + envase + equivalencia Kellerhoff); abajo la lista de los
         productos que ya tienen presentación configurada."""
-        from sqlalchemy import or_ as _or
+        from sqlalchemy import or_ as _or, and_ as _and
         with get_db() as session:
+            # Solo lo que el usuario configuró a mano: fraccionado=True o un envase
+            # editado manualmente (fuente='manual'). NO el cantidad_envase
+            # auto-parseado en catalogación (fuente observer/regex/llm/mixto), que
+            # está en ~60k productos y no es una "presentación" configurada.
             q = (session.query(Producto, ProductoAtributo)
                  .outerjoin(ProductoAtributo, ProductoAtributo.producto_id == Producto.id)
                  .filter(_or(Producto.fraccionado.is_(True),
-                             ProductoAtributo.cantidad_envase.isnot(None)))
+                             _and(ProductoAtributo.fuente == 'manual',
+                                  ProductoAtributo.cantidad_envase.isnot(None))))
                  .order_by(Producto.descripcion))
             filas = []
             for prod, atr in q.limit(2000).all():
@@ -146,11 +151,23 @@ def init_app(app):
                     .filter(Laboratorio.activo.is_(True))
                     .order_by(Laboratorio.nombre).all())
 
+            # Productos marcados "no pedir" al armar un pedido (Producto.no_pedir).
+            # No son flags de la tabla ProductoFlag: es una columna del master que
+            # se setea desde compras/dia → "Pide 0 (no reponer)".
+            np_rows = (session.query(Producto.id, Producto.codigo_barra,
+                                     Producto.descripcion, Laboratorio.nombre)
+                       .outerjoin(Laboratorio, Laboratorio.id == Producto.laboratorio_id)
+                       .filter(Producto.no_pedir.is_(True))
+                       .order_by(Producto.descripcion).all())
+            no_pedir_items = [{'id': r[0], 'ean': r[1], 'nombre': r[2] or '',
+                               'lab': r[3] or ''} for r in np_rows]
+
         return render_template('producto_flags.html',
                                flags=flags,
                                flag_configs=cfgs,
                                filtro_slug=filtro_slug,
-                               labs=labs)
+                               labs=labs,
+                               no_pedir_items=no_pedir_items)
 
     @app.route('/productos/flags/asignar', methods=['POST'])
     @login_required

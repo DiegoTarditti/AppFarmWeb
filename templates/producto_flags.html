@@ -360,11 +360,83 @@
                 <button type="submit" class="btn btn-mint text-xs w-full mt-2">Asignar flag</button>
             </form>
         </div>
+
+        {# ── Productos marcados "no pedir" al armar el pedido (Producto.no_pedir) ── #}
+        <div class="pf-card">
+            <div class="pf-card-head">
+                <h3>🚫 No pedir <span class="text-[11px] font-normal text-[color:var(--ds-text-mute)]">({{ no_pedir_items | length }})</span></h3>
+            </div>
+            {% if no_pedir_items %}
+            <div style="padding: 6px 0 4px;">
+                <div style="padding: 0 14px 8px;">
+                    <input type="text" id="np-filtro" class="pf-input" placeholder="Filtrar…">
+                </div>
+                <div style="max-height: 360px; overflow-y: auto;">
+                <table class="pf-table">
+                    <thead>
+                        <tr><th>Producto</th><th>EAN</th><th></th></tr>
+                    </thead>
+                    <tbody id="np-body">
+                    {% for p in no_pedir_items %}
+                    <tr class="np-row" data-txt="{{ (p.nombre ~ ' ' ~ p.ean ~ ' ' ~ p.lab) | lower }}">
+                        <td class="text-[color:var(--ds-text-soft)]">
+                            {{ p.nombre }}
+                            {% if p.lab %}<br><span class="text-[10px] text-[color:var(--ds-text-mute)]">🏭 {{ p.lab }}</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if p.ean %}<code class="text-[11px] font-mono text-[color:var(--ds-text-mute)]">{{ p.ean }}</code>
+                            {% else %}<span class="text-[color:var(--ds-text-mute)] text-[11px]">—</span>{% endif %}
+                        </td>
+                        <td class="whitespace-nowrap">
+                            <button type="button" onclick="reactivarNoPedir({{ p.id }}, this)"
+                                    class="text-[11px] text-[color:var(--ds-mint)] hover:text-emerald-300 px-2 py-0.5 rounded hover:bg-emerald-900/20 transition border border-[color:var(--ds-line)]">
+                                ↻ Reactivar
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                </div>
+            </div>
+            {% else %}
+            <div class="pf-empty">
+                <div class="text-2xl mb-2">🚫</div>
+                Ningún producto marcado como "no pedir".
+                Se marcan desde el armado de pedido con "Pide 0 (no reponer)".
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
 
 <script>
 const FLAG_CONFIGS = {{ flag_configs | tojson }};
+
+// ── "No pedir": filtro + reactivar (quita Producto.no_pedir) ──
+(function() {
+    const inp = document.getElementById('np-filtro');
+    if (!inp) return;
+    inp.addEventListener('input', () => {
+        const toks = inp.value.toLowerCase().split(/\s+/).filter(Boolean);
+        document.querySelectorAll('.np-row').forEach(r => {
+            r.style.display = toks.every(t => r.dataset.txt.includes(t)) ? '' : 'none';
+        });
+    });
+})();
+
+async function reactivarNoPedir(prodId, btn) {
+    if (!confirm('¿Reactivar este producto? Volverá a entrar en el armado de pedidos.')) return;
+    btn.disabled = true; btn.textContent = '…';
+    try {
+        const r = await fetch('/api/producto/' + prodId + '/reactivar',
+                              {method: 'POST', credentials: 'same-origin'});
+        const d = await r.json();
+        if (!d.ok) { btn.disabled = false; btn.textContent = '↻ Reactivar'; alert(d.error || 'Error'); return; }
+        const row = btn.closest('tr');
+        if (row) row.remove();
+    } catch { btn.disabled = false; btn.textContent = '↻ Reactivar'; alert('Error de red'); }
+}
 
 function validarForm(e) {
     const flag = document.getElementById('sel-flag').value.trim();
