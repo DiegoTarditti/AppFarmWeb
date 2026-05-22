@@ -126,59 +126,14 @@ def init_app(app):
         """Materializa el análisis de cadencias para TODOS los labs con ventas
         y reemplaza el snapshot. ~25s. Params cobertura/meses_rot baked in."""
         import time
-        from helpers import analizar_cadencias_lab
-        from database import CadenciaLabSnapshot, now_ar
+        from helpers import recalcular_snapshot_cadencias
         data = request.get_json(silent=True) or {}
         cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
         meses_rot = max(1, min(int(data.get('meses_rot') or 3), 12))
         t0 = time.time()
         with database.get_db() as session:
-            lab_ids = [r[0] for r in (session.query(ObsProducto.laboratorio_observer)
-                       .join(ObsVentaMensual,
-                             ObsVentaMensual.producto_observer == ObsProducto.observer_id)
-                       .filter(ObsProducto.fecha_baja.is_(None),
-                               ObsProducto.laboratorio_observer.isnot(None))
-                       .distinct().all())]
-            lab_nombre = dict(session.query(ObsLaboratorio.observer_id,
-                                            ObsLaboratorio.descripcion))
-            ahora = now_ar()
-            rows = []
-            for lid in lab_ids:
-                d = analizar_cadencias_lab(session, lid, meses_rotacion=meses_rot,
-                                           cobertura_default=cobertura)
-                t = d['totales']
-                if t['productos_con_ventas'] == 0 and t['productos_sin_ventas'] == 0:
-                    continue
-                rfm = {m['slug']: m['n'] for m in d['matriz']}
-                rfm_m = {m['slug']: m['monto_mensual'] for m in d['matriz']}
-                bk = {b['slug']: b['n_productos'] for b in d['buckets']}
-                bk_m = {b['slug']: b['monto_mensual'] for b in d['buckets']}
-                rows.append({
-                    'lab_id': lid, 'lab_nombre': lab_nombre.get(lid, str(lid)),
-                    'core': rfm.get('core', 0), 'ocasional': rfm.get('ocasional', 0),
-                    'caida': rfm.get('caida', 0), 'dormido': rfm.get('dormido', 0),
-                    'alta': bk.get('alta', 0), 'media_alta': bk.get('media_alta', 0),
-                    'media': bk.get('media', 0), 'baja': bk.get('baja', 0),
-                    'muy_baja': bk.get('muy_baja', 0),
-                    'core_monto': rfm_m.get('core', 0), 'ocasional_monto': rfm_m.get('ocasional', 0),
-                    'caida_monto': rfm_m.get('caida', 0), 'dormido_monto': rfm_m.get('dormido', 0),
-                    'alta_monto': bk_m.get('alta', 0), 'media_alta_monto': bk_m.get('media_alta', 0),
-                    'media_monto': bk_m.get('media', 0), 'baja_monto': bk_m.get('baja', 0),
-                    'muy_baja_monto': bk_m.get('muy_baja', 0),
-                    'con_ventas': t['productos_con_ventas'],
-                    'sin_ventas': t['productos_sin_ventas'],
-                    'monto_mensual': t['monto_mensual_total'],
-                    'dormido_valor': t['dormido_valor'],
-                    'dormido_con_stock': t['dormido_con_stock'],
-                    'dormido_stock_u': t['dormido_stock_u'],
-                    'cobertura': cobertura, 'meses_rot': meses_rot,
-                    'actualizado_en': ahora,
-                })
-            session.query(CadenciaLabSnapshot).delete()
-            session.flush()
-            session.bulk_insert_mappings(CadenciaLabSnapshot, rows)
-            session.commit()
-        return jsonify({'ok': True, 'filas': len(rows),
+            n = recalcular_snapshot_cadencias(session, cobertura, meses_rot)
+        return jsonify({'ok': True, 'filas': n,
                         'segundos': round(time.time() - t0, 1)})
 
     # ── Comparación portfolio líder de un lab vs ventas propias ──

@@ -1586,6 +1586,63 @@ def analizar_cadencias_lab(session, lab_observer_id, meses_rotacion=3,
     }
 
 
+def recalcular_snapshot_cadencias(session, cobertura=30, meses_rot=3):
+    """Materializa `analizar_cadencias_lab` para TODOS los labs con ventas y
+    reemplaza la tabla `cadencia_lab_snapshot`. Devuelve la cantidad de filas.
+
+    Reusado por el endpoint web /informes/cadencias-resumen/recalcular y por el
+    push a Render (computa local, después se copia la tabla). ~5s para ~400 labs.
+    """
+    import database
+    from sqlalchemy import func as _f
+    lab_ids = [r[0] for r in (session.query(database.ObsProducto.laboratorio_observer)
+               .join(database.ObsVentaMensual,
+                     database.ObsVentaMensual.producto_observer == database.ObsProducto.observer_id)
+               .filter(database.ObsProducto.fecha_baja.is_(None),
+                       database.ObsProducto.laboratorio_observer.isnot(None))
+               .distinct().all())]
+    lab_nombre = dict(session.query(database.ObsLaboratorio.observer_id,
+                                    database.ObsLaboratorio.descripcion))
+    ahora = database.now_ar()
+    rows = []
+    for lid in lab_ids:
+        d = analizar_cadencias_lab(session, lid, meses_rotacion=meses_rot,
+                                   cobertura_default=cobertura)
+        t = d['totales']
+        if t['productos_con_ventas'] == 0 and t['productos_sin_ventas'] == 0:
+            continue
+        rfm = {m['slug']: m['n'] for m in d['matriz']}
+        rfm_m = {m['slug']: m['monto_mensual'] for m in d['matriz']}
+        bk = {b['slug']: b['n_productos'] for b in d['buckets']}
+        bk_m = {b['slug']: b['monto_mensual'] for b in d['buckets']}
+        rows.append({
+            'lab_id': lid, 'lab_nombre': lab_nombre.get(lid, str(lid)),
+            'core': rfm.get('core', 0), 'ocasional': rfm.get('ocasional', 0),
+            'caida': rfm.get('caida', 0), 'dormido': rfm.get('dormido', 0),
+            'alta': bk.get('alta', 0), 'media_alta': bk.get('media_alta', 0),
+            'media': bk.get('media', 0), 'baja': bk.get('baja', 0),
+            'muy_baja': bk.get('muy_baja', 0),
+            'core_monto': rfm_m.get('core', 0), 'ocasional_monto': rfm_m.get('ocasional', 0),
+            'caida_monto': rfm_m.get('caida', 0), 'dormido_monto': rfm_m.get('dormido', 0),
+            'alta_monto': bk_m.get('alta', 0), 'media_alta_monto': bk_m.get('media_alta', 0),
+            'media_monto': bk_m.get('media', 0), 'baja_monto': bk_m.get('baja', 0),
+            'muy_baja_monto': bk_m.get('muy_baja', 0),
+            'con_ventas': t['productos_con_ventas'],
+            'sin_ventas': t['productos_sin_ventas'],
+            'monto_mensual': t['monto_mensual_total'],
+            'dormido_valor': t['dormido_valor'],
+            'dormido_con_stock': t['dormido_con_stock'],
+            'dormido_stock_u': t['dormido_stock_u'],
+            'cobertura': cobertura, 'meses_rot': meses_rot,
+            'actualizado_en': ahora,
+        })
+    session.query(database.CadenciaLabSnapshot).delete()
+    session.flush()
+    session.bulk_insert_mappings(database.CadenciaLabSnapshot, rows)
+    session.commit()
+    return len(rows)
+
+
 def calcular_alertas_repo_fija(session, dias_aviso=7, meses_rotacion=3,
                                 limit_top=8, lab_observer_id=None,
                                 incluir_sin_alerta=False):
