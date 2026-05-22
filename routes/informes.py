@@ -80,6 +80,63 @@ def init_app(app):
                                data=data, cobertura=cobertura,
                                meses_rot=meses_rot)
 
+    @app.route('/informes/cadencias-resumen')
+    @login_required
+    def informe_cadencias_resumen():
+        """Plataforma cross-lab: lee el snapshot materializado (1 fila por lab)
+        y lo renderiza para filtrar/ordenar client-side. El cálculo pesado se
+        hace en /recalcular (todos los labs de una). Drill-down por lab en vivo."""
+        from database import CadenciaLabSnapshot
+        int_keys = ('core', 'ocasional', 'caida', 'dormido', 'alta', 'media_alta',
+                    'media', 'baja', 'muy_baja', 'con_ventas',
+                    'dormido_con_stock', 'dormido_stock_u')
+        float_keys = ('monto_mensual', 'dormido_valor',
+                      'core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
+                      'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
+                      'muy_baja_monto')
+        keys = int_keys + float_keys
+        tot = {k: 0 for k in keys}
+        filas = []
+        meta = None
+        with database.get_db() as session:
+            rows = (session.query(CadenciaLabSnapshot)
+                    .order_by(CadenciaLabSnapshot.monto_mensual.desc()).all())
+            for r in rows:
+                fila = {'lab_id': r.lab_id, 'nombre': r.lab_nombre or str(r.lab_id)}
+                for k in keys:
+                    v = getattr(r, k) or 0
+                    v = float(v) if k in float_keys else int(v)
+                    fila[k] = v
+                    tot[k] += v
+                filas.append(fila)
+            if rows:
+                meta = {
+                    'actualizado_en': max((r.actualizado_en for r in rows if r.actualizado_en),
+                                          default=None),
+                    'cobertura': rows[0].cobertura,
+                    'meses_rot': rows[0].meses_rot,
+                    'n_labs': len(rows),
+                }
+        return render_template('informes_cadencias_resumen.html',
+                               filas=filas, totales=tot, meta=meta)
+
+    @app.route('/informes/cadencias-resumen/recalcular', methods=['POST'])
+    @login_required
+    def informe_cadencias_resumen_recalcular():
+        """Materializa el análisis de cadencias para TODOS los labs con ventas
+        y reemplaza el snapshot. ~25s. Params cobertura/meses_rot baked in."""
+        import time
+
+        from helpers import recalcular_snapshot_cadencias
+        data = request.get_json(silent=True) or {}
+        cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
+        meses_rot = max(1, min(int(data.get('meses_rot') or 3), 12))
+        t0 = time.time()
+        with database.get_db() as session:
+            n = recalcular_snapshot_cadencias(session, cobertura, meses_rot)
+        return jsonify({'ok': True, 'filas': n,
+                        'segundos': round(time.time() - t0, 1)})
+
     # ── Comparación portfolio líder de un lab vs ventas propias ──
     # Datasets de referencia (IQVIA/IMS) en referencia_mercado.py. Por ahora
     # solo Roemmers (152). El selector lista los labs con dataset cargado.

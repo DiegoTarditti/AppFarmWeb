@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+{% set nav_active = "productos" %}
+{% block title %}Presentaciones de productos{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.pp-topbar { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border-bottom: 1px solid var(--ds-line); padding: 12px 24px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.pp-topbar h1 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.pp-wrap { padding: 18px 24px; display: flex; flex-direction: column; gap: 18px; max-width: 1100px; }
+
+.pf-card { background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-lg); overflow: visible; }
+.pf-card-head { padding: 12px 16px; border-bottom: 1px solid var(--ds-line); background: rgba(0,0,0,.10);
+    border-top-left-radius: var(--ds-r-lg); border-top-right-radius: var(--ds-r-lg); }
+.pf-card-head h3 { font-size: 13px; font-weight: 700; color: var(--ds-text); margin: 0; }
+.pf-field { margin-bottom: 13px; }
+.pf-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); font-weight: 600; display: block; margin-bottom: 4px; }
+.pf-input { width: 100%; background: var(--ds-surface-2); border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm);
+    padding: 7px 10px; font-size: 13px; color: var(--ds-text); font-family: inherit; }
+.pf-input:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 2px rgba(95,230,188,.15); }
+.pf-help { font-size: 10px; color: var(--ds-text-mute); margin-top: 3px; }
+.pf-ac-wrap { position: relative; }
+.pf-ac-results { position: absolute; top: 100%; left: 0; right: 0; background: var(--ds-surface-2);
+    border: 1px solid var(--ds-line); border-radius: var(--ds-r-sm); max-height: 320px; overflow-y: auto; z-index: 50;
+    box-shadow: 0 6px 18px rgba(0,0,0,.35); display: none; }
+.pf-ac-results.open { display: block; }
+.pf-ac-item { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; font-size: 12px; }
+.pf-ac-item:last-child { border-bottom: none; }
+.pf-ac-item:hover, .pf-ac-item.focused { background: rgba(95,230,188,.10); }
+.pf-ac-item .ac-nombre { color: var(--ds-text); font-weight: 600; }
+.pf-ac-item .ac-meta { color: var(--ds-text-mute); font-size: 10px; margin-top: 2px; display: flex; gap: 10px; flex-wrap: wrap; }
+.pf-ac-item .ac-meta code { font-family: 'JetBrains Mono', monospace; }
+.pf-ac-item mark { background: rgba(95,230,188,.25); color: var(--ds-text); padding: 0 1px; border-radius: 2px; }
+.pf-ac-empty { padding: 12px; text-align: center; color: var(--ds-text-mute); font-size: 11px; }
+.pf-chosen { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(95,230,188,.10);
+    border: 1px solid rgba(95,230,188,.35); border-radius: var(--ds-r-sm); }
+.pf-chosen .chosen-info { flex: 1; min-width: 0; }
+.pf-chosen .chosen-nombre { font-size: 12px; color: var(--ds-text); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-chosen .chosen-ean { font-size: 10px; color: var(--ds-text-mute); font-family: 'JetBrains Mono', monospace; }
+.pf-chosen .chosen-clear { background: transparent; border: none; color: var(--ds-text-mute); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px; }
+.pf-chosen .chosen-clear:hover { color: #f87171; }
+
+/* Lista de productos con presentación */
+.pp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pp-table th { padding: 8px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--ds-text-mute); font-weight: 600; border-bottom: 1px solid var(--ds-line); background: rgba(0,0,0,.08); }
+.pp-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.04); }
+.pp-table tr:hover td { background: rgba(255,255,255,.03); }
+.pp-table code { font-family: 'JetBrains Mono', monospace; color: var(--ds-text-mute); }
+.pp-badge { display:inline-flex; padding:1px 7px; border-radius:999px; font-size:10px; font-weight:600; }
+.pp-badge.si { background: rgba(95,230,188,.15); color: var(--ds-mint); border:1px solid rgba(95,230,188,.3); }
+.pp-badge.no { background: rgba(120,120,120,.12); color: var(--ds-text-mute); border:1px solid rgba(120,120,120,.3); }
+.pp-input { background: var(--ds-surface-2); border: 1px solid var(--ds-line); color: var(--ds-text); border-radius: var(--ds-r-sm); padding: 6px 10px; font-size: 13px; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="pp-topbar">
+    <a href="{{ url_for('productos_list') }}" class="text-[11px] px-2 py-1 rounded bg-[color:var(--ds-surface)] border border-[color:var(--ds-line)] hover:border-[color:var(--ds-mint)] transition">← Productos</a>
+    <h1>🎁 Presentaciones</h1>
+    <span class="text-[11px] text-[color:var(--ds-text-mute)]">{{ filas | length }} con presentación configurada</span>
+</div>
+
+<div class="pp-wrap">
+    {# ── Búsqueda + configuración (arriba) ── #}
+    <div class="pf-card">
+        <div class="pf-card-head"><h3>📦 Configurar presentación</h3></div>
+        <div style="padding: 16px 18px;">
+            <div class="pf-field">
+                <label class="pf-label">Producto (buscar por nombre)</label>
+                <div class="pf-ac-wrap" id="pr-ac-wrap">
+                    <input type="text" class="pf-input" id="pr-search"
+                           placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
+                    <div class="pf-ac-results" id="pr-ac-results"></div>
+                </div>
+                <div class="pf-help">Buscá: click en el nombre = ficha individual; tildá varios para asignar presentación en lote.</div>
+                <div id="pr-search-msg" class="mt-2 text-[12px]"></div>
+
+                <div id="pr-bulk-bar" class="hidden mt-2 p-2 rounded-lg border border-[color:var(--ds-line)] bg-[color:var(--ds-surface)]">
+                    <div class="flex items-center gap-2 flex-wrap text-[12px]">
+                        <span class="font-semibold text-[color:var(--ds-mint)]"><span id="pr-bulk-count">0</span> seleccionados</span>
+                        <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="pr-bulk-frac" checked> fraccionado</label>
+                        <label class="flex items-center gap-1">envase
+                            <input type="text" id="pr-bulk-envase" inputmode="decimal" placeholder="ObServer" class="pf-input" style="width:88px; padding:3px 6px;"></label>
+                        <button type="button" id="pr-bulk-aplicar" class="btn btn-mint text-xs">Aplicar a los tildados</button>
+                        <button type="button" id="pr-bulk-limpiar" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-rose-500">Limpiar</button>
+                    </div>
+                    <div class="text-[10px] text-[color:var(--ds-text-mute)] mt-1">Envase vacío = usa el de ObServer de cada producto. Si lo completás, lo aplica igual a todos.</div>
+                    <div id="pr-bulk-status" class="text-[11px] mt-1"></div>
+                </div>
+            </div>
+
+            <div id="pr-config" style="display:none;">
+                <div class="pf-chosen" style="margin-bottom: 13px;">
+                    <div class="chosen-info">
+                        <div class="chosen-nombre" id="pr-nombre"></div>
+                        <div class="chosen-ean" id="pr-ean-lbl"></div>
+                    </div>
+                    <button type="button" class="chosen-clear" id="pr-clear" title="Cambiar producto">×</button>
+                </div>
+
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--ds-text);">
+                    <input type="checkbox" id="pr-fraccionado" style="width:16px;height:16px;">
+                    Se vende fraccionado (suelto, pero se pide por envase)
+                </label>
+
+                <div class="pf-field" style="margin-top:13px;">
+                    <label class="pf-label">Cantidad por envase</label>
+                    <input type="text" class="pf-input" id="pr-cant" inputmode="decimal" placeholder="ej: 30">
+                    <div class="pf-help" id="pr-cant-help">Unidades de venta por envase de compra.</div>
+                </div>
+
+                <button type="button" class="btn btn-mint text-xs w-full mt-1" id="pr-save">Guardar presentación</button>
+                <div id="pr-status" class="text-[11px] mt-2"></div>
+
+                {# ── Equivalencia Kellerhoff ── #}
+                <div style="border-top:1px solid var(--ds-line); margin-top:14px; padding-top:12px;">
+                    <label class="pf-label" style="margin-bottom:6px;">🏷 Equivalencia Kellerhoff</label>
+                    <div id="kel-estado" class="text-[11px] mb-2"></div>
+                    <div class="pf-ac-wrap" id="kel-ac-wrap">
+                        <input type="text" class="pf-input" id="kel-search" placeholder="Buscar en catálogo Kellerhoff…" autocomplete="off">
+                        <div class="pf-ac-results" id="kel-ac-results"></div>
+                    </div>
+                    <div id="kel-elegido" class="text-[11px] mt-2" style="display:none;"></div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
+                        <button type="button" class="btn btn-mint text-xs" id="kel-asignar" disabled>Asignar código</button>
+                        <button type="button" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-amber-500" id="kel-nodisp">Kellerhoff no lo trae</button>
+                        <button type="button" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-rose-500" id="kel-limpiar">Limpiar</button>
+                    </div>
+                    <div id="kel-status" class="text-[11px] mt-2"></div>
+                </div>
+            </div>
+        </div>
+
+        {# Acceso al catálogo Kellerhoff (importar CSV + recalcular equivalencias) #}
+        <div>
+            <a href="{{ url_for('kellerhoff_catalogo') }}"
+               style="display:inline-flex; align-items:center; gap:8px; padding:10px 16px;
+                      background:linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+                      border:1px solid var(--ds-line); border-radius:var(--ds-r-md);
+                      color:var(--ds-text); font-size:13px; font-weight:600; text-decoration:none;"
+               onmouseover="this.style.borderColor='var(--ds-mint)'"
+               onmouseout="this.style.borderColor='var(--ds-line)'">
+                📦 Catálogo Kellerhoff — importar CSV + recalcular equivalencias →
+            </a>
+        </div>
+    </div>
+
+    {# ── Lista de productos con presentación (abajo) ── #}
+    <div class="pf-card">
+        <div class="pf-card-head" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+            <h3>Productos con presentación</h3>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="text" id="pp-filtro-lab" class="pp-input" placeholder="Filtrar laboratorio…" style="width:200px;">
+                <input type="text" id="pp-filtro" class="pp-input" placeholder="Filtrar…" style="width:200px;">
+            </div>
+        </div>
+        {% if filas %}
+        <div style="overflow-x:auto;">
+        <table class="pp-table">
+            <thead><tr>
+                <th>Producto</th><th>EAN</th><th>Laboratorio</th>
+                <th>Fraccionado</th><th style="text-align:right;">Envase</th>
+                <th>Producto equivalente (Kellerhoff)</th><th>EAN equivalente</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for f in filas %}
+            <tr class="pp-row" data-txt="{{ (f.nombre ~ ' ' ~ f.ean ~ ' ' ~ f.lab) | lower }}"
+                data-lab="{{ f.lab | lower }}" data-pean="{{ f.ean }}">
+                <td class="text-[color:var(--ds-text-soft)]">{{ f.nombre }}</td>
+                <td><code>{{ f.ean }}</code></td>
+                <td class="text-[color:var(--ds-text-mute)]">{% if f.lab %}{{ f.lab }}{% else %}—{% endif %}</td>
+                <td>{% if f.fraccionado %}<span class="pp-badge si">Sí</span>{% else %}<span class="pp-badge no">No</span>{% endif %}</td>
+                <td style="text-align:right;">{% if f.cantidad_envase %}×{{ f.cantidad_envase }}{% else %}<span class="text-[#888]">—</span>{% endif %}</td>
+                {# Buscador inline de equivalencia Kellerhoff por fila #}
+                <td class="kq-cell" data-ean="{{ f.export_ean }}" style="min-width:240px;">
+                    <div class="kq-current text-[11px] mb-1 {% if f.kel_estado == 'no_disponible' %}text-amber-400{% elif f.kel_desc %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">
+                        {% if f.kel_desc %}{{ f.kel_desc }}{% else %}(sin resolver){% endif %}
+                    </div>
+                    <div class="pf-ac-wrap">
+                        <input type="text" class="pf-input kq-search" placeholder="Buscar en Kellerhoff…" autocomplete="off" style="padding:4px 8px; font-size:12px;">
+                        <div class="pf-ac-results kq-res"></div>
+                    </div>
+                    <div class="kq-status text-[10px] mt-1"></div>
+                </td>
+                <td class="kq-ean"><code class="text-[11px] font-mono text-[color:var(--ds-text-mute)]">{% if f.kel_ean_eq %}{{ f.kel_ean_eq }}{% else %}—{% endif %}</code></td>
+                <td class="whitespace-nowrap">
+                    <button type="button" class="pp-edit text-[11px] text-[color:var(--ds-mint)] hover:text-emerald-300 px-2 py-0.5 rounded hover:bg-emerald-900/20 transition border border-[color:var(--ds-line)]">✏ Editar</button>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div style="padding:32px; text-align:center; color:var(--ds-text-mute); font-size:13px;">Todavía no hay productos con presentación configurada. Buscá uno arriba y configuralo.</div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Filtros de la lista (general + laboratorio, ambos multi-token, AND entre sí).
+(function() {
+    const inp = document.getElementById('pp-filtro');
+    const lab = document.getElementById('pp-filtro-lab');
+    if (!inp && !lab) return;
+    function aplicar() {
+        const tx = (inp ? inp.value : '').toLowerCase().split(/\s+/).filter(Boolean);
+        const tl = (lab ? lab.value : '').toLowerCase().split(/\s+/).filter(Boolean);
+        document.querySelectorAll('.pp-row').forEach(r => {
+            const okTxt = tx.every(t => r.dataset.txt.includes(t));
+            const okLab = tl.every(t => (r.dataset.lab || '').includes(t));
+            r.style.display = (okTxt && okLab) ? '' : 'none';
+        });
+    }
+    if (inp) inp.addEventListener('input', aplicar);
+    if (lab) lab.addEventListener('input', aplicar);
+})();
+
+// Buscador inline de equivalencia Kellerhoff por fila + botón Editar.
+(function() {
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => (
+            {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function highlight(text, tokens) {
+        let out = escapeHtml(text);
+        tokens.filter(t => t && t.length >= 2).forEach(t => {
+            const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+            out = out.replace(re, '<mark>$1</mark>');
+        });
+        return out;
+    }
+    const debs = new WeakMap();
+    let seq = 0;
+
+    document.addEventListener('input', (e) => {
+        const inp = e.target.closest('.kq-search');
+        if (!inp) return;
+        const cell = inp.closest('.kq-cell');
+        const res = cell.querySelector('.kq-res');
+        const q = inp.value.trim();
+        if (q.length < 2) { res.classList.remove('open'); return; }
+        clearTimeout(debs.get(inp));
+        debs.set(inp, setTimeout(async () => {
+            const mySeq = ++seq;
+            try {
+                const r = await fetch('/api/kellerhoff/catalogo/buscar?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+                if (mySeq !== seq) return;
+                const d = await r.json();
+                const items = d.data || [];
+                if (!items.length) { res.innerHTML = '<div class="pf-ac-empty">Sin coincidencias</div>'; res.classList.add('open'); return; }
+                res.innerHTML = items.map((c, i) => `
+                    <div class="pf-ac-item" data-i="${i}">
+                        <div class="ac-nombre">${highlight(c.descripcion, q.split(/\s+/))}</div>
+                        <div class="ac-meta"><code>${escapeHtml(c.codigo_kellerhoff)}</code>${c.ean ? '<span>EAN ' + escapeHtml(c.ean) + '</span>' : ''}${c.precio != null ? '<span>$' + c.precio.toLocaleString('es-AR') + '</span>' : ''}</div>
+                    </div>`).join('');
+                res.classList.add('open');
+                res.querySelectorAll('.pf-ac-item').forEach(el => el.addEventListener('click', () => asignar(cell, items[+el.dataset.i])));
+            } catch { res.classList.remove('open'); }
+        }, 250));
+    });
+
+    async function asignar(cell, c) {
+        const ean = cell.dataset.ean;
+        const status = cell.querySelector('.kq-status');
+        status.textContent = 'Guardando…'; status.className = 'kq-status text-[10px] mt-1 text-[#9ca3af]';
+        try {
+            const r = await fetch('/api/producto/kellerhoff-equivalencia', {
+                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ean, accion: 'asignar', codigo_kellerhoff: c.codigo_kellerhoff}),
+            });
+            const d = await r.json();
+            if (!d.ok) { status.textContent = d.error || 'Error'; status.className = 'kq-status text-[10px] mt-1 text-rose-400'; return; }
+            cell.querySelector('.kq-current').textContent = c.descripcion;
+            cell.querySelector('.kq-current').className = 'kq-current text-[11px] mb-1 text-[color:var(--ds-mint)]';
+            cell.querySelector('.kq-search').value = '';
+            cell.querySelector('.kq-res').classList.remove('open');
+            const row = cell.closest('tr');
+            const eanCell = row.querySelector('.kq-ean code');
+            if (eanCell) eanCell.textContent = c.ean || '—';
+            status.textContent = '✓ Guardado'; status.className = 'kq-status text-[10px] mt-1 text-[color:var(--ds-mint)]';
+        } catch { status.textContent = 'Error de red'; status.className = 'kq-status text-[10px] mt-1 text-rose-400'; }
+    }
+
+    document.addEventListener('click', (e) => {
+        const item = e.target.closest('.kq-res');
+        if (!item) document.querySelectorAll('.kq-res.open').forEach(r => {
+            if (!r.parentElement.contains(e.target)) r.classList.remove('open');
+        });
+        const btn = e.target.closest('.pp-edit');
+        if (btn && window.ppEditar) {
+            const row = btn.closest('tr');
+            window.ppEditar(row.dataset.pean);
+        }
+    });
+})();
+
+// ─── Configuración de presentación (búsqueda + fraccionado + envase + Kellerhoff) ───
+(function() {
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => (
+            {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function highlight(text, tokens) {
+        let out = escapeHtml(text);
+        tokens.filter(t => t && t.length >= 2).forEach(t => {
+            const re = new RegExp('(' + t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+            out = out.replace(re, '<mark>$1</mark>');
+        });
+        return out;
+    }
+
+    const sInput   = document.getElementById('pr-search');
+    const sWrap    = document.getElementById('pr-ac-wrap');
+    const sRes     = document.getElementById('pr-ac-results');
+    const cfgBox   = document.getElementById('pr-config');
+    const nom      = document.getElementById('pr-nombre');
+    const eanLbl   = document.getElementById('pr-ean-lbl');
+    const chk      = document.getElementById('pr-fraccionado');
+    const cant     = document.getElementById('pr-cant');
+    const cantHelp = document.getElementById('pr-cant-help');
+    const status   = document.getElementById('pr-status');
+    const msg      = document.getElementById('pr-search-msg');
+    const btnSave  = document.getElementById('pr-save');
+    const btnClear = document.getElementById('pr-clear');
+    const _selected = new Map();
+    const bulkBar     = document.getElementById('pr-bulk-bar');
+    const bulkCount   = document.getElementById('pr-bulk-count');
+    const bulkStatus  = document.getElementById('pr-bulk-status');
+
+    function refreshBulkBar() {
+        bulkCount.textContent = _selected.size;
+        bulkBar.classList.toggle('hidden', _selected.size === 0);
+    }
+    function setMsg(html, cls) { msg.innerHTML = html || ''; msg.className = 'mt-2 text-[12px] ' + (cls || ''); }
+    let _deb = null, _seq = 0, _items = [], _focus = -1, _ean = '';
+    let _kelEan = '', _kelPick = null, _kelDeb = null, _kelSeq = 0;
+    function setStatus(m, cls) { status.textContent = m || ''; status.className = 'text-[11px] mt-2 ' + (cls || ''); }
+
+    function renderRes(items, tokens) {
+        _items = items; _focus = -1;
+        if (!items.length) { sRes.innerHTML = '<div class="pf-ac-empty">Ningún producto coincide</div>'; sRes.classList.add('open'); return; }
+        sRes.innerHTML = items.map((p, i) => `
+            <div class="pf-ac-item" data-idx="${i}" style="display:flex; align-items:flex-start; gap:8px;">
+                <input type="checkbox" class="pf-ac-chk" data-idx="${i}" style="margin-top:3px;" ${_selected.has(String(p.observer_id)) ? 'checked' : ''}>
+                <div class="pf-ac-body" data-idx="${i}" style="flex:1; min-width:0; cursor:pointer;">
+                    <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
+                    <div class="ac-meta"><code>${escapeHtml(p.codigo_barra)}</code>${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}</div>
+                </div>
+            </div>`).join('');
+        sRes.classList.add('open');
+        sRes.querySelectorAll('.pf-ac-body').forEach(el => el.addEventListener('click', () => elegir(_items[+el.dataset.idx])));
+        sRes.querySelectorAll('.pf-ac-chk').forEach(el => el.addEventListener('change', (e) => {
+            e.stopPropagation();
+            const p = _items[+el.dataset.idx]; const k = String(p.observer_id);
+            if (el.checked) _selected.set(k, p.descripcion); else _selected.delete(k);
+            refreshBulkBar();
+        }));
+    }
+
+    async function elegir(p) { sRes.classList.remove('open'); sInput.value = ''; await cargarPresentacion(p); }
+
+    async function bulkAplicar() {
+        if (_selected.size === 0) return;
+        const obs_ids = Array.from(_selected.keys()).map(k => parseInt(k));
+        const fraccionado = document.getElementById('pr-bulk-frac').checked;
+        const envaseRaw = document.getElementById('pr-bulk-envase').value.trim();
+        bulkStatus.textContent = 'Aplicando…'; bulkStatus.className = 'text-[11px] mt-1 text-[#9ca3af]';
+        try {
+            const r = await fetch('/api/producto/presentacion-bulk', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin',
+                body: JSON.stringify({observer_ids: obs_ids, fraccionado, cantidad_envase: envaseRaw || null}),
+            });
+            const d = await r.json();
+            if (!d.ok) { bulkStatus.textContent = d.error || 'Error'; bulkStatus.className = 'text-[11px] mt-1 text-rose-500'; return; }
+            bulkStatus.innerHTML = `✓ ${d.aplicados} aplicado(s)` + (d.materializados ? ` · ${d.materializados} catalogado(s)` : '')
+                + (d.sin_envase ? ` · ${d.sin_envase} sin envase` : '') + (d.errores ? ` · ${d.errores} con error` : '');
+            bulkStatus.className = 'text-[11px] mt-1 text-emerald-600';
+            _selected.clear(); refreshBulkBar();
+            sRes.querySelectorAll('.pf-ac-chk').forEach(c => c.checked = false);
+        } catch { bulkStatus.textContent = 'Error de red'; bulkStatus.className = 'text-[11px] mt-1 text-rose-500'; }
+    }
+    function bulkLimpiar() { _selected.clear(); refreshBulkBar(); sRes.querySelectorAll('.pf-ac-chk').forEach(c => c.checked = false); bulkStatus.textContent = ''; }
+    document.getElementById('pr-bulk-aplicar').addEventListener('click', bulkAplicar);
+    document.getElementById('pr-bulk-limpiar').addEventListener('click', bulkLimpiar);
+
+    async function cargarPresentacion(p) {
+        setMsg('Cargando…', 'text-[#9ca3af]');
+        try {
+            const r = await fetch('/api/producto/presentacion?ean=' + encodeURIComponent(p.codigo_barra), {credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) {
+                if (d.existe_master === false && p.observer_id) {
+                    setMsg(`<span class="text-amber-600">«${escapeHtml(p.descripcion)}» todavía no está catalogado localmente.</span> `
+                        + `<button type="button" id="pr-catalogar" class="ml-1 underline font-semibold text-[color:var(--ds-mint)] hover:opacity-80">Catalogar y configurar</button>`, '');
+                    document.getElementById('pr-catalogar').addEventListener('click', () => catalogar(p));
+                } else { setMsg(escapeHtml(d.error || 'No se pudo cargar'), 'text-rose-500'); }
+                return;
+            }
+            setMsg('', '');
+            _ean = d.ean;
+            nom.textContent = d.descripcion;
+            eanLbl.textContent = (d.ean || '—') + (d.lab ? ' · ' + d.lab : '');
+            chk.checked = !!d.fraccionado;
+            cant.value = d.cantidad_envase != null ? d.cantidad_envase : '';
+            cantHelp.textContent = (d.cantidad_envase == null && d.cantidad_envase_obs != null)
+                ? 'Sugerido ObServer: ' + d.cantidad_envase_obs + '. Unidades de venta por envase.'
+                : 'Unidades de venta por envase de compra.';
+            sWrap.style.display = 'none'; cfgBox.style.display = 'block'; setStatus('', '');
+            renderKel(d.kellerhoff);
+            cfgBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch { setMsg('Error de red', 'text-rose-500'); }
+    }
+
+    async function catalogar(p) {
+        setMsg('Catalogando…', 'text-[#9ca3af]');
+        try {
+            const r = await fetch('/producto/materializar/' + p.observer_id, {method: 'POST', credentials: 'same-origin'});
+            const d = await r.json();
+            if (!d.ok) { setMsg(escapeHtml(d.error || 'No se pudo catalogar'), 'text-rose-500'); return; }
+            await cargarPresentacion(p);
+        } catch { setMsg('Error de red', 'text-rose-500'); }
+    }
+
+    btnClear.addEventListener('click', () => { _ean = ''; cfgBox.style.display = 'none'; sWrap.style.display = ''; setStatus('', ''); setMsg('', ''); sInput.focus(); });
+
+    sInput.addEventListener('input', () => {
+        const q = sInput.value.trim();
+        if (q.length < 2) { sRes.classList.remove('open'); return; }
+        clearTimeout(_deb);
+        _deb = setTimeout(async () => {
+            const seq = ++_seq;
+            try {
+                const r = await fetch('/api/productos?q=' + encodeURIComponent(q) + '&con_ean=1&limit=15', {credentials: 'same-origin'});
+                if (seq !== _seq) return;
+                if (!r.ok) { sRes.classList.remove('open'); return; }
+                const d = await r.json();
+                renderRes(d.data || [], q.split(/\s+/));
+            } catch { sRes.classList.remove('open'); }
+        }, 250);
+    });
+
+    sInput.addEventListener('keydown', (e) => {
+        const items = sRes.querySelectorAll('.pf-ac-item');
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); _focus = (_focus + 1) % items.length; }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); _focus = (_focus - 1 + items.length) % items.length; }
+        else if (e.key === 'Enter') { if (_focus >= 0 && _items[_focus]) { e.preventDefault(); elegir(_items[_focus]); return; } }
+        else if (e.key === 'Escape') { sRes.classList.remove('open'); return; }
+        else { return; }
+        items.forEach((el, i) => el.classList.toggle('focused', i === _focus));
+        if (_focus >= 0) items[_focus].scrollIntoView({block: 'nearest'});
+    });
+    document.addEventListener('click', (e) => { if (!sWrap.contains(e.target)) sRes.classList.remove('open'); });
+
+    btnSave.addEventListener('click', async () => {
+        if (!_ean) return;
+        btnSave.disabled = true; setStatus('Guardando…', '');
+        try {
+            const r = await fetch('/api/producto/presentacion', {
+                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ean: _ean, fraccionado: chk.checked, cantidad_envase: cant.value.trim()}),
+            });
+            const d = await r.json();
+            setStatus(d.ok ? '✓ Guardado' : (d.error || 'Error al guardar'), d.ok ? 'text-[color:var(--ds-mint)]' : 'text-rose-400');
+        } catch { setStatus('Error de red', 'text-rose-400'); }
+        finally { btnSave.disabled = false; }
+    });
+
+    // ── Equivalencia Kellerhoff ──
+    const kelEstado  = document.getElementById('kel-estado');
+    const kelSearch  = document.getElementById('kel-search');
+    const kelRes     = document.getElementById('kel-ac-results');
+    const kelWrap    = document.getElementById('kel-ac-wrap');
+    const kelElegido = document.getElementById('kel-elegido');
+    const kelStatus  = document.getElementById('kel-status');
+    const btnKelAsig = document.getElementById('kel-asignar');
+    const btnKelND   = document.getElementById('kel-nodisp');
+    const btnKelLimp = document.getElementById('kel-limpiar');
+
+    function renderKel(k) {
+        _kelEan = (k && k.ean) || ''; _kelPick = null;
+        kelElegido.style.display = 'none'; kelElegido.textContent = ''; kelStatus.textContent = ''; kelSearch.value = '';
+        btnKelAsig.disabled = true;
+        const map = {
+            sin_catalogo:  ['Catálogo Kellerhoff no cargado.', 'text-[color:var(--ds-text-mute)]'],
+            directo:       ['✓ Resuelve directo por EAN → CodKel ' + (k.codigo || ''), 'text-[color:var(--ds-mint)]'],
+            equivalencia:  ['Equivalencia: CodKel ' + (k.codigo || '') + ' (' + (k.metodo || '') + (k.revisado ? ', manual' : '') + ')', 'text-[color:var(--ds-mint)]'],
+            no_disponible: ['⚠ Marcado: Kellerhoff no lo trae.', 'text-amber-400'],
+            sin_resolver:  ['Sin resolver — elegí el código abajo o marcá que no lo trae.', 'text-rose-400'],
+        };
+        const m = map[(k && k.estado) || 'sin_resolver'] || map.sin_resolver;
+        kelEstado.textContent = m[0]; kelEstado.className = 'text-[11px] mb-2 ' + m[1];
+        const hayCat = k && k.estado !== 'sin_catalogo';
+        kelSearch.disabled = !hayCat; btnKelND.disabled = !hayCat; btnKelLimp.disabled = !hayCat;
+    }
+
+    kelSearch.addEventListener('input', () => {
+        const q = kelSearch.value.trim();
+        if (q.length < 2) { kelRes.classList.remove('open'); return; }
+        clearTimeout(_kelDeb);
+        _kelDeb = setTimeout(async () => {
+            const seq = ++_kelSeq;
+            try {
+                const r = await fetch('/api/kellerhoff/catalogo/buscar?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+                if (seq !== _kelSeq) return;
+                const d = await r.json();
+                const items = d.data || [];
+                if (!items.length) { kelRes.innerHTML = '<div class="pf-ac-empty">Sin coincidencias</div>'; kelRes.classList.add('open'); return; }
+                kelRes.innerHTML = items.map((c, i) => `
+                    <div class="pf-ac-item" data-i="${i}">
+                        <div class="ac-nombre">${highlight(c.descripcion, q.split(/\s+/))}</div>
+                        <div class="ac-meta"><code>${escapeHtml(c.codigo_kellerhoff)}</code>${c.ean ? '<span>EAN ' + escapeHtml(c.ean) + '</span>' : ''}${c.precio != null ? '<span>$' + c.precio.toLocaleString('es-AR') + '</span>' : ''}</div>
+                    </div>`).join('');
+                kelRes.classList.add('open');
+                kelRes.querySelectorAll('.pf-ac-item').forEach(el => el.addEventListener('click', () => {
+                    const c = items[+el.dataset.i]; _kelPick = c;
+                    kelElegido.innerHTML = 'Elegido: <b>' + escapeHtml(c.descripcion) + '</b> · CodKel ' + escapeHtml(c.codigo_kellerhoff);
+                    kelElegido.style.display = 'block'; btnKelAsig.disabled = false;
+                    kelRes.classList.remove('open'); kelSearch.value = '';
+                }));
+            } catch { kelRes.classList.remove('open'); }
+        }, 250);
+    });
+    document.addEventListener('click', (e) => { if (!kelWrap.contains(e.target)) kelRes.classList.remove('open'); });
+
+    async function kelGuardar(accion, codkel) {
+        if (!_kelEan) return;
+        kelStatus.textContent = 'Guardando…'; kelStatus.className = 'text-[11px] mt-2';
+        try {
+            const r = await fetch('/api/producto/kellerhoff-equivalencia', {
+                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ean: _kelEan, accion, codigo_kellerhoff: codkel || ''}),
+            });
+            const d = await r.json();
+            if (d.ok) { renderKel(d.kellerhoff); kelStatus.textContent = '✓ Guardado'; kelStatus.className = 'text-[11px] mt-2 text-[color:var(--ds-mint)]'; }
+            else { kelStatus.textContent = d.error || 'Error'; kelStatus.className = 'text-[11px] mt-2 text-rose-400'; }
+        } catch { kelStatus.textContent = 'Error de red'; kelStatus.className = 'text-[11px] mt-2 text-rose-400'; }
+    }
+    btnKelAsig.addEventListener('click', () => { if (_kelPick) kelGuardar('asignar', _kelPick.codigo_kellerhoff); });
+    btnKelND.addEventListener('click', () => kelGuardar('no_disponible'));
+    btnKelLimp.addEventListener('click', () => kelGuardar('limpiar'));
+
+    // Editar una fila de la lista → carga ese producto en la card de arriba.
+    window.ppEditar = function(ean) {
+        if (!ean) return;
+        sRes.classList.remove('open'); sInput.value = '';
+        cargarPresentacion({codigo_barra: ean, descripcion: ''});
+        window.scrollTo({top: 0, behavior: 'smooth'});
+    };
+})();
+</script>
+{% endblock %}

@@ -1372,6 +1372,50 @@ class ProductAnalytics(Base):
     actualizado_en = Column(DateTime, default=now_ar)
 
 
+class CadenciaLabSnapshot(Base):
+    """Snapshot del análisis de cadencias por laboratorio (1 fila por lab).
+
+    Materializa `analizar_cadencias_lab` para TODOS los labs de una vez (botón
+    Recalcular, ~25s), para que la plataforma de análisis cross-lab lea al
+    instante y filtre/ordene client-side. Los params (cobertura, meses_rot)
+    están baked en el snapshot: cambiarlos = recalcular."""
+    __tablename__ = 'cadencia_lab_snapshot'
+    lab_id = Column(Integer, primary_key=True, autoincrement=False)
+    lab_nombre = Column(String(150))
+    # RFM (recencia × rotación, sobre todos los productos del lab)
+    core = Column(Integer, nullable=False, default=0)
+    ocasional = Column(Integer, nullable=False, default=0)
+    caida = Column(Integer, nullable=False, default=0)
+    dormido = Column(Integer, nullable=False, default=0)
+    # Buckets de rotación (solo productos con ventas en la ventana)
+    alta = Column(Integer, nullable=False, default=0)
+    media_alta = Column(Integer, nullable=False, default=0)
+    media = Column(Integer, nullable=False, default=0)
+    baja = Column(Integer, nullable=False, default=0)
+    muy_baja = Column(Integer, nullable=False, default=0)
+    # $/mes por cuadrante/bucket (para el toggle Cantidad ⇄ Monto)
+    core_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    ocasional_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    caida_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    dormido_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    alta_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    media_alta_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    media_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    baja_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    muy_baja_monto = Column(DECIMAL(16, 2), nullable=False, default=0)
+    # Negocio
+    con_ventas = Column(Integer, nullable=False, default=0)
+    sin_ventas = Column(Integer, nullable=False, default=0)
+    monto_mensual = Column(DECIMAL(16, 2), nullable=False, default=0)
+    dormido_valor = Column(DECIMAL(16, 2), nullable=False, default=0)
+    dormido_con_stock = Column(Integer, nullable=False, default=0)
+    dormido_stock_u = Column(Integer, nullable=False, default=0)
+    # Params usados + timestamp
+    cobertura = Column(Integer, nullable=True)
+    meses_rot = Column(Integer, nullable=True)
+    actualizado_en = Column(DateTime, default=now_ar)
+
+
 class Usuario(Base):
     """Usuarios de la aplicación con rol y permisos."""
     __tablename__ = 'usuarios'
@@ -1854,6 +1898,7 @@ def init_db(database_url=None):
                         'kellerhoff_equivalencia',
                         'estacionalidad_escenarios',
                         'estacionalidad_productos',
+                        'cadencia_lab_snapshot',
                         'archivos_compartidos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
@@ -2420,6 +2465,13 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE laboratorios ADD COLUMN IF NOT EXISTS observer_id INTEGER UNIQUE"
     ))
+    # cadencia_lab_snapshot: columnas de $/mes por cuadrante/bucket (toggle Cant⇄Monto).
+    for _cm in ('core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
+                'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
+                'muy_baja_monto'):
+        conn.execute(text(
+            f"ALTER TABLE cadencia_lab_snapshot ADD COLUMN IF NOT EXISTS {_cm} DECIMAL(16,2) NOT NULL DEFAULT 0"
+        ))
     # Compra rápida v2 (Kel/20j): columna nueva en descuentos_base + tablas
     # proveedor_horarios_reparto y pedido_borrador.
     conn.execute(text(
@@ -2992,6 +3044,14 @@ def _pg_add_columns(conn):
         ('SOLO_UNO', 'Pedir solo 1 unidad', 'flag',
          'Al armar el pedido, la cantidad de este producto se topea en 1 unidad.',
          {'efecto_armado': 'tope_uno', 'icono': '1️⃣', 'color': 'sky',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
+        ('AGOTAR_TODO', 'Agotar stock', 'flag',
+         'Nunca repone (discontinuar). a_pedir = 0 siempre.',
+         {'efecto_armado': 'agotar_todo', 'icono': '📉', 'color': 'amber',
+          'permite_reemplazo': False, 'permite_vigencia': False}),
+        ('AGOTAR_HASTA_1', 'Agotar hasta 1', 'flag',
+         'No repone mientras tenga stock; repone 1 solo cuando llega a 0 (mantiene 1 unidad).',
+         {'efecto_armado': 'agotar_hasta_1', 'icono': '📉', 'color': 'amber',
           'permite_reemplazo': False, 'permite_vigencia': False}),
     ]
     for slug, nombre, cat, desc, cfg in _seed_tipos:

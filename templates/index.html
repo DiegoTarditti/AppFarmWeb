@@ -448,6 +448,19 @@
                             </div>
                         </div>
                     </div>
+                    {# Card especial: Presentaciones (fraccionado + cantidad por envase + equivalencia Kellerhoff). #}
+                    <a href="{{ url_for('productos_presentaciones') }}" class="card card-action home-card"
+                       data-card-text="presentaciones fraccionado cantidad envase suelto equivalencia kellerhoff">
+                        <div class="action-content">
+                            <div class="icon-tile icon-tile-warn">🎁</div>
+                            <div class="action-content__body">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="action-content__title">Presentaciones</span>
+                                </div>
+                                <div class="action-content__desc">Configurá fraccionado y cantidad por envase. Asigná equivalencias Kellerhoff.</div>
+                            </div>
+                        </div>
+                    </a>
                     {% endif %}
                     {% if cat_key == 'analisis' %}
                     {# Card especial: Obras Sociales con acción rápida a chequeo

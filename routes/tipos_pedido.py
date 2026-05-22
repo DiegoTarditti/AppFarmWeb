@@ -83,6 +83,8 @@ ENUMS_FLAG = {
         ('excluir',    'Excluir del armado (no aparece)'),
         ('badge_cero', 'Badge + a_pedir forzado a 0'),
         ('tope_uno',   'Badge + a_pedir topeado en 1'),
+        ('agotar_todo',    'Agotar stock: nunca repone (a_pedir 0)'),
+        ('agotar_hasta_1', 'Agotar hasta 1: repone 1 solo cuando el stock llega a 0'),
         ('solo_badge', 'Solo badge informativo (no afecta cantidad)'),
         ('ninguno',    'Sin efecto visual en el armado'),
     ],

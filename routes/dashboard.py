@@ -110,7 +110,10 @@ def init_app(app):
             } for p in top_qty_rows]
 
             valor_expr = PA.avg_monthly * PA.precio_pvp
-            top_val_rows = base_q.order_by(valor_expr.desc()).limit(10).all()
+            # precio_pvp NULL → valor_expr NULL → en Postgres ordena NULLS FIRST,
+            # así que los sin precio coparían el top con valor 0 (gráfico en blanco).
+            top_val_rows = (base_q.filter(PA.precio_pvp.isnot(None), PA.avg_monthly > 0)
+                            .order_by(valor_expr.desc()).limit(10).all())
             top_val = [{
                 'nombre': (p.descripcion or p.codigo_barra or '')[:40],
                 'valor': float(p.avg_monthly or 0) * float(p.precio_pvp or 0),
@@ -134,7 +137,8 @@ def init_app(app):
             capital_total = float(capital_q.scalar() or 0)
             stock_muerto_total = float(muerto_q.scalar() or 0)
 
-            muerto_rows = base_q.filter(PA.sin_mov_60d == 1, PA.stock > 0)\
+            muerto_rows = base_q.filter(PA.sin_mov_60d == 1, PA.stock > 0,
+                                        PA.precio_pvp.isnot(None))\
                 .order_by(capital_expr.desc()).limit(10).all()
             top_muerto = [{
                 'nombre': (p.descripcion or p.codigo_barra or '')[:40],

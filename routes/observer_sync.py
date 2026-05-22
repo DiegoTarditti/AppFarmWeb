@@ -409,6 +409,38 @@ def init_app(app):
         except Exception as e:
             return jsonify({'ok': False, 'error': str(e)}), 500
 
+    @app.route('/admin/push-cadencias', methods=['POST'])
+    def push_cadencias():
+        """Computa el snapshot de cadencias LOCAL (todos los labs) y lo copia a
+        Render. Disparado desde el DockerPanel. Acepta X-Auto-Sync-Token y, en el
+        body JSON, cobertura/meses_rot (default 30/3). Devuelve JSON con resumen."""
+        expected = os.environ.get('AUTO_SYNC_TOKEN', '').strip()
+        if expected:
+            sent = request.headers.get('X-Auto-Sync-Token', '').strip()
+            if sent != expected:
+                return jsonify({'ok': False, 'error': 'token invalido'}), 401
+
+        render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
+        if not render_url:
+            return jsonify({'ok': False, 'error': 'Falta RENDER_DATABASE_URL en el .env'}), 400
+
+        data = request.get_json(silent=True) or {}
+        try:
+            cobertura = max(7, min(int(data.get('cobertura') or 30), 90))
+            meses_rot = max(1, min(int(data.get('meses_rot') or 3), 12))
+        except (ValueError, TypeError):
+            cobertura, meses_rot = 30, 3
+
+        try:
+            from helpers import recalcular_snapshot_cadencias
+            from scripts.push_cadencias_to_render import push
+            with database.get_db() as session:
+                n_local = recalcular_snapshot_cadencias(session, cobertura, meses_rot)
+            res = push(render_url=render_url)
+            return jsonify({'ok': True, 'local': n_local, 'resultados': res})
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 500
+
     @app.route('/admin/observer-push-render', methods=['POST'])
     def observer_push_render():
         """Replica las tablas obs_* + productos.observer_id a la DB de Render."""

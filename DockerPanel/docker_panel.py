@@ -466,6 +466,20 @@ class DockerPanel(tk.Tk):
         btn_push_master.pack(fill="x", pady=2)
         btn_push_master.bind("<Enter>", lambda e: btn_push_master.config(bg="#5a3a2a"))
         btn_push_master.bind("<Leave>", lambda e: btn_push_master.config(bg="#3a2a1a"))
+
+        btn_push_cad = tk.Button(
+            left, text="📊  Subir cadencias a Render",
+            font=("Segoe UI", 9, "bold"),
+            bg="#3a2a1a", fg="#ffb87f",
+            activebackground="#4a3a2a", activeforeground="#ffb87f",
+            relief="flat", cursor="hand2", pady=7, anchor="w", padx=10,
+            command=lambda: threading.Thread(
+                target=self._push_cadencias, daemon=True
+            ).start()
+        )
+        btn_push_cad.pack(fill="x", pady=2)
+        btn_push_cad.bind("<Enter>", lambda e: btn_push_cad.config(bg="#5a3a2a"))
+        btn_push_cad.bind("<Leave>", lambda e: btn_push_cad.config(bg="#3a2a1a"))
         # === END PUSH MASTER ===
 
         # === BEGIN PANEL REMOTO (buzón de comandos en Render) ===
@@ -1669,6 +1683,56 @@ class DockerPanel(tk.Tk):
         except (urllib.error.URLError, OSError, socket.timeout) as e:
             self.after(0, self._append,
                        f"  ✗ push-master conexión falló: {e}\n", "err")
+        finally:
+            self.after(0, self._cerrar_overlay_sync)
+
+    def _push_cadencias(self):
+        """Dispara /admin/push-cadencias de la app local: computa el snapshot de
+        cadencias (todos los labs) y lo copia a Render. Reusa url + token del
+        auto-sync."""
+        import datetime as _dt
+        cfg = self._load_auto_sync_config()
+        url = (cfg.get('url') or '').strip().rstrip('/')
+        if not url:
+            self.after(0, self._append,
+                       "  ⚠ push-cadencias: falta configurar URL del auto-sync\n", "err")
+            return
+        endpoint = url + '/admin/push-cadencias'
+        token = (cfg.get('token') or '').strip()
+
+        ts = _dt.datetime.now().strftime('%H:%M')
+        self.after(0, self._append,
+                   f"\n📊 {ts} push cadencias → {endpoint}\n", "dim")
+        self.after(0, self._mostrar_overlay_sync,
+                   'Computando + subiendo cadencias a Render',
+                   'Analizando ~400 labs…')
+        try:
+            headers = {'User-Agent': 'DockerPanel-PushCadencias',
+                       'Content-Type': 'application/json'}
+            if token:
+                headers['X-Auto-Sync-Token'] = token
+            req = urllib.request.Request(endpoint, data=b'{}',
+                                         headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=600) as r:
+                body = r.read().decode('utf-8', errors='replace')
+            try:
+                result = json.loads(body)
+            except Exception:
+                result = {'ok': r.getcode() == 200, 'raw': body[:200]}
+            if result.get('ok'):
+                n_local = result.get('local', '?')
+                res = result.get('resultados', {})
+                snap = res.get('cadencia_lab_snapshot', {})
+                self.after(0, self._append,
+                           f"  ✓ push-cadencias OK — {n_local} labs computados, "
+                           f"{snap.get('filas', '?')} subidos ({snap.get('ms', '?')} ms)\n", "ok")
+            else:
+                self.after(0, self._append,
+                           f"  ✗ push-cadencias FALLÓ — {result.get('error', 'error desconocido')}\n",
+                           "err")
+        except (urllib.error.URLError, OSError, socket.timeout) as e:
+            self.after(0, self._append,
+                       f"  ✗ push-cadencias conexión falló: {e}\n", "err")
         finally:
             self.after(0, self._cerrar_overlay_sync)
 

@@ -1269,6 +1269,8 @@ def init_app(app):
                     'u7d': u7d_val,
                     'u12m': u12m_int,
                     'pvp': round(pvp_est, 2),
+                    'rotacion': rotacion_cls,            # 'A'|'M'|'B' (alta/media/baja)
+                    'ventas_arr': ventas_arr,            # 12 meses, [11]=mes actual parcial
                     'sin_mov_60d': bool(sin_mov),
                     'a_pedir': a_pedir,
                     'factor_h': round(factor_h, 2),          # multiplicador aplicado
@@ -1312,8 +1314,13 @@ def init_app(app):
 
             # ── Flags (Comportamientos excepcionales) por EAN ──
             # Cualquier EAN del producto (principal o alt) cuenta. El display del
-            # chip lo arma services.flags (dedup); acá solo aplicamos el efecto
-            # sobre la cantidad: tope_uno → máximo 1 unidad.
+            # chip lo arma services.flags (dedup); acá aplicamos el efecto sobre la
+            # cantidad:
+            #   tope_uno       → a_pedir máx 1.
+            #   agotar_todo    → bloquear reposición mientras quede stock (>0).
+            #   agotar_hasta_1 → bloquear reposición mientras stock > 1.
+            # Los "agotar" se apoyan SOLO en el stock real de ObServer (se liberan
+            # solos al bajar al umbral; no dependen de marcar recepción).
             if obs_ids_items:
                 from services.flags import flags_display_por_producto
                 eans_completos_por_pid = {}
@@ -1326,13 +1333,27 @@ def init_app(app):
                 flag_por_pid = flags_display_por_producto(session, eans_completos_por_pid)
                 for it in items:
                     it['flag'] = flag_por_pid.get(it['pid'])
-                    if (it['flag'] and it['flag'].get('efecto_armado') == 'tope_uno'
-                            and it.get('a_pedir', 0) > 1):
+                    _ef = it['flag'].get('efecto_armado') if it['flag'] else None
+                    if _ef == 'tope_uno' and it.get('a_pedir', 0) > 1:
                         it['a_pedir'] = 1
                         it['tope_uno'] = True
+                    elif _ef == 'agotar_todo':
+                        # Nunca repone (discontinuar / agotar a 0).
+                        it['a_pedir'] = 0
+                        it['agotar'] = True
+                    elif _ef == 'agotar_hasta_1':
+                        # No repone mientras tenga stock; repone 1 al llegar a 0
+                        # (mantiene 1 unidad). Usa el stock real de ObServer.
+                        it['a_pedir'] = 1 if (it.get('stock') or 0) == 0 else 0
+                        it['agotar'] = True
             else:
                 for it in items:
                     it['flag'] = None
+
+            # Los "agotar" con a_pedir 0 ni se traen al armado (no se van a pedir):
+            # "Agotar stock" desaparece siempre; "Agotar hasta 1" solo aparece
+            # cuando llega a 0 y repone 1.
+            items = [it for it in items if not (it.get('agotar') and not it.get('a_pedir'))]
 
             cierre = proximo_cierre(session, prov_id) if prov_id else None
 
@@ -1528,9 +1549,16 @@ def init_app(app):
                 droguerias_canal = [{'id': p.id, 'nombre': p.razon_social}
                                     for p in provs_drog]
 
+            # Valor piso ("productos caros $") desde la config del pedido, para
+            # pre-cargar el filtro de PVP en el header (editable por el operador).
+            from services.calculo_pedido import cargar_config as _cargar_cfg_vp
+            _cfg_vp = _cargar_cfg_vp('COMPRA_LAB' if lab_id else 'REPOSICION') or {}
+            valor_piso = float(_cfg_vp.get('valor_piso') or 0)
+
             return render_template('compras_dia_armar.html',
                                    prov=prov, items=items,
                                    total_items=len(items),
+                                   valor_piso=valor_piso,
                                    cubre=sum(1 for i in items if i['cubre_lab']),
                                    pendientes=sum(1 for i in items if not i['cubre_lab']),
                                    cierre=cierre,

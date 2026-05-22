@@ -5,22 +5,28 @@
 
 {% block extra_head %}
 <style>
-    .cl-page { padding: 18px 24px 28px; }
-    .cl-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .cl-page { padding: 10px 24px 24px; }
+    .cl-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
     .cl-head h1 {
         font-family:'Space Grotesk',sans-serif;
-        font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0;
+        font-size: 17px; font-weight: 700; color: var(--ds-text); margin: 0;
     }
-    .cl-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+    .cl-head .sub { font-size: 11px; color: var(--ds-text-mute); }
 
     .cl-filters {
-        display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-        padding: 10px 14px;
+        display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+        padding: 7px 14px;
         background: var(--ds-surface);
         border: 1px solid var(--ds-line);
         border-radius: 12px;
-        margin-bottom: 14px;
+        margin-bottom: 10px;
     }
+    .cl-h1 { font-family:'Space Grotesk',sans-serif; font-size: 15px; font-weight: 700;
+        color: var(--ds-text); margin: 0; white-space: nowrap; }
+    .cl-div { width: 1px; height: 18px; background: var(--ds-line); }
+    /* margin-right reserva el hueco del FAB de PDF (position:fixed, right:18px). */
+    .cl-volver { margin-left: auto; margin-right: 80px; color: var(--ds-text-mute);
+        font-size: 11px; white-space: nowrap; }
     .cl-filters label {
         font-size: 9px; font-weight: 700; letter-spacing: .08em;
         text-transform: uppercase; color: var(--ds-text-mute);
@@ -37,17 +43,17 @@
     .cl-filters input[type="number"] { width: 60px; text-align: right; }
     .cl-filters .hint { font-size: 10px; color: var(--ds-text-mute); }
 
-    /* KPIs totales arriba */
+    /* KPIs totales arriba (label + valor en la misma línea, strip compacto) */
     .cl-totales {
-        display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+        display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
     }
     .cl-tot {
         flex: 1 1 auto; min-width: 160px;
         background: var(--ds-surface);
         border: 1px solid var(--ds-line);
         border-radius: 10px;
-        padding: 8px 14px;
-        display: flex; flex-direction: column; gap: 2px;
+        padding: 7px 14px;
+        display: flex; align-items: baseline; gap: 8px;
     }
     .cl-tot .lbl {
         font-size: 9px; font-weight: 700; letter-spacing: .06em;
@@ -55,7 +61,8 @@
     }
     .cl-tot .val {
         font-family:'Space Grotesk',sans-serif;
-        font-size: 20px; font-weight: 700; color: var(--ds-text); line-height: 1;
+        font-size: 17px; font-weight: 700; color: var(--ds-text); line-height: 1;
+        margin-left: auto;
     }
     .cl-tot .val.mint { color: var(--ds-mint); }
 
@@ -64,8 +71,8 @@
         background: var(--ds-surface);
         border: 1px solid var(--ds-line);
         border-left: 4px solid var(--ds-line);
-        border-radius: 12px;
-        margin-bottom: 12px;
+        border-radius: 10px;
+        margin-bottom: 6px;
         overflow: hidden;
     }
     .cl-bucket.rojo     { border-left-color: #ef4444; }
@@ -74,15 +81,15 @@
     .cl-bucket.azul     { border-left-color: #7dd3fc; }
     .cl-bucket.mute     { border-left-color: rgba(255,255,255,.2); }
     .cl-bucket-head {
-        display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+        display: flex; align-items: center; gap: 10px; padding: 6px 14px;
         cursor: pointer; user-select: none;
         background: rgba(0,0,0,.10);
     }
     .cl-bucket-head:hover { background: rgba(95,230,188,.05); }
-    .cl-bucket-icon { font-size: 24px; line-height: 1; }
+    .cl-bucket-icon { font-size: 17px; line-height: 1; }
     .cl-bucket-title {
         font-family:'Space Grotesk',sans-serif;
-        font-size: 14px; font-weight: 700; color: var(--ds-text);
+        font-size: 13px; font-weight: 700; color: var(--ds-text);
     }
     .cl-bucket-meta {
         font-size: 11px; color: var(--ds-text-mute);
@@ -137,6 +144,41 @@
         border: 1px solid var(--ds-line);
         border-radius: 12px;
     }
+
+    /* Matriz Recencia × Rotación */
+    .rfm-wrap { margin-bottom: 12px; }
+    .rfm-title { font-size: 11px; font-weight: 700; color: var(--ds-text); margin-bottom: 5px;
+        display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+    .rfm-title .sub { font-size: 10px; font-weight: 400; color: var(--ds-text-mute); }
+    .rfm-grid { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+    .rfm-cell {
+        flex: 1 1 0; min-width: 210px;
+        background: var(--ds-surface); border: 1px solid var(--ds-line);
+        border-left: 3px solid var(--ds-line);
+        border-radius: 8px; padding: 7px 11px;
+        display: flex; flex-direction: column; gap: 3px;
+    }
+    .rfm-cell.rojo     { border-left-color: #ef4444; }
+    .rfm-cell.amarillo { border-left-color: var(--ds-warn); }
+    .rfm-cell.azul     { border-left-color: #7dd3fc; }
+    .rfm-cell.mute     { border-left-color: rgba(255,255,255,.2); }
+    .rfm-cell .top { display: flex; align-items: baseline; gap: 8px; }
+    .rfm-cell .lbl { font-size: 12px; font-weight: 700; color: var(--ds-text); }
+    .rfm-cell .n { font-family:'Space Grotesk',sans-serif; font-size: 17px; font-weight: 700; line-height: 1; }
+    .rfm-cell .meta { font-size: 10px; color: var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace; margin-left: auto; }
+    .rfm-cell .desc { font-size: 10px; color: var(--ds-text-mute); line-height: 1.3; }
+
+    /* Panel del gráfico pegado arriba al scrollear (no se pierde al ver buckets). */
+    #dual-grafico-panel { position: sticky; top: 6px; z-index: 6; }
+
+    /* Badge RFM + última venta en las filas */
+    .rfm-badge { display:inline-block; font-size:9px; font-weight:700; padding:1px 6px; border-radius:99px; }
+    .rfm-badge.core      { background: rgba(239,68,68,.16);  color:#fca5a5; }
+    .rfm-badge.caida     { background: rgba(245,158,11,.16); color:#fcd34d; }
+    .rfm-badge.ocasional { background: rgba(125,211,252,.16);color:#7dd3fc; }
+    .rfm-badge.dormido   { background: rgba(120,120,120,.16);color: var(--ds-text-mute); }
+    .uv-stale { color: var(--ds-warn); }
+    .uv-old   { color: #f87171; }
 </style>
 {% endblock %}
 
@@ -144,34 +186,24 @@
 {% include '_print_pdf.html' %}
 <div class="flex-1 overflow-auto">
 <div class="cl-page">
-    <a href="{{ url_for('informes_index') }}" class="text-xs" style="color:var(--ds-text-mute);">← Mis Informes</a>
-    <div class="cl-head" style="margin-top:6px;">
-        <span style="font-size:24px;">📅</span>
-        <h1>Análisis de cadencias por laboratorio</h1>
-        <span class="sub">
-            Agrupa los productos según cuánto dura una reposición típica al ritmo actual.
-            Útil para decidir si conviene partir el pedido en varias frecuencias.
-        </span>
-    </div>
-
     <form method="get" action="{{ url_for('informe_cadencias_lab') }}" class="cl-filters">
-        <label for="lab-sel">Laboratorio:</label>
+        <span style="font-size:15px;">📅</span>
+        <h1 class="cl-h1">Cadencias por laboratorio</h1>
+        <span class="cl-div"></span>
+        <label for="lab-sel">Lab:</label>
         <select id="lab-sel" name="lab_id" onchange="this.form.submit()">
-            <option value="">— Elegí un lab —</option>
+            <option value="">— Elegí —</option>
             {% for l in labs %}
             <option value="{{ l.id }}" {% if lab_id == l.id %}selected{% endif %}>{{ l.nombre }}</option>
             {% endfor %}
         </select>
-        <label for="cob-input" title="Días de cobertura asumidos para productos sin cantidad_reposicion_fija configurada">Cobertura default (días):</label>
+        <label for="cob-input" title="Días de cobertura asumidos para productos sin cantidad_reposicion_fija configurada">Cobertura:</label>
         <input id="cob-input" type="number" name="cobertura" min="7" max="90" value="{{ cobertura }}"
                onchange="this.form.submit()" title="7-90 días">
-        <label for="rot-input" title="Cantidad de meses completos previos para calcular avg/día">Meses para avg:</label>
+        <label for="rot-input" title="Meses completos previos para calcular avg/día. Buckets por avg mensual (rotación real); la columna Cadencia abajo es cant_repo / avg_diario.">Meses avg:</label>
         <input id="rot-input" type="number" name="meses_rot" min="1" max="12" value="{{ meses_rot }}"
                onchange="this.form.submit()">
-        <span class="hint">
-            Buckets por <code style="color:var(--ds-mint);">avg mensual</code> (rotación real).
-            La columna "Cadencia" abajo muestra el cálculo individual según cant_repo / avg_diario.
-        </span>
+        <a href="{{ url_for('informes_index') }}" class="cl-volver">← Informes</a>
     </form>
 
     {% if not lab_id %}
@@ -190,6 +222,7 @@
         {% endif %}
     </div>
     {% else %}
+    {% set RFM_LBL = {'core':'Core','caida':'En caída','ocasional':'Ocasional','dormido':'Dormido'} %}
     {# Totales del lab #}
     <div class="cl-totales">
         <div class="cl-tot">
@@ -206,6 +239,34 @@
         </div>
     </div>
 
+    {# ── Matriz Recencia × Rotación (mini-RFM) ── #}
+    {% if data.matriz %}
+    {% set q = {} %}
+    {% for m in data.matriz %}{% set _ = q.__setitem__(m.slug, m) %}{% endfor %}
+    {% macro rfm_cell(m) %}
+        <div class="rfm-cell {{ m.color }}">
+            <div class="top">
+                <span class="lbl">{{ m.label }}</span>
+                <span class="n">{{ m.n }}</span>
+                <span class="meta">{% if m.monto_mensual > 0 %}$ {{ '{:,.0f}'.format(m.monto_mensual).replace(',', '.') }}/mes · {% endif %}{{ m.stock_u }}u</span>
+            </div>
+            <div class="desc">{{ m.desc }}</div>
+        </div>
+    {% endmacro %}
+    <div class="rfm-wrap">
+        <div class="rfm-title">
+            🎯 Recencia × Rotación
+            <span class="sub">cuánto vende (avg 12m) × hace cuánto vendió · "seguido" ≥ {{ data.rfm_freq_min|int }}/mes · "reciente" ≤ {{ data.rfm_rec_meses }}m</span>
+        </div>
+        <div class="rfm-grid">
+            {{ rfm_cell(q['core']) }}
+            {{ rfm_cell(q['ocasional']) }}
+            {{ rfm_cell(q['caida']) }}
+            {{ rfm_cell(q['dormido']) }}
+        </div>
+    </div>
+    {% endif %}
+
     {# Panel dual (Año + Mes) — se actualiza al click en una fila de cualquier bucket #}
     {% include '_grafico_dual_panel.html' %}
 
@@ -214,12 +275,10 @@
     <div class="cl-bucket {{ b.color }} {% if b.n_productos == 0 %}empty{% endif %}" id="bucket-{{ b.slug }}">
         <div class="cl-bucket-head" onclick="if({{ b.n_productos }}>0)this.parentElement.classList.toggle('open')">
             <span class="cl-bucket-icon">{{ b.icono }}</span>
-            <div>
-                <div class="cl-bucket-title">{{ b.label }}</div>
-                <div class="cl-bucket-meta" style="margin-left:0; margin-top:2px;">
-                    cadencia sugerida: <b style="color:var(--ds-text);">{{ b.cadencia_sugerida }}</b>
-                </div>
-            </div>
+            <span class="cl-bucket-title">{{ b.label }}</span>
+            <span class="cl-bucket-meta" style="margin-left:8px;">
+                cadencia <b style="color:var(--ds-text);">{{ b.cadencia_sugerida }}</b>
+            </span>
             <div class="cl-bucket-meta">
                 <b>{{ b.n_productos }}</b> producto{{ '' if b.n_productos == 1 else 's' }}
                 · <b>$ {{ '{:,.0f}'.format(b.monto_mensual).replace(',', '.') }}</b>/mes
@@ -234,6 +293,7 @@
                         <th class="left">Producto</th>
                         <th title="Promedio diario sobre últimos {{ meses_rot }} meses">Avg/día</th>
                         <th title="Promedio mensual (avg/día × 30.42)">Avg/mes</th>
+                        <th title="Meses desde la última venta registrada">Últ. venta</th>
                         <th title="Cantidad de reposición usada para calcular cadencia">Cant repo</th>
                         <th title="Cuánto dura la cant_repo al ritmo actual = cant_repo / avg/día">Cadencia</th>
                         <th title="Precio unitario estimado (monto vendido / unidades vendidas)">PVP</th>
@@ -246,13 +306,23 @@
                     <tr data-obsid="{{ it.observer_id }}" data-nombre="{{ it.nombre | e }}"
                         onclick="seleccionarProductoCL(this)">
                         <td class="left">
-                            <div style="font-weight:600;">{{ it.nombre }}</div>
+                            <div style="font-weight:600;">
+                                {{ it.nombre }}
+                                <span class="rfm-badge {{ it.rfm }}" title="{{ RFM_LBL[it.rfm] }}">{{ RFM_LBL[it.rfm] }}</span>
+                            </div>
                             {% if it.codigo_alfabeta %}
                             <div style="font-size:10px; color:var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace;">{{ it.codigo_alfabeta }}</div>
                             {% endif %}
                         </td>
                         <td>{{ '%.2f' % it.avg_diario }}</td>
                         <td class="muted">{{ '%.1f' % it.avg_mensual }}</td>
+                        <td>
+                            {% if it.meses_ult_venta is none %}<span class="muted">nunca</span>
+                            {% elif it.meses_ult_venta == 0 %}<span style="color:var(--ds-mint);">este mes</span>
+                            {% elif it.meses_ult_venta <= 2 %}hace {{ it.meses_ult_venta }}m
+                            {% elif it.meses_ult_venta <= 5 %}<span class="uv-stale">hace {{ it.meses_ult_venta }}m</span>
+                            {% else %}<span class="uv-old">hace {{ it.meses_ult_venta }}m</span>{% endif %}
+                        </td>
                         <td>
                             {{ it.cant_repo }}u
                             {% if it.origen_cant == 'cant_fija' %}
@@ -279,21 +349,40 @@
         <summary class="cl-bucket-head" style="cursor:pointer; list-style:none;">
             <span class="cl-bucket-icon">😴</span>
             <div>
-                <div class="cl-bucket-title">Catálogo dormido</div>
+                <div class="cl-bucket-title">Catálogo dormido — con stock</div>
                 <div class="cl-bucket-meta" style="margin-left:0; margin-top:2px;">
-                    productos del lab sin ventas en {{ meses_rot }} meses
+                    sin ventas en {{ meses_rot }} meses pero con stock parado (lo accionable)
                 </div>
             </div>
             <div class="cl-bucket-meta">
-                <b>{{ data.totales.productos_sin_ventas }}</b> producto{{ '' if data.totales.productos_sin_ventas == 1 else 's' }}
+                <b style="color:var(--ds-warn);">{{ data.totales.dormido_con_stock }}</b> con stock
+                · <b style="color:var(--ds-warn);">$ {{ '{:,.0f}'.format(data.totales.dormido_valor).replace(',', '.') }}</b> parado
+                · <span style="opacity:.7;">{{ data.totales.productos_sin_ventas }} dormidos en total</span>
             </div>
         </summary>
-        <div style="padding: 8px 16px 16px; max-height: 300px; overflow-y: auto;">
+        <div style="padding: 8px 16px 16px; max-height: 320px; overflow-y: auto;">
+            {% if data.totales.dormido_con_stock > 0 %}
+            {# Solo los que sirven: con stock. Los "sin stock" / "nunca" sin stock son ruido. #}
             <ul style="font-size:11px; color:var(--ds-text-soft); margin:0; padding-left:18px; columns:2; column-gap:24px;">
-                {% for p in data.sin_ventas %}
-                <li>{{ p.nombre }}{% if p.codigo_alfabeta %} <span style="color:var(--ds-text-mute); font-family:ui-monospace;">({{ p.codigo_alfabeta }})</span>{% endif %}</li>
+                {% for p in data.sin_ventas if p.stock > 0 %}
+                <li style="margin-bottom:2px;">
+                    {% if p.rfm == 'caida' %}<span class="rfm-badge caida">En caída</span> {% endif %}
+                    {{ p.nombre }}
+                    {% if p.meses_ult_venta is none %}<span style="color:var(--ds-text-mute);">· nunca vendió</span>
+                    {% else %}<span class="{% if p.meses_ult_venta > 5 %}uv-old{% else %}uv-stale{% endif %}">· hace {{ p.meses_ult_venta }}m</span>{% endif %}
+                    <span style="color:var(--ds-warn); font-family:ui-monospace;">· 📦 {{ p.stock }}u
+                        {% if p.valor > 0 %}· $ {{ '{:,.0f}'.format(p.valor).replace(',', '.') }}{% if p.precio_origen == 'venta' %}*{% endif %}{% endif %}</span>
+                    {% if p.codigo_alfabeta %} <span style="color:var(--ds-text-mute); font-family:ui-monospace;">({{ p.codigo_alfabeta }})</span>{% endif %}
+                </li>
                 {% endfor %}
             </ul>
+            <div style="font-size:9px; color:var(--ds-text-mute); margin-top:8px;">
+                Solo se listan los dormidos <b>con stock</b> ({{ data.totales.dormido_con_stock }} de {{ data.totales.productos_sin_ventas }}); el resto (sin stock / nunca vendió) se omite.
+                Valorizado a precio actual. <b>*</b> = sin precio actual, estimado al último precio de venta.
+            </div>
+            {% else %}
+            <div style="font-size:12px; color:var(--ds-text-mute);">Ningún producto dormido tiene stock — nada parado para accionar. ({{ data.totales.productos_sin_ventas }} dormidos sin stock.)</div>
+            {% endif %}
         </div>
     </details>
     {% endif %}
