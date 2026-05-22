@@ -188,73 +188,118 @@
         </div>
 
         {% else %}
-        {# ── Campos de tipo de pedido ── #}
+        {# ── Campos de tipo de pedido (UI legible) ── #}
         <div class="tp-card mt-4" style="margin-top: 14px;">
-            <h3>Reglas de cálculo</h3>
+            <h3>Comportamiento del pedido</h3>
 
-            <div class="tp-field">
-                <label class="tp-field-label">Piso del ideal</label>
-                <select name="piso_ideal" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.piso_ideal %}
-                    <option value="{{ opt }}" {% if tipo.config.piso_ideal == opt %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
+            {# Preset quick-fill #}
+            <div class="tp-field" style="background:rgba(95,230,188,.06); border:1px solid rgba(95,230,188,.25); border-radius:8px; padding:10px 12px;">
+                <label class="tp-field-label">⚡ Arrancar desde un preset</label>
+                <select id="preset-select" class="tp-select" onchange="aplicarPreset(this.value)">
+                    <option value="">— Elegí un preset para autocompletar —</option>
+                    <option value="chico">Pedido Chico — solo cubrir faltantes</option>
+                    <option value="semanal">Pedido Semanal — ~7 días</option>
+                    <option value="quincenal">Pedido Quincenal — ~15 días</option>
+                    <option value="mensual">Pedido Mensual — ~30 días</option>
                 </select>
-                <div class="tp-field-help">Cantidad mínima a la que apuntar (suelo del cálculo).</div>
+                <div class="tp-field-help">Rellena los campos de abajo con valores típicos. Después ajustás a mano.</div>
             </div>
 
+            {# ── BÁSICO ── #}
             <div class="tp-field">
-                <label class="tp-field-label">Target / Horizonte</label>
-                <select name="target_horizonte" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.target_horizonte %}
-                    <option value="{{ opt }}" {% if tipo.config.target_horizonte == opt %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-                <div class="tp-field-help">Cobertura adicional sobre el piso. El motor toma el mayor de piso vs target.</div>
-            </div>
-
-            <div class="tp-field">
-                <label class="tp-field-label">Días de cobertura fijos (piso)</label>
-                <input type="number" name="dias_cobertura_fijo" min="1" max="365"
-                       value="{{ tipo.config.dias_cobertura_fijo or '' }}" class="tp-input"
-                       placeholder="Vacío = usa slider" oninput="simular()">
-                <div class="tp-field-help">Solo aplica cuando piso = tasa diaria × días. Reemplaza el slider del armado. Dejá vacío para que el slider controle.</div>
-            </div>
-
-            <div class="tp-field">
-                <label class="tp-field-label">Buffer (% sobre ideal)</label>
-                <input type="number" name="buffer_pct" min="0" max="100"
-                       value="{{ tipo.config.buffer_pct or 0 }}" class="tp-input"
-                       oninput="simular()">
-                <div class="tp-field-help">Margen de seguridad. 20 = +20% sobre el ideal calculado.</div>
-            </div>
-
-            <div class="tp-field">
-                <label class="tp-field-label">Universo (informativo)</label>
+                <label class="tp-field-label">¿Qué productos entran?</label>
                 <select name="universo" class="tp-select" onchange="simular()">
                     {% for opt, label in enums.universo %}
                     <option value="{{ opt }}" {% if tipo.config.universo == opt %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <div class="tp-field-help">Qué productos entran al listado de este tipo. No afecta el cálculo de cantidad, solo documenta.</div>
             </div>
 
             <div class="tp-field">
-                <label class="tp-field-label">Override por producto</label>
-                <select name="override_producto" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.override_producto %}
-                    <option value="{{ opt }}" {% if tipo.config.override_producto == opt %}selected{% endif %}>{{ label }}</option>
+                <label class="tp-field-label">¿Cuánto querés tener en stock como base?</label>
+                <select name="piso_ideal" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.piso_ideal %}
+                    <option value="{{ opt }}" {% if tipo.config.piso_ideal == opt %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
-                <div class="tp-field-help">Campo de Producto que pisa el cálculo si está seteado (ej. cantidad fija).</div>
             </div>
 
             <div class="tp-field">
-                <label class="tp-field-label">Redondeo</label>
-                <select name="redondeo" class="tp-select" onchange="simular()">
-                    {% for opt, label in enums.redondeo %}
-                    <option value="{{ opt }}" {% if tipo.config.redondeo == opt %}selected{% endif %}>{{ label }}</option>
+                <label class="tp-field-label">¿Para cuántos días de venta comprás?</label>
+                <input type="number" name="dias_cobertura_fijo" min="1" max="365"
+                       value="{{ tipo.config.dias_cobertura_fijo or '' }}" class="tp-input"
+                       placeholder="Vacío = usa el slider del armado" oninput="simular()">
+                <div class="tp-field-help">Solo aplica si arriba elegiste "lo que se vende en N días".</div>
+            </div>
+
+            <div class="tp-field">
+                <label class="tp-field-label">¿Qué ventas miro para calcular el ritmo?</label>
+                <select name="base_demanda" class="tp-select" onchange="simular()">
+                    {% for opt, label in enums.base_demanda %}
+                    <option value="{{ opt }}" {% if (tipo.config.base_demanda or 'u3m') == opt %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
+            </div>
+
+            {# ── AVANZADO (colapsable) ── #}
+            <button type="button" onclick="toggleAvanzado()" id="btn-avanzado"
+                    style="margin:8px 0; font-size:12px; color:var(--ds-text-mute); background:none; border:none; cursor:pointer;">
+                ⚙ Avanzado ▾
+            </button>
+            <div id="avanzado-block" style="display:none; border-left:2px solid var(--ds-line); padding-left:12px;">
+                <div class="tp-field">
+                    <label class="tp-field-label">Si el producto tiene cantidad fija seteada…</label>
+                    <select name="cant_fija_efecto" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.cant_fija_efecto %}
+                        <option value="{{ opt }}" {% if (tipo.config.cant_fija_efecto or 'override') == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Si hay mínimo de oferta (TRF)…</label>
+                    <select name="oferta_min_efecto" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.oferta_min_efecto %}
+                        <option value="{{ opt }}" {% if (tipo.config.oferta_min_efecto or 'piso') == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Cobertura adicional (target)</label>
+                    <select name="target_horizonte" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.target_horizonte %}
+                        <option value="{{ opt }}" {% if tipo.config.target_horizonte == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="tp-field-help">El motor toma el mayor entre la base y este horizonte.</div>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Margen de seguridad (%)</label>
+                    <input type="number" name="buffer_pct" min="0" max="100"
+                           value="{{ tipo.config.buffer_pct or 0 }}" class="tp-input"
+                           oninput="simular()">
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Override por producto</label>
+                    <select name="override_producto" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.override_producto %}
+                        <option value="{{ opt }}" {% if tipo.config.override_producto == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="tp-field-help">Habilita qué campo del producto puede pisar el cálculo (la política la elegís arriba).</div>
+                </div>
+
+                <div class="tp-field">
+                    <label class="tp-field-label">Redondeo</label>
+                    <select name="redondeo" class="tp-select" onchange="simular()">
+                        {% for opt, label in enums.redondeo %}
+                        <option value="{{ opt }}" {% if tipo.config.redondeo == opt %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
         </div>
         {% endif %}
@@ -324,14 +369,46 @@
 {% if tipo.categoria != 'flag' %}
 const SLUG = '{{ tipo.slug }}';
 
+function _val(name) { const e = document.querySelector(`[name="${name}"]`); return e ? e.value : ''; }
+
+function aplicarPreset(slug) {
+    if (!slug) return;
+    // Cada preset rellena los campos básicos. Después se ajusta a mano.
+    const P = {
+        chico:      {piso_ideal: 'min_efectivo',             target_horizonte: 'none', dias_cobertura_fijo: '',  base_demanda: 'u3m'},
+        semanal:    {piso_ideal: 'daily_rate_x_cubrir_dias', target_horizonte: 'none', dias_cobertura_fijo: '7',  base_demanda: 'u3m'},
+        quincenal:  {piso_ideal: 'daily_rate_x_cubrir_dias', target_horizonte: 'none', dias_cobertura_fijo: '15', base_demanda: 'u3m'},
+        mensual:    {piso_ideal: 'daily_rate_x_cubrir_dias', target_horizonte: 'none', dias_cobertura_fijo: '30', base_demanda: 'u12m'},
+    };
+    const cfg = P[slug];
+    if (!cfg) return;
+    for (const [name, v] of Object.entries(cfg)) {
+        const el = document.querySelector(`[name="${name}"]`);
+        if (el) el.value = v;
+    }
+    simular();
+}
+
+function toggleAvanzado() {
+    const b = document.getElementById('avanzado-block');
+    const btn = document.getElementById('btn-avanzado');
+    const open = b.style.display === 'none';
+    b.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '⚙ Avanzado ▴' : '⚙ Avanzado ▾';
+}
+
 async function simular() {
     const cfg = {
-        piso_ideal:        document.querySelector('[name="piso_ideal"]').value,
-        target_horizonte:  document.querySelector('[name="target_horizonte"]').value,
-        buffer_pct:        parseInt(document.querySelector('[name="buffer_pct"]').value || 0),
-        universo:          document.querySelector('[name="universo"]').value,
-        override_producto: document.querySelector('[name="override_producto"]').value,
-        redondeo:          document.querySelector('[name="redondeo"]').value,
+        piso_ideal:          _val('piso_ideal'),
+        target_horizonte:    _val('target_horizonte'),
+        buffer_pct:          parseInt(_val('buffer_pct') || 0),
+        universo:            _val('universo'),
+        override_producto:   _val('override_producto'),
+        redondeo:            _val('redondeo'),
+        dias_cobertura_fijo: _val('dias_cobertura_fijo') ? parseInt(_val('dias_cobertura_fijo')) : null,
+        base_demanda:        _val('base_demanda'),
+        cant_fija_efecto:    _val('cant_fija_efecto'),
+        oferta_min_efecto:   _val('oferta_min_efecto'),
     };
     const fijaRaw = document.getElementById('sim-fija').value;
     const ctx = {
