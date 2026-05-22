@@ -118,10 +118,10 @@ class TestCaroRotacionBaja:
         assert 'caro_baja_cap1' in r['regla_usada']
 
     def test_caro_baja_sin_movimiento_da_cero(self):
-        # El guard sin_rotacion gana → 0 (no llega al tope de 1).
+        # Sin ventas (fallback sin ventas_mensuales) → 0 por la ventana propia.
         r = calcular_a_pedir(self._cfg(), self._ctx(sin_mov=True))
         assert r['a_pedir'] == 0
-        assert r['regla_usada'] == 'sin_rotacion'
+        assert 'caro_baja_sin_venta' in r['regla_usada']
 
     def test_caro_rotacion_alta_no_topea(self):
         r = calcular_a_pedir(self._cfg(), self._ctx(rotacion='A'))
@@ -134,6 +134,21 @@ class TestCaroRotacionBaja:
     def test_valor_piso_cero_desactiva_regla(self):
         r = calcular_a_pedir(self._cfg(valor_piso=0), self._ctx())
         assert r['a_pedir'] == 10
+
+    def test_ventana_sin_venta_reciente_da_cero(self):
+        # dias_valor_piso=60 → últimos 2 meses (slots 10,11). Sin ventas ahí → 0,
+        # aunque haya vendido hace meses (slot 3).
+        cfg = dict(self._cfg(), dias_valor_piso=60)
+        vm = [0, 0, 0, 8] + [0]*8   # vendió en el slot 3, nada reciente
+        r = calcular_a_pedir(cfg, self._ctx(ventas_mensuales=vm))
+        assert r['a_pedir'] == 0
+        assert 'caro_baja_sin_venta_60d' in r['regla_usada']
+
+    def test_ventana_con_venta_reciente_topea_1(self):
+        cfg = dict(self._cfg(), dias_valor_piso=60)
+        vm = [0]*10 + [0, 3]        # vendió 3 el mes actual (slot 11)
+        r = calcular_a_pedir(cfg, self._ctx(ventas_mensuales=vm))
+        assert r['a_pedir'] == 1
 
 
 class TestCantFijaEfecto:

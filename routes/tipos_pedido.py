@@ -65,23 +65,24 @@ BASE_CONFIGS = {
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'dias_cobertura_fijo': 4, 'base_demanda': 'u3m',
                    'cant_fija_efecto': 'override', 'oferta_min_efecto': 'piso',
-                   'valor_piso': 0},
+                   'valor_piso': 0, 'dias_valor_piso': 60},
     'COMPRA_LAB': {'piso_ideal': 'daily_rate_x_cubrir_dias', 'target_horizonte': 'none',
                    'buffer_pct': 0, 'universo': 'lab_x',
                    'override_producto': 'none', 'redondeo': 'ceil',
                    'base_demanda': 'u3m', 'cant_fija_efecto': 'override',
-                   'oferta_min_efecto': 'piso', 'valor_piso': 0},
+                   'oferta_min_efecto': 'piso', 'valor_piso': 0, 'dias_valor_piso': 60},
     'PRUEBA':     {'piso_ideal': 'min_efectivo', 'target_horizonte': 'none',
                    'buffer_pct': 0, 'universo': 'manual',
                    'override_producto': 'cantidad_reposicion_fija', 'redondeo': 'ceil',
                    'base_demanda': 'u12m_estacional', 'cant_fija_efecto': 'override',
-                   'oferta_min_efecto': 'indicador', 'valor_piso': 0},
+                   'oferta_min_efecto': 'indicador', 'valor_piso': 0, 'dias_valor_piso': 60},
 }
 
 ENUMS_FLAG = {
     'efecto_armado': [
         ('excluir',    'Excluir del armado (no aparece)'),
         ('badge_cero', 'Badge + a_pedir forzado a 0'),
+        ('tope_uno',   'Badge + a_pedir topeado en 1'),
         ('solo_badge', 'Solo badge informativo (no afecta cantidad)'),
         ('ninguno',    'Sin efecto visual en el armado'),
     ],
@@ -156,6 +157,8 @@ def init_app(app):
                         _valor_piso = max(0.0, float(_vp_raw)) if _vp_raw else float(cfg_actual.get('valor_piso') or 0)
                     except ValueError:
                         _valor_piso = float(cfg_actual.get('valor_piso') or 0)
+                    _dvp_raw = (request.form.get('dias_valor_piso') or '').strip()
+                    _dias_valor_piso = int(_dvp_raw) if _dvp_raw.isdigit() and int(_dvp_raw) > 0 else int(cfg_actual.get('dias_valor_piso') or 60)
                     cfg_nuevo = {
                         'piso_ideal':          request.form.get('piso_ideal') or cfg_actual.get('piso_ideal', 'min_efectivo'),
                         'target_horizonte':    request.form.get('target_horizonte') or cfg_actual.get('target_horizonte', 'factor_h'),
@@ -170,6 +173,8 @@ def init_app(app):
                         'oferta_min_efecto':   request.form.get('oferta_min_efecto') or cfg_actual.get('oferta_min_efecto', 'piso'),
                         # Precio desde el cual el producto es "caro": si rota bajo, repone máx 1. 0 = off.
                         'valor_piso':          _valor_piso,
+                        # Ventana (días) para evaluar si el caro+baja vendió algo. Default 60.
+                        'dias_valor_piso':     _dias_valor_piso,
                     }
                 row.nombre      = (request.form.get('nombre') or row.nombre).strip()
                 row.descripcion = (request.form.get('descripcion') or '').strip() or None

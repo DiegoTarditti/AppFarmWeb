@@ -1646,6 +1646,51 @@ def normalizar_unidades_minima(valor):
     return max(1, v)
 
 
+def materializar_producto(session, observer_id):
+    """Crea (o devuelve) el Producto master local a partir de un ObsProducto.
+
+    Misma lógica que la ruta /producto/materializar, pero reutilizable desde
+    flujos bulk (ej. presentación a varios). NO commitea — flush para tener el
+    id; el caller decide el commit. Devuelve (Producto|None, error_str|None).
+    """
+    from database import Laboratorio, ObsCodigoBarras, ObsLaboratorio, ObsProducto
+    obs = session.get(ObsProducto, observer_id)
+    if not obs:
+        return None, f'observer_id {observer_id} no existe'
+    existente = session.query(Producto).filter_by(observer_id=observer_id).first()
+    if existente:
+        return existente, None
+    # EAN principal (orden mínimo, activo). Placeholder si ObServer no tiene EAN.
+    ean_row = (session.query(ObsCodigoBarras.codigo_barras)
+               .filter_by(producto_observer=observer_id)
+               .filter(ObsCodigoBarras.fecha_baja.is_(None))
+               .order_by(ObsCodigoBarras.orden).first())
+    ean = ean_row[0] if ean_row else f'OBS-{observer_id}'
+    colision = session.query(Producto).filter_by(codigo_barra=ean).first()
+    if colision:
+        return None, f'EAN {ean} ya está en el producto #{colision.id}'
+    lab_id_local = None
+    if obs.laboratorio_observer:
+        lab = (session.query(Laboratorio)
+               .filter_by(observer_id=obs.laboratorio_observer).first())
+        if not lab:
+            obs_lab = session.get(ObsLaboratorio, obs.laboratorio_observer)
+            if obs_lab:
+                lab = Laboratorio(nombre=obs_lab.descripcion,
+                                  observer_id=obs.laboratorio_observer, activo=True)
+                session.add(lab)
+                session.flush()
+        if lab:
+            lab_id_local = lab.id
+    prod = Producto(codigo_barra=ean, descripcion=obs.descripcion,
+                    observer_id=observer_id, laboratorio_id=lab_id_local,
+                    codigo_alfabeta=obs.codigo_alfabeta,
+                    fuente_creacion='materializar_obs')
+    session.add(prod)
+    session.flush()
+    return prod, None
+
+
 def _sin_acentos(s):
     """lowercase + sin acentos, para matching insensible a tildes.
 

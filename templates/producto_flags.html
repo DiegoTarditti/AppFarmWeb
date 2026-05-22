@@ -374,10 +374,29 @@
                                placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
                         <div class="pf-ac-results" id="pr-ac-results"></div>
                     </div>
-                    <div class="pf-help">Buscá el producto para configurar su envase.</div>
+                    <div class="pf-help">Buscá: click en el nombre = ficha individual; tildá varios para asignar presentación en lote.</div>
                     {# Mensaje visible (fuera de #pr-config, que arranca oculto): errores y
                        el prompt de "catalogar" cuando el producto no tiene master local. #}
                     <div id="pr-search-msg" class="mt-2 text-[12px]"></div>
+
+                    {# Barra de acción en lote (aparece al tildar ≥1 resultado). #}
+                    <div id="pr-bulk-bar" class="hidden mt-2 p-2 rounded-lg border border-[color:var(--ds-line)] bg-[color:var(--ds-surface)]">
+                        <div class="flex items-center gap-2 flex-wrap text-[12px]">
+                            <span class="font-semibold text-[color:var(--ds-mint)]"><span id="pr-bulk-count">0</span> seleccionados</span>
+                            <label class="flex items-center gap-1 cursor-pointer">
+                                <input type="checkbox" id="pr-bulk-frac" checked> fraccionado
+                            </label>
+                            <label class="flex items-center gap-1">
+                                envase
+                                <input type="text" id="pr-bulk-envase" inputmode="decimal" placeholder="ObServer"
+                                       class="pf-input" style="width:88px; padding:3px 6px;">
+                            </label>
+                            <button type="button" id="pr-bulk-aplicar" class="btn btn-mint text-xs">Aplicar a los tildados</button>
+                            <button type="button" id="pr-bulk-limpiar" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-rose-500">Limpiar</button>
+                        </div>
+                        <div class="text-[10px] text-[color:var(--ds-text-mute)] mt-1">Envase vacío = usa el de ObServer de cada producto. Si lo completás, lo aplica igual a todos.</div>
+                        <div id="pr-bulk-status" class="text-[11px] mt-1"></div>
+                    </div>
                 </div>
 
                 <div id="pr-config" style="display:none;">
@@ -610,6 +629,16 @@ document.addEventListener('click', (e) => {
     const msg      = document.getElementById('pr-search-msg');
     const btnSave  = document.getElementById('pr-save');
     const btnClear = document.getElementById('pr-clear');
+    // Selección en lote: observer_id → descripción.
+    const _selected = new Map();
+    const bulkBar     = document.getElementById('pr-bulk-bar');
+    const bulkCount   = document.getElementById('pr-bulk-count');
+    const bulkStatus  = document.getElementById('pr-bulk-status');
+
+    function refreshBulkBar() {
+        bulkCount.textContent = _selected.size;
+        bulkBar.classList.toggle('hidden', _selected.size === 0);
+    }
 
     function setMsg(html, cls) {
         msg.innerHTML = html || '';
@@ -630,20 +659,68 @@ document.addEventListener('click', (e) => {
             sRes.classList.add('open'); return;
         }
         sRes.innerHTML = items.map((p, i) => `
-            <div class="pf-ac-item" data-idx="${i}">
-                <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
-                <div class="ac-meta"><code>${escapeHtml(p.codigo_barra)}</code>
-                ${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}</div>
+            <div class="pf-ac-item" data-idx="${i}" style="display:flex; align-items:flex-start; gap:8px;">
+                <input type="checkbox" class="pf-ac-chk" data-idx="${i}" style="margin-top:3px;"
+                       ${_selected.has(String(p.observer_id)) ? 'checked' : ''}>
+                <div class="pf-ac-body" data-idx="${i}" style="flex:1; min-width:0; cursor:pointer;">
+                    <div class="ac-nombre">${highlight(p.descripcion, tokens)}</div>
+                    <div class="ac-meta"><code>${escapeHtml(p.codigo_barra)}</code>
+                    ${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}</div>
+                </div>
             </div>`).join('');
         sRes.classList.add('open');
-        sRes.querySelectorAll('.pf-ac-item').forEach(el =>
+        // Click en el cuerpo → ficha individual (incluye Kellerhoff).
+        sRes.querySelectorAll('.pf-ac-body').forEach(el =>
             el.addEventListener('click', () => elegir(_items[+el.dataset.idx])));
+        // Tilde → selección para lote (no abre la ficha).
+        sRes.querySelectorAll('.pf-ac-chk').forEach(el =>
+            el.addEventListener('change', (e) => {
+                e.stopPropagation();
+                const p = _items[+el.dataset.idx];
+                const k = String(p.observer_id);
+                if (el.checked) _selected.set(k, p.descripcion);
+                else _selected.delete(k);
+                refreshBulkBar();
+            }));
     }
 
     async function elegir(p) {
         sRes.classList.remove('open'); sInput.value = '';
         await cargarPresentacion(p);
     }
+
+    // ── Lote: aplicar fraccionado + envase a todos los tildados ──
+    async function bulkAplicar() {
+        if (_selected.size === 0) return;
+        const obs_ids = Array.from(_selected.keys()).map(k => parseInt(k));
+        const fraccionado = document.getElementById('pr-bulk-frac').checked;
+        const envaseRaw = document.getElementById('pr-bulk-envase').value.trim();
+        bulkStatus.textContent = 'Aplicando…'; bulkStatus.className = 'text-[11px] mt-1 text-[#9ca3af]';
+        try {
+            const r = await fetch('/api/producto/presentacion-bulk', {
+                method: 'POST', headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({observer_ids: obs_ids, fraccionado,
+                                      cantidad_envase: envaseRaw || null}),
+            });
+            const d = await r.json();
+            if (!d.ok) { bulkStatus.textContent = d.error || 'Error'; bulkStatus.className = 'text-[11px] mt-1 text-rose-500'; return; }
+            bulkStatus.innerHTML = `✓ ${d.aplicados} aplicado(s)`
+                + (d.materializados ? ` · ${d.materializados} catalogado(s)` : '')
+                + (d.sin_envase ? ` · ${d.sin_envase} sin envase` : '')
+                + (d.errores ? ` · ${d.errores} con error` : '');
+            bulkStatus.className = 'text-[11px] mt-1 text-emerald-600';
+            _selected.clear(); refreshBulkBar();
+            sRes.querySelectorAll('.pf-ac-chk').forEach(c => c.checked = false);
+        } catch { bulkStatus.textContent = 'Error de red'; bulkStatus.className = 'text-[11px] mt-1 text-rose-500'; }
+    }
+    function bulkLimpiar() {
+        _selected.clear(); refreshBulkBar();
+        sRes.querySelectorAll('.pf-ac-chk').forEach(c => c.checked = false);
+        bulkStatus.textContent = '';
+    }
+    document.getElementById('pr-bulk-aplicar').addEventListener('click', bulkAplicar);
+    document.getElementById('pr-bulk-limpiar').addEventListener('click', bulkLimpiar);
 
     async function cargarPresentacion(p) {
         setMsg('Cargando…', 'text-[#9ca3af]');

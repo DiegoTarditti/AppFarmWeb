@@ -1011,15 +1011,23 @@ def init_app(app):
             # cantidad_reposicion_fija (override del cálculo dinámico).
             local_por_obs = {}
             if obs_pids:
+                # fraccionado (master) + cantidad_envase (ProductoAtributo, lo que
+                # se carga en Presentación) → para mostrar la equivalencia en cajas.
                 rows = (session.query(Producto.observer_id, Producto.id,
                                        Producto.excluido_armado_actual,
                                        Producto.no_pedir, Producto.laboratorio_id,
-                                       Producto.cantidad_reposicion_fija)
+                                       Producto.cantidad_reposicion_fija,
+                                       Producto.fraccionado,
+                                       database.ProductoAtributo.cantidad_envase)
+                        .outerjoin(database.ProductoAtributo,
+                                   database.ProductoAtributo.producto_id == Producto.id)
                         .filter(Producto.observer_id.in_(obs_pids)).all())
                 local_por_obs = {r[0]: {
                     'id': r[1], 'excluido': r[2], 'no_pedir': r[3],
                     'lab_local_id': r[4],
                     'cantidad_reposicion_fija': r[5],
+                    'fraccionado': bool(r[6]),
+                    'cantidad_envase': int(r[7]) if r[7] else None,
                 } for r in rows}
 
             # Modo multi-drog: necesitamos saber qué drog(s) cubre cada lab.
@@ -1209,6 +1217,7 @@ def init_app(app):
                     'sin_mov': sin_mov,
                     'pvp': pvp_est,
                     'rotacion': rotacion_cls,
+                    'ventas_mensuales': ventas_arr,
                 }
                 _result = calcular_a_pedir(_cfg, _ctx_base)
                 a_pedir = _result['a_pedir']
@@ -1238,6 +1247,10 @@ def init_app(app):
                     'no_pedir': no_pedir_flag,
                     'pid': r.pid,
                     'producto_id_local': local['id'] if local else None,
+                    # Presentación: para mostrar equivalencia en cajas (sin tocar
+                    # la cantidad en unidades). Solo si fraccionado + envase>1.
+                    'fraccionado': bool(local and local.get('fraccionado')),
+                    'cantidad_envase': (local.get('cantidad_envase') if local else None),
                     'desc': r.desc,
                     'droga_nombre': r.droga_nombre or '',
                     'lab_nombre': r.lab_nombre or '—',
@@ -1354,6 +1367,10 @@ def init_app(app):
                             'nota': fobj.nota or '',
                             'ean_reemplazo': fobj.ean_reemplazo or '',
                         }
+                        # Efecto sobre la cantidad: tope_uno → máximo 1 unidad.
+                        if cfg_d.get('efecto_armado') == 'tope_uno' and it.get('a_pedir', 0) > 1:
+                            it['a_pedir'] = 1
+                            it['tope_uno'] = True
                         break
             else:
                 for it in items:
