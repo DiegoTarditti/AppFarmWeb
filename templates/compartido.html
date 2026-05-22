@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% set nav_active = "bi" %}
+{% block title %}Archivos compartidos{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+    .cp-page { padding: 18px 24px 28px; }
+    .cp-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+    .cp-head h1 { font-family:'Space Grotesk',sans-serif; font-size: 22px; font-weight: 700; color: var(--ds-text); margin: 0; }
+    .cp-head .sub { font-size: 12px; color: var(--ds-text-mute); }
+
+    .cp-hub-badge {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+        padding: 3px 10px; border-radius: 99px;
+        background: rgba(95,230,188,.15); color: var(--ds-mint);
+        border: 1px solid rgba(95,230,188,.3);
+    }
+
+    .cp-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+    .cp-table thead th {
+        background: rgba(0,0,0,.20); color: var(--ds-text-mute);
+        font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+        padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--ds-line);
+    }
+    .cp-table thead th.r { text-align: right; }
+    .cp-table tbody tr { border-bottom: 1px solid rgba(255,255,255,.04); }
+    .cp-table tbody tr:hover { background: rgba(95,230,188,.04); }
+    .cp-table tbody td { padding: 9px 12px; color: var(--ds-text); vertical-align: middle; }
+    .cp-table tbody td.muted { color: var(--ds-text-mute); font-size: 11px; }
+    .cp-table tbody td.mono { font-family: ui-monospace, Consolas, monospace; text-align: right; }
+
+    .cp-tipo-badge {
+        display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 7px;
+        border-radius: 99px; background: rgba(125,211,252,.15); color: #7dd3fc;
+    }
+    .cp-tipo-badge.oferta_minimo { background: rgba(95,230,188,.15); color: var(--ds-mint); }
+    .cp-tipo-badge.modulos { background: rgba(167,139,250,.15); color: #c4b5fd; }
+
+    .cp-card {
+        background: var(--ds-surface); border: 1px solid var(--ds-line);
+        border-radius: 12px; overflow: hidden;
+    }
+    .cp-empty { padding: 48px 20px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+    .cp-error {
+        padding: 14px 18px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+        border-radius: 10px; color: #fca5a5; font-size: 12px; margin-bottom: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="cp-page">
+    <a href="{{ url_for('bi_tablero') }}" class="text-xs" style="color:var(--ds-text-mute);">← BI</a>
+    <div class="cp-head" style="margin-top:6px;">
+        <span style="font-size:24px;">🔄</span>
+        <h1>Archivos compartidos del grupo</h1>
+        {% if es_hub %}
+        <span class="cp-hub-badge">★ Este es el hub</span>
+        {% endif %}
+        <span class="sub">Ofertas y módulos procesados por cualquier farmacia del grupo.</span>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+    <div style="margin-bottom:12px; padding:10px 14px; border-radius:8px;
+                background:{% if cat=='error' %}rgba(239,68,68,.12){% else %}rgba(95,230,188,.12){% endif %};
+                color:{% if cat=='error' %}#fca5a5{% else %}var(--ds-mint){% endif %};
+                font-size:12px;">
+        {{ msg }}
+    </div>
+    {% endfor %}
+    {% endwith %}
+
+    {% if error_hub %}
+    <div class="cp-error">⚠ {{ error_hub }}</div>
+    {% endif %}
+
+    <div class="cp-card">
+        {% if archivos %}
+        <table class="cp-table">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Tipo</th>
+                    <th>Farmacia origen</th>
+                    <th class="r">Items</th>
+                    <th>Fecha</th>
+                    <th style="text-align:right; padding-right:16px;">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in archivos %}
+                <tr>
+                    <td>
+                        <div style="font-weight:600;">{{ a.nombre }}</div>
+                        {% if a.descripcion %}
+                        <div class="muted">{{ a.descripcion }}</div>
+                        {% endif %}
+                    </td>
+                    <td><span class="cp-tipo-badge {{ a.tipo }}">{{ a.tipo_label }}</span></td>
+                    <td class="muted">Farmacia {{ a.farmacia_origen }}</td>
+                    <td class="mono muted">{{ a.n_items }}</td>
+                    <td class="muted">{{ a.creado_en }}</td>
+                    <td style="text-align:right; padding-right:16px;">
+                        <form method="post" action="{{ url_for('compartido_importar', archivo_id=a.id) }}"
+                              onsubmit="return confirm('¿Importar {{ a.n_items }} registros de \'{{ a.nombre }}\'?')">
+                            <button type="submit" class="btn btn-mint btn-sm">Importar</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="cp-empty">
+            <p style="font-size:24px;">📭</p>
+            <p>No hay archivos compartidos todavía.</p>
+            <p style="font-size:11px; margin-top:8px;">
+                Cuando una farmacia comparta una oferta procesada, aparecerá acá.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <p style="font-size:11px; color:var(--ds-text-mute); margin-top:14px;">
+        Para compartir una oferta, andá a
+        <a href="{{ url_for('laboratorios_list') }}" style="color:var(--ds-mint);">Laboratorios</a>
+        → cargá la oferta → botón <strong>Compartir con el grupo</strong>.
+    </p>
+</div>
+</div>
+{% endblock %}

@@ -599,6 +599,24 @@ class OfertaMinimo(Base):
     actualizado_en  = Column(DateTime, default=now_ar)
 
 
+class ArchivoCompartido(Base):
+    """Archivos procesados compartidos entre instancias del grupo.
+
+    Una instancia actúa como hub (HUB_BASE_URL apunta a ella).
+    Las demás pushean y pullean vía /api/compartido/*.
+    Tipos soportados: 'oferta_minimo', 'modulos', 'equivalencias'.
+    """
+    __tablename__ = 'archivos_compartidos'
+    id              = Column(Integer, primary_key=True)
+    tipo            = Column(String(50), nullable=False, index=True)
+    nombre          = Column(String(200), nullable=False)
+    descripcion     = Column(Text, nullable=True)
+    farmacia_origen = Column(String(100), nullable=False)
+    json_data       = Column(Text, nullable=False)
+    n_items         = Column(Integer, default=0)
+    creado_en       = Column(DateTime, default=now_ar)
+
+
 class Provider(Base):
     __tablename__ = 'proveedores'
     id = Column(Integer, primary_key=True)
@@ -1834,7 +1852,8 @@ def init_db(database_url=None):
                         'kellerhoff_catalogo',
                         'kellerhoff_equivalencia',
                         'estacionalidad_escenarios',
-                        'estacionalidad_productos')
+                        'estacionalidad_productos',
+                        'archivos_compartidos')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
