@@ -69,7 +69,30 @@
         border-top: 2px solid var(--ds-line); background: rgba(0,0,0,.15); }
     .cr-table tfoot td.left { text-align: left; }
     .cr-empty { padding: 48px; text-align: center; color: var(--ds-text-mute); font-size: 13px; }
+
+    /* Split tabla / gráficos */
+    .cr-split { display: flex; gap: 12px; align-items: flex-start; }
+    .cr-left { flex: 1 1 56%; min-width: 0; }
+    .cr-right { flex: 0 0 42%; position: sticky; top: 6px; max-height: calc(100vh - 78px);
+        overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    @media (max-width: 1100px) { .cr-split { flex-direction: column; } .cr-left, .cr-right { flex: 1 1 auto; width: 100%; position: static; max-height: none; } }
+    .cr-card { background: var(--ds-surface); border: 1px solid var(--ds-line); border-radius: 12px; padding: 10px 12px; }
+    .cr-card h3 { font-size: 11px; font-weight: 700; color: var(--ds-text); margin: 0 0 6px;
+        display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .cr-card h3 .sub { font-size: 9px; font-weight: 400; color: var(--ds-text-mute); }
+    .cr-canvas-wrap { position: relative; height: 180px; }
+    .cr-canvas-wrap.tall { height: 230px; }
+    .cr-back { font-size: 10px; color: var(--ds-mint); cursor: pointer; }
+    .cr-back:hover { text-decoration: underline; }
+    .cr-stats { display: flex; gap: 6px; flex-wrap: wrap; }
+    .cr-stat { flex: 1 1 auto; background: rgba(0,0,0,.18); border-radius: 8px; padding: 6px 8px; text-align: center; min-width: 70px; }
+    .cr-stat .l { font-size: 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-text-mute); }
+    .cr-stat .v { font-family:'Space Grotesk',sans-serif; font-size: 14px; font-weight: 700; color: var(--ds-text); line-height: 1.1; }
+    #cr-tabla tbody tr.cr-sel td { background: rgba(95,230,188,.14) !important; }
+    .cr-labname { color: inherit; text-decoration: none; }
+    .cr-labname:hover { color: var(--ds-mint); text-decoration: underline; }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 {% endblock %}
 
 {% block main %}
@@ -107,6 +130,8 @@
     {% macro cel(cant, monto, cls='') %}
         <td class="{{ cls }}"><span class="cc {% if not cant %}cr-zero{% endif %}">{{ cant }}</span><span class="cm">{% if monto and monto > 0 %}$ {{ '{:,.0f}'.format(monto).replace(',', '.') }}{% else %}—{% endif %}</span></td>
     {% endmacro %}
+    <div class="cr-split">
+    <div class="cr-left">
     <div class="cr-tablewrap">
         <table class="cr-table" id="cr-tabla">
             <thead>
@@ -140,9 +165,9 @@
                     data-dormido_m="{{ f.dormido_monto }}" data-alta_m="{{ f.alta_monto }}" data-media_alta_m="{{ f.media_alta_monto }}"
                     data-media_m="{{ f.media_monto }}" data-baja_m="{{ f.baja_monto }}" data-muy_baja_m="{{ f.muy_baja_monto }}"
                     data-monto_mensual="{{ f.monto_mensual }}" data-dormido_valor="{{ f.dormido_valor }}"
-                    onclick="window.location='{{ url_for('informe_cadencias_lab', lab_id=f.lab_id, cobertura=(meta.cobertura if meta else 30), meses_rot=(meta.meses_rot if meta else 3)) }}'"
-                    title="Ver detalle de {{ f.nombre }}">
-                    <td class="left">{{ f.nombre }}</td>
+                    data-con_ventas="{{ f.con_ventas }}" data-sin_ventas="{{ f.sin_ventas }}"
+                    onclick="selLab(this)" title="Ver gráficos de {{ f.nombre }}">
+                    <td class="left"><a class="cr-labname" href="{{ url_for('informe_cadencias_lab', lab_id=f.lab_id, cobertura=(meta.cobertura if meta else 30), meses_rot=(meta.meses_rot if meta else 3)) }}" onclick="event.stopPropagation()" title="Abrir detalle del lab">{{ f.nombre }}</a></td>
                     {{ cel(f.core, f.core_monto, 'sep cr-c-core') }}
                     {{ cel(f.ocasional, f.ocasional_monto, 'cr-c-ocasional') }}
                     {{ cel(f.caida, f.caida_monto, 'cr-c-caida') }}
@@ -176,9 +201,31 @@
         </table>
     </div>
     <p style="font-size:10px; color:var(--ds-text-mute); margin-top:8px;">
-        Click en una fila → detalle del lab. Click en un encabezado → ordenar.
+        Click en una fila → gráficos de ese lab · click en el nombre → detalle · click en encabezado → ordenar.
         RFM sobre todos los productos; Rotación solo sobre los con ventas. $ Dormido = stock sin ventas recientes a precio actual.
     </p>
+    </div>{# /cr-left #}
+
+    <div class="cr-right" id="cr-charts">
+        <div class="cr-card">
+            <h3 id="ch-titulo">Panorama — todos los labs
+                <span class="sub" id="ch-sub">click en un lab para enfocarlo</span></h3>
+            <div id="ch-stats" class="cr-stats" style="display:none;"></div>
+        </div>
+        <div class="cr-card" id="ch-card-a">
+            <h3 id="ch-a-tit">Facturación vs plata parada <span class="sub">$/mes vs $ dormido · tamaño = catálogo</span></h3>
+            <div class="cr-canvas-wrap tall"><canvas id="ch-a"></canvas></div>
+        </div>
+        <div class="cr-card" id="ch-card-b">
+            <h3 id="ch-b-tit">Top $ dormido por lab <span class="sub">capital parado</span></h3>
+            <div class="cr-canvas-wrap tall"><canvas id="ch-b"></canvas></div>
+        </div>
+        <div class="cr-card" id="ch-card-c">
+            <h3 id="ch-c-tit">Composición <span class="sub" id="ch-c-sub">RFM agregado</span></h3>
+            <div class="cr-canvas-wrap"><canvas id="ch-c"></canvas></div>
+        </div>
+    </div>
+    </div>{# /cr-split #}
     {% endif %}
 </div>
 </div>
@@ -252,5 +299,119 @@ async function recalcular() {
         setTimeout(() => location.reload(), 600);
     } catch (e) { st.textContent = 'Error de red'; btn.disabled = false; }
 }
+
+// ─────────── Gráficos (Chart.js) ───────────
+(function() {
+    const tabla = document.getElementById('cr-tabla');
+    if (!tabla || typeof Chart === 'undefined') return;
+
+    const T = { text:'#ECFDF5', soft:'#B8D4C9', mute:'#86A89C', line:'rgba(95,230,188,.12)', surface:'#103D31' };
+    Chart.defaults.color = T.soft; Chart.defaults.font.size = 9;
+    const COL_RFM = { core:'#fca5a5', ocasional:'#7dd3fc', caida:'#fcd34d', dormido:'#9aa0a6' };
+    const COL_ROT = ['#ef4444','#fbbf24','#5fe6bc','#7dd3fc','#9aa0a6'];
+    const ROT_KEYS = ['alta','media_alta','media','baja','muy_baja'];
+    const ROT_LBL = ['Alta','M-alta','Media','Baja','M.baja'];
+    const RFM_KEYS = ['core','ocasional','caida','dormido'];
+    const RFM_LBL = ['Core','Ocasional','En caída','Dormido'];
+
+    const num = (d, k) => parseFloat(d[k]) || 0;
+    const ROWS = Array.from(tabla.querySelectorAll('tbody tr')).map(tr => {
+        const d = tr.dataset, o = { tr, nombre: tr.querySelector('.cr-labname').textContent.trim(),
+            monto: num(d,'monto_mensual'), dormido_valor: num(d,'dormido_valor'),
+            con: num(d,'con_ventas'), sin: num(d,'sin_ventas') };
+        RFM_KEYS.forEach(k => { o[k] = num(d,k); o[k+'_m'] = num(d, k+'_m'); });
+        ROT_KEYS.forEach(k => { o[k] = num(d,k); o[k+'_m'] = num(d, k+'_m'); });
+        return o;
+    });
+
+    function fmtMoney(v) {
+        if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+        if (v >= 1e3) return '$' + (v/1e3).toFixed(0) + 'k';
+        return '$' + Math.round(v);
+    }
+    const charts = {};
+    function draw(id, cfg) { if (charts[id]) charts[id].destroy(); charts[id] = new Chart(document.getElementById(id), cfg); }
+    const baseScales = () => ({ x:{grid:{color:T.line},ticks:{color:T.soft}}, y:{grid:{color:T.line},ticks:{color:T.soft},beginAtZero:true} });
+
+    let _selNombre = null;
+
+    function renderGlobal() {
+        _selNombre = null;
+        document.getElementById('ch-titulo').firstChild.textContent = 'Panorama — todos los labs ';
+        document.getElementById('ch-sub').textContent = 'click en un lab para enfocarlo';
+        document.getElementById('ch-stats').style.display = 'none';
+        document.getElementById('ch-card-b').style.display = '';
+        document.getElementById('ch-a-tit').innerHTML = 'Facturación vs plata parada <span class="sub">$/mes vs $ dormido · tamaño = catálogo</span>';
+        document.getElementById('ch-b-tit').innerHTML = 'Top $ dormido por lab <span class="sub">capital parado</span>';
+        document.getElementById('ch-c-tit').innerHTML = 'Composición <span class="sub">RFM agregado · ' + (_monto ? '$/mes' : 'productos') + '</span>';
+
+        // A) Burbujas facturación vs dormido (top 30 por $/mes).
+        const top = ROWS.filter(r => r.monto > 0).sort((a,b)=>b.monto-a.monto).slice(0,30);
+        const maxCat = Math.max(1, ...top.map(r=>r.con+r.sin));
+        draw('ch-a', { type:'bubble', data:{ datasets:[{
+            data: top.map(r=>({x:r.monto, y:r.dormido_valor, r:5+18*Math.sqrt((r.con+r.sin)/maxCat), _n:r.nombre})),
+            backgroundColor:'rgba(95,230,188,.45)', borderColor:'#5fe6bc', borderWidth:1 }]},
+            options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+                tooltip:{callbacks:{label:c=>`${c.raw._n}: ${fmtMoney(c.raw.x)}/mes · ${fmtMoney(c.raw.y)} parado`}}},
+                scales:{ x:{...baseScales().x, title:{display:true,text:'$/mes',color:T.mute}, ticks:{color:T.soft,callback:v=>fmtMoney(v)}},
+                         y:{...baseScales().y, title:{display:true,text:'$ dormido',color:T.mute}, ticks:{color:T.soft,callback:v=>fmtMoney(v)}}}}});
+
+        // B) Top $ dormido (barras horizontales, top 12).
+        const dorm = ROWS.filter(r=>r.dormido_valor>0).sort((a,b)=>b.dormido_valor-a.dormido_valor).slice(0,12);
+        draw('ch-b', { type:'bar', data:{ labels:dorm.map(r=>r.nombre),
+            datasets:[{ data:dorm.map(r=>r.dormido_valor), backgroundColor:'#fbbf24', borderRadius:3 }]},
+            options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+                tooltip:{callbacks:{label:c=>fmtMoney(c.parsed.x)+' parado'}}},
+                scales:{ x:{...baseScales().x, ticks:{color:T.soft,callback:v=>fmtMoney(v)}}, y:{grid:{display:false},ticks:{color:T.soft,font:{size:9}}}}}});
+
+        // C) Composición RFM agregada (dona).
+        const suf = _monto ? '_m' : '';
+        const agg = RFM_KEYS.map(k => ROWS.reduce((s,r)=>s+r[k+suf],0));
+        draw('ch-c', donutCfg(RFM_LBL, agg, RFM_KEYS.map(k=>COL_RFM[k])));
+    }
+
+    function donutCfg(labels, data, colors) {
+        return { type:'doughnut', data:{ labels, datasets:[{ data, backgroundColor:colors, borderColor:T.surface, borderWidth:2 }]},
+            options:{ responsive:true, maintainAspectRatio:false, cutout:'58%',
+                plugins:{ legend:{position:'right', labels:{color:T.soft, boxWidth:10, font:{size:9}}},
+                    tooltip:{callbacks:{label:c=>{ const tot=c.dataset.data.reduce((a,b)=>a+b,0)||1;
+                        const v=c.parsed; return `${c.label}: ${_monto?fmtMoney(v):v} (${(v/tot*100).toFixed(0)}%)`; }}}}}};
+    }
+
+    window.selLab = function(tr) {
+        document.querySelectorAll('#cr-tabla tbody tr.cr-sel').forEach(t=>t.classList.remove('cr-sel'));
+        tr.classList.add('cr-sel');
+        const r = ROWS.find(x=>x.tr===tr); if (!r) return;
+        _selNombre = r.nombre;
+        document.getElementById('ch-titulo').firstChild.textContent = r.nombre + ' ';
+        document.getElementById('ch-sub').innerHTML = '<span class="cr-back" onclick="renderGlobalPublic()">← ver todos</span>';
+        // Stats
+        const tot = r.con + r.sin, pct = tot ? (r.dormido/tot*100) : 0;
+        document.getElementById('ch-stats').style.display = '';
+        document.getElementById('ch-stats').innerHTML = [
+            ['$/mes', fmtMoney(r.monto)], ['$ dormido', fmtMoney(r.dormido_valor)],
+            ['% dormido', pct.toFixed(0)+'%'], ['Productos', tot],
+        ].map(s=>`<div class="cr-stat"><div class="l">${s[0]}</div><div class="v">${s[1]}</div></div>`).join('');
+        // A) rotación del lab (barras)
+        document.getElementById('ch-a-tit').innerHTML = 'Rotación <span class="sub">' + (_monto?'$/mes':'productos') + ' por bucket</span>';
+        const suf = _monto ? '_m' : '';
+        draw('ch-a', { type:'bar', data:{ labels:ROT_LBL,
+            datasets:[{ data:ROT_KEYS.map(k=>r[k+suf]), backgroundColor:COL_ROT, borderRadius:3 }]},
+            options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+                tooltip:{callbacks:{label:c=>_monto?fmtMoney(c.parsed.y):c.parsed.y+' productos'}}}, scales:baseScales()}});
+        // B) ocultar (ranking es global)
+        document.getElementById('ch-card-b').style.display = 'none';
+        // C) dona RFM del lab
+        document.getElementById('ch-c-tit').innerHTML = 'Composición RFM <span class="sub">' + (_monto?'$/mes':'productos') + '</span>';
+        draw('ch-c', donutCfg(RFM_LBL, RFM_KEYS.map(k=>r[k+suf]), RFM_KEYS.map(k=>COL_RFM[k])));
+    };
+    window.renderGlobalPublic = renderGlobal;
+
+    // Re-render al togglear cantidad/monto.
+    const _origToggle = window.toggleMonto;
+    window.toggleMonto = function() { _origToggle(); if (_selNombre) { const r = ROWS.find(x=>x.nombre===_selNombre); if (r) selLab(r.tr); } else renderGlobal(); };
+
+    renderGlobal();
+})();
 </script>
 {% endblock %}
