@@ -929,6 +929,13 @@ def init_app(app):
             r += 1
 
         cols = fields or (list(rows[0].keys()) if rows else [])
+        # Enriquecer cada fila con columnas de análisis derivadas (descuento real,
+        # adicional, montos faltantes, checks, estado). No van al sistema — solo XLS.
+        ANALISIS_COLS = ['dto_efectivo_%', 'dto_adicional_%', 'desc_adicional_unit_$',
+                         'desc_adicional_total_$', 'chk_cant_x_unit_$', 'chk_pub_x_dto_$', 'estado']
+        for row in rows:
+            _analisis_fila(row)
+        cols = list(cols) + [c for c in ANALISIS_COLS if c not in cols]
         for ci, c in enumerate(cols, start=1):
             ws.cell(row=r, column=ci, value=c)
         r += 1
@@ -943,6 +950,66 @@ def init_app(app):
         out_name = os.path.splitext(token)[0] + '.xlsx'
         return send_file(buf, as_attachment=True, download_name=out_name,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _num_ar(v):
+    """Parsea un número que puede venir como float o string AR ('12.578,40')."""
+    if v is None or v == '':
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s:
+        return None
+    if ',' in s:                       # AR: '.' miles, ',' decimal
+        s = s.replace('.', '').replace(',', '.')
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _analisis_fila(row):
+    """Agrega al dict `row` columnas de análisis derivadas (descuento real y
+    adicional, montos faltantes, checks matemáticos y estado). Solo para el XLS
+    de análisis — NO se persiste al sistema."""
+    pub  = _num_ar(row.get('precio_publico'))
+    dto  = _num_ar(row.get('dto'))
+    unit = _num_ar(row.get('precio_unitario'))
+    imp  = _num_ar(row.get('importe'))
+    cant = _num_ar(row.get('cantidad'))
+
+    def _r(x):
+        return round(x, 2) if x is not None else ''
+
+    dto_ef = pub_neto = desc_unit = desc_tot = dto_adic = None
+    if pub and unit is not None:
+        dto_ef = (1 - unit / pub) * 100
+    if pub is not None and dto is not None:
+        pub_neto = pub * (1 - dto / 100.0)
+    if pub_neto is not None and unit is not None:
+        desc_unit = pub_neto - unit
+        if cant is not None:
+            desc_tot = desc_unit * cant
+        if pub_neto:
+            dto_adic = (desc_unit / pub_neto) * 100
+
+    chk_cu = (cant * unit - imp) if (cant is not None and unit is not None and imp is not None) else None
+    chk_pd = (pub_neto - unit) if (pub_neto is not None and unit is not None) else None
+
+    estado = 'OK'
+    if chk_cu is not None and imp is not None and abs(chk_cu) > max(1.0, abs(imp) * 0.01):
+        estado = 'ERROR'
+    elif chk_pd is not None and unit is not None and abs(chk_pd) > max(1.0, abs(unit) * 0.01):
+        estado = 'WARN'
+
+    row['dto_efectivo_%']         = _r(dto_ef)
+    row['dto_adicional_%']        = _r(dto_adic)
+    row['desc_adicional_unit_$']  = _r(desc_unit)
+    row['desc_adicional_total_$'] = _r(desc_tot)
+    row['chk_cant_x_unit_$']      = _r(chk_cu)
+    row['chk_pub_x_dto_$']        = _r(chk_pd)
+    row['estado']                 = estado
 
 
 def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FAC'):
