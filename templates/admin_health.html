@@ -166,6 +166,14 @@
         <p class="text-[11px] text-[#6f6f6f] leading-snug">Diagnóstico rápido cuando algo no anda — primer punto de chequeo. Si algo está rojo acá, pasar a /admin/alarmas (chequeos automáticos) o /admin/cron-log (proceso periódico). Endpoint público para Render: <code class="font-mono">/health</code> (devuelve 200/503).</p>
     </div>
 
+    {# Acceso "escondido" (no listado en informes): comparativa de ventas Pieri vs Badia. #}
+    <div class="pt-2 text-center">
+        <a href="{{ url_for('comparativa_ventas') }}"
+           class="inline-flex items-center gap-2 text-xs font-semibold text-violet-700 hover:text-violet-900 hover:underline">
+            📊 Comparativa de ventas semanales — Pieri vs Badia →
+        </a>
+    </div>
+
 </div>
 </div>
 {% endblock %}
