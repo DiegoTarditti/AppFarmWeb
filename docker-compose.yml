@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: farmacia
       PGTZ: UTC
-      PGDATA: /var/lib/postgresql/data
+      PGDATA: /var/lib/postgresql/18/docker
     volumes:
       - pgdata:/var/lib/postgresql
     ports:
