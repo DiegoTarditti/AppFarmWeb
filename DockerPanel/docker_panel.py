@@ -1921,6 +1921,10 @@ class DockerPanel(tk.Tk):
             # (stock 3h, ventas_mensuales 24h, productos 7d). Lo dispara el boton
             # movil de consulta-stock. Rapido (~40s-1.5min) vs el completo (~10min).
             'sync_inteligente': [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync?modo=inteligente"', 'sync inteligente')],
+            # Genera el snapshot de cadencias LOCAL (todos los labs) y lo copia a
+            # Render. Corre dentro del container (DB + RENDER_DATABASE_URL del
+            # entorno). El snapshot se computa fresco con datos de ObServer.
+            'push_cadencias': [('docker-compose exec -T web python -m scripts.push_cadencias_to_render', 'cadencias')],
             # Dedupe labs/proveedores. Corre DENTRO del container web (vía
             # docker-compose exec) para usar Python + DB del entorno deployado.
             # SIEMPRE dry-run primero; el apply solo después de revisar el
