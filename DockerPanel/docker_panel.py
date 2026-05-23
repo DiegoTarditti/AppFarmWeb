@@ -1917,6 +1917,10 @@ class DockerPanel(tk.Tk):
             # a Render con lock atómico. --max-time 290 para no chocar con
             # el timeout=300 del subprocess.
             'sync_now':      [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync"', 'auto-sync')],
+            # Sync inteligente: solo entidades de Nivel 1 vencidas por tolerancia
+            # (stock 3h, ventas_mensuales 24h, productos 7d). Lo dispara el boton
+            # movil de consulta-stock. Rapido (~40s-1.5min) vs el completo (~10min).
+            'sync_inteligente': [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync?modo=inteligente"', 'sync inteligente')],
             # Dedupe labs/proveedores. Corre DENTRO del container web (vía
             # docker-compose exec) para usar Python + DB del entorno deployado.
             # SIEMPRE dry-run primero; el apply solo después de revisar el

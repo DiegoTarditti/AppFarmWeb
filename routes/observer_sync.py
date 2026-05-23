@@ -517,6 +517,7 @@ def init_app(app):
 
             skip_push  = request.args.get('skip_push') == '1'
             skip_match = request.args.get('skip_match') == '1'
+            modo       = (request.args.get('modo') or '').strip()  # 'inteligente' = solo lo vencido por tolerancia
 
             resultado['inicio'] = inicio.isoformat()
 
@@ -553,6 +554,42 @@ def init_app(app):
                 'medicos_matriculas':   observer_source.sync_medicos_matriculas,
                 'ventas_detalle':       observer_source.sync_ventas_detalle,
             }
+
+            # Modo inteligente (botón móvil / día a día): solo entidades de
+            # Nivel 1 y SOLO las vencidas por tolerancia. El resto (clientes,
+            # medicos, ventas_detalle, etc.) nunca entra acá — solo el sync
+            # completo. Ahorra recursos: al mediodía típicamente solo 'stock'.
+            if modo == 'inteligente':
+                from database import ObsSyncLog, now_ar
+                from sqlalchemy import func as _f2
+                TOL_HORAS = {
+                    'stock': 3, 'ventas_mensuales': 24, 'productos': 24 * 7,
+                    'laboratorios': 24 * 7, 'rubros': 24 * 7,
+                    'subrubros': 24 * 7, 'nombres_drogas': 24 * 7,
+                }
+                nivel1 = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
+                          'productos', 'stock', 'ventas_mensuales']
+                with database.get_db() as _s:
+                    # Sin filtrar por error: algunos syncs (ventas_mensuales) guardan
+                    # una NOTA en la columna error aunque sean exitosos, y un sync
+                    # fallido ni siquiera crea fila (la excepción corta antes del log).
+                    ultimos = dict(
+                        _s.query(ObsSyncLog.entidad, _f2.max(ObsSyncLog.ejecutado_en))
+                        .group_by(ObsSyncLog.entidad).all())
+                _ahora = now_ar()
+
+                def _vencido(ent):
+                    ult = ultimos.get(ent)
+                    if not ult:
+                        return True  # nunca sincronizada
+                    return (_ahora - ult).total_seconds() / 3600.0 >= TOL_HORAS.get(ent, 0)
+
+                orden = [e for e in nivel1 if _vencido(e)]
+                if 'productos' not in orden:
+                    skip_match = True  # match solo tiene sentido si se tocó productos
+                resultado['modo'] = 'inteligente'
+                resultado['entidades_a_sincronizar'] = orden
+
             for ent in orden:
                 _sync_lock_set_paso(ent)
                 try:
@@ -625,7 +662,9 @@ def init_app(app):
                     try:
                         with cron_log.registrar('push_render', origen='dockerpanel') as clog:
                             from scripts.push_obs_to_render import push
-                            res = push(render_url=render_url)
+                            # Modo inteligente: push SOLO las tablas que se sincronizaron.
+                            _tablas = ['obs_' + e for e in orden] if modo == 'inteligente' else None
+                            res = push(render_url=render_url, tablas=_tablas)
                             total_filas = sum(v['filas'] for v in res.values() if isinstance(v, dict))
                             clog.set_mensaje(f'{total_filas} filas en {res.get("TOTAL_MS", 0)} ms')
                         resultado['pasos'].append({

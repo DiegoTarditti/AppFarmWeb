@@ -278,18 +278,20 @@ def init_app(app):
 
     @app.route('/consulta-stock/sync-stock', methods=['POST'])
     def consulta_stock_sync_stock():
-        """Encola un comando 'sync_now' en panel_comandos para que el
-        DockerPanel local lo levante en el próximo polling y refresque
-        stock + ventas desde ObServer.
+        """Encola un comando 'sync_inteligente' en panel_comandos para que el
+        DockerPanel local lo levante en el próximo polling y refresque SOLO lo
+        vencido por tolerancia (stock 3h, ventas_mensuales 24h, productos 7d).
+        Mucho más liviano que el sync completo — no trae medicos/clientes/
+        ventas_detalle (esos solo en el sync completo manual).
 
         Retorna JSON con el id del comando + ETA típico (~30s polling +
-        ~1-2min de sync, según volumen).
+        ~40s-1.5min de sync, según qué esté vencido).
         """
         from database import PanelComando
         username = getattr(current_user, 'username', None) or 'usuario_movil'
         with database.get_db() as session:
             cmd = PanelComando(
-                comando='sync_now',
+                comando='sync_inteligente',
                 estado='pendiente',
                 solicitado_por=f'{username} (móvil)',
             )
@@ -299,9 +301,9 @@ def init_app(app):
         return jsonify({
             'ok': True,
             'id': cmd_id,
-            'mensaje': ('Sync encolado. La PC de la farmacia lo levanta en ~30s '
-                        'y tarda 1-2 min en completar. Re-ejecutá la consulta '
-                        'después para ver el stock actualizado.'),
+            'mensaje': ('Sync (inteligente) encolado. La PC de la farmacia lo levanta '
+                        'en ~30s y refresca solo lo vencido (stock, y ventas/catálogo '
+                        'si hace falta) en ~40s-1.5 min. Re-ejecutá la consulta después.'),
         })
 
     @app.route('/consulta-stock/export-xls', methods=['POST'])
