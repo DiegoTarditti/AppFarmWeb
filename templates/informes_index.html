@@ -2,6 +2,17 @@
 {% set nav_active = "informes" %}
 {% block title %}Mis Informes{% endblock %}
 {% block main %}
+{% macro inf_card(endpoint, icon, color, badge, badge_color, titulo, desc, cats) %}
+<a href="{{ url_for(endpoint) }}" data-cat="{{ cats }}"
+   class="inf-card block bg-white border border-surface-border rounded-lg p-3 hover:shadow-md hover:border-{{ color }}-400 transition-all">
+    <div class="flex items-center gap-2 mb-1">
+        <span class="w-7 h-7 rounded-md bg-{{ color }}-100 text-{{ color }}-700 flex items-center justify-center text-sm flex-shrink-0">{{ icon }}</span>
+        <p class="font-semibold text-[13px] text-[#1e1e1e] leading-tight flex-1">{{ titulo }}</p>
+        <span class="text-[9px] uppercase font-bold text-{{ badge_color }}-700 bg-{{ badge_color }}-50 px-1.5 py-0.5 rounded flex-shrink-0">{{ badge }}</span>
+    </div>
+    <p class="text-[11px] text-[#6f6f6f] leading-snug line-clamp-2">{{ desc }}</p>
+</a>
+{% endmacro %}
 
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3">
     <h1 class="text-base font-bold text-[#1e1e1e]">📊 Mis Informes</h1>
@@ -11,191 +22,121 @@
 <div class="flex-1 overflow-auto p-4 sm:p-6">
     <div class="max-w-5xl mx-auto">
 
+        {# ─── Barra de filtro: búsqueda + chips por categoría ─── #}
+        <div class="mb-5 flex flex-col gap-2">
+            <input id="inf-q" type="text" placeholder="🔎 Buscar informe… (ej. droga, médico, oferta)"
+                   oninput="filtrarInformes()"
+                   class="w-full bg-white border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
+            <div id="inf-chips" class="flex gap-1.5 flex-wrap">
+                <button class="inf-chip" data-cat="" onclick="setCat(this)">Todos</button>
+                <button class="inf-chip" data-cat="stock" onclick="setCat(this)">📉 Stock / Mínimos</button>
+                <button class="inf-chip" data-cat="cadencias" onclick="setCat(this)">📅 Cadencias</button>
+                <button class="inf-chip" data-cat="drogas" onclick="setCat(this)">🧬 Drogas</button>
+                <button class="inf-chip" data-cat="medicos" onclick="setCat(this)">🩺 Médicos</button>
+                <button class="inf-chip" data-cat="laboratorios" onclick="setCat(this)">🏭 Laboratorios</button>
+                <button class="inf-chip" data-cat="mercado" onclick="setCat(this)">🎯 Mercado</button>
+                <button class="inf-chip" data-cat="ofertas" onclick="setCat(this)">🏷️ Ofertas</button>
+            </div>
+        </div>
+
+        <p id="inf-vacio" class="hidden text-center text-sm text-[#6f6f6f] py-8">
+            No hay informes que coincidan con el filtro.
+        </p>
+
         {# ═══════════════════ ANÁLISIS DE MÍNIMOS ═══════════════════ #}
-        <div class="mb-6">
-            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
-                <span class="text-base">📉</span> Análisis de mínimos
-            </h2>
-            <p class="text-[11px] text-[#6f6f6f] mb-3">Cruces con el stock mínimo que calcula ObServer a diario.</p>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <a href="{{ url_for('informe_bajo_minimo') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-rose-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center text-lg flex-shrink-0">🔻</div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Productos bajo mínimo</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos cuyo stock actual está por debajo del mínimo de ObServer. Filtrá por lab y ordená por urgencia.</p>
-                </a>
-
-                <a href="{{ url_for('informe_correcciones_minimos') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-violet-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📐</div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Correcciones de mínimos sugeridas</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Productos cuyo mínimo en Observer está desfasado del calculado. Agrupado por laboratorio. Para mandar al staff del POS y que actualice manualmente.</p>
-                </a>
-
-                <a href="{{ url_for('informe_cadencias_lab') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-amber-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">📅</div>
-                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Cadencias por laboratorio</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Agrupa los productos de un lab por cadencia natural de compra: alta rotación (≤10d) · media · baja · ocasional. Para decidir si conviene partir el pedido en varias frecuencias.</p>
-                </a>
-
-                <a href="{{ url_for('informe_cadencias_resumen') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-amber-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">📊</div>
-                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Cadencias — resumen por lab</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tabla cross-lab de todos los laboratorios: Core / En caída / Dormido + buckets de rotación + stock dormido valorizado. Ordená y filtrá; click para el detalle del lab.</p>
-                </a>
+        <div class="inf-section mb-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>📉</span> Análisis de mínimos</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('informe_bajo_minimo', '🔻', 'rose', 'Listo', 'emerald', 'Productos bajo mínimo',
+                   'Productos cuyo stock está por debajo del mínimo de ObServer. Filtrá por lab y ordená por urgencia.', 'stock') }}
+                {{ inf_card('informe_correcciones_minimos', '📐', 'violet', 'Listo', 'emerald', 'Correcciones de mínimos sugeridas',
+                   'Productos cuyo mínimo en Observer está desfasado del calculado. Agrupado por laboratorio.', 'stock') }}
+                {{ inf_card('informe_cadencias_lab', '📅', 'amber', 'Nuevo', 'amber', 'Cadencias por laboratorio',
+                   'Agrupa los productos de un lab por cadencia natural de compra: alta rotación, media, baja, ocasional.', 'cadencias laboratorios') }}
+                {{ inf_card('informe_cadencias_resumen', '📊', 'amber', 'Nuevo', 'amber', 'Cadencias — resumen por lab',
+                   'Tabla cross-lab: Core / En caída / Dormido + buckets de rotación + stock dormido valorizado.', 'cadencias laboratorios stock') }}
             </div>
         </div>
 
         {# ═══════════════════ POSICIONAMIENTO DE MERCADO ═══════════════════ #}
-        <div class="mb-6">
-            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
-                <span class="text-base">🎯</span> Posicionamiento de mercado
-            </h2>
-            <p class="text-[11px] text-[#6f6f6f] mb-3">Cruza el portfolio líder de un laboratorio (ranking IQVIA nacional) contra tus ventas reales.</p>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <a href="{{ url_for('informe_lab_gap_marcas') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-amber-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">🎯</div>
-                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Gap de captura por marca</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Marcas líderes nacionales del lab (Lotrial, Losacor, Amoxidal…) y cuánto vendés de cada una. Detecta marcas top que no estás capturando.</p>
-                </a>
-
-                <a href="{{ url_for('informe_lab_ranking_nacional') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">🏆</div>
-                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Mi ranking vs nacional</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tu top de productos del lab, marcando cuáles son marca estrella del país. Valida si tu mix sigue al mercado.</p>
-                </a>
-
-                <a href="{{ url_for('informe_lab_cobertura_moleculas') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-violet-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">🧬</div>
-                        <span class="text-[10px] uppercase font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">Nuevo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Cobertura de moléculas líderes</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Por molécula del ranking nacional (enalapril, losartán…): ¿la vendés con la marca del lab o con competencia? Share por marca.</p>
-                </a>
+        <div class="inf-section mb-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>🎯</span> Posicionamiento de mercado</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('informe_lab_gap_marcas', '🎯', 'amber', 'Nuevo', 'amber', 'Gap de captura por marca',
+                   'Marcas líderes nacionales del lab y cuánto vendés de cada una. Detecta marcas top que no capturás.', 'laboratorios mercado') }}
+                {{ inf_card('informe_lab_ranking_nacional', '🏆', 'emerald', 'Nuevo', 'amber', 'Mi ranking vs nacional',
+                   'Tu top de productos del lab, marcando cuáles son marca estrella del país. Valida tu mix vs el mercado.', 'laboratorios mercado') }}
+                {{ inf_card('informe_lab_cobertura_moleculas', '🧬', 'violet', 'Nuevo', 'amber', 'Cobertura de moléculas líderes',
+                   'Por molécula del ranking nacional: ¿la vendés con la marca del lab o con competencia? Share por marca.', 'drogas laboratorios mercado') }}
             </div>
         </div>
 
         {# ═══════════════════ OFERTAS ═══════════════════ #}
-        <div class="mb-6">
-            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
-                <span class="text-base">🏷️</span> Ofertas y descuentos
-            </h2>
-            <p class="text-[11px] text-[#6f6f6f] mb-3">Gestión de todas las ofertas cargadas en el sistema.</p>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                <a href="{{ url_for('informe_ofertas_activas') }}"
-                   class="block bg-white border border-surface-border rounded-xl p-4 hover:border-emerald-500 hover:shadow-md transition-all">
-                    <div class="flex items-start gap-2 mb-2">
-                        <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">🏷️</div>
-                        <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                    </div>
-                    <p class="font-bold text-sm text-[#1e1e1e]">Ofertas activas</p>
-                    <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Todas las ofertas cargadas — por lab, droguería y módulos. Filtrá por tipo y eliminá las que ya no aplican.</p>
-                </a>
+        <div class="inf-section mb-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>🏷️</span> Ofertas y descuentos</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('informe_ofertas_activas', '🏷️', 'emerald', 'Listo', 'emerald', 'Ofertas activas',
+                   'Todas las ofertas cargadas — por lab, droguería y módulos. Filtrá por tipo y eliminá las que no aplican.', 'ofertas') }}
             </div>
         </div>
 
-        <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2">
-            <span class="text-base">📊</span> Catálogo y ventas
-        </h2>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-
-            {# ── Estadísticas por droga (pantalla existente, ahora primer informe) ── #}
-            <a href="{{ url_for('estadisticas_drogas') }}"
-               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-violet-500 hover:shadow-md transition-all">
-                <div class="flex items-start gap-2 mb-2">
-                    <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📈</div>
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                </div>
-                <p class="font-bold text-sm text-[#1e1e1e]">Estadísticas por droga</p>
-                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Ventas agregadas por monodroga con gráfico 12m, comparación de labs y filtros por rotación.</p>
-            </a>
-
-            {# ── Estacionalidad por droga ── #}
-            <a href="{{ url_for('informe_estacionalidad_drogas') }}"
-               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-violet-500 hover:shadow-md transition-all">
-                <div class="flex items-start gap-2 mb-2">
-                    <div class="w-9 h-9 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-lg flex-shrink-0">📅</div>
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                </div>
-                <p class="font-bold text-sm text-[#1e1e1e]">Estacionalidad por droga</p>
-                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Patrón mensual (1-12) de cada monodroga con heatmap E-D. Pooling por subrubro para drogas con poca historia. CV para ordenar por más estacional.</p>
-            </a>
-
-            {# ── Informe #1 ── #}
-            <a href="{{ url_for('informe_labs_por_droga') }}"
-               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-brand hover:shadow-md transition-all">
-                <div class="flex items-start gap-2 mb-2">
-                    <div class="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg flex-shrink-0">🔍</div>
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                </div>
-                <p class="font-bold text-sm text-[#1e1e1e]">Labs por droga</p>
-                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">¿Qué labs fabrican esta droga y cuál te vende más? Útil cuando un lab se queda sin stock o sube precio.</p>
-            </a>
-
-            {# ── Informe #2 ── #}
-            <a href="{{ url_for('informe_drogas_sin_alternativa') }}"
-               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-amber-500 hover:shadow-md transition-all">
-                <div class="flex items-start gap-2 mb-2">
-                    <div class="w-9 h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center text-lg flex-shrink-0">⚠</div>
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                </div>
-                <p class="font-bold text-sm text-[#1e1e1e]">Drogas sin alternativa</p>
-                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Drogas que vendés con pocos labs proveedores. Alerta de riesgo de quiebre / dependencia.</p>
-            </a>
-
-            {# ── Informe #3 ── #}
-            <a href="{{ url_for('informe_presentaciones_por_droga') }}"
-               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-sky-500 hover:shadow-md transition-all">
-                <div class="flex items-start gap-2 mb-2">
-                    <div class="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center text-lg flex-shrink-0">📦</div>
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                </div>
-                <p class="font-bold text-sm text-[#1e1e1e]">Presentaciones por droga</p>
-                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Para una droga, qué presentaciones (x10/x20/x30) se venden más. Para decidir qué stockear.</p>
-            </a>
-
-            {# ── Informe #4: Ventas multi-dimensional ── #}
-            <a href="{{ url_for('informe_ventas_multi') }}"
-               class="block bg-white border border-surface-border rounded-xl p-4 hover:border-fuchsia-500 hover:shadow-md transition-all relative">
-                <div class="flex items-start gap-2 mb-2">
-                    <div class="w-9 h-9 rounded-lg bg-fuchsia-100 text-fuchsia-700 flex items-center justify-center text-lg flex-shrink-0">🔬</div>
-                    <span class="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">Listo</span>
-                </div>
-                <p class="font-bold text-sm text-[#1e1e1e]">Ventas por droga / producto / médico / fecha</p>
-                <p class="text-xs text-[#6f6f6f] mt-1 leading-snug">Tabla pivot configurable: cruzá ventas por monodroga, producto, médico prescriptor y/o rango de fechas. Top prescriptores, evolución temporal, ranking por OS.</p>
-            </a>
-
+        {# ═══════════════════ CATÁLOGO Y VENTAS ═══════════════════ #}
+        <div class="inf-section mb-5">
+            <h2 class="text-sm font-bold text-[#1e1e1e] mb-2 flex items-center gap-2"><span>📊</span> Catálogo y ventas</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {{ inf_card('estadisticas_drogas', '📈', 'violet', 'Listo', 'emerald', 'Estadísticas por droga',
+                   'Ventas agregadas por monodroga con gráfico 12m, comparación de labs y filtros por rotación.', 'drogas ventas') }}
+                {{ inf_card('informe_estacionalidad_drogas', '📅', 'violet', 'Listo', 'emerald', 'Estacionalidad por droga',
+                   'Patrón mensual de cada monodroga con heatmap. Pooling por subrubro. CV para ordenar por más estacional.', 'drogas ventas') }}
+                {{ inf_card('informe_labs_por_droga', '🔍', 'emerald', 'Listo', 'emerald', 'Labs por droga',
+                   '¿Qué labs fabrican esta droga y cuál te vende más? Útil cuando un lab se queda sin stock o sube precio.', 'drogas laboratorios') }}
+                {{ inf_card('informe_drogas_sin_alternativa', '⚠', 'amber', 'Listo', 'emerald', 'Drogas sin alternativa',
+                   'Drogas que vendés con pocos labs proveedores. Alerta de riesgo de quiebre / dependencia.', 'drogas') }}
+                {{ inf_card('informe_presentaciones_por_droga', '📦', 'sky', 'Listo', 'emerald', 'Presentaciones por droga',
+                   'Para una droga, qué presentaciones (x10/x20/x30) se venden más. Para decidir qué stockear.', 'drogas') }}
+                {{ inf_card('informe_ventas_multi', '🔬', 'fuchsia', 'Listo', 'emerald', 'Ventas por droga / producto / médico / fecha',
+                   'Tabla pivot: cruzá ventas por monodroga, producto, médico prescriptor y/o fechas. Top prescriptores, ranking por OS.', 'ventas medicos drogas') }}
+            </div>
         </div>
 
     </div>
 </div>
 
+<style>
+.inf-chip { font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 9999px;
+    border: 1px solid #cfe3d6; background: #fff; color: #1e1e1e; cursor: pointer; transition: all .12s; }
+.inf-chip:hover { background: #f0f7f3; }
+.inf-chip.active { background: #2E7D5B; color: #fff; border-color: #2E7D5B; }
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+<script>
+let INF_CAT = '';
+function setCat(btn) {
+    INF_CAT = btn.dataset.cat || '';
+    document.querySelectorAll('#inf-chips .inf-chip').forEach(b => b.classList.toggle('active', b === btn));
+    filtrarInformes();
+}
+function filtrarInformes() {
+    const q = (document.getElementById('inf-q').value || '').toLowerCase().trim();
+    const tokens = q ? q.split(/\s+/) : [];
+    document.querySelectorAll('.inf-card').forEach(card => {
+        const cats = card.dataset.cat || '';
+        const txt = (card.textContent || '').toLowerCase();
+        const okCat = !INF_CAT || cats.split(' ').includes(INF_CAT);
+        const okTxt = tokens.every(t => txt.includes(t) || cats.includes(t));
+        card.style.display = (okCat && okTxt) ? '' : 'none';
+    });
+    let totalVis = 0;
+    document.querySelectorAll('.inf-section').forEach(sec => {
+        const vis = [...sec.querySelectorAll('.inf-card')].filter(c => c.style.display !== 'none').length;
+        sec.style.display = vis ? '' : 'none';
+        totalVis += vis;
+    });
+    document.getElementById('inf-vacio').classList.toggle('hidden', totalVis > 0);
+}
+document.addEventListener('DOMContentLoaded', () => {
+    const first = document.querySelector('#inf-chips .inf-chip');
+    if (first) first.classList.add('active');
+});
+</script>
 {% endblock %}

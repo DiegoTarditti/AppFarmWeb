@@ -108,6 +108,12 @@
         <button onclick="reiniciarFilas()" class="px-3 py-1.5 text-xs rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold">↺ Revertir cambios</button>
         <button onclick="autodetectarDesglose()" class="px-3 py-1.5 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" title="Deducir IVA, Exento, Percepciones por relaciones matemáticas">🧮 Auto-detectar desglose</button>
         <span class="flex-1"></span>
+        <button id="btn-export" onclick="exportarXLSX()"
+                class="px-4 py-2 text-sm rounded-lg border border-emerald-600 text-emerald-700 hover:bg-emerald-50 font-semibold inline-flex items-center gap-1.5"
+                title="Descargar XLSX con el análisis completo (descuentos extra, checks por fila). No importa a la DB.">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+            Exportar XLSX
+        </button>
         <button id="btn-import" onclick="confirmarImport()"
                 class="px-4 py-2 text-sm rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold disabled:opacity-50">
             Confirmar e importar →
@@ -475,6 +481,26 @@ async function confirmarImport() {
         alert('Error: ' + e);
         btn.disabled = false; btn.textContent = 'Confirmar e importar →';
     }
+}
+
+async function exportarXLSX() {
+    const btn = document.getElementById('btn-export');
+    const old = btn.innerHTML;
+    btn.disabled = true; btn.textContent = 'Generando…';
+    try {
+        const resp = await fetch('{{ url_for("converter_export", token=token) }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ rows: state.rows, header: HEADER })
+        });
+        if (!resp.ok) { alert('Error al exportar.'); return; }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = '{{ filename }}.xlsx'.replace(/\.pdf\.xlsx$/i, '.xlsx');
+        document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    } catch (e) { alert('Error: ' + e); }
+    finally { btn.disabled = false; btn.innerHTML = old; }
 }
 
 </script>

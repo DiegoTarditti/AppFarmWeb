@@ -333,6 +333,11 @@ def init_app(app):
                         'cuit': prov.cuit, 'parser_file': prov.parser_file,
                     }
 
+        # Si el proveedor todavía no tiene parser, esta pantalla de decisión no
+        # aporta nada (el único camino es aprender el parser) → directo a /pick.
+        if not (proveedor and proveedor.get('parser_file')):
+            return redirect(url_for('converter_pick', token=safe))
+
         prueba = None
         if proveedor and proveedor.get('parser_file'):
             prueba = _probar_parser(proveedor['parser_file'], path)
@@ -793,8 +798,9 @@ def init_app(app):
 
         with database.get_db() as session:
             prov = None
-            if provider_id:
-                prov = session.get(database.Provider, int(provider_id))
+            pid = str(provider_id).strip() if provider_id is not None else ''
+            if pid.isdigit():
+                prov = session.get(database.Provider, int(pid))
             if not prov and provider_name:
                 from helpers import _normalizar_nombre_entidad, get_or_create_proveedor
                 norm_buscado = _normalizar_nombre_entidad(provider_name)
@@ -910,26 +916,84 @@ def init_app(app):
         if not rows:
             return jsonify({'error': 'No hay filas para exportar'}), 400
 
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+
         wb = _ox.Workbook()
         ws = wb.active
         ws.title = 'Datos'
 
+        bold = Font(bold=True)
+        hdr_font = Font(bold=True, color='FFFFFF')
+        hdr_fill = PatternFill('solid', fgColor='1F2937')
+        estado_fill = {
+            'OK':    PatternFill('solid', fgColor='DCFCE7'),
+            'WARN':  PatternFill('solid', fgColor='FEF3C7'),
+            'ERROR': PatternFill('solid', fgColor='FEE2E2'),
+        }
+
         r = 1
         if header:
             for k, v in header.items():
-                ws.cell(row=r, column=1, value=k)
-                ws.cell(row=r, column=2, value=v)
+                ws.cell(row=r, column=1, value=k).font = bold
+                n = _num_ar(v)
+                if n is not None and k not in ('cuit', 'numero', 'fecha', 'razon_social'):
+                    cell = ws.cell(row=r, column=2, value=n)
+                    cell.number_format = '#,##0.00'
+                else:
+                    ws.cell(row=r, column=2, value=v)
                 r += 1
             r += 1
 
         cols = fields or (list(rows[0].keys()) if rows else [])
+        # Enriquecer cada fila con columnas de análisis derivadas (descuento real,
+        # adicional, montos faltantes, checks, estado). No van al sistema — solo XLS.
+        ANALISIS_COLS = ['dto_efectivo_%', 'dto_adicional_%', 'desc_adicional_unit_$',
+                         'desc_adicional_total_$', 'chk_cant_x_unit_$', 'chk_pub_x_dto_$', 'estado']
+        for row in rows:
+            _analisis_fila(row)
+        cols = list(cols) + [c for c in ANALISIS_COLS if c not in cols]
+
+        # Numéricos → se escriben como número (no texto) + formato. codigo_barra,
+        # descripcion, lote, vencimiento y estado quedan como texto.
+        NUM_COLS = {'cantidad', 'precio_publico', 'dto', 'precio_unitario', 'importe',
+                    'dto_efectivo_%', 'dto_adicional_%', 'desc_adicional_unit_$',
+                    'desc_adicional_total_$', 'chk_cant_x_unit_$', 'chk_pub_x_dto_$'}
+        PCT_COLS = {'dto', 'dto_efectivo_%', 'dto_adicional_%'}
+
+        hdr_row = r
         for ci, c in enumerate(cols, start=1):
-            ws.cell(row=r, column=ci, value=c)
+            cell = ws.cell(row=r, column=ci, value=c)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal='center')
         r += 1
+
+        estado_idx = (cols.index('estado') + 1) if 'estado' in cols else None
         for row in rows:
             for ci, c in enumerate(cols, start=1):
-                ws.cell(row=r, column=ci, value=row.get(c, ''))
+                val = row.get(c, '')
+                if c in NUM_COLS:
+                    n = _num_ar(val)
+                    cell = ws.cell(row=r, column=ci, value=n)
+                    if n is not None:
+                        cell.number_format = ('0.00"%"' if c in PCT_COLS
+                                              else '#,##0' if c == 'cantidad'
+                                              else '#,##0.00')
+                else:
+                    ws.cell(row=r, column=ci, value=val)
+            if estado_idx:
+                est = (row.get('estado') or '').upper()
+                if est in estado_fill:
+                    ws.cell(row=r, column=estado_idx).fill = estado_fill[est]
             r += 1
+
+        ws.freeze_panes = ws.cell(row=hdr_row + 1, column=1)
+        anchos = {'codigo_barra': 16, 'descripcion': 36, 'cantidad': 9,
+                  'precio_publico': 13, 'dto': 8, 'precio_unitario': 14, 'importe': 13,
+                  'lote': 10, 'vencimiento': 12, 'estado': 9}
+        for ci, c in enumerate(cols, start=1):
+            ws.column_dimensions[get_column_letter(ci)].width = anchos.get(c, 17)
 
         buf = _io.BytesIO()
         wb.save(buf)
@@ -937,6 +1001,66 @@ def init_app(app):
         out_name = os.path.splitext(token)[0] + '.xlsx'
         return send_file(buf, as_attachment=True, download_name=out_name,
                          mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+def _num_ar(v):
+    """Parsea un número que puede venir como float o string AR ('12.578,40')."""
+    if v is None or v == '':
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    if not s:
+        return None
+    if ',' in s:                       # AR: '.' miles, ',' decimal
+        s = s.replace('.', '').replace(',', '.')
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _analisis_fila(row):
+    """Agrega al dict `row` columnas de análisis derivadas (descuento real y
+    adicional, montos faltantes, checks matemáticos y estado). Solo para el XLS
+    de análisis — NO se persiste al sistema."""
+    pub  = _num_ar(row.get('precio_publico'))
+    dto  = _num_ar(row.get('dto'))
+    unit = _num_ar(row.get('precio_unitario'))
+    imp  = _num_ar(row.get('importe'))
+    cant = _num_ar(row.get('cantidad'))
+
+    def _r(x):
+        return round(x, 2) if x is not None else ''
+
+    dto_ef = pub_neto = desc_unit = desc_tot = dto_adic = None
+    if pub and unit is not None:
+        dto_ef = (1 - unit / pub) * 100
+    if pub is not None and dto is not None:
+        pub_neto = pub * (1 - dto / 100.0)
+    if pub_neto is not None and unit is not None:
+        desc_unit = pub_neto - unit
+        if cant is not None:
+            desc_tot = desc_unit * cant
+        if pub_neto:
+            dto_adic = (desc_unit / pub_neto) * 100
+
+    chk_cu = (cant * unit - imp) if (cant is not None and unit is not None and imp is not None) else None
+    chk_pd = (pub_neto - unit) if (pub_neto is not None and unit is not None) else None
+
+    estado = 'OK'
+    if chk_cu is not None and imp is not None and abs(chk_cu) > max(1.0, abs(imp) * 0.01):
+        estado = 'ERROR'
+    elif chk_pd is not None and unit is not None and abs(chk_pd) > max(1.0, abs(unit) * 0.01):
+        estado = 'WARN'
+
+    row['dto_efectivo_%']         = _r(dto_ef)
+    row['dto_adicional_%']        = _r(dto_adic)
+    row['desc_adicional_unit_$']  = _r(desc_unit)
+    row['desc_adicional_total_$'] = _r(desc_tot)
+    row['chk_cant_x_unit_$']      = _r(chk_cu)
+    row['chk_pub_x_dto_$']        = _r(chk_pd)
+    row['estado']                 = estado
 
 
 def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FAC'):

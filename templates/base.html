@@ -966,6 +966,12 @@
             Reposición grupal
         </a>
         {% endif %}
+        <a href="{{ url_for('transferencias') }}"
+           class="{{ nav_active_cls if nav_active == 'transferencias' else nav_link }} pl-8 text-[13px]"
+           title="Comparar stock entre sucursales (Pieri/Badia) y sugerir transferencias">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/></svg>
+            Transferencias
+        </a>
         <a href="{{ url_for('procesos_list') }}"
            class="{{ nav_active_cls if nav_active == 'procesos' else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>

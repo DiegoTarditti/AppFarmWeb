@@ -7,7 +7,31 @@
     <a href="{{ url_for('admin_index') }}" class="text-[#6f6f6f] hover:text-[#1e1e1e] text-sm">← Admin</a>
     <h1 class="text-base font-bold text-[#1e1e1e]">Log de procesos automáticos</h1>
     <span class="text-xs text-[#6f6f6f]">retención 7 días</span>
+    <span class="flex-1"></span>
+    <span id="cron-updated" class="text-[11px] text-[#6f6f6f]"></span>
+    <label class="flex items-center gap-1.5 text-xs text-[#6f6f6f] cursor-pointer select-none" title="Recargar automáticamente cada 10s">
+        <input type="checkbox" id="cron-auto" class="w-3.5 h-3.5 accent-brand"> Auto
+    </label>
+    <button onclick="location.reload()" title="Actualizar ahora"
+            class="px-3 py-1.5 text-xs rounded-lg bg-brand hover:bg-brand-hover text-brand-dark font-semibold">🔄 Actualizar</button>
 </div>
+<script>
+(function () {
+    const cb = document.getElementById('cron-auto');
+    const upd = document.getElementById('cron-updated');
+    if (upd) upd.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-AR');
+    if (!cb) return;
+    cb.checked = localStorage.getItem('cronAuto') === '1';
+    let timer = null;
+    function apply() {
+        localStorage.setItem('cronAuto', cb.checked ? '1' : '0');
+        if (timer) { clearInterval(timer); timer = null; }
+        if (cb.checked) timer = setInterval(() => location.reload(), 10000);
+    }
+    cb.addEventListener('change', apply);
+    apply();
+})();
+</script>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4">
 
