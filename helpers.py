@@ -460,6 +460,8 @@ def get_config():
             'keep_alive_enabled': bool(cfg.keep_alive_enabled),
             'keep_alive_interval_min': int(cfg.keep_alive_interval_min or 10),
             'dockerpanel_ruta': cfg.dockerpanel_ruta or '',
+            'transfer_excedente_meses': float(cfg.transfer_excedente_meses or 6.0),
+            'transfer_necesita_meses': float(cfg.transfer_necesita_meses or 2.0),
         }
 
 

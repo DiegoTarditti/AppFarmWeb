@@ -98,6 +98,8 @@ def init_app(app):
                 cfg.rot_media_min = max(0.0, float(request.form.get('rot_media_min', 5.0)))
                 cfg.rot_media_tol = max(0.0, float(request.form.get('rot_media_tol', 0.0)))
                 cfg.rot_baja_tol = max(0.0, float(request.form.get('rot_baja_tol', 0.0)))
+                cfg.transfer_excedente_meses = max(1.0, min(60.0, float(request.form.get('transfer_excedente_meses', 6.0))))
+                cfg.transfer_necesita_meses = max(0.0, min(12.0, float(request.form.get('transfer_necesita_meses', 2.0))))
             except (ValueError, TypeError):
                 pass
             cfg.keep_alive_enabled = request.form.get('keep_alive_enabled') == '1'
