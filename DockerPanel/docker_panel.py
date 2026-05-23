@@ -1917,6 +1917,10 @@ class DockerPanel(tk.Tk):
             # a Render con lock atómico. --max-time 290 para no chocar con
             # el timeout=300 del subprocess.
             'sync_now':      [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync"', 'auto-sync')],
+            # Sync inteligente: solo entidades de Nivel 1 vencidas por tolerancia
+            # (stock 3h, ventas_mensuales 24h, productos 7d). Lo dispara el boton
+            # movil de consulta-stock. Rapido (~40s-1.5min) vs el completo (~10min).
+            'sync_inteligente': [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync?modo=inteligente"', 'sync inteligente')],
             # Genera el snapshot de cadencias LOCAL (todos los labs) y lo copia a
             # Render. Corre dentro del container (DB + RENDER_DATABASE_URL del
             # entorno). El snapshot se computa fresco con datos de ObServer.
@@ -2737,7 +2741,10 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
 def _start_helper_server(panel):
     """Arranca el HTTP server en un thread daemon y notifica al GUI."""
     try:
-        srv = http.server.HTTPServer(("127.0.0.1", HELPER_PORT), _HelperHandler)
+        # ThreadingHTTPServer (no HTTPServer single-thread): el navegador poolea
+        # /ping con keep-alive y una conexión abierta bloqueaba el único hilo →
+        # las demás requests timeouteaban ("Panel inactivo" con el panel corriendo).
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", HELPER_PORT), _HelperHandler)
     except OSError as e:
         panel.after(0, panel._set_helper_status, False, str(e))
         return

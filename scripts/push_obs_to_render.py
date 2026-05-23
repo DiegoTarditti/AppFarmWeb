@@ -55,13 +55,29 @@ def _normalize_url(url):
     return url
 
 
-def push(local_url=None, render_url=None, log=print):
+def push(local_url=None, render_url=None, log=print, tablas=None):
     local_url = _normalize_url(local_url or os.environ.get('DATABASE_URL'))
     render_url = _normalize_url(render_url or os.environ.get('RENDER_DATABASE_URL'))
     if not local_url:
         raise RuntimeError('Falta DATABASE_URL (Postgres local)')
     if not render_url:
         raise RuntimeError('Falta RENDER_DATABASE_URL (externa de Render)')
+
+    # Push parcial (tablas=[...]): solo seguro para tablas HOJA (sin hijos FK).
+    # Si el subset incluye una tabla padre (productos/refs), su TRUNCATE CASCADE
+    # borraria hijos que no re-copiamos (ventas_detalle) -> hacemos push completo.
+    LEAF_SEGURAS = {'obs_stock', 'obs_ventas_mensuales'}
+    if tablas is not None:
+        pedido = [t for t in TABLAS if t in set(tablas)]
+        if not pedido:
+            log('Push: subset vacio, nada que pushear.')
+            return {'TOTAL_MS': 0}
+        if set(pedido).issubset(LEAF_SEGURAS):
+            tablas_push, es_parcial = pedido, True
+        else:
+            tablas_push, es_parcial = list(TABLAS), False
+    else:
+        tablas_push, es_parcial = list(TABLAS), False
 
     resultados = {}
     t_total = time.time()
@@ -70,12 +86,12 @@ def push(local_url=None, render_url=None, log=print):
         with local.cursor() as lc, remote.cursor() as rc:
 
             # 1. TRUNCATE en Render en orden inverso (primero hijos, después padres)
-            log('Limpiando Render…')
-            for t in reversed(TABLAS):
+            log(f'Limpiando Render… ({"parcial: " + ",".join(tablas_push) if es_parcial else "completo"})')
+            for t in reversed(tablas_push):
                 rc.execute(f'TRUNCATE TABLE {t} CASCADE')
 
             # 2. Streaming COPY por cada tabla
-            for t in TABLAS:
+            for t in tablas_push:
                 t0 = time.time()
                 buf = io.StringIO()
                 lc.copy_expert(f'COPY {t} TO STDOUT', buf)
@@ -88,14 +104,17 @@ def push(local_url=None, render_url=None, log=print):
                 resultados[t] = {'filas': n, 'ms': ms}
                 log(f'  {t}: {n:,} filas en {ms} ms')
 
-            # 3. Propagar productos.observer_id por codigo_barra
+            # 3. Propagar productos.observer_id por codigo_barra (solo en push
+            #    completo — en parcial de stock/ventas el master no cambió).
             t0 = time.time()
-            lc.execute("""
-                SELECT codigo_barra, observer_id
-                FROM productos
-                WHERE observer_id IS NOT NULL AND codigo_barra IS NOT NULL
-            """)
-            pares = lc.fetchall()
+            pares = []
+            if not es_parcial:
+                lc.execute("""
+                    SELECT codigo_barra, observer_id
+                    FROM productos
+                    WHERE observer_id IS NOT NULL AND codigo_barra IS NOT NULL
+                """)
+                pares = lc.fetchall()
             if pares:
                 rc.execute("""
                     CREATE TEMP TABLE _bridge (

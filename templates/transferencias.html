@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% set nav_active = "transferencias" %}
+{% block title %}Transferencias entre sucursales — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block main %}
+<div class="max-w-[1200px] mx-auto px-4 py-6">
+
+  <div class="flex items-center justify-between gap-3 flex-wrap mb-4">
+    <div>
+      <h1 class="text-xl font-bold glow-text">🔁 Transferencias entre sucursales</h1>
+      <p class="text-xs" style="color:var(--ds-text-mute)">
+        Comparador <b>Badia</b> ↔ <b>Pieristei</b> por código Alfabeta. Mueve lo que a una le sobra y a la otra le falta.
+      </p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <form method="get" class="flex items-center gap-2 text-xs">
+        <label>Excedente &gt; <input type="number" name="exc" value="{{ exc }}" step="0.5" min="1"
+               class="ds-input w-16 text-center"> m</label>
+        <label>Necesita &lt; <input type="number" name="nec" value="{{ nec }}" step="0.5" min="0"
+               class="ds-input w-16 text-center"> m</label>
+        <button class="btn btn-secondary btn-sm" type="submit">Recalcular</button>
+      </form>
+      <a href="/settings" class="text-xs underline" style="color:var(--ds-text-mute)" title="Guardar umbrales por defecto">⚙ defaults</a>
+    </div>
+  </div>
+
+  {% if not data.ok %}
+    <div class="card p-4 border" style="border-color:#f87171">
+      <p class="text-sm font-semibold" style="color:#f87171">No se pudo generar el análisis</p>
+      <p class="text-xs mt-1" style="color:var(--ds-text-mute)">{{ data.error }}</p>
+    </div>
+  {% else %}
+
+    <div class="flex items-center gap-3 flex-wrap mb-3 text-xs">
+      <!-- Toggle: invierte quién MANDA (origen, excedente) y quién PIDE (destino) -->
+      <button id="toggle-dir" type="button" onclick="swapDir()"
+              class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg font-bold border hover:brightness-110 transition"
+              style="border-color:var(--ds-line);background:var(--ds-surface-2,#1f2937)"
+              title="Tocá para invertir: cambia qué sucursal MANDA (origen) y cuál PIDE (destino)">
+        <span id="tg-origen">🟢 Badia</span>
+        <svg class="w-3.5 h-3.5 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m4 6H4m0 0l4 4m-4-4l4-4"/></svg>
+        <span id="tg-destino">🔵 Pieri</span>
+        <span id="tg-count" class="ml-1 font-semibold px-2 py-0.5 rounded" style="background:var(--ds-line)"></span>
+      </button>
+      <span id="tg-explica" style="color:var(--ds-text-mute)"></span>
+      <input id="filtro" type="text" placeholder="🔎 Filtrar producto…" class="ds-input text-xs ml-auto" style="max-width:220px"
+             oninput="filtrar()" title="Filtrar la lista por nombre de producto">
+      <a href="/transferencias/export?exc={{ exc }}&nec={{ nec }}"
+         class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold inline-flex items-center gap-1.5"
+         title="Descargar el análisis completo (ambas direcciones) en Excel">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        Exportar XLSX
+      </a>
+    </div>
+
+    <div class="card overflow-x-auto">
+      <table class="w-full text-xs" id="tabla">
+        <thead>
+          <tr style="background:var(--ds-surface-2,#1f2937)">
+            <th colspan="3" class="py-1.5 text-center font-bold" style="color:#86efac" title="Sucursal Badia">🟢 BADIA</th>
+            <th class="py-1.5"></th>
+            <th colspan="3" class="py-1.5 text-center font-bold" style="color:#7dd3fc" title="Sucursal Pieristei">🔵 PIERISTEI</th>
+            <th class="py-1.5"></th>
+          </tr>
+          <tr class="text-[10px] font-semibold" style="color:var(--ds-text-mute);border-bottom:1px solid var(--ds-line)">
+            <th class="py-1 px-2 text-right" title="Stock actual en Badia">Stock</th>
+            <th class="px-2 text-right" title="Unidades vendidas por mes en Badia (promedio últimos 12 meses)">Vta/mes</th>
+            <th class="px-2 text-right" title="Meses de cobertura en Badia = stock ÷ venta mensual. Verde = excedente">Cob (m)</th>
+            <th class="px-2 text-left">Producto</th>
+            <th class="px-2 text-right" title="Meses de cobertura en Pieristei. Verde = excedente">Cob (m)</th>
+            <th class="px-2 text-right" title="Venta mensual promedio en Pieristei (12 meses)">Vta/mes</th>
+            <th class="px-2 text-right" title="Stock actual en Pieristei">Stock</th>
+            <th class="px-2 text-center" title="Dirección y cantidad sugerida a transferir entre sucursales">Transferir</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in data.filas %}
+          {% set bp = f.direccion == 'badia_a_pieri' %}
+          <tr class="fila" data-dir="{{ f.direccion }}" data-nom="{{ f.descripcion|lower }}"
+              style="border-bottom:1px solid var(--ds-line)">
+            <td class="py-1 px-2 text-right {{ 'font-bold' if bp else '' }}" style="{{ 'background:rgba(134,239,172,.10)' if bp else '' }}">{{ f.b_stock }}</td>
+            <td class="px-2 text-right">{{ f.b_avg }}</td>
+            <td class="px-2 text-right {{ 'text-emerald-400 font-bold' if bp else '' }}">{% if f.b_cob >= 999 %}∞{% else %}{{ f.b_cob }}{% endif %}</td>
+            <td class="px-2 text-left">{{ f.descripcion }}</td>
+            <td class="px-2 text-right {{ 'text-emerald-400 font-bold' if not bp else '' }}">{% if f.p_cob >= 999 %}∞{% else %}{{ f.p_cob }}{% endif %}</td>
+            <td class="px-2 text-right">{{ f.p_avg }}</td>
+            <td class="px-2 text-right {{ 'font-bold' if not bp else '' }}" style="{{ 'background:rgba(125,211,252,.10)' if not bp else '' }}">{{ f.p_stock }}</td>
+            <td class="px-2 text-center whitespace-nowrap font-bold {{ 'text-emerald-400' if bp else 'text-sky-400' }}">
+              {% if bp %}→ Pieri {{ f.qty }}{% else %}← Badia {{ f.qty }}{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if not data.filas %}
+        <p class="p-4 text-center text-xs" style="color:var(--ds-text-mute)">No hay transferencias sugeridas con estos umbrales.</p>
+      {% endif %}
+    </div>
+
+    <p class="text-[10px] mt-2" style="color:var(--ds-text-mute)">
+      cob = meses de cobertura (stock ÷ venta mensual prom. 12m). ∞ = tiene stock pero sin ventas.
+      Transferir = mín(excedente del que da, faltante del que pide). Solo lectura sobre ambas DBs.
+    </p>
+  {% endif %}
+</div>
+
+<script>
+let DIR = 'badia_a_pieri';
+const COUNTS = {'badia_a_pieri': {{ data.n_badia_a_pieri | default(0) }}, 'pieri_a_badia': {{ data.n_pieri_a_badia | default(0) }}};
+function swapDir() {
+  DIR = (DIR === 'badia_a_pieri') ? 'pieri_a_badia' : 'badia_a_pieri';
+  aplicarDir();
+}
+function aplicarDir() {
+  if (!document.getElementById('toggle-dir')) return;
+  const bp = DIR === 'badia_a_pieri';
+  document.getElementById('tg-origen').textContent = bp ? '🟢 Badia' : '🔵 Pieri';
+  document.getElementById('tg-destino').textContent = bp ? '🔵 Pieri' : '🟢 Badia';
+  document.getElementById('tg-count').textContent = (COUNTS[DIR] || 0) + ' prod.';
+  document.getElementById('tg-explica').textContent = bp
+    ? '— lo que le sobra a Badia y Pieri necesita'
+    : '— lo que le sobra a Pieri y Badia necesita';
+  filtrar();
+}
+function filtrar() {
+  const q = (document.getElementById('filtro').value || '').toLowerCase();
+  document.querySelectorAll('#tabla tbody tr.fila').forEach(tr => {
+    const okNom = !q || (tr.dataset.nom || '').includes(q);
+    tr.style.display = (tr.dataset.dir === DIR && okNom) ? '' : 'none';
+  });
+}
+document.addEventListener('DOMContentLoaded', aplicarDir);
+</script>
+{% endblock %}

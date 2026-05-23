@@ -66,6 +66,10 @@ class Config(Base):
     dockerpanel_ruta = Column(String(500), nullable=True)
     # Observer: cuántos meses hacia atrás trae sync_ventas_mensuales
     observer_ventas_meses = Column(Integer, nullable=False, default=16)
+    # Transferencias entre sucursales (/transferencias): umbrales de cobertura.
+    # excedente = cobertura > N meses; necesita = vende y cobertura < M meses.
+    transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0)
+    transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0)
 
 
 class Laboratorio(Base):
@@ -2769,6 +2773,8 @@ def _pg_add_columns(conn):
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ovd_cliente_fecha ON obs_ventas_detalle(cliente_observer, fecha_estadistica)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ovd_producto_fecha ON obs_ventas_detalle(producto_observer, fecha_estadistica)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_excedente_meses DECIMAL(5,1) NOT NULL DEFAULT 6.0"))
+    conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_necesita_meses DECIMAL(5,1) NOT NULL DEFAULT 2.0"))
     # Rutas predeterminadas adicionales (cliente local)
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_excels VARCHAR(500)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_descargas VARCHAR(500)"))

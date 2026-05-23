@@ -2582,6 +2582,18 @@ def init_app(app):
                     if oid not in ean_map and cb:
                         ean_map[oid] = cb
 
+            # Fallback al master local: donde viven los EANs backfilleados
+            # (Kellerhoff / farmacia hermana) cuando ObServer no tiene
+            # obs_codigos_barras cargado. ObServer tiene precedencia (se cargó arriba).
+            faltan = [o for o in obs_ids if o not in ean_map]
+            if faltan:
+                from database import Producto
+                for oid, cb in (session.query(Producto.observer_id, Producto.codigo_barra)
+                                .filter(Producto.observer_id.in_(faltan),
+                                        Producto.codigo_barra.isnot(None))):
+                    if cb and not str(cb).startswith('OBS-') and oid not in ean_map:
+                        ean_map[oid] = cb
+
             rows = [{
                 'ean': ean_map.get(it.observer_id, it.observer_id or ''),
                 'codigo_barra': ean_map.get(it.observer_id, it.observer_id or ''),

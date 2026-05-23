@@ -53,6 +53,7 @@ from routes import (
     providers,
     purchase,
     tipos_pedido,
+    transferencias,
     vademecum,
 )
 from routes import help as help_module
@@ -112,6 +113,7 @@ _modules = [
     estacionalidad,
     pedido_prueba,
     planificacion_compras,
+    transferencias,
 ]
 
 
