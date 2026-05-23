@@ -1917,6 +1917,10 @@ class DockerPanel(tk.Tk):
             # a Render con lock atómico. --max-time 290 para no chocar con
             # el timeout=300 del subprocess.
             'sync_now':      [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync"', 'auto-sync')],
+            # Genera el snapshot de cadencias LOCAL (todos los labs) y lo copia a
+            # Render. Corre dentro del container (DB + RENDER_DATABASE_URL del
+            # entorno). El snapshot se computa fresco con datos de ObServer.
+            'push_cadencias': [('docker-compose exec -T web python -m scripts.push_cadencias_to_render', 'cadencias')],
             # Dedupe labs/proveedores. Corre DENTRO del container web (vía
             # docker-compose exec) para usar Python + DB del entorno deployado.
             # SIEMPRE dry-run primero; el apply solo después de revisar el

@@ -751,6 +751,7 @@ def init_app(app):
         'status': 'Estado contenedores',
         'version': 'Versión deployada (git rev)',
         'sync_now': 'Sync ObServer ahora',
+        'push_cadencias': 'Generar + subir cadencias a Render',
         'dedupe_labs_dry': 'Dedupe labs/proveedores (DRY-RUN)',
         'dedupe_labs_apply': 'Dedupe labs/proveedores (APLICAR)',
         'purgar_cron_log': 'Purgar cron_log >7 días',
