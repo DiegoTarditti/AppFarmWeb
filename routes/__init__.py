@@ -7,6 +7,7 @@ from routes import (
     bi,
     claims,
     clientes,
+    comparativa_ventas,
     compartido,
     compras_dia,
     compras_rapido,
@@ -114,6 +115,7 @@ _modules = [
     pedido_prueba,
     planificacion_compras,
     transferencias,
+    comparativa_ventas,
 ]
 
 
