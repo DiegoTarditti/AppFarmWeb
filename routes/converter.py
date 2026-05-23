@@ -333,6 +333,11 @@ def init_app(app):
                         'cuit': prov.cuit, 'parser_file': prov.parser_file,
                     }
 
+        # Si el proveedor todavía no tiene parser, esta pantalla de decisión no
+        # aporta nada (el único camino es aprender el parser) → directo a /pick.
+        if not (proveedor and proveedor.get('parser_file')):
+            return redirect(url_for('converter_pick', token=safe))
+
         prueba = None
         if proveedor and proveedor.get('parser_file'):
             prueba = _probar_parser(proveedor['parser_file'], path)

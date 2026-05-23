@@ -839,8 +839,17 @@ function _fmtVerif(ok, msgOk, msgErr) {
 }
 
 async function inferirYScrollAlResultado() {
+    // Si todavía no se aplicó el Detalle pero la auto-detección está disponible
+    // (el operador ya vio el preview), aplicamos las 3 secciones solas — no hace
+    // falta clickear "Aplicar" en cada cuadro.
+    if ((!state.exampleLine || !state.selections.length)
+        && _autoTodoData && _autoTodoData.fila_ejemplo) {
+        try { aplicarAutoHeader(); } catch (_) {}
+        try { aplicarAutoPie(); } catch (_) {}
+        try { await aplicarAutoDetalle(); } catch (_) {}  // setea exampleLine + selections
+    }
     if (!state.exampleLine || !state.selections.length) {
-        alert('Primero aplicá el Detalle (cuadro del medio).');
+        alert('No hay datos para inferir. Probá la auto-detección (botón "Probar") o asigná el Detalle a mano.');
         return;
     }
     // Inferir si no se hizo todavía (o re-inferir por si el user editó algo).
@@ -2609,6 +2618,25 @@ function _fmtMoneyInput(el) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
     else bind();
 });
+
+// Auto-arranque: al entrar a /pick sin nada asignado todavía, correr la
+// auto-detección + aplicar las 3 secciones + inferir solo (el camino es siempre
+// el mismo). Silencioso: si algo falla, el operador sigue a mano con "Probar".
+async function _autoArranquePick() {
+    try {
+        if (state.selections && state.selections.length) return;  // ya hay laburo manual
+        const pdfBox = document.getElementById('pdf-text');
+        if (!pdfBox || !(pdfBox.textContent || '').trim()) return;
+        await autoDetectarTodo();
+        if (_autoTodoData && _autoTodoData.fila_ejemplo) {
+            await inferirYScrollAlResultado();
+        }
+    } catch (_) { /* el operador puede hacerlo a mano */ }
+}
+if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', _autoArranquePick);
+else
+    _autoArranquePick();
 
 function _findField(fields, regex) {
     return fields.find(f => regex.test(f.toLowerCase()));
