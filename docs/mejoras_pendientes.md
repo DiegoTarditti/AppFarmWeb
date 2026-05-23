@@ -4,6 +4,57 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Transferencias: calcular según presentación (unidades vs cajas) (2026-05-23)
+
+**Problema**: en `/transferencias` las cantidades (stock, venta, sugerido) están en
+**unidades de venta**, no en envases. Ej. GENIOL PLUS mostró Pieri stock = **1216**,
+que son **tabletas sueltas, no cajas**. Una transferencia entre sucursales normalmente
+se mueve por **caja/envase**. Hoy el sugerido "← Badia 179" son 179 unidades sueltas;
+habría que expresarlo/redondearlo en **cajas** (ej. si la caja trae 12 → ~15 cajas).
+
+**Qué falta**:
+- Traer `cantidad_envase` del producto (ya existe en `ProductoAtributo.cantidad_envase`
+  / `ObsProducto.cantidad_envase`) y, cuando esté cargado, mostrar el sugerido también
+  en **cajas** (unidades ÷ cantidad_envase, redondeo a múltiplos del envase).
+- El cruce es cross-DB por alfabeta; el `cantidad_envase` puede salir de cualquiera de
+  las dos farmacias (mismo producto → mismo envase).
+- **Revisar caso por caso**: confirmar que stock/venta de ObServer vienen en unidades
+  de venta y no ya en cajas (varía por producto / presentación).
+
+**Relacionado**: item "Unidad de venta vs unidad de pedido (fraccionados)" más abajo —
+misma necesidad de `cantidad_envase`. Si se resuelve la conversión ahí, reusarla acá.
+
+**Trigger**: cuando se quiera que las transferencias se expresen/redondeen en cajas.
+
+---
+
+## ⏳ Pendiente — Factor de cálculo por horas hasta el próximo pedido (cadencia de reparto) (2026-05-23)
+
+**Idea**: cuando la droguería tiene cargada su **lista de horarios de reparto**
+(matriz semanal en `/compras/dia` — modelo de horarios + countdown a la próxima
+ventana, ya existente), usar las **horas/días hasta el próximo pedido/reparto**
+como **factor de cálculo adicional** del sugerido.
+
+**Lógica**: hoy el "a pedir" cubre un horizonte fijo de N días. Si el próximo
+pedido a esa droguería cae dentro de muchas horas (ventana larga sin reposición),
+hay que pedir **más** para cubrir el gap; si el próximo reparto es pronto, **menos**.
+O sea: escalar el sugerido por la **cobertura real hasta la próxima ventana de
+reparto** en vez de un horizonte fijo.
+
+**Qué ya existe**:
+- Matriz de horarios de reparto por droguería + countdown a la próxima ventana
+  (`routes/compras_dia.py` / `/compras/dia`).
+- Cálculo del sugerido en `services/calculo_pedido.py` y `compras_dia_armar`.
+
+**Qué falta**: derivar "horas/días hasta el próximo reparto" del horario de la
+droguería y meterlo como horizonte dinámico / multiplicador en el `a_pedir`
+(solo cuando el horario está cargado; si no, fallback al horizonte fijo actual).
+
+**Trigger**: cuando los horarios de droguería estén cargados y se quiera afinar
+el sugerido por la cadencia real de reparto.
+
+---
+
 ## ⏳ Pendiente — Precio de última compra (para valorizar) (2026-05-22)
 
 **Contexto**: en el informe de cadencias, el "Catálogo dormido" valoriza el stock

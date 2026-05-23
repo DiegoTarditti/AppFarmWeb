@@ -2733,7 +2733,10 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
 def _start_helper_server(panel):
     """Arranca el HTTP server en un thread daemon y notifica al GUI."""
     try:
-        srv = http.server.HTTPServer(("127.0.0.1", HELPER_PORT), _HelperHandler)
+        # ThreadingHTTPServer (no HTTPServer single-thread): el navegador poolea
+        # /ping con keep-alive y una conexión abierta bloqueaba el único hilo →
+        # las demás requests timeouteaban ("Panel inactivo" con el panel corriendo).
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", HELPER_PORT), _HelperHandler)
     except OSError as e:
         panel.after(0, panel._set_helper_status, False, str(e))
         return
