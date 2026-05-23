@@ -16,6 +16,7 @@ import os
 import queue
 import socket
 import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -998,6 +999,58 @@ class DockerPanel(tk.Tk):
         # Config vive en la misma carpeta que este script (evita problemas de case en Windows)
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
 
+    def _python_exe(self):
+        """Intérprete Python a usar para subprocesos. Usa el MISMO que corre el
+        panel (sys.executable) para no caer en el alias de Microsoft Store que
+        rompe 'python' en el PATH. Si el panel se lanzó con pythonw.exe, prefiere
+        el python.exe hermano (tiene consola para capturar stdout)."""
+        py = sys.executable or "python"
+        low = py.lower()
+        if low.endswith("pythonw.exe"):
+            cand = py[:-len("pythonw.exe")] + "python.exe"
+            if os.path.isfile(cand):
+                py = cand
+        return py
+
+    def _read_config_value(self, key, default=""):
+        """Lee una clave puntual de agente_config.txt (ej. 'agente_token')."""
+        cfg_path = self._get_agente_config_path()
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith(key + "="):
+                            return line.split("=", 1)[1].strip()
+            except OSError:
+                pass
+        return default
+
+    def _update_config_file(self, updates):
+        """Reescribe agente_config.txt actualizando SOLO las claves de `updates`
+        (dict clave→valor str) y preservando cualquier otra línea existente.
+        Evita que guardar un bloque (agente / keepalive / auto-sync / panel-remoto)
+        borre los otros bloques o claves sueltas (agente_token, helper_whitelist)."""
+        cfg_path = self._get_agente_config_path()
+        managed = set(updates.keys())
+        preserved = []
+        if os.path.isfile(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        raw = line.rstrip("\n")
+                        key = raw.split("=", 1)[0].strip() if "=" in raw else ""
+                        if key in managed:
+                            continue
+                        preserved.append(raw)
+            except OSError:
+                pass
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            for ln in preserved:
+                f.write(ln + "\n")
+            for k, v in updates.items():
+                f.write(f"{k}={v}\n")
+
     def _load_agente_config(self):
         """Carga carpeta y URL del agente desde archivo de config."""
         cfg_path = self._get_agente_config_path()
@@ -1033,29 +1086,17 @@ class DockerPanel(tk.Tk):
     def _save_agente_config(self, carpeta, url, mover, keepalive=False,
                              keepalive_url=KEEPALIVE_DEFAULT_URL,
                              keepalive_min=KEEPALIVE_DEFAULT_MIN):
-        # Preservar config de auto-sync que puede haberse guardado por separado
-        auto_sync_cfg = self._load_auto_sync_config()
-        cfg_path = self._get_agente_config_path()
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write(f"carpeta={carpeta}\n")
-            f.write(f"url={url}\n")
-            f.write(f"mover={'true' if mover else 'false'}\n")
-            # === BEGIN KEEPALIVE RENDER (copy to unified panel) ===
-            f.write(f"keepalive={'true' if keepalive else 'false'}\n")
-            f.write(f"keepalive_url={keepalive_url}\n")
-            f.write(f"keepalive_min={keepalive_min}\n")
-            # === END KEEPALIVE RENDER ===
-            # === BEGIN AUTO-SYNC ===
-            f.write(f"autosync_enabled={'true' if auto_sync_cfg['enabled'] else 'false'}\n")
-            f.write(f"autosync_horas={auto_sync_cfg['horas']}\n")
-            f.write(f"autosync_arranque_min={auto_sync_cfg['arranque_min']}\n")
-            f.write(f"autosync_url={auto_sync_cfg['url']}\n")
-            f.write(f"autosync_token={auto_sync_cfg['token']}\n")
-            if auto_sync_cfg.get('last_run'):
-                f.write(f"autosync_last_run={auto_sync_cfg['last_run']}\n")
-            if auto_sync_cfg.get('last_attempt'):
-                f.write(f"autosync_last_attempt={auto_sync_cfg['last_attempt']}\n")
-            # === END AUTO-SYNC ===
+        # Solo toca las claves del agente + keepalive. Auto-sync, panel-remoto,
+        # agente_token y helper_whitelist quedan intactos (los preserva
+        # _update_config_file).
+        self._update_config_file({
+            'carpeta': carpeta,
+            'url': url,
+            'mover': 'true' if mover else 'false',
+            'keepalive': 'true' if keepalive else 'false',
+            'keepalive_url': keepalive_url,
+            'keepalive_min': keepalive_min,
+        })
 
     # === BEGIN AUTO-SYNC ===
     def _load_auto_sync_config(self):
@@ -1092,30 +1133,22 @@ class DockerPanel(tk.Tk):
         return cfg
 
     def _save_auto_sync_config(self, **changes):
-        """Actualiza solo los campos provistos del bloque auto-sync."""
+        """Actualiza solo los campos provistos del bloque auto-sync.
+        Preserva los otros bloques (agente/keepalive/panel-remoto)."""
         current = self._load_auto_sync_config()
         current.update(changes)
-        # Reusar _save_agente_config para reescribir el archivo entero.
-        # Necesitamos los otros bloques tal cual están ahora.
-        carpeta, url, mover, ka, ka_url, ka_min = self._load_agente_config()
-        # Guardar de forma manual para incluir los cambios del auto-sync
-        cfg_path = self._get_agente_config_path()
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            f.write(f"carpeta={carpeta}\n")
-            f.write(f"url={url}\n")
-            f.write(f"mover={'true' if mover else 'false'}\n")
-            f.write(f"keepalive={'true' if ka else 'false'}\n")
-            f.write(f"keepalive_url={ka_url}\n")
-            f.write(f"keepalive_min={ka_min}\n")
-            f.write(f"autosync_enabled={'true' if current['enabled'] else 'false'}\n")
-            f.write(f"autosync_horas={current['horas']}\n")
-            f.write(f"autosync_arranque_min={current['arranque_min']}\n")
-            f.write(f"autosync_url={current['url']}\n")
-            f.write(f"autosync_token={current['token']}\n")
-            if current.get('last_run'):
-                f.write(f"autosync_last_run={current['last_run']}\n")
-            if current.get('last_attempt'):
-                f.write(f"autosync_last_attempt={current['last_attempt']}\n")
+        updates = {
+            'autosync_enabled': 'true' if current['enabled'] else 'false',
+            'autosync_horas': current['horas'],
+            'autosync_arranque_min': current['arranque_min'],
+            'autosync_url': current['url'],
+            'autosync_token': current['token'],
+        }
+        if current.get('last_run'):
+            updates['autosync_last_run'] = current['last_run']
+        if current.get('last_attempt'):
+            updates['autosync_last_attempt'] = current['last_attempt']
+        self._update_config_file(updates)
     # === END AUTO-SYNC ===
 
     def _config_agente(self):
@@ -1240,7 +1273,14 @@ class DockerPanel(tk.Tk):
             self._append(f"  ✖  No se encontró {script}\n", "err")
             return
 
-        cmd = f'python "{script}" --carpeta "{carpeta}" --url "{url}"'
+        # El agente lee AGENTE_TOKEN de os.environ y lo manda como X-Agent-Token
+        # (Render lo valida). Lo inyectamos acá desde agente_config.txt — el
+        # subprocess (shell=True) hereda el env del panel.
+        agente_token = self._read_config_value("agente_token")
+        if agente_token:
+            os.environ["AGENTE_TOKEN"] = agente_token
+
+        cmd = f'"{self._python_exe()}" "{script}" --carpeta "{carpeta}" --url "{url}"'
         if mover:
             cmd += ' --mover'
 
@@ -1272,7 +1312,7 @@ class DockerPanel(tk.Tk):
             return
 
         # Encadenamos el pull + restart web en una sola shell (cwd = proyecto)
-        cmd = f'python "{script}" && docker-compose restart web'
+        cmd = f'"{self._python_exe()}" "{script}" && docker-compose restart web'
         self._set_pull_running(True)
         self._queue.put(("cmd", cmd))
         self._queue.put(("cb", lambda: self._set_pull_running(False)))
@@ -1918,23 +1958,12 @@ class DockerPanel(tk.Tk):
 
     def _save_panel_remoto_config(self, cfg):
         """Persiste solo las claves del panel remoto, preservando lo demás."""
-        cfg_path = self._get_agente_config_path()
-        # Leer archivo actual y reemplazar solo las claves panel_remoto_*
-        keys = ('panel_remoto_enabled', 'panel_remoto_url',
-                'panel_remoto_token', 'panel_remoto_seg')
-        existing = []
-        if os.path.isfile(cfg_path):
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if not any(line.startswith(k + "=") for k in keys):
-                        existing.append(line.rstrip("\n"))
-        with open(cfg_path, "w", encoding="utf-8") as f:
-            for line in existing:
-                f.write(line + "\n")
-            f.write(f"panel_remoto_enabled={'true' if cfg['enabled'] else 'false'}\n")
-            f.write(f"panel_remoto_url={cfg['url']}\n")
-            f.write(f"panel_remoto_token={cfg['token']}\n")
-            f.write(f"panel_remoto_seg={cfg['seg']}\n")
+        self._update_config_file({
+            'panel_remoto_enabled': 'true' if cfg['enabled'] else 'false',
+            'panel_remoto_url': cfg['url'],
+            'panel_remoto_token': cfg['token'],
+            'panel_remoto_seg': cfg['seg'],
+        })
 
     def _panel_remoto_loop(self):
         """Loop principal: polea cada N seg si está enabled."""
@@ -2583,6 +2612,29 @@ def _path_allowed(target_path, whitelist):
     return False
 
 
+def _config_render_origins():
+    """Orígenes (scheme://host) de las URLs de Render configuradas en
+    agente_config.txt. Permite que el helper acepte CORS desde la instancia
+    de ESTA farmacia sin hardcodear su dominio en HELPER_ALLOWED_ORIGINS."""
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agente_config.txt")
+    origins = set()
+    if os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    for key in ("url=", "panel_remoto_url=", "keepalive_url=", "autosync_url="):
+                        if line.startswith(key):
+                            val = line.split("=", 1)[1].strip()
+                            if val.startswith("http"):
+                                p = urllib.parse.urlparse(val)
+                                if p.scheme and p.netloc:
+                                    origins.add(f"{p.scheme}://{p.netloc}")
+        except OSError:
+            pass
+    return origins
+
+
 class _HelperHandler(http.server.BaseHTTPRequestHandler):
     """Endpoints locales: /ping, /folder-files?path=…, /read-pdf?path=…
 
@@ -2592,7 +2644,8 @@ class _HelperHandler(http.server.BaseHTTPRequestHandler):
 
     def _cors(self):
         origin = self.headers.get("Origin", "")
-        if origin in HELPER_ALLOWED_ORIGINS:
+        if origin and (origin in HELPER_ALLOWED_ORIGINS
+                       or origin in _config_render_origins()):
             self.send_header("Access-Control-Allow-Origin", origin)
         self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")

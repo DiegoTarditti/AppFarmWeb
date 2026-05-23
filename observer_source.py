@@ -557,9 +557,44 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
     planes_validos       = {i for (i,) in session.query(ObsPlan.observer_id).all()}
 
     conn = _connect(timeout=600)  # 10 min — es el sync más pesado
+
     if conn is None:
         raise RuntimeError('ObServer no configurado')
+
+    # Bulk upsert por lote (PostgreSQL ON CONFLICT). Antes se hacía un
+    # _upsert_obs (SELECT+INSERT) por fila + cur.fetchall() en RAM → en el
+    # primer sync de 24 meses eran millones de roundtrips + ~2 GiB de buffer, y
+    # el worker de gunicorn moría por timeout (900s) sin commitear → 0 filas.
+    # Ahora: cursor en streaming (fetchmany) + INSERT ... ON CONFLICT por lote
+    # + commit por lote, así el progreso parcial sobrevive y el sync incremental
+    # retoma desde el MAX(fecha) local.
+    from sqlalchemy.dialects.postgresql import insert as _pg_insert
+    es_pg = session.get_bind().dialect.name == 'postgresql'
+    _tabla = ObsVentaDetalle.__table__
+    _cols_update = [c.name for c in _tabla.columns if c.name != 'id_producto_vendido']
+
+    def _flush(mappings):
+        if not mappings:
+            return
+        if es_pg:
+            # Dedup por PK dentro del lote: ON CONFLICT no puede tocar la misma fila 2x.
+            dedup = {m['id_producto_vendido']: m for m in mappings}
+            stmt = _pg_insert(_tabla).values(list(dedup.values()))
+            stmt = stmt.on_conflict_do_update(
+                index_elements=['id_producto_vendido'],
+                set_={c: stmt.excluded[c] for c in _cols_update},
+            )
+            session.execute(stmt)
+        else:
+            # Fallback no-PG (ej. SQLite en dev): upsert fila por fila.
+            for m in mappings:
+                pk = m.pop('id_producto_vendido')
+                _upsert_obs(session, ObsVentaDetalle, 'id_producto_vendido', pk, **m)
+        session.commit()
+
+    BATCH = 5000
     n = skipped = 0
+    ts = now_ar()
     try:
         with conn.cursor(as_dict=True) as cur:
             cur.execute("""
@@ -574,61 +609,68 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                        IdFarmacia, IdCanalDeVenta, IdTipoOperacion
                 FROM DW.ProductosVendidos
                 WHERE FechaEstadistica >= %s AND IdFarmacia = %s
+                ORDER BY FechaEstadistica
             """, (desde_fecha, id_farmacia))
 
-            for r in cur.fetchall():
-                # FKs: skipear si producto no existe local (debería estar)
-                pid = int(r['IdProducto']) if r['IdProducto'] is not None else None
-                if pid is None or pid not in productos_validos:
-                    skipped += 1
-                    continue
-                cli = int(r['IdCliente']) if r['IdCliente'] is not None else None
-                if cli is not None and cli not in clientes_validos:
-                    cli = None
-                os_id = int(r['IdObraSocialPrincipal']) if r['IdObraSocialPrincipal'] is not None else None
-                if os_id is not None and os_id not in obras_validas:
-                    os_id = None
-                plan = int(r['IdPlanPrincipal']) if r['IdPlanPrincipal'] is not None else None
-                if plan is not None and plan not in planes_validos:
-                    plan = None
+            buffer = []
+            while True:
+                filas = cur.fetchmany(BATCH)
+                if not filas:
+                    break
+                for r in filas:
+                    # FKs: skipear si producto no existe local (debería estar)
+                    pid = int(r['IdProducto']) if r['IdProducto'] is not None else None
+                    if pid is None or pid not in productos_validos:
+                        skipped += 1
+                        continue
+                    cli = int(r['IdCliente']) if r['IdCliente'] is not None else None
+                    if cli is not None and cli not in clientes_validos:
+                        cli = None
+                    os_id = int(r['IdObraSocialPrincipal']) if r['IdObraSocialPrincipal'] is not None else None
+                    if os_id is not None and os_id not in obras_validas:
+                        os_id = None
+                    plan = int(r['IdPlanPrincipal']) if r['IdPlanPrincipal'] is not None else None
+                    if plan is not None and plan not in planes_validos:
+                        plan = None
 
-                _upsert_obs(
-                    session, ObsVentaDetalle, 'id_producto_vendido',
-                    int(r['IdProductoVendido']),
-                    id_operacion=int(r['IdOperacion']) if r['IdOperacion'] is not None else None,
-                    numero_renglon=int(r['NumeroRenglon']) if r['NumeroRenglon'] is not None else None,
-                    producto_observer=pid,
-                    cliente_observer=cli,
-                    medico_observer=int(r['IdMedico']) if r['IdMedico'] is not None else None,
-                    medico_matricula_observer=int(r['IdMedicoMatricula']) if r['IdMedicoMatricula'] is not None else None,
-                    es_venta_particular=bool(r['EsVentaParticular']) if r['EsVentaParticular'] is not None else None,
-                    obra_social_observer=os_id,
-                    plan_principal_observer=plan,
-                    plan_complemento1_observer=int(r['IdPlanComplemento1']) if r['IdPlanComplemento1'] is not None else None,
-                    plan_complemento2_observer=int(r['IdPlanComplemento2']) if r['IdPlanComplemento2'] is not None else None,
-                    plan_complemento3_observer=int(r['IdPlanComplemento3']) if r['IdPlanComplemento3'] is not None else None,
-                    cantidad=r['Cantidad'],
-                    cantidad_reconocida_principal=r['CantidadReconocidaPlanPrincipal'],
-                    importe=r['Importe'],
-                    importe_a_cargo_os=r['ImporteACargoOS'],
-                    a_cargo_plan_principal=r['ACargoPlanPrincipal'],
-                    importe_efectivo=r['ImporteEfectivo'],
-                    importe_tarjeta=r['ImporteTarjeta'],
-                    importe_cheque=r['ImporteCheque'],
-                    importe_cuenta_corriente=r['ImporteCuentaCorriente'],
-                    fecha_operacion=r['FechaDeOperacion'],
-                    fecha_estadistica=r['FechaEstadistica'],
-                    anio=int(r['Anio']) if r['Anio'] is not None else None,
-                    mes=int(r['Mes']) if r['Mes'] is not None else None,
-                    dia=int(r['Dia']) if r['Dia'] is not None else None,
-                    id_farmacia=int(r['IdFarmacia']),
-                    canal_venta_observer=int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
-                    tipo_operacion=r.get('IdTipoOperacion'),
-                    sync_en=now_ar(),
-                )
-                n += 1
-                if n % 5000 == 0:
-                    session.flush()
+                    buffer.append({
+                        'id_producto_vendido': int(r['IdProductoVendido']),
+                        'id_operacion': int(r['IdOperacion']) if r['IdOperacion'] is not None else None,
+                        'numero_renglon': int(r['NumeroRenglon']) if r['NumeroRenglon'] is not None else None,
+                        'producto_observer': pid,
+                        'cliente_observer': cli,
+                        'medico_observer': int(r['IdMedico']) if r['IdMedico'] is not None else None,
+                        'medico_matricula_observer': int(r['IdMedicoMatricula']) if r['IdMedicoMatricula'] is not None else None,
+                        'es_venta_particular': bool(r['EsVentaParticular']) if r['EsVentaParticular'] is not None else None,
+                        'obra_social_observer': os_id,
+                        'plan_principal_observer': plan,
+                        'plan_complemento1_observer': int(r['IdPlanComplemento1']) if r['IdPlanComplemento1'] is not None else None,
+                        'plan_complemento2_observer': int(r['IdPlanComplemento2']) if r['IdPlanComplemento2'] is not None else None,
+                        'plan_complemento3_observer': int(r['IdPlanComplemento3']) if r['IdPlanComplemento3'] is not None else None,
+                        'cantidad': r['Cantidad'],
+                        'cantidad_reconocida_principal': r['CantidadReconocidaPlanPrincipal'],
+                        'importe': r['Importe'],
+                        'importe_a_cargo_os': r['ImporteACargoOS'],
+                        'a_cargo_plan_principal': r['ACargoPlanPrincipal'],
+                        'importe_efectivo': r['ImporteEfectivo'],
+                        'importe_tarjeta': r['ImporteTarjeta'],
+                        'importe_cheque': r['ImporteCheque'],
+                        'importe_cuenta_corriente': r['ImporteCuentaCorriente'],
+                        'fecha_operacion': r['FechaDeOperacion'],
+                        'fecha_estadistica': r['FechaEstadistica'],
+                        'anio': int(r['Anio']) if r['Anio'] is not None else None,
+                        'mes': int(r['Mes']) if r['Mes'] is not None else None,
+                        'dia': int(r['Dia']) if r['Dia'] is not None else None,
+                        'id_farmacia': int(r['IdFarmacia']),
+                        'canal_venta_observer': int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
+                        'tipo_operacion': r.get('IdTipoOperacion'),
+                        'sync_en': ts,
+                    })
+                    n += 1
+                    if len(buffer) >= BATCH:
+                        _flush(buffer)
+                        buffer = []
+            _flush(buffer)
     finally:
         conn.close()
     duracion = int((time.time() - t0) * 1000)
