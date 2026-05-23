@@ -115,10 +115,10 @@ if (btn) {
             box.innerHTML = `
                 <div class="kc-stat"><div class="v">${fmt(d.total)}</div><div class="l">Productos ObServer</div></div>
                 <div class="kc-stat ok"><div class="v">${fmt(d.por_ean)}</div><div class="l">EAN directo · ${pct(d.por_ean)}</div></div>
-                <div class="kc-stat ok"><div class="v">${fmt(d.por_ean_alt)}</div><div class="l">Corregible x EAN-alt</div></div>
+                <div class="kc-stat ok"><div class="v">${fmt(d.por_alfabeta)}</div><div class="l">x Alfabeta · ${pct(d.por_alfabeta)}</div></div>
                 <div class="kc-stat bad"><div class="v">${fmt(d.sin_match)}</div><div class="l">Sin match · ${pct(d.sin_match)}</div></div>`;
             box.style.display = 'grid';
-            st.textContent = `EAN directo: ${fmt(d.por_ean)}. Corregibles por EAN alternativo: ${fmt(d.por_ean_alt)}. Sin match: ${fmt(d.sin_match)} (mayoría = Kellerhoff no los vende; los que sí trae van a resolución manual desde Presentación).`;
+            st.textContent = `EAN directo: ${fmt(d.por_ean)}. Resueltos por Alfabeta: ${fmt(d.por_alfabeta)}. Sin match: ${fmt(d.sin_match)} (mayoría = Kellerhoff no los vende).`;
         } catch { st.textContent = 'Error de red.'; }
         finally { btn.disabled = false; }
     });

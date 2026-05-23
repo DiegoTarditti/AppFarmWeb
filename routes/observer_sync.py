@@ -596,6 +596,22 @@ def init_app(app):
                     resultado['pasos'].append({'paso': 'match_productos', 'ok': False, 'error': str(e)})
                     # No abortamos si el match falla, seguimos con el push
 
+            # Paso 3.5: refrescar snapshot del dashboard (product_analytics) desde
+            # obs_stock + obs_ventas_mensuales recién sincronizados. Local: el push
+            # NO replica product_analytics, así que esto mantiene fresco el dashboard
+            # de ESTA instancia tras cada sync. No aborta si falla.
+            _sync_lock_set_paso('refresh_analytics')
+            try:
+                from services.dashboard_snapshot import refrescar_product_analytics
+                with cron_log.registrar('refresh_analytics', origen='dockerpanel') as clog:
+                    with database.get_db() as session:
+                        st_an = refrescar_product_analytics(session)
+                    clog.set_mensaje(f"{st_an.get('filas', 0)} filas")
+                resultado['pasos'].append({'paso': 'refresh_analytics', 'ok': True,
+                                           'filas': st_an.get('filas', 0)})
+            except Exception as e:
+                resultado['pasos'].append({'paso': 'refresh_analytics', 'ok': False, 'error': str(e)})
+
             # Paso 4: push a Render (opcional)
             if not skip_push:
                 _sync_lock_set_paso('push_render')

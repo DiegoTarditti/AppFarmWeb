@@ -793,8 +793,9 @@ def init_app(app):
 
         with database.get_db() as session:
             prov = None
-            if provider_id:
-                prov = session.get(database.Provider, int(provider_id))
+            pid = str(provider_id).strip() if provider_id is not None else ''
+            if pid.isdigit():
+                prov = session.get(database.Provider, int(pid))
             if not prov and provider_name:
                 from helpers import _normalizar_nombre_entidad, get_or_create_proveedor
                 norm_buscado = _normalizar_nombre_entidad(provider_name)
