@@ -560,8 +560,9 @@ def init_app(app):
             # medicos, ventas_detalle, etc.) nunca entra acá — solo el sync
             # completo. Ahorra recursos: al mediodía típicamente solo 'stock'.
             if modo == 'inteligente':
-                from database import ObsSyncLog, now_ar
                 from sqlalchemy import func as _f2
+
+                from database import ObsSyncLog, now_ar
                 TOL_HORAS = {
                     'stock': 3, 'ventas_mensuales': 24, 'productos': 24 * 7,
                     'laboratorios': 24 * 7, 'rubros': 24 * 7,
