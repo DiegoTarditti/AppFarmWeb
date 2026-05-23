@@ -916,15 +916,32 @@ def init_app(app):
         if not rows:
             return jsonify({'error': 'No hay filas para exportar'}), 400
 
+        from openpyxl.styles import Alignment, Font, PatternFill
+        from openpyxl.utils import get_column_letter
+
         wb = _ox.Workbook()
         ws = wb.active
         ws.title = 'Datos'
 
+        bold = Font(bold=True)
+        hdr_font = Font(bold=True, color='FFFFFF')
+        hdr_fill = PatternFill('solid', fgColor='1F2937')
+        estado_fill = {
+            'OK':    PatternFill('solid', fgColor='DCFCE7'),
+            'WARN':  PatternFill('solid', fgColor='FEF3C7'),
+            'ERROR': PatternFill('solid', fgColor='FEE2E2'),
+        }
+
         r = 1
         if header:
             for k, v in header.items():
-                ws.cell(row=r, column=1, value=k)
-                ws.cell(row=r, column=2, value=v)
+                ws.cell(row=r, column=1, value=k).font = bold
+                n = _num_ar(v)
+                if n is not None and k not in ('cuit', 'numero', 'fecha', 'razon_social'):
+                    cell = ws.cell(row=r, column=2, value=n)
+                    cell.number_format = '#,##0.00'
+                else:
+                    ws.cell(row=r, column=2, value=v)
                 r += 1
             r += 1
 
@@ -936,13 +953,47 @@ def init_app(app):
         for row in rows:
             _analisis_fila(row)
         cols = list(cols) + [c for c in ANALISIS_COLS if c not in cols]
+
+        # Numéricos → se escriben como número (no texto) + formato. codigo_barra,
+        # descripcion, lote, vencimiento y estado quedan como texto.
+        NUM_COLS = {'cantidad', 'precio_publico', 'dto', 'precio_unitario', 'importe',
+                    'dto_efectivo_%', 'dto_adicional_%', 'desc_adicional_unit_$',
+                    'desc_adicional_total_$', 'chk_cant_x_unit_$', 'chk_pub_x_dto_$'}
+        PCT_COLS = {'dto', 'dto_efectivo_%', 'dto_adicional_%'}
+
+        hdr_row = r
         for ci, c in enumerate(cols, start=1):
-            ws.cell(row=r, column=ci, value=c)
+            cell = ws.cell(row=r, column=ci, value=c)
+            cell.font = hdr_font
+            cell.fill = hdr_fill
+            cell.alignment = Alignment(horizontal='center')
         r += 1
+
+        estado_idx = (cols.index('estado') + 1) if 'estado' in cols else None
         for row in rows:
             for ci, c in enumerate(cols, start=1):
-                ws.cell(row=r, column=ci, value=row.get(c, ''))
+                val = row.get(c, '')
+                if c in NUM_COLS:
+                    n = _num_ar(val)
+                    cell = ws.cell(row=r, column=ci, value=n)
+                    if n is not None:
+                        cell.number_format = ('0.00"%"' if c in PCT_COLS
+                                              else '#,##0' if c == 'cantidad'
+                                              else '#,##0.00')
+                else:
+                    ws.cell(row=r, column=ci, value=val)
+            if estado_idx:
+                est = (row.get('estado') or '').upper()
+                if est in estado_fill:
+                    ws.cell(row=r, column=estado_idx).fill = estado_fill[est]
             r += 1
+
+        ws.freeze_panes = ws.cell(row=hdr_row + 1, column=1)
+        anchos = {'codigo_barra': 16, 'descripcion': 36, 'cantidad': 9,
+                  'precio_publico': 13, 'dto': 8, 'precio_unitario': 14, 'importe': 13,
+                  'lote': 10, 'vencimiento': 12, 'estado': 9}
+        for ci, c in enumerate(cols, start=1):
+            ws.column_dimensions[get_column_letter(ci)].width = anchos.get(c, 17)
 
         buf = _io.BytesIO()
         wb.save(buf)

@@ -362,9 +362,9 @@
             <button id="btn-enviar-proceso" onclick="enviarAProceso()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">
                 🚀 Enviar a Proceso
             </button>
-            <button id="btn-export" onclick="exportXLSX()" class="btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+            <button id="btn-export" onclick="exportXLSX()" class="px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold inline-flex items-center gap-1.5" title="Exportar a Excel (XLSX) con análisis por ítem">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                XLSX
+                Exportar XLSX
             </button>
         </div>
         <p id="save-status" class="mt-2 text-xs hidden"></p>
@@ -2848,7 +2848,7 @@ async function exportXLSX() {
         const url = URL.createObjectURL(blob); const a = document.createElement('a');
         a.href = url; a.download = '{{ filename }}.xlsx'.replace(/\.pdf\.xlsx$/i,'.xlsx');
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } finally { btn.disabled = false; btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> XLSX'; }
+    } finally { btn.disabled = false; btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Exportar XLSX'; }
 }
 
 // ── División del texto del PDF en 3 secciones ──
