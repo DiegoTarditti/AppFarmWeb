@@ -238,7 +238,7 @@ def corregir_eans(session, eans):
     pero hay equivalencia, se manda el EAN de Kellerhoff (CodBarraPrinc) de ese
     producto — el que ellos reconocen. Si no hay arreglo, se manda el nuestro
     (falla igual que antes, no peor). Nunca vacío."""
-    eans = list({e for e in eans if e})
+    eans = list({str(e) for e in eans if e})  # str: la col ean es varchar (evita varchar=int)
     out = {e: e for e in eans}  # default: el mismo EAN
     if not eans:
         return out
@@ -382,42 +382,60 @@ def init_app(app):
     @app.route('/kellerhoff/catalogo/cobertura')
     @login_required
     def kellerhoff_catalogo_cobertura():
-        """Reporte on-demand sobre los productos ObServer: cuántos resuelven con
-        Kellerhoff por EAN directo (su EAN principal está en el catálogo) y
-        cuántos más son corregibles por EAN alternativo del mismo producto."""
+        """Reporte on-demand sobre TODOS los productos ObServer activos: cuántos
+        resuelven con Kellerhoff por EAN (el EAN del producto está en el catálogo)
+        y cuántos más por el puente Alfabeta (su CodigoAlfabeta lo vende Kellerhoff).
+
+        Los EANs se juntan del espejo ObServer (obs_codigos_barras) Y del master
+        local (Producto.codigo_barra + producto_codigos_barra). Así el reporte
+        funciona aunque obs_codigos_barras esté vacío (EANs cargados vía el master,
+        ej. el puente Alfabeta desde Kellerhoff)."""
         from collections import defaultdict
+
+        from database import ProductoCodigoBarra
         with get_db() as session:
             if not session.query(KellerhoffCatalogo).first():
                 return jsonify({'ok': False, 'error': 'No hay catálogo cargado.'})
 
             cat_ean = {e for (e,) in session.query(KellerhoffCatalogo.ean) if e}
-            obs_eans = defaultdict(list)
-            for oid, ean, orden in session.query(
-                    ObsCodigoBarras.producto_observer, ObsCodigoBarras.codigo_barras,
-                    ObsCodigoBarras.orden).filter(ObsCodigoBarras.fecha_baja.is_(None)):
-                if ean:
-                    obs_eans[oid].append((orden if orden is not None else 999, ean))
+            cat_alfa = {a for (a,) in session.query(KellerhoffCatalogo.alfabeta) if a}
 
-            directo = corregible = sin = 0
+            # EANs por observer_id: espejo ObServer + master (principal + alts).
+            obs_eans = defaultdict(set)
+            for oid, ean in session.query(
+                    ObsCodigoBarras.producto_observer, ObsCodigoBarras.codigo_barras
+            ).filter(ObsCodigoBarras.fecha_baja.is_(None)):
+                if ean:
+                    obs_eans[oid].add(ean)
+            for oid, ean in (session.query(Producto.observer_id, Producto.codigo_barra)
+                             .filter(Producto.observer_id.isnot(None))):
+                if ean and not ean.startswith('OBS-'):
+                    obs_eans[oid].add(ean)
+            for oid, ean in (session.query(Producto.observer_id, ProductoCodigoBarra.codigo_barra)
+                             .join(ProductoCodigoBarra, ProductoCodigoBarra.producto_id == Producto.id)
+                             .filter(Producto.observer_id.isnot(None))):
+                if ean:
+                    obs_eans[oid].add(ean)
+
+            por_ean = por_alfabeta = sin = 0
             total = 0
-            for oid, eans in obs_eans.items():
+            for oid, alfa in (session.query(ObsProducto.observer_id, ObsProducto.codigo_alfabeta)
+                              .filter(ObsProducto.fecha_baja.is_(None))):
                 total += 1
-                eans.sort()
-                principal = eans[0][1]
-                if principal in cat_ean:
-                    directo += 1
-                elif any(e in cat_ean for (_, e) in eans):
-                    corregible += 1
+                if obs_eans.get(oid) and (obs_eans[oid] & cat_ean):
+                    por_ean += 1
+                elif alfa and alfa in cat_alfa:
+                    por_alfabeta += 1
                 else:
                     sin += 1
 
         return jsonify({
             'ok': True,
             'total': total,
-            'por_ean': directo,
-            'por_ean_alt': corregible,
+            'por_ean': por_ean,
+            'por_alfabeta': por_alfabeta,
             'sin_match': sin,
-            'resueltos': directo + corregible,
+            'resueltos': por_ean + por_alfabeta,
         })
 
     @app.route('/kellerhoff/equivalencias/recalcular', methods=['POST'])

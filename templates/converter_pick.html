@@ -362,9 +362,9 @@
             <button id="btn-enviar-proceso" onclick="enviarAProceso()" class="px-4 py-2 text-xs rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">
                 🚀 Enviar a Proceso
             </button>
-            <button id="btn-export" onclick="exportXLSX()" class="btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
+            <button id="btn-export" onclick="exportXLSX()" class="px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold inline-flex items-center gap-1.5" title="Exportar a Excel (XLSX) con análisis por ítem">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                XLSX
+                Exportar XLSX
             </button>
         </div>
         <p id="save-status" class="mt-2 text-xs hidden"></p>
@@ -839,8 +839,17 @@ function _fmtVerif(ok, msgOk, msgErr) {
 }
 
 async function inferirYScrollAlResultado() {
+    // Si todavía no se aplicó el Detalle pero la auto-detección está disponible
+    // (el operador ya vio el preview), aplicamos las 3 secciones solas — no hace
+    // falta clickear "Aplicar" en cada cuadro.
+    if ((!state.exampleLine || !state.selections.length)
+        && _autoTodoData && _autoTodoData.fila_ejemplo) {
+        try { aplicarAutoHeader(); } catch (_) {}
+        try { aplicarAutoPie(); } catch (_) {}
+        try { await aplicarAutoDetalle(); } catch (_) {}  // setea exampleLine + selections
+    }
     if (!state.exampleLine || !state.selections.length) {
-        alert('Primero aplicá el Detalle (cuadro del medio).');
+        alert('No hay datos para inferir. Probá la auto-detección (botón "Probar") o asigná el Detalle a mano.');
         return;
     }
     // Inferir si no se hizo todavía (o re-inferir por si el user editó algo).
@@ -2610,6 +2619,25 @@ function _fmtMoneyInput(el) {
     else bind();
 });
 
+// Auto-arranque: al entrar a /pick sin nada asignado todavía, correr la
+// auto-detección + aplicar las 3 secciones + inferir solo (el camino es siempre
+// el mismo). Silencioso: si algo falla, el operador sigue a mano con "Probar".
+async function _autoArranquePick() {
+    try {
+        if (state.selections && state.selections.length) return;  // ya hay laburo manual
+        const pdfBox = document.getElementById('pdf-text');
+        if (!pdfBox || !(pdfBox.textContent || '').trim()) return;
+        await autoDetectarTodo();
+        if (_autoTodoData && _autoTodoData.fila_ejemplo) {
+            await inferirYScrollAlResultado();
+        }
+    } catch (_) { /* el operador puede hacerlo a mano */ }
+}
+if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', _autoArranquePick);
+else
+    _autoArranquePick();
+
 function _findField(fields, regex) {
     return fields.find(f => regex.test(f.toLowerCase()));
 }
@@ -2820,7 +2848,7 @@ async function exportXLSX() {
         const url = URL.createObjectURL(blob); const a = document.createElement('a');
         a.href = url; a.download = '{{ filename }}.xlsx'.replace(/\.pdf\.xlsx$/i,'.xlsx');
         document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    } finally { btn.disabled = false; btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> XLSX'; }
+    } finally { btn.disabled = false; btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg> Exportar XLSX'; }
 }
 
 // ── División del texto del PDF en 3 secciones ──
