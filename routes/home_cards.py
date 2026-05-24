@@ -43,23 +43,17 @@ def init_app(app):
                 if accion == 'reset':
                     u.preferencias_home_json = None
                     session.commit()
-                    flash('Preferencias restablecidas al default.', 'success')
+                    flash('Se muestran todas las cards de nuevo.', 'success')
                     return redirect(url_for('personalizar_home'))
-                # Guardar
-                modo = request.form.get('modo', 'auto')
-                orden = request.form.get('orden', '').split(',')
-                orden = [x.strip() for x in orden if x.strip() in hc.ACCIONES_HOME_BY_ID]
+                # Guardar — solo visibilidad (ocultar/mostrar). El orden lo maneja
+                # el sistema (auto por clicks dentro de cada banda); el color custom
+                # se discontinuó al pasar al diseño por bandas (2026-05-24).
                 ocultos = request.form.getlist('ocultos')
                 ocultos = [x for x in ocultos if x in hc.ACCIONES_HOME_BY_ID]
-                colores = {}
-                for c in hc.ACCIONES_HOME:
-                    color = request.form.get(f'color_{c["id"]}', '').strip()
-                    if color and color.lower() != c['bg_default'].lower():
-                        colores[c['id']] = color
-                prefs = {'modo': modo, 'orden': orden, 'colores': colores, 'ocultos': ocultos}
+                prefs = {'modo': 'auto', 'orden': [], 'colores': {}, 'ocultos': ocultos}
                 u.preferencias_home_json = json.dumps(prefs, ensure_ascii=False)
                 session.commit()
-                flash('Preferencias guardadas.', 'success')
+                flash('Listo, se actualizaron las cards visibles.', 'success')
                 return redirect(url_for('personalizar_home'))
 
             # GET

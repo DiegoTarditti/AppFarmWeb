@@ -266,31 +266,41 @@ ACCIONES_HOME_BY_ID = {c['id']: c for c in ACCIONES_HOME}
 # 2026-05-09: 15 cards en flat list = no encuentra nada).
 # El orden de las claves dicta el orden de los grupos en pantalla.
 CATEGORIAS_HOME = [
-    ('operativo',  '🔄 Operativo diario'),
-    ('analisis',   '📊 Análisis e informes'),
-    ('catalogo',   '📚 Catálogo'),
-    ('datos',      '⚙ Datos y configuración'),
-    ('pendientes', '⏳ Pendientes'),
+    ('laboratorios',    '🧪 Laboratorios'),
+    ('droguerias',      '💊 Droguerías'),
+    ('operativo',       '⚡ Operativo'),
+    ('productos',       '📦 Productos'),
+    ('otras_entidades', '🏥 Otras entidades'),
+    ('informes',        '📊 Informes'),
 ]
 # Mapa card_id → categoria_key. Si una card no aparece, va a 'operativo' por default.
 CARD_CATEGORIA = {
+    # Operativo (día a día)
     'pedidos':              'operativo',
     'ingresos':             'operativo',
     'procesos':             'operativo',
-    'reclamos':             'operativo',
-    'informes':             'analisis',
-    'bi':                   'analisis',
-    'compras_recurrentes':  'analisis',
-    'obras_sociales':       'analisis',
-    'flujo_fondos':         'analisis',
-    'productos':            'catalogo',
-    'vademecum':            'catalogo',
-    'clientes':             'catalogo',
-    'ofertas_import':       'operativo',
-    'config':               'datos',
-    # Pendientes (al fondo)
-    'productos_pendientes': 'pendientes',
-    'cuentas':              'pendientes',
+    'consulta_stock':       'operativo',
+    'consulta_producto':    'operativo',
+    'config':               'operativo',   # TODO: pasar a engranaje suelto (mock home)
+    # Laboratorios
+    'ofertas_import':       'laboratorios',
+    'consulta_lab':         'laboratorios',
+    # Droguerías
+    'reclamos':             'droguerias',
+    'cuentas':              'droguerias',
+    # Productos
+    'productos':            'productos',
+    'vademecum':            'productos',
+    'productos_pendientes': 'productos',
+    # Informes
+    'informes':             'informes',
+    'bi':                   'informes',
+    'flujo_fondos':         'informes',
+    'compras_recurrentes':  'informes',
+    # Otras entidades
+    'obras_sociales':       'otras_entidades',
+    'clientes':             'otras_entidades',
+    'consulta_medico':      'otras_entidades',
 }
 
 

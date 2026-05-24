@@ -604,10 +604,11 @@ class OfertaMinimo(Base):
 
 
 class ArchivoCompartido(Base):
-    """Archivos procesados compartidos entre instancias del grupo.
+    """Buzón de salida de cada farmacia: datasets curados para compartir.
 
-    Una instancia actúa como hub (HUB_BASE_URL apunta a ella).
-    Las demás pushean y pullean vía /api/compartido/*.
+    Modelo peer-to-peer (sin hub): cada instancia publica acá (INSERT local) y
+    las otras sucursales lo LEEN read-only vía `Sucursal.url_externa` (mismo
+    patrón que /transferencias). Lo consumido se registra en `CompartidoImportado`.
     Tipos soportados: 'oferta_minimo', 'modulos', 'equivalencias'.
     """
     __tablename__ = 'archivos_compartidos'
@@ -616,9 +617,29 @@ class ArchivoCompartido(Base):
     nombre          = Column(String(200), nullable=False)
     descripcion     = Column(Text, nullable=True)
     farmacia_origen = Column(String(100), nullable=False)
+    destinatarios   = Column(String(200), nullable=False, default='todos')  # 'todos' o slugs csv
     json_data       = Column(Text, nullable=False)
     n_items         = Column(Integer, default=0)
     creado_en       = Column(DateTime, default=now_ar)
+
+
+class CompartidoImportado(Base):
+    """Log LOCAL de lo que esta instancia ya consumió de los peers.
+
+    Evita re-avisar/re-importar. `origen_slug` = slug de la sucursal de la que
+    vino; `archivo_id` = id en el `archivos_compartidos` de ESE peer.
+    """
+    __tablename__ = 'compartido_importado'
+    id          = Column(Integer, primary_key=True)
+    origen_slug = Column(String(50), nullable=False)
+    archivo_id  = Column(Integer, nullable=False)
+    tipo        = Column(String(50))
+    nombre      = Column(String(200))
+    accion      = Column(String(20), nullable=False, default='importado')  # 'importado' | 'descartado'
+    usuario     = Column(String(80))
+    creado_en   = Column(DateTime, default=now_ar)
+    __table_args__ = (UniqueConstraint('origen_slug', 'archivo_id',
+                                       name='uq_compartido_importado'),)
 
 
 class Sucursal(Base):
@@ -1922,7 +1943,8 @@ def init_db(database_url=None):
                         'estacionalidad_escenarios',
                         'estacionalidad_productos',
                         'cadencia_lab_snapshot',
-                        'archivos_compartidos', 'sucursales')
+                        'archivos_compartidos', 'sucursales',
+                        'compartido_importado')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2088,6 +2110,24 @@ def init_db(database_url=None):
                         finalizado_en TIMESTAMP,
                         paso_actual VARCHAR(80),
                         ultimo_resultado TEXT
+                    )
+                """))
+                # Compartido peer-to-peer: columna destinatarios + log local de importados.
+                conn.execute(text(
+                    "ALTER TABLE archivos_compartidos "
+                    "ADD COLUMN IF NOT EXISTS destinatarios VARCHAR(200) NOT NULL DEFAULT 'todos'"
+                ))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS compartido_importado (
+                        id SERIAL PRIMARY KEY,
+                        origen_slug VARCHAR(50) NOT NULL,
+                        archivo_id INTEGER NOT NULL,
+                        tipo VARCHAR(50),
+                        nombre VARCHAR(200),
+                        accion VARCHAR(20) NOT NULL DEFAULT 'importado',
+                        usuario VARCHAR(80),
+                        creado_en TIMESTAMP NOT NULL DEFAULT NOW(),
+                        CONSTRAINT uq_compartido_importado UNIQUE (origen_slug, archivo_id)
                     )
                 """))
                 # Migración estacionalidad_escenarios: meses → días.

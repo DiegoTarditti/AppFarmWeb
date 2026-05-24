@@ -135,8 +135,12 @@ function filtrarInformes() {
     document.getElementById('inf-vacio').classList.toggle('hidden', totalVis > 0);
 }
 document.addEventListener('DOMContentLoaded', () => {
-    const first = document.querySelector('#inf-chips .inf-chip');
-    if (first) first.classList.add('active');
+    const cat = new URLSearchParams(location.search).get('cat') || '';
+    const target = cat
+        ? document.querySelector('#inf-chips .inf-chip[data-cat="' + cat + '"]')
+        : null;
+    const chip = target || document.querySelector('#inf-chips .inf-chip');
+    if (chip) setCat(chip);
 });
 </script>
 {% endblock %}

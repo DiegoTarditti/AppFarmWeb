@@ -1,27 +1,20 @@
-"""Archivos compartidos entre instancias del grupo.
+"""Compartido peer-to-peer entre farmacias del grupo (sin hub).
 
-Hub: la instancia Render designada (HUB_BASE_URL en .env).
-- POST /api/compartido/subir      — sube un archivo procesado al hub
-- GET  /api/compartido/listar     — lista archivos disponibles en el hub
-- GET  /api/compartido/<id>/json  — descarga JSON de un archivo del hub
-- POST /compartido/<id>/importar  — importa un archivo del hub a la DB local
-- GET  /compartido                — UI: lista + botones importar
+Cada farmacia publica datasets curados (ofertas con mínimo, equivalencias,
+módulos) en SU tabla `archivos_compartidos` (INSERT local vía /api/compartido/push).
+Las demás los LEEN read-only (services/compartido_sync → Sucursal.url_externa) y
+los importan on-demand; lo consumido queda en `compartido_importado` (log local).
+
+Reemplaza el viejo esquema hub HTTP (HUB_BASE_URL / HUB_TOKEN) — ya no se usan.
 """
 import json
-import os
-from datetime import datetime
 
-import requests
 from flask import flash, jsonify, redirect, render_template, request, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
-import database
-from database import ArchivoCompartido, Laboratorio, OfertaMinimo, get_db
+from database import ArchivoCompartido, CompartidoImportado, Laboratorio, OfertaMinimo, get_db
 from helpers import now_ar
-
-_HUB_BASE_URL = os.environ.get('HUB_BASE_URL', '').rstrip('/')
-_HUB_TOKEN    = os.environ.get('HUB_TOKEN', '')
-_FARMACIA_ID  = os.environ.get('OBSERVER_ID_FARMACIA', 'desconocida')
+from services import compartido_sync
 
 _TIPOS_LABEL = {
     'oferta_minimo': 'Ofertas con mínimo',
@@ -29,212 +22,133 @@ _TIPOS_LABEL = {
     'equivalencias': 'Equivalencias de barcode',
 }
 
-_ES_HUB = not _HUB_BASE_URL or _HUB_BASE_URL.rstrip('/') in (
-    os.environ.get('RENDER_BASE_URL', '').rstrip('/'),
-    'http://localhost:5000',
-    'http://localhost:5000/',
-)
 
-
-def _auth_ok(req):
-    token = req.headers.get('X-Hub-Token', '')
-    return token and token == _HUB_TOKEN
-
-
-def _hub_headers():
-    return {'X-Hub-Token': _HUB_TOKEN, 'Content-Type': 'application/json'}
+def _origen_local():
+    """Nombre de esta sucursal para sellar `farmacia_origen` al publicar."""
+    try:
+        from services.transferencias import _local_slug, listar_sucursales
+        sucs = listar_sucursales()
+        slug = _local_slug(sucs)
+        return next((s['nombre'] for s in sucs if s['slug'] == slug), None) or slug or 'local'
+    except Exception:
+        import os
+        return os.environ.get('OBSERVER_ID_FARMACIA', 'local')
 
 
 def init_app(app):
 
-    # ── Endpoints hub (escritura/lectura de archivos compartidos) ────────────
-
-    @app.route('/api/compartido/subir', methods=['POST'])
-    def api_compartido_subir():
-        """Recibe un archivo procesado y lo guarda en la DB del hub."""
-        if not _auth_ok(request):
-            return jsonify({'ok': False, 'error': 'No autorizado'}), 401
+    @app.route('/api/compartido/push', methods=['POST'])
+    @login_required
+    def api_compartido_push():
+        """Publica un dataset curado en la tabla local (buzón de salida)."""
         data = request.get_json(silent=True) or {}
-        tipo    = (data.get('tipo') or '').strip()
-        nombre  = (data.get('nombre') or '').strip()
-        origen  = (data.get('farmacia_origen') or 'desconocida').strip()
-        desc    = (data.get('descripcion') or '').strip() or None
-        items   = data.get('items')
+        tipo   = (data.get('tipo') or '').strip()
+        nombre = (data.get('nombre') or '').strip()
+        desc   = (data.get('descripcion') or '').strip() or None
+        items  = data.get('items')
+        destinatarios = (data.get('destinatarios') or 'todos').strip() or 'todos'
         if not tipo or not nombre or not isinstance(items, list):
             return jsonify({'ok': False, 'error': 'Faltan campos: tipo, nombre, items[]'}), 400
-        json_str = json.dumps(items, ensure_ascii=False)
         with get_db() as session:
-            archivo = ArchivoCompartido(
+            arch = ArchivoCompartido(
                 tipo=tipo, nombre=nombre, descripcion=desc,
-                farmacia_origen=origen, json_data=json_str,
+                farmacia_origen=_origen_local(), destinatarios=destinatarios,
+                json_data=json.dumps(items, ensure_ascii=False),
                 n_items=len(items), creado_en=now_ar(),
             )
-            session.add(archivo)
+            session.add(arch)
             session.commit()
-            return jsonify({'ok': True, 'id': archivo.id, 'n_items': len(items)})
-
-    @app.route('/api/compartido/listar')
-    def api_compartido_listar():
-        """Lista archivos disponibles (JSON). Opcionalmente filtra por tipo."""
-        if not _auth_ok(request):
-            return jsonify({'ok': False, 'error': 'No autorizado'}), 401
-        tipo = request.args.get('tipo', '').strip() or None
-        with get_db() as session:
-            q = session.query(
-                ArchivoCompartido.id,
-                ArchivoCompartido.tipo,
-                ArchivoCompartido.nombre,
-                ArchivoCompartido.descripcion,
-                ArchivoCompartido.farmacia_origen,
-                ArchivoCompartido.n_items,
-                ArchivoCompartido.creado_en,
-            ).order_by(ArchivoCompartido.creado_en.desc())
-            if tipo:
-                q = q.filter(ArchivoCompartido.tipo == tipo)
-            rows = q.limit(100).all()
-        return jsonify({'ok': True, 'archivos': [
-            {'id': r.id, 'tipo': r.tipo, 'nombre': r.nombre,
-             'descripcion': r.descripcion, 'farmacia_origen': r.farmacia_origen,
-             'n_items': r.n_items,
-             'creado_en': r.creado_en.strftime('%d/%m/%Y %H:%M') if r.creado_en else ''}
-            for r in rows
-        ]})
-
-    @app.route('/api/compartido/<int:archivo_id>/json')
-    def api_compartido_json(archivo_id):
-        """Descarga el JSON de un archivo específico."""
-        if not _auth_ok(request):
-            return jsonify({'ok': False, 'error': 'No autorizado'}), 401
-        with get_db() as session:
-            arch = session.get(ArchivoCompartido, archivo_id)
-            if not arch:
-                return jsonify({'ok': False, 'error': 'No encontrado'}), 404
-            return jsonify({'ok': True, 'tipo': arch.tipo, 'nombre': arch.nombre,
-                            'items': json.loads(arch.json_data)})
-
-    # ── UI: pantalla de importación ──────────────────────────────────────────
+            compartido_sync._count_cache['ts'] = 0.0  # invalidar count de los peers
+            return jsonify({'ok': True, 'id': arch.id, 'n_items': len(items)})
 
     @app.route('/compartido')
     @login_required
     def compartido_index():
-        """Lista archivos disponibles en el hub y permite importarlos."""
-        archivos = []
-        error_hub = None
-        if _ES_HUB:
-            with get_db() as session:
-                rows = session.query(ArchivoCompartido).order_by(
-                    ArchivoCompartido.creado_en.desc()).limit(100).all()
-                archivos = [{
-                    'id': r.id, 'tipo': r.tipo,
-                    'tipo_label': _TIPOS_LABEL.get(r.tipo, r.tipo),
-                    'nombre': r.nombre, 'descripcion': r.descripcion,
-                    'farmacia_origen': r.farmacia_origen,
-                    'n_items': r.n_items,
-                    'creado_en': r.creado_en.strftime('%d/%m/%Y %H:%M') if r.creado_en else '',
-                } for r in rows]
-        elif _HUB_BASE_URL and _HUB_TOKEN:
-            try:
-                r = requests.get(f'{_HUB_BASE_URL}/api/compartido/listar',
-                                 headers=_hub_headers(), timeout=10)
-                data = r.json()
-                if data.get('ok'):
-                    archivos = [{**a, 'tipo_label': _TIPOS_LABEL.get(a['tipo'], a['tipo'])}
-                                for a in data['archivos']]
-                else:
-                    error_hub = data.get('error', 'Error desconocido del hub')
-            except Exception as e:
-                error_hub = f'No se pudo conectar al hub: {e}'
-        else:
-            error_hub = 'HUB_BASE_URL o HUB_TOKEN no configurados.'
+        """Compartidos de los peers (con estado) + lo publicado por esta farmacia."""
+        del_peers = compartido_sync.listar_peers()
+        errores = [{'origen': it['origen_nombre'], 'error': it['error']}
+                   for it in del_peers if 'error' in it]
+
+        with get_db() as session:
+            log = {(r.origen_slug, r.archivo_id): r.accion
+                   for r in session.query(CompartidoImportado).all()}
+            mios = [{
+                'id': m.id, 'tipo': m.tipo, 'tipo_label': _TIPOS_LABEL.get(m.tipo, m.tipo),
+                'nombre': m.nombre, 'descripcion': m.descripcion, 'n_items': m.n_items,
+                'destinatarios': m.destinatarios,
+                'creado_en': m.creado_en.strftime('%d/%m/%Y %H:%M') if m.creado_en else '',
+            } for m in session.query(ArchivoCompartido).order_by(
+                ArchivoCompartido.creado_en.desc()).limit(100).all()]
+
+        items = []
+        for it in del_peers:
+            if 'error' in it:
+                continue
+            items.append({
+                **it,
+                'tipo_label': _TIPOS_LABEL.get(it['tipo'], it['tipo']),
+                'estado': log.get((it['origen_slug'], it['id']), 'nuevo'),
+                'creado_en_fmt': it['creado_en'].strftime('%d/%m/%Y %H:%M') if it.get('creado_en') else '',
+            })
+        items.sort(key=lambda x: x['estado'] != 'nuevo')  # nuevos primero (sort estable)
 
         return render_template('compartido.html',
-                               archivos=archivos,
-                               error_hub=error_hub,
-                               es_hub=_ES_HUB,
+                               items=items, errores=errores, mios=mios,
+                               sin_peers=not compartido_sync.peers(),
                                tipos_label=_TIPOS_LABEL)
 
-    @app.route('/compartido/<int:archivo_id>/importar', methods=['POST'])
+    @app.route('/compartido/importar', methods=['POST'])
     @login_required
-    def compartido_importar(archivo_id):
-        """Descarga un archivo del hub e importa su contenido a la DB local."""
-        items_raw = None
-
-        if _ES_HUB:
-            with get_db() as session:
-                arch = session.get(ArchivoCompartido, archivo_id)
-                if not arch:
-                    flash('Archivo no encontrado.', 'error')
-                    return redirect(url_for('compartido_index'))
-                tipo = arch.tipo
-                nombre = arch.nombre
-                items_raw = json.loads(arch.json_data)
-        else:
-            try:
-                r = requests.get(f'{_HUB_BASE_URL}/api/compartido/{archivo_id}/json',
-                                 headers=_hub_headers(), timeout=15)
-                data = r.json()
-                if not data.get('ok'):
-                    flash(f'Error del hub: {data.get("error")}', 'error')
-                    return redirect(url_for('compartido_index'))
-                tipo = data['tipo']
-                nombre = data['nombre']
-                items_raw = data['items']
-            except Exception as e:
-                flash(f'No se pudo conectar al hub: {e}', 'error')
-                return redirect(url_for('compartido_index'))
-
-        n = _importar_items(tipo, nombre, items_raw)
+    def compartido_importar():
+        slug = (request.form.get('origen_slug') or '').strip()
+        archivo_id = request.form.get('archivo_id', type=int)
+        if not slug or not archivo_id:
+            flash('Falta origen o id.', 'error')
+            return redirect(url_for('compartido_index'))
+        arch = compartido_sync.leer_archivo(slug, archivo_id)
+        if not arch:
+            flash('No se pudo leer el archivo del peer (¿offline o ya no existe?).', 'error')
+            return redirect(url_for('compartido_index'))
+        n = _importar_items(arch['tipo'], arch['nombre'], arch['items'])
         if n is None:
-            flash(f'Tipo "{tipo}" no soportado para importación.', 'error')
-        else:
-            flash(f'Importados {n} registros de "{nombre}".', 'success')
+            flash(f'Tipo "{arch["tipo"]}" no soportado para importación.', 'error')
+            return redirect(url_for('compartido_index'))
+        _registrar(slug, archivo_id, arch['tipo'], arch['nombre'], 'importado')
+        flash(f'Importados {n} registros de "{arch["nombre"]}".', 'success')
         return redirect(url_for('compartido_index'))
 
-    # ── API para compartir desde la app local al hub ─────────────────────────
-
-    @app.route('/api/compartido/push', methods=['POST'])
+    @app.route('/compartido/descartar', methods=['POST'])
     @login_required
-    def api_compartido_push():
-        """Sube un archivo procesado al hub (llamado desde la app local)."""
-        data = request.get_json(silent=True) or {}
-        tipo   = data.get('tipo', '').strip()
-        nombre = data.get('nombre', '').strip()
-        desc   = data.get('descripcion', '').strip() or None
-        items  = data.get('items')
-        if not tipo or not nombre or not isinstance(items, list):
-            return jsonify({'ok': False, 'error': 'Faltan campos'}), 400
+    def compartido_descartar():
+        slug = (request.form.get('origen_slug') or '').strip()
+        archivo_id = request.form.get('archivo_id', type=int)
+        if slug and archivo_id:
+            _registrar(slug, archivo_id, request.form.get('tipo', ''),
+                       request.form.get('nombre', ''), 'descartado')
+            flash('Marcado como descartado (no vuelve a avisar).', 'success')
+        return redirect(url_for('compartido_index'))
 
-        payload = {
-            'tipo': tipo, 'nombre': nombre, 'descripcion': desc,
-            'farmacia_origen': str(_FARMACIA_ID), 'items': items,
-        }
 
-        if _ES_HUB:
-            json_str = json.dumps(items, ensure_ascii=False)
-            with get_db() as session:
-                arch = ArchivoCompartido(
-                    tipo=tipo, nombre=nombre, descripcion=desc,
-                    farmacia_origen=str(_FARMACIA_ID),
-                    json_data=json_str, n_items=len(items), creado_en=now_ar(),
-                )
-                session.add(arch)
-                session.commit()
-                return jsonify({'ok': True, 'id': arch.id, 'n_items': len(items)})
-        elif _HUB_BASE_URL and _HUB_TOKEN:
-            try:
-                r = requests.post(f'{_HUB_BASE_URL}/api/compartido/subir',
-                                  headers=_hub_headers(),
-                                  data=json.dumps(payload, ensure_ascii=False),
-                                  timeout=15)
-                return jsonify(r.json())
-            except Exception as e:
-                return jsonify({'ok': False, 'error': str(e)}), 502
+def _registrar(slug, archivo_id, tipo, nombre, accion):
+    """Upsert en el log local `compartido_importado` + invalida el count cacheado."""
+    usuario = getattr(current_user, 'username', None) or getattr(current_user, 'nombre', None)
+    with get_db() as session:
+        ex = session.query(CompartidoImportado).filter_by(
+            origen_slug=slug, archivo_id=archivo_id).first()
+        if ex:
+            ex.accion, ex.usuario, ex.creado_en = accion, usuario, now_ar()
+            if tipo:   ex.tipo = tipo
+            if nombre: ex.nombre = nombre
         else:
-            return jsonify({'ok': False, 'error': 'HUB_BASE_URL o HUB_TOKEN no configurados'}), 503
+            session.add(CompartidoImportado(
+                origen_slug=slug, archivo_id=archivo_id, tipo=tipo or None,
+                nombre=nombre or None, accion=accion, usuario=usuario, creado_en=now_ar()))
+        session.commit()
+    compartido_sync._count_cache['ts'] = 0.0
 
 
 def _importar_items(tipo, nombre, items):
-    """Importa items al modelo local según tipo. Retorna n registros o None si tipo inválido."""
+    """Importa items al modelo local según tipo. n registros o None si tipo inválido."""
     if tipo == 'oferta_minimo':
         return _importar_oferta_minimo(items)
     return None
@@ -256,10 +170,8 @@ def _importar_oferta_minimo(items):
                 continue
             existing = session.query(OfertaMinimo).filter_by(
                 ean=ean, laboratorio_id=lab_id, tipo_descuento=tipo_d).first()
-            if existing:
-                obj = existing
-            else:
-                obj = OfertaMinimo(ean=ean, laboratorio_id=lab_id, tipo_descuento=tipo_d)
+            obj = existing or OfertaMinimo(ean=ean, laboratorio_id=lab_id, tipo_descuento=tipo_d)
+            if not existing:
                 session.add(obj)
             obj.descripcion     = it.get('descripcion')
             obj.codigo          = it.get('codigo')

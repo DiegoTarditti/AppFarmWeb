@@ -3,287 +3,287 @@
 
 {% block title %}Laboratorios — Farmacia{% endblock %}
 
+{% block body_class %}theme-emerald{% endblock %}
+
 {% block extra_head %}
 <style>
-    /* Paleta verde + amarillo + negro */
-    .lab-card {
-        background: #ffffff;
-        border: 1px solid #cfe3d6;
-        border-radius: 14px;
-        overflow: hidden;
-        transition: box-shadow .15s, border-color .15s, transform .15s;
+    .lab-table { width: 100%; border-collapse: collapse; }
+    .lab-table thead th {
+        text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+        color: var(--ds-text-mute); font-weight: 600;
+        padding: 7px 14px; border-bottom: 1px solid var(--ds-line);
+        position: sticky; top: 0; background: var(--ds-surface); z-index: 2;
     }
-    .lab-card:hover { box-shadow: 0 6px 18px rgba(30,60,40,.08); border-color: #7fb99f; }
-    .lab-card .band {
-        background: #1f2937;
-        color: #F4C430;
-        padding: 10px 16px;
-        display: flex; align-items: center; gap: 10px;
-        border-bottom: 2px solid #2E7D5B;
+    .lab-table tbody tr.lab-view { border-bottom: 1px solid var(--ds-line); }
+    .lab-table tbody tr.lab-view:hover { background: rgba(95,230,188,.04); }
+    .lab-table td { padding: 6px 14px; font-size: 13px; color: var(--ds-text); vertical-align: middle; }
+    .lab-name { font-weight: 600; }
+    .lab-idtag {
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 10px; color: var(--ds-mint);
+        background: rgba(95,230,188,.10); border: 1px solid var(--ds-line);
+        padding: 1px 6px; border-radius: 999px; margin-left: 8px;
     }
-    .lab-card .band .idtag {
-        font-size: 10px; font-weight: 600;
-        color: #A8D5BA;
-        background: rgba(46,125,91,.25);
-        border: 1px solid #2E7D5B;
-        padding: 1px 6px; border-radius: 99px;
-        margin-left: auto;
+    .lab-packs-badge {
+        font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 5px;
+        background: rgba(95,230,188,.18); color: var(--ds-mint); margin-left: 6px;
     }
-    .lab-card .body { padding: 10px 16px; }
+    .lab-actions { display: flex; gap: 1px; flex-wrap: wrap; justify-content: flex-end; }
+
     .action-link {
-        display: inline-flex; align-items: center; gap: 5px;
-        padding: 4px 9px; border-radius: 8px;
-        font-size: 12px; font-weight: 500; color: #555;
-        transition: background .12s, color .12s;
+        display: inline-flex; align-items: center; gap: 4px;
+        padding: 3px 7px; border-radius: var(--ds-r-sm);
+        font-size: 11.5px; font-weight: 500;
+        color: var(--ds-text-soft); background: transparent;
+        border: 1px solid transparent; cursor: pointer;
+        transition: all .15s; text-decoration: none; white-space: nowrap;
     }
-    .action-link:hover { background: #E8F3ED; color: #1F5D40; }
-    .action-link.danger:hover { background: #FEE2E2; color: #B91C1C; }
-    .stat-pill {
-        display: inline-flex; align-items: center; gap: 5px;
-        padding: 3px 9px; border-radius: 99px;
-        font-size: 11px; font-weight: 600;
-        background: #FFF7DC; color: #92630b;
-        border: 1px solid #F4C430;
+    .action-link:hover { background: rgba(95,230,188,.1); color: var(--ds-mint); }
+    .action-link.danger:hover { background: rgba(239,68,68,.1); color: var(--ds-danger); }
+    .action-link.violet:hover { background: rgba(139,92,246,.12); color: #C4B5FD; }
+
+    .filter-bar {
+        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+        border: 1px solid var(--ds-line);
+        border-radius: var(--ds-r-lg);
+        padding: 14px 18px;
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
     }
-    .stat-pill .num { color: #1a1100; font-weight: 700; }
+    .filter-bar .search-wrap { position: relative; flex: 1; min-width: 240px; }
+    .filter-bar .search-wrap svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--ds-text-mute); pointer-events: none; }
+    .filter-bar .search-input {
+        width: 100%;
+        background: var(--ds-surface); border: 1px solid var(--ds-line);
+        color: var(--ds-text); border-radius: var(--ds-r-md);
+        padding: 8px 10px 8px 34px; font-size: 13px;
+    }
+    .filter-bar .search-input:focus { outline: none; border-color: var(--ds-mint); box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+    .filter-bar .search-input::placeholder { color: var(--ds-text-mute); }
+
+    .add-form {
+        background: linear-gradient(135deg, rgba(95,230,188,.08) 0%, rgba(16,185,129,.04) 100%);
+        border: 1px solid rgba(95,230,188,.3);
+        border-radius: var(--ds-r-lg);
+        padding: 14px 18px;
+        display: flex; flex-wrap: wrap; align-items: end; gap: 12px;
+    }
+    .empty-state { padding: 48px 24px; text-align: center; color: var(--ds-text-soft); font-size: 14px; }
+    .list-note { font-size: 11px; color: var(--ds-text-mute); padding: 2px 2px 0; }
 </style>
 {% endblock %}
 
 {% block main %}
-<!-- Header sticky -->
-<div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
-    <h1 class="text-base font-bold text-[#1e1e1e]">Laboratorios</h1>
-    <span class="text-xs text-[#6f6f6f]" id="lab-count">{{ laboratorios|length }} laboratorio{{ 's' if laboratorios|length != 1 }}</span>
-    <span id="lab-count-filtered" class="text-xs text-[#6f6f6f] hidden"></span>
-    <div class="ml-auto flex items-center gap-2">
-        {% if observer_disponible %}
-        <form method="post" action="{{ url_for('laboratorios_sync_observer') }}"
-              onsubmit="return confirm('Sincronizar laboratorios desde ObServer?\nLos nuevos se agregarán como inactivos.');">
-            <button type="submit"
-                    class="text-sm bg-[#2E7D5B] hover:bg-[#1F5D40] text-white font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-                    title="Vincula los laboratorios locales con el espejo de ObServer">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                Sync ObServer
-            </button>
-        </form>
-        {% endif %}
-        <a href="{{ url_for('laboratorios_activos') }}"
-           class="text-sm text-[#6f6f6f] hover:text-[#1e1e1e] border border-surface-border px-3 py-1.5 rounded-lg transition-colors">
-            Activar / desactivar
-        </a>
-        <a href="{{ url_for('modulo_packs_list') }}"
-           class="bg-brand hover:bg-brand-hover text-brand-dark text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors">
-            Packs de módulos
-        </a>
-        <a href="{{ url_for('modulos_import_page') }}"
-           class="bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors">
-            Importar módulos
-        </a>
-    </div>
-</div>
+<div class="flex-1 overflow-auto py-6 px-6">
+    <div class="max-w-6xl mx-auto">
 
-<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
-
-    {% with messages = get_flashed_messages() %}
-        {% if messages %}
-        <div class="bg-amber-50 border border-amber-300 text-amber-800 rounded-xl px-4 py-3 text-sm">
-            {{ messages[0] }}
-        </div>
-        {% endif %}
-    {% endwith %}
-
-    <!-- Filtro a la izquierda · Agregar a la derecha (separado para no confundir) -->
-    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-start gap-4 flex-wrap">
-        {# Izquierda: buscador multi-token + checkbox matriz #}
-        <div class="flex-1 min-w-[260px] space-y-2">
-            <div class="relative">
-                <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#999]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                          d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15z"/>
-                </svg>
-                <input type="text" id="lab-filter" placeholder='🔎 Buscar laboratorio (multi-token: "bayer cons" → tiene ambos)'
-                       oninput="filterLabs()" autocomplete="off"
-                       class="w-full bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg pl-10 pr-10 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                <button type="button" onclick="clearLabFilter()"
-                        class="absolute right-2 top-1/2 -translate-y-1/2 text-[#999] hover:text-[#1e1e1e] text-sm px-2 py-1 rounded hidden" id="lab-filter-clear">✕</button>
+        <!-- Page header -->
+        <header class="page-header">
+            <div class="page-header__left">
+                <span class="section-label">Gestión</span>
+                <h1 class="page-header__title"><span class="glow-text">Laboratorios</span></h1>
+                <p class="page-header__subtitle">
+                    <span id="lab-count">{{ laboratorios|length }}</span>
+                    laboratorio<span>{{ 's' if laboratorios|length != 1 }}</span>
+                </p>
             </div>
-            <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none">
-                <input type="checkbox" id="filtro-matriz" class="w-3.5 h-3.5" onchange="filterLabs()">
+            <div class="page-header__actions">
+                {% if observer_disponible %}
+                <form method="post" action="{{ url_for('laboratorios_sync_observer') }}"
+                      onsubmit="return confirm('Sincronizar laboratorios desde ObServer?\nLos nuevos se agregarán como inactivos.');">
+                    <button type="submit" class="btn btn-secondary btn-sm" title="Vincula los laboratorios locales con el espejo de ObServer">
+                        🔄 Sync ObServer
+                    </button>
+                </form>
+                {% endif %}
+                <a href="{{ url_for('laboratorios_activos') }}" class="btn btn-secondary btn-sm">Activar / desactivar</a>
+                <a href="{{ url_for('modulo_packs_list') }}" class="btn btn-secondary btn-sm">Packs de módulos</a>
+                <a href="{{ url_for('modulos_import_page') }}" class="btn btn-secondary btn-sm" style="color:#C4B5FD;">Importar módulos</a>
+                <button type="button" onclick="document.getElementById('form-add-lab').classList.toggle('hidden')"
+                        class="btn btn-primary btn-sm">+ Agregar</button>
+            </div>
+        </header>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+            <div class="card mb-4" style="background:rgba(245,158,11,.10); border-color:rgba(245,158,11,.3); color:#FCD34D; padding:10px 14px; font-size:13px;">
+                {{ messages[0] }}
+            </div>
+            {% endif %}
+        {% endwith %}
+
+        <!-- Filtros -->
+        <div class="filter-bar mb-4">
+            <div class="search-wrap">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M10 18a8 8 0 100-16 8 8 0 000 16z"/>
+                </svg>
+                <input type="text" id="lab-filter" autocomplete="off"
+                       placeholder='🔎 Buscar laboratorio (multi-token: "bayer cons" → tiene ambos)'
+                       oninput="filterLabs()" class="search-input">
+            </div>
+            <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none" style="color:var(--ds-text-soft);">
+                <input type="checkbox" id="filtro-matriz" onchange="filterLabs()" style="accent-color:var(--ds-mint);">
                 Solo en matriz pedidos
             </label>
         </div>
-        {# Derecha: agregar nuevo lab, separado con borde y label propio #}
-        <form method="post" action="{{ url_for('laboratorio_create') }}"
-              class="flex flex-col gap-1.5 border-l border-surface-border pl-4">
-            <span class="text-[10px] uppercase tracking-wide font-semibold text-[#999]">Nuevo laboratorio</span>
-            <div class="flex gap-2">
-                <input type="text" name="nombre" placeholder="Nombre del lab" required
-                       class="bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-2 text-sm w-52 focus:outline-none focus:ring-2 focus:ring-brand">
-                <button type="submit"
-                    class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm px-4 py-2 rounded-lg transition-colors whitespace-nowrap">
-                    + Agregar
-                </button>
+
+        <!-- Form alta -->
+        <form id="form-add-lab" method="post" action="{{ url_for('laboratorio_create') }}" class="add-form hidden mb-4">
+            <div class="flex-1 min-w-[220px]">
+                <label class="ds-label">Nuevo laboratorio</label>
+                <input type="text" name="nombre" placeholder="Nombre del lab" required class="ds-input">
             </div>
+            <button type="submit" class="btn btn-mint">+ Agregar</button>
+            <button type="button" onclick="document.getElementById('form-add-lab').classList.add('hidden')"
+                    class="btn btn-ghost btn-sm">Cancelar</button>
         </form>
-    </div>
 
-    <!-- Lista -->
-    {% if laboratorios %}
-    <div class="space-y-3">
-        {% for lab in laboratorios %}
-        <div class="lab-card lab-row" data-nombre="{{ lab.nombre | lower }}" data-matriz="{{ 'y' if lab.en_matriz else 'n' }}" id="lab-row-{{ lab.id }}">
-            <div id="lab-view-{{ lab.id }}">
-                <div class="band">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                              d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
-                    </svg>
-                    <span class="font-bold text-sm">{{ lab.nombre }}</span>
-                    {% if lab.usa_packs %}
-                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:rgba(95,230,188,.18); color:#5fe6bc;" title="Usa packs — habilita Cargar Packs en Compras Laboratorio">📦 packs</span>
-                    {% endif %}
-                    <span class="idtag">#{{ lab.id }}</span>
-                </div>
-                <div class="body">
-                    <div class="flex items-center gap-1 flex-wrap">
-                        <label class="flex items-center gap-1 text-xs cursor-pointer select-none px-2 py-1 rounded border border-surface-border hover:bg-black/[0.03] mr-1"
-                               title="Si el lab usa packs, habilita 'Cargar Packs' en Compras Laboratorio.">
-                            <input type="checkbox" class="w-3.5 h-3.5" {% if lab.usa_packs %}checked{% endif %}
-                                   onchange="toggleUsaPacks({{ lab.id }}, this)">
-                            📦 Usa packs
-                        </label>
-                        <a href="{{ url_for('modulo_packs_list') }}?lab={{ lab.nombre }}" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/>
-                            </svg>
-                            Módulos
-                        </a>
-                        <a href="{{ url_for('lab_ofertas_minimo', lab_id=lab.id) }}" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-                            </svg>
-                            Ofertas
-                        </a>
-                        <button onclick="openOfertasModal({{ lab.id }}, '{{ lab.nombre }}', true)" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-                            </svg>
-                            Ofertas c/mín.
-                        </button>
-                        <a href="{{ url_for('lab_ofertas_minimo', lab_id=lab.id) }}" class="action-link" title="Ver/editar ofertas c/mínimo guardadas">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                            </svg>
-                            Ver guardadas
-                        </a>
-                        <a href="{{ url_for('plantillas_list', tipo='laboratorio', id=lab.id) }}" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
-                            Plantillas
-                        </a>
-                        <a href="{{ url_for('lab_equivalencias', lab_id=lab.id) }}" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
-                            </svg>
-                            Equivalencias
-                        </a>
-
-                        <span class="flex-1"></span>
-
-                        <button onclick="openLabEdit({{ lab.id }})" class="action-link">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-                            </svg>
-                            Renombrar
-                        </button>
-                        <form method="post" action="{{ url_for('laboratorio_delete', lab_id=lab.id) }}"
-                              onsubmit="return confirm('¿Eliminar laboratorio «{{ lab.nombre }}»? Los productos quedarán sin laboratorio asignado.')">
-                            <button type="submit" class="action-link danger">
-                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M10 7V4a1 1 0 011-1h2a1 1 0 011 1v3"/>
-                                </svg>
-                                Eliminar
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            </div>
-            <form id="lab-edit-{{ lab.id }}" class="hidden flex items-center gap-2 px-4 py-3"
-                  method="post" action="{{ url_for('laboratorio_edit', lab_id=lab.id) }}">
-                <input type="text" name="nombre" value="{{ lab.nombre }}" required
-                       class="flex-1 bg-surface-input border border-surface-border text-[#1e1e1e] rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand">
-                <label class="flex items-center gap-1.5 text-xs text-[#555] cursor-pointer select-none whitespace-nowrap"
-                       title="Si el lab maneja packs, habilita 'Cargar Packs' en Compras Laboratorio.">
-                    <input type="checkbox" name="usa_packs" value="1" class="w-3.5 h-3.5" {% if lab.usa_packs %}checked{% endif %}>
-                    📦 Usa packs
-                </label>
-                <button type="submit"
-                    class="text-xs bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-3 py-1.5 rounded-lg transition-colors">
-                    Guardar
-                </button>
-                <button type="button" onclick="closeLabEdit({{ lab.id }})"
-                    class="text-xs text-[#6f6f6f] hover:text-[#1e1e1e] px-3 py-1.5 rounded-lg border border-surface-border transition-colors">
-                    Cancelar
-                </button>
-            </form>
+        {% if laboratorios %}
+        <p class="list-note mb-1" id="lab-list-note"></p>
+        <div class="card" style="padding:0; overflow:hidden;">
+            <table class="lab-table">
+                <thead><tr>
+                    <th>Laboratorio</th>
+                    <th style="text-align:center; width:64px;">Packs</th>
+                    <th style="text-align:right;">Acciones</th>
+                </tr></thead>
+                <tbody id="lab-list"></tbody>
+            </table>
         </div>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="bg-white border border-dashed border-surface-border rounded-xl px-6 py-12 text-center text-sm text-[#999]">
-        No hay laboratorios registrados.
-    </div>
-    {% endif %}
+        {% else %}
+        <div class="card empty-state">No hay laboratorios registrados.</div>
+        {% endif %}
 
+    </div>
 </div>
 
-<!-- Modal Ofertas -->
-<div id="ofertas-modal" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-4 max-h-[90vh] flex flex-col">
+<!-- Modal Ofertas c/mín -->
+<div id="ofertas-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,.55);">
+    <div class="card" style="width:100%; max-width:56rem; max-height:90vh; display:flex; flex-direction:column; gap:14px; padding:22px;">
         <div class="flex items-center justify-between">
             <div>
-                <p id="ofertas-modal-title" class="font-bold text-[#1e1e1e]">Importar ofertas</p>
-                <p id="ofertas-modal-lab" class="text-xs text-[#6f6f6f] mt-0.5"></p>
+                <p id="ofertas-modal-title" class="font-bold" style="color:var(--ds-text);">Ofertas con cantidad mínima</p>
+                <p id="ofertas-modal-lab" class="text-xs mt-0.5" style="color:var(--ds-text-mute);"></p>
             </div>
-            <button onclick="closeOfertasModal()" class="text-[#999] hover:text-[#1e1e1e] transition-colors">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
+            <button onclick="closeOfertasModal()" class="action-link">✕</button>
         </div>
-
-        <div id="ofertas-modal-desc" class="text-sm text-[#555] bg-[#f5f5f5] rounded-xl px-4 py-3"></div>
-
+        <div id="ofertas-modal-desc" class="text-sm" style="color:var(--ds-text-soft); background:rgba(0,0,0,.2); border-radius:var(--ds-r-md); padding:12px 14px;"></div>
         <form id="ofertas-form" class="space-y-3">
             <input type="hidden" id="ofertas-lab-id" name="lab_id">
-            <input type="hidden" id="ofertas-con-minimo" name="con_minimo">
+            <input type="hidden" id="ofertas-con-minimo" name="con_minimo" value="1">
             <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-medium text-[#555]">Archivo Excel (.xlsx / .xls)</label>
-                <input type="file" name="archivo" accept=".xlsx,.xls" required
-                       class="text-sm text-[#1e1e1e] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-brand file:text-brand-dark hover:file:bg-brand-hover cursor-pointer">
+                <label class="ds-label">Archivo Excel (.xlsx / .xls)</label>
+                <input type="file" name="archivo" accept=".xlsx,.xls" required class="ds-input">
             </div>
             <div class="flex gap-2 pt-1">
-                <button type="submit"
-                        class="flex-1 bg-brand hover:bg-brand-hover text-brand-dark font-semibold text-sm py-2 rounded-xl transition-colors">
-                    Importar y previsualizar
-                </button>
-                <button type="button" onclick="closeOfertasModal()"
-                        class="px-4 py-2 text-sm text-[#555] border border-surface-border rounded-xl hover:bg-[#f5f5f5] transition-colors">
-                    Cancelar
-                </button>
+                <button type="submit" class="btn btn-mint" style="flex:1;">Importar y previsualizar</button>
+                <button type="button" onclick="closeOfertasModal()" class="btn btn-ghost btn-sm">Cancelar</button>
             </div>
         </form>
-
-        <div id="ofertas-result" class="hidden overflow-y-auto flex-1"></div>
+        <div id="ofertas-result" class="hidden overflow-y-auto" style="flex:1;"></div>
     </div>
 </div>
 
 <script>
-// Toggle directo de "usa packs" en cada card (guarda al instante, sin form).
+const LABS = {{ laboratorios|tojson }};
+const LABS_BY_ID = {};
+LABS.forEach(l => { l._n = _norm(l.nombre); LABS_BY_ID[l.id] = l; });
+
+// Plantillas de URL (id sentinel 12345 → reemplazo por id real; url_for es la fuente).
+const U = {
+    ofmin:      "{{ url_for('lab_ofertas_minimo', lab_id=12345) }}",
+    plantillas: "{{ url_for('plantillas_list', tipo='laboratorio', id=12345) }}",
+    equiv:      "{{ url_for('lab_equivalencias', lab_id=12345) }}",
+    edit:       "{{ url_for('laboratorio_edit', lab_id=12345) }}",
+    del:        "{{ url_for('laboratorio_delete', lab_id=12345) }}",
+    packs:      "{{ url_for('modulo_packs_list') }}",
+};
+function u(tpl, id) { return U[tpl].replace('12345', id); }
+
+function _norm(s) {
+    return (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+}
+function esc(s) {
+    return (s || '').toString().replace(/[&<>"']/g, c =>
+        ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+const CAP = 200;   // máx. filas renderadas a la vez (perf con 2000 labs)
+const INICIAL = 100;
+
+function renderLab(lab) {
+    const id = lab.id, nombre = esc(lab.nombre);
+    const packsBadge = lab.usa_packs ? '<span class="lab-packs-badge" title="Usa packs">packs</span>' : '';
+    return `
+    <tr class="lab-view" id="lab-view-${id}">
+      <td><span class="lab-name">${nombre}</span>${packsBadge}<span class="lab-idtag">#${id}</span></td>
+      <td style="text-align:center;">
+        <input type="checkbox" ${lab.usa_packs ? 'checked' : ''} onchange="toggleUsaPacks(${id}, this)"
+               style="accent-color:var(--ds-mint);" title="Usa packs — habilita 'Cargar Packs' en Compras Laboratorio">
+      </td>
+      <td>
+        <div class="lab-actions">
+          <a href="${u('packs', id)}?lab=${encodeURIComponent(lab.nombre)}" class="action-link">🧩 Módulos</a>
+          <a href="${u('ofmin', id)}" class="action-link">🏷️ Ofertas</a>
+          <button onclick="openOfertasModal(${id})" class="action-link">📋 Importar c/mín</button>
+          <a href="${u('plantillas', id)}" class="action-link violet">📄 Plantillas</a>
+          <a href="${u('equiv', id)}" class="action-link">🔀 Equiv.</a>
+          <button onclick="openLabEdit(${id})" class="action-link">✏️ Renombrar</button>
+          <button onclick="delLab(${id})" class="action-link danger" title="Eliminar">🗑️</button>
+        </div>
+      </td>
+    </tr>
+    <tr id="lab-edit-${id}" style="display:none;">
+      <td colspan="3" style="background:rgba(95,230,188,.05);">
+        <form method="post" action="${u('edit', id)}" style="display:flex; align-items:center; gap:8px;">
+          <input type="text" name="nombre" value="${nombre}" required class="ds-input" style="flex:1;">
+          <label class="action-link" style="white-space:nowrap;">
+            <input type="checkbox" name="usa_packs" value="1" ${lab.usa_packs ? 'checked' : ''} style="accent-color:var(--ds-mint);">📦 Usa packs
+          </label>
+          <button type="submit" class="btn btn-mint btn-sm">Guardar</button>
+          <button type="button" onclick="closeLabEdit(${id})" class="btn btn-ghost btn-sm">Cancelar</button>
+        </form>
+      </td>
+    </tr>`;
+}
+
+// ── Render con cap + buscar ──────────────────────────────────────────────
+let _filterTimer = null;
+function filterLabs() {
+    clearTimeout(_filterTimer);
+    _filterTimer = setTimeout(_renderList, 120);
+}
+function _renderList() {
+    const raw = document.getElementById('lab-filter').value;
+    const tokens = _norm(raw).replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
+    const soloMatriz = document.getElementById('filtro-matriz').checked;
+    const buscando = tokens.length > 0 || soloMatriz;
+
+    const match = [];
+    let totalMatch = 0;
+    for (const lab of LABS) {
+        if (soloMatriz && !lab.en_matriz) continue;
+        if (tokens.length && !tokens.every(t => lab._n.includes(t))) continue;
+        totalMatch++;
+        if (match.length < CAP) match.push(lab);
+    }
+    // Sin búsqueda: mostramos solo los primeros INICIAL.
+    const toRender = buscando ? match : match.slice(0, INICIAL);
+    document.getElementById('lab-list').innerHTML = toRender.map(renderLab).join('');
+
+    const note = document.getElementById('lab-list-note');
+    if (!buscando && totalMatch > INICIAL) {
+        note.textContent = `Mostrando ${INICIAL} de ${totalMatch} — escribí para buscar entre todos.`;
+    } else if (totalMatch > CAP) {
+        note.textContent = `${totalMatch} coinciden — mostrando ${CAP}. Afiná la búsqueda.`;
+    } else if (buscando) {
+        note.textContent = `${totalMatch} resultado${totalMatch !== 1 ? 's' : ''}.`;
+    } else {
+        note.textContent = `${totalMatch} laboratorio${totalMatch !== 1 ? 's' : ''}.`;
+    }
+}
+
+// ── Acciones ──────────────────────────────────────────────────────────────
 async function toggleUsaPacks(labId, chk) {
     const prev = !chk.checked;
     try {
@@ -292,200 +292,114 @@ async function toggleUsaPacks(labId, chk) {
             body: JSON.stringify({usa_packs: chk.checked}),
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (LABS_BY_ID[labId]) LABS_BY_ID[labId].usa_packs = chk.checked;
     } catch (e) {
-        chk.checked = prev;  // revertir si fall\u00f3
+        chk.checked = prev;
         alert('No se pudo guardar: ' + e.message);
     }
 }
-
-function _normFilter(s) {
-    return (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
-}
-// Cache de filas + nombre normalizado precomputado (evita querySelectorAll +
-// re-normalizar 2000 veces por tecla). Se arma 1 vez (lazy).
-let _labRowsCache = null;
-function _buildLabCache() {
-    _labRowsCache = Array.from(document.querySelectorAll('.lab-row')).map(el => ({
-        el,
-        nombre: _normFilter(el.dataset.nombre),
-        matriz: el.dataset.matriz === 'y',
-    }));
-}
-// Debounce: filtra ~120ms después de la última tecla (no en cada pulsación).
-let _labFilterTimer = null;
-function filterLabs() {
-    clearTimeout(_labFilterTimer);
-    _labFilterTimer = setTimeout(_filterLabsNow, 120);
-}
-function _filterLabsNow() {
-    if (!_labRowsCache) _buildLabCache();
-    const raw = document.getElementById('lab-filter').value;
-    const tokens = _normFilter(raw).replace(/\+/g, ' ').split(/\s+/).filter(Boolean);
-    document.getElementById('lab-filter-clear').classList.toggle('hidden', tokens.length === 0);
-    const soloMatriz = document.getElementById('filtro-matriz').checked;
-    let visible = 0;
-    for (const r of _labRowsCache) {
-        const matchNombre = tokens.length === 0 || tokens.every(t => r.nombre.includes(t));
-        const match = matchNombre && (!soloMatriz || r.matriz);
-        // Solo tocar el DOM si el estado cambia (evita reflows innecesarios).
-        if (r.el.classList.contains('hidden') === match) {
-            r.el.classList.toggle('hidden', !match);
-        }
-        if (match) visible++;
-    }
-    const filteredEl = document.getElementById('lab-count-filtered');
-    if (tokens.length) {
-        filteredEl.textContent = `· ${visible} visible${visible !== 1 ? 's' : ''}`;
-        filteredEl.classList.remove('hidden');
-    } else {
-        filteredEl.classList.add('hidden');
-    }
-}
-function clearLabFilter() {
-    document.getElementById('lab-filter').value = '';
-    filterLabs();
-    document.getElementById('lab-filter').focus();
-}
-
 function openLabEdit(id) {
-    document.getElementById('lab-view-' + id).classList.add('hidden');
-    document.getElementById('lab-edit-' + id).classList.remove('hidden');
+    document.getElementById('lab-view-' + id).style.display = 'none';
+    document.getElementById('lab-edit-' + id).style.display = '';
 }
 function closeLabEdit(id) {
-    document.getElementById('lab-edit-' + id).classList.add('hidden');
-    document.getElementById('lab-view-' + id).classList.remove('hidden');
+    document.getElementById('lab-edit-' + id).style.display = 'none';
+    document.getElementById('lab-view-' + id).style.display = '';
+}
+function delLab(id) {
+    const lab = LABS_BY_ID[id];
+    if (!confirm(`¿Eliminar laboratorio «${lab.nombre}»? Los productos quedarán sin laboratorio asignado.`)) return;
+    const f = document.createElement('form');
+    f.method = 'post'; f.action = u('del', id);
+    document.body.appendChild(f); f.submit();
 }
 
-function openOfertasModal(labId, labNombre, conMinimo) {
+// ── Modal Ofertas c/mín ─────────────────────────────────────────────────
+function openOfertasModal(labId) {
+    const lab = LABS_BY_ID[labId];
     document.getElementById('ofertas-lab-id').value = labId;
-    document.getElementById('ofertas-con-minimo').value = conMinimo ? '1' : '0';
-    document.getElementById('ofertas-modal-lab').textContent = labNombre;
-    document.getElementById('ofertas-modal-title').textContent =
-        conMinimo ? 'Ofertas con cantidad mínima' : 'Ofertas simples';
-    document.getElementById('ofertas-modal-desc').textContent = conMinimo
-        ? 'Excel con columnas: Código de barra, Producto, Unidades mínima, Descuento PSL, Rentabilidad, Plazo de pago. Grupos separados por filas vacías.'
-        : 'Excel con códigos de barra y descripciones de productos en oferta.';
+    document.getElementById('ofertas-modal-lab').textContent = lab ? lab.nombre : '';
+    document.getElementById('ofertas-modal-desc').textContent =
+        'Excel con columnas: Código de barra, Producto, Unidades mínima, Descuento PSL, Rentabilidad, Plazo de pago. Grupos separados por filas vacías.';
     document.getElementById('ofertas-result').classList.add('hidden');
     document.getElementById('ofertas-form').classList.remove('hidden');
     document.getElementById('ofertas-modal').classList.remove('hidden');
 }
-
 function closeOfertasModal() {
     document.getElementById('ofertas-modal').classList.add('hidden');
 }
-
 document.getElementById('ofertas-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     const btn = this.querySelector('button[type=submit]');
-    btn.disabled = true;
-    btn.textContent = 'Procesando…';
-
+    btn.disabled = true; btn.textContent = 'Procesando…';
     const fd = new FormData(this);
-    const conMinimo = fd.get('con_minimo') === '1';
     const labId = fd.get('lab_id');
-    const url = conMinimo ? '/api/ofertas/preview-con-minimo' : '/api/ofertas/preview';
-
     try {
-        const res = await fetch(url, { method: 'POST', body: fd });
+        const res = await fetch('/api/ofertas/preview-con-minimo', { method: 'POST', body: fd });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error desconocido');
-
         const resultDiv = document.getElementById('ofertas-result');
         resultDiv.classList.remove('hidden');
         document.getElementById('ofertas-form').classList.add('hidden');
-
         const items = data.items || [];
         const grupos = data.grupos || null;
-
-        let html = `<p class="text-sm font-semibold text-[#1e1e1e] mb-2">${items.length} producto${items.length !== 1 ? 's' : ''} importado${items.length !== 1 ? 's' : ''}`;
+        let html = `<p class="text-sm font-semibold mb-2" style="color:var(--ds-text);">${items.length} producto${items.length !== 1 ? 's' : ''} importado${items.length !== 1 ? 's' : ''}`;
         if (grupos) html += ` · ${grupos} grupo${grupos !== 1 ? 's' : ''} con mínimo compartido`;
-        html += '</p>';
-
-        html += '<div class="overflow-auto border border-surface-border rounded-xl text-xs" style="max-height:60vh">';
-        html += '<table class="w-full">';
-        if (conMinimo) {
-            html += '<thead><tr><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th><th class="text-right px-3 py-2">Mín.</th><th class="text-right px-3 py-2">Dto.</th><th class="text-right px-3 py-2">Gpo.</th></tr></thead><tbody>';
-            for (const it of items) {
-                const gpo = it.grupo_id != null ? `<span class="bg-blue-100 text-blue-700 rounded px-1">${it.grupo_id}</span>` : '';
-                html += `<tr class="border-t border-surface-border"><td class="px-3 py-1.5 font-mono">${it.ean}</td><td class="px-3 py-1.5 truncate max-w-[180px]">${it.descripcion}</td><td class="px-3 py-1.5 text-right">${it.unidades_minima ?? '—'}</td><td class="px-3 py-1.5 text-right">${it.descuento_psl != null ? it.descuento_psl + '%' : '—'}</td><td class="px-3 py-1.5 text-right">${gpo}</td></tr>`;
-            }
-        } else {
-            html += '<thead><tr><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th></tr></thead><tbody>';
-            for (const it of items) {
-                html += `<tr class="border-t border-surface-border"><td class="px-3 py-1.5 font-mono">${it.ean}</td><td class="px-3 py-1.5">${it.descripcion}</td></tr>`;
-            }
+        html += '</p><div class="overflow-auto" style="max-height:60vh; border:1px solid var(--ds-line); border-radius:var(--ds-r-md);"><table class="w-full text-xs"><thead><tr style="color:var(--ds-text-mute);"><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th><th class="text-right px-3 py-2">Mín.</th><th class="text-right px-3 py-2">Dto.</th><th class="text-right px-3 py-2">Gpo.</th></tr></thead><tbody>';
+        for (const it of items) {
+            const gpo = it.grupo_id != null ? `<span style="background:rgba(95,230,188,.15); color:var(--ds-mint); border-radius:4px; padding:0 5px;">${it.grupo_id}</span>` : '';
+            html += `<tr style="border-top:1px solid var(--ds-line);"><td class="px-3 py-1.5 font-mono">${esc(it.ean)}</td><td class="px-3 py-1.5">${esc(it.descripcion)}</td><td class="px-3 py-1.5 text-right">${it.unidades_minima ?? '—'}</td><td class="px-3 py-1.5 text-right">${it.descuento_psl != null ? it.descuento_psl + '%' : '—'}</td><td class="px-3 py-1.5 text-right">${gpo}</td></tr>`;
         }
         html += '</tbody></table></div>';
-        if (conMinimo) {
-            html += `<button onclick="guardarOfertasMinimo(${labId})" id="btn-guardar-ofmin"
-                class="mt-3 w-full text-sm font-semibold bg-brand hover:bg-brand-hover text-brand-dark rounded-xl py-2 transition-colors">
-                Guardar en sistema para este laboratorio</button>`;
-            html += `<button onclick="compartirOfertasGrupo(${labId})" id="btn-compartir-ofmin"
-                class="mt-2 w-full text-sm font-semibold border border-emerald-600 text-emerald-600 rounded-xl py-2 hover:bg-emerald-50 transition-colors">
-                🔄 Compartir con el grupo</button>`;
-        }
-        html += '<button onclick="closeOfertasModal()" class="mt-2 w-full text-sm text-[#555] border border-surface-border rounded-xl py-2 hover:bg-[#f5f5f5] transition-colors">Cerrar</button>';
+        html += `<button onclick="guardarOfertasMinimo(${labId})" id="btn-guardar-ofmin" class="btn btn-mint mt-3" style="width:100%;">Guardar en sistema para este laboratorio</button>`;
+        html += `<button onclick="compartirConGrupo(${labId})" id="btn-compartir-ofmin" class="btn btn-secondary btn-sm mt-2" style="width:100%;">🔄 Compartir con el grupo</button>`;
+        html += '<button onclick="closeOfertasModal()" class="btn btn-ghost btn-sm mt-2" style="width:100%;">Cerrar</button>';
         resultDiv.innerHTML = html;
         resultDiv._items = items;
     } catch (err) {
         alert('Error: ' + err.message);
     } finally {
-        btn.disabled = false;
-        btn.textContent = 'Importar y previsualizar';
+        btn.disabled = false; btn.textContent = 'Importar y previsualizar';
     }
 });
-
 async function guardarOfertasMinimo(labId) {
     const btn = document.getElementById('btn-guardar-ofmin');
     const items = document.getElementById('ofertas-result')._items;
     if (!items || !items.length) return;
-    btn.disabled = true;
-    btn.textContent = 'Guardando…';
+    btn.disabled = true; btn.textContent = 'Guardando…';
     try {
         const res = await fetch(`/api/laboratorio/${labId}/ofertas-minimo`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ items }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error');
         btn.textContent = `✓ Guardado (${data.guardados} productos)`;
-        btn.className = btn.className.replace('bg-brand hover:bg-brand-hover text-brand-dark', 'bg-emerald-600 text-white');
     } catch (err) {
-        btn.textContent = 'Error: ' + err.message;
-        btn.disabled = false;
+        btn.textContent = 'Error: ' + err.message; btn.disabled = false;
     }
 }
-
-async function compartirOfertasGrupo(labId) {
+async function compartirConGrupo(labId) {
     const btn = document.getElementById('btn-compartir-ofmin');
     const items = document.getElementById('ofertas-result')._items;
     if (!items || !items.length) return;
-    const labNombre = document.querySelector(`[data-lab-id="${labId}"] .lab-nombre`)?.textContent?.trim()
-                   || `Lab ${labId}`;
-    const nombre = `${labNombre} — oferta ${new Date().toLocaleDateString('es-AR')}`;
-    btn.disabled = true;
-    btn.textContent = 'Compartiendo…';
+    const lab = LABS_BY_ID[labId];
+    const nombre = `${lab ? lab.nombre : 'Lab ' + labId} — oferta ${new Date().toLocaleDateString('es-AR')}`;
+    btn.disabled = true; btn.textContent = 'Compartiendo…';
     try {
         const res = await fetch('/api/compartido/push', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                tipo: 'oferta_minimo',
-                nombre,
-                descripcion: `${items.length} productos`,
-                items,
-            }),
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tipo: 'oferta_minimo', nombre, descripcion: `${items.length} productos`, items }),
         });
         const data = await res.json();
         if (!data.ok) throw new Error(data.error || 'Error');
         btn.textContent = `✓ Compartido (${data.n_items} productos)`;
-        btn.style.borderColor = '#10b981';
-        btn.style.color = '#10b981';
     } catch (err) {
-        btn.textContent = 'Error: ' + err.message;
-        btn.disabled = false;
+        btn.textContent = 'Error: ' + err.message; btn.disabled = false;
     }
 }
+
+// Render inicial
+{% if laboratorios %}_renderList();{% endif %}
 </script>
 {% endblock %}
