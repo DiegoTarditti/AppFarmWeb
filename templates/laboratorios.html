@@ -352,6 +352,7 @@ document.getElementById('ofertas-form').addEventListener('submit', async functio
         }
         html += '</tbody></table></div>';
         html += `<button onclick="guardarOfertasMinimo(${labId})" id="btn-guardar-ofmin" class="btn btn-mint mt-3" style="width:100%;">Guardar en sistema para este laboratorio</button>`;
+        html += `<button onclick="compartirConGrupo(${labId})" id="btn-compartir-ofmin" class="btn btn-secondary btn-sm mt-2" style="width:100%;">🔄 Compartir con el grupo</button>`;
         html += '<button onclick="closeOfertasModal()" class="btn btn-ghost btn-sm mt-2" style="width:100%;">Cerrar</button>';
         resultDiv.innerHTML = html;
         resultDiv._items = items;
@@ -374,6 +375,25 @@ async function guardarOfertasMinimo(labId) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Error');
         btn.textContent = `✓ Guardado (${data.guardados} productos)`;
+    } catch (err) {
+        btn.textContent = 'Error: ' + err.message; btn.disabled = false;
+    }
+}
+async function compartirConGrupo(labId) {
+    const btn = document.getElementById('btn-compartir-ofmin');
+    const items = document.getElementById('ofertas-result')._items;
+    if (!items || !items.length) return;
+    const lab = LABS_BY_ID[labId];
+    const nombre = `${lab ? lab.nombre : 'Lab ' + labId} — oferta ${new Date().toLocaleDateString('es-AR')}`;
+    btn.disabled = true; btn.textContent = 'Compartiendo…';
+    try {
+        const res = await fetch('/api/compartido/push', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tipo: 'oferta_minimo', nombre, descripcion: `${items.length} productos`, items }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Error');
+        btn.textContent = `✓ Compartido (${data.n_items} productos)`;
     } catch (err) {
         btn.textContent = 'Error: ' + err.message; btn.disabled = false;
     }

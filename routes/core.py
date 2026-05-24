@@ -31,13 +31,21 @@ def init_app(app):
                 'productos_pendientes_revision': session.query(database.ProductoPendienteRevision)
                     .filter(database.ProductoPendienteRevision.estado == 'pendiente').count(),
             }
-            # Card "Requiere atención" del home — 3 pendientes accionables.
+            # Card "Requiere atención" del home — pendientes accionables.
             # Control de Ingreso = documentos pendientes de procesar (mismo dato
             # que la campanita del topbar; acá funciona como panel de triage).
+            # Novedades del grupo = compartidos de peers sin importar (count cacheado
+            # ~5 min; lee read-only las otras sucursales, no frena el home).
+            try:
+                from services import compartido_sync
+                compartido_nuevos = compartido_sync.contar_nuevos(session)
+            except Exception:
+                compartido_nuevos = 0
             alertas_atencion = {
                 'productos_pendientes': badges['productos_pendientes_revision'],
                 'docs_pendientes':      badges['docs_pendientes'],
                 'reclamos_abiertos':    badges['reclamos_abiertos'],
+                'compartido_nuevos':    compartido_nuevos,
             }
         cards = [c for c in cards if not c.get('oculto')]
         # Inyectar badge_count en cada card según su badge_key

@@ -270,7 +270,7 @@
                        es un link distinto. NO duplica la campanita del topbar (esa
                        muestra "documentos pendientes" de procesar). #}
                     {% set _at = alertas_atencion %}
-                    {% set _at_total = (_at.productos_pendientes or 0) + (_at.docs_pendientes or 0) + (_at.reclamos_abiertos or 0) %}
+                    {% set _at_total = (_at.productos_pendientes or 0) + (_at.docs_pendientes or 0) + (_at.reclamos_abiertos or 0) + (_at.compartido_nuevos or 0) %}
                     <div class="home-alarm home-alarm--atencion">
                         <div class="home-alarm__head">
                             {% if _at_total > 0 %}
@@ -311,6 +311,18 @@
                             </span>
                             <span class="arrow">→</span>
                         </a>
+                        {% if _at.compartido_nuevos and _at.compartido_nuevos > 0 %}
+                        <a href="{{ url_for('compartido_index') }}" class="home-alarm__row">
+                            <span class="ico">📨</span>
+                            <span class="body">
+                                <span class="name">Novedades del grupo
+                                    <span class="home-alarm__cnt hot">{{ _at.compartido_nuevos }}</span>
+                                </span>
+                                <span class="sub">Compartido para importar</span>
+                            </span>
+                            <span class="arrow">→</span>
+                        </a>
+                        {% endif %}
                     </div>
 
                     {# Card B: Repo fija — mismo dato que antes, ahora al lado. #}
