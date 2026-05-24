@@ -5,8 +5,10 @@ Compara stock vs venta mensual de cada producto en ambas farmacias, cruzando por
 ObServer, el Alfabeta del vademécum NO). Sugiere mover producto de la sucursal
 con EXCEDENTE a la que lo NECESITA.
 
-Solo lectura sobre ambas DBs. Badia vía `BADIA_DATABASE_URL` (env). Pieri vía
-`DATABASE_URL` (la DB local).
+Solo lectura sobre ambas DBs. La DB local es `DATABASE_URL`; la otra sucursal,
+`BADIA_DATABASE_URL`. Qué farmacia es la local depende de la instancia:
+`TRANSFER_LOCAL_ES` = 'pieri' (default, instancia Pieri) o 'badia' (instancia
+Badia). Las columnas Badia/Pieri salen correctas en cualquiera de las dos.
 """
 import os
 from datetime import date
@@ -50,20 +52,33 @@ def _cob(stock, avg):
     return 999.0 if stock > 0 else 0.0
 
 
-def analizar(excedente_meses=6.0, necesita_meses=2.0, local_url=None, badia_url=None):
+def analizar(excedente_meses=6.0, necesita_meses=2.0, local_url=None, badia_url=None,
+             local_es=None):
     local_url = local_url or os.environ.get('DATABASE_URL', '')
     badia_url = badia_url or os.environ.get('BADIA_DATABASE_URL', '')
     if not badia_url:
         return {'ok': False, 'error': 'BADIA_DATABASE_URL no configurada en el entorno (.env).'}
+    # Qué farmacia es la DB local. En la instancia de Pieri (default) la local es
+    # Pieri; en la de Badia hay que setear TRANSFER_LOCAL_ES=badia. Así las
+    # columnas Badia/Pieri salen correctas corra donde corra. BADIA_DATABASE_URL
+    # es siempre "la OTRA sucursal": en Pieri apunta a Badia, en Badia a Pieri.
+    local_es = (local_es or os.environ.get('TRANSFER_LOCAL_ES', 'pieri')).strip().lower()
 
     hoy = date.today()
     desde_key = (hoy.year - 1) * 100 + hoy.month  # últimos ~12 meses
 
     try:
-        p_stock, p_avg, p_desc = _pull(_engine(local_url), desde_key)
-        b_stock, b_avg, b_desc = _pull(_engine(badia_url, render=True), desde_key)
+        loc = _pull(_engine(local_url), desde_key)
+        rem = _pull(_engine(badia_url, render=True), desde_key)
     except Exception as e:
         return {'ok': False, 'error': f'No pude leer alguna DB: {e}'}
+
+    # b_* = datos de Badia, p_* = datos de Pieri SIEMPRE (el resto del cálculo y
+    # el template lo asumen). Mapear cada pull a su sucursal según la instancia.
+    if local_es == 'badia':
+        (b_stock, b_avg, b_desc), (p_stock, p_avg, p_desc) = loc, rem
+    else:
+        (p_stock, p_avg, p_desc), (b_stock, b_avg, b_desc) = loc, rem
 
     U, L = float(excedente_meses), float(necesita_meses)
     filas = []
