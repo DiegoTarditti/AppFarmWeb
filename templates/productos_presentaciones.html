@@ -84,15 +84,19 @@
                 <button type="button" class="ft-tab"        data-modo="pack"          onclick="ftModo('pack')">📦 Pack</button>
             </div>
 
-            {# Buscador — siempre visible. Tildá varios o clic en el nombre (uno solo) #}
+            {# Buscador + Aplicar (a la altura del buscador, siempre visible) #}
             <div class="pf-field">
                 <label class="pf-label">Buscar producto</label>
-                <div class="pf-ac-wrap" id="pr-ac-wrap">
-                    <input type="text" class="pf-input" id="pr-search"
-                           placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
-                    <div class="pf-ac-results" id="pr-ac-results"></div>
+                <div style="display:flex; gap:8px; align-items:flex-start;">
+                    <div class="pf-ac-wrap" id="pr-ac-wrap" style="flex:1; min-width:0;">
+                        <input type="text" class="pf-input" id="pr-search"
+                               placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
+                        <div class="pf-ac-results" id="pr-ac-results"></div>
+                    </div>
+                    <button type="button" class="btn btn-mint text-xs" id="pr-aplicar" style="white-space:nowrap;">Aplicar (0)</button>
                 </div>
-                <div class="pf-help">Tildá varios para aplicar en lote · clic en el nombre = uno solo (precarga su valor actual). Kellerhoff se asigna por fila en la tabla de abajo.</div>
+                <div class="pf-help">Tildá varios para aplicar en lote · clic en el nombre = uno solo (precarga su valor actual). Kellerhoff se asigna por fila abajo.</div>
+                <div id="pr-status" class="text-[11px] mt-1"></div>
             </div>
 
             {# Selección actual #}
@@ -142,8 +146,6 @@
                 </div>
             </div>
 
-            <button type="button" class="btn btn-mint text-xs w-full mt-3" id="pr-aplicar">Aplicar a los seleccionados</button>
-            <div id="pr-status" class="text-[11px] mt-2"></div>
         </div>
 
         {# Acceso al catálogo Kellerhoff (importar CSV + recalcular equivalencias) #}
@@ -342,6 +344,8 @@
         if (n === 0) selInfo.textContent = 'Ningún producto seleccionado.';
         else if (n === 1) selInfo.innerHTML = 'Seleccionado: <b>' + escapeHtml([..._selected.values()][0].desc) + '</b>';
         else selInfo.innerHTML = '<b>' + n + '</b> productos seleccionados';
+        btnAplicar.textContent = 'Aplicar (' + n + ')';
+        btnAplicar.style.opacity = n === 0 ? '.5' : '1';
     }
 
     function renderRes(items, tokens) {
@@ -454,6 +458,8 @@
         precargar(ean);
         window.scrollTo({top: 0, behavior: 'smooth'});
     };
+
+    updateSel();  // estado inicial del botón "Aplicar (0)"
 })();
 </script>
 {% endblock %}
