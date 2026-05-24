@@ -302,15 +302,33 @@ def init_app(app):
             from routes.kellerhoff import ean_export_de_producto, estado_equivalencia
             kel_ean = ean_export_de_producto(session, prod)
             kel = estado_equivalencia(session, kel_ean)
+            # Oferta vigente del producto (lab derivado del producto — un producto
+            # = un solo lab). Para la pestaña Oferta de la ficha 360.
+            from database import OfertaMinimo
+            oferta = None
+            if prod.laboratorio_id:
+                of = (session.query(OfertaMinimo)
+                      .filter_by(ean=prod.codigo_barra, laboratorio_id=prod.laboratorio_id)
+                      .order_by(OfertaMinimo.actualizado_en.desc()).first())
+                if of:
+                    oferta = {
+                        'descuento_psl': float(of.descuento_psl) if of.descuento_psl is not None else None,
+                        'unidades_minima': of.unidades_minima,
+                    }
             return jsonify({
                 'ok': True,
                 'existe_master': True,
+                'producto_id': prod.id,
                 'ean': prod.codigo_barra,
                 'descripcion': prod.descripcion or '',
                 'lab': prod.laboratorio.nombre if prod.laboratorio else '',
+                'lab_id': prod.laboratorio_id,
                 'fraccionado': bool(prod.fraccionado),
                 'cantidad_envase': cant,
                 'cantidad_envase_obs': cant_obs,
+                'es_pack': bool(prod.es_pack),
+                'cantidad_reposicion_fija': prod.cantidad_reposicion_fija,
+                'oferta': oferta,
                 'kellerhoff': kel,
             })
 
@@ -352,6 +370,55 @@ def init_app(app):
             return jsonify({'ok': True, 'fraccionado': prod.fraccionado,
                             'cantidad_envase': float(atr.cantidad_envase)
                             if (atr and atr.cantidad_envase is not None) else None})
+
+    @app.route('/api/producto/oferta', methods=['POST'])
+    @login_required
+    def api_producto_oferta_guardar():
+        """Carga/actualiza UNA oferta para un producto (ficha 360, pestaña Oferta).
+        El laboratorio se DERIVA del producto (un producto = un solo lab). Body
+        JSON: {ean, descuento_psl, unidades_minima}. unidades_minima 1 = simple,
+        >1 = con_minimo. descuento_psl vacío → borra la oferta."""
+        from database import OfertaMinimo, now_ar
+        body = request.get_json(silent=True) or {}
+        ean = str(body.get('ean', '')).strip()
+        if not ean:
+            return jsonify({'ok': False, 'error': 'Falta EAN'}), 400
+        with get_db() as session:
+            prod = _resolver_producto_por_ean(session, ean)
+            if not prod:
+                return jsonify({'ok': False, 'error': 'Producto sin ficha master local.'}), 404
+            if not prod.laboratorio_id:
+                return jsonify({'ok': False, 'error': 'El producto no tiene laboratorio asignado.'}), 400
+            ean_p = prod.codigo_barra
+            existing = (session.query(OfertaMinimo)
+                        .filter_by(ean=ean_p, laboratorio_id=prod.laboratorio_id)
+                        .order_by(OfertaMinimo.actualizado_en.desc()).first())
+            dto_raw = str(body.get('descuento_psl', '')).strip().replace(',', '.')
+            if not dto_raw:  # vaciar = borrar
+                if existing:
+                    session.delete(existing)
+                    session.commit()
+                return jsonify({'ok': True, 'borrada': True})
+            try:
+                dto = float(dto_raw)
+            except ValueError:
+                return jsonify({'ok': False, 'error': 'Descuento inválido.'}), 400
+            try:
+                um = max(1, int(body.get('unidades_minima') or 1))
+            except (ValueError, TypeError):
+                um = 1
+            obj = existing or OfertaMinimo(ean=ean_p, laboratorio_id=prod.laboratorio_id)
+            if not existing:
+                session.add(obj)
+            obj.descripcion     = prod.descripcion
+            obj.unidades_minima = um
+            obj.descuento_psl   = dto
+            obj.tipo_descuento  = 'simple' if um <= 1 else 'con_minimo'
+            obj.activo          = True
+            obj.actualizado_en  = now_ar()
+            session.commit()
+            return jsonify({'ok': True, 'unidades_minima': um,
+                            'descuento_psl': dto, 'tipo_descuento': obj.tipo_descuento})
 
     @app.route('/api/producto/presentacion-bulk', methods=['POST'])
     @login_required
