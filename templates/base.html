@@ -820,10 +820,10 @@
 {% endif %}
 
 {# ── CSS helpers para links del sidebar ── #}
-{% set nav_link = "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors" %}
-{% set nav_active_cls = "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium bg-brand text-brand-dark" %}
-{% set nav_sub = "flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-medium text-[#d1d5db] hover:text-white hover:bg-white/[0.06] transition-colors" %}
-{% set nav_sub_active = "flex items-center gap-2.5 px-3 py-2 ml-4 rounded-lg text-xs font-semibold text-amber-800 bg-amber-50/60" %}
+{% set nav_link = "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] font-medium text-[#a9ccbd] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors" %}
+{% set nav_active_cls = "flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold text-[#5fe6bc] bg-[rgba(95,230,188,0.14)]" %}
+{% set nav_sub = "flex items-center gap-2.5 px-2.5 py-1.5 ml-4 rounded-lg text-[11.5px] font-medium text-[#a9ccbd] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors" %}
+{% set nav_sub_active = "flex items-center gap-2.5 px-2.5 py-1.5 ml-4 rounded-lg text-[11.5px] font-semibold text-[#5fe6bc] bg-[rgba(95,230,188,0.14)]" %}
 
 {% set _hide_chrome = hide_sidebar | default(False) or (current_user.is_authenticated and current_user.rol in ('pedidos', 'rendicion')) %}
 {% if not _hide_chrome %}
@@ -843,35 +843,35 @@
 
 <!-- Sidebar -->
 <aside id="mobile-sidebar"
-       class="w-52 min-h-screen bg-[#1f2937] border-r border-[#111827] flex flex-col flex-shrink-0
+       class="w-52 min-h-screen bg-[#05110c] border-r border-[#214635] flex flex-col flex-shrink-0
               fixed lg:static top-0 left-0 z-50 h-screen lg:h-auto
               overflow-y-auto
               -translate-x-full lg:translate-x-0 transition-transform duration-200 ease-in-out
               {% block aside_extra_class %}{% endblock %}">
-    <div class="px-4 py-5 border-b border-[#111827]">
+    <div class="px-3.5 py-3.5 border-b border-[#214635]">
         <div class="flex items-center gap-2.5">
-            <div class="w-8 h-8 rounded-lg bg-brand flex items-center justify-center flex-shrink-0">
-                <svg class="w-4 h-4 text-brand-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div class="w-[30px] h-[30px] rounded-lg bg-[rgba(95,230,188,0.14)] border border-[rgba(95,230,188,0.3)] flex items-center justify-center flex-shrink-0">
+                <svg class="w-4 h-4 text-[#5fe6bc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
                 </svg>
             </div>
             <div class="brand-text flex-1 min-w-0">
-                <p class="text-sm font-bold text-[#F4C430] leading-tight">Control de Stock</p>
-                <p class="text-xs text-[#9ca3af] truncate">{{ config.farmacia_nombre | default('Farmacia') }}</p>
+                <p class="text-[12.5px] font-bold text-[#5fe6bc] leading-tight">Control de Stock</p>
+                <p class="text-[10px] text-[#6d9082] truncate">{{ config.farmacia_nombre | default('Farmacia') }}</p>
             </div>
         </div>
     </div>
     {% if nav_active != 'inicio' %}
     <button type="button" onclick="toggleSidebar()" title="Colapsar/expandir menú"
-            class="hidden lg:flex mx-3 mt-2 items-center justify-center gap-2 py-1.5 rounded-lg text-[11px] text-[#9ca3af] hover:text-white hover:bg-white/[0.06] transition-colors">
+            class="hidden lg:flex mx-3 mt-2 items-center justify-center gap-2 py-1.5 rounded-lg text-[11px] text-[#6d9082] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors">
         <svg class="sidebar-toggle-icon w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
         </svg>
         <span class="sidebar-toggle-text">Colapsar</span>
     </button>
     {% endif %}
-    <nav class="flex-1 px-3 py-4 space-y-0.5">
+    <nav class="flex-1 px-2 py-2 space-y-px">
         <a href="{{ url_for('index') }}"
            class="{{ nav_active_cls if nav_active == 'inicio' else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
@@ -883,7 +883,7 @@
             Dashboard
         </a>
 
-        <p class="px-3 pt-4 pb-1 text-[10px] font-semibold text-[#6b7280] uppercase tracking-[.18em]">Gestión</p>
+        <p class="px-3 pt-3 pb-1 text-[9px] font-bold text-[#6d9082] uppercase tracking-[.16em]">Gestión</p>
         <a href="{{ url_for('providers_list') }}"
            class="{{ nav_active_cls if nav_active == 'proveedores' else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
@@ -911,7 +911,7 @@
             Reclamos
         </a>
 
-        <p class="px-3 pt-4 pb-1 text-[10px] font-semibold text-[#6b7280] uppercase tracking-[.18em]">Operaciones</p>
+        <p class="px-3 pt-3 pb-1 text-[9px] font-bold text-[#6d9082] uppercase tracking-[.16em]">Operaciones</p>
         <a href="{{ url_for('docs_pendientes') }}"
            class="{{ nav_active_cls if nav_active in ('docs_pendientes', 'convertir') else nav_link }}">
             <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/></svg>
