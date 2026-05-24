@@ -421,6 +421,45 @@ def init_app(app):
             return jsonify({'ok': True, 'unidades_minima': um,
                             'descuento_psl': dto, 'tipo_descuento': obj.tipo_descuento})
 
+    @app.route('/api/producto/configurados')
+    @login_required
+    def api_producto_configurados():
+        """Lista de productos que tienen algo configurado para un modo, para la
+        tabla contextual de abajo. modo: oferta | repo | pack."""
+        modo = (request.args.get('modo') or '').strip()
+        rows = []
+        with get_db() as session:
+            if modo == 'oferta':
+                from database import Laboratorio, OfertaMinimo
+                q = (session.query(OfertaMinimo, Laboratorio.nombre)
+                     .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                     .filter(OfertaMinimo.activo.is_(True),
+                             OfertaMinimo.descuento_psl.isnot(None))
+                     .order_by(OfertaMinimo.descripcion.nullslast()).limit(500).all())
+                for of, labnom in q:
+                    um = of.unidades_minima or 1
+                    val = f'{float(of.descuento_psl):g}%' + (f' · mín {um}' if um > 1 else '')
+                    rows.append({'nombre': of.descripcion or of.ean, 'ean': of.ean,
+                                 'lab': labnom or '', 'valor': val})
+            elif modo == 'repo':
+                q = (session.query(Producto)
+                     .filter(Producto.cantidad_reposicion_fija.isnot(None),
+                             Producto.cantidad_reposicion_fija > 0)
+                     .order_by(Producto.descripcion).limit(500).all())
+                for p in q:
+                    rows.append({'nombre': p.descripcion or p.codigo_barra, 'ean': p.codigo_barra,
+                                 'lab': p.laboratorio.nombre if p.laboratorio else '',
+                                 'valor': f'{p.cantidad_reposicion_fija} u'})
+            elif modo == 'pack':
+                q = (session.query(Producto).filter(Producto.es_pack == 1)
+                     .order_by(Producto.descripcion).limit(500).all())
+                for p in q:
+                    rows.append({'nombre': p.descripcion or p.codigo_barra, 'ean': p.codigo_barra,
+                                 'lab': p.laboratorio.nombre if p.laboratorio else '', 'valor': 'Sí'})
+            else:
+                return jsonify({'ok': False, 'error': 'modo inválido'}), 400
+        return jsonify({'ok': True, 'rows': rows})
+
     @app.route('/api/producto/config-bulk', methods=['POST'])
     @login_required
     def api_producto_config_bulk():

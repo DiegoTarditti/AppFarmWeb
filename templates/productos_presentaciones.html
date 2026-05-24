@@ -160,12 +160,13 @@
     {# ── Lista de productos con presentación (abajo) ── #}
     <div class="pf-card">
         <div class="pf-card-head" style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-            <h3>Productos con presentación</h3>
-            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <h3 id="list-titulo">Productos con presentación</h3>
+            <div id="pp-filtros" style="display:flex; gap:8px; flex-wrap:wrap;">
                 <input type="text" id="pp-filtro-lab" class="pp-input" placeholder="Filtrar laboratorio…" style="width:200px;">
                 <input type="text" id="pp-filtro" class="pp-input" placeholder="Filtrar…" style="width:200px;">
             </div>
         </div>
+        <div id="list-pres">
         {% if filas %}
         <div style="overflow-x:auto;">
         <table class="pp-table">
@@ -206,6 +207,18 @@
         {% else %}
         <div style="padding:32px; text-align:center; color:var(--ds-text-mute); font-size:13px;">Todavía no hay productos con presentación configurada. Buscá uno arriba y configuralo.</div>
         {% endif %}
+        </div>{# /list-pres #}
+
+        {# Lista contextual de los otros modos (oferta/repo/pack), client-rendered #}
+        <div id="list-otros" style="display:none;">
+            <div style="overflow-x:auto;">
+            <table class="pp-table">
+                <thead><tr><th>Producto</th><th>EAN</th><th>Laboratorio</th><th id="list-otros-valcol" style="text-align:right;">Valor</th></tr></thead>
+                <tbody id="list-otros-body"></tbody>
+            </table>
+            </div>
+            <div id="list-otros-vacio" style="display:none; padding:24px; text-align:center; color:var(--ds-text-mute); font-size:13px;"></div>
+        </div>
     </div>
 </div>
 
@@ -328,11 +341,53 @@
     const _selected = new Map();   // observer_id(str) -> {ean, desc}
     let _modo = 'presentacion', _deb = null, _seq = 0, _items = [], _focus = -1;
 
+    const LISTA_META = {
+        presentacion: {titulo: 'Productos con presentación'},
+        oferta: {titulo: 'Productos con oferta', valcol: 'Descuento'},
+        repo:   {titulo: 'Productos con repo fija', valcol: 'Repo fija'},
+        pack:   {titulo: 'Productos marcados como pack', valcol: 'Pack'},
+    };
     window.ftModo = function(m) {
         _modo = m;
         document.querySelectorAll('.ft-tab').forEach(t => t.classList.toggle('active', t.dataset.modo === m));
         document.querySelectorAll('.ft-form').forEach(f => f.style.display = (f.id === 'form-' + m) ? 'block' : 'none');
+        // Lista de abajo, contextual al modo.
+        const esPres = (m === 'presentacion');
+        const lp = $('list-pres'), lo = $('list-otros'), filtros = $('pp-filtros'), titulo = $('list-titulo');
+        if (lp) lp.style.display = esPres ? '' : 'none';
+        if (lo) lo.style.display = esPres ? 'none' : '';
+        if (filtros) filtros.style.display = esPres ? '' : 'none';
+        if (titulo) titulo.textContent = (LISTA_META[m] || {}).titulo || '';
+        if (!esPres) cargarLista(m);
     };
+    async function cargarLista(m) {
+        const body = $('list-otros-body'), vacio = $('list-otros-vacio'), valcol = $('list-otros-valcol');
+        if (!body) return;
+        if (valcol) valcol.textContent = (LISTA_META[m] || {}).valcol || 'Valor';
+        body.innerHTML = '<tr><td colspan="4" style="padding:16px; text-align:center; color:var(--ds-text-mute);">Cargando…</td></tr>';
+        vacio.style.display = 'none';
+        try {
+            const r = await fetch('/api/producto/configurados?modo=' + encodeURIComponent(m), {credentials: 'same-origin'});
+            const d = await r.json();
+            const rows = (d.ok && d.rows) ? d.rows : [];
+            if (!rows.length) {
+                body.innerHTML = '';
+                vacio.textContent = 'No hay productos configurados en este modo. Buscá uno arriba y aplicá.';
+                vacio.style.display = 'block';
+                return;
+            }
+            body.innerHTML = rows.map(p => `
+                <tr style="border-bottom:1px solid rgba(255,255,255,.04);">
+                    <td class="text-[color:var(--ds-text-soft)]" style="padding:8px 12px;">${escapeHtml(p.nombre)}</td>
+                    <td style="padding:8px 12px;"><code>${escapeHtml(p.ean)}</code></td>
+                    <td class="text-[color:var(--ds-text-mute)]" style="padding:8px 12px;">${escapeHtml(p.lab) || '—'}</td>
+                    <td style="padding:8px 12px; text-align:right; font-weight:600; color:var(--ds-mint);">${escapeHtml(p.valor)}</td>
+                </tr>`).join('');
+        } catch {
+            body.innerHTML = '';
+            vacio.textContent = 'Error al cargar.'; vacio.style.display = 'block';
+        }
+    }
     function setStatus(msg, ok) { status.textContent = msg || ''; status.className = 'text-[11px] mt-2 ' + (msg ? (ok ? 'text-[color:var(--ds-mint)]' : 'text-rose-400') : ''); }
     function updateSel() {
         const n = _selected.size;
@@ -440,6 +495,7 @@
             if (d.sin_envase) msg += ' · ' + d.sin_envase + ' sin envase';
             if (d.errores) msg += ' · ' + d.errores + ' error(es)';
             setStatus(msg, true);
+            if (_modo !== 'presentacion') cargarLista(_modo);  // refrescar la lista del modo
         } catch { setStatus('Error de red', false); }
         finally { btnAplicar.disabled = false; }
     });
