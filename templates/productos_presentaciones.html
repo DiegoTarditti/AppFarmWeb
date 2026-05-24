@@ -93,24 +93,6 @@
                 </a>
             </div>
 
-            {# Buscador + Aplicar (a la altura del buscador, siempre visible) #}
-            <div class="pf-field">
-                <label class="pf-label">Buscar producto</label>
-                <div style="display:flex; gap:8px; align-items:flex-start;">
-                    <div class="pf-ac-wrap" id="pr-ac-wrap" style="flex:1; min-width:0;">
-                        <input type="text" class="pf-input" id="pr-search"
-                               placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
-                        <div class="pf-ac-results" id="pr-ac-results"></div>
-                    </div>
-                    <button type="button" class="btn btn-mint text-xs" id="pr-aplicar" style="white-space:nowrap;">Aplicar (0)</button>
-                </div>
-                <div class="pf-help">Tildá varios para aplicar en lote · clic en el nombre = uno solo (precarga su valor actual). Kellerhoff se asigna por fila abajo.</div>
-                <div id="pr-status" class="text-[11px] mt-1"></div>
-            </div>
-
-            {# Selección actual #}
-            <div id="pr-sel" class="text-[12px] mb-2" style="color:var(--ds-text-mute);">Ningún producto seleccionado.</div>
-
             {# Form Presentación #}
             <div class="ft-form" id="form-presentacion">
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--ds-text);">
@@ -153,6 +135,22 @@
                     <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--ds-text);"><input type="radio" name="pack-val" value="1" checked> Es pack</label>
                     <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--ds-text);"><input type="radio" name="pack-val" value="0"> No es pack</label>
                 </div>
+            </div>
+
+            {# Buscador + Aplicar (debajo del detalle, así la lista no tapa los campos) #}
+            <div class="pf-field" style="margin-top:14px;">
+                <label class="pf-label">Buscar producto</label>
+                <div style="display:flex; gap:8px; align-items:flex-start;">
+                    <div class="pf-ac-wrap" id="pr-ac-wrap" style="flex:1; min-width:0;">
+                        <input type="text" class="pf-input" id="pr-search"
+                               placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
+                        <div class="pf-ac-results" id="pr-ac-results"></div>
+                    </div>
+                    <button type="button" class="btn btn-mint text-xs" id="pr-aplicar" style="white-space:nowrap;">Aplicar (0)</button>
+                </div>
+                <div class="pf-help">Tildá varios para aplicar en lote · clic en el nombre = uno solo (precarga su valor actual). Kellerhoff se asigna por fila abajo.</div>
+                <div id="pr-sel" class="text-[12px] mt-1" style="color:var(--ds-text-mute);">Ningún producto seleccionado.</div>
+                <div id="pr-status" class="text-[11px] mt-1"></div>
             </div>
 
         </div>
