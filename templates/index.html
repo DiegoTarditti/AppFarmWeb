@@ -163,6 +163,60 @@
             .home-alertas { max-width: none; flex: 1; }
         }
 
+        /* ── Alarmas del home: 2 cards "una al lado de la otra" ───────────── */
+        .home-alarmas-split { flex: 1 1 auto; display: flex; gap: 12px; min-width: 0; }
+        .home-alarm {
+            flex: 1 1 0; min-width: 0;
+            background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-surface-2) 100%);
+            border: 1px solid var(--ds-line-2);
+            border-radius: 16px; padding: 12px 14px;
+            display: flex; flex-direction: column; gap: 6px;
+            text-decoration: none; color: inherit;
+            transition: border-color .15s, transform .15s;
+        }
+        a.home-alarm:hover { border-color: var(--ds-mint); transform: translateY(-1px); text-decoration: none; }
+        .home-alarm--atencion { border-color: rgba(234,179,8,.30); }
+        .home-alarm__head { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+        .home-alarm__head .ttl {
+            font-size: 12px; font-weight: 700; color: var(--ds-text);
+            text-transform: uppercase; letter-spacing: .04em;
+        }
+        .home-alarm__head .ttl.warn { color: var(--ds-warn); }
+        .home-alarm__head .ttl.ok   { color: var(--ds-mint); }
+        .home-alarm__head .meta { font-size: 10px; color: var(--ds-text-mute); margin-left: auto; }
+        /* filas accionables de "Requiere atención" */
+        .home-alarm__row {
+            display: flex; align-items: center; gap: 10px;
+            padding: 6px 8px; margin: 0 -6px; border-radius: 10px;
+            text-decoration: none; color: inherit; transition: background .12s;
+        }
+        .home-alarm__row:hover { background: var(--ds-surface-2); text-decoration: none; }
+        .home-alarm__row .ico { font-size: 17px; line-height: 1; flex-shrink: 0; }
+        .home-alarm__row .body { flex: 1; min-width: 0; line-height: 1.25; }
+        .home-alarm__row .name { font-size: 12.5px; font-weight: 600; color: var(--ds-text); display: flex; align-items: center; gap: 7px; }
+        .home-alarm__row .sub { font-size: 10.5px; color: var(--ds-text-soft); display: block; }
+        .home-alarm__row .arrow { color: var(--ds-text-mute); font-size: 14px; flex-shrink: 0; }
+        .home-alarm__cnt {
+            font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums;
+            min-width: 20px; text-align: center; padding: 1px 7px; border-radius: 999px;
+        }
+        .home-alarm__cnt.hot  { background: rgba(234,179,8,.18); color: var(--ds-warn); }
+        .home-alarm__cnt.zero { background: var(--ds-surface-2); color: var(--ds-text-mute); }
+        .home-alarm__cta {
+            margin-top: auto; padding-top: 2px;
+            font-size: 11px; color: var(--ds-mint); font-weight: 700; text-align: right;
+        }
+        .home-alarm--ok .home-alarm__cta { color: var(--ds-text-mute); font-weight: 400; }
+        @media (max-width: 760px) { .home-alarmas-split { flex-direction: column; } }
+
+        /* Card "Informes" por banda — acento sutil para que se lea como salida a reportes */
+        .home-card--informes { border-style: dashed; border-color: var(--ds-line-2); }
+        .home-card--informes:hover { border-color: var(--ds-mint); }
+
+        /* Buscador "Filtrar acción" — texto y placeholder en naranja (pedido Diego). */
+        #home-card-buscador { color: #fb923c; }
+        #home-card-buscador::placeholder { color: #fb923c; opacity: .75; }
+
         /* Entity cards — más compactas, icon + título en línea */
         .entity-card { padding: 16px 18px; position: relative; }
         .entity-card .entity-num {
@@ -187,8 +241,8 @@
         .action-content__desc { font-size: 11px; color: var(--ds-text-soft); margin-top: 2px; line-height: 1.35; }
 
         /* Page header compacto en home (va inline con hero) */
-        .home-page-header { margin-bottom: 16px; }
-        .home-page-header .page-header__title { font-size: 22px; margin-top: 4px; }
+        .home-page-header { margin-bottom: 8px; }
+        .home-page-header .page-header__title { font-size: 22px; margin-top: 0; }
         .home-page-header .page-header__subtitle { margin-top: 4px; font-size: 12px; }
     </style>
 {% endblock %}
@@ -197,93 +251,116 @@
     <div class="flex-1 overflow-auto">
         <div class="home-container">
 
-            <!-- Top row: header + hero en línea -->
+            {# Header de la farmacia — arriba de todo (pedido Diego 2026-05-24).
+               Sin label "Inicio" (ya está en el topbar) para no repetir. #}
+            <header class="page-header home-page-header">
+                <div class="page-header__left">
+                    {# Primera palabra normal, el resto (la marca, ej. "Badía") en glow. #}
+                    {% set _nom = config.farmacia_nombre.split(' ', 1) %}
+                    <h1 class="page-header__title">{{ _nom[0] }}{% if _nom|length > 1 %} <span class="glow-text">{{ _nom[1] }}</span>{% endif %}<span class="glow-text">.</span></h1>
+                    <p class="page-header__subtitle">Elegí por dónde trabajar hoy.</p>
+                </div>
+            </header>
+
+            <!-- Top: 2 alarmas una al lado de la otra + atajo a UX móvil -->
             <div class="home-toprow">
-                <header class="page-header home-page-header">
-                    <div class="page-header__left">
-                        <span class="section-label">Inicio</span>
-                        <h1 class="page-header__title">{{ config.farmacia_nombre }}<span class="glow-text">.</span></h1>
-                        <p class="page-header__subtitle">Elegí por dónde trabajar hoy.</p>
-                    </div>
-                </header>
+                <div class="home-alarmas-split">
 
-                {# Card "Alertas Repo fija": entre el page-header y el hero.
-                   On-demand, sin cron. Visible siempre — incluso sin alertas
-                   muestra estado "todo en orden" como tranquilizador visual. #}
-                {% if alertas_repo and alertas_repo.total > 0 %}
-                {% set _has_alerts = (alertas_repo.rojo + alertas_repo.amarillo + alertas_repo.verde) > 0 %}
-                <a href="{{ url_for('productos_repo_alertas') }}"
-                   class="home-alertas {% if not _has_alerts %}home-alertas--ok{% endif %}"
-                   title="Alertas de reposición fija — productos con cantidad_reposicion_fija configurada">
-                    <div class="home-alertas__head">
-                        <span style="font-size:18px; line-height:1;">📦</span>
-                        <span class="home-alertas__title">Repo fija</span>
-                        <span class="home-alertas__total">{{ alertas_repo.total }} configurado{{ '' if alertas_repo.total == 1 else 's' }}</span>
-                    </div>
-                    <div class="home-alertas__niveles">
-                        {% if alertas_repo.rojo > 0 %}
-                        <div class="home-alertas__nivel">
-                            <span class="dot rojo"></span>
-                            <span class="num">{{ alertas_repo.rojo }}</span>
-                            <span class="lbl">ya bajo mínimo</span>
+                    {# Card A: Requiere atención. 3 pendientes accionables, cada fila
+                       es un link distinto. NO duplica la campanita del topbar (esa
+                       muestra "documentos pendientes" de procesar). #}
+                    {% set _at = alertas_atencion %}
+                    {% set _at_total = (_at.productos_pendientes or 0) + (_at.docs_pendientes or 0) + (_at.reclamos_abiertos or 0) %}
+                    <div class="home-alarm home-alarm--atencion">
+                        <div class="home-alarm__head">
+                            {% if _at_total > 0 %}
+                            <span style="font-size:15px;line-height:1;">⚠️</span>
+                            <span class="ttl warn">Requiere atención</span>
+                            {% else %}
+                            <span style="font-size:15px;line-height:1;">✅</span>
+                            <span class="ttl ok">Todo al día</span>
+                            {% endif %}
                         </div>
-                        {% endif %}
-                        {% if alertas_repo.amarillo > 0 %}
-                        <div class="home-alertas__nivel">
-                            <span class="dot amarillo"></span>
-                            <span class="num">{{ alertas_repo.amarillo }}</span>
-                            <span class="lbl">≤ 3 días al mínimo</span>
-                        </div>
-                        {% endif %}
-                        {% if alertas_repo.verde > 0 %}
-                        <div class="home-alertas__nivel">
-                            <span class="dot verde"></span>
-                            <span class="num">{{ alertas_repo.verde }}</span>
-                            <span class="lbl">4-7 días al mínimo</span>
-                        </div>
-                        {% endif %}
-                        {% if not _has_alerts %}
-                        <div class="home-alertas__nivel">
-                            <span class="dot verde"></span>
-                            <span class="lbl" style="color:var(--ds-text-soft);">Sin alertas · todo cubierto</span>
-                        </div>
-                        {% endif %}
-                    </div>
-                    <div class="home-alertas__cta">{% if _has_alerts %}Ver detalle →{% else %}Ver productos →{% endif %}</div>
-                </a>
-                {% endif %}
-
-                <div class="home-compras-split">
-                    {# Card 1: Compras Droguería (click en el card entero → /pedidos/dia) #}
-                    <a href="{{ url_for('compras_dia') }}" class="home-hero hover:no-underline">
-                        <span class="home-hero__dots" aria-hidden="true"></span>
-                        <div class="home-hero__body">
-                            <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
-                            <div class="home-hero__title">Compras <span class="glow-text">Droguería</span></div>
-                            <div class="home-hero__desc">Reposición según horarios</div>
-                        </div>
-                    </a>
-                    {# Card 2: Compras Laboratorio (selector de lab bajo mínimo) #}
-                    <a href="{{ url_for('compras_laboratorio') }}" class="home-hero home-hero--lab hover:no-underline">
-                        <span class="home-hero__dots" aria-hidden="true"></span>
-                        <div class="home-hero__body">
-                            <div class="section-label" style="margin-bottom:4px;">🧪 Por laboratorio</div>
-                            <div class="home-hero__title">Compras <span class="glow-text">Laboratorio</span></div>
-                            <div class="home-hero__desc">Pedido/Canal</div>
-                        </div>
-                    </a>
-                    {# CTA "Ir al pedido" + "Ver pendientes" — a la derecha del split. #}
-                    <div class="home-compras-cta">
-                        <a href="{{ url_for('compras_dia') }}" class="btn btn-primary">Ir al pedido →</a>
-                        <a href="{{ url_for('orders_list') }}"
-                           class="hover:underline" style="color:var(--ds-text-soft); font-size:11px; text-align:center;">
-                            Ver pendientes →
+                        <a href="{{ url_for('productos_pendientes_revision') }}" class="home-alarm__row">
+                            <span class="ico">📦</span>
+                            <span class="body">
+                                <span class="name">Productos pendientes
+                                    <span class="home-alarm__cnt {{ 'hot' if _at.productos_pendientes else 'zero' }}">{{ _at.productos_pendientes }}</span>
+                                </span>
+                                <span class="sub">Imports sin match</span>
+                            </span>
+                            <span class="arrow">→</span>
+                        </a>
+                        <a href="{{ url_for('ingresos') }}" class="home-alarm__row">
+                            <span class="ico">🧾</span>
+                            <span class="body">
+                                <span class="name">Control de Ingreso
+                                    <span class="home-alarm__cnt {{ 'hot' if _at.docs_pendientes else 'zero' }}">{{ _at.docs_pendientes }}</span>
+                                </span>
+                                <span class="sub">Facturas sin cruzar</span>
+                            </span>
+                            <span class="arrow">→</span>
+                        </a>
+                        <a href="{{ url_for('claims_list') }}" class="home-alarm__row">
+                            <span class="ico">⚠️</span>
+                            <span class="body">
+                                <span class="name">Reclamos
+                                    <span class="home-alarm__cnt {{ 'hot' if _at.reclamos_abiertos else 'zero' }}">{{ _at.reclamos_abiertos }}</span>
+                                </span>
+                                <span class="sub">Diferencias abiertas</span>
+                            </span>
+                            <span class="arrow">→</span>
                         </a>
                     </div>
+
+                    {# Card B: Repo fija — mismo dato que antes, ahora al lado. #}
+                    {% if alertas_repo and alertas_repo.total > 0 %}
+                    {% set _has_alerts = (alertas_repo.rojo + alertas_repo.amarillo + alertas_repo.verde) > 0 %}
+                    <a href="{{ url_for('productos_repo_alertas') }}"
+                       class="home-alarm {% if not _has_alerts %}home-alarm--ok{% endif %}"
+                       title="Alertas de reposición fija — productos con cantidad_reposicion_fija configurada">
+                        <div class="home-alarm__head">
+                            <span style="font-size:15px;line-height:1;">📦</span>
+                            <span class="ttl">Repo fija</span>
+                            <span class="meta">{{ alertas_repo.total }} config.</span>
+                        </div>
+                        <div class="repo-chips">
+                            {% if alertas_repo.rojo > 0 %}<span class="repo-chip rojo"><span class="dot"></span>{{ alertas_repo.rojo }} bajo mín.</span>{% endif %}
+                            {% if alertas_repo.amarillo > 0 %}<span class="repo-chip amarillo"><span class="dot"></span>{{ alertas_repo.amarillo }} ≤3 días</span>{% endif %}
+                            {% if alertas_repo.verde > 0 %}<span class="repo-chip verde"><span class="dot"></span>{{ alertas_repo.verde }} 4-7 días</span>{% endif %}
+                            {% if not _has_alerts %}<span class="repo-chip verde"><span class="dot"></span>Todo cubierto</span>{% endif %}
+                        </div>
+                        {% if alertas_repo.top %}
+                        <div class="repo-top">
+                            {% for p in alertas_repo.top[:5] %}
+                            <div class="repo-top__row">
+                                <span class="dot {{ p.nivel }}"></span>
+                                <span class="repo-top__name" title="{{ p.nombre }}">{{ p.nombre }}</span>
+                                <span class="repo-top__meta">{% if p.nivel == 'rojo' %}bajo mín{% elif p.dias_a_min is not none %}~{{ p.dias_a_min|int }}d{% else %}—{% endif %}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="home-alarm__cta">{% if _has_alerts %}Ver detalle →{% else %}Ver productos →{% endif %}</div>
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('productos_repo_alertas') }}" class="home-alarm home-alarm--ok"
+                       title="Reposición fija — configurar productos">
+                        <div class="home-alarm__head">
+                            <span style="font-size:15px;line-height:1;">📦</span>
+                            <span class="ttl">Repo fija</span>
+                        </div>
+                        <div style="flex:1; font-size:11px; color:var(--ds-text-soft);">
+                            Sin productos con reposición fija configurada.
+                        </div>
+                        <div class="home-alarm__cta">Configurar →</div>
+                    </a>
+                    {% endif %}
+
                 </div>
 
-                {# Atajo temporal: acceso directo a la UX móvil desde el home
-                   mientras la estamos puliendo. Quitar cuando salga estable. #}
+                {# Atajo temporal a UX móvil — sigue arriba por pedido de Diego
+                   mientras pulimos el flujo nuevo. Quitar cuando salga estable. #}
                 <a href="{{ url_for('consulta_stock') }}" class="home-mobile-cta hover:no-underline" title="Probar el flujo móvil (consulta de stock + consulta de medicamento)">
                     <div class="home-mobile-cta__icon">📱</div>
                     <div class="home-mobile-cta__text">
@@ -293,62 +370,19 @@
                 </a>
             </div>
 
-            <!-- 3 ENTIDADES -->
-            <div class="section-label" style="margin-bottom:4px;">Entidades</div>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+            {# Banda "Entidades" (01/02/03) eliminada 2026-05-24 — redundante con
+               las bandas por entidad (Laboratorios, Droguerías, …) de abajo.
+               Sus accesos (laboratorios_list, providers_list, packs, procesos)
+               siguen en el sidebar. #}
 
-                <div class="card entity-card">
-                    <span class="entity-num">01</span>
-                    <div class="entity-head">
-                        <div class="icon-tile icon-tile-sm">🧪</div>
-                        <div class="entity-title">Laboratorios</div>
-                    </div>
-                    <div class="text-xs mb-3" style="color:var(--ds-text-soft);">Módulos, ofertas y análisis</div>
-                    <div class="flex flex-wrap gap-1.5">
-                        <a href="{{ url_for('laboratorios_list') }}" class="btn btn-secondary btn-sm">Ver →</a>
-                        <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-ghost btn-sm">Procesos</a>
-                        <a href="{{ url_for('modulo_packs_list') }}" class="btn btn-ghost btn-sm">Packs</a>
-                    </div>
-                </div>
-
-                <div class="card entity-card">
-                    <span class="entity-num">02</span>
-                    <div class="entity-head">
-                        <div class="icon-tile icon-tile-sm">💊</div>
-                        <div class="entity-title">Droguerías</div>
-                    </div>
-                    <div class="text-xs mb-3" style="color:var(--ds-text-soft);">Facturas, ctas. corrientes y reclamos</div>
-                    <div class="flex flex-wrap gap-1.5">
-                        <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm">Ver →</a>
-                        <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-ghost btn-sm">Procesos</a>
-                        <a href="{{ url_for('ingresos') }}" class="btn btn-ghost btn-sm">Nueva</a>
-                    </div>
-                </div>
-
-                <div class="card entity-card">
-                    <span class="entity-num">03</span>
-                    <div class="entity-head">
-                        <div class="icon-tile icon-tile-sm">🏢</div>
-                        <div class="entity-title">Otros</div>
-                    </div>
-                    <div class="text-xs mb-3" style="color:var(--ds-text-soft);">Proveedores no droguería ni lab</div>
-                    <div class="flex flex-wrap gap-1.5">
-                        <a href="{{ url_for('providers_list') }}?tipo=otro" class="btn btn-secondary btn-sm">Ver →</a>
-                        <a href="{{ url_for('procesos_list') }}?tipo=otro" class="btn btn-ghost btn-sm">Procesos</a>
-                        <a href="{{ url_for('claims_list') }}" class="btn btn-ghost btn-sm">Reclamos</a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ACCIONES FRECUENTES — agrupadas por categoría + buscador live -->
-            <div class="flex items-center justify-between mb-1 flex-wrap gap-3">
-                <div class="section-label">Acciones frecuentes</div>
+            <!-- Buscador de acciones + Personalizar (sin título, alineado a la derecha) -->
+            <div class="flex items-center justify-end mb-1 flex-wrap gap-3">
                 <div class="flex items-center gap-3 flex-wrap">
-                    <input type="text" id="home-card-buscador"
+                    <input type="text" id="home-card-buscador" class="home-card-filtro"
                            placeholder="Filtrar acción…  (ej: pedido, oferta, cliente)"
                            autocomplete="off"
                            style="background:var(--ds-surface); border:1px solid var(--ds-line);
-                                  color:var(--ds-text); border-radius:var(--ds-r-sm);
+                                  color:#fb923c; border-radius:var(--ds-r-sm);
                                   padding:5px 10px; font-size:12px; width:280px;">
                     <a href="{{ url_for('personalizar_home') }}"
                        class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);"
@@ -406,14 +440,49 @@
                 {% endif %}
             {% endmacro %}
 
+            {% set informes_cat = {'laboratorios': 'laboratorios', 'droguerias': 'ofertas', 'operativo': 'stock', 'productos': 'drogas', 'otras_entidades': 'medicos'} %}
             {% for cat_key, cat_label, cards in grupos_acciones %}
             <div class="cat-group" data-cat="{{ cat_key }}" style="margin-bottom: 14px;">
                 <div class="section-label" style="margin: 8px 0 6px; font-size: 10px;">{{ cat_label }}</div>
-                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3">
+                <div class="grid grid-cols-2 md:grid-cols-3 {% if cat_key in ['laboratorios', 'droguerias'] %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-3">
+                    {# Card-hero de compras por entidad — rallado diagonal (.home-hero).
+                       Movidas acá 2026-05-24: Droguería en su banda, Lab en la suya. #}
+                    {% if cat_key == 'laboratorios' %}
+                    <div class="home-hero home-card" style="flex-direction:column; align-items:stretch; gap:10px;"
+                         data-card-text="compras laboratorio pedido canal por laboratorio reposicion abm gestionar laboratorios packs procesos">
+                        <span class="home-hero__dots" aria-hidden="true"></span>
+                        <a href="{{ url_for('compras_laboratorio') }}" class="home-hero__body hover:no-underline" style="text-decoration:none; color:inherit;">
+                            <div class="section-label" style="margin-bottom:4px;">🧪 Por laboratorio</div>
+                            <div class="home-hero__title">Compras <span class="glow-text">Laboratorio</span></div>
+                            <div class="home-hero__desc">Pedido/Canal</div>
+                        </a>
+                        <div class="flex gap-1.5" style="position:relative; z-index:2;">
+                            <a href="{{ url_for('laboratorios_list') }}" class="btn btn-mint btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;" title="ABM de laboratorios">📋 Laboratorios</a>
+                            <a href="{{ url_for('modulo_packs_list') }}" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Packs</a>
+                            <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Procesos</a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if cat_key == 'droguerias' %}
+                    <div class="home-hero home-card" style="flex-direction:column; align-items:stretch; gap:10px;"
+                         data-card-text="compras drogueria reposicion dia accion del dia pedido abm gestionar droguerias proveedores nueva factura procesos">
+                        <span class="home-hero__dots" aria-hidden="true"></span>
+                        <a href="{{ url_for('compras_dia') }}" class="home-hero__body hover:no-underline" style="text-decoration:none; color:inherit;">
+                            <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
+                            <div class="home-hero__title">Compras <span class="glow-text">Droguería</span></div>
+                            <div class="home-hero__desc">Reposición según horarios</div>
+                        </a>
+                        <div class="flex gap-1.5" style="position:relative; z-index:2;">
+                            <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-mint btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;" title="ABM de droguerías">📋 Droguerías</a>
+                            <a href="{{ url_for('ingresos') }}" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Nueva</a>
+                            <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Procesos</a>
+                        </div>
+                    </div>
+                    {% endif %}
                     {% if cat_key == 'operativo' %}
                     {# Card especial: Armar pedido (2 modos). Movido desde BI tablero
                        2026-05-10 — Diego pidió consolidar entry points de compra. #}
-                    <div class="card home-card" data-card-text="armar pedido por laboratorio por productos compra rapida multi-drogueria">
+                    <div class="card home-card" data-card-text="armar pedido compras dia drogueria laboratorio por productos compra rapida multi-drogueria reposicion">
                         <div class="action-content">
                             <div class="icon-tile">📦</div>
                             <div class="action-content__body">
@@ -421,17 +490,17 @@
                                     <span class="action-content__title">Armar pedido</span>
                                 </div>
                                 <div class="action-content__desc">Iniciar el flujo de compra</div>
-                                <div class="flex gap-2 flex-wrap" style="margin-top:8px;">
-                                    <a href="{{ url_for('compras_multi_lab') }}" class="btn btn-secondary btn-sm">Multi-lab</a>
-                                    <a href="{{ url_for('cronograma_list') }}" class="btn btn-secondary btn-sm">Planificación</a>
-                                    <a href="{{ url_for('flujo_fondos') }}" class="btn btn-secondary btn-sm">💰 Flujo</a>
-                                    <a href="{{ url_for('pedido_prueba') }}" class="btn btn-secondary btn-sm" title="Pedido prueba — planificación con estacionalidad">🧪 Ped.Prueba</a>
+                                <div style="margin-top:8px; display:grid; grid-template-columns:repeat(4,1fr); gap:6px;">
+                                    <a href="{{ url_for('compras_multi_lab') }}" class="btn btn-secondary btn-sm" style="padding:4px 4px; font-size:10.5px; justify-content:center; white-space:nowrap;" title="Multi-laboratorio">Multi-lab</a>
+                                    <a href="{{ url_for('cronograma_list') }}" class="btn btn-secondary btn-sm" style="padding:4px 4px; font-size:10.5px; justify-content:center; white-space:nowrap;" title="Planificación">Planif.</a>
+                                    <a href="{{ url_for('flujo_fondos') }}" class="btn btn-secondary btn-sm" style="padding:4px 4px; font-size:10.5px; justify-content:center; white-space:nowrap;" title="Flujo de fondos">💰 Flujo</a>
+                                    <a href="{{ url_for('pedido_prueba') }}" class="btn btn-secondary btn-sm" style="padding:4px 4px; font-size:10.5px; justify-content:center; white-space:nowrap;" title="Pedido prueba — planificación con estacionalidad">🧪 Prueba</a>
                                 </div>
                             </div>
                         </div>
                     </div>
                     {% endif %}
-                    {% if cat_key == 'catalogo' %}
+                    {% if cat_key == 'productos' %}
                     {# Card especial: Comportamientos excepcionales (flags por producto/lab). #}
                     <div class="card home-card" data-card-text="flags comportamiento excepcional discontinuado reemplazado sin descuento nota producto laboratorio">
                         <div class="action-content">
@@ -462,7 +531,7 @@
                         </div>
                     </a>
                     {% endif %}
-                    {% if cat_key == 'analisis' %}
+                    {% if cat_key == 'otras_entidades' %}
                     {# Card especial: Obras Sociales con acción rápida a chequeo
                        de recetas (2026-05-13). #}
                     <div class="card home-card" data-card-text="obras sociales analisis financiero medicos pacientes catalogo chequeo recetas">
@@ -482,6 +551,24 @@
                     </div>
                     {% endif %}
                     {% for c in cards %}{% if c.id != 'obras_sociales' %}{{ render_card(c) }}{% endif %}{% endfor %}
+                    {# Card "Informes" por entidad — pre-setea el tema en /informes.
+                       Reemplaza al link del header (pedido Diego 2026-05-24). #}
+                    {% if cat_key in informes_cat %}
+                    {% set _ent = cat_label.split(' ', 1)[1] if ' ' in cat_label else cat_label %}
+                    <a href="{{ url_for('informes_index') }}?cat={{ informes_cat[cat_key] }}"
+                       class="card card-action home-card home-card--informes"
+                       data-card-text="informes reportes analisis {{ _ent | lower }}">
+                        <div class="action-content">
+                            <div class="icon-tile icon-tile-info">📊</div>
+                            <div class="action-content__body">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="action-content__title">Informes</span>
+                                </div>
+                                <div class="action-content__desc">Reportes y análisis de {{ _ent }}</div>
+                            </div>
+                        </div>
+                    </a>
+                    {% endif %}
                 </div>
             </div>
             {% endfor %}
@@ -492,16 +579,18 @@
 
             <script>
             (function() {
-                const inp = document.getElementById('home-card-buscador');
-                if (!inp) return;
+                // Buscador de acciones (clase .home-card-filtro). Soporta N inputs
+                // sincronizados por si se agrega otro; hoy queda uno solo.
+                const inputs = Array.from(document.querySelectorAll('.home-card-filtro'));
+                if (!inputs.length) return;
                 const cards = document.querySelectorAll('.home-card');
                 const grupos = document.querySelectorAll('.cat-group');
                 const vacioMsg = document.getElementById('home-card-vacio');
                 const qSpan = document.getElementById('home-card-q');
                 const norm = s => (s || '').toString().toLowerCase()
                     .normalize('NFD').replace(/[̀-ͯ]/g, '');
-                inp.addEventListener('input', e => {
-                    const q = norm(e.target.value.trim());
+                function aplicar(raw) {
+                    const q = norm(raw.trim());
                     let totalVisible = 0;
                     cards.forEach(c => {
                         const txt = c.dataset.cardText || '';
@@ -516,17 +605,22 @@
                         g.style.display = hay ? '' : 'none';
                     });
                     if (q && totalVisible === 0) {
-                        qSpan.textContent = e.target.value;
+                        qSpan.textContent = raw;
                         vacioMsg.classList.remove('hidden');
                     } else {
                         vacioMsg.classList.add('hidden');
                     }
-                });
-                // Atajo: '/' enfoca el buscador
+                }
+                inputs.forEach(inp => inp.addEventListener('input', e => {
+                    const v = e.target.value;
+                    inputs.forEach(o => { if (o !== e.target) o.value = v; });
+                    aplicar(v);
+                }));
+                // Atajo: '/' enfoca el primer buscador
                 document.addEventListener('keydown', e => {
                     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') {
                         e.preventDefault();
-                        inp.focus();
+                        inputs[0].focus();
                     }
                 });
             })();
