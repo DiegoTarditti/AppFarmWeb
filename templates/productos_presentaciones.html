@@ -53,7 +53,8 @@
 /* Lista de productos con presentación */
 .pp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .pp-table th { padding: 8px 12px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--ds-text-mute); font-weight: 600; border-bottom: 1px solid var(--ds-line); background: rgba(0,0,0,.08); }
+    color: var(--ds-text-mute); font-weight: 600; border-bottom: 1px solid var(--ds-line);
+    background: var(--ds-surface); position: sticky; top: 0; z-index: 5; }
 .pp-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.04); }
 .pp-table tr:hover td { background: rgba(255,255,255,.03); }
 .pp-table code { font-family: 'JetBrains Mono', monospace; color: var(--ds-text-mute); }
@@ -168,7 +169,7 @@
         </div>
         <div id="list-pres">
         {% if filas %}
-        <div style="overflow-x:auto;">
+        <div style="overflow:auto; max-height:65vh;">
         <table class="pp-table">
             <thead><tr>
                 <th>Producto</th><th>EAN</th><th>Laboratorio</th>
@@ -211,7 +212,7 @@
 
         {# Lista contextual de los otros modos (oferta/repo/pack), client-rendered #}
         <div id="list-otros" style="display:none;">
-            <div style="overflow-x:auto;">
+            <div style="overflow:auto; max-height:65vh;">
             <table class="pp-table">
                 <thead><tr><th>Producto</th><th>EAN</th><th>Laboratorio</th><th id="list-otros-valcol" style="text-align:right;">Valor</th></tr></thead>
                 <tbody id="list-otros-body"></tbody>
