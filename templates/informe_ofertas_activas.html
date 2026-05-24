@@ -9,6 +9,10 @@
         <p class="text-xs text-[#888] mt-0.5">Todas las ofertas cargadas en el sistema — por lab, droguería y módulos.</p>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
+        {# Sync/Pull local↔Render: solo tiene sentido desde una instancia LOCAL.
+           En Render (entorno.codigo == 'render') se ocultan — "sync a Render"
+           desde Render no aplica. #}
+        {% if entorno.codigo != 'render' %}
         <button type="button" id="btn-sync-all-render" onclick="syncAllRender()"
                 title="Empujar TODAS las ofertas a Render. Requiere RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env."
                 class="text-xs bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 font-semibold px-3 py-1.5 rounded-lg">
@@ -19,6 +23,7 @@
                 class="text-xs bg-violet-50 hover:bg-violet-100 border border-violet-300 text-violet-800 font-semibold px-3 py-1.5 rounded-lg">
             ⬇ Pull TODAS de Render
         </button>
+        {% endif %}
         <a href="{{ url_for('informes_index') }}" class="text-xs text-sky-600 hover:underline">← Informes</a>
     </div>
 </div>
