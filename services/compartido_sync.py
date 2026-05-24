@@ -24,11 +24,14 @@ def peers():
 
 
 def _filas_peer(url, limit=100):
-    """SELECT read-only del archivos_compartidos de un peer."""
+    """SELECT read-only del archivos_compartidos de un peer.
+
+    Solo columnas presentes en el esquema viejo — NO incluye `destinatarios`
+    (columna nueva) para poder leer peers que aún no migraron (deploy rolling)."""
     with _engine(url).connect() as c:
         return c.execute(sa.text("""
             SELECT id, tipo, nombre, descripcion, farmacia_origen,
-                   n_items, creado_en, destinatarios
+                   n_items, creado_en
             FROM archivos_compartidos
             ORDER BY creado_en DESC
             LIMIT :lim
@@ -46,7 +49,7 @@ def listar_peers(limit=100):
                     'origen_slug': p['slug'], 'origen_nombre': p['nombre'],
                     'id': r[0], 'tipo': r[1], 'nombre': r[2], 'descripcion': r[3],
                     'farmacia_origen': r[4], 'n_items': r[5] or 0,
-                    'creado_en': r[6], 'destinatarios': r[7] or 'todos',
+                    'creado_en': r[6], 'destinatarios': 'todos',
                 })
         except Exception as e:
             out.append({'origen_slug': p['slug'], 'origen_nombre': p['nombre'],
