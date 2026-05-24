@@ -26,7 +26,7 @@
     <div>
       <h1 class="text-xl font-bold glow-text">📊 Comparativa de ventas semanales</h1>
       <p class="text-xs" style="color:var(--ds-text-mute)">
-        <b class="cv-pieri">Pieri</b> vs <b class="cv-badia">Badia</b> por semana del mes, cruzado por código Alfabeta.
+        <b class="cv-pieri" id="cv-nom-intro-p">—</b> vs <b class="cv-badia" id="cv-nom-intro-b">—</b> por semana del mes, cruzado por código Alfabeta.
         Filtrá por mes y laboratorio.
       </p>
     </div>
@@ -59,8 +59,8 @@
       <div class="flex items-center justify-between gap-3 flex-wrap mb-2">
         <div class="text-sm font-semibold" id="cv-scope">Total — todos los laboratorios</div>
         <div class="text-xs flex items-center gap-4 cv-num">
-          <span><b class="cv-pieri">Pieri</b>: <span id="cv-tot-p">—</span></span>
-          <span><b class="cv-badia">Badia</b>: <span id="cv-tot-b">—</span></span>
+          <span><b class="cv-pieri" id="cv-nom-tot-p">—</b>: <span id="cv-tot-p">—</span></span>
+          <span><b class="cv-badia" id="cv-nom-tot-b">—</b>: <span id="cv-tot-b">—</span></span>
           <span id="cv-tot-diff" style="color:var(--ds-text-mute)"></span>
         </div>
       </div>
@@ -88,6 +88,17 @@ const semU = (o) => o.p_sem_u ? o : o;           // helper noop (legibilidad)
 const pickSem = (o, who) => STATE.metric === 'm' ? o[who + '_sem_m'] : o[who + '_sem_u'];
 const pickTot = (o, who) => STATE.metric === 'm' ? o[who + '_m'] : o[who + '_u'];
 
+// Nombres dinámicos de las sucursales (p = local, b = otra). Vienen del backend
+// (tabla sucursales) → correctos en cualquier instancia, no hardcode Pieri/Badia.
+const NOM = {
+  get p() { return (STATE.data && STATE.data.local_nombre) || 'Local'; },
+  get b() { return (STATE.data && STATE.data.otra_nombre) || 'Otra'; },
+};
+function applyNames() {
+  ['cv-nom-intro-p', 'cv-nom-tot-p'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = NOM.p; });
+  ['cv-nom-intro-b', 'cv-nom-tot-b'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = NOM.b; });
+}
+
 function weekLabels() {
   const n = STATE.data.n_semanas, d = STATE.data.n_dias, out = [];
   for (let i = 0; i < n; i++) {
@@ -112,8 +123,8 @@ function renderChart() {
     data: {
       labels,
       datasets: [
-        {label: 'Pieri', data: dataP, backgroundColor: '#38bdf8', borderRadius: 4},
-        {label: 'Badia', data: dataB, backgroundColor: '#34d399', borderRadius: 4},
+        {label: NOM.p, data: dataP, backgroundColor: '#38bdf8', borderRadius: 4},
+        {label: NOM.b, data: dataB, backgroundColor: '#34d399', borderRadius: 4},
       ],
     },
     options: {
@@ -137,7 +148,7 @@ function renderChart() {
   const el = document.getElementById('cv-tot-diff');
   if (Math.abs(diff) < 0.5) { el.textContent = '(empatadas)'; }
   else {
-    const quien = diff > 0 ? 'Pieri' : 'Badia';
+    const quien = diff > 0 ? NOM.p : NOM.b;
     el.textContent = quien + ' +' + fmt(Math.abs(diff)) + ' (' + NF1.format(pct) + '%)';
   }
   document.getElementById('cv-scope').textContent =
@@ -210,9 +221,9 @@ function prodTable(prods) {
   return '<table class="w-full">' +
     '<thead><tr class="text-[10px] uppercase" style="color:var(--ds-text-mute)">' +
       '<th class="px-3 py-1 text-left">Producto</th>' +
-      '<th class="px-3 py-1 text-right cv-pieri">Pieri</th>' +
+      '<th class="px-3 py-1 text-right cv-pieri">' + NOM.p + '</th>' +
       '<th class="px-2 py-1"></th>' +
-      '<th class="px-3 py-1 text-right cv-badia">Badia</th>' +
+      '<th class="px-3 py-1 text-right cv-badia">' + NOM.b + '</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
@@ -231,6 +242,7 @@ function rebuildLabFilter() {
 }
 
 function renderAll() {
+  applyNames();
   document.getElementById('cv-tot-p').textContent = '—';
   renderChart();
   renderLabs();
