@@ -624,10 +624,10 @@ class ArchivoCompartido(Base):
 class Sucursal(Base):
     """Registro de sucursales del grupo para /transferencias (comparador N-way).
 
-    Cada fila = una sucursal con su DB. Guarda AMBAS URLs: la interna (conexión
-    dentro de Render — rápida, sin SSL, sin egress) y la externa (desde afuera /
-    dev local — con SSL). La instancia elige cuál usar según dónde corre
-    (ver services/transferencias.py). Reemplaza el viejo BADIA_DATABASE_URL.
+    Cada fila = una sucursal con su DB. `url_externa` es la URL de conexión
+    (externa de Render: funciona desde local Y desde Render). La instancia
+    compara su DB local (DATABASE_URL) contra las otras del registro.
+    Reemplaza el viejo BADIA_DATABASE_URL.
     """
     __tablename__ = 'sucursales'
     id             = Column(Integer, primary_key=True)
@@ -635,8 +635,7 @@ class Sucursal(Base):
     nombre         = Column(String(100), nullable=False)              # display: 'Badia'
     app_name       = Column(String(100), nullable=True)               # 'farmacia-web'
     db_name        = Column(String(100), nullable=True)               # 'farmacia_yhvp'
-    url_interna    = Column(Text, nullable=True)                      # Render internal URL
-    url_externa    = Column(Text, nullable=True)                      # Render external URL
+    url_externa    = Column(Text, nullable=True)                      # URL de conexión (externa)
     activa         = Column(Boolean, nullable=False, default=True)
     actualizado_en = Column(DateTime, default=now_ar)
 
@@ -2795,6 +2794,8 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS observer_ventas_meses INTEGER NOT NULL DEFAULT 16"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_excedente_meses DECIMAL(5,1) NOT NULL DEFAULT 6.0"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS transfer_necesita_meses DECIMAL(5,1) NOT NULL DEFAULT 2.0"))
+    # sucursales: se unificó a una sola URL — limpiar la columna interna obsoleta.
+    conn.execute(text("ALTER TABLE sucursales DROP COLUMN IF EXISTS url_interna"))
     # Rutas predeterminadas adicionales (cliente local)
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_excels VARCHAR(500)"))
     conn.execute(text("ALTER TABLE configuracion ADD COLUMN IF NOT EXISTS ruta_descargas VARCHAR(500)"))

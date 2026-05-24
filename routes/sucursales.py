@@ -1,6 +1,6 @@
 """Admin: registro de sucursales del grupo (DBs) para /transferencias.
 
-Cada sucursal guarda su URL interna (dentro de Render) y externa (desde afuera).
+Cada sucursal guarda su URL de conexión (externa, alcanzable de local y Render).
 La instancia compara su DB local (DATABASE_URL) contra las otras del registro.
 """
 import os
@@ -21,7 +21,7 @@ def init_app(app):
             sucs = [{
                 'id': r.id, 'slug': r.slug, 'nombre': r.nombre,
                 'app_name': r.app_name, 'db_name': r.db_name,
-                'url_interna': r.url_interna or '', 'url_externa': r.url_externa or '',
+                'url_externa': r.url_externa or '',
                 'activa': r.activa,
             } for r in rows]
         return render_template('sucursales.html', sucursales=sucs,
@@ -53,7 +53,6 @@ def init_app(app):
             row.nombre = nombre
             row.app_name = (f.get('app_name') or '').strip() or None
             row.db_name = (f.get('db_name') or '').strip() or None
-            row.url_interna = (f.get('url_interna') or '').strip() or None
             row.url_externa = (f.get('url_externa') or '').strip() or None
             row.activa = bool(f.get('activa'))
             row.actualizado_en = database.now_ar()
