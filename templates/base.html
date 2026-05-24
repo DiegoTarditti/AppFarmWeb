@@ -862,7 +862,6 @@
             </div>
         </div>
     </div>
-    {% if nav_active != 'inicio' %}
     <button type="button" onclick="toggleSidebar()" title="Colapsar/expandir menú"
             class="hidden lg:flex mx-3 mt-2 items-center justify-center gap-2 py-1.5 rounded-lg text-[11px] text-[#6d9082] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors">
         <svg class="sidebar-toggle-icon w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -870,7 +869,6 @@
         </svg>
         <span class="sidebar-toggle-text">Colapsar</span>
     </button>
-    {% endif %}
     <nav class="flex-1 px-2 py-2 space-y-px">
         <a href="{{ url_for('index') }}"
            class="{{ nav_active_cls if nav_active == 'inicio' else nav_link }}">
