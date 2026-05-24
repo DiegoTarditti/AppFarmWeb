@@ -621,6 +621,26 @@ class ArchivoCompartido(Base):
     creado_en       = Column(DateTime, default=now_ar)
 
 
+class Sucursal(Base):
+    """Registro de sucursales del grupo para /transferencias (comparador N-way).
+
+    Cada fila = una sucursal con su DB. Guarda AMBAS URLs: la interna (conexión
+    dentro de Render — rápida, sin SSL, sin egress) y la externa (desde afuera /
+    dev local — con SSL). La instancia elige cuál usar según dónde corre
+    (ver services/transferencias.py). Reemplaza el viejo BADIA_DATABASE_URL.
+    """
+    __tablename__ = 'sucursales'
+    id             = Column(Integer, primary_key=True)
+    slug           = Column(String(50), unique=True, nullable=False)  # 'badia', 'pieri'
+    nombre         = Column(String(100), nullable=False)              # display: 'Badia'
+    app_name       = Column(String(100), nullable=True)               # 'farmacia-web'
+    db_name        = Column(String(100), nullable=True)               # 'farmacia_yhvp'
+    url_interna    = Column(Text, nullable=True)                      # Render internal URL
+    url_externa    = Column(Text, nullable=True)                      # Render external URL
+    activa         = Column(Boolean, nullable=False, default=True)
+    actualizado_en = Column(DateTime, default=now_ar)
+
+
 class Provider(Base):
     __tablename__ = 'proveedores'
     id = Column(Integer, primary_key=True)
@@ -1903,7 +1923,7 @@ def init_db(database_url=None):
                         'estacionalidad_escenarios',
                         'estacionalidad_productos',
                         'cadencia_lab_snapshot',
-                        'archivos_compartidos')
+                        'archivos_compartidos', 'sucursales')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

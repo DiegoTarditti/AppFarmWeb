@@ -72,8 +72,10 @@ services:
       # que ya usa el DockerPanel para hablar con Render (X-Panel-Token).
       RENDER_BASE_URL: ${RENDER_BASE_URL:-}
       PANEL_REMOTO_TOKEN: ${PANEL_REMOTO_TOKEN:-}
-      # DB de la farmacia hermana (Badia), read-only, para /transferencias.
+      # /transferencias: BADIA_DATABASE_URL es fallback legacy (sin tabla sucursales).
       BADIA_DATABASE_URL: ${BADIA_DATABASE_URL:-}
+      # Slug de esta sucursal (si no, se autodetecta por db_name vs DATABASE_URL).
+      SUCURSAL_LOCAL: ${SUCURSAL_LOCAL:-}
     ports:
       - "${WEB_PORT:-5000}:5000"
     # Si no tenés .env, el default es 5000.

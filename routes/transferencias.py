@@ -1,4 +1,4 @@
-"""Transferencias entre sucursales: comparador Pieri <-> Badia + export XLSX."""
+"""Transferencias entre sucursales: comparador N-way (de a pares) + export XLSX."""
 import io
 
 from flask import jsonify, render_template, request, send_file
@@ -25,7 +25,8 @@ def init_app(app):
     @login_required
     def transferencias():
         exc, nec = _umbrales()
-        data = svc.analizar(excedente_meses=exc, necesita_meses=nec)
+        otra = (request.args.get('otra') or '').strip() or None
+        data = svc.analizar(excedente_meses=exc, necesita_meses=nec, otra=otra)
         return render_template('transferencias.html', data=data, exc=exc, nec=nec)
 
     @app.route('/transferencias/export')
@@ -36,16 +37,19 @@ def init_app(app):
         from openpyxl.utils import get_column_letter
 
         exc, nec = _umbrales()
-        data = svc.analizar(excedente_meses=exc, necesita_meses=nec)
+        otra = (request.args.get('otra') or '').strip() or None
+        data = svc.analizar(excedente_meses=exc, necesita_meses=nec, otra=otra)
         if not data.get('ok'):
             return jsonify(data), 400
 
+        loc = data['local']['nombre']
+        otr = data['otra']['nombre']
         wb = ox.Workbook()
         ws = wb.active
         ws.title = 'Transferencias'
         cols = ['Alfabeta', 'Producto',
-                'Badia stock', 'Badia vta/m', 'Badia cob(m)',
-                'Pieri stock', 'Pieri vta/m', 'Pieri cob(m)',
+                f'{otr} stock', f'{otr} vta/m', f'{otr} cob(m)',
+                f'{loc} stock', f'{loc} vta/m', f'{loc} cob(m)',
                 'Direccion', 'Transferir']
         hf = Font(bold=True, color='FFFFFF')
         fill = PatternFill('solid', fgColor='1F2937')
@@ -56,15 +60,15 @@ def init_app(app):
             cell.alignment = Alignment(horizontal='center')
         r = 2
         for f in data['filas']:
-            direc = ('Badia -> Pieri' if f['direccion'] == 'badia_a_pieri'
-                     else 'Pieri -> Badia')
+            direc = (f'{otr} -> {loc}' if f['direccion'] == 'otra_a_local'
+                     else f'{loc} -> {otr}')
             vals = [f['alfabeta'], f['descripcion'],
-                    f['b_stock'], f['b_avg'], f['b_cob'],
-                    f['p_stock'], f['p_avg'], f['p_cob'], direc, f['qty']]
+                    f['o_stock'], f['o_avg'], f['o_cob'],
+                    f['l_stock'], f['l_avg'], f['l_cob'], direc, f['qty']]
             for ci, v in enumerate(vals, 1):
                 ws.cell(r, ci, v)
             r += 1
-        for ci, w in enumerate([10, 38, 11, 10, 11, 11, 10, 11, 16, 11], 1):
+        for ci, w in enumerate([10, 38, 11, 10, 11, 11, 10, 11, 18, 11], 1):
             ws.column_dimensions[get_column_letter(ci)].width = w
         ws.freeze_panes = 'A2'
 

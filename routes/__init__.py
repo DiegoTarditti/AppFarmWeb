@@ -53,6 +53,7 @@ from routes import (
     productos_pendientes,
     providers,
     purchase,
+    sucursales,
     tipos_pedido,
     transferencias,
     vademecum,
@@ -115,6 +116,7 @@ _modules = [
     pedido_prueba,
     planificacion_compras,
     transferencias,
+    sucursales,
     comparativa_ventas,
 ]
 
