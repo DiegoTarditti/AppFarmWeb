@@ -76,118 +76,74 @@
     <div class="pf-card">
         <div class="pf-card-head"><h3>📦 Configurar presentación</h3></div>
         <div style="padding: 16px 18px;">
+            {# Modo (qué vas a configurar) — siempre visible, se elige PRIMERO #}
+            <div class="ft-tabs">
+                <button type="button" class="ft-tab active" data-modo="presentacion" onclick="ftModo('presentacion')">📦 Presentación</button>
+                <button type="button" class="ft-tab"        data-modo="oferta"       onclick="ftModo('oferta')">🎁 Oferta</button>
+                <button type="button" class="ft-tab"        data-modo="repo"          onclick="ftModo('repo')">🔁 Repo fija</button>
+                <button type="button" class="ft-tab"        data-modo="pack"          onclick="ftModo('pack')">📦 Pack</button>
+            </div>
+
+            {# Buscador — siempre visible. Tildá varios o clic en el nombre (uno solo) #}
             <div class="pf-field">
-                <label class="pf-label">Producto (buscar por nombre)</label>
+                <label class="pf-label">Buscar producto</label>
                 <div class="pf-ac-wrap" id="pr-ac-wrap">
                     <input type="text" class="pf-input" id="pr-search"
                            placeholder='Ej: "alikal sobre" — multi-token' autocomplete="off">
                     <div class="pf-ac-results" id="pr-ac-results"></div>
                 </div>
-                <div class="pf-help">Buscá: click en el nombre = ficha individual; tildá varios para asignar presentación en lote.</div>
-                <div id="pr-search-msg" class="mt-2 text-[12px]"></div>
-
-                <div id="pr-bulk-bar" class="hidden mt-2 p-2 rounded-lg border border-[color:var(--ds-line)] bg-[color:var(--ds-surface)]">
-                    <div class="flex items-center gap-2 flex-wrap text-[12px]">
-                        <span class="font-semibold text-[color:var(--ds-mint)]"><span id="pr-bulk-count">0</span> seleccionados</span>
-                        <label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" id="pr-bulk-frac" checked> fraccionado</label>
-                        <label class="flex items-center gap-1">envase
-                            <input type="text" id="pr-bulk-envase" inputmode="decimal" placeholder="ObServer" class="pf-input" style="width:88px; padding:3px 6px;"></label>
-                        <button type="button" id="pr-bulk-aplicar" class="btn btn-mint text-xs">Aplicar a los tildados</button>
-                        <button type="button" id="pr-bulk-limpiar" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-rose-500">Limpiar</button>
-                    </div>
-                    <div class="text-[10px] text-[color:var(--ds-text-mute)] mt-1">Envase vacío = usa el de ObServer de cada producto. Si lo completás, lo aplica igual a todos.</div>
-                    <div id="pr-bulk-status" class="text-[11px] mt-1"></div>
-                </div>
+                <div class="pf-help">Tildá varios para aplicar en lote · clic en el nombre = uno solo (precarga su valor actual). Kellerhoff se asigna por fila en la tabla de abajo.</div>
             </div>
 
-            <div id="pr-config" style="display:none;">
-                <div class="pf-chosen" style="margin-bottom: 13px;">
-                    <div class="chosen-info">
-                        <div class="chosen-nombre" id="pr-nombre"></div>
-                        <div class="chosen-ean" id="pr-ean-lbl"></div>
-                    </div>
-                    <button type="button" class="chosen-clear" id="pr-clear" title="Cambiar producto">×</button>
-                </div>
+            {# Selección actual #}
+            <div id="pr-sel" class="text-[12px] mb-2" style="color:var(--ds-text-mute);">Ningún producto seleccionado.</div>
 
-                <div class="ft-tabs">
-                    <button type="button" class="ft-tab active" data-panel="pres"   onclick="ftTab('pres')">📦 Presentación</button>
-                    <button type="button" class="ft-tab"        data-panel="oferta" onclick="ftTab('oferta')">🎁 Oferta</button>
-                    <button type="button" class="ft-tab"        data-panel="repo"   onclick="ftTab('repo')">🔁 Repo fija</button>
-                    <button type="button" class="ft-tab"        data-panel="pack"   onclick="ftTab('pack')">📦 Pack</button>
-                </div>
-
-                <div class="ft-panel active" id="panel-pres">
+            {# Form Presentación #}
+            <div class="ft-form" id="form-presentacion">
                 <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--ds-text);">
                     <input type="checkbox" id="pr-fraccionado" style="width:16px;height:16px;">
                     Se vende fraccionado (suelto, pero se pide por envase)
                 </label>
-
                 <div class="pf-field" style="margin-top:13px;">
                     <label class="pf-label">Cantidad por envase</label>
-                    <input type="text" class="pf-input" id="pr-cant" inputmode="decimal" placeholder="ej: 30">
-                    <div class="pf-help" id="pr-cant-help">Unidades de venta por envase de compra.</div>
-                </div>
-
-                <button type="button" class="btn btn-mint text-xs w-full mt-1" id="pr-save">Guardar presentación</button>
-                <div id="pr-status" class="text-[11px] mt-2"></div>
-
-                {# ── Equivalencia Kellerhoff ── #}
-                <div style="border-top:1px solid var(--ds-line); margin-top:14px; padding-top:12px;">
-                    <label class="pf-label" style="margin-bottom:6px;">🏷 Equivalencia Kellerhoff</label>
-                    <div id="kel-estado" class="text-[11px] mb-2"></div>
-                    <div class="pf-ac-wrap" id="kel-ac-wrap">
-                        <input type="text" class="pf-input" id="kel-search" placeholder="Buscar en catálogo Kellerhoff…" autocomplete="off">
-                        <div class="pf-ac-results" id="kel-ac-results"></div>
-                    </div>
-                    <div id="kel-elegido" class="text-[11px] mt-2" style="display:none;"></div>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;">
-                        <button type="button" class="btn btn-mint text-xs" id="kel-asignar" disabled>Asignar código</button>
-                        <button type="button" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-amber-500" id="kel-nodisp">Kellerhoff no lo trae</button>
-                        <button type="button" class="text-[11px] px-2 py-1 rounded border border-[color:var(--ds-line)] text-[color:var(--ds-text-mute)] hover:border-rose-500" id="kel-limpiar">Limpiar</button>
-                    </div>
-                    <div id="kel-status" class="text-[11px] mt-2"></div>
-                </div>
-                </div>{# /panel-pres #}
-
-                {# ── B · Oferta ── #}
-                <div class="ft-panel" id="panel-oferta">
-                    <div class="pf-help" style="margin-bottom:10px;">Oferta de <b id="of-lab">—</b> · el laboratorio sale del producto.</div>
-                    <div class="pf-field">
-                        <label class="pf-label">% Descuento (PSL)</label>
-                        <input type="text" class="pf-input" id="of-dto" inputmode="decimal" placeholder="ej: 22.5">
-                    </div>
-                    <div class="pf-field">
-                        <label class="pf-label">Cantidad mínima</label>
-                        <input type="number" class="pf-input" id="of-min" min="1" value="1">
-                        <div class="pf-help">1 = oferta simple (sin mínimo) · mayor = el descuento aplica desde esa cantidad.</div>
-                    </div>
-                    <button type="button" class="btn btn-mint text-xs w-full mt-1" id="of-save">Guardar oferta</button>
-                    <div class="pf-help" style="margin-top:4px;">Vaciar el descuento y guardar = borra la oferta.</div>
-                    <div id="of-status" class="text-[11px] mt-2"></div>
-                </div>
-
-                {# ── C · Repo fija ── #}
-                <div class="ft-panel" id="panel-repo">
-                    <div class="pf-help" style="margin-bottom:10px;">Cantidad fija a pedir cuando el producto llega al punto de pedido. Vacío = el motor la calcula sola (dinámico).</div>
-                    <div class="pf-field">
-                        <label class="pf-label">Cantidad de reposición fija</label>
-                        <input type="number" class="pf-input" id="repo-cant" min="0" placeholder="(dinámico)">
-                    </div>
-                    <button type="button" class="btn btn-mint text-xs w-full mt-1" id="repo-save">Guardar repo fija</button>
-                    <div id="repo-status" class="text-[11px] mt-2"></div>
-                </div>
-
-                {# ── D · Pack ── #}
-                <div class="ft-panel" id="panel-pack">
-                    <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--ds-text);">
-                        <input type="checkbox" id="pack-chk" style="width:16px;height:16px;">
-                        Es un pack de unidades
-                    </label>
-                    <div class="pf-help" style="margin-top:8px;">Marca el producto como pack: se trata distinto en el armado de pedido.</div>
-                    <button type="button" class="btn btn-mint text-xs w-full mt-2" id="pack-save">Guardar</button>
-                    <div id="pack-status" class="text-[11px] mt-2"></div>
+                    <input type="text" class="pf-input" id="pr-cant" inputmode="decimal" placeholder="vacío = usa el de ObServer">
+                    <div class="pf-help">Unidades de venta por envase. En lote, vacío = el de ObServer de cada uno.</div>
                 </div>
             </div>
+
+            {# Form Oferta #}
+            <div class="ft-form" id="form-oferta" style="display:none;">
+                <div class="pf-field">
+                    <label class="pf-label">% Descuento (PSL)</label>
+                    <input type="text" class="pf-input" id="of-dto" inputmode="decimal" placeholder="ej: 22.5 — vacío = borra la oferta">
+                </div>
+                <div class="pf-field">
+                    <label class="pf-label">Cantidad mínima</label>
+                    <input type="number" class="pf-input" id="of-min" min="1" value="1">
+                    <div class="pf-help">1 = oferta simple · mayor = aplica desde esa cantidad. El laboratorio sale de cada producto.</div>
+                </div>
+            </div>
+
+            {# Form Repo fija #}
+            <div class="ft-form" id="form-repo" style="display:none;">
+                <div class="pf-field">
+                    <label class="pf-label">Cantidad de reposición fija</label>
+                    <input type="number" class="pf-input" id="repo-cant" min="0" placeholder="vacío = dinámico">
+                    <div class="pf-help">Lo que se pide al llegar al punto de pedido. Vacío = el motor lo calcula solo.</div>
+                </div>
+            </div>
+
+            {# Form Pack #}
+            <div class="ft-form" id="form-pack" style="display:none;">
+                <label class="pf-label" style="margin-bottom:6px;">Marcar como pack</label>
+                <div style="display:flex; gap:14px;">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--ds-text);"><input type="radio" name="pack-val" value="1" checked> Es pack</label>
+                    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;color:var(--ds-text);"><input type="radio" name="pack-val" value="0"> No es pack</label>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-mint text-xs w-full mt-3" id="pr-aplicar">Aplicar a los seleccionados</button>
+            <div id="pr-status" class="text-[11px] mt-2"></div>
         </div>
 
         {# Acceso al catálogo Kellerhoff (importar CSV + recalcular equivalencias) #}
@@ -224,7 +180,7 @@
             <tbody>
             {% for f in filas %}
             <tr class="pp-row" data-txt="{{ (f.nombre ~ ' ' ~ f.ean ~ ' ' ~ f.lab) | lower }}"
-                data-lab="{{ f.lab | lower }}" data-pean="{{ f.ean }}">
+                data-lab="{{ f.lab | lower }}" data-pean="{{ f.ean }}" data-oid="{{ f.observer_id or '' }}">
                 <td class="text-[color:var(--ds-text-soft)]">{{ f.nombre }}</td>
                 <td><code>{{ f.ean }}</code></td>
                 <td class="text-[color:var(--ds-text-mute)]">{% if f.lab %}{{ f.lab }}{% else %}—{% endif %}</td>
@@ -349,7 +305,7 @@
         const btn = e.target.closest('.pp-edit');
         if (btn && window.ppEditar) {
             const row = btn.closest('tr');
-            window.ppEditar(row.dataset.pean);
+            window.ppEditar(row.dataset.pean, row.dataset.oid, (row.querySelector('td') || {}).textContent || '');
         }
     });
 })();
@@ -369,32 +325,24 @@
         return out;
     }
 
-    const sInput   = document.getElementById('pr-search');
-    const sWrap    = document.getElementById('pr-ac-wrap');
-    const sRes     = document.getElementById('pr-ac-results');
-    const cfgBox   = document.getElementById('pr-config');
-    const nom      = document.getElementById('pr-nombre');
-    const eanLbl   = document.getElementById('pr-ean-lbl');
-    const chk      = document.getElementById('pr-fraccionado');
-    const cant     = document.getElementById('pr-cant');
-    const cantHelp = document.getElementById('pr-cant-help');
-    const status   = document.getElementById('pr-status');
-    const msg      = document.getElementById('pr-search-msg');
-    const btnSave  = document.getElementById('pr-save');
-    const btnClear = document.getElementById('pr-clear');
-    const _selected = new Map();
-    const bulkBar     = document.getElementById('pr-bulk-bar');
-    const bulkCount   = document.getElementById('pr-bulk-count');
-    const bulkStatus  = document.getElementById('pr-bulk-status');
+    const $ = id => document.getElementById(id);
+    const sInput = $('pr-search'), sWrap = $('pr-ac-wrap'), sRes = $('pr-ac-results');
+    const selInfo = $('pr-sel'), status = $('pr-status'), btnAplicar = $('pr-aplicar');
+    const _selected = new Map();   // observer_id(str) -> {ean, desc}
+    let _modo = 'presentacion', _deb = null, _seq = 0, _items = [], _focus = -1;
 
-    function refreshBulkBar() {
-        bulkCount.textContent = _selected.size;
-        bulkBar.classList.toggle('hidden', _selected.size === 0);
+    window.ftModo = function(m) {
+        _modo = m;
+        document.querySelectorAll('.ft-tab').forEach(t => t.classList.toggle('active', t.dataset.modo === m));
+        document.querySelectorAll('.ft-form').forEach(f => f.style.display = (f.id === 'form-' + m) ? 'block' : 'none');
+    };
+    function setStatus(msg, ok) { status.textContent = msg || ''; status.className = 'text-[11px] mt-2 ' + (msg ? (ok ? 'text-[color:var(--ds-mint)]' : 'text-rose-400') : ''); }
+    function updateSel() {
+        const n = _selected.size;
+        if (n === 0) selInfo.textContent = 'Ningún producto seleccionado.';
+        else if (n === 1) selInfo.innerHTML = 'Seleccionado: <b>' + escapeHtml([..._selected.values()][0].desc) + '</b>';
+        else selInfo.innerHTML = '<b>' + n + '</b> productos seleccionados';
     }
-    function setMsg(html, cls) { msg.innerHTML = html || ''; msg.className = 'mt-2 text-[12px] ' + (cls || ''); }
-    let _deb = null, _seq = 0, _items = [], _focus = -1, _ean = '', _producto_id = null;
-    let _kelEan = '', _kelPick = null, _kelDeb = null, _kelSeq = 0;
-    function setStatus(m, cls) { status.textContent = m || ''; status.className = 'text-[11px] mt-2 ' + (cls || ''); }
 
     function renderRes(items, tokens) {
         _items = items; _focus = -1;
@@ -407,105 +355,37 @@
                     <div class="ac-meta"><code>${escapeHtml(p.codigo_barra)}</code>${p.laboratorio_nombre ? '<span>' + escapeHtml(p.laboratorio_nombre) + '</span>' : ''}</div>
                 </div>
             </div>`).join('');
-        sRes.innerHTML += `<div id="pr-ac-foot" style="position:sticky; bottom:0; background:var(--ds-surface-2); border-top:1px solid var(--ds-line); padding:7px 10px; align-items:center; gap:8px; display:none;">
-            <span class="text-[11px] text-[color:var(--ds-text-mute)]"><b id="pr-ac-foot-n">0</b> tildados · (clic en el nombre = configurar uno solo)</span>
-            <button type="button" id="pr-ac-foot-ap" class="btn btn-mint text-xs" style="margin-left:auto;">Aplicar a los tildados</button>
-        </div>`;
         sRes.classList.add('open');
-        sRes.querySelectorAll('.pf-ac-body').forEach(el => el.addEventListener('click', () => elegir(_items[+el.dataset.idx])));
+        sRes.querySelectorAll('.pf-ac-body').forEach(el => el.addEventListener('click', () => elegirUno(_items[+el.dataset.idx])));
         sRes.querySelectorAll('.pf-ac-chk').forEach(el => el.addEventListener('change', (e) => {
             e.stopPropagation();
-            const p = _items[+el.dataset.idx]; const k = String(p.observer_id);
-            if (el.checked) _selected.set(k, p.descripcion); else _selected.delete(k);
-            refreshBulkBar(); updateFoot();
+            const p = _items[+el.dataset.idx], k = String(p.observer_id);
+            if (el.checked) _selected.set(k, {ean: p.codigo_barra, desc: p.descripcion}); else _selected.delete(k);
+            updateSel();
         }));
-        const ap = document.getElementById('pr-ac-foot-ap');
-        if (ap) ap.addEventListener('click', bulkAplicar);
-        updateFoot();
-    }
-    function updateFoot() {
-        const foot = document.getElementById('pr-ac-foot');
-        if (!foot) return;
-        foot.style.display = _selected.size > 0 ? 'flex' : 'none';
-        const n = document.getElementById('pr-ac-foot-n');
-        if (n) n.textContent = _selected.size;
     }
 
-    async function elegir(p) { sRes.classList.remove('open'); sInput.value = ''; await cargarPresentacion(p); }
-
-    async function bulkAplicar() {
-        if (_selected.size === 0) return;
-        const obs_ids = Array.from(_selected.keys()).map(k => parseInt(k));
-        const fraccionado = document.getElementById('pr-bulk-frac').checked;
-        const envaseRaw = document.getElementById('pr-bulk-envase').value.trim();
-        bulkStatus.textContent = 'Aplicando…'; bulkStatus.className = 'text-[11px] mt-1 text-[#9ca3af]';
+    // Clic en nombre = seleccionar SOLO ese + precargar su valor actual.
+    async function elegirUno(p) {
+        _selected.clear();
+        if (p.observer_id != null) _selected.set(String(p.observer_id), {ean: p.codigo_barra, desc: p.descripcion});
+        updateSel(); sRes.classList.remove('open'); sInput.value = '';
+        await precargar(p.codigo_barra);
+    }
+    async function precargar(ean) {
         try {
-            const r = await fetch('/api/producto/presentacion-bulk', {
-                method: 'POST', headers: {'Content-Type': 'application/json'}, credentials: 'same-origin',
-                body: JSON.stringify({observer_ids: obs_ids, fraccionado, cantidad_envase: envaseRaw || null}),
-            });
+            const r = await fetch('/api/producto/presentacion?ean=' + encodeURIComponent(ean), {credentials: 'same-origin'});
             const d = await r.json();
-            if (!d.ok) { bulkStatus.textContent = d.error || 'Error'; bulkStatus.className = 'text-[11px] mt-1 text-rose-500'; return; }
-            bulkStatus.innerHTML = `✓ ${d.aplicados} aplicado(s)` + (d.materializados ? ` · ${d.materializados} catalogado(s)` : '')
-                + (d.sin_envase ? ` · ${d.sin_envase} sin envase` : '') + (d.errores ? ` · ${d.errores} con error` : '');
-            bulkStatus.className = 'text-[11px] mt-1 text-emerald-600';
-            _selected.clear(); refreshBulkBar(); updateFoot();
-            sRes.querySelectorAll('.pf-ac-chk').forEach(c => c.checked = false);
-            sRes.classList.remove('open');  // cerrar la lista → se ve el status del lote
-        } catch { bulkStatus.textContent = 'Error de red'; bulkStatus.className = 'text-[11px] mt-1 text-rose-500'; }
+            if (!d.ok) return;
+            $('pr-fraccionado').checked = !!d.fraccionado;
+            $('pr-cant').value = d.cantidad_envase != null ? d.cantidad_envase : '';
+            $('of-dto').value = (d.oferta && d.oferta.descuento_psl != null) ? d.oferta.descuento_psl : '';
+            $('of-min').value = (d.oferta && d.oferta.unidades_minima) ? d.oferta.unidades_minima : 1;
+            $('repo-cant').value = (d.cantidad_reposicion_fija != null) ? d.cantidad_reposicion_fija : '';
+            const pv = d.es_pack ? '1' : '0';
+            document.querySelectorAll('input[name=pack-val]').forEach(rb => rb.checked = (rb.value === pv));
+        } catch {}
     }
-    function bulkLimpiar() { _selected.clear(); refreshBulkBar(); sRes.querySelectorAll('.pf-ac-chk').forEach(c => c.checked = false); bulkStatus.textContent = ''; }
-    document.getElementById('pr-bulk-aplicar').addEventListener('click', bulkAplicar);
-    document.getElementById('pr-bulk-limpiar').addEventListener('click', bulkLimpiar);
-
-    async function cargarPresentacion(p) {
-        setMsg('Cargando…', 'text-[#9ca3af]');
-        try {
-            const r = await fetch('/api/producto/presentacion?ean=' + encodeURIComponent(p.codigo_barra), {credentials: 'same-origin'});
-            const d = await r.json();
-            if (!d.ok) {
-                if (d.existe_master === false && p.observer_id) {
-                    setMsg(`<span class="text-amber-600">«${escapeHtml(p.descripcion)}» todavía no está catalogado localmente.</span> `
-                        + `<button type="button" id="pr-catalogar" class="ml-1 underline font-semibold text-[color:var(--ds-mint)] hover:opacity-80">Catalogar y configurar</button>`, '');
-                    document.getElementById('pr-catalogar').addEventListener('click', () => catalogar(p));
-                } else { setMsg(escapeHtml(d.error || 'No se pudo cargar'), 'text-rose-500'); }
-                return;
-            }
-            setMsg('', '');
-            _ean = d.ean;
-            nom.textContent = d.descripcion;
-            eanLbl.textContent = (d.ean || '—') + (d.lab ? ' · ' + d.lab : '');
-            chk.checked = !!d.fraccionado;
-            cant.value = d.cantidad_envase != null ? d.cantidad_envase : '';
-            cantHelp.textContent = (d.cantidad_envase == null && d.cantidad_envase_obs != null)
-                ? 'Sugerido ObServer: ' + d.cantidad_envase_obs + '. Unidades de venta por envase.'
-                : 'Unidades de venta por envase de compra.';
-            sWrap.style.display = 'none'; cfgBox.style.display = 'block'; setStatus('', '');
-            renderKel(d.kellerhoff);
-            // Ficha 360: poblar pestañas Oferta / Repo fija / Pack.
-            _producto_id = d.producto_id || null;
-            document.getElementById('of-lab').textContent = d.lab || '(sin laboratorio)';
-            document.getElementById('of-dto').value = (d.oferta && d.oferta.descuento_psl != null) ? d.oferta.descuento_psl : '';
-            document.getElementById('of-min').value = (d.oferta && d.oferta.unidades_minima) ? d.oferta.unidades_minima : 1;
-            document.getElementById('repo-cant').value = (d.cantidad_reposicion_fija != null) ? d.cantidad_reposicion_fija : '';
-            document.getElementById('pack-chk').checked = !!d.es_pack;
-            ftTab('pres');
-            ['of-status', 'repo-status', 'pack-status'].forEach(id => { const e = document.getElementById(id); if (e) e.textContent = ''; });
-            cfgBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } catch { setMsg('Error de red', 'text-rose-500'); }
-    }
-
-    async function catalogar(p) {
-        setMsg('Catalogando…', 'text-[#9ca3af]');
-        try {
-            const r = await fetch('/producto/materializar/' + p.observer_id, {method: 'POST', credentials: 'same-origin'});
-            const d = await r.json();
-            if (!d.ok) { setMsg(escapeHtml(d.error || 'No se pudo catalogar'), 'text-rose-500'); return; }
-            await cargarPresentacion(p);
-        } catch { setMsg('Error de red', 'text-rose-500'); }
-    }
-
-    btnClear.addEventListener('click', () => { _ean = ''; cfgBox.style.display = 'none'; sWrap.style.display = ''; setStatus('', ''); setMsg('', ''); sInput.focus(); });
 
     sInput.addEventListener('input', () => {
         const q = sInput.value.trim();
@@ -522,13 +402,12 @@
             } catch { sRes.classList.remove('open'); }
         }, 250);
     });
-
     sInput.addEventListener('keydown', (e) => {
         const items = sRes.querySelectorAll('.pf-ac-item');
         if (!items.length) return;
         if (e.key === 'ArrowDown') { e.preventDefault(); _focus = (_focus + 1) % items.length; }
         else if (e.key === 'ArrowUp') { e.preventDefault(); _focus = (_focus - 1 + items.length) % items.length; }
-        else if (e.key === 'Enter') { if (_focus >= 0 && _items[_focus]) { e.preventDefault(); elegir(_items[_focus]); return; } }
+        else if (e.key === 'Enter') { if (_focus >= 0 && _items[_focus]) { e.preventDefault(); elegirUno(_items[_focus]); return; } }
         else if (e.key === 'Escape') { sRes.classList.remove('open'); return; }
         else { return; }
         items.forEach((el, i) => el.classList.toggle('focused', i === _focus));
@@ -536,139 +415,43 @@
     });
     document.addEventListener('click', (e) => { if (!sWrap.contains(e.target)) sRes.classList.remove('open'); });
 
-    btnSave.addEventListener('click', async () => {
-        if (!_ean) return;
-        btnSave.disabled = true; setStatus('Guardando…', '');
+    btnAplicar.addEventListener('click', async () => {
+        const obs_ids = [..._selected.keys()].map(k => parseInt(k)).filter(x => !isNaN(x));
+        if (!obs_ids.length) { setStatus('Tildá o elegí al menos un producto.', false); return; }
+        btnAplicar.disabled = true; setStatus('Aplicando…', true);
+        let url, body;
+        if (_modo === 'presentacion') {
+            url = '/api/producto/presentacion-bulk';
+            body = {observer_ids: obs_ids, fraccionado: $('pr-fraccionado').checked, cantidad_envase: $('pr-cant').value.trim() || null};
+        } else {
+            url = '/api/producto/config-bulk';
+            let valores = {};
+            if (_modo === 'oferta') valores = {descuento_psl: $('of-dto').value.trim(), unidades_minima: $('of-min').value};
+            else if (_modo === 'repo') valores = {cantidad: $('repo-cant').value.trim()};
+            else if (_modo === 'pack') valores = {es_pack: (document.querySelector('input[name=pack-val]:checked') || {}).value};
+            body = {observer_ids: obs_ids, modo: (_modo === 'repo' ? 'repo_fija' : _modo), valores};
+        }
         try {
-            const r = await fetch('/api/producto/presentacion', {
-                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ean: _ean, fraccionado: chk.checked, cantidad_envase: cant.value.trim()}),
-            });
+            const r = await fetch(url, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
             const d = await r.json();
-            setStatus(d.ok ? '✓ Guardado' : (d.error || 'Error al guardar'), d.ok ? 'text-[color:var(--ds-mint)]' : 'text-rose-400');
-        } catch { setStatus('Error de red', 'text-rose-400'); }
-        finally { btnSave.disabled = false; }
+            if (!d.ok) { setStatus(d.error || 'Error', false); return; }
+            let msg = '✓ ' + (d.aplicados != null ? d.aplicados : obs_ids.length) + ' aplicado(s)';
+            if (d.materializados) msg += ' · ' + d.materializados + ' catalogado(s)';
+            if (d.sin_lab) msg += ' · ' + d.sin_lab + ' sin lab';
+            if (d.sin_envase) msg += ' · ' + d.sin_envase + ' sin envase';
+            if (d.errores) msg += ' · ' + d.errores + ' error(es)';
+            setStatus(msg, true);
+        } catch { setStatus('Error de red', false); }
+        finally { btnAplicar.disabled = false; }
     });
 
-    // ── Equivalencia Kellerhoff ──
-    const kelEstado  = document.getElementById('kel-estado');
-    const kelSearch  = document.getElementById('kel-search');
-    const kelRes     = document.getElementById('kel-ac-results');
-    const kelWrap    = document.getElementById('kel-ac-wrap');
-    const kelElegido = document.getElementById('kel-elegido');
-    const kelStatus  = document.getElementById('kel-status');
-    const btnKelAsig = document.getElementById('kel-asignar');
-    const btnKelND   = document.getElementById('kel-nodisp');
-    const btnKelLimp = document.getElementById('kel-limpiar');
-
-    function renderKel(k) {
-        _kelEan = (k && k.ean) || ''; _kelPick = null;
-        kelElegido.style.display = 'none'; kelElegido.textContent = ''; kelStatus.textContent = ''; kelSearch.value = '';
-        btnKelAsig.disabled = true;
-        const map = {
-            sin_catalogo:  ['Catálogo Kellerhoff no cargado.', 'text-[color:var(--ds-text-mute)]'],
-            directo:       ['✓ Resuelve directo por EAN → CodKel ' + (k.codigo || ''), 'text-[color:var(--ds-mint)]'],
-            equivalencia:  ['Equivalencia: CodKel ' + (k.codigo || '') + ' (' + (k.metodo || '') + (k.revisado ? ', manual' : '') + ')', 'text-[color:var(--ds-mint)]'],
-            no_disponible: ['⚠ Marcado: Kellerhoff no lo trae.', 'text-amber-400'],
-            sin_resolver:  ['Sin resolver — elegí el código abajo o marcá que no lo trae.', 'text-rose-400'],
-        };
-        const m = map[(k && k.estado) || 'sin_resolver'] || map.sin_resolver;
-        kelEstado.textContent = m[0]; kelEstado.className = 'text-[11px] mb-2 ' + m[1];
-        const hayCat = k && k.estado !== 'sin_catalogo';
-        kelSearch.disabled = !hayCat; btnKelND.disabled = !hayCat; btnKelLimp.disabled = !hayCat;
-    }
-
-    kelSearch.addEventListener('input', () => {
-        const q = kelSearch.value.trim();
-        if (q.length < 2) { kelRes.classList.remove('open'); return; }
-        clearTimeout(_kelDeb);
-        _kelDeb = setTimeout(async () => {
-            const seq = ++_kelSeq;
-            try {
-                const r = await fetch('/api/kellerhoff/catalogo/buscar?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
-                if (seq !== _kelSeq) return;
-                const d = await r.json();
-                const items = d.data || [];
-                if (!items.length) { kelRes.innerHTML = '<div class="pf-ac-empty">Sin coincidencias</div>'; kelRes.classList.add('open'); return; }
-                kelRes.innerHTML = items.map((c, i) => `
-                    <div class="pf-ac-item" data-i="${i}">
-                        <div class="ac-nombre">${highlight(c.descripcion, q.split(/\s+/))}</div>
-                        <div class="ac-meta"><code>${escapeHtml(c.codigo_kellerhoff)}</code>${c.ean ? '<span>EAN ' + escapeHtml(c.ean) + '</span>' : ''}${c.precio != null ? '<span>$' + c.precio.toLocaleString('es-AR') + '</span>' : ''}</div>
-                    </div>`).join('');
-                kelRes.classList.add('open');
-                kelRes.querySelectorAll('.pf-ac-item').forEach(el => el.addEventListener('click', () => {
-                    const c = items[+el.dataset.i]; _kelPick = c;
-                    kelElegido.innerHTML = 'Elegido: <b>' + escapeHtml(c.descripcion) + '</b> · CodKel ' + escapeHtml(c.codigo_kellerhoff);
-                    kelElegido.style.display = 'block'; btnKelAsig.disabled = false;
-                    kelRes.classList.remove('open'); kelSearch.value = '';
-                }));
-            } catch { kelRes.classList.remove('open'); }
-        }, 250);
-    });
-    document.addEventListener('click', (e) => { if (!kelWrap.contains(e.target)) kelRes.classList.remove('open'); });
-
-    async function kelGuardar(accion, codkel) {
-        if (!_kelEan) return;
-        kelStatus.textContent = 'Guardando…'; kelStatus.className = 'text-[11px] mt-2';
-        try {
-            const r = await fetch('/api/producto/kellerhoff-equivalencia', {
-                method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ean: _kelEan, accion, codigo_kellerhoff: codkel || ''}),
-            });
-            const d = await r.json();
-            if (d.ok) { renderKel(d.kellerhoff); kelStatus.textContent = '✓ Guardado'; kelStatus.className = 'text-[11px] mt-2 text-[color:var(--ds-mint)]'; }
-            else { kelStatus.textContent = d.error || 'Error'; kelStatus.className = 'text-[11px] mt-2 text-rose-400'; }
-        } catch { kelStatus.textContent = 'Error de red'; kelStatus.className = 'text-[11px] mt-2 text-rose-400'; }
-    }
-    btnKelAsig.addEventListener('click', () => { if (_kelPick) kelGuardar('asignar', _kelPick.codigo_kellerhoff); });
-    btnKelND.addEventListener('click', () => kelGuardar('no_disponible'));
-    btnKelLimp.addEventListener('click', () => kelGuardar('limpiar'));
-
-    // ── Ficha 360: pestañas + guardar Oferta / Repo fija / Pack ──
-    window.ftTab = function(name) {
-        document.querySelectorAll('.ft-tab').forEach(t => t.classList.toggle('active', t.dataset.panel === name));
-        document.querySelectorAll('.ft-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
-    };
-    function setMini(id, m, ok) {
-        const e = document.getElementById(id);
-        if (e) { e.textContent = m || ''; e.className = 'text-[11px] mt-2 ' + (m ? (ok ? 'text-[color:var(--ds-mint)]' : 'text-rose-400') : ''); }
-    }
-    async function editField(field, value) {
-        if (!_producto_id) return { ok: false, error: 'Producto sin ficha master.' };
-        try {
-            const r = await fetch('/producto/' + _producto_id + '/edit', {
-                method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ field, value }) });
-            return await r.json();
-        } catch { return { ok: false, error: 'Error de red' }; }
-    }
-    document.getElementById('of-save').addEventListener('click', async () => {
-        if (!_ean) return;
-        setMini('of-status', 'Guardando…', true);
-        try {
-            const r = await fetch('/api/producto/oferta', {
-                method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ean: _ean, descuento_psl: document.getElementById('of-dto').value.trim(), unidades_minima: document.getElementById('of-min').value }) });
-            const d = await r.json();
-            setMini('of-status', d.ok ? (d.borrada ? '✓ Oferta borrada' : '✓ Guardada') : (d.error || 'Error'), d.ok);
-        } catch { setMini('of-status', 'Error de red', false); }
-    });
-    document.getElementById('repo-save').addEventListener('click', async () => {
-        setMini('repo-status', 'Guardando…', true);
-        const d = await editField('cantidad_reposicion_fija', document.getElementById('repo-cant').value.trim());
-        setMini('repo-status', d.ok ? '✓ Guardado' : (d.error || 'Error'), d.ok);
-    });
-    document.getElementById('pack-save').addEventListener('click', async () => {
-        setMini('pack-status', 'Guardando…', true);
-        const d = await editField('es_pack', document.getElementById('pack-chk').checked ? '1' : '0');
-        setMini('pack-status', d.ok ? '✓ Guardado' : (d.error || 'Error'), d.ok);
-    });
-
-    // Editar una fila de la lista → carga ese producto en la card de arriba.
-    window.ppEditar = function(ean) {
+    // "Editar" en la lista de abajo → selecciona ese producto (por observer_id) + precarga.
+    window.ppEditar = function(ean, oid, nombre) {
         if (!ean) return;
-        sRes.classList.remove('open'); sInput.value = '';
-        cargarPresentacion({codigo_barra: ean, descripcion: ''});
+        _selected.clear();
+        if (oid) _selected.set(String(oid), {ean: ean, desc: nombre || ean});
+        updateSel(); sRes.classList.remove('open'); sInput.value = '';
+        precargar(ean);
         window.scrollTo({top: 0, behavior: 'smooth'});
     };
 })();

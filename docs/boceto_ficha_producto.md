@@ -1,6 +1,14 @@
 # Boceto — Ficha 360 del producto (centro de comando)
 
-> Estado: **diseño**, sin implementar. Para discutir antes de codear.
+> **Actualización (2026-05-23):** el modelo evolucionó de "producto primero →
+> ficha con pestañas" a **"modo primero → multi-select"**: elegís la pestaña
+> (Presentación / Oferta / Repo fija / Pack), buscás, y aplicás a UNO (clic en el
+> nombre, precarga su valor) o a VARIOS (tildás) con un solo "Aplicar a los
+> seleccionados". Backend: `/api/producto/config-bulk` (oferta/repo/pack, N
+> productos, materializa si hace falta) + `/presentacion-bulk` (existente). El
+> lab de la oferta se deriva del producto. Lo de abajo es el diseño original.
+
+> Estado: **implementado** (branch `feat/ficha-producto-360`).
 > Idea: el buscador multi-token de `/productos/presentaciones` es excelente.
 > En vez de una pantalla por cosa, lo convertimos en el **punto de entrada único**
 > a todo lo configurable de un producto: un buscador arriba → ficha del producto

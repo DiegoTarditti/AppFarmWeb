@@ -131,6 +131,7 @@ def init_app(app):
                     kel_desc, kel_codigo, kel_ean_eq = '', '', ''
                 filas.append({
                     'ean': prod.codigo_barra,
+                    'observer_id': prod.observer_id,
                     'export_ean': eean,
                     'nombre': prod.descripcion or '',
                     'lab': (prod.laboratorio.nombre if prod.laboratorio
@@ -419,6 +420,89 @@ def init_app(app):
             session.commit()
             return jsonify({'ok': True, 'unidades_minima': um,
                             'descuento_psl': dto, 'tipo_descuento': obj.tipo_descuento})
+
+    @app.route('/api/producto/config-bulk', methods=['POST'])
+    @login_required
+    def api_producto_config_bulk():
+        """Aplica oferta / repo_fija / pack a VARIOS productos a la vez (1 o N).
+        Body: {observer_ids:[...], modo:'oferta'|'repo_fija'|'pack', valores:{...}}.
+        Materializa el master si no existe. El lab de la oferta se deriva del
+        producto (un producto = un solo lab)."""
+        from database import OfertaMinimo, now_ar
+        from helpers import materializar_producto
+        body = request.get_json(silent=True) or {}
+        obs_ids = [int(x) for x in (body.get('observer_ids') or [])
+                   if str(x).strip().lstrip('-').isdigit()]
+        modo = (body.get('modo') or '').strip()
+        val = body.get('valores') or {}
+        if not obs_ids:
+            return jsonify({'ok': False, 'error': 'No seleccionaste productos.'}), 400
+        if modo not in ('oferta', 'repo_fija', 'pack'):
+            return jsonify({'ok': False, 'error': 'Modo inválido.'}), 400
+
+        # Pre-parse de valores según el modo (falla rápido si están mal).
+        dto = um = rf = es_pack = None
+        if modo == 'oferta':
+            dto_raw = str(val.get('descuento_psl', '')).strip().replace(',', '.')
+            try:
+                dto = float(dto_raw) if dto_raw else None  # None → borrar oferta
+            except ValueError:
+                return jsonify({'ok': False, 'error': 'Descuento inválido.'}), 400
+            try:
+                um = max(1, int(val.get('unidades_minima') or 1))
+            except (ValueError, TypeError):
+                um = 1
+        elif modo == 'repo_fija':
+            rf_raw = str(val.get('cantidad', '')).strip()
+            if rf_raw:
+                try:
+                    rf = int(rf_raw)
+                    if rf < 0:
+                        return jsonify({'ok': False, 'error': 'Debe ser >= 0'}), 400
+                except ValueError:
+                    return jsonify({'ok': False, 'error': 'Cantidad inválida.'}), 400
+        elif modo == 'pack':
+            es_pack = 1 if val.get('es_pack') in (True, '1', 1, 'true') else 0
+
+        aplicados = materializados = sin_lab = errores = 0
+        with get_db() as session:
+            for oid in obs_ids:
+                ya = session.query(Producto).filter_by(observer_id=oid).first() is not None
+                prod, err = materializar_producto(session, oid)
+                if not prod:
+                    errores += 1
+                    continue
+                if not ya:
+                    materializados += 1
+                if modo == 'repo_fija':
+                    prod.cantidad_reposicion_fija = rf if (rf and rf > 0) else None
+                elif modo == 'pack':
+                    prod.es_pack = es_pack
+                elif modo == 'oferta':
+                    if not prod.laboratorio_id:
+                        sin_lab += 1
+                        continue
+                    of = (session.query(OfertaMinimo)
+                          .filter_by(ean=prod.codigo_barra, laboratorio_id=prod.laboratorio_id)
+                          .order_by(OfertaMinimo.actualizado_en.desc()).first())
+                    if dto is None:
+                        if of:
+                            session.delete(of)
+                        aplicados += 1
+                        continue
+                    if not of:
+                        of = OfertaMinimo(ean=prod.codigo_barra, laboratorio_id=prod.laboratorio_id)
+                        session.add(of)
+                    of.descripcion = prod.descripcion
+                    of.unidades_minima = um
+                    of.descuento_psl = dto
+                    of.tipo_descuento = 'simple' if um <= 1 else 'con_minimo'
+                    of.activo = True
+                    of.actualizado_en = now_ar()
+                aplicados += 1
+            session.commit()
+        return jsonify({'ok': True, 'aplicados': aplicados, 'materializados': materializados,
+                        'sin_lab': sin_lab, 'errores': errores})
 
     @app.route('/api/producto/presentacion-bulk', methods=['POST'])
     @login_required
