@@ -6,8 +6,8 @@ ObServer, el Alfabeta del vademécum NO). Sugiere mover producto de la sucursal
 con EXCEDENTE a la que lo NECESITA.
 
 Las sucursales viven en la tabla `sucursales` (modelo Sucursal), cada una con su
-URL interna (dentro de Render) y externa (desde afuera/dev). La DB local de la
-instancia es `DATABASE_URL`; se compara contra UNA otra sucursal elegida.
+URL de conexión (`url_externa`, alcanzable desde local y desde Render). La DB
+local de la instancia es `DATABASE_URL`; se compara contra UNA otra elegida.
 
 Fallback: si la tabla está vacía, cae al viejo `BADIA_DATABASE_URL` para no
 romper instalaciones sin migrar.
@@ -19,8 +19,7 @@ import sqlalchemy as sa
 
 
 def _engine(url):
-    """Engine read-only. SSL require solo para URLs externas de Render
-    (las internas `dpg-xxx-a` sin dominio no lo necesitan)."""
+    """Engine read-only. SSL require para URLs de Render (`.render.com`)."""
     if url.startswith('postgresql://'):
         url = url.replace('postgresql://', 'postgresql+psycopg2://', 1)
     args = {'connect_timeout': 30}
@@ -71,8 +70,7 @@ def listar_sucursales():
             rows = (s.query(Sucursal).filter_by(activa=True)
                     .order_by(Sucursal.nombre).all())
             return [{'slug': r.slug, 'nombre': r.nombre, 'app_name': r.app_name,
-                     'db_name': r.db_name, 'url_interna': r.url_interna,
-                     'url_externa': r.url_externa} for r in rows]
+                     'db_name': r.db_name, 'url_externa': r.url_externa} for r in rows]
     except Exception:
         return []
 
@@ -88,15 +86,6 @@ def _local_slug(sucs):
         if s.get('db_name') and s['db_name'].lower() == dbn:
             return s['slug']
     return None
-
-
-def _url_para(suc):
-    """URL para conectarse a una sucursal: interna si corremos en Render, externa
-    si es dev local. Cae a la que haya si falta una."""
-    interna, externa = suc.get('url_interna'), suc.get('url_externa')
-    if os.environ.get('RENDER'):
-        return interna or externa
-    return externa or interna
 
 
 def _comparar(local_url, otra_url, excedente_meses, necesita_meses, local, otra, remotas):
@@ -174,7 +163,7 @@ def analizar(excedente_meses=6.0, necesita_meses=2.0, otra=None):
     local_suc = next((s for s in sucs if s['slug'] == local_slug),
                      {'slug': local_slug or 'local', 'nombre': 'Local'})
     return _comparar(
-        local_url, _url_para(otra_suc), excedente_meses, necesita_meses,
+        local_url, otra_suc.get('url_externa'), excedente_meses, necesita_meses,
         {'slug': local_suc['slug'], 'nombre': local_suc['nombre']},
         {'slug': otra_suc['slug'], 'nombre': otra_suc['nombre']},
         [{'slug': s['slug'], 'nombre': s['nombre']} for s in remotas])

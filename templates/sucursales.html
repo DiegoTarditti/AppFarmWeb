@@ -11,7 +11,7 @@
     <p class="text-xs" style="color:var(--ds-text-mute)">
       Registro de las DBs de cada sucursal para el comparador de
       <a href="/transferencias" class="underline" style="color:var(--ds-mint)">transferencias</a>.
-      Cada una guarda su URL <b>interna</b> (dentro de Render) y <b>externa</b> (desde afuera/dev).
+      Cada una guarda su URL de conexión (la externa de Render, que funciona desde local y desde Render).
     </p>
     <p class="text-[11px] mt-1" style="color:var(--ds-text-mute)">
       Esta instancia se identifica como
@@ -37,10 +37,7 @@
       <label>Base de datos (opcional, usado para autodetectar la local)
         <input type="text" name="db_name" id="f-db" class="ds-input w-full" placeholder="farmacia_yhvp">
       </label>
-      <label class="md:col-span-2">URL interna (Render, <code>dpg-xxx-a</code> sin dominio)
-        <input type="text" name="url_interna" id="f-int" class="ds-input w-full font-mono" placeholder="postgresql://user:pass@dpg-xxx-a/db">
-      </label>
-      <label class="md:col-span-2">URL externa (con <code>.render.com</code>, para dev/local)
+      <label class="md:col-span-2">URL de la base de datos (External Database URL de Render)
         <input type="text" name="url_externa" id="f-ext" class="ds-input w-full font-mono" placeholder="postgresql://user:pass@dpg-xxx-a.oregon-postgres.render.com/db">
       </label>
       <label class="inline-flex items-center gap-2">
@@ -61,8 +58,7 @@
           <th class="py-1.5 px-2 text-left">Nombre</th>
           <th class="px-2 text-left">Slug</th>
           <th class="px-2 text-left">App / DB</th>
-          <th class="px-2 text-center">Interna</th>
-          <th class="px-2 text-center">Externa</th>
+          <th class="px-2 text-center">URL</th>
           <th class="px-2 text-center">Activa</th>
           <th class="px-2 text-right">Acciones</th>
         </tr>
@@ -73,14 +69,13 @@
           <td class="py-1.5 px-2 font-semibold">{{ s.nombre }}</td>
           <td class="px-2 font-mono">{{ s.slug }}</td>
           <td class="px-2" style="color:var(--ds-text-mute)">{{ s.app_name or '—' }} / {{ s.db_name or '—' }}</td>
-          <td class="px-2 text-center">{{ '✓' if s.url_interna else '—' }}</td>
           <td class="px-2 text-center">{{ '✓' if s.url_externa else '—' }}</td>
           <td class="px-2 text-center">{{ '🟢' if s.activa else '⏸️' }}</td>
           <td class="px-2 text-right whitespace-nowrap">
             <button type="button" class="underline" style="color:var(--ds-mint)"
                     data-id="{{ s.id }}" data-slug="{{ s.slug }}" data-nombre="{{ s.nombre }}"
                     data-app="{{ s.app_name or '' }}" data-db="{{ s.db_name or '' }}"
-                    data-int="{{ s.url_interna }}" data-ext="{{ s.url_externa }}"
+                    data-ext="{{ s.url_externa }}"
                     data-activa="{{ '1' if s.activa else '' }}"
                     onclick="editar(this)">Editar</button>
             <form method="post" action="/sucursales/{{ s.id }}/delete" class="inline"
@@ -91,7 +86,7 @@
         </tr>
       {% endfor %}
       {% if not sucursales %}
-        <tr><td colspan="7" class="p-4 text-center" style="color:var(--ds-text-mute)">
+        <tr><td colspan="6" class="p-4 text-center" style="color:var(--ds-text-mute)">
           No hay sucursales cargadas. Agregá la primera arriba.
         </td></tr>
       {% endif %}
@@ -100,8 +95,8 @@
   </div>
 
   <p class="text-[10px] mt-3" style="color:var(--ds-text-mute)">
-    Las URLs llevan credenciales — esta pantalla es solo admin. La instancia usa la
-    URL <b>interna</b> si corre en Render y la <b>externa</b> si es local.
+    Las URLs llevan credenciales — esta pantalla es solo admin. La DB local de la
+    instancia se lee de <code>DATABASE_URL</code>; las otras, de esta URL.
   </p>
 </div>
 
@@ -112,7 +107,6 @@ function editar(btn) {
   document.getElementById('f-nombre').value = btn.dataset.nombre;
   document.getElementById('f-app').value    = btn.dataset.app;
   document.getElementById('f-db').value     = btn.dataset.db;
-  document.getElementById('f-int').value    = btn.dataset.int;
   document.getElementById('f-ext').value    = btn.dataset.ext;
   document.getElementById('f-activa').checked = !!btn.dataset.activa;
   document.getElementById('form-titulo').textContent = 'Editar: ' + btn.dataset.nombre;
@@ -120,7 +114,7 @@ function editar(btn) {
 }
 function cancelarEdicion() {
   document.getElementById('f-id').value = '';
-  ['f-slug','f-nombre','f-app','f-db','f-int','f-ext'].forEach(id => document.getElementById(id).value = '');
+  ['f-slug','f-nombre','f-app','f-db','f-ext'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('f-activa').checked = true;
   document.getElementById('form-titulo').textContent = 'Nueva sucursal';
 }
