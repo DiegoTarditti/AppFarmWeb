@@ -76,12 +76,21 @@
     <div class="pf-card">
         <div class="pf-card-head"><h3>📦 Configurar presentación</h3></div>
         <div style="padding: 16px 18px;">
-            {# Modo (qué vas a configurar) — siempre visible, se elige PRIMERO #}
-            <div class="ft-tabs">
-                <button type="button" class="ft-tab active" data-modo="presentacion" onclick="ftModo('presentacion')">📦 Presentación</button>
-                <button type="button" class="ft-tab"        data-modo="oferta"       onclick="ftModo('oferta')">🎁 Oferta</button>
-                <button type="button" class="ft-tab"        data-modo="repo"          onclick="ftModo('repo')">🔁 Repo fija</button>
-                <button type="button" class="ft-tab"        data-modo="pack"          onclick="ftModo('pack')">📦 Pack</button>
+            {# Modo (se elige PRIMERO) a la izquierda · Catálogo Kellerhoff a la derecha #}
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--ds-line); margin:4px 0 14px;">
+                <div class="ft-tabs" style="border-bottom:none; margin:0;">
+                    <button type="button" class="ft-tab active" data-modo="presentacion" onclick="ftModo('presentacion')">📦 Presentación</button>
+                    <button type="button" class="ft-tab"        data-modo="oferta"       onclick="ftModo('oferta')">🎁 Oferta</button>
+                    <button type="button" class="ft-tab"        data-modo="repo"          onclick="ftModo('repo')">🔁 Repo fija</button>
+                    <button type="button" class="ft-tab"        data-modo="pack"          onclick="ftModo('pack')">📦 Pack</button>
+                </div>
+                <a href="{{ url_for('kellerhoff_catalogo') }}"
+                   style="display:inline-flex; align-items:center; gap:6px; padding:5px 10px; font-size:11px; font-weight:600;
+                          border:1px solid var(--ds-line); border-radius:var(--ds-r-sm); color:var(--ds-text-soft); text-decoration:none; white-space:nowrap;"
+                   onmouseover="this.style.borderColor='var(--ds-mint)'" onmouseout="this.style.borderColor='var(--ds-line)'"
+                   title="Importar CSV del catálogo Kellerhoff + recalcular equivalencias">
+                    📦 Catálogo Kellerhoff →
+                </a>
             </div>
 
             {# Buscador + Aplicar (a la altura del buscador, siempre visible) #}
@@ -148,18 +157,6 @@
 
         </div>
 
-        {# Acceso al catálogo Kellerhoff (importar CSV + recalcular equivalencias) #}
-        <div>
-            <a href="{{ url_for('kellerhoff_catalogo') }}"
-               style="display:inline-flex; align-items:center; gap:8px; padding:10px 16px;
-                      background:linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
-                      border:1px solid var(--ds-line); border-radius:var(--ds-r-md);
-                      color:var(--ds-text); font-size:13px; font-weight:600; text-decoration:none;"
-               onmouseover="this.style.borderColor='var(--ds-mint)'"
-               onmouseout="this.style.borderColor='var(--ds-line)'">
-                📦 Catálogo Kellerhoff — importar CSV + recalcular equivalencias →
-            </a>
-        </div>
     </div>
 
     {# ── Lista de productos con presentación (abajo) ── #}
