@@ -76,6 +76,165 @@ def _sync_lock_estado():
         }
 
 
+def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
+    """Corre el sync completo (ObServer → local → push) ASUMIENDO que el lock
+    `sync_lock` YA fue tomado por el caller; lo libera al terminar (finally).
+
+    Devuelve el dict `resultado`. Sirve para los dos modos de /api/auto-sync:
+    sincrónico (el caller espera el JSON) o en un thread de background
+    (`?bg=1` → el caller consulta /api/auto-sync/status). El progreso se publica
+    en `sync_lock` (paso_actual) y el resultado final queda en `ultimo_resultado`,
+    así el polling ve todo aunque el request original haya respondido al instante.
+    """
+    resultado = {'pasos': []}
+    try:
+        with app.app_context():
+            inicio = datetime.now()
+            resultado['inicio'] = inicio.isoformat()
+
+            if not observer_source.observer_disponible():
+                resultado['pasos'].append({'paso': 'observer_ping', 'ok': False,
+                                           'error': 'ObServer no disponible'})
+                resultado['ok'] = False
+                return resultado
+
+            orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
+                     'productos', 'stock', 'ventas_mensuales',
+                     'grupos_clientes', 'categorias_clientes',
+                     'obras_sociales', 'convenios', 'planes', 'clientes',
+                     'colegios_medicos', 'medicos', 'medicos_matriculas',
+                     'ventas_detalle']
+            funcs = {
+                'laboratorios':         observer_source.sync_laboratorios,
+                'rubros':               observer_source.sync_rubros,
+                'subrubros':            observer_source.sync_subrubros,
+                'nombres_drogas':       observer_source.sync_nombres_drogas,
+                'productos':            observer_source.sync_productos,
+                'stock':                observer_source.sync_stock,
+                'ventas_mensuales':     observer_source.sync_ventas_mensuales,
+                'grupos_clientes':      observer_source.sync_grupos_clientes,
+                'categorias_clientes':  observer_source.sync_categorias_clientes,
+                'obras_sociales':       observer_source.sync_obras_sociales,
+                'convenios':            observer_source.sync_convenios,
+                'planes':               observer_source.sync_planes,
+                'clientes':             observer_source.sync_clientes,
+                'colegios_medicos':     observer_source.sync_colegios_medicos,
+                'medicos':              observer_source.sync_medicos,
+                'medicos_matriculas':   observer_source.sync_medicos_matriculas,
+                'ventas_detalle':       observer_source.sync_ventas_detalle,
+            }
+
+            if modo == 'inteligente':
+                from sqlalchemy import func as _f2
+
+                from database import ObsSyncLog, now_ar
+                TOL_HORAS = {
+                    'stock': 3, 'ventas_mensuales': 24, 'productos': 24 * 7,
+                    'laboratorios': 24 * 7, 'rubros': 24 * 7,
+                    'subrubros': 24 * 7, 'nombres_drogas': 24 * 7,
+                }
+                nivel1 = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
+                          'productos', 'stock', 'ventas_mensuales']
+                with database.get_db() as _s:
+                    ultimos = dict(
+                        _s.query(ObsSyncLog.entidad, _f2.max(ObsSyncLog.ejecutado_en))
+                        .group_by(ObsSyncLog.entidad).all())
+                _ahora = now_ar()
+
+                def _vencido(ent):
+                    ult = ultimos.get(ent)
+                    if not ult:
+                        return True
+                    return (_ahora - ult).total_seconds() / 3600.0 >= TOL_HORAS.get(ent, 0)
+
+                orden = [e for e in nivel1 if _vencido(e)]
+                if 'productos' not in orden:
+                    skip_match = True
+                resultado['modo'] = 'inteligente'
+                resultado['entidades_a_sincronizar'] = orden
+
+            for ent in orden:
+                _sync_lock_set_paso(ent)
+                try:
+                    with cron_log.registrar(f'sync_{ent}', origen='dockerpanel') as clog:
+                        with database.get_db() as session:
+                            stats = funcs[ent](session)
+                            session.commit()
+                        clog.set_mensaje(f'{stats.get("upsert", 0)} filas en {stats.get("duracion_ms", 0)} ms')
+                    resultado['pasos'].append({'paso': ent, 'ok': True,
+                                               'upsert': stats.get('upsert', 0),
+                                               'ms': stats.get('duracion_ms', 0)})
+                except Exception as e:
+                    resultado['pasos'].append({'paso': ent, 'ok': False, 'error': str(e)})
+                    resultado['ok'] = False
+                    return resultado
+
+            if not skip_match:
+                _sync_lock_set_paso('match_productos')
+                try:
+                    with cron_log.registrar('match_productos', origen='dockerpanel') as clog:
+                        with database.get_db() as session:
+                            stats = observer_matcher.match_productos(session, threshold=0.80)
+                            session.commit()
+                        clog.set_mensaje(
+                            f'exact={stats.get("linked_exact", 0)} '
+                            f'super={stats.get("linked_superset", 0)} '
+                            f'fuzzy={stats.get("linked_fuzzy", 0)} '
+                            f'sin={stats.get("sin_match", 0)}')
+                    resultado['pasos'].append({
+                        'paso': 'match_productos', 'ok': True,
+                        'linked_exact':    stats.get('linked_exact', 0),
+                        'linked_superset': stats.get('linked_superset', 0),
+                        'linked_fuzzy':    stats.get('linked_fuzzy', 0),
+                        'sin_match':       stats.get('sin_match', 0)})
+                except Exception as e:
+                    resultado['pasos'].append({'paso': 'match_productos', 'ok': False, 'error': str(e)})
+
+            _sync_lock_set_paso('refresh_analytics')
+            try:
+                from services.dashboard_snapshot import refrescar_product_analytics
+                with cron_log.registrar('refresh_analytics', origen='dockerpanel') as clog:
+                    with database.get_db() as session:
+                        st_an = refrescar_product_analytics(session)
+                    clog.set_mensaje(f"{st_an.get('filas', 0)} filas")
+                resultado['pasos'].append({'paso': 'refresh_analytics', 'ok': True,
+                                           'filas': st_an.get('filas', 0)})
+            except Exception as e:
+                resultado['pasos'].append({'paso': 'refresh_analytics', 'ok': False, 'error': str(e)})
+
+            if not skip_push:
+                _sync_lock_set_paso('push_render')
+                render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
+                if not render_url:
+                    resultado['pasos'].append({'paso': 'push_render', 'ok': False,
+                                               'error': 'RENDER_DATABASE_URL no configurada'})
+                else:
+                    try:
+                        with cron_log.registrar('push_render', origen='dockerpanel') as clog:
+                            from scripts.push_obs_to_render import push
+                            _tablas = ['obs_' + e for e in orden] if modo == 'inteligente' else None
+                            res = push(render_url=render_url, tablas=_tablas)
+                            total_filas = sum(v['filas'] for v in res.values() if isinstance(v, dict))
+                            clog.set_mensaje(f'{total_filas} filas en {res.get("TOTAL_MS", 0)} ms')
+                        resultado['pasos'].append({'paso': 'push_render', 'ok': True,
+                                                   'total_filas': total_filas,
+                                                   'ms': res.get('TOTAL_MS', 0)})
+                    except Exception as e:
+                        resultado['pasos'].append({'paso': 'push_render', 'ok': False, 'error': str(e)})
+                        resultado['ok'] = False
+                        return resultado
+
+            resultado['ok'] = True
+            resultado['fin'] = datetime.now().isoformat()
+            return resultado
+    except Exception as e:
+        resultado['ok'] = False
+        resultado['pasos'].append({'paso': 'fatal', 'ok': False, 'error': str(e)})
+        return resultado
+    finally:
+        _sync_lock_release(resultado=resultado)
+
+
 def _contar_tablas_locales(tablas):
     """Cuenta filas por tabla en la DB local. Devuelve {tabla: int|None}."""
     out = {}
@@ -480,210 +639,46 @@ def init_app(app):
 
     @app.route('/api/auto-sync', methods=['POST'])
     def api_auto_sync():
-        """Endpoint JSON para el DockerPanel (cron automático).
+        """Dispara el sync ObServer -> local -> push a Render.
 
-        Ejecuta en cascada: sync ObServer → productos local → push a Render.
-        Devuelve JSON con el detalle de cada paso. Protegido por lock para
-        evitar ejecuciones paralelas.
+        Dos modos:
+          - sincronico (default): corre y devuelve el JSON con el detalle. Lo usa
+            el boton "Sincronizar todo" del navegador (/pedidos/dia).
+          - background (?bg=1): arranca el sync en un thread y responde 202 al
+            instante; el caller (DockerPanel) consulta /api/auto-sync/status para
+            seguir el progreso y el resultado final. Evita timeouts en syncs largos.
 
-        Query params opcionales:
-          - skip_push=1    → no pushear a Render (solo sync local)
-          - skip_match=1   → no correr auto-matcher
-
-        Autenticación: acepta CUALQUIERA de las dos —
-          - X-Auto-Sync-Token (machine-to-machine, DockerPanel) si AUTO_SYNC_TOKEN está seteada, o
-          - usuario logueado (botón "Sincronizar todo" de /pedidos/dia).
+        Query params: skip_push=1, skip_match=1, modo=inteligente, bg=1.
+        Auth: X-Auto-Sync-Token (maquina) o usuario logueado.
         """
-        # Token para llamadas máquina-a-máquina (DockerPanel). Si además hay un
-        # usuario logueado en sesión, también se permite (el botón del navegador).
         expected = os.environ.get('AUTO_SYNC_TOKEN', '').strip()
         if expected:
             from flask_login import current_user
             sent = request.headers.get('X-Auto-Sync-Token', '').strip()
             if sent != expected and not current_user.is_authenticated:
-                return jsonify({'ok': False, 'error': 'token inválido'}), 401
+                return jsonify({'ok': False, 'error': 'token invalido'}), 401
 
-        # Lock atómico en DB — coordina entre workers de gunicorn.
+        # Lock atomico en DB -- coordina entre workers y entre llamadas.
         if not _sync_lock_acquire():
             estado = _sync_lock_estado()
-            return jsonify({
-                'ok': False, 'error': 'sync en curso',
-                'ultimo_inicio': estado.get('ultimo_inicio'),
-            }), 409
+            return jsonify({'ok': False, 'error': 'sync en curso',
+                            'ultimo_inicio': estado.get('ultimo_inicio')}), 409
 
-        resultado = {'pasos': []}
-        try:
-            inicio = datetime.now()
+        modo       = (request.args.get('modo') or '').strip()
+        skip_push  = request.args.get('skip_push') == '1'
+        skip_match = request.args.get('skip_match') == '1'
 
-            skip_push  = request.args.get('skip_push') == '1'
-            skip_match = request.args.get('skip_match') == '1'
-            modo       = (request.args.get('modo') or '').strip()  # 'inteligente' = solo lo vencido por tolerancia
+        if request.args.get('bg') == '1':
+            import threading
+            threading.Thread(
+                target=_ejecutar_sync, args=(app, modo, skip_push, skip_match),
+                daemon=True, name='auto-sync').start()
+            return jsonify({'ok': True, 'iniciado': True,
+                            'mensaje': 'Sync iniciado en background. Segui en /api/auto-sync/status.'}), 202
 
-            resultado['inicio'] = inicio.isoformat()
-
-            # Paso 1: verificar que ObServer esté disponible
-            if not observer_source.observer_disponible():
-                resultado['pasos'].append({'paso': 'observer_ping',
-                                            'ok': False, 'error': 'ObServer no disponible'})
-                resultado['ok'] = False
-                return jsonify(resultado), 503
-
-            # Paso 2: sync entidades ObServer → DB local
-            orden = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                     'productos', 'stock', 'ventas_mensuales',
-                     'grupos_clientes', 'categorias_clientes',
-                     'obras_sociales', 'convenios', 'planes', 'clientes',
-                     'colegios_medicos', 'medicos', 'medicos_matriculas',
-                     'ventas_detalle']
-            funcs = {
-                'laboratorios':         observer_source.sync_laboratorios,
-                'rubros':               observer_source.sync_rubros,
-                'subrubros':            observer_source.sync_subrubros,
-                'nombres_drogas':       observer_source.sync_nombres_drogas,
-                'productos':            observer_source.sync_productos,
-                'stock':                observer_source.sync_stock,
-                'ventas_mensuales':     observer_source.sync_ventas_mensuales,
-                'grupos_clientes':      observer_source.sync_grupos_clientes,
-                'categorias_clientes':  observer_source.sync_categorias_clientes,
-                'obras_sociales':       observer_source.sync_obras_sociales,
-                'convenios':            observer_source.sync_convenios,
-                'planes':               observer_source.sync_planes,
-                'clientes':             observer_source.sync_clientes,
-                'colegios_medicos':     observer_source.sync_colegios_medicos,
-                'medicos':              observer_source.sync_medicos,
-                'medicos_matriculas':   observer_source.sync_medicos_matriculas,
-                'ventas_detalle':       observer_source.sync_ventas_detalle,
-            }
-
-            # Modo inteligente (botón móvil / día a día): solo entidades de
-            # Nivel 1 y SOLO las vencidas por tolerancia. El resto (clientes,
-            # medicos, ventas_detalle, etc.) nunca entra acá — solo el sync
-            # completo. Ahorra recursos: al mediodía típicamente solo 'stock'.
-            if modo == 'inteligente':
-                from sqlalchemy import func as _f2
-
-                from database import ObsSyncLog, now_ar
-                TOL_HORAS = {
-                    'stock': 3, 'ventas_mensuales': 24, 'productos': 24 * 7,
-                    'laboratorios': 24 * 7, 'rubros': 24 * 7,
-                    'subrubros': 24 * 7, 'nombres_drogas': 24 * 7,
-                }
-                nivel1 = ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas',
-                          'productos', 'stock', 'ventas_mensuales']
-                with database.get_db() as _s:
-                    # Sin filtrar por error: algunos syncs (ventas_mensuales) guardan
-                    # una NOTA en la columna error aunque sean exitosos, y un sync
-                    # fallido ni siquiera crea fila (la excepción corta antes del log).
-                    ultimos = dict(
-                        _s.query(ObsSyncLog.entidad, _f2.max(ObsSyncLog.ejecutado_en))
-                        .group_by(ObsSyncLog.entidad).all())
-                _ahora = now_ar()
-
-                def _vencido(ent):
-                    ult = ultimos.get(ent)
-                    if not ult:
-                        return True  # nunca sincronizada
-                    return (_ahora - ult).total_seconds() / 3600.0 >= TOL_HORAS.get(ent, 0)
-
-                orden = [e for e in nivel1 if _vencido(e)]
-                if 'productos' not in orden:
-                    skip_match = True  # match solo tiene sentido si se tocó productos
-                resultado['modo'] = 'inteligente'
-                resultado['entidades_a_sincronizar'] = orden
-
-            for ent in orden:
-                _sync_lock_set_paso(ent)
-                try:
-                    with cron_log.registrar(f'sync_{ent}', origen='dockerpanel') as clog:
-                        with database.get_db() as session:
-                            stats = funcs[ent](session)
-                            session.commit()
-                        clog.set_mensaje(f'{stats.get("upsert", 0)} filas en {stats.get("duracion_ms", 0)} ms')
-                    resultado['pasos'].append({
-                        'paso': ent, 'ok': True,
-                        'upsert': stats.get('upsert', 0),
-                        'ms': stats.get('duracion_ms', 0),
-                    })
-                except Exception as e:
-                    resultado['pasos'].append({'paso': ent, 'ok': False, 'error': str(e)})
-                    resultado['ok'] = False
-                    return jsonify(resultado), 500
-
-            # Paso 3: auto-match productos (opcional)
-            if not skip_match:
-                _sync_lock_set_paso('match_productos')
-                try:
-                    with cron_log.registrar('match_productos', origen='dockerpanel') as clog:
-                        with database.get_db() as session:
-                            stats = observer_matcher.match_productos(session, threshold=0.80)
-                            session.commit()
-                        clog.set_mensaje(
-                            f'exact={stats.get("linked_exact", 0)} '
-                            f'super={stats.get("linked_superset", 0)} '
-                            f'fuzzy={stats.get("linked_fuzzy", 0)} '
-                            f'sin={stats.get("sin_match", 0)}'
-                        )
-                    resultado['pasos'].append({
-                        'paso': 'match_productos', 'ok': True,
-                        'linked_exact':    stats.get('linked_exact', 0),
-                        'linked_superset': stats.get('linked_superset', 0),
-                        'linked_fuzzy':    stats.get('linked_fuzzy', 0),
-                        'sin_match':       stats.get('sin_match', 0),
-                    })
-                except Exception as e:
-                    resultado['pasos'].append({'paso': 'match_productos', 'ok': False, 'error': str(e)})
-                    # No abortamos si el match falla, seguimos con el push
-
-            # Paso 3.5: refrescar snapshot del dashboard (product_analytics) desde
-            # obs_stock + obs_ventas_mensuales recién sincronizados. Local: el push
-            # NO replica product_analytics, así que esto mantiene fresco el dashboard
-            # de ESTA instancia tras cada sync. No aborta si falla.
-            _sync_lock_set_paso('refresh_analytics')
-            try:
-                from services.dashboard_snapshot import refrescar_product_analytics
-                with cron_log.registrar('refresh_analytics', origen='dockerpanel') as clog:
-                    with database.get_db() as session:
-                        st_an = refrescar_product_analytics(session)
-                    clog.set_mensaje(f"{st_an.get('filas', 0)} filas")
-                resultado['pasos'].append({'paso': 'refresh_analytics', 'ok': True,
-                                           'filas': st_an.get('filas', 0)})
-            except Exception as e:
-                resultado['pasos'].append({'paso': 'refresh_analytics', 'ok': False, 'error': str(e)})
-
-            # Paso 4: push a Render (opcional)
-            if not skip_push:
-                _sync_lock_set_paso('push_render')
-                render_url = os.environ.get('RENDER_DATABASE_URL', '').strip()
-                if not render_url:
-                    resultado['pasos'].append({
-                        'paso': 'push_render', 'ok': False,
-                        'error': 'RENDER_DATABASE_URL no configurada',
-                    })
-                else:
-                    try:
-                        with cron_log.registrar('push_render', origen='dockerpanel') as clog:
-                            from scripts.push_obs_to_render import push
-                            # Modo inteligente: push SOLO las tablas que se sincronizaron.
-                            _tablas = ['obs_' + e for e in orden] if modo == 'inteligente' else None
-                            res = push(render_url=render_url, tablas=_tablas)
-                            total_filas = sum(v['filas'] for v in res.values() if isinstance(v, dict))
-                            clog.set_mensaje(f'{total_filas} filas en {res.get("TOTAL_MS", 0)} ms')
-                        resultado['pasos'].append({
-                            'paso': 'push_render', 'ok': True,
-                            'total_filas': total_filas,
-                            'ms': res.get('TOTAL_MS', 0),
-                        })
-                    except Exception as e:
-                        resultado['pasos'].append({'paso': 'push_render', 'ok': False, 'error': str(e)})
-                        resultado['ok'] = False
-                        return jsonify(resultado), 500
-
-            resultado['ok'] = True
-            resultado['fin'] = datetime.now().isoformat()
-            return jsonify(resultado)
-
-        finally:
-            _sync_lock_release(resultado=resultado)
+        # Sincronico: corre y devuelve el resultado (el lock se libera adentro).
+        resultado = _ejecutar_sync(app, modo, skip_push, skip_match)
+        return jsonify(resultado), (200 if resultado.get('ok') else 500)
 
     @app.route('/api/auto-sync/status')
     def api_auto_sync_status():
