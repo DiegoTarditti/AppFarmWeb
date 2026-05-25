@@ -1912,11 +1912,12 @@ class DockerPanel(tk.Tk):
             'status':        [('docker-compose ps', 'ps')],
             'version':       [('git rev-parse --short HEAD', 'rev'),
                               ('git log -1 --format=%s%n%cI', 'last_commit')],
-            # Sync ObServer completo via endpoint local de la app web. El
-            # endpoint /api/auto-sync ya orquesta sync ObServer→local + push
-            # a Render con lock atómico. --max-time 290 para no chocar con
-            # el timeout=300 del subprocess.
-            'sync_now':      [('curl -sS --max-time 290 -X POST "http://localhost:5000/api/auto-sync"', 'auto-sync')],
+            # Sync ObServer completo. Corre en BACKGROUND (?bg=1): el endpoint
+            # responde 202 al instante y el sync sigue server-side, coordinado
+            # por sync_lock. Antes era sincrónico y el sync completo (~10min)
+            # chocaba siempre con --max-time 290 → timeout. El progreso y el
+            # resultado se ven en /api/auto-sync/status y en /admin (sync audit).
+            'sync_now':      [('curl -sS --max-time 30 -X POST "http://localhost:5000/api/auto-sync?bg=1"', 'auto-sync (bg)')],
             # Sync inteligente: solo entidades de Nivel 1 vencidas por tolerancia
             # (stock 3h, ventas_mensuales 24h, productos 7d). Lo dispara el boton
             # movil de consulta-stock. Rapido (~40s-1.5min) vs el completo (~10min).
