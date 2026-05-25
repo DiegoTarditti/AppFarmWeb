@@ -15,6 +15,7 @@ from flask import flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import text as _text
 
 import database
+from services.farmacia import farmacia_operativa
 
 # ── Mock data ─────────────────────────────────────────────────────────
 
@@ -2397,7 +2398,7 @@ def init_app(app):
 
         from database import get_db
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         filtros = _parse_filtros_dispensas()
 
         with get_db() as session:
@@ -2461,7 +2462,7 @@ def init_app(app):
 
         from database import get_db
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         filtros = _parse_filtros_dispensas()
 
         with get_db() as session:
@@ -2549,7 +2550,7 @@ def init_app(app):
             get_db,
         )
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         hoy = date.today()
         # Default: últimos 6 meses (180 días).

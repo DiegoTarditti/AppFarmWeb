@@ -27,6 +27,7 @@ from database import (
     get_db,
     now_ar,
 )
+from services.farmacia import farmacia_operativa
 
 K_PRIOR = 12
 
@@ -203,7 +204,7 @@ def init_app(app):
             page = 1
         per_page = 50
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with get_db() as session:
             sql = _text("""
@@ -381,7 +382,7 @@ def init_app(app):
     @login_required
     def api_estacionalidad_droga(droga_id):
         """Serie mensual por anio para el chart de detalle (no agregada)."""
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with get_db() as session:
             sql = _text("""
@@ -505,7 +506,7 @@ def init_app(app):
     @login_required
     def api_estacionalidad_droga_productos(droga_id):
         """Productos activos de esta droga agrupados por lab, con estado de asignación."""
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         with get_db() as session:
             sql = _text("""
                 SELECT
