@@ -756,15 +756,15 @@ function actualizarBotonContinuar() {
     if (_panel2Mode === 'select') {
         btn.disabled = _columnasActivas.size === 0;
     } else {
-        // Para continuar necesitamos: 1) algo que identifique al producto
-        // (EAN, código, o al menos descripción para match fuzzy), y 2) algún
-        // valor (descuento o precio). Ofertas sin valor no aporta nada.
+        // Para continuar alcanza con identificar el producto (EAN, código o
+        // descripción). El valor (descuento/precio/mínimo) es OPCIONAL: una
+        // oferta "marcador" (solo lab/ean/descrip) indica que el producto está
+        // en oferta y se guarda con mínimo 1 (= oferta simple), sin descuento.
         const tieneIdent = _mapping.ean != null || _mapping.codigo != null
                         || _mapping.descripcion != null;
-        const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null || _mapping.unidades_minima != null;
-        btn.disabled = !(tieneIdent && tieneValor);
+        btn.disabled = !tieneIdent;
         btn.title = btn.disabled
-            ? 'Mapeá al menos descripción (o EAN/código) y un valor (descuento, precio o mín. unidades).'
+            ? 'Mapeá al menos descripción (o EAN/código).'
             : '';
     }
     btn.classList.toggle('opacity-40', btn.disabled);
@@ -987,9 +987,8 @@ document.getElementById('btn-next-2').addEventListener('click', () => {
     }
     const tieneIdent = _mapping.ean != null || _mapping.codigo != null
                     || _mapping.descripcion != null;
-    const tieneValor = _mapping.descuento_psl != null || _mapping.precio != null || _mapping.unidades_minima != null;
-    if (!tieneIdent || !tieneValor) {
-        alert('Necesitás mapear al menos descripción (o EAN/código) y un valor (descuento, precio o mín. unidades).');
+    if (!tieneIdent) {
+        alert('Necesitás mapear al menos descripción (o EAN/código).');
         return;
     }
     renderPreview();
