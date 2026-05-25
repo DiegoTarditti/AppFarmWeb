@@ -25,11 +25,9 @@ from sqlalchemy import func
 from database import ObsStock, ObsVentaMensual
 from purchase_engine import rotation_index
 
-
-def farmacia_operativa():
-    """ID de la unica farmacia operativa. Centraliza el env var que estaba
-    repetido inline en ~10 rutas."""
-    return int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+# Canonical en services/farmacia.py (env → autodetección → legacy). Re-export
+# acá por backcompat: varios módulos importan farmacia_operativa desde producto_metrics.
+from services.farmacia import farmacia_operativa  # noqa: E402,F401
 
 
 def _ventas_12m(session, observer_id, id_farmacia, hoy):

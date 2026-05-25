@@ -17,6 +17,7 @@ from auth import tiene_permiso
 from database import AnalisisSesion, Pedido, PedidoItem
 from helpers import PURCHASE_FOLDER, _upsert_producto, get_config, now_ar
 from purchase_engine import analyze_purchase
+from services.farmacia import farmacia_operativa
 
 
 def _user_tiene_observer(user):
@@ -75,7 +76,7 @@ def init_app(app):
         per_page = 50
         offset = (page - 1) * per_page
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with database.get_db() as session:
             base = session.query(database.ObsProducto)
@@ -262,7 +263,7 @@ def init_app(app):
         per_page = 40
         offset = (page - 1) * per_page
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with database.get_db() as session:
             mv_estado = matviews.estado_matview(session, 'mv_stats_drogas')
@@ -407,7 +408,7 @@ def init_app(app):
 
         from sqlalchemy import func as _f
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         # Generar (year, month) de los últimos 12 meses hasta el actual
@@ -457,7 +458,7 @@ def init_app(app):
 
         from sqlalchemy import func as _f
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         def _ym_hace(n):
@@ -569,7 +570,7 @@ def init_app(app):
         if len(lab_ids) < 2:
             return jsonify({'error': 'Se requieren al menos 2 laboratorios'}), 400
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         # Meses de los últimos 12

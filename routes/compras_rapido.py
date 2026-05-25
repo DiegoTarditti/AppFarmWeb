@@ -28,6 +28,7 @@ from database import (
 )
 from helpers import now_ar
 from services.descuentos import mejor_descuento
+from services.farmacia import farmacia_operativa
 
 
 def init_app(app):
@@ -64,7 +65,7 @@ def init_app(app):
                 except (ValueError, TypeError):
                     pass
 
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = _dt.now()
 
         # Ventana 12 meses para calcular ventas

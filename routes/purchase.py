@@ -25,6 +25,7 @@ from parsers.sales_history import parse_sales_history_pdf
 from parsers.sales_history_html import parse_sales_history_html
 from parsers.sales_history_xls import parse_sales_history_xls
 from purchase_engine import analyze_purchase
+from services.farmacia import farmacia_operativa
 
 _PACK_PATTERN = re.compile(r'\bPACK\s*X\s*(\d+)\b', re.IGNORECASE)
 
@@ -1074,7 +1075,7 @@ def init_app(app):
 
         from sqlalchemy import func as _f
 
-        id_farmacia = int(_os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         hoy = datetime.now()
 
         # Ventana 12m

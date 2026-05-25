@@ -31,6 +31,7 @@ from database import (
     get_db,
 )
 from helpers import aplicar_overrides_planificador, calcular_metricas_pedido_auto
+from services.farmacia import farmacia_operativa
 from services.pedido_estacional import (
     LIMITES,
     MESES_ES,
@@ -98,7 +99,7 @@ def init_app(app):
     @login_required
     def api_pedido_prueba_historico(producto_id):
         """Serie mensual de ventas del producto por anio, para chart del drawer."""
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
         from collections import defaultdict
         with get_db() as session:
             rows = (session.query(
@@ -150,7 +151,7 @@ def init_app(app):
             )
         except (TypeError, ValueError):
             cob_default = LIMITES['cob_dias_default']
-        id_farmacia = int(os.environ.get('OBSERVER_ID_FARMACIA', '10525'))
+        id_farmacia = farmacia_operativa()
 
         with get_db() as session:
             productos = (session.query(ObsProducto)
