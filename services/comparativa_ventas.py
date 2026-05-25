@@ -5,8 +5,10 @@ Para un mes elegido, agrega las ventas de cada sucursal por SEMANA del mes
 Cruza por `codigo_alfabeta` (universal; el observer_id difiere entre instalaciones).
 
 Devuelve ambas métricas (unidades e importe $) para que el toggle de la UI sea
-client-side sin re-fetch. Solo lectura sobre ambas DBs:
-Pieri vía `DATABASE_URL`, Badia vía `BADIA_DATABASE_URL` (env).
+client-side sin re-fetch. Solo lectura sobre ambas DBs: local vía `DATABASE_URL`;
+la OTRA sucursal se resuelve desde la tabla `sucursales` (url_externa), igual que
+/transferencias. Devuelve `local_nombre`/`otra_nombre` para que los labels sean
+correctos en cualquier instancia. Fallback legacy: `BADIA_DATABASE_URL` (env).
 """
 import calendar
 import os
@@ -80,13 +82,34 @@ def meses_disponibles(n=12):
     return out
 
 
-def analizar_semanal(mes_key, local_url=None, badia_url=None):
+def analizar_semanal(mes_key, local_url=None, otra_url=None):
     local_url = local_url or os.environ.get('DATABASE_URL', '')
-    badia_url = badia_url or os.environ.get('BADIA_DATABASE_URL', '')
+    # La "otra" sucursal sale del registro `sucursales` (mismo patrón que
+    # /transferencias): local = esta instancia (DATABASE_URL); otra = la primera
+    # otra activa con URL. Reemplaza el viejo BADIA_DATABASE_URL "mentido".
+    local_nombre, otra_nombre = 'Local', 'Otra'
+    if not otra_url:
+        try:
+            from services.transferencias import _local_slug, listar_sucursales
+            sucs = listar_sucursales()
+            if sucs:
+                lslug = _local_slug(sucs)
+                local_suc = next((s for s in sucs if s['slug'] == lslug), None)
+                if local_suc:
+                    local_nombre = local_suc['nombre']
+                otras = [s for s in sucs if s['slug'] != lslug and s.get('url_externa')]
+                if otras:
+                    otra_url, otra_nombre = otras[0]['url_externa'], otras[0]['nombre']
+        except Exception:
+            pass
+    if not otra_url:  # fallback legacy
+        otra_url = os.environ.get('BADIA_DATABASE_URL', '')
+        otra_nombre = 'Badia'
+
     if not local_url:
         return {'ok': False, 'error': 'DATABASE_URL no configurada.'}
-    if not badia_url:
-        return {'ok': False, 'error': 'BADIA_DATABASE_URL no configurada en el entorno (.env / Render).'}
+    if not otra_url:
+        return {'ok': False, 'error': 'No hay otra sucursal cargada en la tabla `sucursales` (ni BADIA_DATABASE_URL).'}
 
     anio, mes = mes_key // 100, mes_key % 100
     if not (1 <= mes <= 12):
@@ -98,7 +121,7 @@ def analizar_semanal(mes_key, local_url=None, badia_url=None):
 
     try:
         p, p_lab, p_desc = _pull_db(local_url, d1, d2, n_sem)
-        b, b_lab, b_desc = _pull_db(badia_url, d1, d2, n_sem, render=True)
+        b, b_lab, b_desc = _pull_db(otra_url, d1, d2, n_sem, render=True)
     except Exception as e:
         return {'ok': False, 'error': f'No pude leer alguna DB: {e}'}
 
@@ -158,6 +181,8 @@ def analizar_semanal(mes_key, local_url=None, badia_url=None):
         'mes_key': mes_key,
         'n_semanas': n_sem,
         'n_dias': n_days,
+        'local_nombre': local_nombre,
+        'otra_nombre': otra_nombre,
         'labs': out_labs,
         'total': {
             'p_sem_u': [round(x, 1) for x in tot['p_sem_u']],
