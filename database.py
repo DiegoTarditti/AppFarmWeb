@@ -265,7 +265,19 @@ class ObsVentaDetalle(Base):
     id_farmacia                    = Column(Integer, nullable=False, index=True)
     canal_venta_observer           = Column(Integer, nullable=True)
     tipo_operacion                 = Column(String(2), nullable=True, index=True)  # 'V'=venta, 'D'=devol., 'NC'=nota crédito
+    operador_observer              = Column(String(40), nullable=True, index=True)  # IdOperador (UUID) → ObsOperador. Stats x vendedor
     sync_en                        = Column(DateTime, default=now_ar)
+
+
+class ObsOperador(Base):
+    """Vendedores/operadores del POS (espejo de DW.OperadoresVenta).
+
+    `observer_id` = IdUsuario (UUID), igual al `operador_observer` de obs_ventas_detalle.
+    Se sincroniza con `observer_source.sync_operadores`."""
+    __tablename__ = 'obs_operadores'
+    observer_id = Column(String(40), primary_key=True, autoincrement=False)
+    nombre      = Column(String(120))
+    sync_en     = Column(DateTime, default=now_ar)
 
 
 class ObsGrupoCliente(Base):
@@ -1944,7 +1956,7 @@ def init_db(database_url=None):
                         'estacionalidad_productos',
                         'cadencia_lab_snapshot',
                         'archivos_compartidos', 'sucursales',
-                        'compartido_importado')
+                        'compartido_importado', 'obs_operadores')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2128,6 +2140,22 @@ def init_db(database_url=None):
                         usuario VARCHAR(80),
                         creado_en TIMESTAMP NOT NULL DEFAULT NOW(),
                         CONSTRAINT uq_compartido_importado UNIQUE (origen_slug, archivo_id)
+                    )
+                """))
+                # Estadísticas por vendedor: operador en ventas_detalle + tabla de operadores.
+                conn.execute(text(
+                    "ALTER TABLE obs_ventas_detalle "
+                    "ADD COLUMN IF NOT EXISTS operador_observer VARCHAR(40)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_obs_vd_operador "
+                    "ON obs_ventas_detalle(operador_observer)"
+                ))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS obs_operadores (
+                        observer_id VARCHAR(40) PRIMARY KEY,
+                        nombre VARCHAR(120),
+                        sync_en TIMESTAMP
                     )
                 """))
                 # Migración estacionalidad_escenarios: meses → días.

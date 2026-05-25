@@ -103,7 +103,7 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                      'grupos_clientes', 'categorias_clientes',
                      'obras_sociales', 'convenios', 'planes', 'clientes',
                      'colegios_medicos', 'medicos', 'medicos_matriculas',
-                     'ventas_detalle']
+                     'operadores', 'ventas_detalle']
             funcs = {
                 'laboratorios':         observer_source.sync_laboratorios,
                 'rubros':               observer_source.sync_rubros,
@@ -121,6 +121,7 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                 'colegios_medicos':     observer_source.sync_colegios_medicos,
                 'medicos':              observer_source.sync_medicos,
                 'medicos_matriculas':   observer_source.sync_medicos_matriculas,
+                'operadores':           observer_source.sync_operadores,
                 'ventas_detalle':       observer_source.sync_ventas_detalle,
             }
 

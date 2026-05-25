@@ -42,6 +42,30 @@ def init_app(app):
         """Índice con tarjetas para cada informe disponible."""
         return render_template('informes_index.html')
 
+    @app.route('/informes/ventas-vendedor')
+    @login_required
+    def informes_ventas_vendedor():
+        """Ventas por vendedor/operador (ObServer DW.ProductosVendidos.IdOperador)."""
+        import calendar
+        from datetime import date as _date
+
+        from services.comparativa_ventas import meses_disponibles
+        from services.ventas_vendedor import ventas_por_vendedor
+        meses = meses_disponibles()
+        mes = request.args.get('mes', type=int) or meses[0]['key']
+        anio, m = mes // 100, mes % 100
+        if not (1 <= m <= 12):
+            mes, anio, m = meses[0]['key'], meses[0]['key'] // 100, meses[0]['key'] % 100
+        d1 = _date(anio, m, 1)
+        d2 = _date(anio, m, calendar.monthrange(anio, m)[1])
+        with database.get_db() as session:
+            data = ventas_por_vendedor(session, d1, d2)
+        tot_imp = sum(x['importe'] for x in data)
+        tot_u = sum(x['unidades'] for x in data)
+        return render_template('informes_ventas_vendedor.html',
+                               data=data, meses=meses, mes_sel=mes,
+                               tot_imp=tot_imp, tot_u=tot_u)
+
     @app.route('/informes/cadencias-lab')
     @login_required
     def informe_cadencias_lab():

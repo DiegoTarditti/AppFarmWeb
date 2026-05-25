@@ -606,7 +606,7 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                        Importe, ImporteACargoOS, ACargoPlanPrincipal,
                        ImporteEfectivo, ImporteTarjeta, ImporteCheque, ImporteCuentaCorriente,
                        FechaDeOperacion, FechaEstadistica, [Año] AS Anio, Mes, Dia,
-                       IdFarmacia, IdCanalDeVenta, IdTipoOperacion
+                       IdFarmacia, IdCanalDeVenta, IdTipoOperacion, IdOperador
                 FROM DW.ProductosVendidos
                 WHERE FechaEstadistica >= %s AND IdFarmacia = %s
                 ORDER BY FechaEstadistica
@@ -664,6 +664,7 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
                         'id_farmacia': int(r['IdFarmacia']),
                         'canal_venta_observer': int(r['IdCanalDeVenta']) if r['IdCanalDeVenta'] is not None else None,
                         'tipo_operacion': r.get('IdTipoOperacion'),
+                        'operador_observer': str(r['IdOperador']) if r.get('IdOperador') is not None else None,
                         'sync_en': ts,
                     })
                     n += 1
@@ -681,6 +682,37 @@ def sync_ventas_detalle(session, desde_fecha=None, meses_default=24, id_farmacia
         'desde': desde_fecha.isoformat(),
         'skipped_fk': skipped,
     }
+
+
+def sync_operadores(session):
+    """Espejo de DW.OperadoresVenta (vendedores/operadores del POS).
+
+    `observer_id` = IdUsuario (UUID) = el `IdOperador` de DW.ProductosVendidos.
+    Habilita las estadísticas de ventas por vendedor (obs_ventas_detalle.operador_observer)."""
+    from database import ObsOperador, now_ar
+    t0 = time.time()
+    conn = _connect()
+    if conn is None:
+        raise RuntimeError('ObServer no configurado')
+    n = 0
+    try:
+        with conn.cursor(as_dict=True) as cur:
+            cur.execute("SELECT IdUsuario, Vendedor FROM DW.OperadoresVenta")
+            for r in cur.fetchall():
+                uid = r['IdUsuario']
+                if uid is None:
+                    continue
+                _upsert_obs(
+                    session, ObsOperador, 'observer_id', str(uid),
+                    nombre=(r['Vendedor'] or '').strip() or '(sin nombre)',
+                    sync_en=now_ar(),
+                )
+                n += 1
+    finally:
+        conn.close()
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'operadores', n, duracion)
+    return {'upsert': n, 'duracion_ms': duracion}
 
 
 def sync_grupos_clientes(session):
