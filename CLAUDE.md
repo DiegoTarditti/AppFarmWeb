@@ -130,9 +130,10 @@ Se hacen inline en `init_db()` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (P
 
 | Archivo | Proveedor | CUIT | match_strategy |
 |---------|-----------|------|----------------|
-| `droguer_a_kellerhoff_s_a.py` | Droguería Kellerhoff | — | barcode |
 | `pharmos.py` | Pharmos | 30-64266156-2 | descripcion (usa refs internas como barcode) |
 | `20_de_junio.py` | 20 de Junio | 23-17460511-4 | barcode |
+
+> **Kellerhoff ya no usa parser regex.** Se importa por el flujo JSON con IA (`/converter/<token>/extraer-json` → `services/factura_ia.py`, Claude lee el PDF). Los 3 parsers regex (`droguer_a_kellerhoff_s_a.py`, `kellerhoff.py`, `drogueria_kelleroff.py`) se retiraron el 2026-05-26. El path regex (`data_extract.parse_invoice_pdf` vía `Provider.parser_file`, usado por `routes/batch.py` y el modo aprendizaje del conversor) sigue vivo para otros proveedores; si un Provider Kellerhoff viejo todavía tiene `parser_file` seteado, los callers degradan con error limpio (no crashean).
 
 ### ⚠ OBLIGATORIO: normalización de texto PDF
 
@@ -165,7 +166,7 @@ def parse_invoice_pdf(pdf_path):
 **Si descubrís otro artefacto recurrente de pdfplumber** (ej. rotaciones de caracteres, comillas raras, etc.), agregarlo como paso nuevo en `_normalize_quadrupled` en `helpers.py` — así automáticamente se propaga a todos los parsers que ya llaman a esta función.
 
 ### Formato Kellerhoff
-`BARCODE CANT DESC PRECIO_PUB %DTO PRECIO_UNIT IMPORTE` — regex con grupos.
+Importado por el flujo JSON con IA (ver nota en "Parsers activos"). El parser regex se retiró. El layout del PDF era `BARCODE CANT DESC PRECIO_PUB %DTO PRECIO_UNIT IMPORTE` + sección "PRODUCTOS GRAVADOS" (5 cols) + pie fiscal; todo eso ahora lo extrae `factura_ia.py`.
 
 ### Formato Pharmos
 Sin barcodes reales. Usa códigos internos tipo `79-65` como codigo_barra. Regex: `^(\d{2}-\d+)\s+...`
