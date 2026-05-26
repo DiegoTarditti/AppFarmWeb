@@ -139,6 +139,7 @@ class ObsProducto(Base):
     cantidad_envase        = Column(DECIMAL(10, 3), nullable=True)
     es_habilitado_venta    = Column(Boolean, nullable=False, default=True)
     requiere_cadena_frio   = Column(Boolean, nullable=False, default=False)
+    es_fraccionable        = Column(Boolean, nullable=False, default=False)  # DW.Productos.EsFraccionable
     fecha_baja             = Column(DateTime, nullable=True)
     sync_en                = Column(DateTime, default=now_ar)
 
@@ -151,6 +152,7 @@ class ObsStock(Base):
     stock_actual = Column(Integer, nullable=False, default=0)
     maximo = Column(Integer, nullable=True)
     minimo = Column(Integer, nullable=True)
+    fraccionado = Column(Boolean, nullable=False, default=False)  # DW.StockFarmaciasProductos.Fraccionado
     sync_en = Column(DateTime, default=now_ar)
 
 
@@ -2846,6 +2848,11 @@ def _pg_add_columns(conn):
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS id_tipo_venta_control VARCHAR(1)"))
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_obs_prod_tvc ON obs_productos(id_tipo_venta_control)"))
     conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS descripcion_custom VARCHAR(200)"))
+    # Fraccionado: flag de producto (DW.Productos.EsFraccionable) + de stock
+    # (DW.StockFarmaciasProductos.Fraccionado). Para fraccionables, obs_stock.
+    # stock_actual viene en UNIDADES sueltas, no en envases.
+    conn.execute(text("ALTER TABLE obs_productos ADD COLUMN IF NOT EXISTS es_fraccionable BOOLEAN NOT NULL DEFAULT FALSE"))
+    conn.execute(text("ALTER TABLE obs_stock ADD COLUMN IF NOT EXISTS fraccionado BOOLEAN NOT NULL DEFAULT FALSE"))
     # Provider: mínimo de compra (puede no estar en deploys viejos)
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS compra_minima_pesos DECIMAL(14, 2)"))
     conn.execute(text("ALTER TABLE proveedores ADD COLUMN IF NOT EXISTS descuento_con_transfer DECIMAL(5, 2)"))
