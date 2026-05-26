@@ -170,6 +170,20 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                     resultado['ok'] = False
                     return resultado
 
+            # Deriva fraccionado del master desde ObServer (es_fraccionable) +
+            # completa cantidad_envase. Depende de productos/obs_productos ya sync.
+            _sync_lock_set_paso('fraccionado_master')
+            try:
+                with cron_log.registrar('fraccionado_master', origen='dockerpanel') as clog:
+                    with database.get_db() as session:
+                        st_fr = observer_source.sync_fraccionado_master(session)
+                        session.commit()
+                    clog.set_mensaje(f"flag={st_fr['flag_updates']} "
+                                     f"envase +{st_fr['env_nuevos']}/{st_fr['env_completados']}")
+                resultado['pasos'].append({'paso': 'fraccionado_master', 'ok': True, **st_fr})
+            except Exception as e:
+                resultado['pasos'].append({'paso': 'fraccionado_master', 'ok': False, 'error': str(e)})
+
             if not skip_match:
                 _sync_lock_set_paso('match_productos')
                 try:

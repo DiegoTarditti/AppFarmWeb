@@ -727,7 +727,17 @@ def init_app(app):
                         'cadena_frio': op.requiere_cadena_frio,
                         'baja': op.fecha_baja,
                         'monodroga': obs_droga.descripcion if obs_droga else None,
+                        'es_fraccionable': bool(op.es_fraccionable),
                     }
+                    # Stock de la farmacia operativa + "Frac." (envases/unidades).
+                    from database import ObsStock
+                    from services.farmacia import farmacia_operativa
+                    st = session.get(ObsStock, (farmacia_operativa(), op.observer_id))
+                    if st:
+                        obs['stock_actual'] = st.stock_actual
+                        env = int(op.cantidad_envase) if op.cantidad_envase else 0
+                        if op.es_fraccionable and env and st.stock_actual:
+                            obs['frac_display'] = f'{st.stock_actual // env}/{st.stock_actual}'
             # EANs alts desde producto_codigos_barra (1-a-N)
             from database import ProductoCodigoBarra
             alts_lista = [
@@ -742,6 +752,7 @@ def init_app(app):
                 'alts': alts_lista,
                 'precio_pvp': float(prod.precio_pvp) if prod.precio_pvp else None,
                 'es_pack': bool(prod.es_pack),
+                'fraccionado': bool(prod.fraccionado),
                 'laboratorio': prod.laboratorio.nombre if prod.laboratorio else None,
                 'codigo_alfabeta': prod.codigo_alfabeta,
                 'observer_id': prod.observer_id,

@@ -26,6 +26,7 @@
                 <span class="font-mono text-xs">EAN {{ producto.codigo_barra }}</span>
                 {% if producto.laboratorio %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-sky-100 text-sky-800 text-xs font-semibold">{{ producto.laboratorio }}</span>{% endif %}
                 {% if producto.es_pack %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-semibold">PACK</span>{% endif %}
+                {% if producto.fraccionado %}<span class="ml-2 inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-semibold">FRACCIONADO</span>{% endif %}
             </p>
         </div>
         <a href="{{ url_for('productos_list') }}" class="text-xs text-sky-600 hover:underline">← Productos</a>
@@ -156,6 +157,9 @@
             {% if obs.troquel %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Troquel</dt><dd class="font-mono">{{ obs.troquel }}</dd></div>{% endif %}
             {% if obs.codigo_alfabeta %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cód. Alfabeta</dt><dd class="font-mono">{{ obs.codigo_alfabeta }}</dd></div>{% endif %}
             {% if obs.tvc %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Tipo venta</dt><dd class="font-mono">{{ obs.tvc }}</dd></div>{% endif %}
+            <div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Fraccionable</dt>
+                <dd>{% if obs.es_fraccionable %}<span class="text-emerald-700 font-bold">SÍ</span>{% if obs.frac_display %} <span class="font-mono text-[#888]">· {{ obs.frac_display }}</span>{% endif %}{% else %}<span class="text-[#999]">No</span>{% endif %}</dd></div>
+            {% if obs.stock_actual is not none %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Stock{% if obs.es_fraccionable %} (u){% endif %}</dt><dd class="font-mono">{{ obs.stock_actual }}</dd></div>{% endif %}
             {% if obs.cadena_frio %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">⚠ Cadena frío</dt><dd class="text-rose-700 font-bold">SÍ</dd></div>{% endif %}
             {% if obs.baja %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Baja</dt><dd class="text-rose-700">{{ obs.baja.strftime('%d/%m/%Y') }}</dd></div>{% endif %}
         </dl>

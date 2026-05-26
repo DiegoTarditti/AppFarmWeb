@@ -382,7 +382,7 @@ def sync_productos(session):
             cur.execute("""
                 SELECT IdProducto, Producto, IdLaboratorio, IdSubRubro, IdNombresDrogas,
                        CodigoAlfabeta, IdTipoVentaYControl, Troquel, CantidadDelEnvase,
-                       EsHabilitadoVenta, RequiereCadenaFrio, FechaBaja
+                       EsHabilitadoVenta, RequiereCadenaFrio, EsFraccionable, FechaBaja
                 FROM DW.Productos
             """)
             for r in cur.fetchall():
@@ -402,6 +402,7 @@ def sync_productos(session):
                     cantidad_envase=r['CantidadDelEnvase'],
                     es_habilitado_venta=bool(r['EsHabilitadoVenta']),
                     requiere_cadena_frio=bool(r['RequiereCadenaFrio']),
+                    es_fraccionable=bool(r['EsFraccionable']) if r['EsFraccionable'] is not None else False,
                     fecha_baja=r['FechaBaja'],
                     sync_en=now_ar(),
                 )
@@ -414,6 +415,53 @@ def sync_productos(session):
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'productos', n, duracion)
     return {'upsert': n, 'duracion_ms': duracion}
+
+
+def sync_fraccionado_master(session):
+    """Deriva el flag fraccionado del master desde ObServer + completa el envase.
+
+    ObServer manda: para productos con observer_id, `Producto.fraccionado` refleja
+    `obs_productos.es_fraccionable`. El envase (`ProductoAtributo.cantidad_envase`)
+    se rellena desde obs SOLO si la fila no es `fuente='manual'` (no pisa ediciones
+    a mano). Los productos sin observer_id no se tocan (ahí el marcado manual sigue
+    siendo la única fuente). PostgreSQL-only; correr después de sync_productos.
+    """
+    from sqlalchemy import text
+
+    from database import now_ar
+    t0 = time.time()
+    # 1) Espejo del flag fraccionado (solo donde difiere).
+    flag = session.execute(text("""
+        UPDATE productos p
+        SET fraccionado = o.es_fraccionable
+        FROM obs_productos o
+        WHERE o.observer_id = p.observer_id
+          AND p.fraccionado IS DISTINCT FROM o.es_fraccionable
+    """)).rowcount or 0
+    # 2a) Crear ProductoAtributo con el envase de obs para fraccionables sin atributo.
+    env_nuevos = session.execute(text("""
+        INSERT INTO producto_atributos (producto_id, cantidad_envase, fuente, confianza, extraido_en)
+        SELECT p.id, o.cantidad_envase, 'observer', 'ALTA', :ts
+        FROM productos p
+        JOIN obs_productos o ON o.observer_id = p.observer_id
+        LEFT JOIN producto_atributos a ON a.producto_id = p.id
+        WHERE o.es_fraccionable AND o.cantidad_envase IS NOT NULL
+          AND a.producto_id IS NULL
+    """), {'ts': now_ar()}).rowcount or 0
+    # 2b) Completar envase en filas existentes no-manual que lo tengan vacío.
+    env_completados = session.execute(text("""
+        UPDATE producto_atributos a
+        SET cantidad_envase = o.cantidad_envase
+        FROM productos p, obs_productos o
+        WHERE a.producto_id = p.id AND o.observer_id = p.observer_id
+          AND o.es_fraccionable AND o.cantidad_envase IS NOT NULL
+          AND a.cantidad_envase IS NULL AND a.fuente <> 'manual'
+    """)).rowcount or 0
+    duracion = int((time.time() - t0) * 1000)
+    _log_sync(session, 'fraccionado_master', flag, duracion,
+              f'envase: {env_nuevos} nuevos, {env_completados} completados')
+    return {'upsert': flag, 'duracion_ms': duracion, 'flag_updates': flag,
+            'env_nuevos': env_nuevos, 'env_completados': env_completados}
 
 
 def sync_colegios_medicos(session):
@@ -939,7 +987,7 @@ def sync_stock(session, id_farmacia=None):
     try:
         with conn.cursor(as_dict=True) as cur:
             cur.execute("""
-                SELECT IdProducto, StockActual, Maximo, Minimo
+                SELECT IdProducto, StockActual, Maximo, Minimo, Fraccionado
                 FROM DW.StockFarmaciasProductos
                 WHERE IdFarmacia = %d
             """, (int(id_farmacia),))
@@ -956,6 +1004,7 @@ def sync_stock(session, id_farmacia=None):
                 obj.stock_actual = int(r['StockActual'] or 0)
                 obj.maximo = int(r['Maximo']) if r['Maximo'] is not None else None
                 obj.minimo = int(r['Minimo']) if r['Minimo'] is not None else None
+                obj.fraccionado = bool(r['Fraccionado']) if r['Fraccionado'] is not None else False
                 obj.sync_en = now_ar()
                 n += 1
                 if n % 5000 == 0:
