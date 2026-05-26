@@ -362,7 +362,7 @@ document.querySelectorAll('select[name^="motivo_"]').forEach(sel => {
     const wrap = document.getElementById('agregar-datos-' + opId);
     if (!wrap) return;
     const selectedText = sel.options[sel.selectedIndex]?.text || '';
-    const isAgregar = /agregar\s+datos/i.test(selectedText);
+    const isAgregar = /(agregar|faltan)\s+datos/i.test(selectedText);
     wrap.classList.toggle('hidden', !isAgregar);
     if (!isAgregar) {
       wrap.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
