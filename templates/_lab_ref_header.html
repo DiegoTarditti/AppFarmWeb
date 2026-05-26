@@ -10,7 +10,86 @@
     <button type="button" onclick="window.print()" class="lr-print-btn no-print"
             title="Imprimir / Guardar como PDF (apaisado)">🖨️ Imprimir / PDF</button>
     {% endif %}
+    {% if data and analizar_endpoint is defined %}
+    <button type="button" class="lr-print-btn no-print" id="lr-analizar-btn"
+            data-url="{{ url_for(analizar_endpoint) }}" data-lab-id="{{ lab_id }}"
+            onclick="analizarInformeIA(this)"
+            title="Análisis con Claude (Opus 4.7 — consume crédito de la API)">🤖 Analizar con IA</button>
+    <button type="button" class="lr-print-btn no-print" id="lr-ver-ultimo-btn"
+            data-clave="{{ endpoint[8:] }}:{{ lab_id }}"
+            onclick="verUltimoInforme(this)"
+            title="Re-mostrar el último análisis guardado (sin gastar API)">👁 Ver último</button>
+    {% endif %}
 </div>
+{% if data and analizar_endpoint is defined %}
+<script>
+async function analizarInformeIA(btn) {
+    const url = btn.dataset.url, labId = btn.dataset.labId;
+    if (!confirm('Analizar este informe con Claude (Opus 4.7).\nTarda ~10-20s y consume crédito de la API (~2-4 centavos USD). ¿Continuar?')) return;
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '🤖 Analizando…';
+    try {
+        const r = await fetch(url, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({lab_id: parseInt(labId)}),
+        });
+        const d = await r.json();
+        btn.disabled = false; btn.textContent = orig;
+        if (!d.ok) { alert('Error: ' + (d.error || '?')); return; }
+        _lrMostrarAnalisis(d.analisis, d.tokens_in ? (d.tokens_in + '→' + d.tokens_out + ' tok') : '');
+    } catch (e) { btn.disabled = false; btn.textContent = orig; alert('Error de red: ' + e); }
+}
+
+async function verUltimoInforme(btn) {
+    const clave = btn.dataset.clave;
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '…';
+    try {
+        const r = await fetch('{{ url_for("informe_analisis_ia_ultimo") }}?clave=' + encodeURIComponent(clave), { credentials: 'same-origin' });
+        const d = await r.json();
+        btn.disabled = false; btn.textContent = orig;
+        if (!d.ok) { alert(d.error || 'No hay análisis guardado para este lab.'); return; }
+        const meta = (d.tokens_in ? (d.tokens_in + '→' + d.tokens_out + ' tok · ') : '') + 'generado ' + (d.creado_en || '');
+        _lrMostrarAnalisis(d.analisis, meta);
+    } catch (e) { btn.disabled = false; btn.textContent = orig; alert('Error de red: ' + e); }
+}
+
+function _lrMostrarAnalisis(texto, metaTxt) {
+    window.__analisisIA = texto;
+    window.__analisisTitulo = ((document.querySelector('.lr-head h1') || {}).textContent || 'Análisis IA').trim();
+    let modal = document.getElementById('lr-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'lr-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:24px;';
+        modal.onclick = e => { if (e.target === modal) modal.remove(); };
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = '<div style="background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:12px;max-width:680px;max-height:80vh;overflow-y:auto;padding:20px 24px;color:var(--ds-text);font-size:13px;line-height:1.6;white-space:pre-wrap;">'
+        + texto.replace(/</g, '&lt;')
+        + '<div style="margin-top:16px;display:flex;gap:8px;align-items:center;justify-content:flex-end;">'
+        + '<span style="font-size:11px;color:var(--ds-text-mute);margin-right:auto;">' + (metaTxt || '') + '</span>'
+        + '<button class="lr-print-btn" onclick="exportarAnalisisPDF(window.__analisisTitulo, window.__analisisIA)">📄 Exportar PDF</button>'
+        + '<button class="lr-print-btn" onclick="document.getElementById(\'lr-modal\').remove()">Cerrar</button></div></div>';
+}
+
+function exportarAnalisisPDF(titulo, texto) {
+    const w = window.open('', '_blank');
+    if (!w) { alert('Permití las ventanas emergentes para exportar a PDF.'); return; }
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    w.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>' + esc(titulo) + '</title>'
+        + '<style>body{font-family:system-ui,"Segoe UI",Arial,sans-serif;max-width:720px;margin:32px auto;padding:0 24px;color:#1a1a1a;line-height:1.6;font-size:13px;}'
+        + 'h1{font-size:18px;color:#0f5132;border-bottom:2px solid #16a34a;padding-bottom:8px;margin-bottom:4px;}'
+        + '.meta{color:#666;font-size:11px;margin-bottom:18px;}pre{white-space:pre-wrap;word-wrap:break-word;font-family:inherit;margin:0;}</style>'
+        + '</head><body><h1>' + esc(titulo) + '</h1>'
+        + '<div class="meta">Análisis generado por IA (Claude) · ' + new Date().toLocaleString('es-AR') + '</div>'
+        + '<pre>' + esc(texto) + '</pre></body></html>');
+    w.document.close();
+    setTimeout(function(){ try { w.focus(); w.print(); } catch (e) {} }, 250);
+}
+</script>
+{% endif %}
 
 <form method="get" action="{{ url_for(endpoint) }}" class="lr-filters no-print">
     <label for="lab-sel">Laboratorio:</label>

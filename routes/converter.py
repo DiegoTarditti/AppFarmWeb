@@ -659,6 +659,90 @@ def init_app(app):
             'tokens_out': getattr(resp.usage, 'output_tokens', None),
         })
 
+    @app.route('/converter/<token>/extraer-json', methods=['POST'])
+    def converter_extraer_json(token):
+        """Extrae la factura a JSON estructurado (formato AppFarmWeb) con Claude Vision.
+
+        Variante de reocr-vision: en vez de texto plano, le pide el JSON anidado
+        del skill `extraer-facturas` y corre la auto-validación matemática/fiscal.
+        Devuelve {ok, data, validacion} para previsualizar ANTES de guardar.
+        Guarda el resultado en <pdf>.extraido.json."""
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        safe = secure_filename(token)
+        path = os.path.join(CONVERTER_DIR, safe)
+        if not os.path.exists(path):
+            return jsonify({'ok': False, 'error': 'Documento no encontrado.'}), 404
+
+        from services import factura_ia
+        with open(path, 'rb') as fh:
+            pdf_bytes = fh.read()
+        try:
+            data, usage = factura_ia.extraer_factura_json(pdf_bytes, api_key)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 502
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito en https://console.anthropic.com/settings/billing y volvé a intentar.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada. Generá una nueva en console.anthropic.com.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y probá de nuevo.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+
+        validacion = factura_ia.validar(data)
+        try:
+            with open(path + '.extraido.json', 'w', encoding='utf-8') as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+        except OSError:
+            pass
+        return jsonify({
+            'ok': True, 'data': data, 'validacion': validacion,
+            'tokens_in': getattr(usage, 'input_tokens', None),
+            'tokens_out': getattr(usage, 'output_tokens', None),
+        })
+
+    @app.route('/converter/<token>/importar-json', methods=['POST'])
+    def converter_importar_json(token):
+        """Flatten del JSON extraído por IA → facturas/factura_items + faltantes + matching.
+
+        Carga el JSON del body o del <pdf>.extraido.json guardado, lo valida
+        (bloquea si estado='error'), persiste la factura y encola al queue de
+        revisión los ítems que no matchean por EAN en el catálogo."""
+        safe = secure_filename(token)
+        path = os.path.join(CONVERTER_DIR, safe)
+        if not os.path.exists(path):
+            return jsonify({'ok': False, 'error': 'Documento no encontrado.'}), 404
+        body = request.get_json(silent=True) or {}
+        data = body.get('data')
+        if not data:
+            jpath = path + '.extraido.json'
+            if not os.path.exists(jpath):
+                return jsonify({'ok': False, 'error': 'No hay JSON extraído. Corré "Extraer a JSON" primero.'}), 400
+            with open(jpath, encoding='utf-8') as fh:
+                data = json.load(fh)
+        tipo_override = (body.get('tipo') or '').strip().upper() or None
+
+        from services import factura_ia
+        val = factura_ia.validar(data)
+        if val.get('estado') == 'error':
+            return jsonify({'ok': False, 'validacion': val,
+                            'error': 'La factura no valida (estado error): ' + '; '.join(val.get('errores') or [])}), 422
+        try:
+            inv_id, msg, items_data, prov_id, prov_razon = _guardar_factura_desde_ia(token, data, tipo_override)
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        encolados, en_catalogo = _matchear_items_factura(items_data, prov_id, prov_razon)
+        return jsonify({'ok': True, 'invoice_id': inv_id, 'mensaje': msg,
+                        'encolados': encolados, 'en_catalogo': en_catalogo,
+                        'estado': val.get('estado'), 'validacion': val})
+
     @app.route('/converter/<token>/pick', methods=['GET'])
     def converter_pick(token):
         """Modo aprendizaje: seleccionás partes de una fila ejemplo y el sistema infiere regex."""
@@ -1257,6 +1341,237 @@ def _guardar_factura_desde_aprendizaje(token, header, rows, tipo_comprobante='FA
                 ))
         session.commit()
         return inv.id, f'Factura {inv.numero_factura} guardada con {len(items_data)} ítems.'
+
+
+def _guardar_factura_desde_ia(token, data, tipo_override=None):
+    """Flatten del JSON anidado de la IA (encabezado+detalle+falta_momentanea)
+    → Invoice + InvoiceItem + ProductoPrecioHist + FacturaFaltante.
+
+    Devuelve (invoice_id, mensaje, items_data, prov_id, prov_razon).
+    Lanza ValueError con el detalle si faltan datos o hay filas inválidas.
+    """
+    import shutil
+    from datetime import date, datetime
+
+    from werkzeug.utils import secure_filename as _sf
+
+    from helpers import UPLOAD_FOLDER
+    from services.factura_ia import _f
+
+    safe = _sf(token)
+    path = os.path.join(CONVERTER_DIR, safe)
+    if not os.path.exists(path):
+        raise ValueError('Documento no encontrado')
+
+    enc = (data or {}).get('encabezado') or {}
+    tot = enc.get('totales') or {}
+    det = (data or {}).get('detalle') or []
+    faltantes = (data or {}).get('falta_momentanea') or []
+    if not det:
+        raise ValueError('El JSON no tiene detalle para guardar')
+
+    prov = enc.get('proveedor') or {}
+    cli = enc.get('cliente') or {}
+
+    tipo = (tipo_override or enc.get('tipo_comprobante') or 'FAC').upper()
+    if tipo not in ('FAC', 'NCR', 'PREFAC'):
+        tipo = 'FAC'
+    sign = -1 if tipo == 'NCR' else 1
+
+    # Fecha: la IA la da en ISO; tolerar formato arg por las dudas.
+    fecha = date.today()
+    fstr = (enc.get('fecha') or '').strip()
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y'):
+        try:
+            fecha = datetime.strptime(fstr, fmt).date()
+            break
+        except ValueError:
+            continue
+
+    MAX_VAL = 10**11
+    items_data = []
+    rows_malas = []
+    for i, it in enumerate(det, 1):
+        unit = _f(it.get('precio_unitario'))
+        imp = _f(it.get('importe')) or 0
+        cant = int(_f(it.get('cantidad')) or 0)
+        dto = _f(it.get('dto_pct'))
+        cb = (it.get('codigo_barra') or it.get('codigo_interno') or '').strip()
+        problemas = []
+        if unit is not None and abs(unit) > MAX_VAL:
+            problemas.append(f'precio_unitario fuera de rango ({unit:.2f})')
+        if abs(imp) > MAX_VAL:
+            problemas.append(f'importe fuera de rango ({imp:.2f})')
+        if problemas:
+            rows_malas.append((i, cb, (it.get('descripcion') or '')[:50], problemas))
+            continue
+        items_data.append({
+            'codigo_barra': cb[:20] or None,
+            'codigo_interno': (it.get('codigo_interno') or '').strip()[:30] or None,
+            'cantidad': cant,
+            'descripcion': (it.get('descripcion') or '').strip()[:150],
+            'precio_unitario': unit,
+            'dto': dto,
+            'importe': imp,
+            'categoria': (it.get('grupo') or '').strip()[:50] or None,
+            'precio_publico': _f(it.get('precio_publico')),
+            'lote': (it.get('lote') or '').strip()[:30] or None,
+            'vencimiento': (it.get('vencimiento') or '').strip()[:20] or None,
+        })
+    if rows_malas:
+        detalle = '; '.join(
+            f'fila {i} ({cb or "s/cod"} · {d}): {", ".join(p)}'
+            for i, cb, d, p in rows_malas[:5]
+        )
+        raise ValueError(f'{len(rows_malas)} fila(s) con datos inválidos: {detalle}')
+
+    h = {k: _f(tot.get(k)) for k in
+         ('monto_exento', 'monto_gravado', 'iva_105', 'iva_21', 'percepciones', 'otros')}
+    total = _f(tot.get('total'))
+    if total is None:
+        total = sum(it['importe'] for it in items_data)
+
+    pdf_dest = os.path.join(UPLOAD_FOLDER, safe)
+    if not os.path.exists(pdf_dest):
+        try:
+            shutil.copy(path, pdf_dest)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning('No pude copiar %s a UPLOAD_FOLDER: %s', path, e)
+
+    prov_razon = (prov.get('razon_social') or '').strip()
+    prov_cuit = (prov.get('cuit') or '').strip()
+    with database.get_db() as session:
+        inv = database.Invoice(
+            numero_factura=((enc.get('numero_factura') or 'SIN_NUMERO').strip())[:20],
+            fecha=fecha,
+            proveedor_razon=prov_razon or None,
+            proveedor_cuit=prov_cuit[:20] or None,
+            proveedor_domicilio=((prov.get('domicilio') or '').strip()[:200] or None),
+            cliente_codigo=((cli.get('codigo') or '').strip()[:20] or None),
+            cliente_razon=((cli.get('razon_social') or '').strip()[:100] or None),
+            tipo_comprobante=tipo,
+            total=(total or 0) * sign,
+            total_articulos=len(items_data),
+            total_unidades=sum(it['cantidad'] for it in items_data),
+            pdf_filename=safe,
+            monto_exento  = (h['monto_exento']  * sign) if h['monto_exento']  is not None else None,
+            monto_gravado = (h['monto_gravado'] * sign) if h['monto_gravado'] is not None else None,
+            iva_105       = (h['iva_105']       * sign) if h['iva_105']       is not None else None,
+            iva_21        = (h['iva_21']        * sign) if h['iva_21']        is not None else None,
+            percepciones  = (h['percepciones']  * sign) if h['percepciones']  is not None else None,
+            otros         = (h['otros']         * sign) if h['otros']         is not None else None,
+        )
+        session.add(inv)
+        session.flush()
+        prov_id = None
+        if prov_cuit:
+            p = session.query(database.Provider).filter_by(cuit=prov_cuit).first()
+            if p:
+                prov_id = p.id
+        if not prov_id and prov_razon:
+            p = session.query(database.Provider).filter_by(razon_social=prov_razon).first()
+            if p:
+                prov_id = p.id
+        for it in items_data:
+            session.add(database.InvoiceItem(
+                factura_id=inv.id,
+                codigo_barra=it['codigo_barra'],
+                cantidad=it['cantidad'],
+                descripcion=it['descripcion'],
+                precio_unitario=it['precio_unitario'],
+                dto=it['dto'],
+                importe=(it['importe'] or 0) * sign,
+                categoria=it['categoria'],
+                lote=it['lote'],
+                vencimiento=it['vencimiento'],
+            ))
+            if it['codigo_barra'] and fecha:
+                session.add(database.ProductoPrecioHist(
+                    codigo_barra=it['codigo_barra'],
+                    proveedor_id=prov_id,
+                    proveedor_razon=prov_razon or None,
+                    fecha=fecha,
+                    precio_publico=it['precio_publico'],
+                    dto_pct=it['dto'],
+                    precio_unitario=it['precio_unitario'],
+                    importe=it['importe'],
+                    factura_id=inv.id,
+                    tipo_comprobante=tipo,
+                ))
+        n_falt = 0
+        for ft in faltantes:
+            d = (ft.get('descripcion') or '').strip()
+            if not d:
+                continue
+            session.add(database.FacturaFaltante(
+                factura_id=inv.id,
+                codigo_barra=((ft.get('codigo_barra') or '').strip()[:20] or None),
+                codigo_interno=((ft.get('codigo_interno') or '').strip()[:30] or None),
+                cantidad=int(_f(ft.get('cantidad')) or 0),
+                descripcion=d[:150],
+            ))
+            n_falt += 1
+        session.commit()
+        inv_id = inv.id
+        numero = inv.numero_factura
+    msg = (f'{tipo} {numero} guardada: {len(items_data)} ítems'
+           + (f', {n_falt} en falta' if n_falt else ''))
+    return inv_id, msg, items_data, prov_id, prov_razon
+
+
+def _matchear_items_factura(items_data, prov_id, prov_nombre):
+    """Encola al queue de revisión los ítems sin match por EAN en el catálogo.
+
+    Reusa el flujo de ofertas: _find_producto (EAN exacto) decide los matcheados;
+    el resto va a enqueue_pendiente con candidatos de buscar_candidatos_bulk.
+    No bloquea el import: si algo falla, devuelve (0, 0).
+    Devuelve (encolados, en_catalogo).
+    """
+    try:
+        import producto_matcher as pm
+        from helpers import _find_producto
+        from routes.productos_pendientes import enqueue_pendiente
+
+        no_match = []
+        en_catalogo = 0
+        with database.get_db() as s:
+            for idx, it in enumerate(items_data):
+                cb = it.get('codigo_barra')
+                prod = _find_producto(s, cb) if cb else None
+                if prod is not None:
+                    en_catalogo += 1
+                else:
+                    no_match.append((idx, it))
+            cands = {}
+            if no_match:
+                items_for_search = [
+                    {'idx': idx, 'descripcion': it['descripcion'],
+                     'ean': it.get('codigo_barra'), 'codigo': it.get('codigo_interno')}
+                    for idx, it in no_match
+                ]
+                cands = pm.buscar_candidatos_bulk(items_for_search, top=5, session=s)
+            for idx, it in no_match:
+                raw = cands.get(idx, []) or []
+                payload = [
+                    {'producto_id': c.get('producto_id'), 'observer_id': c.get('observer_id'),
+                     'descripcion': c.get('descripcion') or '',
+                     'score': round(float(c.get('score') or 0), 3)}
+                    for c in (raw[:5] if isinstance(raw, list) else [])
+                ]
+                enqueue_pendiente(
+                    s, descripcion=it['descripcion'],
+                    supplier_id=prov_id, supplier_nombre=prov_nombre,
+                    archivo_origen='factura',
+                    score_top=(payload[0]['score'] if payload else None),
+                    top_candidatos=payload,
+                )
+            s.commit()
+        return len(no_match), en_catalogo
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning('matching de factura falló (no bloquea): %s', e)
+        return 0, 0
 
 
 def _generar_codigo_parser(pattern, fields, razon_social, cuit):

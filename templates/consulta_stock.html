@@ -281,6 +281,15 @@ document.getElementById('form-consulta').addEventListener('submit', () => {
     btn.disabled = true;
 });
 
+// Al volver con "Atrás" el navegador restaura la página desde el bfcache con el
+// botón en "⏳ Analizando…" y deshabilitado → queda freezado. Capturamos el
+// texto original y lo restauramos en pageshow (dispara también en restore).
+const _btnLabelOrig = document.getElementById('btn-label').textContent;
+window.addEventListener('pageshow', () => {
+    document.getElementById('btn-label').textContent = _btnLabelOrig;
+    updateCtaState();  // re-habilita si quedó una selección válida
+});
+
 // Prellenar "Nombre del análisis" con `DD-MM -> NN días`. Se reajusta cuando
 // se mueve el slider, salvo que el user haya editado el campo a mano.
 (function _autoPeriodo() {

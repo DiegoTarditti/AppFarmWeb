@@ -117,6 +117,8 @@
         <label class="cr-meta" for="rc-rot">Avg(m)</label>
         <input id="rc-rot" type="number" class="cr-num" min="1" max="12" value="{{ meta.meses_rot if meta else 3 }}">
         <button type="button" id="cr-recalc" class="cr-btn" onclick="recalcular()">↻ Recalcular (todos)</button>
+        {% if filas %}<button type="button" id="cr-analizar" class="cr-btn" onclick="analizarLabs()">🤖 Analizar con IA</button>
+        <button type="button" id="cr-ver-ultimo" class="cr-btn" onclick="verUltimoLabs()" title="Re-mostrar el último análisis sin gastar API">👁 Ver último</button>{% endif %}
         <span id="cr-status" class="cr-meta"></span>
         <a href="{{ url_for('informes_index') }}" class="cr-volver">← Informes</a>
     </div>
@@ -298,6 +300,69 @@ async function recalcular() {
         st.textContent = `✓ ${d.filas} labs en ${d.segundos}s. Recargando…`;
         setTimeout(() => location.reload(), 600);
     } catch (e) { st.textContent = 'Error de red'; btn.disabled = false; }
+}
+
+async function analizarLabs() {
+    const btn = document.getElementById('cr-analizar');
+    const st = document.getElementById('cr-status');
+    if (!confirm('Analizar el top 10 labs con Claude (Opus 4.7).\nTarda ~10-20s y consume crédito de la API (~2-4 centavos USD). ¿Continuar?')) return;
+    btn.disabled = true; st.textContent = 'Analizando con Claude…';
+    try {
+        const r = await fetch('{{ url_for("informe_cadencias_resumen_analizar") }}', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({top: 10, vista: _monto ? 'monto' : 'cantidad'}),
+        });
+        const d = await r.json();
+        btn.disabled = false;
+        if (!d.ok) { st.textContent = 'Error: ' + (d.error || '?'); return; }
+        st.textContent = (d.tokens_in ? `✓ ${d.tokens_in}→${d.tokens_out} tok` : '');
+        _crMostrarAnalisis(d.analisis, '');
+    } catch (e) { st.textContent = 'Error de red'; btn.disabled = false; }
+}
+
+async function verUltimoLabs() {
+    const st = document.getElementById('cr-status');
+    try {
+        const r = await fetch('{{ url_for("informe_analisis_ia_ultimo") }}?clave=cadencias', { credentials: 'same-origin' });
+        const d = await r.json();
+        if (!d.ok) { st.textContent = d.error || 'No hay análisis guardado.'; return; }
+        st.textContent = 'último: ' + (d.creado_en || '');
+        _crMostrarAnalisis(d.analisis, 'generado ' + (d.creado_en || ''));
+    } catch (e) { st.textContent = 'Error de red'; }
+}
+
+function _crMostrarAnalisis(texto, metaTxt) {
+    window.__analisisIA = texto;
+    let modal = document.getElementById('cr-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'cr-modal';
+        modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:24px;';
+        modal.onclick = e => { if (e.target === modal) modal.remove(); };
+        document.body.appendChild(modal);
+    }
+    modal.innerHTML = '<div style="background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:12px;max-width:680px;max-height:80vh;overflow-y:auto;padding:20px 24px;color:var(--ds-text);font-size:13px;line-height:1.6;white-space:pre-wrap;">'
+        + texto.replace(/</g, '&lt;')
+        + '<div style="margin-top:16px;display:flex;gap:8px;align-items:center;justify-content:flex-end;">'
+        + '<span style="font-size:11px;color:var(--ds-text-mute);margin-right:auto;">' + (metaTxt || '') + '</span>'
+        + '<button class="cr-btn" onclick="exportarAnalisisPDF(\'Análisis de cadencias por laboratorio\', window.__analisisIA)">📄 Exportar PDF</button>'
+        + '<button class="cr-btn" onclick="document.getElementById(\'cr-modal\').remove()">Cerrar</button></div></div>';
+}
+
+function exportarAnalisisPDF(titulo, texto) {
+    const w = window.open('', '_blank');
+    if (!w) { alert('Permití las ventanas emergentes para exportar a PDF.'); return; }
+    const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+    w.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>' + esc(titulo) + '</title>'
+        + '<style>body{font-family:system-ui,"Segoe UI",Arial,sans-serif;max-width:720px;margin:32px auto;padding:0 24px;color:#1a1a1a;line-height:1.6;font-size:13px;}'
+        + 'h1{font-size:18px;color:#0f5132;border-bottom:2px solid #16a34a;padding-bottom:8px;margin-bottom:4px;}'
+        + '.meta{color:#666;font-size:11px;margin-bottom:18px;}pre{white-space:pre-wrap;word-wrap:break-word;font-family:inherit;margin:0;}</style>'
+        + '</head><body><h1>' + esc(titulo) + '</h1>'
+        + '<div class="meta">Análisis generado por IA (Claude) · ' + new Date().toLocaleString('es-AR') + '</div>'
+        + '<pre>' + esc(texto) + '</pre></body></html>');
+    w.document.close();
+    setTimeout(function(){ try { w.focus(); w.print(); } catch (e) {} }, 250);
 }
 
 // ─────────── Gráficos (Chart.js) ───────────

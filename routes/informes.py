@@ -34,6 +34,70 @@ def _ventana_12m():
     return desde, hasta
 
 
+def _leer_snapshot_cadencias(session):
+    """Lee el snapshot de cadencias (1 fila por lab) ya ordenado por
+    monto_mensual desc. Devuelve (filas, totales, meta).
+
+    Una sola fuente de verdad compartida por la pantalla
+    `/informes/cadencias-resumen` y el análisis IA `/.../analizar-ia`.
+    """
+    from database import CadenciaLabSnapshot
+    int_keys = ('core', 'ocasional', 'caida', 'dormido', 'alta', 'media_alta',
+                'media', 'baja', 'muy_baja', 'con_ventas', 'sin_ventas',
+                'dormido_con_stock', 'dormido_stock_u')
+    float_keys = ('monto_mensual', 'dormido_valor',
+                  'core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
+                  'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
+                  'muy_baja_monto')
+    keys = int_keys + float_keys
+    tot = {k: 0 for k in keys}
+    filas = []
+    meta = None
+    rows = (session.query(CadenciaLabSnapshot)
+            .order_by(CadenciaLabSnapshot.monto_mensual.desc()).all())
+    for r in rows:
+        fila = {'lab_id': r.lab_id, 'nombre': r.lab_nombre or str(r.lab_id)}
+        for k in keys:
+            v = getattr(r, k) or 0
+            v = float(v) if k in float_keys else int(v)
+            fila[k] = v
+            tot[k] += v
+        filas.append(fila)
+    if rows:
+        meta = {
+            'actualizado_en': max((r.actualizado_en for r in rows if r.actualizado_en),
+                                  default=None),
+            'cobertura': rows[0].cobertura,
+            'meses_rot': rows[0].meses_rot,
+            'n_labs': len(rows),
+        }
+    return filas, tot, meta
+
+
+def _guardar_analisis_cache(clave, titulo, texto, usage=None):
+    """Upsert del último análisis IA por clave (para re-mostrarlo sin gastar API).
+
+    Defensivo: si el guardado falla, no rompe la respuesta del análisis.
+    """
+    try:
+        ti = getattr(usage, 'input_tokens', None) if usage else None
+        to = getattr(usage, 'output_tokens', None) if usage else None
+        with database.get_db() as s:
+            row = s.get(database.AnalisisIaCache, clave)
+            if row:
+                row.titulo, row.texto = titulo, texto
+                row.tokens_in, row.tokens_out = ti, to
+                row.creado_en = database.now_ar()
+            else:
+                s.add(database.AnalisisIaCache(
+                    clave=clave, titulo=titulo, texto=texto,
+                    tokens_in=ti, tokens_out=to))
+            s.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning('no pude cachear análisis %s', clave, exc_info=True)
+
+
 def init_app(app):
 
     @app.route('/informes')
@@ -110,37 +174,8 @@ def init_app(app):
         """Plataforma cross-lab: lee el snapshot materializado (1 fila por lab)
         y lo renderiza para filtrar/ordenar client-side. El cálculo pesado se
         hace en /recalcular (todos los labs de una). Drill-down por lab en vivo."""
-        from database import CadenciaLabSnapshot
-        int_keys = ('core', 'ocasional', 'caida', 'dormido', 'alta', 'media_alta',
-                    'media', 'baja', 'muy_baja', 'con_ventas',
-                    'dormido_con_stock', 'dormido_stock_u')
-        float_keys = ('monto_mensual', 'dormido_valor',
-                      'core_monto', 'ocasional_monto', 'caida_monto', 'dormido_monto',
-                      'alta_monto', 'media_alta_monto', 'media_monto', 'baja_monto',
-                      'muy_baja_monto')
-        keys = int_keys + float_keys
-        tot = {k: 0 for k in keys}
-        filas = []
-        meta = None
         with database.get_db() as session:
-            rows = (session.query(CadenciaLabSnapshot)
-                    .order_by(CadenciaLabSnapshot.monto_mensual.desc()).all())
-            for r in rows:
-                fila = {'lab_id': r.lab_id, 'nombre': r.lab_nombre or str(r.lab_id)}
-                for k in keys:
-                    v = getattr(r, k) or 0
-                    v = float(v) if k in float_keys else int(v)
-                    fila[k] = v
-                    tot[k] += v
-                filas.append(fila)
-            if rows:
-                meta = {
-                    'actualizado_en': max((r.actualizado_en for r in rows if r.actualizado_en),
-                                          default=None),
-                    'cobertura': rows[0].cobertura,
-                    'meses_rot': rows[0].meses_rot,
-                    'n_labs': len(rows),
-                }
+            filas, tot, meta = _leer_snapshot_cadencias(session)
         return render_template('informes_cadencias_resumen.html',
                                filas=filas, totales=tot, meta=meta)
 
@@ -160,6 +195,67 @@ def init_app(app):
             n = recalcular_snapshot_cadencias(session, cobertura, meses_rot)
         return jsonify({'ok': True, 'filas': n,
                         'segundos': round(time.time() - t0, 1)})
+
+    @app.route('/informes/cadencias-resumen/analizar', methods=['POST'])
+    @login_required
+    def informe_cadencias_resumen_analizar():
+        """Manda el top N labs del snapshot a Claude y devuelve un análisis en
+        prosa (para mostrar en un modal). On-demand: consume crédito de la API."""
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            top_n = max(1, min(int(body.get('top') or 10), 30))
+        except (TypeError, ValueError):
+            top_n = 10
+        vista = 'monto' if (body.get('vista') == 'monto') else 'cantidad'
+        with database.get_db() as session:
+            filas, _tot, meta = _leer_snapshot_cadencias(session)
+        if not filas:
+            return jsonify({'ok': False, 'error': 'No hay snapshot. Tocá "Recalcular" primero.'}), 400
+        from services import cadencias_analisis
+        try:
+            texto, usage = cadencias_analisis.analizar_cadencias(
+                filas[:top_n], meta, api_key, vista=vista)
+            _guardar_analisis_cache('cadencias', 'Análisis de cadencias por laboratorio', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto, 'top': top_n,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/analisis-ia/ultimo')
+    @login_required
+    def informe_analisis_ia_ultimo():
+        """Devuelve el último análisis IA cacheado para una clave (sin llamar API).
+
+        Para "Ver último análisis" en demos: cero gasto, cero riesgo de fallo.
+        """
+        clave = (request.args.get('clave') or '').strip()
+        if not clave:
+            return jsonify({'ok': False, 'error': 'clave requerida'}), 400
+        with database.get_db() as s:
+            row = s.get(database.AnalisisIaCache, clave)
+        if not row:
+            return jsonify({'ok': False, 'error': 'Todavía no generaste un análisis para esto.'}), 404
+        return jsonify({'ok': True, 'analisis': row.texto, 'titulo': row.titulo,
+                        'tokens_in': row.tokens_in, 'tokens_out': row.tokens_out,
+                        'creado_en': row.creado_en.strftime('%d/%m/%Y %H:%M') if row.creado_en else None})
 
     # ── Comparación portfolio líder de un lab vs ventas propias ──
     # Datasets de referencia (IQVIA/IMS) en referencia_mercado.py. Por ahora
@@ -186,6 +282,49 @@ def init_app(app):
         from helpers import analizar_gap_marcas
         return _ctx_referencia(analizar_gap_marcas, 'informes_lab_gap_marcas.html')
 
+    @app.route('/informes/lab-gap-marcas/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_gap_marcas_analizar():
+        """Análisis IA del gap de captura de un lab (recalcula data + Claude prosa)."""
+        import os
+
+        from helpers import analizar_gap_marcas
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        with database.get_db() as session:
+            data = analizar_gap_marcas(session, lab_id)
+        if not data:
+            return jsonify({'ok': False, 'error': 'No hay dataset de referencia para ese lab.'}), 400
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_gap_marcas(data, api_key)
+            _guardar_analisis_cache(f'lab_gap_marcas:{lab_id}',
+                                    f'Gap de captura — {data.get("nombre_lab") or ""}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
     @app.route('/informes/lab-ranking-nacional')
     @login_required
     def informe_lab_ranking_nacional():
@@ -193,12 +332,98 @@ def init_app(app):
         from helpers import analizar_ranking_vs_nacional
         return _ctx_referencia(analizar_ranking_vs_nacional, 'informes_lab_ranking_nacional.html')
 
+    @app.route('/informes/lab-ranking-nacional/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_ranking_nacional_analizar():
+        """Análisis IA del ranking propio del lab vs marcas estrella nacionales."""
+        import os
+
+        from helpers import analizar_ranking_vs_nacional
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        with database.get_db() as session:
+            data = analizar_ranking_vs_nacional(session, lab_id)
+        if not data:
+            return jsonify({'ok': False, 'error': 'No hay dataset de referencia para ese lab.'}), 400
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_ranking_vs_nacional(data, api_key)
+            _guardar_analisis_cache(f'lab_ranking_nacional:{lab_id}',
+                                    f'Ranking vs nacional — {data.get("nombre_lab") or ""}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
     @app.route('/informes/lab-cobertura-moleculas')
     @login_required
     def informe_lab_cobertura_moleculas():
         """Informe — Cobertura de moléculas líderes nacionales."""
         from helpers import analizar_cobertura_moleculas
         return _ctx_referencia(analizar_cobertura_moleculas, 'informes_lab_cobertura_moleculas.html')
+
+    @app.route('/informes/lab-cobertura-moleculas/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_cobertura_moleculas_analizar():
+        """Análisis IA de la cobertura de moléculas líderes de un lab."""
+        import os
+
+        from helpers import analizar_cobertura_moleculas
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        with database.get_db() as session:
+            data = analizar_cobertura_moleculas(session, lab_id)
+        if not data:
+            return jsonify({'ok': False, 'error': 'No hay dataset de referencia para ese lab.'}), 400
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_cobertura_moleculas(data, api_key)
+            _guardar_analisis_cache(f'lab_cobertura_moleculas:{lab_id}',
+                                    f'Cobertura de moléculas — {data.get("nombre_lab") or ""}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+        return jsonify({'ok': True, 'analisis': texto,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
 
     @app.route('/informes/labs-por-droga')
     @login_required

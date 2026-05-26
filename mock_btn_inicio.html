@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Mock — botón Inicio</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+    --ds-bg-deep: #07241C; --ds-bg: #0A2F25; --ds-surface: #103D31; --ds-surface-2: #164A3C;
+    --ds-line: rgba(95,230,188,.12); --ds-line-2: rgba(95,230,188,.22);
+    --ds-mint: #5FE6BC; --ds-mint-bright: #34D399; --ds-mint-deep: #10B981;
+    --ds-orange: #FB923C; --ds-orange-deep: #EA580C;
+    --ds-text: #ECFDF5; --ds-text-soft: #B8D4C9; --ds-text-mute: #86A89C;
+    --ds-r-sm: 6px; --ds-r-md: 10px;
+}
+body {
+    background: var(--ds-bg-deep); color: var(--ds-text); font-family: Inter, sans-serif;
+    margin: 0; padding: 32px;
+}
+h1 { font-family: 'Space Grotesk'; font-size: 18px; margin: 0 0 6px; }
+.sub { color: var(--ds-text-mute); font-size: 13px; margin-bottom: 32px; }
+.opt {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line);
+    border-radius: 12px; padding: 18px 22px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 24px;
+}
+.opt h2 { font-size: 14px; font-weight: 700; color: var(--ds-mint); margin: 0 0 4px; min-width: 120px; }
+.opt .desc { font-size: 12px; color: var(--ds-text-mute); flex: 1; }
+.opt .demo { display: flex; gap: 12px; align-items: center; flex-shrink: 0; }
+
+/* Opt A: outline mint con label */
+.btn-inicio-a {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: var(--ds-r-md);
+    background: rgba(95,230,188,.08);
+    border: 1px solid var(--ds-line-2);
+    color: var(--ds-mint); font-weight: 600; font-size: 12px;
+    text-decoration: none;
+    transition: all .15s;
+}
+.btn-inicio-a:hover {
+    background: rgba(95,230,188,.18);
+    border-color: var(--ds-mint);
+    transform: translateY(-1px);
+}
+.btn-inicio-a svg { width: 14px; height: 14px; }
+
+/* Opt B: icon-only redondo */
+.btn-inicio-b {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px;
+    border-radius: 999px;
+    background: rgba(95,230,188,.10);
+    border: 1px solid var(--ds-line-2);
+    color: var(--ds-mint);
+    transition: all .15s;
+    text-decoration: none;
+}
+.btn-inicio-b:hover {
+    background: var(--ds-mint);
+    color: var(--ds-bg-deep);
+    border-color: var(--ds-mint);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(16,185,129,.4);
+}
+.btn-inicio-b svg { width: 16px; height: 16px; }
+
+/* Opt C: filled mint compacto */
+.btn-inicio-c {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: var(--ds-r-md);
+    background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
+    color: var(--ds-bg-deep);
+    border: 1px solid transparent;
+    font-weight: 700; font-size: 12px;
+    text-decoration: none;
+    box-shadow: 0 4px 14px rgba(16,185,129,.25);
+    transition: all .15s;
+}
+.btn-inicio-c:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 22px rgba(16,185,129,.4);
+}
+.btn-inicio-c svg { width: 14px; height: 14px; }
+
+/* Opt D: glow mint sutil con flecha */
+.btn-inicio-d {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 16px;
+    border-radius: var(--ds-r-md);
+    background: var(--ds-surface-2);
+    border: 1px solid rgba(95,230,188,.35);
+    color: var(--ds-text);
+    font-weight: 600; font-size: 12px;
+    text-decoration: none;
+    box-shadow: inset 0 0 0 1px rgba(95,230,188,.1), 0 0 0 0 rgba(95,230,188,0);
+    transition: all .2s;
+}
+.btn-inicio-d:hover {
+    border-color: var(--ds-mint);
+    color: var(--ds-mint);
+    box-shadow: inset 0 0 0 1px rgba(95,230,188,.2), 0 0 18px rgba(95,230,188,.18);
+}
+.btn-inicio-d svg { width: 14px; height: 14px; color: var(--ds-mint); }
+
+/* Topbar de muestra */
+.fake-topbar {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-line);
+    border-radius: 8px;
+    padding: 8px 14px;
+    display: flex; align-items: center; gap: 14px;
+    font-size: 12px;
+    margin-top: 6px;
+}
+.fake-topbar .title { color: var(--ds-text-soft); flex: 1; }
+.fake-topbar .meta { color: var(--ds-text-mute); }
+
+.svg-home { fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+</style>
+</head>
+<body>
+
+<h1>Botón "Inicio" — opciones</h1>
+<p class="sub">El botón aparece en topbars, headers de páginas, modales y volver-a-home. Pickear uno = lo aplico a todos lados.</p>
+
+<div class="opt">
+    <div>
+        <h2>Opción A</h2>
+        <p class="desc">Outline mint translúcido con icono + label. Hover sube y satura. <strong>Sutil, semantic, encaja con el resto del DS.</strong></p>
+    </div>
+    <div class="demo">
+        <a href="#" class="btn-inicio-a">
+            <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+            Inicio
+        </a>
+        <div class="fake-topbar" style="flex:1;">
+            <span class="title">Pedidos guardados</span>
+            <a href="#" class="btn-inicio-a">
+                <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+                Inicio
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="opt">
+    <div>
+        <h2>Opción B</h2>
+        <p class="desc">Icon-only redondo. Hover invierte (mint filled). <strong>Compacto, ideal para topbars apretados, sin label.</strong></p>
+    </div>
+    <div class="demo">
+        <a href="#" class="btn-inicio-b" title="Inicio">
+            <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+        </a>
+        <div class="fake-topbar" style="flex:1;">
+            <span class="title">Pedidos guardados</span>
+            <a href="#" class="btn-inicio-b" title="Inicio">
+                <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="opt">
+    <div>
+        <h2>Opción C</h2>
+        <p class="desc">Mint filled compacto. <strong>Más prominente — elegir si querés que destaque como CTA secundario.</strong> Riesgo: compite con los CTAs naranja primary.</p>
+    </div>
+    <div class="demo">
+        <a href="#" class="btn-inicio-c">
+            <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+            Inicio
+        </a>
+        <div class="fake-topbar" style="flex:1;">
+            <span class="title">Pedidos guardados</span>
+            <a href="#" class="btn-inicio-c">
+                <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+                Inicio
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="opt">
+    <div>
+        <h2>Opción D</h2>
+        <p class="desc">Glow mint sutil sobre surface. Texto blanco default, mint en hover con halo. <strong>Mi favorito — elegante y minimalista, no compite con orange.</strong></p>
+    </div>
+    <div class="demo">
+        <a href="#" class="btn-inicio-d">
+            <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+            Inicio
+        </a>
+        <div class="fake-topbar" style="flex:1;">
+            <span class="title">Pedidos guardados</span>
+            <a href="#" class="btn-inicio-d">
+                <svg class="svg-home" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1V10"/></svg>
+                Inicio
+            </a>
+        </div>
+    </div>
+</div>
+
+</body></html>

@@ -215,7 +215,7 @@
 
         /* Buscador "Filtrar acción" — texto y placeholder en naranja (pedido Diego). */
         #home-card-buscador { color: #fb923c; }
-        #home-card-buscador::placeholder { color: #fb923c; opacity: .75; }
+        #home-card-buscador::placeholder { color: #fb923c !important; opacity: 1; }
 
         /* Entity cards — más compactas, icon + título en línea */
         .entity-card { padding: 16px 18px; position: relative; }
@@ -253,12 +253,26 @@
 
             {# Header de la farmacia — arriba de todo (pedido Diego 2026-05-24).
                Sin label "Inicio" (ya está en el topbar) para no repetir. #}
-            <header class="page-header home-page-header">
+            <header class="page-header home-page-header" style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
                 <div class="page-header__left">
                     {# Primera palabra normal, el resto (la marca, ej. "Badía") en glow. #}
                     {% set _nom = config.farmacia_nombre.split(' ', 1) %}
                     <h1 class="page-header__title">{{ _nom[0] }}{% if _nom|length > 1 %} <span class="glow-text">{{ _nom[1] }}</span>{% endif %}<span class="glow-text">.</span></h1>
                     <p class="page-header__subtitle">Elegí por dónde trabajar hoy.</p>
+                </div>
+                {# Buscador de acciones + Personalizar — a la derecha del título (margin-left:auto lo empuja a la derecha). #}
+                <div class="flex items-center gap-3 flex-wrap" style="margin-left:auto;">
+                    <input type="text" id="home-card-buscador" class="home-card-filtro"
+                           placeholder="Filtrar acción…  (ej: pedido, oferta, cliente)"
+                           autocomplete="off"
+                           style="background:var(--ds-surface); border:1px solid var(--ds-line);
+                                  color:#fb923c; border-radius:var(--ds-r-sm);
+                                  padding:5px 10px; font-size:12px; width:280px;">
+                    <a href="{{ url_for('personalizar_home') }}"
+                       class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);"
+                       title="Personalizar acciones frecuentes">
+                        ⚙ Personalizar
+                    </a>
                 </div>
             </header>
 
@@ -270,7 +284,7 @@
                        es un link distinto. NO duplica la campanita del topbar (esa
                        muestra "documentos pendientes" de procesar). #}
                     {% set _at = alertas_atencion %}
-                    {% set _at_total = (_at.productos_pendientes or 0) + (_at.docs_pendientes or 0) + (_at.reclamos_abiertos or 0) + (_at.compartido_nuevos or 0) %}
+                    {% set _at_total = (_at.productos_pendientes or 0) + (_at.docs_pendientes or 0) + (_at.reclamos_abiertos or 0) %}
                     <div class="home-alarm home-alarm--atencion">
                         <div class="home-alarm__head">
                             {% if _at_total > 0 %}
@@ -311,18 +325,6 @@
                             </span>
                             <span class="arrow">→</span>
                         </a>
-                        {% if _at.compartido_nuevos and _at.compartido_nuevos > 0 %}
-                        <a href="{{ url_for('compartido_index') }}" class="home-alarm__row">
-                            <span class="ico">📨</span>
-                            <span class="body">
-                                <span class="name">Novedades del grupo
-                                    <span class="home-alarm__cnt hot">{{ _at.compartido_nuevos }}</span>
-                                </span>
-                                <span class="sub">Compartido para importar</span>
-                            </span>
-                            <span class="arrow">→</span>
-                        </a>
-                        {% endif %}
                     </div>
 
                     {# Card B: Repo fija — mismo dato que antes, ahora al lado. #}
@@ -369,6 +371,34 @@
                     </a>
                     {% endif %}
 
+                    {# Card C: Compartido del grupo — entrante (para importar) + saliente (publicado por vos). #}
+                    <a href="{{ url_for('compartido_index') }}" class="home-alarm"
+                       title="Datasets compartidos con el grupo (ofertas, módulos, equivalencias)">
+                        <div class="home-alarm__head">
+                            <span style="font-size:15px;line-height:1;">📨</span>
+                            <span class="ttl">Compartido</span>
+                        </div>
+                        <div class="home-alarm__row" style="cursor:inherit;">
+                            <span class="ico">📥</span>
+                            <span class="body">
+                                <span class="name">Del grupo
+                                    <span class="home-alarm__cnt {{ 'hot' if _at.compartido_nuevos else 'zero' }}">{{ _at.compartido_nuevos or 0 }}</span>
+                                </span>
+                                <span class="sub">Para importar</span>
+                            </span>
+                        </div>
+                        <div class="home-alarm__row" style="cursor:inherit;">
+                            <span class="ico">📤</span>
+                            <span class="body">
+                                <span class="name">Publicado por vos
+                                    <span class="home-alarm__cnt zero">{{ _at.compartido_publicados or 0 }}</span>
+                                </span>
+                                <span class="sub">En el buzón del grupo</span>
+                            </span>
+                        </div>
+                        <div class="home-alarm__cta">Ver compartido →</div>
+                    </a>
+
                 </div>
 
                 {# Atajo temporal a UX móvil — sigue arriba por pedido de Diego
@@ -387,22 +417,7 @@
                Sus accesos (laboratorios_list, providers_list, packs, procesos)
                siguen en el sidebar. #}
 
-            <!-- Buscador de acciones + Personalizar (sin título, alineado a la derecha) -->
-            <div class="flex items-center justify-end mb-1 flex-wrap gap-3">
-                <div class="flex items-center gap-3 flex-wrap">
-                    <input type="text" id="home-card-buscador" class="home-card-filtro"
-                           placeholder="Filtrar acción…  (ej: pedido, oferta, cliente)"
-                           autocomplete="off"
-                           style="background:var(--ds-surface); border:1px solid var(--ds-line);
-                                  color:#fb923c; border-radius:var(--ds-r-sm);
-                                  padding:5px 10px; font-size:12px; width:280px;">
-                    <a href="{{ url_for('personalizar_home') }}"
-                       class="text-xs font-medium hover:underline" style="color:var(--ds-text-soft);"
-                       title="Personalizar acciones frecuentes">
-                        ⚙ Personalizar
-                    </a>
-                </div>
-            </div>
+            {# Buscador "Filtrar acción" movido al header (a la derecha del título). #}
 
             {% macro card_inner(card, tone_cls) %}
                 <div class="action-content">
@@ -452,7 +467,8 @@
                 {% endif %}
             {% endmacro %}
 
-            {% set informes_cat = {'laboratorios': 'laboratorios', 'droguerias': 'ofertas', 'operativo': 'stock', 'productos': 'drogas', 'otras_entidades': 'medicos'} %}
+            {# Informes por banda: sacado de 'productos' y 'otras_entidades' (pedido Diego 2026-05-25). #}
+            {% set informes_cat = {'laboratorios': 'laboratorios', 'droguerias': 'ofertas', 'operativo': 'stock'} %}
             {% for cat_key, cat_label, cards in grupos_acciones %}
             <div class="cat-group" data-cat="{{ cat_key }}" style="margin-bottom: 14px;">
                 <div class="section-label" style="margin: 8px 0 6px; font-size: 10px;">{{ cat_label }}</div>
@@ -460,36 +476,54 @@
                     {# Card-hero de compras por entidad — rallado diagonal (.home-hero).
                        Movidas acá 2026-05-24: Droguería en su banda, Lab en la suya. #}
                     {% if cat_key == 'laboratorios' %}
-                    <div class="home-hero home-card" style="flex-direction:column; align-items:stretch; gap:10px;"
-                         data-card-text="compras laboratorio pedido canal por laboratorio reposicion abm gestionar laboratorios packs procesos">
-                        <span class="home-hero__dots" aria-hidden="true"></span>
-                        <a href="{{ url_for('compras_laboratorio') }}" class="home-hero__body hover:no-underline" style="text-decoration:none; color:inherit;">
-                            <div class="section-label" style="margin-bottom:4px;">🧪 Por laboratorio</div>
-                            <div class="home-hero__title">Compras <span class="glow-text">Laboratorio</span></div>
-                            <div class="home-hero__desc">Pedido/Canal</div>
-                        </a>
-                        <div class="flex gap-1.5" style="position:relative; z-index:2;">
-                            <a href="{{ url_for('laboratorios_list') }}" class="btn btn-mint btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;" title="ABM de laboratorios">📋 Laboratorios</a>
-                            <a href="{{ url_for('modulo_packs_list') }}" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Packs</a>
-                            <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Procesos</a>
+                    {# Card 1: contenedor de gestión (NO clickeable como botón).
+                       Laboratorios (verde) arriba a lo ancho, Packs + Procesos abajo. #}
+                    <div class="card home-card" style="display:flex; flex-direction:column; gap:8px; justify-content:center;"
+                         data-card-text="laboratorios packs procesos abm gestionar modulos">
+                        <div class="section-label">🧪 Laboratorios</div>
+                        <a href="{{ url_for('laboratorios_list') }}" class="btn btn-mint btn-sm" style="width:100%; justify-content:center;" title="ABM de laboratorios">📋 Laboratorios</a>
+                        <div class="flex gap-1.5">
+                            <a href="{{ url_for('modulo_packs_list') }}" class="btn btn-secondary btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;">Packs</a>
+                            <a href="{{ url_for('procesos_list') }}?tipo=laboratorio" class="btn btn-secondary btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;">Procesos</a>
                         </div>
                     </div>
+                    {# Card 2: Compras (clickeable, rayado oblicuo), título apilado Compras / Laboratorio. #}
+                    <a href="{{ url_for('compras_laboratorio') }}" class="home-hero home-card hover:no-underline"
+                       style="flex-direction:column; align-items:stretch; justify-content:center; gap:2px; text-decoration:none; color:inherit;"
+                       data-card-text="compras laboratorio pedido canal por laboratorio reposicion">
+                        <span class="home-hero__dots" aria-hidden="true"></span>
+                        <div class="home-hero__body" style="position:relative; z-index:1;">
+                            <div class="section-label" style="margin-bottom:4px;">🧪 Por laboratorio</div>
+                            <div class="home-hero__title">Compras</div>
+                            <div class="home-hero__title"><span class="glow-text">Laboratorio</span></div>
+                            <div class="home-hero__desc" style="margin-top:4px;">Pedido/Canal</div>
+                        </div>
+                    </a>
                     {% endif %}
                     {% if cat_key == 'droguerias' %}
-                    <div class="home-hero home-card" style="flex-direction:column; align-items:stretch; gap:10px;"
-                         data-card-text="compras drogueria reposicion dia accion del dia pedido abm gestionar droguerias proveedores nueva factura procesos">
-                        <span class="home-hero__dots" aria-hidden="true"></span>
-                        <a href="{{ url_for('compras_dia') }}" class="home-hero__body hover:no-underline" style="text-decoration:none; color:inherit;">
-                            <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
-                            <div class="home-hero__title">Compras <span class="glow-text">Droguería</span></div>
-                            <div class="home-hero__desc">Reposición según horarios</div>
-                        </a>
-                        <div class="flex gap-1.5" style="position:relative; z-index:2;">
-                            <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-mint btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;" title="ABM de droguerías">📋 Droguerías</a>
-                            <a href="{{ url_for('ingresos') }}" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Nueva</a>
-                            <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm" style="flex:0 0 auto; padding:4px 8px; font-size:10px; white-space:nowrap;">Procesos</a>
+                    {# Card 1: contenedor de gestión (NO clickeable como botón).
+                       Droguerías (verde) arriba a lo ancho, Nueva + Procesos abajo. #}
+                    <div class="card home-card" style="display:flex; flex-direction:column; gap:8px; justify-content:center;"
+                         data-card-text="droguerias proveedores nueva factura procesos abm gestionar">
+                        <div class="section-label">💊 Droguerías</div>
+                        <a href="{{ url_for('providers_list') }}?tipo=drogueria" class="btn btn-mint btn-sm" style="width:100%; justify-content:center;" title="ABM de droguerías">📋 Droguerías</a>
+                        <div class="flex gap-1.5">
+                            <a href="{{ url_for('ingresos') }}" class="btn btn-secondary btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;">Nueva</a>
+                            <a href="{{ url_for('procesos_list') }}?tipo=drogueria" class="btn btn-secondary btn-sm" style="flex:1 1 0; min-width:0; justify-content:center; white-space:nowrap;">Procesos</a>
                         </div>
                     </div>
+                    {# Card 2: Compras (clickeable, rayado oblicuo), título apilado Compras / Droguería. #}
+                    <a href="{{ url_for('compras_dia') }}" class="home-hero home-card hover:no-underline"
+                       style="flex-direction:column; align-items:stretch; justify-content:center; gap:2px; text-decoration:none; color:inherit;"
+                       data-card-text="compras drogueria reposicion dia accion del dia pedido">
+                        <span class="home-hero__dots" aria-hidden="true"></span>
+                        <div class="home-hero__body" style="position:relative; z-index:1;">
+                            <div class="section-label" style="margin-bottom:4px;">⚡ Acción del día</div>
+                            <div class="home-hero__title">Compras</div>
+                            <div class="home-hero__title"><span class="glow-text">Droguería</span></div>
+                            <div class="home-hero__desc" style="margin-top:4px;">Reposición según horarios</div>
+                        </div>
+                    </a>
                     {% endif %}
                     {% if cat_key == 'operativo' %}
                     {# Card especial: Armar pedido (2 modos). Movido desde BI tablero
@@ -562,11 +596,28 @@
                         </div>
                     </div>
                     {% endif %}
-                    {% for c in cards %}{% if c.id != 'obras_sociales' %}{{ render_card(c) }}{% endif %}{% endfor %}
+                    {% for c in cards %}{% if c.id not in ['obras_sociales', 'consulta_lab'] %}{{ render_card(c) }}{% endif %}{% endfor %}
                     {# Card "Informes" por entidad — pre-setea el tema en /informes.
                        Reemplaza al link del header (pedido Diego 2026-05-24). #}
                     {% if cat_key in informes_cat %}
                     {% set _ent = cat_label.split(' ', 1)[1] if ' ' in cat_label else cat_label %}
+                    {% if cat_key == 'laboratorios' %}
+                    {# Informes de Laboratorios: contenedor con link al informe + sub-botón
+                       "Consultar laboratorio" (movido acá desde su card suelta). #}
+                    <div class="card home-card home-card--informes" style="display:flex; flex-direction:column; gap:8px;"
+                         data-card-text="informes reportes analisis laboratorios consultar laboratorio top productos medicos os">
+                        <a href="{{ url_for('informes_index') }}?cat={{ informes_cat[cat_key] }}" class="hover:no-underline" style="text-decoration:none; color:inherit;">
+                            <div class="action-content">
+                                <div class="icon-tile icon-tile-info">📊</div>
+                                <div class="action-content__body">
+                                    <span class="action-content__title">Informes</span>
+                                    <div class="action-content__desc">Reportes y análisis de {{ _ent }}</div>
+                                </div>
+                            </div>
+                        </a>
+                        <a href="{{ url_for('consulta_lab') }}" class="btn btn-mint btn-sm" style="justify-content:center;" title="Top productos, médicos y OS por laboratorio">🧪 Consultar laboratorio</a>
+                    </div>
+                    {% else %}
                     <a href="{{ url_for('informes_index') }}?cat={{ informes_cat[cat_key] }}"
                        class="card card-action home-card home-card--informes"
                        data-card-text="informes reportes analisis {{ _ent | lower }}">
@@ -580,6 +631,7 @@
                             </div>
                         </div>
                     </a>
+                    {% endif %}
                     {% endif %}
                 </div>
             </div>

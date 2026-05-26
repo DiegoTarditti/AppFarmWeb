@@ -157,33 +157,6 @@
     </div>
 </div>
 
-<!-- Modal Ofertas c/mín -->
-<div id="ofertas-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,.55);">
-    <div class="card" style="width:100%; max-width:56rem; max-height:90vh; display:flex; flex-direction:column; gap:14px; padding:22px;">
-        <div class="flex items-center justify-between">
-            <div>
-                <p id="ofertas-modal-title" class="font-bold" style="color:var(--ds-text);">Ofertas con cantidad mínima</p>
-                <p id="ofertas-modal-lab" class="text-xs mt-0.5" style="color:var(--ds-text-mute);"></p>
-            </div>
-            <button onclick="closeOfertasModal()" class="action-link">✕</button>
-        </div>
-        <div id="ofertas-modal-desc" class="text-sm" style="color:var(--ds-text-soft); background:rgba(0,0,0,.2); border-radius:var(--ds-r-md); padding:12px 14px;"></div>
-        <form id="ofertas-form" class="space-y-3">
-            <input type="hidden" id="ofertas-lab-id" name="lab_id">
-            <input type="hidden" id="ofertas-con-minimo" name="con_minimo" value="1">
-            <div class="flex flex-col gap-1.5">
-                <label class="ds-label">Archivo Excel (.xlsx / .xls)</label>
-                <input type="file" name="archivo" accept=".xlsx,.xls" required class="ds-input">
-            </div>
-            <div class="flex gap-2 pt-1">
-                <button type="submit" class="btn btn-mint" style="flex:1;">Importar y previsualizar</button>
-                <button type="button" onclick="closeOfertasModal()" class="btn btn-ghost btn-sm">Cancelar</button>
-            </div>
-        </form>
-        <div id="ofertas-result" class="hidden overflow-y-auto" style="flex:1;"></div>
-    </div>
-</div>
-
 <script>
 const LABS = {{ laboratorios|tojson }};
 const LABS_BY_ID = {};
@@ -223,9 +196,8 @@ function renderLab(lab) {
       </td>
       <td>
         <div class="lab-actions">
-          <a href="${u('packs', id)}?lab=${encodeURIComponent(lab.nombre)}" class="action-link">🧩 Módulos</a>
+          ${lab.usa_packs ? `<a href="${u('packs', id)}?lab=${encodeURIComponent(lab.nombre)}" class="action-link">🧩 Módulos</a>` : ''}
           <a href="${u('ofmin', id)}" class="action-link">🏷️ Ofertas</a>
-          <button onclick="openOfertasModal(${id})" class="action-link">📋 Importar c/mín</button>
           <a href="${u('plantillas', id)}" class="action-link violet">📄 Plantillas</a>
           <a href="${u('equiv', id)}" class="action-link">🔀 Equiv.</a>
           <button onclick="openLabEdit(${id})" class="action-link">✏️ Renombrar</button>
@@ -245,6 +217,21 @@ function renderLab(lab) {
         </form>
       </td>
     </tr>`;
+}
+
+// Re-renderiza una sola fila in situ tras togglear usa_packs, para que el
+// badge "packs" y el botón "🧩 Módulos" (que solo aparece con packs) se
+// actualicen sin re-renderizar toda la lista.
+function rerenderLabRow(id) {
+    const viewRow = document.getElementById('lab-view-' + id);
+    if (!viewRow || !LABS_BY_ID[id]) return;
+    const editRow = document.getElementById('lab-edit-' + id);
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = renderLab(LABS_BY_ID[id]).trim();
+    const parent = viewRow.parentNode;
+    while (tmp.firstChild) parent.insertBefore(tmp.firstChild, viewRow);
+    viewRow.remove();
+    if (editRow) editRow.remove();
 }
 
 // ── Render con cap + buscar ──────────────────────────────────────────────
@@ -292,7 +279,10 @@ async function toggleUsaPacks(labId, chk) {
             body: JSON.stringify({usa_packs: chk.checked}),
         });
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        if (LABS_BY_ID[labId]) LABS_BY_ID[labId].usa_packs = chk.checked;
+        if (LABS_BY_ID[labId]) {
+            LABS_BY_ID[labId].usa_packs = chk.checked;
+            rerenderLabRow(labId);  // mostrar/ocultar botón Módulos + badge al instante
+        }
     } catch (e) {
         chk.checked = prev;
         alert('No se pudo guardar: ' + e.message);
@@ -312,91 +302,6 @@ function delLab(id) {
     const f = document.createElement('form');
     f.method = 'post'; f.action = u('del', id);
     document.body.appendChild(f); f.submit();
-}
-
-// ── Modal Ofertas c/mín ─────────────────────────────────────────────────
-function openOfertasModal(labId) {
-    const lab = LABS_BY_ID[labId];
-    document.getElementById('ofertas-lab-id').value = labId;
-    document.getElementById('ofertas-modal-lab').textContent = lab ? lab.nombre : '';
-    document.getElementById('ofertas-modal-desc').textContent =
-        'Excel con columnas: Código de barra, Producto, Unidades mínima, Descuento PSL, Rentabilidad, Plazo de pago. Grupos separados por filas vacías.';
-    document.getElementById('ofertas-result').classList.add('hidden');
-    document.getElementById('ofertas-form').classList.remove('hidden');
-    document.getElementById('ofertas-modal').classList.remove('hidden');
-}
-function closeOfertasModal() {
-    document.getElementById('ofertas-modal').classList.add('hidden');
-}
-document.getElementById('ofertas-form').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const btn = this.querySelector('button[type=submit]');
-    btn.disabled = true; btn.textContent = 'Procesando…';
-    const fd = new FormData(this);
-    const labId = fd.get('lab_id');
-    try {
-        const res = await fetch('/api/ofertas/preview-con-minimo', { method: 'POST', body: fd });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error desconocido');
-        const resultDiv = document.getElementById('ofertas-result');
-        resultDiv.classList.remove('hidden');
-        document.getElementById('ofertas-form').classList.add('hidden');
-        const items = data.items || [];
-        const grupos = data.grupos || null;
-        let html = `<p class="text-sm font-semibold mb-2" style="color:var(--ds-text);">${items.length} producto${items.length !== 1 ? 's' : ''} importado${items.length !== 1 ? 's' : ''}`;
-        if (grupos) html += ` · ${grupos} grupo${grupos !== 1 ? 's' : ''} con mínimo compartido`;
-        html += '</p><div class="overflow-auto" style="max-height:60vh; border:1px solid var(--ds-line); border-radius:var(--ds-r-md);"><table class="w-full text-xs"><thead><tr style="color:var(--ds-text-mute);"><th class="text-left px-3 py-2">EAN</th><th class="text-left px-3 py-2">Producto</th><th class="text-right px-3 py-2">Mín.</th><th class="text-right px-3 py-2">Dto.</th><th class="text-right px-3 py-2">Gpo.</th></tr></thead><tbody>';
-        for (const it of items) {
-            const gpo = it.grupo_id != null ? `<span style="background:rgba(95,230,188,.15); color:var(--ds-mint); border-radius:4px; padding:0 5px;">${it.grupo_id}</span>` : '';
-            html += `<tr style="border-top:1px solid var(--ds-line);"><td class="px-3 py-1.5 font-mono">${esc(it.ean)}</td><td class="px-3 py-1.5">${esc(it.descripcion)}</td><td class="px-3 py-1.5 text-right">${it.unidades_minima ?? '—'}</td><td class="px-3 py-1.5 text-right">${it.descuento_psl != null ? it.descuento_psl + '%' : '—'}</td><td class="px-3 py-1.5 text-right">${gpo}</td></tr>`;
-        }
-        html += '</tbody></table></div>';
-        html += `<button onclick="guardarOfertasMinimo(${labId})" id="btn-guardar-ofmin" class="btn btn-mint mt-3" style="width:100%;">Guardar en sistema para este laboratorio</button>`;
-        html += `<button onclick="compartirConGrupo(${labId})" id="btn-compartir-ofmin" class="btn btn-secondary btn-sm mt-2" style="width:100%;">🔄 Compartir con el grupo</button>`;
-        html += '<button onclick="closeOfertasModal()" class="btn btn-ghost btn-sm mt-2" style="width:100%;">Cerrar</button>';
-        resultDiv.innerHTML = html;
-        resultDiv._items = items;
-    } catch (err) {
-        alert('Error: ' + err.message);
-    } finally {
-        btn.disabled = false; btn.textContent = 'Importar y previsualizar';
-    }
-});
-async function guardarOfertasMinimo(labId) {
-    const btn = document.getElementById('btn-guardar-ofmin');
-    const items = document.getElementById('ofertas-result')._items;
-    if (!items || !items.length) return;
-    btn.disabled = true; btn.textContent = 'Guardando…';
-    try {
-        const res = await fetch(`/api/laboratorio/${labId}/ofertas-minimo`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Error');
-        btn.textContent = `✓ Guardado (${data.guardados} productos)`;
-    } catch (err) {
-        btn.textContent = 'Error: ' + err.message; btn.disabled = false;
-    }
-}
-async function compartirConGrupo(labId) {
-    const btn = document.getElementById('btn-compartir-ofmin');
-    const items = document.getElementById('ofertas-result')._items;
-    if (!items || !items.length) return;
-    const lab = LABS_BY_ID[labId];
-    const nombre = `${lab ? lab.nombre : 'Lab ' + labId} — oferta ${new Date().toLocaleDateString('es-AR')}`;
-    btn.disabled = true; btn.textContent = 'Compartiendo…';
-    try {
-        const res = await fetch('/api/compartido/push', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tipo: 'oferta_minimo', nombre, descripcion: `${items.length} productos`, items }),
-        });
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Error');
-        btn.textContent = `✓ Compartido (${data.n_items} productos)`;
-    } catch (err) {
-        btn.textContent = 'Error: ' + err.message; btn.disabled = false;
-    }
 }
 
 // Render inicial

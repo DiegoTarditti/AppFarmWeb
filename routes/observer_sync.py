@@ -376,6 +376,8 @@ def init_app(app):
                 'colegios_medicos':   session.query(database.ObsColegioMedico).count(),
                 'medicos':            session.query(database.ObsMedico).count(),
                 'medicos_matriculas': session.query(database.ObsMedicoMatricula).count(),
+                'operadores':         session.query(database.ObsOperador).count(),
+                'ventas_detalle':     session.query(database.ObsVentaDetalle).count(),
             }
             # Última ejecución por entidad
             ultimos = {}
@@ -417,6 +419,7 @@ def init_app(app):
             'colegios_medicos':     observer_source.sync_colegios_medicos,
             'medicos':              observer_source.sync_medicos,
             'medicos_matriculas':   observer_source.sync_medicos_matriculas,
+            'operadores':           observer_source.sync_operadores,
             'ventas_detalle':       observer_source.sync_ventas_detalle,
         }
 
@@ -426,7 +429,7 @@ def init_app(app):
                  'grupos_clientes', 'categorias_clientes',
                  'obras_sociales', 'convenios', 'planes', 'clientes',
                  'colegios_medicos', 'medicos', 'medicos_matriculas',
-                 'ventas_detalle']
+                 'operadores', 'ventas_detalle']
 
         if entidad == 'todo':
             ents = orden

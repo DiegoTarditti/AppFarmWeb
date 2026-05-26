@@ -41,11 +41,17 @@ def init_app(app):
                 compartido_nuevos = compartido_sync.contar_nuevos(session)
             except Exception:
                 compartido_nuevos = 0
+            # Publicado por ESTA farmacia (buzón de salida local).
+            try:
+                compartido_publicados = session.query(database.ArchivoCompartido).count()
+            except Exception:
+                compartido_publicados = 0
             alertas_atencion = {
-                'productos_pendientes': badges['productos_pendientes_revision'],
-                'docs_pendientes':      badges['docs_pendientes'],
-                'reclamos_abiertos':    badges['reclamos_abiertos'],
-                'compartido_nuevos':    compartido_nuevos,
+                'productos_pendientes':  badges['productos_pendientes_revision'],
+                'docs_pendientes':       badges['docs_pendientes'],
+                'reclamos_abiertos':     badges['reclamos_abiertos'],
+                'compartido_nuevos':     compartido_nuevos,
+                'compartido_publicados': compartido_publicados,
             }
         cards = [c for c in cards if not c.get('oculto')]
         # Inyectar badge_count en cada card según su badge_key

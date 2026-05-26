@@ -174,18 +174,6 @@ ACCIONES_HOME = [
         'fg_default': '#2E7D5B',
     },
     {
-        'id': 'consulta_producto',
-        'titulo': 'Consultar medicamento',
-        'desc': 'Escaneá el troquel (cámara o pistola)',
-        'endpoint': 'consulta_producto',
-        'emoji': '🔍',
-        'tone': 'info',
-        'badge_key': None,
-        'icono_path': 'M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z',
-        'bg_default': '#DBEAFE',
-        'fg_default': '#1E40AF',
-    },
-    {
         'id': 'consulta_medico',
         'titulo': 'Consultar médico',
         'desc': 'Estadísticas: top productos, OS, evolución',
@@ -220,18 +208,6 @@ ACCIONES_HOME = [
         'icono_path': 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
         'bg_default': '#F3E8FF',
         'fg_default': '#9333EA',
-    },
-    {
-        'id': 'config',
-        'titulo': 'Configuración',
-        'desc': 'Ajustes del sistema',
-        'endpoint': 'settings',
-        'emoji': '⚙️',
-        'tone': 'mute',
-        'badge_key': None,
-        'icono_path': 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z',
-        'bg_default': '#F3F4F6',
-        'fg_default': '#6b7280',
     },
     {
         'id': 'flujo_fondos',
@@ -280,14 +256,12 @@ CARD_CATEGORIA = {
     'ingresos':             'operativo',
     'procesos':             'operativo',
     'consulta_stock':       'operativo',
-    'consulta_producto':    'operativo',
-    'config':               'operativo',   # TODO: pasar a engranaje suelto (mock home)
     # Laboratorios
     'ofertas_import':       'laboratorios',
     'consulta_lab':         'laboratorios',
     # Droguerías
     'reclamos':             'droguerias',
-    'cuentas':              'droguerias',
+    'cuentas':              'operativo',   # movida desde Droguerías (2026-05-25)
     # Productos
     'productos':            'productos',
     'vademecum':            'productos',
