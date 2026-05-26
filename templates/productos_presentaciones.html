@@ -340,7 +340,7 @@
     const sInput = $('pr-search'), sWrap = $('pr-ac-wrap'), sRes = $('pr-ac-results');
     const selInfo = $('pr-sel'), status = $('pr-status'), btnAplicar = $('pr-aplicar');
     const _selected = new Map();   // observer_id(str) -> {ean, desc}
-    let _modo = 'presentacion', _deb = null, _seq = 0, _items = [], _focus = -1;
+    let _modo = 'presentacion', _deb = null, _seq = 0, _items = [], _focus = -1, _listaSeq = 0;
 
     const LISTA_META = {
         presentacion: {titulo: 'Productos con presentación'},
@@ -364,12 +364,14 @@
     async function cargarLista(m) {
         const body = $('list-otros-body'), vacio = $('list-otros-vacio'), valcol = $('list-otros-valcol');
         if (!body) return;
+        const mySeq = ++_listaSeq;  // descarta respuestas viejas si se cambió de ficha mientras llegaba
         if (valcol) valcol.textContent = (LISTA_META[m] || {}).valcol || 'Valor';
         body.innerHTML = '<tr><td colspan="4" style="padding:16px; text-align:center; color:var(--ds-text-mute);">Cargando…</td></tr>';
         vacio.style.display = 'none';
         try {
             const r = await fetch('/api/producto/configurados?modo=' + encodeURIComponent(m), {credentials: 'same-origin'});
             const d = await r.json();
+            if (mySeq !== _listaSeq) return;  // el usuario ya cambió de ficha → esta respuesta es vieja
             const rows = (d.ok && d.rows) ? d.rows : [];
             if (!rows.length) {
                 body.innerHTML = '';
@@ -385,6 +387,7 @@
                     <td style="padding:8px 12px; text-align:right; font-weight:600; color:var(--ds-mint);">${escapeHtml(p.valor)}</td>
                 </tr>`).join('');
         } catch {
+            if (mySeq !== _listaSeq) return;  // respuesta vieja → no pisar la ficha actual
             body.innerHTML = '';
             vacio.textContent = 'Error al cargar.'; vacio.style.display = 'block';
         }
