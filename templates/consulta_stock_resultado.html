@@ -384,6 +384,7 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                 <div class="csr-ind">
                     <div class="csr-ind-label">Stock</div>
                     <div class="csr-ind-val">{{ p.stock | int }}</div>
+                    {% if p.frac %}<div class="csr-ind-sub" title="cajas enteras / unidades sueltas (fraccionado)">📦 {{ p.frac }}</div>{% endif %}
                     {% if (p.precio_pvp or 0) > 0 %}
                     <div class="csr-ind-sub">${{ p.precio_pvp | int }} c/u</div>
                     {% endif %}
@@ -503,7 +504,7 @@ body.csr-tabla-mode #csr-tabla { display: block; }
                         <div class="csr-tabla-name">{{ p.nombre | truncate(34) }}</div>
                         <div class="csr-tabla-ean">{{ p.codigo_barra }}</div>
                     </td>
-                    <td><span class="csr-tabla-num">{{ p.stock | int }}</span></td>
+                    <td><span class="csr-tabla-num">{{ p.stock | int }}</span>{% if p.frac %}<div class="csr-tabla-ean" title="cajas/unidades">📦 {{ p.frac }}</div>{% endif %}</td>
                     <td>
                         <span class="csr-tabla-num {% if p.rotacion == 'Alta' %}ok{% elif p.rotacion == 'Baja' %}low{% endif %}">
                             {{ (p.rotacion or '—')[:1] }}
