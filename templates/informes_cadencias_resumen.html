@@ -346,8 +346,21 @@ function _crMostrarAnalisis(texto, metaTxt) {
         + texto.replace(/</g, '&lt;')
         + '<div style="margin-top:16px;display:flex;gap:8px;align-items:center;justify-content:flex-end;">'
         + '<span style="font-size:11px;color:var(--ds-text-mute);margin-right:auto;">' + (metaTxt || '') + '</span>'
-        + '<button class="cr-btn" onclick="exportarAnalisisPDF(\'Análisis de cadencias por laboratorio\', window.__analisisIA)">📄 Exportar PDF</button>'
-        + '<button class="cr-btn" onclick="document.getElementById(\'cr-modal\').remove()">Cerrar</button></div></div>';
+        + '<button type="button" class="cr-btn" id="cr-modal-pdf">📄 Exportar PDF</button>'
+        + '<button type="button" class="cr-btn" id="cr-modal-close">Cerrar</button></div></div>';
+    // Cierre robusto: listeners (no onclick inline) + Escape. El backdrop ya
+    // cierra vía modal.onclick (e.target === modal).
+    function _crCerrar() {
+        const m = document.getElementById('cr-modal');
+        if (m) m.remove();
+        document.removeEventListener('keydown', _crEsc);
+    }
+    function _crEsc(e) { if (e.key === 'Escape') _crCerrar(); }
+    modal.querySelector('#cr-modal-close').addEventListener('click', _crCerrar);
+    modal.querySelector('#cr-modal-pdf').addEventListener('click', function () {
+        exportarAnalisisPDF('Análisis de cadencias por laboratorio', window.__analisisIA);
+    });
+    document.addEventListener('keydown', _crEsc);
 }
 
 function exportarAnalisisPDF(titulo, texto) {
