@@ -100,12 +100,16 @@ def init_app(app):
                 procs = [p for p in procs if q_text in (p.partner_nombre or '').lower()]
             data = [_serialize_list(p, session) for p in procs]
 
-            # Conteos para filtros
+            # Conteos para filtros: GROUP BY en SQL en vez de traer todas las
+            # filas y contar en Python. NULL → 'BORRADOR'; el `+= n` acumula el
+            # grupo NULL y el grupo 'BORRADOR' explícito en la misma clave.
+            from sqlalchemy import func
             counts = {est: 0 for est in ESTADOS_ORDEN}
-            for p in session.query(ProcesoCompra.estado).all():
-                est = p[0] or 'BORRADOR'
+            for estado, n in (session.query(ProcesoCompra.estado, func.count())
+                              .group_by(ProcesoCompra.estado).all()):
+                est = estado or 'BORRADOR'
                 if est in counts:
-                    counts[est] += 1
+                    counts[est] += n
 
             laboratorios = [{'id': l.id, 'nombre': l.nombre}
                             for l in session.query(Laboratorio).order_by(Laboratorio.nombre).all()]

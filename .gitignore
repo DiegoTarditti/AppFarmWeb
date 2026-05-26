@@ -48,6 +48,9 @@ EstadVentas/
 fc-kel.*
 image.*
 
+# Corpus de prueba de facturas (datos reales del cliente — local only)
+samples/
+
 # Memoria local de Claude (ruta alterna si existiese)
 memory/
 

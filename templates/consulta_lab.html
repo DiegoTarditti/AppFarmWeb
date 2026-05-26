@@ -61,5 +61,13 @@ document.getElementById('cl-form').addEventListener('submit', () => {
     document.getElementById('btn-label').textContent = '⏳ Cargando…';
     document.getElementById('btn-submit').disabled = true;
 });
+
+// Al volver con "Atrás" el navegador restaura la página desde el bfcache con
+// el botón en "⏳ Cargando…" y deshabilitado → queda freezado. Reseteamos el
+// botón en pageshow (dispara tanto en carga normal como al restaurar bfcache).
+window.addEventListener('pageshow', () => {
+    document.getElementById('btn-label').textContent = 'Consultar';
+    updateCta();  // re-habilita si quedó un lab seleccionado
+});
 </script>
 {% endblock %}

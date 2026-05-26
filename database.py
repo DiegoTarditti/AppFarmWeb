@@ -615,6 +615,29 @@ class OfertaMinimo(Base):
     actualizado_en  = Column(DateTime, default=now_ar)
 
 
+class ParserOfertasLab(Base):
+    """Formato/parser de import de ofertas aprendido POR LABORATORIO.
+
+    Permite que el wizard /ofertas/import recuerde, por lab, qué columna del
+    Excel es cada campo (y el tipo de formato) → al re-importar ese lab no hay
+    que volver a mapear. Es el equivalente, para ofertas, del "guardar parser"
+    por proveedor del conversor de facturas (parsers/<slug>.py), pero acá
+    alcanza con persistir el mapeo (no hace falta generar código).
+
+    - `column_mapping`: JSON {campo: nombre_header}. Se guarda por NOMBRE de
+      header (no por índice) para sobrevivir reordenamientos de columnas.
+    - `formato`: 'plano' | 'bernabo_grupos' (grupos por filas vacías + mínimo
+      compartido). El wiring del parseo Bernabó es una segunda etapa.
+    """
+    __tablename__ = 'parser_ofertas_lab'
+    laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
+    column_mapping = Column(Text, nullable=False, default='{}')
+    formato        = Column(String(30), nullable=False, default='plano')
+    header_row     = Column(Integer, nullable=True)
+    creado_por     = Column(String(80), nullable=True)
+    actualizado_en = Column(DateTime, default=now_ar)
+
+
 class ArchivoCompartido(Base):
     """Buzón de salida de cada farmacia: datasets curados para compartir.
 
@@ -1011,7 +1034,7 @@ class Invoice(Base):
     proveedor_domicilio = Column(String(200))
     cliente_codigo = Column(String(20))
     cliente_razon = Column(String(100))
-    tipo_comprobante = Column(String(5), nullable=False, default='FAC')
+    tipo_comprobante = Column(String(10), nullable=False, default='FAC')  # FAC / NCR / PREFAC
     total = Column(DECIMAL(14, 2))
     total_articulos = Column(Integer)
     total_unidades = Column(Integer)
@@ -1046,6 +1069,22 @@ class InvoiceItem(Base):
     lote = Column(String(30))
     vencimiento = Column(String(20))
     invoice = relationship('Invoice', back_populates='items')
+
+
+class FacturaFaltante(Base):
+    """Ítems en falta momentánea / no facturados de una factura importada.
+
+    NUNCA suman al total ni van a `factura_items`. Se guardan aparte para
+    cruzar con `pedidos`/`pedido_items` por codigo_barra (faltantes de droguería).
+    """
+    __tablename__ = 'factura_faltante'
+    id = Column(Integer, primary_key=True)
+    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='CASCADE'), nullable=False, index=True)
+    codigo_barra = Column(String(20), index=True)
+    codigo_interno = Column(String(30))
+    cantidad = Column(Integer)
+    descripcion = Column(String(150))
+    creado_en = Column(DateTime, default=now_ar)
 
 
 class ErpStock(Base):
@@ -1470,6 +1509,19 @@ class CadenciaLabSnapshot(Base):
     cobertura = Column(Integer, nullable=True)
     meses_rot = Column(Integer, nullable=True)
     actualizado_en = Column(DateTime, default=now_ar)
+
+
+class AnalisisIaCache(Base):
+    """Último análisis IA por informe (+ lab) para re-mostrarlo SIN volver a
+    llamar a la API. Pensado para demos: cero gasto y cero riesgo de fallo en
+    vivo. Se upsertea en cada análisis nuevo (1 fila por clave)."""
+    __tablename__ = 'analisis_ia_cache'
+    clave = Column(String(80), primary_key=True)   # 'cadencias' | 'lab_gap_marcas:152' | ...
+    titulo = Column(String(200))
+    texto = Column(Text, nullable=False)
+    tokens_in = Column(Integer)
+    tokens_out = Column(Integer)
+    creado_en = Column(DateTime, default=now_ar)
 
 
 class Usuario(Base):
@@ -1956,7 +2008,9 @@ def init_db(database_url=None):
                         'estacionalidad_productos',
                         'cadencia_lab_snapshot',
                         'archivos_compartidos', 'sucursales',
-                        'compartido_importado', 'obs_operadores')
+                        'compartido_importado', 'obs_operadores',
+                        'parser_ofertas_lab', 'factura_faltante',
+                        'analisis_ia_cache')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2055,6 +2109,42 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_horarios_prov "
                     "ON proveedor_horarios_reparto (proveedor_id)"
                 ))
+                # Ítems en falta momentánea de facturas importadas (cruce con pedidos).
+                # Tabla nueva crítica del import IA: no debe depender de _pg_add_columns.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS factura_faltante (
+                        id SERIAL PRIMARY KEY,
+                        factura_id INTEGER NOT NULL REFERENCES facturas(id) ON DELETE CASCADE,
+                        codigo_barra VARCHAR(20),
+                        codigo_interno VARCHAR(30),
+                        cantidad INTEGER,
+                        descripcion VARCHAR(150),
+                        creado_en TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_factura_faltante_fac "
+                    "ON factura_faltante (factura_id)"
+                ))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS idx_factura_faltante_cb "
+                    "ON factura_faltante (codigo_barra)"
+                ))
+                # PREFAC (prefactura) no entra en VARCHAR(5): ensanchar a 10.
+                conn.execute(text(
+                    "ALTER TABLE facturas ALTER COLUMN tipo_comprobante TYPE VARCHAR(10)"
+                ))
+                # Caché del último análisis IA por informe (re-mostrar sin gastar API).
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS analisis_ia_cache (
+                        clave VARCHAR(80) PRIMARY KEY,
+                        titulo VARCHAR(200),
+                        texto TEXT NOT NULL,
+                        tokens_in INTEGER,
+                        tokens_out INTEGER,
+                        creado_en TIMESTAMP DEFAULT NOW()
+                    )
+                """))
                 # Queue de items de import sin match en catálogo.
                 # Mismo motivo que panel_comandos: tabla nueva crítica usada
                 # por imports y por una pantalla de revisión, no debe depender
@@ -2156,6 +2246,17 @@ def init_db(database_url=None):
                         observer_id VARCHAR(40) PRIMARY KEY,
                         nombre VARCHAR(120),
                         sync_en TIMESTAMP
+                    )
+                """))
+                # Parser de import de ofertas aprendido por laboratorio.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS parser_ofertas_lab (
+                        laboratorio_id INTEGER PRIMARY KEY,
+                        column_mapping TEXT NOT NULL DEFAULT '{}',
+                        formato VARCHAR(30) NOT NULL DEFAULT 'plano',
+                        header_row INTEGER,
+                        creado_por VARCHAR(80),
+                        actualizado_en TIMESTAMP
                     )
                 """))
                 # Migración estacionalidad_escenarios: meses → días.

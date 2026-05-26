@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mock — chart histórico (actual vs propuesto)</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+    --ds-bg-deep: #07241C;
+    --ds-bg: #0A2F25;
+    --ds-surface: #103D31;
+    --ds-surface-2: #164A3C;
+    --ds-line: rgba(95,230,188,.12);
+    --ds-line-2: rgba(95,230,188,.22);
+    --ds-mint: #5FE6BC;
+    --ds-mint-bright: #34D399;
+    --ds-orange: #FB923C;
+    --ds-orange-deep: #EA580C;
+    --ds-text: #ECFDF5;
+    --ds-text-soft: #B8D4C9;
+    --ds-text-mute: #86A89C;
+    --ds-danger: #EF4444;
+    --ds-warn: #F59E0B;
+}
+body {
+    background: var(--ds-bg-deep);
+    color: var(--ds-text);
+    font-family: 'Inter', sans-serif;
+    margin: 0; padding: 24px;
+    min-height: 100vh;
+}
+h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 18px; margin: 0 0 8px;
+}
+.subtitle { color: var(--ds-text-mute); font-size: 13px; margin-bottom: 24px; }
+.cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; max-width: 1600px; margin: 0 auto; }
+.col-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--ds-text-mute); margin-bottom: 8px;
+}
+.col-label.current::before { content: '◯ '; color: var(--ds-text-mute); }
+.col-label.proposed::before { content: '★ '; color: var(--ds-mint); }
+.modal {
+    background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
+    border: 1px solid var(--ds-line-2);
+    border-radius: 16px; padding: 24px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.4);
+}
+.modal h2 { font-size: 14px; font-weight: 700; color: var(--ds-text); margin: 0 0 2px; font-family: 'Space Grotesk', sans-serif; }
+.modal .ean { font-size: 11px; color: var(--ds-text-mute); font-family: ui-monospace, Consolas, monospace; margin-bottom: 16px; }
+.chart-wrap { background: var(--ds-bg); border: 1px solid var(--ds-line); border-radius: 12px; padding: 12px; height: 280px; }
+.chart-wrap canvas { width: 100% !important; height: 100% !important; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 16px; }
+.stat-card { background: rgba(255,255,255,.03); border-radius: 10px; padding: 10px 8px; text-align: center; border: 1px solid var(--ds-line); }
+.stat-card .lbl { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--ds-text-mute); margin-bottom: 4px; font-weight: 600; }
+.stat-card.current .val { font-size: 11px; font-weight: 700; }
+.stat-card.proposed .val { font-size: 14px; font-weight: 700; }
+.note {
+    margin-top: 12px; padding: 8px 12px;
+    background: rgba(245,158,11,.10); border: 1px solid rgba(245,158,11,.3);
+    color: var(--ds-warn); border-radius: 8px; font-size: 11px;
+}
+</style>
+</head>
+<body>
+
+<h1>Mock — chart histórico</h1>
+<p class="subtitle">Datos dummy: ACANTEX 500mg con ventas mayormente 0, alguna del=1.</p>
+
+<div class="cmp-grid">
+
+    <!-- COLUMNA IZQUIERDA: ACTUAL -->
+    <div>
+        <div class="col-label current">Actual (lo que ves hoy)</div>
+        <div class="modal">
+            <h2>ACANTEX 500 mg IM F.A x 1</h2>
+            <p class="ean">7795380001268</p>
+            <div class="chart-wrap"><canvas id="chart-current"></canvas></div>
+            <div class="stats">
+                <div class="stat-card current"><p class="lbl">Prom/mes</p><p class="val" style="color:#1e1e1e;background:#fff;padding:2px;border-radius:4px;">0</p></div>
+                <div class="stat-card current"><p class="lbl">Rotación</p><p class="val" style="color:#dc2626">Baja</p></div>
+                <div class="stat-card current"><p class="lbl">Tendencia</p><p class="val" style="color:#15803d">↑ 0.1/m</p></div>
+                <div class="stat-card current"><p class="lbl">Stock</p><p class="val" style="color:#dc2626">agotado</p></div>
+                <div class="stat-card current"><p class="lbl">Cobertura</p><p class="val" style="color:#888">agotado</p></div>
+            </div>
+            <p class="note">7 meses sin ventas — la tendencia puede estar distorsionada.</p>
+        </div>
+    </div>
+
+    <!-- COLUMNA DERECHA: PROPUESTO -->
+    <div>
+        <div class="col-label proposed">Propuesto</div>
+        <div class="modal">
+            <h2>ACANTEX 500 mg IM F.A x 1</h2>
+            <p class="ean">7795380001268</p>
+            <div class="chart-wrap"><canvas id="chart-proposed"></canvas></div>
+            <div class="stats">
+                <div class="stat-card proposed"><p class="lbl">Prom/mes</p><p class="val" style="color:var(--ds-text)">0</p></div>
+                <div class="stat-card proposed"><p class="lbl">Rotación</p><p class="val" style="color:#FCA5A5">Baja</p></div>
+                <div class="stat-card proposed"><p class="lbl">Tendencia</p><p class="val" style="color:var(--ds-mint)">↑ 0.1/m</p></div>
+                <div class="stat-card proposed"><p class="lbl">Stock</p><p class="val" style="color:#FCA5A5">agotado</p></div>
+                <div class="stat-card proposed"><p class="lbl">Cobertura</p><p class="val" style="color:var(--ds-text-soft)">agotado</p></div>
+            </div>
+            <p class="note">7 meses sin ventas — la tendencia puede estar distorsionada.</p>
+        </div>
+    </div>
+
+</div>
+
+<script>
+const labels = ['May','Jun','Jul','Ago','Sep','Oct','Nov','Dic','Ene','Feb','Mar','Abr*','May→','Jun→'];
+const ventasData = [0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, null, null];
+const proyData = [null,null,null,null,null,null,null,null,null,null,null,null, 1, 1];
+const tendData = [0.16, 0.16, 0.16, 0.20, 0.30, 0.40, 0.50, 0.55, 0.60, 0.62, 0.63, 0.64, 0.65, 0.65];
+const promData = Array(14).fill(0.4);
+
+// === CHART ACTUAL ===
+new Chart(document.getElementById('chart-current'), {
+    type: 'bar',
+    plugins: [{
+        id: 'barLabels',
+        afterDraw(chart) {
+            const ctx = chart.ctx;
+            chart.data.datasets.forEach((d, di) => {
+                const meta = chart.getDatasetMeta(di);
+                if (meta.type !== 'bar') return;
+                meta.data.forEach((bar, i) => {
+                    const v = d.data[i];
+                    if (v == null || v <= 0) return;
+                    ctx.save();
+                    ctx.font = '8px sans-serif';
+                    ctx.fillStyle = di === 1 ? 'rgba(34,197,94,0.9)' : '#888';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                    ctx.fillText(Math.round(v), bar.x, bar.y - 2);
+                    ctx.restore();
+                });
+            });
+        }
+    }],
+    data: {
+        labels,
+        datasets: [
+            { label: 'Ventas', data: ventasData, type: 'bar', backgroundColor: 'rgba(56,189,248,0.45)', borderColor: 'rgba(56,189,248,0.75)', borderWidth: 1, borderRadius: 3, order: 3 },
+            { label: 'Proyección', data: proyData, type: 'bar', backgroundColor: 'rgba(34,197,94,0.35)', borderColor: 'rgba(34,197,94,0.85)', borderWidth: 1, borderRadius: 3, order: 3 },
+            { label: 'Tendencia', data: tendData, type: 'line', borderColor: '#f97316', borderWidth: 2, pointRadius: 0, tension: 0, fill: false, order: 1 },
+            { label: 'Prom.', data: promData, type: 'line', borderColor: '#EAB308', borderWidth: 1.5, borderDash: [6, 3], pointRadius: 0, tension: 0, fill: false, order: 2 },
+        ]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: '#888', font: { size: 10 }, boxWidth: 20, padding: 12 } },
+            tooltip: { backgroundColor: '#fff', titleColor: '#1e1e1e', bodyColor: '#555', borderColor: '#e0e0e0', borderWidth: 1 },
+        },
+        scales: {
+            x: { grid: { color: '#e8e8e8' }, ticks: { color: '#999', font: { size: 10 } } },
+            y: { grid: { color: '#e8e8e8' }, ticks: { color: '#999', font: { size: 10 } }, beginAtZero: true },
+        }
+    }
+});
+
+// === CHART PROPUESTO ===
+new Chart(document.getElementById('chart-proposed'), {
+    type: 'bar',
+    plugins: [{
+        id: 'barLabels',
+        afterDraw(chart) {
+            const ctx = chart.ctx;
+            chart.data.datasets.forEach((d, di) => {
+                const meta = chart.getDatasetMeta(di);
+                if (meta.type !== 'bar') return;
+                meta.data.forEach((bar, i) => {
+                    const v = d.data[i];
+                    if (v == null || v <= 0) return;
+                    ctx.save();
+                    ctx.font = 'bold 10px sans-serif';
+                    ctx.fillStyle = '#ECFDF5';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+                    ctx.fillText(Math.round(v), bar.x, bar.y - 3);
+                    ctx.restore();
+                });
+            });
+        }
+    }],
+    data: {
+        labels,
+        datasets: [
+            { label: 'Ventas', data: ventasData, type: 'bar', backgroundColor: 'rgba(125,211,252,0.75)', borderColor: 'rgba(125,211,252,1)', borderWidth: 1, borderRadius: 4, order: 3 },
+            { label: 'Proyección', data: proyData, type: 'bar', backgroundColor: 'rgba(95,230,188,0.65)', borderColor: 'rgba(95,230,188,1)', borderWidth: 1, borderRadius: 4, order: 3 },
+            { label: 'Tendencia', data: tendData, type: 'line', borderColor: '#FB923C', borderWidth: 2.5, pointRadius: 0, tension: 0, fill: false, order: 1 },
+            { label: 'Prom.', data: promData, type: 'line', borderColor: '#FBBF24', borderWidth: 2, borderDash: [6, 3], pointRadius: 0, tension: 0, fill: false, order: 2 },
+        ]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+            legend: { labels: { color: '#B8D4C9', font: { size: 10, weight: '600' }, boxWidth: 20, padding: 12, usePointStyle: false } },
+            tooltip: {
+                backgroundColor: '#103D31', titleColor: '#ECFDF5', bodyColor: '#B8D4C9',
+                borderColor: 'rgba(95,230,188,.4)', borderWidth: 1, padding: 8,
+                titleFont: { weight: 700 }, displayColors: true,
+            },
+        },
+        scales: {
+            x: { grid: { color: 'rgba(95,230,188,.08)' }, ticks: { color: '#B8D4C9', font: { size: 10 } } },
+            y: { grid: { color: 'rgba(95,230,188,.10)' }, ticks: { color: '#B8D4C9', font: { size: 10 } }, beginAtZero: true },
+        }
+    }
+});
+</script>
+
+</body>
+</html>

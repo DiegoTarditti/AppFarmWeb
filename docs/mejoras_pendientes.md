@@ -2,6 +2,8 @@
 
 Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo se hace, se marca ✅ y se agrega fecha.
 
+> ⚠️ **Lo URGENTE vive en [`docs/backlog_urgente.md`](backlog_urgente.md)** — lista corta priorizada (P0/P1/P2). Este doc es el backlog general (features + mejoras no urgentes).
+
 ---
 
 ## ⏳ Pendiente — Transferencias: calcular según presentación (unidades vs cajas) (2026-05-23)

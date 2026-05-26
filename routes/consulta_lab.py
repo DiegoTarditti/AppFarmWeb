@@ -64,7 +64,12 @@ def init_app(app):
             if obs_lab_id is None:
                 from helpers import _normalizar_nombre_entidad
                 norm_local = _normalizar_nombre_entidad(lab.nombre)
-                for o in session.query(database.ObsLaboratorio).all():
+                # Fallback (lab sin bridge a Observer): recorre el catálogo de
+                # labs normalizando en Python. Traemos SOLO las 2 columnas que
+                # se usan y streameamos (sin .all()) para no hidratar el ORM
+                # entero ni materializar la lista completa en RAM.
+                for o in session.query(database.ObsLaboratorio.observer_id,
+                                       database.ObsLaboratorio.descripcion):
                     if _normalizar_nombre_entidad(o.descripcion or '') == norm_local:
                         obs_lab_id = o.observer_id
                         break

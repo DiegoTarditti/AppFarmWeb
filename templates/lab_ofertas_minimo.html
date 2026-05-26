@@ -10,11 +10,16 @@
     <span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800">OFERTAS</span>
 
     <div class="ml-auto flex items-center gap-2 flex-wrap">
-        <a href="{{ url_for('ofertas_import_page') }}"
+        <a href="{{ url_for('ofertas_import_page') }}?lab_id={{ lab.id }}"
            class="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg">
             ➕ Importar más
         </a>
         {% if total > 0 %}
+        <button type="button" id="btn-compartir-grupo" onclick="compartirGrupo({{ lab.id }}, '{{ lab.nombre | e }}')"
+                title="Publicar estas ofertas para el resto del grupo (por si te olvidaste de compartir al importar)"
+                class="text-xs bg-[#5fe6bc] hover:brightness-95 text-emerald-900 font-semibold px-3 py-1.5 rounded-lg">
+            🔄 Compartir con el grupo
+        </button>
         <button type="button" id="btn-sync-render" onclick="syncARender({{ lab.id }}, '{{ lab.nombre | e }}')"
                 title="Empujar estas ofertas a Render (requiere RENDER_BASE_URL + PANEL_REMOTO_TOKEN en env local)"
                 class="text-xs bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-800 font-semibold px-3 py-1.5 rounded-lg">
@@ -62,6 +67,34 @@ async function syncARender(labId, labNombre) {
     }
 }
 
+// Compartir con el grupo (peer-to-peer): publica las ofertas guardadas del lab.
+// Mismo endpoint que el botón del wizard — fallback por si no se compartió al importar.
+async function compartirGrupo(labId, labNombre) {
+    if (!confirm(`Compartir las ofertas de "${labNombre}" con el grupo?`)) return;
+    const btn = document.getElementById('btn-compartir-grupo');
+    btn.disabled = true;
+    btn.textContent = '⏳ Compartiendo…';
+    try {
+        const rg = await fetch(`/api/laboratorio/${labId}/ofertas-minimo`, { credentials: 'same-origin' });
+        const dg = await rg.json();
+        const items = dg.items || [];
+        if (!items.length) { alert('Este lab no tiene ofertas guardadas para compartir.'); return; }
+        const nombre = `${labNombre} — oferta ${new Date().toLocaleDateString('es-AR')}`;
+        const r = await fetch('/api/compartido/push', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+            body: JSON.stringify({ tipo: 'oferta_minimo', nombre, descripcion: `${items.length} productos`, items }),
+        });
+        const d = await r.json();
+        if (!d.ok) alert('Error: ' + (d.error || 'desconocido'));
+        else alert(`✓ Compartido con el grupo.\n\nLab: ${labNombre}\nProductos: ${d.n_items ?? items.length}`);
+    } catch (e) {
+        alert('Error de red: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Compartir con el grupo';
+    }
+}
+
 async function pullDeRender(labId, labNombre) {
     if (!confirm(`Traer de Render las ofertas de "${labNombre}"?\n\nCrea/actualiza las filas en local (clave: EAN + grupo + droguería). ¿Continuar?`)) return;
     const btn = document.getElementById('btn-pull-render');
@@ -103,7 +136,7 @@ async function pullDeRender(labId, labNombre) {
     {% if not ofertas %}
     <div class="bg-white border border-surface-border rounded-xl p-8 text-center">
         <p class="text-sm text-[#6f6f6f] mb-3">No hay ofertas cargadas para este laboratorio.</p>
-        <a href="{{ url_for('ofertas_import_page') }}"
+        <a href="{{ url_for('ofertas_import_page') }}?lab_id={{ lab.id }}"
            class="inline-block text-sm bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-2 rounded-lg">
             Importar ofertas
         </a>

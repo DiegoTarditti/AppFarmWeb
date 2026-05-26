@@ -576,6 +576,73 @@ def init_app(app):
             session.commit()
             return jsonify({'ok': True, 'guardados': len(items)})
 
+    # ─── Parser de import de ofertas POR LABORATORIO ──────────────────────
+    # El wizard /ofertas/import recuerda, por lab, qué columna es cada campo,
+    # para no re-mapear al re-importar ese lab. Mapeo guardado por NOMBRE de
+    # header (no índice) → sobrevive reordenamientos.
+
+    @app.route('/api/laboratorio/<int:lab_id>/parser-ofertas', methods=['GET'])
+    def api_parser_ofertas_get(lab_id):
+        """Parser/mapeo de ofertas guardado para este lab (o {exists:false})."""
+        from database import ParserOfertasLab
+        with database.get_db() as session:
+            p = session.get(ParserOfertasLab, lab_id)
+            if not p:
+                return jsonify({'exists': False})
+            return jsonify({
+                'exists': True,
+                'column_mapping': json.loads(p.column_mapping or '{}'),
+                'formato': p.formato or 'plano',
+                'header_row': p.header_row,
+                'actualizado_en': (p.actualizado_en.strftime('%d/%m/%Y %H:%M')
+                                   if p.actualizado_en else None),
+            })
+
+    @app.route('/api/laboratorio/<int:lab_id>/parser-ofertas', methods=['POST'])
+    def api_parser_ofertas_save(lab_id):
+        """Guarda/actualiza el parser de ofertas del lab (upsert).
+
+        Body JSON: {column_mapping: {campo: nombre_header}, formato?, header_row?}.
+        """
+        from flask_login import current_user
+
+        from database import ParserOfertasLab
+        body = request.get_json(silent=True) or {}
+        column_mapping = body.get('column_mapping')
+        if not isinstance(column_mapping, dict) or not column_mapping:
+            return jsonify({'ok': False, 'error': 'column_mapping vacío'}), 400
+        formato = (body.get('formato') or 'plano').strip() or 'plano'
+        header_row = body.get('header_row')
+        try:
+            header_row = int(header_row) if header_row is not None else None
+        except (TypeError, ValueError):
+            header_row = None
+        with database.get_db() as session:
+            if not session.get(Laboratorio, lab_id):
+                return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
+            p = session.get(ParserOfertasLab, lab_id)
+            if not p:
+                p = ParserOfertasLab(laboratorio_id=lab_id)
+                session.add(p)
+            p.column_mapping = json.dumps(column_mapping, ensure_ascii=False)
+            p.formato = formato
+            p.header_row = header_row
+            p.creado_por = getattr(current_user, 'username', None)
+            p.actualizado_en = now_ar()
+            session.commit()
+            return jsonify({'ok': True, 'campos': len(column_mapping), 'formato': formato})
+
+    @app.route('/api/laboratorio/<int:lab_id>/parser-ofertas', methods=['DELETE'])
+    def api_parser_ofertas_delete(lab_id):
+        """Borra el parser de ofertas guardado de este lab (si existe)."""
+        from database import ParserOfertasLab
+        with database.get_db() as session:
+            p = session.get(ParserOfertasLab, lab_id)
+            if p:
+                session.delete(p)
+                session.commit()
+            return jsonify({'ok': True, 'borrado': bool(p)})
+
     # ─── Sync local → Render ──────────────────────────────────────────────
     #
     # Flujo C: procesás ofertas en local con el wizard normal, validás

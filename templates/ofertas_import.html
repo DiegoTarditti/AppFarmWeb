@@ -190,6 +190,16 @@
                         class="hidden text-xs text-[#6f6f6f] hover:text-[#1e1e1e] underline">
                     ← Volver a columnas
                 </button>
+                <button type="button" id="btn-guardar-parser" onclick="guardarParserLab()"
+                        title="Recordar este mapeo de columnas para futuras importaciones de este laboratorio"
+                        class="hidden text-xs border border-violet-300 text-violet-700 hover:bg-violet-50 font-semibold px-3 py-1.5 rounded-lg">
+                    💾 Guardar formato de este lab
+                </button>
+                <button type="button" id="btn-olvidar-parser" onclick="olvidarParserLab()"
+                        title="Borrar el formato guardado de este laboratorio (vuelve a detección automática)"
+                        class="hidden text-xs border border-red-300 text-red-700 hover:bg-red-50 font-semibold px-3 py-1.5 rounded-lg">
+                    🗑️ Olvidar formato guardado
+                </button>
                 <button type="button" id="btn-next-2"
                         class="bg-brand hover:bg-brand-hover text-brand-dark font-semibold px-4 py-1.5 rounded-lg text-sm">
                     Continuar →
@@ -211,7 +221,7 @@
             </div>
         </div>
         <p class="text-xs text-[#6f6f6f] mb-3">
-            Editá cualquier celda con click. ✕ elimina la fila. Mostramos las primeras 100 filas; al guardar se guardan todas.
+            Editá cualquier celda con click. ✕ elimina la fila. Paginado de a 100; el <strong>∅</strong> en cada columna filtra las filas vacías en esa columna (para cazar títulos/basura). Al guardar se guardan todas.
         </p>
 
         <div class="overflow-x-auto max-h-[500px] overflow-y-auto border border-surface-border rounded-lg">
@@ -222,6 +232,8 @@
                 <tbody id="preview-body" class="divide-y divide-surface-border"></tbody>
             </table>
         </div>
+
+        <div id="preview-paginacion" class="mt-2"></div>
 
         <div class="flex justify-between gap-2 mt-4">
             <button type="button" id="btn-back-2"
@@ -469,6 +481,11 @@
                class="bg-amber-600 hover:bg-amber-700 text-white font-semibold px-3 py-1.5 rounded-lg text-xs">
                 📋 Ver pendientes de revisión →
             </a>
+            <button type="button" id="btn-compartir-grupo" onclick="compartirOfertasGrupo()"
+                    title="Publicar las ofertas guardadas de este laboratorio para el resto del grupo"
+                    class="hidden bg-[#5fe6bc] hover:brightness-95 text-emerald-900 font-semibold px-3 py-1.5 rounded-lg text-xs">
+                🔄 Compartir con el grupo
+            </button>
             <button type="button" onclick="location.reload()" class="bg-white border border-emerald-300 text-emerald-800 font-semibold px-3 py-1.5 rounded-lg text-xs">
                 Importar otro archivo
             </button>
@@ -500,6 +517,9 @@ let _step = 1;
 let _columnasActivas = new Set();   // índices de columnas seleccionadas en el snapshot
 let _camposVisibles = new Set();    // claves de campo que se muestran en el grid
 let _panel2Mode = 'select';         // 'select' = elegir columnas, 'map' = mapear a campos
+let _filtrosVacios = new Set();     // campos con filtro "solo vacías" activo (paso 3)
+let _previewPagina = 0;             // página actual del preview (paso 3)
+const _PREVIEW_POR_PAGINA = 100;
 
 function setStep(n) {
     _step = n;
@@ -555,6 +575,100 @@ function _sincronizarLab(srcId) {
     _labFinal.value = v;
 }
 _labPre.addEventListener('change', () => _sincronizarLab('pre'));
+
+// ── Parser de import POR LABORATORIO (aditivo: solo actúa si existe) ───────
+// Recuerda, por lab, qué columna es cada campo → al re-importar ese lab el
+// mapeo viene pre-cargado. No afecta el flujo standalone si el lab no tiene
+// parser guardado.
+let _parserGuardado = null;   // {column_mapping:{campo:header}, formato, ...} | null
+
+async function _cargarParserLab(labId) {
+    _parserGuardado = null;
+    if (!labId) return;
+    try {
+        const r = await fetch(`/api/laboratorio/${labId}/parser-ofertas`,
+                              { credentials: 'same-origin' });
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d && d.exists) _parserGuardado = d;
+    } catch (_) { /* sin parser guardado → mapeo normal */ }
+}
+_labPre.addEventListener('change', () => _cargarParserLab(_labPre.value));
+
+// Traduce el mapeo guardado {campo: nombreHeader} → {campo: idx} contra los
+// headers del archivo actual (por nombre → sobrevive reordenamientos).
+function _aplicarParserGuardado() {
+    if (!_parserGuardado || !_parserGuardado.column_mapping) return false;
+    const nuevo = {};
+    for (const [campo, header] of Object.entries(_parserGuardado.column_mapping)) {
+        const objetivo = (header || '').trim();
+        const idx = _headers.findIndex(h => (h || '').trim() === objetivo);
+        if (idx >= 0) nuevo[campo] = idx;
+    }
+    if (Object.keys(nuevo).length === 0) return false;
+    _mapping = nuevo;
+    _camposVisibles = new Set(Object.keys(nuevo));
+    for (const idx of Object.values(nuevo)) _columnasActivas.add(idx);
+    return true;
+}
+
+// Guarda el mapeo actual como parser de ESTE lab (campo → nombre de header).
+async function guardarParserLab() {
+    const labId = (_labPre.value || _labFinal.value || '').trim();
+    const btn = document.getElementById('btn-guardar-parser');
+    if (!labId) { alert('Elegí un laboratorio destino primero (modo "Por laboratorio").'); return; }
+    const cm = {};
+    for (const [campo, idx] of Object.entries(_mapping)) {
+        if (idx != null && _headers[idx] != null) cm[campo] = _headers[idx];
+    }
+    if (Object.keys(cm).length === 0) { alert('Mapeá al menos una columna antes de guardar el formato.'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+    try {
+        const r = await fetch(`/api/laboratorio/${labId}/parser-ofertas`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ column_mapping: cm, formato: 'plano' }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || 'Error');
+        _parserGuardado = { column_mapping: cm, formato: 'plano' };
+        _actualizarBotonOlvidar();   // ahora hay parser → mostrar "Olvidar"
+        if (btn) btn.textContent = `✓ Formato guardado (${d.campos} campos)`;
+    } catch (err) {
+        if (btn) { btn.textContent = '💾 Guardar formato de este lab'; btn.disabled = false; }
+        alert('No se pudo guardar el formato: ' + err.message);
+    }
+}
+
+// Muestra "Olvidar" solo en el sub-paso de mapeo (2b) y si hay parser guardado.
+function _actualizarBotonOlvidar() {
+    const b = document.getElementById('btn-olvidar-parser');
+    if (b) b.classList.toggle('hidden', !(_parserGuardado && _panel2Mode === 'map'));
+}
+
+// Borra el parser guardado de este lab → vuelve a detección automática.
+async function olvidarParserLab() {
+    const labId = (_labPre.value || _labFinal.value || '').trim();
+    if (!labId) return;
+    if (!confirm('¿Borrar el formato guardado de este laboratorio? El próximo import volverá a la detección automática.')) return;
+    const btn = document.getElementById('btn-olvidar-parser');
+    if (btn) { btn.disabled = true; btn.textContent = 'Borrando…'; }
+    try {
+        const r = await fetch(`/api/laboratorio/${labId}/parser-ofertas`, {
+            method: 'DELETE', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) throw new Error(d.error || 'Error');
+        _parserGuardado = null;
+        if (btn) { btn.textContent = '🗑️ Olvidar formato guardado'; btn.disabled = false; }
+        _actualizarBotonOlvidar();   // se oculta
+        const bs = document.getElementById('btn-guardar-parser');
+        if (bs) bs.textContent = '💾 Guardar formato de este lab';
+    } catch (err) {
+        if (btn) { btn.textContent = '🗑️ Olvidar formato guardado'; btn.disabled = false; }
+        alert('No se pudo borrar: ' + err.message);
+    }
+}
 
 // Toggle de modo: lab vs drog (multi-lab). Cuando es drog, no exige lab.
 function toggleModoCarga() {
@@ -617,6 +731,12 @@ document.getElementById('btn-parse').addEventListener('click', async () => {
         // Por default todas las columnas seleccionadas; el user puede destildar.
         _columnasActivas = new Set(_headers.map((_, i) => i));
         _camposVisibles = new Set(Object.keys(_mapping));
+        // Si este lab tiene un formato guardado, lo aplicamos pisando la auto-
+        // inferencia. Si no, sigue el flujo normal (sin cambios).
+        if (_aplicarParserGuardado()) {
+            status.textContent = '✓ Apliqué el formato guardado de este laboratorio — revisá el mapeo.';
+            status.className = 'text-xs text-emerald-700 mt-2';
+        }
         setStep(2);
         setPanel2Mode('select');     // sub-paso 2a: elegir columnas
     } catch (err) {
@@ -727,6 +847,8 @@ function setPanel2Mode(modo) {
         btnBackCols.classList.add('hidden');
         btnAll.parentElement.classList.remove('hidden');
         btnNext.textContent = 'Mapear campos →';
+        document.getElementById('btn-guardar-parser').classList.add('hidden');
+        _actualizarBotonOlvidar();   // se oculta (no estamos en sub-paso mapeo)
         renderSnapshot();
         renderMapping();
         actualizarBotonContinuar();
@@ -739,6 +861,8 @@ function setPanel2Mode(modo) {
         btnBackCols.classList.remove('hidden');
         btnAll.parentElement.classList.add('hidden');
         btnNext.textContent = 'Continuar →';
+        document.getElementById('btn-guardar-parser').classList.remove('hidden');
+        _actualizarBotonOlvidar();   // muestra "Olvidar" si este lab ya tiene parser
         // Auto-inferir sobre las columnas activas y re-render cuando termine.
         autoinferirMapeo().finally(() => {
             // Después de auto-inferir, los nuevos mapeos también se muestran.
@@ -914,36 +1038,88 @@ function recalcularItems() {
     }
 }
 
+function _itemVacioEn(item, key) {
+    const v = item[key];
+    return v == null || String(v).trim() === '';
+}
+
 function renderPreview() {
     document.getElementById('preview-count').textContent = _items.length;
     const camposActivos = CAMPOS.filter(c => _mapping[c.key] != null);
+    const cont = document.getElementById('preview-paginacion');
     if (camposActivos.length === 0 || _items.length === 0) {
         document.getElementById('preview-header').innerHTML =
             '<th class="px-2 py-1.5 text-center text-[#999]">Mapeá EAN o Código en el paso 2</th>';
         document.getElementById('preview-body').innerHTML = '';
+        if (cont) cont.innerHTML = '';
         return;
     }
+
+    // Filtro por columna: índices ORIGINALES (en _items) que están vacíos en
+    // TODAS las columnas con filtro activo. Sin filtros → todos los índices.
+    const filtros = [..._filtrosVacios].filter(k => _mapping[k] != null);
+    const idxFiltrados = [];
+    for (let i = 0; i < _items.length; i++) {
+        if (filtros.every(k => _itemVacioEn(_items[i], k))) idxFiltrados.push(i);
+    }
+
+    // Paginación sobre el resultado filtrado.
+    const totalPag = Math.max(1, Math.ceil(idxFiltrados.length / _PREVIEW_POR_PAGINA));
+    if (_previewPagina >= totalPag) _previewPagina = totalPag - 1;
+    if (_previewPagina < 0) _previewPagina = 0;
+    const desde = _previewPagina * _PREVIEW_POR_PAGINA;
+    const idxPagina = idxFiltrados.slice(desde, desde + _PREVIEW_POR_PAGINA);
+
+    // Header con botón ∅ (filtrar vacías) por columna.
     document.getElementById('preview-header').innerHTML =
         '<th class="px-2 py-1.5 text-left w-8">#</th>' +
-        camposActivos.map(c => `<th class="px-2 py-1.5 text-left">${c.label}</th>`).join('') +
+        camposActivos.map(c => {
+            const on = _filtrosVacios.has(c.key);
+            return `<th class="px-2 py-1.5 text-left whitespace-nowrap">${c.label}
+                <button type="button" class="filtro-vacias ml-1 text-[10px] px-1 rounded border ${on ? 'bg-red-100 text-red-700 border-red-300' : 'border-transparent text-[#bbb] hover:text-[#888]'}"
+                        data-key="${c.key}" title="Mostrar solo filas con esta columna vacía">∅</button></th>`;
+        }).join('') +
         '<th class="px-2 py-1.5 text-center w-10">✕</th>';
 
+    // Body: solo la página actual; data-idx = índice ORIGINAL en _items.
     const body = document.getElementById('preview-body');
-    body.innerHTML = _items.slice(0, 100).map((item, idx) => {
-        const cells = camposActivos.map(c => {
-            const val = item[c.key] != null ? item[c.key] : '';
-            return `<td class="px-2 py-1 border-l border-[#f0f0f0]" contenteditable="true" data-idx="${idx}" data-key="${c.key}">${escapeHtml(val)}</td>`;
+    if (idxPagina.length === 0) {
+        body.innerHTML = `<tr><td colspan="${camposActivos.length + 2}" class="px-2 py-3 text-center text-[#999]">Sin filas que cumplan el filtro.</td></tr>`;
+    } else {
+        body.innerHTML = idxPagina.map((oi, n) => {
+            const item = _items[oi];
+            const cells = camposActivos.map(c => {
+                const val = item[c.key] != null ? item[c.key] : '';
+                const vacio = _itemVacioEn(item, c.key);
+                return `<td class="px-2 py-1 border-l border-[#f0f0f0] ${vacio ? 'bg-red-50' : ''}" contenteditable="true" data-idx="${oi}" data-key="${c.key}">${escapeHtml(val)}</td>`;
+            }).join('');
+            return `<tr class="hover:bg-black/[0.02]">
+                <td class="px-2 py-1 text-[#888]">${desde + n + 1}</td>
+                ${cells}
+                <td class="px-2 py-1 text-center">
+                    <button type="button" class="btn-del text-red-500 hover:text-red-700" data-idx="${oi}">✕</button>
+                </td>
+            </tr>`;
         }).join('');
-        return `<tr class="hover:bg-black/[0.02]">
-            <td class="px-2 py-1 text-[#888]">${idx + 1}</td>
-            ${cells}
-            <td class="px-2 py-1 text-center">
-                <button type="button" class="btn-del text-red-500 hover:text-red-700" data-idx="${idx}">✕</button>
-            </td>
-        </tr>`;
-    }).join('');
-    if (_items.length > 100) {
-        body.innerHTML += `<tr><td colspan="${camposActivos.length + 2}" class="px-2 py-2 text-center text-[#888] text-[11px]">... y ${_items.length - 100} más (todos se importan)</td></tr>`;
+    }
+
+    // Barra de estado del filtro + paginación.
+    if (cont) {
+        const hayFiltro = filtros.length > 0;
+        const labels = filtros.map(k => (CAMPOS.find(c => c.key === k) || {}).label || k).join(' + ');
+        const etiqueta = hayFiltro
+            ? `<span class="font-semibold text-red-700">${idxFiltrados.length}</span> con ${labels} vacío`
+            : `${_items.length} fila${_items.length !== 1 ? 's' : ''}`;
+        cont.innerHTML = `<div class="flex items-center gap-2 flex-wrap text-[11px] text-[#666]">
+            <span>${etiqueta}</span>
+            ${hayFiltro ? '<button type="button" id="btn-limpiar-filtros" class="underline text-violet-700 hover:text-violet-900">limpiar filtros</button>' : ''}
+            ${hayFiltro && idxFiltrados.length > 0 ? `<button type="button" id="btn-borrar-filtradas" class="text-red-700 border border-red-300 hover:bg-red-50 rounded px-2 py-0.5 font-semibold">🗑️ Borrar las ${idxFiltrados.length} filtradas</button>` : ''}
+            <span class="ml-auto flex items-center gap-1">
+                <button type="button" id="btn-prev-pag" class="px-2 py-0.5 border rounded ${_previewPagina <= 0 ? 'opacity-40' : 'hover:bg-black/[0.04]'}" ${_previewPagina <= 0 ? 'disabled' : ''}>←</button>
+                <span>Pág ${_previewPagina + 1}/${totalPag}</span>
+                <button type="button" id="btn-next-pag" class="px-2 py-0.5 border rounded ${_previewPagina >= totalPag - 1 ? 'opacity-40' : 'hover:bg-black/[0.04]'}" ${_previewPagina >= totalPag - 1 ? 'disabled' : ''}>→</button>
+            </span>
+        </div>`;
     }
 }
 
@@ -972,6 +1148,37 @@ document.getElementById('preview-body').addEventListener('click', (e) => {
     if (isNaN(idx)) return;
     _items.splice(idx, 1);
     renderPreview();
+});
+
+// Toggle del filtro ∅ (solo vacías) por columna — delegado en el header.
+document.getElementById('preview-header').addEventListener('click', (e) => {
+    const btn = e.target.closest('.filtro-vacias');
+    if (!btn) return;
+    const key = btn.dataset.key;
+    if (_filtrosVacios.has(key)) _filtrosVacios.delete(key);
+    else _filtrosVacios.add(key);
+    _previewPagina = 0;
+    renderPreview();
+});
+
+// Paginación + acciones del filtro — delegado en la barra (se re-renderiza).
+document.getElementById('preview-paginacion').addEventListener('click', (e) => {
+    if (e.target.closest('#btn-prev-pag')) { _previewPagina--; renderPreview(); }
+    else if (e.target.closest('#btn-next-pag')) { _previewPagina++; renderPreview(); }
+    else if (e.target.closest('#btn-limpiar-filtros')) { _filtrosVacios.clear(); _previewPagina = 0; renderPreview(); }
+    else if (e.target.closest('#btn-borrar-filtradas')) {
+        const filtros = [..._filtrosVacios].filter(k => _mapping[k] != null);
+        if (filtros.length === 0) return;
+        const aBorrar = [];
+        for (let i = 0; i < _items.length; i++) {
+            if (filtros.every(k => _itemVacioEn(_items[i], k))) aBorrar.push(i);
+        }
+        if (aBorrar.length === 0) return;
+        if (!confirm(`¿Borrar ${aBorrar.length} fila(s) filtrada(s)? Se quitan del import.`)) return;
+        for (let j = aBorrar.length - 1; j >= 0; j--) _items.splice(aBorrar[j], 1);  // de atrás → no corre índices
+        _previewPagina = 0;
+        renderPreview();
+    }
 });
 
 // Navegación entre pasos
@@ -1919,9 +2126,40 @@ async function _confirmarEImportar() {
         }
         document.getElementById('link-lab').href = `/laboratorio/${labId}/ofertas-minimo`;
         document.getElementById('link-equiv').href = `/laboratorio/${labId}/equivalencias`;
+        // "Compartir con el grupo" solo si fue import por laboratorio (lab único).
+        document.getElementById('btn-compartir-grupo').classList.toggle('hidden', !labId);
     } catch (err) {
         status.textContent = '✗ Error de red: ' + err.message;
         status.className = 'text-xs text-red-700 mt-3';
+    }
+}
+
+// Publica las ofertas guardadas del lab para el grupo (peer-to-peer).
+// Reemplaza el "Compartir con el grupo" que vivía en la modal de /laboratorios.
+async function compartirOfertasGrupo() {
+    const labId = (_labPre.value || _labFinal.value || '').trim();
+    const btn = document.getElementById('btn-compartir-grupo');
+    if (!labId) { alert('Compartir con el grupo solo está disponible para import por laboratorio.'); return; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Compartiendo…'; }
+    try {
+        // Fuente de verdad: las OfertaMinimo guardadas del lab (no lo recién parseado).
+        const rg = await fetch(`/api/laboratorio/${labId}/ofertas-minimo`, { credentials: 'same-origin' });
+        const dg = await rg.json();
+        const items = dg.items || [];
+        if (!items.length) throw new Error('El lab no tiene ofertas guardadas para compartir.');
+        const sel = document.querySelector('#lab-select option:checked');
+        const labNombre = (sel ? sel.textContent : ('Lab ' + labId)).trim();
+        const nombre = `${labNombre} — oferta ${new Date().toLocaleDateString('es-AR')}`;
+        const r = await fetch('/api/compartido/push', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
+            body: JSON.stringify({ tipo: 'oferta_minimo', nombre, descripcion: `${items.length} productos`, items }),
+        });
+        const d = await r.json();
+        if (!d.ok) throw new Error(d.error || 'Error');
+        if (btn) btn.textContent = `✓ Compartido (${d.n_items ?? items.length})`;
+    } catch (err) {
+        if (btn) { btn.textContent = '🔄 Compartir con el grupo'; btn.disabled = false; }
+        alert('No se pudo compartir: ' + err.message);
     }
 }
 
@@ -1963,6 +2201,9 @@ document.getElementById('btn-guardar').addEventListener('click', _confirmarEImpo
 document.getElementById('btn-guardar-top').addEventListener('click', _confirmarEImportar);
 
 setStep(1);
+// Si el lab vino fijado (?lab_id=N) o ya hay uno elegido, precargamos su
+// parser guardado para auto-aplicarlo al analizar el archivo.
+if (_labPre && _labPre.value) _cargarParserLab(_labPre.value);
 </script>
 
 {% endblock %}

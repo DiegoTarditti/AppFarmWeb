@@ -138,7 +138,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas'] %}
+                {% for ent in ['laboratorios', 'rubros', 'subrubros', 'nombres_drogas', 'productos', 'stock', 'ventas_mensuales', 'obras_sociales', 'convenios', 'planes', 'colegios_medicos', 'medicos', 'medicos_matriculas', 'operadores', 'ventas_detalle'] %}
                 <tr class="border-t border-surface-border">
                     <td class="px-4 py-3 font-semibold">{{ ent }}</td>
                     <td class="px-4 py-3 text-right font-mono">{{ '{:,}'.format(cuentas[ent]) }}</td>
@@ -213,6 +213,8 @@ document.querySelectorAll('form[method=post]').forEach(f => {
             sub = 'Leyendo de DW.* y upserteando en la tabla local.';
             if (ent === 'ventas_mensuales') {
                 sub = 'Agregando DW.ProductosVendidos con GROUP BY en SQL Server. Puede tardar más que las demás.';
+            } else if (ent === 'ventas_detalle') {
+                sub = 'Detalle de ventas renglón por renglón (incluye el vendedor/operador). Es el sync MÁS pesado — puede tardar varios minutos.';
             }
         }
         document.getElementById('proc-overlay-title').textContent = title;
