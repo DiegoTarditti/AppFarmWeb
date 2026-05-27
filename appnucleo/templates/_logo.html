@@ -17,7 +17,7 @@
     <path id="nucHex" d="M0,-8 -6.93,-4 -6.93,4 0,8 6.93,4 6.93,-4Z"/>
   </defs>
 
-  <circle cx="60" cy="60" r="40" fill="url(#nucGlow)"/>
+  <circle class="nuc-glow" cx="60" cy="60" r="40" fill="url(#nucGlow)"/>
 
   {# anillos de control #}
   <g class="rings" fill="none" stroke="#34d399">
@@ -36,7 +36,7 @@
   </g>
 
   {# 6 satélites (farmacias) #}
-  <g fill="url(#nucSat)" stroke="#0b1411" stroke-width="1.2">
+  <g class="nuc-sats" fill="url(#nucSat)" stroke="#0b1411" stroke-width="1.2">
     <use href="#nucHex" transform="translate(60,18)"/>
     <use href="#nucHex" transform="translate(23.63,39)"/>
     <use href="#nucHex" transform="translate(23.63,81)"/>
@@ -46,13 +46,26 @@
   </g>
 
   {# núcleo #}
-  <polygon points="60,44 46.14,52 46.14,68 60,76 73.86,68 73.86,52"
-           fill="url(#nucCore)" stroke="#0b1411" stroke-width="1.5"/>
-  <circle cx="60" cy="60" r="3.6" fill="#fff"/>
+  <g class="nuc-core">
+    <polygon points="60,44 46.14,52 46.14,68 60,76 73.86,68 73.86,52"
+             fill="url(#nucCore)" stroke="#0b1411" stroke-width="1.5"/>
+    <circle cx="60" cy="60" r="3.6" fill="#fff"/>
+  </g>
 </svg>
 <style>
-  .nucleo-logo .rings{ transform-box:fill-box; transform-origin:center;
-                       animation:nucSpin 28s linear infinite; }
-  @keyframes nucSpin{ to{ transform:rotate(360deg);} }
-  @media (prefers-reduced-motion: reduce){ .nucleo-logo .rings{ animation:none; } }
+  .nucleo-logo .rings,
+  .nucleo-logo .nuc-core,
+  .nucleo-logo .nuc-sats{ transform-box:fill-box; transform-origin:center; }
+  .nucleo-logo .rings   { animation:nucSpin 28s linear infinite; }
+  .nucleo-logo .nuc-core{ animation:nucPulse 3.6s ease-in-out infinite; }
+  .nucleo-logo .nuc-glow{ animation:nucGlow 3.6s ease-in-out infinite; }
+  .nucleo-logo .nuc-sats{ animation:nucBreath 4.6s ease-in-out infinite; }
+  @keyframes nucSpin  { to    { transform:rotate(360deg); } }
+  @keyframes nucPulse { 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.07); } }
+  @keyframes nucBreath{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.05); } }
+  @keyframes nucGlow  { 0%,100%{ opacity:.45; } 50%{ opacity:1; } }
+  @media (prefers-reduced-motion: reduce){
+    .nucleo-logo .rings, .nucleo-logo .nuc-core,
+    .nucleo-logo .nuc-glow, .nucleo-logo .nuc-sats{ animation:none; }
+  }
 </style>
