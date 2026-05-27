@@ -1,0 +1,92 @@
+{# Logo AppNúcleo: hexágono central (núcleo) + anillos de control + 6 satélites
+   (las farmacias del grupo). Animado. Params opcionales:
+     lid        → prefijo de ids SVG (único por instancia; evita choque de gradientes)
+     logo_class → tamaño Tailwind (default w-14 h-14) #}
+{% set lid = lid | default('nuc') %}
+{% set logo_class = logo_class | default('w-14 h-14') %}
+<svg viewBox="0 0 120 120" class="nucleo-logo {{ logo_class }} shrink-0" aria-label="núcleo">
+  <defs>
+    <linearGradient id="{{ lid }}Core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="{{ lid }}Sat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <radialGradient id="{{ lid }}Glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#34d399" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#34d399" stop-opacity="0"/>
+    </radialGradient>
+    <path id="{{ lid }}Hex" d="M0,-8 -6.93,-4 -6.93,4 0,8 6.93,4 6.93,-4Z"/>
+  </defs>
+
+  <circle class="nuc-glow" cx="60" cy="60" r="40" fill="url(#{{ lid }}Glow)"/>
+
+  {# sonar: anillos que se expanden desde el núcleo #}
+  <g fill="none" stroke="#34d399" stroke-width="1.5">
+    <circle class="nuc-ping"  cx="60" cy="60" r="18"/>
+    <circle class="nuc-ping2" cx="60" cy="60" r="18"/>
+  </g>
+
+  {# anillos de control #}
+  <g class="rings" fill="none" stroke="#34d399">
+    <circle cx="60" cy="60" r="30" stroke-opacity=".18"/>
+    <circle cx="60" cy="60" r="42" stroke-opacity=".40" stroke-dasharray="3 6"/>
+  </g>
+
+  {# conectores núcleo → satélites #}
+  <g stroke="#34d399" stroke-opacity=".14" stroke-width="1">
+    <line x1="60" y1="60" x2="60"    y2="18"/>
+    <line x1="60" y1="60" x2="23.63" y2="39"/>
+    <line x1="60" y1="60" x2="23.63" y2="81"/>
+    <line x1="60" y1="60" x2="60"    y2="102"/>
+    <line x1="60" y1="60" x2="96.37" y2="81"/>
+    <line x1="60" y1="60" x2="96.37" y2="39"/>
+  </g>
+
+  {# 6 satélites (farmacias) — titilan en ola #}
+  <g class="nuc-sats" fill="url(#{{ lid }}Sat)" stroke="#0b1411" stroke-width="1.2">
+    <use href="#{{ lid }}Hex" transform="translate(60,18)"/>
+    <use href="#{{ lid }}Hex" transform="translate(96.37,39)"/>
+    <use href="#{{ lid }}Hex" transform="translate(96.37,81)"/>
+    <use href="#{{ lid }}Hex" transform="translate(60,102)"/>
+    <use href="#{{ lid }}Hex" transform="translate(23.63,81)"/>
+    <use href="#{{ lid }}Hex" transform="translate(23.63,39)"/>
+  </g>
+
+  {# núcleo #}
+  <g class="nuc-core">
+    <polygon points="60,44 46.14,52 46.14,68 60,76 73.86,68 73.86,52"
+             fill="url(#{{ lid }}Core)" stroke="#0b1411" stroke-width="1.5"/>
+    <circle cx="60" cy="60" r="3.6" fill="#fff"/>
+  </g>
+</svg>
+<style>
+  .nucleo-logo .rings, .nucleo-logo .nuc-core,
+  .nucleo-logo .nuc-ping, .nucleo-logo .nuc-ping2{
+    transform-box:fill-box; transform-origin:center; }
+  .nucleo-logo .rings    { animation:nucSpin 12s linear infinite; }
+  .nucleo-logo .nuc-core { animation:nucPulse 2.4s ease-in-out infinite; }
+  .nucleo-logo .nuc-glow { animation:nucGlow 2.4s ease-in-out infinite; }
+  .nucleo-logo .nuc-ping { animation:nucPing 2.8s ease-out infinite; }
+  .nucleo-logo .nuc-ping2{ animation:nucPing 2.8s ease-out infinite; animation-delay:1.4s; }
+  .nucleo-logo .nuc-sats use{ animation:nucTwinkle 2.4s ease-in-out infinite; }
+  .nucleo-logo .nuc-sats use:nth-of-type(1){ animation-delay:0s; }
+  .nucleo-logo .nuc-sats use:nth-of-type(2){ animation-delay:.4s; }
+  .nucleo-logo .nuc-sats use:nth-of-type(3){ animation-delay:.8s; }
+  .nucleo-logo .nuc-sats use:nth-of-type(4){ animation-delay:1.2s; }
+  .nucleo-logo .nuc-sats use:nth-of-type(5){ animation-delay:1.6s; }
+  .nucleo-logo .nuc-sats use:nth-of-type(6){ animation-delay:2s; }
+  @keyframes nucSpin    { to     { transform:rotate(360deg); } }
+  @keyframes nucPulse   { 0%,100%{ transform:scale(1); }   50%{ transform:scale(1.12); } }
+  @keyframes nucGlow    { 0%,100%{ opacity:.4; }            50%{ opacity:1; } }
+  @keyframes nucTwinkle { 0%,100%{ opacity:.35; }           50%{ opacity:1; } }
+  @keyframes nucPing    { 0%{ transform:scale(.6); opacity:.55; } 100%{ transform:scale(2.4); opacity:0; } }
+  @media (prefers-reduced-motion: reduce){
+    .nucleo-logo .rings, .nucleo-logo .nuc-core, .nucleo-logo .nuc-glow,
+    .nucleo-logo .nuc-ping, .nucleo-logo .nuc-ping2,
+    .nucleo-logo .nuc-sats use{ animation:none; }
+    .nucleo-logo .nuc-ping, .nucleo-logo .nuc-ping2{ opacity:0; }
+  }
+</style>
