@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Ventas multi · AppNúcleo{% endblock %}
+{% block nav_vm %}bg-white/10 text-[color:var(--mint)]{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-extrabold tracking-tight mb-1">Ventas multi · grupo</h1>
+<p class="text-[color:var(--mute)] text-sm mb-4">
+  Unidades vendidas (12m) por {{ group_by }}, con columna por farmacia + consolidado.
+</p>
+
+{# ── Filtros ── #}
+<form method="get" class="card p-3 mb-4 flex items-end gap-3 flex-wrap">
+  <div>
+    <label class="block text-[10px] uppercase text-[color:var(--mute)] mb-1">Agrupar por</label>
+    <select name="group_by" class="bg-[#0b1411] border border-[color:var(--line)] rounded-lg px-3 py-2 text-sm">
+      {% for opt,lbl in [('laboratorio','Laboratorio'),('producto','Producto'),('rubro','Rubro')] %}
+      <option value="{{ opt }}" {{ 'selected' if group_by==opt }}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="flex-1 min-w-[200px]">
+    <label class="block text-[10px] uppercase text-[color:var(--mute)] mb-1">Buscar</label>
+    <input name="q" value="{{ q }}" placeholder="texto en producto / laboratorio"
+           class="w-full bg-[#0b1411] border border-[color:var(--line)] rounded-lg px-3 py-2 text-sm">
+  </div>
+  <div>
+    <label class="block text-[10px] uppercase text-[color:var(--mute)] mb-1">Rubro contiene</label>
+    <input name="rubro" value="{{ rubro }}" placeholder="ej: Medicamentos"
+           class="bg-[#0b1411] border border-[color:var(--line)] rounded-lg px-3 py-2 text-sm">
+  </div>
+  <button class="bg-[color:var(--mint2)] hover:brightness-110 text-[#062018] font-bold px-5 py-2 rounded-lg text-sm">
+    Aplicar
+  </button>
+</form>
+
+<div class="text-xs text-[color:var(--mute)] mb-2">
+  {{ pivot.filas | length }} de {{ pivot.total_filas }} filas (top por $)
+</div>
+
+{# ── Tabla (PC) ── #}
+<div class="card overflow-hidden hidden md:block">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-[11px] uppercase text-[color:var(--mute)] bg-white/5">
+        <tr>
+          <th class="text-left px-4 py-2 sticky left-0 bg-[#10201a]">{{ group_by | capitalize }}</th>
+          {% for s in pivot.slugs %}
+          <th class="text-right px-3 py-2">{{ pivot.nombres[s] }}</th>
+          {% endfor %}
+          <th class="text-right px-4 py-2 text-[color:var(--mint)]">Grupo (u)</th>
+          <th class="text-right px-4 py-2 text-[color:var(--mint)]">$</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in pivot.filas %}
+        <tr class="border-t border-[color:var(--line)] hover:bg-white/5">
+          <td class="px-4 py-2 sticky left-0 bg-[#0e1c17] max-w-[280px] truncate" title="{{ f.label }}">{{ f.label }}</td>
+          {% for s in pivot.slugs %}
+          <td class="px-3 py-2 text-right {{ 'text-[color:var(--mute)]' if f.far[s][0]==0 }}">
+            {{ f.far[s][0] | miles if f.far[s][0] else '—' }}
+          </td>
+          {% endfor %}
+          <td class="px-4 py-2 text-right font-bold">{{ f.tot[0] | miles }}</td>
+          <td class="px-4 py-2 text-right font-bold text-[color:var(--mint)]">{{ f.tot[1] | money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── Cards (mobile) ── #}
+<div class="md:hidden space-y-2">
+  {% for f in pivot.filas %}
+  <div class="card p-3">
+    <div class="font-semibold truncate">{{ f.label }}</div>
+    <div class="flex items-center justify-between mt-1">
+      <span class="text-[color:var(--mint)] font-bold">{{ f.tot[0] | miles }} u</span>
+      <span class="text-[color:var(--mint)] font-bold">{{ f.tot[1] | money }}</span>
+    </div>
+    <div class="text-[11px] text-[color:var(--mute)] mt-1 flex flex-wrap gap-x-3">
+      {% for s in pivot.slugs %}<span>{{ pivot.nombres[s][:1] }}{{ f.far[s][0] | miles }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if not pivot.filas %}
+<div class="card p-8 text-center text-[color:var(--mute)]">Sin resultados para esos filtros.</div>
+{% endif %}
+{% endblock %}

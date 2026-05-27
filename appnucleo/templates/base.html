@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}AppNúcleo{% endblock %}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{ --bg:#0b1411; --surface:#10201a; --surface2:#152a22; --line:#1e3a30;
+         --mint:#34d399; --mint2:#10b981; --text:#e6f2ec; --mute:#7fa394; }
+  body{ background:linear-gradient(160deg,#0b1411,#08100d 60%); color:var(--text);
+        font-family:'Inter',system-ui,sans-serif; }
+  .card{ background:linear-gradient(150deg,var(--surface),var(--bg));
+         border:1px solid var(--line); border-radius:18px; }
+  .kpi{ background:linear-gradient(150deg,var(--surface2),var(--surface));
+        border:1px solid var(--line); border-radius:18px; }
+  .glow{ box-shadow:0 0 0 1px rgba(52,211,153,.10), 0 18px 50px -20px rgba(16,185,129,.35); }
+  .pill{ font-size:11px; padding:2px 8px; border-radius:999px; }
+  ::-webkit-scrollbar{height:8px;width:8px}
+  ::-webkit-scrollbar-thumb{background:#1e3a30;border-radius:8px}
+  a{color:inherit}
+</style>
+</head>
+<body class="min-h-screen">
+  <header class="sticky top-0 z-30 backdrop-blur border-b border-[color:var(--line)]
+                 bg-[#0b1411]/80 px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
+    <a href="/" class="flex items-center gap-2 font-extrabold tracking-tight">
+      <span class="text-[color:var(--mint)] text-xl">◆</span> AppNúcleo
+    </a>
+    <span class="text-[color:var(--mute)] text-xs hidden sm:inline">· dashboard de grupo</span>
+    {% if demo %}
+    <span class="pill bg-amber-500/15 text-amber-300 border border-amber-500/30">DEMO · datos sintéticos</span>
+    {% endif %}
+    <nav class="ml-auto flex items-center gap-1 text-sm">
+      <a href="/" class="px-3 py-1.5 rounded-lg hover:bg-white/5 {% block nav_home %}{% endblock %}">Resumen</a>
+      <a href="/ventas-multi" class="px-3 py-1.5 rounded-lg hover:bg-white/5 {% block nav_vm %}{% endblock %}">Ventas multi</a>
+      <form method="post" action="/refrescar" class="inline">
+        <button type="submit" class="px-3 py-1.5 rounded-lg hover:bg-white/5 text-[color:var(--mute)]" title="Refrescar datos">↻</button>
+      </form>
+    </nav>
+  </header>
+  <main class="px-4 sm:px-6 py-5 max-w-[1280px] mx-auto w-full">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="px-6 py-6 text-center text-[11px] text-[color:var(--mute)]">
+    AppNúcleo · lectura sobre las DBs del grupo{% if tot is defined and tot %} · {{ tot.skus | miles }} SKUs analizados{% endif %}
+  </footer>
+</body>
+</html>
