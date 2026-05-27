@@ -29,6 +29,10 @@ Registro de farmacias por env var `NUCLEO_FARMACIAS` (JSON):
 
 Sin `NUCLEO_FARMACIAS` → **modo DEMO** con datos sintéticos (para ver la UI).
 
+Cómodo: copiá `appnucleo/.env.example` → `appnucleo/.env` (gitignored) y poné ahí
+`NUCLEO_FARMACIAS`. Si `python-dotenv` está instalado, se carga solo (y no tenés
+que pasar el `-e` por comando).
+
 ## Correr
 
 ```bash

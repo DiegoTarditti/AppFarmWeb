@@ -11,6 +11,15 @@ from flask import Flask, redirect, render_template, request, url_for
 
 from appnucleo import data
 
+# Carga appnucleo/.env (gitignored) si python-dotenv está instalado — así
+# NUCLEO_FARMACIAS / NUCLEO_SECRET_KEY se ponen ahí sin pasarlos por comando.
+# Graceful: si dotenv no está, sigue andando con las env vars del entorno.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+except ImportError:
+    pass
+
 
 def create_app():
     app = Flask(__name__, template_folder='templates')
