@@ -850,24 +850,51 @@
               {% block aside_extra_class %}{% endblock %}">
     <div class="px-3.5 py-3.5 border-b border-[#214635]">
         <div class="flex items-center gap-2.5">
-            <div class="w-[34px] h-[34px] flex items-center justify-center flex-shrink-0">
-                <svg class="afw-logo w-full h-full" viewBox="0 0 48 48" aria-label="Business Intelligence">
+            <div class="w-[38px] h-[38px] flex items-center justify-center flex-shrink-0">
+                <svg class="w-full h-full" viewBox="0 0 290 290" role="img" aria-label="Business Intelligence">
                     <defs>
-                        <linearGradient id="afwCore" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0" stop-color="#7ff0cf"/><stop offset="1" stop-color="#16a273"/>
+                        <linearGradient id="afwIsoBg" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#0A1F1A"/>
+                            <stop offset="100%" stop-color="#0D2823"/>
                         </linearGradient>
-                        <radialGradient id="afwGlow" cx="50%" cy="50%" r="50%">
-                            <stop offset="0" stop-color="#5fe6bc" stop-opacity=".5"/>
-                            <stop offset="1" stop-color="#5fe6bc" stop-opacity="0"/>
-                        </radialGradient>
                     </defs>
-                    <circle class="afw-glow" cx="24" cy="24" r="16" fill="url(#afwGlow)"/>
-                    <circle class="afw-ring" cx="24" cy="24" r="20" fill="none" stroke="#5fe6bc"
-                            stroke-opacity=".5" stroke-width="1.4" stroke-dasharray="2 5"/>
-                    <g class="afw-core">
-                        <polygon points="24,13 14.47,18.5 14.47,29.5 24,35 33.53,29.5 33.53,18.5"
-                                 fill="url(#afwCore)" stroke="#05110c" stroke-width="1.4"/>
-                        <circle cx="24" cy="24" r="2.4" fill="#eafaf3"/>
+                    <rect width="290" height="290" rx="48" fill="url(#afwIsoBg)"/>
+                    <g transform="translate(145, 145)">
+                        <rect x="-8" y="-50" width="16" height="40" rx="3" fill="#10B981">
+                            <animateTransform attributeName="transform" type="translate"
+                                values="0,-30; 0,0; 0,0; 0,-30" keyTimes="0; 0.3; 0.7; 1"
+                                dur="3s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="0; 1; 1; 0"
+                                keyTimes="0; 0.3; 0.7; 1" dur="3s" repeatCount="indefinite"/>
+                        </rect>
+                        <rect x="-8" y="10" width="16" height="40" rx="3" fill="#10B981">
+                            <animateTransform attributeName="transform" type="translate"
+                                values="0,30; 0,0; 0,0; 0,30" keyTimes="0; 0.3; 0.7; 1"
+                                dur="3s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="0; 1; 1; 0"
+                                keyTimes="0; 0.3; 0.7; 1" dur="3s" repeatCount="indefinite"/>
+                        </rect>
+                        <rect x="-50" y="-8" width="40" height="16" rx="3" fill="#10B981">
+                            <animateTransform attributeName="transform" type="translate"
+                                values="-30,0; 0,0; 0,0; -30,0" keyTimes="0; 0.3; 0.7; 1"
+                                dur="3s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="0; 1; 1; 0"
+                                keyTimes="0; 0.3; 0.7; 1" dur="3s" repeatCount="indefinite"/>
+                        </rect>
+                        <rect x="10" y="-8" width="40" height="16" rx="3" fill="#10B981">
+                            <animateTransform attributeName="transform" type="translate"
+                                values="30,0; 0,0; 0,0; 30,0" keyTimes="0; 0.3; 0.7; 1"
+                                dur="3s" repeatCount="indefinite"/>
+                            <animate attributeName="opacity" values="0; 1; 1; 0"
+                                keyTimes="0; 0.3; 0.7; 1" dur="3s" repeatCount="indefinite"/>
+                        </rect>
+                        <rect x="-8" y="-8" width="16" height="16" rx="3" fill="#FFFFFF">
+                            <animate attributeName="opacity" values="0; 0; 1; 1; 0"
+                                keyTimes="0; 0.35; 0.45; 0.7; 1" dur="3s" repeatCount="indefinite"/>
+                            <animateTransform attributeName="transform" type="scale"
+                                values="0.5; 0.5; 1.2; 1; 1" keyTimes="0; 0.35; 0.5; 0.6; 1"
+                                dur="3s" repeatCount="indefinite"/>
+                        </rect>
                     </g>
                 </svg>
             </div>
@@ -879,18 +906,6 @@
             </div>
         </div>
     </div>
-    <style>
-      .afw-logo .afw-ring,.afw-logo .afw-core{ transform-box:fill-box; transform-origin:center; }
-      .afw-logo .afw-ring{ animation:afwSpin 14s linear infinite; }
-      .afw-logo .afw-core{ animation:afwPulse 3s ease-in-out infinite; }
-      .afw-logo .afw-glow{ animation:afwGlow 3s ease-in-out infinite; }
-      @keyframes afwSpin { to{ transform:rotate(360deg); } }
-      @keyframes afwPulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.07); } }
-      @keyframes afwGlow { 0%,100%{ opacity:.45; } 50%{ opacity:1; } }
-      @media (prefers-reduced-motion:reduce){
-        .afw-logo .afw-ring,.afw-logo .afw-core,.afw-logo .afw-glow{ animation:none; }
-      }
-    </style>
     <button type="button" onclick="toggleSidebar()" title="Colapsar/expandir menú"
             class="hidden lg:flex mx-3 mt-2 items-center justify-center gap-2 py-1.5 rounded-lg text-[11px] text-[#6d9082] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors">
         <svg class="sidebar-toggle-icon w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
