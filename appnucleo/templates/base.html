@@ -22,9 +22,28 @@
   ::-webkit-scrollbar{height:8px;width:8px}
   ::-webkit-scrollbar-thumb{background:#1e3a30;border-radius:8px}
   a{color:inherit}
+  /* Splash de entrada (logo grande animado ~3s, 1 vez por sesión) */
+  #nuc-splash{ position:fixed; inset:0; z-index:100; display:flex; align-items:center;
+    justify-content:center; background:radial-gradient(circle at 50% 45%,#102a22,#060d0b 70%);
+    animation:splashOut .7s ease forwards; animation-delay:2.6s; }
+  #nuc-splash .splash-inner{ display:flex; flex-direction:column; align-items:center; gap:1.25rem;
+    animation:splashIn .8s cubic-bezier(.2,.8,.2,1) both; }
+  #nuc-splash.done{ display:none; }
+  @keyframes splashIn { from{opacity:0; transform:scale(.85) translateY(10px);} to{opacity:1; transform:none;} }
+  @keyframes splashOut{ to{opacity:0; visibility:hidden;} }
+  @media (prefers-reduced-motion: reduce){ #nuc-splash{ display:none; } }
 </style>
 </head>
 <body class="min-h-screen">
+  <div id="nuc-splash" aria-hidden="true">
+    <div class="splash-inner">
+      {% with lid='nucB', logo_class='w-40 h-40 sm:w-52 sm:h-52' %}{% include "_logo.html" %}{% endwith %}
+      <div class="text-center leading-none">
+        <div class="text-4xl sm:text-5xl font-extrabold tracking-tight">núcleo</div>
+        <div class="text-[11px] tracking-[.4em] uppercase text-[color:var(--mute)] mt-2">Pharma Stock</div>
+      </div>
+    </div>
+  </div>
   <header class="sticky top-0 z-30 backdrop-blur border-b border-[color:var(--line)]
                  bg-[#0b1411]/80 px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <a href="/" class="flex items-center gap-2.5">
@@ -52,5 +71,15 @@
   <footer class="px-6 py-6 text-center text-[11px] text-[color:var(--mute)]">
     AppNúcleo · lectura sobre las DBs del grupo{% if tot is defined and tot %} · {{ tot.skus | miles }} SKUs analizados{% endif %}
   </footer>
+  <script>
+  (function(){
+    var s = document.getElementById('nuc-splash');
+    if (!s) return;
+    // Mostrar el splash 1 vez por sesión (no en cada navegación).
+    if (sessionStorage.getItem('nucSplash')) { s.classList.add('done'); return; }
+    sessionStorage.setItem('nucSplash', '1');
+    setTimeout(function(){ s.classList.add('done'); }, 3300);
+  })();
+  </script>
 </body>
 </html>
