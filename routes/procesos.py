@@ -529,6 +529,20 @@ def init_app(app):
             key=lambda p: (p.get('nombre') or '').upper(),
         )
 
+        # Frac (cajas/unidades) tipo ObServer: enriquecemos cada producto con el
+        # flag fraccionado + envase del master (por codigo_barra). El stock viene
+        # crudo de obs_stock → para fraccionables está en UNIDADES sueltas.
+        from database import Producto, ProductoAtributo, get_db
+        _eans = [p.get('codigo_barra') for p in data.get('products', []) if p.get('codigo_barra')]
+        _frac_by_ean = {}
+        if _eans:
+            with get_db() as _s:
+                for cb, fr, env in (_s.query(Producto.codigo_barra, Producto.fraccionado,
+                                             ProductoAtributo.cantidad_envase)
+                                    .outerjoin(ProductoAtributo, ProductoAtributo.producto_id == Producto.id)
+                                    .filter(Producto.codigo_barra.in_(_eans)).all()):
+                    _frac_by_ean[cb] = (bool(fr), env)
+
         # Pre-cómputo por producto para que el template sea liviano:
         # - vendido 3m (suma de los últimos 3 meses) + 12m (total).
         # - dias de cobertura.
@@ -536,6 +550,9 @@ def init_app(app):
             ventas = p.get('ventas') or []
             avg = p.get('avg_monthly') or 0
             stock = p.get('stock') or 0
+            _fr, _env = _frac_by_ean.get(p.get('codigo_barra'), (False, None))
+            p['frac'] = (f'{int(stock) // int(_env)}/{int(stock)}'
+                         if (_fr and _env and stock) else None)
             p['v3m'] = sum(ventas[:3]) if len(ventas) >= 3 else sum(ventas)
             p['v12m'] = p.get('total') or sum(ventas)
             if avg > 0 and stock > 0:

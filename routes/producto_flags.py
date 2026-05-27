@@ -115,9 +115,22 @@ def init_app(app):
                         .filter(ObsProducto.observer_id.in_(obs_ids))):
                     lab_by_oid[oid] = labdesc or ''
 
+            # Stock de la farmacia operativa → "Frac." (cajas/unidades) tipo ObServer.
+            from database import ObsStock
+            from services.farmacia import farmacia_operativa
+            stock_by_oid = {}
+            if obs_ids:
+                _fid = farmacia_operativa()
+                for oid, st in (session.query(ObsStock.producto_observer, ObsStock.stock_actual)
+                                .filter(ObsStock.id_farmacia == _fid,
+                                        ObsStock.producto_observer.in_(obs_ids)).all()):
+                    stock_by_oid[oid] = st
+
             filas = []
             for prod, atr in prod_rows:
                 ce = atr.cantidad_envase if (atr and atr.cantidad_envase is not None) else None
+                _stk = stock_by_oid.get(prod.observer_id)
+                frac = (f'{int(_stk) // int(ce)}/{int(_stk)}' if (ce and _stk) else None)
                 eean = export_eans[prod.id]
                 est = estado_equivalencia(session, eean)
                 estado = est.get('estado')
@@ -138,6 +151,8 @@ def init_app(app):
                             else lab_by_oid.get(prod.observer_id, '')),
                     'fraccionado': bool(prod.fraccionado),
                     'cantidad_envase': int(ce) if ce is not None else None,
+                    'stock_actual': _stk,
+                    'frac': frac,
                     'kel_estado': estado,
                     'kel_desc': kel_desc,
                     'kel_codigo': kel_codigo,

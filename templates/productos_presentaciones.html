@@ -174,6 +174,7 @@
             <thead><tr>
                 <th>Producto</th><th>EAN</th><th>Laboratorio</th>
                 <th>Fraccionado</th><th style="text-align:right;">Envase</th>
+                <th style="text-align:right;" title="Cajas enteras / unidades totales (como ObServer)">Frac. (caja/u)</th>
                 <th>Producto equivalente (Kellerhoff)</th><th>EAN equivalente</th><th></th>
             </tr></thead>
             <tbody>
@@ -185,6 +186,7 @@
                 <td class="text-[color:var(--ds-text-mute)]">{% if f.lab %}{{ f.lab }}{% else %}—{% endif %}</td>
                 <td>{% if f.fraccionado %}<span class="pp-badge si">Sí</span>{% else %}<span class="pp-badge no">No</span>{% endif %}</td>
                 <td style="text-align:right;">{% if f.cantidad_envase %}×{{ f.cantidad_envase }}{% else %}<span class="text-[#888]">—</span>{% endif %}</td>
+                <td style="text-align:right;"><code>{% if f.frac %}{{ f.frac }}{% else %}<span class="text-[#888]">—</span>{% endif %}</code></td>
                 {# Buscador inline de equivalencia Kellerhoff por fila #}
                 <td class="kq-cell" data-ean="{{ f.export_ean }}" style="min-width:240px;">
                     <div class="kq-current text-[11px] mb-1 {% if f.kel_estado == 'no_disponible' %}text-amber-400{% elif f.kel_desc %}text-[color:var(--ds-mint)]{% else %}text-[color:var(--ds-text-mute)]{% endif %}">
