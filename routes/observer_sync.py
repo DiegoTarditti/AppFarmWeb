@@ -178,7 +178,8 @@ def _ejecutar_sync(app, modo='', skip_push=False, skip_match=False):
                     with database.get_db() as session:
                         st_fr = observer_source.sync_fraccionado_master(session)
                         session.commit()
-                    clog.set_mensaje(f"flag={st_fr['flag_updates']} "
+                    clog.set_mensaje(f"mat={st_fr.get('mat_nuevos', 0)} "
+                                     f"flag={st_fr['flag_updates']} "
                                      f"envase +{st_fr['env_nuevos']}/{st_fr['env_completados']}")
                 resultado['pasos'].append({'paso': 'fraccionado_master', 'ok': True, **st_fr})
             except Exception as e:

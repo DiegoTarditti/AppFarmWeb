@@ -418,25 +418,48 @@ def sync_productos(session):
 
 
 def sync_fraccionado_master(session):
-    """Deriva el flag fraccionado del master desde ObServer + completa el envase.
+    """Deriva el flag fraccionado del master desde ObServer + el envase.
 
-    ObServer manda: para productos con observer_id, `Producto.fraccionado` refleja
-    `obs_productos.es_fraccionable`. El envase (`ProductoAtributo.cantidad_envase`)
-    se rellena desde obs SOLO si la fila no es `fuente='manual'` (no pisa ediciones
-    a mano). Los productos sin observer_id no se tocan (ahí el marcado manual sigue
-    siendo la única fuente). PostgreSQL-only; correr después de sync_productos.
+    ObServer MANDA en presentación (decisión 2026-05-27): para productos con
+    observer_id, `Producto.fraccionado` refleja `obs_productos.es_fraccionable`,
+    y `ProductoAtributo.cantidad_envase` se sincroniza desde obs **pisando incluso
+    ediciones manuales** (lo cargado a mano es un stopgap; ObServer es la verdad).
+    Los productos sin observer_id no se tocan (ahí el marcado manual sigue siendo
+    la única fuente). PostgreSQL-only; correr después de sync_productos.
+
+    Paso 0: materializa la fila de master para las fraccionables de ObServer que
+    todavía no la tengan. La pantalla de presentación lee el master
+    (`Producto.fraccionado`); en una instancia nueva el master está casi vacío
+    aunque ObServer tenga las fraccionables, así que sin esto no habría filas
+    sobre las cuales setear flag/envase.
     """
     from sqlalchemy import text
 
     from database import now_ar
+    from helpers import materializar_producto
     t0 = time.time()
+    # 0) Materializar el master de las fraccionables de ObServer sin fila local.
+    faltantes = [r[0] for r in session.execute(text("""
+        SELECT o.observer_id
+        FROM obs_productos o
+        LEFT JOIN productos p ON p.observer_id = o.observer_id
+        WHERE o.es_fraccionable AND o.fecha_baja IS NULL AND p.id IS NULL
+    """)).fetchall()]
+    mat_nuevos = 0
+    for oid in faltantes:
+        prod, _err = materializar_producto(session, oid)
+        if prod is not None:
+            mat_nuevos += 1
+    if mat_nuevos:
+        session.flush()
     # 1) Espejo del flag fraccionado (solo donde difiere).
+    #    Sin alias en la tabla destino: Postgres y SQLite (>=3.33) lo aceptan así.
     flag = session.execute(text("""
-        UPDATE productos p
+        UPDATE productos
         SET fraccionado = o.es_fraccionable
         FROM obs_productos o
-        WHERE o.observer_id = p.observer_id
-          AND p.fraccionado IS DISTINCT FROM o.es_fraccionable
+        WHERE o.observer_id = productos.observer_id
+          AND productos.fraccionado IS DISTINCT FROM o.es_fraccionable
     """)).rowcount or 0
     # 2a) Crear ProductoAtributo con el envase de obs para fraccionables sin atributo.
     env_nuevos = session.execute(text("""
@@ -448,19 +471,22 @@ def sync_fraccionado_master(session):
         WHERE o.es_fraccionable AND o.cantidad_envase IS NOT NULL
           AND a.producto_id IS NULL
     """), {'ts': now_ar()}).rowcount or 0
-    # 2b) Completar envase en filas existentes no-manual que lo tengan vacío.
+    # 2b) Sincronizar envase desde obs en fraccionables, PISANDO el valor actual
+    #     (incluido manual) cuando difiere. ObServer manda en presentación.
     env_completados = session.execute(text("""
-        UPDATE producto_atributos a
-        SET cantidad_envase = o.cantidad_envase
+        UPDATE producto_atributos
+        SET cantidad_envase = o.cantidad_envase, fuente = 'observer'
         FROM productos p, obs_productos o
-        WHERE a.producto_id = p.id AND o.observer_id = p.observer_id
+        WHERE producto_atributos.producto_id = p.id AND o.observer_id = p.observer_id
           AND o.es_fraccionable AND o.cantidad_envase IS NOT NULL
-          AND a.cantidad_envase IS NULL AND a.fuente <> 'manual'
+          AND producto_atributos.cantidad_envase IS DISTINCT FROM o.cantidad_envase
     """)).rowcount or 0
     duracion = int((time.time() - t0) * 1000)
     _log_sync(session, 'fraccionado_master', flag, duracion,
+              f'master: {mat_nuevos} materializados; '
               f'envase: {env_nuevos} nuevos, {env_completados} completados')
     return {'upsert': flag, 'duracion_ms': duracion, 'flag_updates': flag,
+            'mat_nuevos': mat_nuevos,
             'env_nuevos': env_nuevos, 'env_completados': env_completados}
 
 
