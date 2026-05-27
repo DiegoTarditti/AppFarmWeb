@@ -6,6 +6,29 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## 🟢 AppNúcleo — dashboard de grupo (read-only, app separada) (2026-05-27)
+
+**Qué es**: UX separada que consolida las farmacias del grupo (Badia, Pieri; vienen **Grassi** y **Cappone**) **sin** multi-tenant in-DB. Cada farmacia sigue siendo su instancia; el Núcleo solo **lee y agrega**. Vive en `appnucleo/` (app Flask standalone). Detalle en `appnucleo/README.md`.
+
+**Decisión de arquitectura**: "datos ya masticados" en el edge. El Núcleo lee la tabla `product_analytics` de cada farmacia (snapshot chico ya pre-agregado por su propio sync: stock+precio+ventas12m+lab+rubro) por **fan-out read-only**. Nunca toca `obs_ventas_detalle` crudo (OOM). Clave cross-instancia = `codigo_alfabeta` (producto) y `matrícula` (médico); `observer_id` difiere entre ObServers.
+
+### ✅ Fase 0 — HECHO (PR #122, 2026-05-27)
+- Landing: KPIs (ventas/unidades/stock valorizado/sin movimiento), tendencia 12m apilada por farmacia, participación, top labs, rotación, tabla por farmacia con salud del feed (🟢/🔴).
+- Ventas-multi: pivot por lab/producto/rubro con columna por farmacia + consolidado (responsive PC+mobile).
+- `data.py` con fan-out + caché TTL 5min + degradación por instancia + modo DEMO sintético. Logo + splash. 5 smoke tests. Validado contra Badia+Pieri reales (28k SKUs).
+- Config por env `NUCLEO_FARMACIAS` (JSON, **rol read-only por farmacia**, URLs no commiteadas) / carga `appnucleo/.env` si hay python-dotenv.
+
+### ⏳ Pendiente — cómo sigue
+1. **Deploy**: subirla como **servicio Render propio** (`gunicorn 'appnucleo.app:create_app()'`), con `NUCLEO_FARMACIAS` + rol Postgres read-only por farmacia. Sumar Grassi + Cappone al registro cuando estén.
+2. **Fase 1 — dims médico (matrícula) + obra social**: no salen de `product_analytics` (necesitan `obs_ventas_detalle`). Resolverlas con **edge-ETL**: cada localhost prepara un feed normalizado (claves naturales) y lo pushea a un **warehouse propio del Núcleo** → el Núcleo consulta local, sin fan-out en vivo. (OS/droga necesitan tabla de normalización de nombres.)
+3. **Fase 2 — pedidos grupales**: se crean en las apps locales (tabla `pedido_grupal` taggeable) y el Núcleo los **consolida** (mantiene al Núcleo read-only).
+4. **Fase 3 — scoping por dueño**: cada dueño ve su farmacia; auth de grupo.
+5. **Visual ("caer los calzones")** en la pantalla grande: drill-down al clickear farmacia/lab, mapa de calor de cobertura, comparativa lado a lado, animación de entrada de los números.
+
+**Audiencia**: Diego + dueños (por ahora pocos). Ver memoria `project_appnucleo`.
+
+---
+
 ## ⏳ Pendiente — Transferencias: calcular según presentación (unidades vs cajas) (2026-05-23)
 
 **Problema**: en `/transferencias` las cantidades (stock, venta, sugerido) están en
