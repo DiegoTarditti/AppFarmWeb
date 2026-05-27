@@ -1,0 +1,58 @@
+{# Logo AppNúcleo: hexágono central (núcleo) + anillos de control + 6 satélites
+   (las farmacias del grupo). Recreación SVG del boceto "A". #}
+<svg viewBox="0 0 120 120" class="nucleo-logo w-9 h-9 shrink-0" aria-label="núcleo">
+  <defs>
+    <linearGradient id="nucCore" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="nucSat" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5eead4"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <radialGradient id="nucGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#34d399" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#34d399" stop-opacity="0"/>
+    </radialGradient>
+    <path id="nucHex" d="M0,-8 -6.93,-4 -6.93,4 0,8 6.93,4 6.93,-4Z"/>
+  </defs>
+
+  <circle cx="60" cy="60" r="40" fill="url(#nucGlow)"/>
+
+  {# anillos de control #}
+  <g class="rings" fill="none" stroke="#34d399">
+    <circle cx="60" cy="60" r="30" stroke-opacity=".18"/>
+    <circle cx="60" cy="60" r="42" stroke-opacity=".30" stroke-dasharray="3 6"/>
+  </g>
+
+  {# conectores núcleo → satélites #}
+  <g stroke="#34d399" stroke-opacity=".14" stroke-width="1">
+    <line x1="60" y1="60" x2="60"    y2="18"/>
+    <line x1="60" y1="60" x2="23.63" y2="39"/>
+    <line x1="60" y1="60" x2="23.63" y2="81"/>
+    <line x1="60" y1="60" x2="60"    y2="102"/>
+    <line x1="60" y1="60" x2="96.37" y2="81"/>
+    <line x1="60" y1="60" x2="96.37" y2="39"/>
+  </g>
+
+  {# 6 satélites (farmacias) #}
+  <g fill="url(#nucSat)" stroke="#0b1411" stroke-width="1.2">
+    <use href="#nucHex" transform="translate(60,18)"/>
+    <use href="#nucHex" transform="translate(23.63,39)"/>
+    <use href="#nucHex" transform="translate(23.63,81)"/>
+    <use href="#nucHex" transform="translate(60,102)"/>
+    <use href="#nucHex" transform="translate(96.37,81)"/>
+    <use href="#nucHex" transform="translate(96.37,39)"/>
+  </g>
+
+  {# núcleo #}
+  <polygon points="60,44 46.14,52 46.14,68 60,76 73.86,68 73.86,52"
+           fill="url(#nucCore)" stroke="#0b1411" stroke-width="1.5"/>
+  <circle cx="60" cy="60" r="3.6" fill="#fff"/>
+</svg>
+<style>
+  .nucleo-logo .rings{ transform-box:fill-box; transform-origin:center;
+                       animation:nucSpin 28s linear infinite; }
+  @keyframes nucSpin{ to{ transform:rotate(360deg);} }
+  @media (prefers-reduced-motion: reduce){ .nucleo-logo .rings{ animation:none; } }
+</style>
