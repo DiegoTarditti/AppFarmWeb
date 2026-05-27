@@ -9,6 +9,10 @@
     <span id="status-chip" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold">
         cargando…
     </span>
+    <span id="hb-chip" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-semibold ml-auto"
+          title="Última vez que la PC de la farmacia poleó el buzón. Si fue hace poco, la PC está prendida.">
+        DockerPanel: …
+    </span>
 </div>
 
 <div class="flex-1 overflow-auto p-4 sm:p-6 space-y-4 max-w-5xl mx-auto w-full">
@@ -97,6 +101,36 @@ function fmtFecha(iso) {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
 }
 
+function fmtAgo(s) {
+    if (s < 60) return s + 's';
+    const m = Math.floor(s / 60);
+    if (m < 60) return m + ' min';
+    const h = Math.floor(m / 60);
+    return h + 'h ' + (m % 60) + 'm';
+}
+
+function actualizarHeartbeat(hb) {
+    const chip = document.getElementById('hb-chip');
+    if (!chip) return;
+    const base = 'text-[11px] px-2 py-0.5 rounded-full font-semibold ml-auto ';
+    if (!hb || !hb.ultimo_visto) {
+        chip.textContent = '⚪ DockerPanel: nunca visto';
+        chip.className = base + 'bg-slate-100 text-slate-600';
+        return;
+    }
+    const secs = Math.max(0, Math.round((Date.now() - new Date(hb.ultimo_visto).getTime()) / 1000));
+    if (secs < 30) {
+        chip.textContent = `🟢 DockerPanel activo · hace ${fmtAgo(secs)}`;
+        chip.className = base + 'bg-emerald-100 text-emerald-800';
+    } else if (secs < 300) {
+        chip.textContent = `🟡 DockerPanel · visto hace ${fmtAgo(secs)}`;
+        chip.className = base + 'bg-amber-100 text-amber-800';
+    } else {
+        chip.textContent = `🔴 Sin señal hace ${fmtAgo(secs)} · ¿PC apagada?`;
+        chip.className = base + 'bg-rose-100 text-rose-800';
+    }
+}
+
 let _resultadosCache = {};
 
 function _esc(s) {
@@ -114,6 +148,7 @@ async function refrescar() {
         const r = await fetch('{{ url_for("admin_panel_recientes") }}?limit=30');
         const data = await r.json();
         if (!data.ok) return;
+        actualizarHeartbeat(data.heartbeat);
         const rows = data.comandos;
         const body = document.getElementById('historial-body');
         if (!rows.length) {

@@ -464,6 +464,18 @@ class PanelComando(Base):
     origen = Column(String(40), nullable=True)
 
 
+class PanelHeartbeat(Base):
+    """Latido del DockerPanel: se estampa en cada poll de comandos.
+
+    Singleton (id=1). Permite ver desde Render cuándo fue la última vez que la PC
+    de la farmacia poleó el buzón → si fue hace poco, la PC está prendida.
+    """
+    __tablename__ = 'panel_heartbeat'
+    id = Column(Integer, primary_key=True)  # singleton id=1
+    ultimo_visto = Column(DateTime, nullable=True)
+    origen = Column(String(40), nullable=True)
+
+
 class ProductoPendienteRevision(Base):
     """Queue de items de import sin match en catálogo (o donde el user hizo Skip).
 
@@ -2012,7 +2024,7 @@ def init_db(database_url=None):
                         'archivos_compartidos', 'sucursales',
                         'compartido_importado', 'obs_operadores',
                         'parser_ofertas_lab', 'factura_faltante',
-                        'analisis_ia_cache')
+                        'analisis_ia_cache', 'panel_heartbeat')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.
@@ -2084,6 +2096,15 @@ def init_db(database_url=None):
                     "CREATE INDEX IF NOT EXISTS idx_panel_comandos_estado "
                     "ON panel_comandos(estado, solicitado_en)"
                 ))
+                # Latido del DockerPanel (singleton id=1): se estampa en cada poll
+                # del buzón. Misma razón que panel_comandos para crearla acá.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS panel_heartbeat (
+                        id INTEGER PRIMARY KEY,
+                        ultimo_visto TIMESTAMP,
+                        origen VARCHAR(40)
+                    )
+                """))
                 # Estado de notificaciones de alarmas (dedup Telegram).
                 # Mismo motivo que panel_comandos: tabla crítica usada por
                 # endpoints + cron, no debe depender de _pg_add_columns.

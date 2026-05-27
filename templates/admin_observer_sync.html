@@ -126,6 +126,27 @@
         </a>
     </div>
 
+    <!-- Fraccionado master (presentaciones) -->
+    <div class="bg-white border border-surface-border rounded-xl p-4 flex items-center gap-4 flex-wrap">
+        <div class="flex-1 min-w-[240px]">
+            <p class="font-semibold text-sm text-[#1e1e1e]">Presentaciones (fraccionado) desde ObServer</p>
+            <p class="text-xs text-[#666] mt-1">
+                Materializa en el master las fraccionables de ObServer que no tengan fila,
+                espeja el flag <code class="font-mono">fraccionado</code> y sincroniza el envase.
+                <strong>No requiere ObServer</strong> (trabaja sobre <code class="font-mono">obs_productos</code> de esta DB) →
+                sirve para poblar <a href="{{ url_for('productos_presentaciones') }}" class="text-[#1F5D40] underline">/productos/presentaciones</a> en una instancia con el master vacío.
+            </p>
+        </div>
+        <form method="post" action="{{ url_for('fraccionado_master_run') }}"
+              onsubmit="return confirm('Voy a materializar en el master las fraccionables de ObServer que falten y sincronizar flag + envase.\n\nNo borra nada; ObServer manda en presentación.\n\n¿Continuar?');"
+              class="flex items-center gap-2">
+            <button type="submit"
+                    class="text-sm bg-[#2E7D5B] hover:bg-[#1F5D40] text-white font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                Poblar presentaciones
+            </button>
+        </form>
+    </div>
+
     <div class="bg-white border border-surface-border rounded-xl overflow-hidden">
         <table class="w-full text-sm">
             <thead class="bg-[#f5f5f5]">
