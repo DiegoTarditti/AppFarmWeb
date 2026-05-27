@@ -819,7 +819,12 @@ def init_app(app):
                 'resultado': (r.resultado[:8000] if r.resultado else None),
                 'origen': r.origen,
             } for r in rows]
-        return jsonify({'ok': True, 'comandos': recientes})
+            hb = session.get(database.PanelHeartbeat, 1)
+            heartbeat = {
+                'ultimo_visto': hb.ultimo_visto.isoformat() if hb and hb.ultimo_visto else None,
+                'origen': hb.origen if hb else None,
+            }
+        return jsonify({'ok': True, 'comandos': recientes, 'heartbeat': heartbeat})
 
     def _check_panel_token():
         """Wrapper sobre _check_token_header para X-Panel-Token + PANEL_REMOTO_TOKEN."""
@@ -844,6 +849,15 @@ def init_app(app):
             return jsonify({'ok': False, 'error': err[0]}), err[1]
         origen = (request.args.get('origen') or 'dockerpanel').strip()[:40]
         with database.get_db() as session:
+            # Heartbeat: estampar que la PC poleó (haya o no comandos). Permite
+            # ver desde Render si el DockerPanel está vivo → la PC está prendida.
+            hb = session.get(database.PanelHeartbeat, 1)
+            if hb is None:
+                hb = database.PanelHeartbeat(id=1)
+                session.add(hb)
+            hb.ultimo_visto = now_ar()
+            hb.origen = origen
+            session.commit()
             # Zombie sweep — sin esto, un en_proceso sin reportar nunca se libera.
             umbral_zombie = now_ar() - timedelta(minutes=10)
             session.execute(_text(
