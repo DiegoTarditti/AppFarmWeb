@@ -850,18 +850,47 @@
               {% block aside_extra_class %}{% endblock %}">
     <div class="px-3.5 py-3.5 border-b border-[#214635]">
         <div class="flex items-center gap-2.5">
-            <div class="w-[30px] h-[30px] rounded-lg bg-[rgba(95,230,188,0.14)] border border-[rgba(95,230,188,0.3)] flex items-center justify-center flex-shrink-0">
-                <svg class="w-4 h-4 text-[#5fe6bc]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0119 9.414V19a2 2 0 01-2 2z"/>
+            <div class="w-[34px] h-[34px] flex items-center justify-center flex-shrink-0">
+                <svg class="afw-logo w-full h-full" viewBox="0 0 48 48" aria-label="Business Intelligence">
+                    <defs>
+                        <linearGradient id="afwCore" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#7ff0cf"/><stop offset="1" stop-color="#16a273"/>
+                        </linearGradient>
+                        <radialGradient id="afwGlow" cx="50%" cy="50%" r="50%">
+                            <stop offset="0" stop-color="#5fe6bc" stop-opacity=".5"/>
+                            <stop offset="1" stop-color="#5fe6bc" stop-opacity="0"/>
+                        </radialGradient>
+                    </defs>
+                    <circle class="afw-glow" cx="24" cy="24" r="16" fill="url(#afwGlow)"/>
+                    <circle class="afw-ring" cx="24" cy="24" r="20" fill="none" stroke="#5fe6bc"
+                            stroke-opacity=".5" stroke-width="1.4" stroke-dasharray="2 5"/>
+                    <g class="afw-core">
+                        <polygon points="24,13 14.47,18.5 14.47,29.5 24,35 33.53,29.5 33.53,18.5"
+                                 fill="url(#afwCore)" stroke="#05110c" stroke-width="1.4"/>
+                        <circle cx="24" cy="24" r="2.4" fill="#eafaf3"/>
+                    </g>
                 </svg>
             </div>
             <div class="brand-text flex-1 min-w-0">
-                <p class="text-[12.5px] font-bold text-[#5fe6bc] leading-tight">Control de Stock</p>
+                <p class="text-[12.5px] font-bold leading-tight">
+                    <span class="text-white">Business</span> <span class="glow-text">Intelligence</span>
+                </p>
                 <p class="text-[10px] text-[#6d9082] truncate">{{ config.farmacia_nombre | default('Farmacia') }}</p>
             </div>
         </div>
     </div>
+    <style>
+      .afw-logo .afw-ring,.afw-logo .afw-core{ transform-box:fill-box; transform-origin:center; }
+      .afw-logo .afw-ring{ animation:afwSpin 14s linear infinite; }
+      .afw-logo .afw-core{ animation:afwPulse 3s ease-in-out infinite; }
+      .afw-logo .afw-glow{ animation:afwGlow 3s ease-in-out infinite; }
+      @keyframes afwSpin { to{ transform:rotate(360deg); } }
+      @keyframes afwPulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.07); } }
+      @keyframes afwGlow { 0%,100%{ opacity:.45; } 50%{ opacity:1; } }
+      @media (prefers-reduced-motion:reduce){
+        .afw-logo .afw-ring,.afw-logo .afw-core,.afw-logo .afw-glow{ animation:none; }
+      }
+    </style>
     <button type="button" onclick="toggleSidebar()" title="Colapsar/expandir menú"
             class="hidden lg:flex mx-3 mt-2 items-center justify-center gap-2 py-1.5 rounded-lg text-[11px] text-[#6d9082] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors">
         <svg class="sidebar-toggle-icon w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
