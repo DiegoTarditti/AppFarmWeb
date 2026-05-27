@@ -494,6 +494,30 @@ def init_app(app):
               f'{stats["sin_lab"]} sin laboratorio.', 'success')
         return redirect(url_for('observer_sync_panel'))
 
+    @app.route('/admin/fraccionado-master/run', methods=['POST'])
+    def fraccionado_master_run():
+        """Corre sync_fraccionado_master contra la DB de ESTA instancia.
+
+        NO requiere ObServer: solo cruza obs_productos ↔ productos en la misma DB
+        (materializa fraccionables sin master, espeja el flag, sincroniza envase).
+        Pensado para instancias Render donde las obs_* ya están pero el master
+        arranca vacío → presentaciones saldría vacío sin esto.
+        """
+        try:
+            with cron_log.registrar('fraccionado_master', origen='web') as clog:
+                with database.get_db() as session:
+                    st = observer_source.sync_fraccionado_master(session)
+                    session.commit()
+                clog.set_mensaje(f"mat={st['mat_nuevos']} flag={st['flag_updates']} "
+                                 f"envase +{st['env_nuevos']}/{st['env_completados']}")
+            flash(f"Fraccionado master — {st['mat_nuevos']} materializados · "
+                  f"{st['flag_updates']} flags · "
+                  f"{st['env_nuevos']} envases nuevos / {st['env_completados']} actualizados.",
+                  'success')
+        except Exception as e:
+            flash(f'Error en fraccionado master: {e}', 'error')
+        return redirect(url_for('observer_sync_panel'))
+
     @app.route('/productos/sin-vincular')
     def productos_sin_vincular():
         """Pantalla para vincular manualmente productos locales con obs_productos."""
