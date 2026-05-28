@@ -2425,10 +2425,15 @@ def init_db(database_url=None):
                         f'dropearla. El conflicto pg_type debe resolverse a mano. '
                         f'Error original: {msg.split(chr(10))[0][:200]}'
                     )
-                for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
-                            f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
-                            f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE',
-                            f'DROP SEQUENCE IF EXISTS "{zombie}" CASCADE'):
+                # RESTRICT (default de PG) en vez de CASCADE: si "zombie" tiene
+                # objetos dependientes (FK desde tablas hijas con data, columnas
+                # usando el type, etc.) → el DROP falla y aborta init_db.
+                # CASCADE silenciosamente arrastraba esas dependencias y borraba
+                # data. Fallar ruidoso > destruir en silencio.
+                for ddl in (f'DROP TABLE IF EXISTS "{zombie}" RESTRICT',
+                            f'DROP TYPE  IF EXISTS "{zombie}" RESTRICT',
+                            f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" RESTRICT',
+                            f'DROP SEQUENCE IF EXISTS "{zombie}" RESTRICT'):
                     try:
                         conn.execute(text(ddl))
                     except Exception as drop_err:
@@ -3131,6 +3136,11 @@ def _pg_add_columns(conn):
         "ALTER TABLE configuracion ALTER COLUMN backup_semanales_max SET DEFAULT 0",
         "ALTER TABLE configuracion ALTER COLUMN backup_quincenales_max SET DEFAULT 1",
         "ALTER TABLE configuracion ALTER COLUMN backup_mensuales_max SET DEFAULT 0",
+        # Defaults recuperados el 2026-05-28 (causa raíz del wipe): el INSERT
+        # inicial no lista estas columnas y, sin DEFAULT a nivel DB, dispara
+        # NotNullViolation → zombie handler → wipe. Idempotente.
+        "ALTER TABLE configuracion ALTER COLUMN transfer_excedente_meses SET DEFAULT 6.0",
+        "ALTER TABLE configuracion ALTER COLUMN transfer_necesita_meses SET DEFAULT 2.0",
     ):
         try:
             conn.execute(text(ddl))
