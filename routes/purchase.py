@@ -1706,6 +1706,38 @@ def init_app(app):
                     if droga_map.get(oid):
                         droga_id_by_cb[cb] = droga_map[oid]
 
+            # Stock actual + presentación (fraccionado + envase) por EAN del pedido.
+            # Reusa obs_ids_directos ya armado arriba (cb → observer_id).
+            from services.farmacia import farmacia_operativa
+            _id_farm = farmacia_operativa()
+            stock_actual_by_obs = {}
+            if todos_obs_ids and _id_farm:
+                for po, sa in (session.query(
+                        database.ObsStock.producto_observer,
+                        database.ObsStock.stock_actual)
+                        .filter(database.ObsStock.id_farmacia == _id_farm,
+                                database.ObsStock.producto_observer.in_(todos_obs_ids))):
+                    stock_actual_by_obs[po] = int(sa or 0)
+            fraccionado_by_pid = {p.id: bool(p.fraccionado) for p in all_prods}
+            envase_by_pid = {}
+            if all_prods:
+                _pids = [p.id for p in all_prods]
+                for pid, ce in (session.query(database.ProductoAtributo.producto_id,
+                                              database.ProductoAtributo.cantidad_envase)
+                                .filter(database.ProductoAtributo.producto_id.in_(_pids),
+                                        database.ProductoAtributo.cantidad_envase.isnot(None))):
+                    envase_by_pid[pid] = int(ce)
+            fraccionado_by_cb = {}
+            envase_by_cb = {}
+            for p in all_prods:
+                fr = fraccionado_by_pid.get(p.id, False)
+                ce = envase_by_pid.get(p.id)
+                for bc in _all_eans(p):
+                    if bc:
+                        fraccionado_by_cb[bc] = fr
+                        if ce is not None:
+                            envase_by_cb[bc] = ce
+
             data['productos'] = [
                 {
                     'codigo_barra': it.codigo_barra,
@@ -1716,6 +1748,10 @@ def init_app(app):
                     'rotacion': it.rotacion or '',
                     'avg_monthly': float(it.avg_monthly) if it.avg_monthly else None,
                     'erp_qty': erp_stock_map.get(it.codigo_barra),
+                    'stock_actual': stock_actual_by_obs.get(
+                        obs_ids_directos.get(it.codigo_barra)),
+                    'fraccionado': fraccionado_by_cb.get(it.codigo_barra, False),
+                    'cantidad_envase': envase_by_cb.get(it.codigo_barra),
                     'monodroga': monodroga_by_bc.get(it.codigo_barra, ''),
                     'tvc': tvc_by_cb.get(it.codigo_barra, ''),
                     'monodroga_id': droga_id_by_cb.get(it.codigo_barra),

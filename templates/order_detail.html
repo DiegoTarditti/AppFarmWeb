@@ -282,24 +282,22 @@
             <!-- JS renders table here -->
         </div>
 
-        <!-- Resumen por producto -->
-        <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4 overflow-x-auto">
-            <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen por producto</p>
-            <table class="w-full text-xs border-collapse" style="min-width:880px">
+        <!-- Resumen de módulos a pedir (solo los confirmados con cantidad > 0).
+             El saldo por producto sigue calculado internamente y va a la
+             próxima instancia (ofertas c/mín). -->
+        <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4">
+            <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen de módulos a pedir</p>
+            <table class="w-full text-xs border-collapse" style="min-width:520px">
                 <thead>
                     <tr class="bg-[#f5f0e8] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
-                        <th class="text-left px-2 py-1.5" style="min-width:180px">Producto</th>
-                        <th class="text-left px-2 py-1.5" style="min-width:80px">EAN</th>
-                        <th class="text-right px-2 py-1.5 text-amber-700">Cant.Pedida</th>
-                        <th class="text-right px-2 py-1.5 text-purple-700">Rot. / Prom.mes</th>
-                        <th class="text-right px-2 py-1.5 text-emerald-700">Propuesta Total</th>
-                        <th class="text-right px-2 py-1.5 text-sky-700">Saldo</th>
-                        <th class="text-right px-2 py-1.5 text-[#888]">Tol.%</th>
-                        <th class="text-right px-2 py-1.5 text-rose-700" title="precio_pvp × propuesta total">Importe</th>
-                        <th class="text-right px-2 py-1.5 text-emerald-700" title="Ahorro estimado = pvp × cubierto × desc%">Ahorro</th>
+                        <th class="text-left px-2 py-1.5" style="min-width:280px">Módulo</th>
+                        <th class="text-right px-2 py-1.5 text-emerald-700">Cantidad</th>
+                        <th class="text-right px-2 py-1.5 text-rose-700">Importe</th>
+                        <th class="text-right px-2 py-1.5 text-emerald-700">Ahorro</th>
                     </tr>
                 </thead>
                 <tbody id="tbody-resumen-mod"></tbody>
+                <tfoot id="tfoot-resumen-mod"></tfoot>
             </table>
         </div>
 
@@ -587,6 +585,10 @@ const pedidoErp  = {};
 const pedidoMono = {};
 const pedidoTvc  = {};   // 'L'=Venta Libre, 'R'=Receta, 'A'=Receta Archivada, '1-8'=Controlados
 const pedidoDrogaId = {}; // observer_id de la monodroga (para "Comparar otros labs")
+// Stock actual (obs_stock) + presentación (fraccionado + cantidad envase).
+const pedidoStock = {};
+const pedidoFrac  = {};
+const pedidoEnvase = {};
 PEDIDO_PRODS.forEach(p => {
     pedidoQty[p.codigo_barra] = p.cantidad;
     pedidoNom[p.codigo_barra] = p.nombre;
@@ -596,7 +598,28 @@ PEDIDO_PRODS.forEach(p => {
     if (p.erp_qty !== null && p.erp_qty !== undefined) pedidoErp[p.codigo_barra] = p.erp_qty;
     if (p.tvc) pedidoTvc[p.codigo_barra] = p.tvc;
     if (p.monodroga_id) pedidoDrogaId[p.codigo_barra] = p.monodroga_id;
+    if (p.stock_actual !== null && p.stock_actual !== undefined) pedidoStock[p.codigo_barra] = p.stock_actual;
+    if (p.fraccionado) pedidoFrac[p.codigo_barra] = true;
+    if (p.cantidad_envase) pedidoEnvase[p.codigo_barra] = p.cantidad_envase;
 });
+
+// Formato de stock: para fraccionables, "X+Y" (X cajas enteras + Y sueltas).
+// Para no-fraccionables, número crudo. '—' si no hay dato.
+function fmtStock(ean) {
+    if (!ean) return '—';
+    const s = pedidoStock[ean];
+    if (s === undefined || s === null) return '—';
+    if (pedidoFrac[ean]) {
+        const env = pedidoEnvase[ean];
+        if (env && env > 0) {
+            const cajas = Math.floor(s / env);
+            const sueltas = s % env;
+            return `<span title="${s} unidades sueltas · envase de ${env}">${cajas}+${sueltas}</span>`;
+        }
+        return `<span title="fraccionable" class="text-amber-700">${s} u</span>`;
+    }
+    return String(s);
+}
 
 EQUIV_GROUPS.forEach(g => {
     let qty = null, nom = null;
@@ -968,21 +991,21 @@ function renderModulosRaw() {
     const body = document.getElementById('modulos-body');
     let html = `<table class="w-full text-xs border-collapse min-w-[1000px]" id="tbl-modulos">
     <thead>
-      <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
+      <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0 z-20 shadow-sm">
         <th class="text-left px-2 py-2 w-6"><input type="checkbox" id="chk-all-mods" onchange="toggleAllModules(this.checked)"></th>
         <th class="text-left px-2 py-2" style="min-width:180px">Módulo / Producto</th>
         <th class="text-left px-2 py-2" style="min-width:80px">EAN</th>
         <th class="text-center px-2 py-2 text-emerald-700" title="Ítem es pack de unidades">Pack</th>
-        <th class="text-right px-2 py-2">Cantidad</th>
-        <th class="text-right px-2 py-2 text-emerald-700" title="Unidades del pedido que cubre cada slot del módulo">Can.Un.Mod.</th>
+        <th class="text-right px-2 py-2" title="Cantidad mínima del módulo definida en el Excel del laboratorio (para packs, el multiplicador ya se aplica al calcular)">Cant.Min.Mod.</th>
         <th class="text-right px-2 py-2">Desc%</th>
-        <th class="text-right px-2 py-2 text-amber-700">Cant.Pedida</th>
+        <th class="text-right px-2 py-2 text-amber-700" title="Unidades ya cargadas en este pedido. NO es stock.">Ya en pedido</th>
+        <th class="text-right px-2 py-2 text-cyan-700" title="Stock actual (ObServer). Fraccionables: cajas+sueltas.">Stock</th>
         <th class="text-right px-2 py-2 text-purple-700" title="Rotación A/M/B · promedio de unidades vendidas por mes">Rot. / Prom.mes</th>
         <th class="text-right px-2 py-2 text-brand">Cant.Calc.</th>
-        <th class="text-right px-2 py-2 text-emerald-700">Propuesta</th>
+        <th class="text-right px-2 py-2 text-white bg-emerald-600 border-l-2 border-r-2 border-emerald-800" title="Lo que vas a pedir realmente (editable)">▶ Comprar ◀</th>
         <th class="text-right px-2 py-2 text-sky-700">Saldo</th>
-        <th class="text-right px-2 py-2 text-[#888]" title="% del pedido cubierto por la propuesta">Tol.%</th>
-        <th class="text-right px-2 py-2 text-rose-700" title="precio_pvp × unidades propuestas">Precio</th>
+        <th class="text-right px-2 py-2 text-[#888]" title="% del pedido cubierto por las unidades a comprar">Tol.%</th>
+        <th class="text-right px-2 py-2 text-rose-700" title="precio_pvp × unidades a comprar">Precio</th>
       </tr>
     </thead>
     <tbody id="tbody-modulos">`;
@@ -1051,12 +1074,12 @@ function renderModulosRaw() {
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
-                <td class="px-2 text-right">${unModCell}</td>
                 <td class="px-2 text-right ${_descColorCls(it.desc_pct || 0)}">${it.desc_pct}%</td>
                 <td class="px-2 text-right font-medium text-amber-700" id="cp-${mi}-${ii}">${cantPedida > 0 ? cantPedida : '<span class="text-[#ccc]">—</span>'}</td>
+                <td class="px-2 text-right text-cyan-700 font-medium" id="st-${mi}-${ii}">${fmtStock(eanLookup)}</td>
                 <td class="px-2 text-right" id="rot-${mi}-${ii}">${rotBadge}</td>
                 <td class="px-2 text-right font-bold text-brand" id="cc-${mi}-${ii}">—</td>
-                <td class="px-2 text-right text-[#aaa]" id="prop-disp-${mi}-${ii}">—</td>
+                <td class="px-2 text-right text-[#aaa] bg-emerald-50 border-l-2 border-r-2 border-emerald-300 font-semibold" id="prop-disp-${mi}-${ii}">—</td>
                 <td class="px-2 text-right" id="saldo-${mi}-${ii}">—</td>
                 <td class="px-2 text-right" id="tol-${mi}-${ii}">—</td>
                 <td class="px-2 text-right text-rose-700 font-medium" id="pvp-${mi}-${ii}">—</td>
@@ -1200,57 +1223,52 @@ function recalcModuloAll(mi) {
 function recalcRow(mi, ii) { recalcModuloAll(mi); }
 
 function renderResumenModulos() {
+    // Resumen al pie: 1 fila por modulo con cantidad confirmada > 0
+    // (titulo + cantidad + importe estimado + ahorro). El saldo por
+    // producto sigue calculado internamente (it.propuesta sobre cada item)
+    // y se preserva en modulesData para la siguiente instancia.
     const wrap  = document.getElementById('resumen-modulos-wrap');
     const tbody = document.getElementById('tbody-resumen-mod');
+    const tfoot = document.getElementById('tfoot-resumen-mod');
     if (!wrap || !tbody) return;
-    const byEan = {};
+    const filas = [];
+    let totCant = 0, totImp = 0, totAhorro = 0;
     modulesData.forEach(mod => {
         if (mod._selected === false) return;
+        const cant = parseInt(mod.modulos_propuesta || 0) || 0;
+        if (cant <= 0) return;
+        let imp = 0, ahorro = 0;
         mod.items.forEach(it => {
-            const pack      = MODULO_PACKS[it.ean];
-            const ean       = pack ? pack.ean_unidad : it.ean;
-            const _ups      = it._unidadesPorSlot ?? it.cant;
-            const cubierto  = (it.propuesta || 0) * _ups;
-            if (!byEan[ean]) {
-                byEan[ean] = {
-                    descripcion: pedidoNom[ean] || it.descripcion,
-                    cant_pedida: pedidoQty[ean] ?? 0,
-                    rot:         pedidoRot[ean] || {},
-                    pvp:         pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0,
-                    cubierto:    0,
-                    ahorro:      0,
-                };
-            }
-            byEan[ean].cubierto += cubierto;
-            // Ahorro estimado = pvp × unidades cubiertas × desc% (Fase 1).
-            byEan[ean].ahorro += byEan[ean].pvp * cubierto * ((it.desc_pct || 0) / 100);
+            const pack = MODULO_PACKS[it.ean];
+            const ean  = pack ? pack.ean_unidad : it.ean;
+            const ups  = it._unidadesPorSlot ?? it.cant;
+            const propUnits = cant * ups;
+            const pvp = pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0;
+            imp    += pvp * propUnits;
+            ahorro += pvp * propUnits * ((it.desc_pct || 0) / 100);
         });
+        filas.push({nombre: mod.nombre, cant, imp, ahorro});
+        totCant += cant; totImp += imp; totAhorro += ahorro;
     });
-    const rows = Object.entries(byEan).sort((a, b) =>
-        (a[1].descripcion || '').localeCompare(b[1].descripcion || '', 'es', {sensitivity: 'base'})
-    );
-    if (rows.length === 0) { wrap.classList.add('hidden'); return; }
-    const fmt = n => n.toLocaleString('es-AR', {maximumFractionDigits: 0});
-    let html = '';
-    rows.forEach(([ean, d]) => {
-        const saldo    = d.cant_pedida - d.cubierto;
-        const pct      = d.cant_pedida > 0 ? Math.min(100, Math.round(d.cubierto / d.cant_pedida * 100)) : 0;
-        const importe  = d.pvp * d.cubierto;
-        const pctCls   = pct >= 100 ? 'text-emerald-700 font-bold' : pct > 0 ? 'text-amber-600' : 'text-[#999]';
-        const saldoCls = saldo > 0 ? 'saldo-ok' : saldo < 0 ? 'saldo-neg' : 'text-[#999]';
-        html += `<tr class="border-b border-[#ede8e0] hover:bg-amber-50/40 transition-colors">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${d.descripcion}</td>
-            <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
-            <td class="px-2 py-1.5 text-right text-amber-700">${d.cant_pedida > 0 ? d.cant_pedida : '<span class="text-[#ccc]">—</span>'}</td>
-            <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
-            <td class="px-2 py-1.5 text-right font-semibold text-emerald-700">${d.cubierto > 0 ? d.cubierto : '<span class="text-[#ccc]">0</span>'}</td>
-            <td class="px-2 py-1.5 text-right ${saldoCls}">${saldo}</td>
-            <td class="px-2 py-1.5 text-right"><span class="${pctCls}">${pct}%</span></td>
-            <td class="px-2 py-1.5 text-right text-rose-700 font-medium">${importe > 0 ? '$' + fmt(importe) : '<span class="text-[#ccc]">—</span>'}</td>
-            <td class="px-2 py-1.5 text-right text-emerald-700 font-semibold">${d.ahorro > 0 ? '$' + fmt(d.ahorro) : '<span class="text-[#ccc]">—</span>'}</td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
+    if (filas.length === 0) { wrap.classList.add('hidden'); return; }
+    const fmt = n => Math.round(n).toLocaleString('es-AR');
+    const $$ = n => '$' + fmt(n);
+    tbody.innerHTML = filas.map(f => `
+        <tr class="border-b border-[#ede8e0] hover:bg-amber-50/40 transition-colors">
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${f.nombre}</td>
+            <td class="px-2 py-1.5 text-right text-emerald-700 font-bold">${f.cant}</td>
+            <td class="px-2 py-1.5 text-right text-rose-700">${f.imp > 0 ? $$(f.imp) : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right text-emerald-700 font-semibold">${f.ahorro > 0 ? $$(f.ahorro) : '<span class="text-[#ccc]">—</span>'}</td>
+        </tr>
+    `).join('');
+    tfoot.innerHTML = `
+        <tr class="border-t-2 border-[#ddd] bg-[#fafafa]">
+            <td class="px-2 py-2 font-bold uppercase text-[10px] tracking-wide">Total</td>
+            <td class="px-2 py-2 text-right text-emerald-700 font-bold">${totCant}</td>
+            <td class="px-2 py-2 text-right text-rose-700 font-bold">${$$(totImp)}</td>
+            <td class="px-2 py-2 text-right text-emerald-700 font-bold">${$$(totAhorro)}</td>
+        </tr>
+    `;
     wrap.classList.remove('hidden');
 }
 
@@ -1418,7 +1436,7 @@ function renderResumen() {
     <div class="overflow-x-auto">
     <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:1000px">
     <thead>
-        <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
+        <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0 z-20 shadow-sm">
             <th class="text-left px-2 py-2" style="min-width:150px">Producto</th>
             <th class="text-left px-2 py-2" style="width:110px">EAN</th>
             <th class="text-right px-2 py-2" style="width:65px" title="Stock actual ERP">Stock</th>
@@ -1787,7 +1805,7 @@ function renderOfertasMinImportPreview() {
             individuals.push(it);
         }
     });
-    const thead = `<thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
+    const thead = `<thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
         <th class="text-left px-2 py-2">EAN</th>
         <th class="text-left px-2 py-2">Producto</th>
         <th class="text-right px-2 py-2 text-sky-700">Mín.</th>
@@ -1904,7 +1922,7 @@ function renderOfertasConMinimoTable() {
     if (individuals.length) {
         html += `<p class="text-xs font-semibold text-[#555] mb-2">INDIVIDUALES (${individuals.length})</p>
         <table class="w-full text-xs border-collapse mb-4 min-w-[560px]">
-        <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
+        <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
             <th class="text-left px-2 py-2">EAN</th>
             <th class="text-left px-2 py-2">Producto</th>
             <th class="text-right px-2 py-2 text-amber-700">Saldo</th>
