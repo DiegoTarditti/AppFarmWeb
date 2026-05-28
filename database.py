@@ -2387,6 +2387,24 @@ def init_db(database_url=None):
                 _intento + 1, _MAX_RETRIES, zombie, msg.split('\n')[0][:200],
             )
             with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+                # GUARD: si "zombie" es en realidad una tabla con datos, NO la
+                # dropeamos — preferimos que el deploy falle ruidosamente a
+                # destruir data en silencio. Histórico: el handler dropeó
+                # `configuracion` por un conflicto de pg_type y el CASCADE
+                # arrastró tablas grandes (productos/obs_*/etc.). El bug real
+                # estaba en otro lado, no acá. Ver mejoras_pendientes.md.
+                try:
+                    n_rows = conn.execute(text(
+                        f'SELECT COUNT(*) FROM "{zombie}"'
+                    )).scalar() or 0
+                except Exception:
+                    n_rows = 0  # tabla no existe → es un pg_type huérfano real
+                if n_rows > 0:
+                    raise RuntimeError(
+                        f'init_db: "{zombie}" tiene {n_rows} filas — me niego a '
+                        f'dropearla. El conflicto pg_type debe resolverse a mano. '
+                        f'Error original: {msg.split(chr(10))[0][:200]}'
+                    )
                 for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
                             f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
                             f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE',
