@@ -991,7 +991,7 @@ function renderModulosRaw() {
     const body = document.getElementById('modulos-body');
     let html = `<table class="w-full text-xs border-collapse min-w-[1000px]" id="tbl-modulos">
     <thead>
-      <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
+      <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0 z-20 shadow-sm">
         <th class="text-left px-2 py-2 w-6"><input type="checkbox" id="chk-all-mods" onchange="toggleAllModules(this.checked)"></th>
         <th class="text-left px-2 py-2" style="min-width:180px">Módulo / Producto</th>
         <th class="text-left px-2 py-2" style="min-width:80px">EAN</th>
@@ -1436,7 +1436,7 @@ function renderResumen() {
     <div class="overflow-x-auto">
     <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:1000px">
     <thead>
-        <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0">
+        <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0 z-20 shadow-sm">
             <th class="text-left px-2 py-2" style="min-width:150px">Producto</th>
             <th class="text-left px-2 py-2" style="width:110px">EAN</th>
             <th class="text-right px-2 py-2" style="width:65px" title="Stock actual ERP">Stock</th>
@@ -1805,7 +1805,7 @@ function renderOfertasMinImportPreview() {
             individuals.push(it);
         }
     });
-    const thead = `<thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
+    const thead = `<thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
         <th class="text-left px-2 py-2">EAN</th>
         <th class="text-left px-2 py-2">Producto</th>
         <th class="text-right px-2 py-2 text-sky-700">Mín.</th>
@@ -1922,7 +1922,7 @@ function renderOfertasConMinimoTable() {
     if (individuals.length) {
         html += `<p class="text-xs font-semibold text-[#555] mb-2">INDIVIDUALES (${individuals.length})</p>
         <table class="w-full text-xs border-collapse mb-4 min-w-[560px]">
-        <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px]">
+        <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
             <th class="text-left px-2 py-2">EAN</th>
             <th class="text-left px-2 py-2">Producto</th>
             <th class="text-right px-2 py-2 text-amber-700">Saldo</th>
