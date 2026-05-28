@@ -1330,9 +1330,9 @@ def init_app(app):
 
                 # Toda oferta importada tiene mínimo >= 1 (simple = mínimo 1).
                 um = normalizar_unidades_minima(it.get('unidades_minima'))
-                # Una sola categoría: toda oferta es "con_minimo". Si no vino mín.
-            # importado, normalizar_unidades_minima ya coerciona a 1.
-            tipo_desc = 'con_minimo'
+                # Una sola categoría: toda oferta es "con_minimo". Si no vino
+                # mín. importado, normalizar_unidades_minima ya coerciona a 1.
+                tipo_desc = 'con_minimo'
 
                 if existing:
                     if it.get('descripcion'):
