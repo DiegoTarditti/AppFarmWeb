@@ -73,6 +73,11 @@ GREEN    = "#4ADE80"
 RED      = "#F87171"
 YELLOW   = "#FBBF24"
 
+# Backup diario obligatorio (config). Si la share no es alcanzable, se loguea
+# el error en backup_log y se muestra warning rojo (no bloquea el panel).
+BACKUP_SHARE = r'\\server-1\D\RespaldoFarmWeb'
+BACKUP_RETENTION_DAYS = 30
+
 
 # ── Persistencia del último proyecto abierto ──────────────────────────────────
 
@@ -248,6 +253,13 @@ class DockerPanel(tk.Tk):
         threading.Thread(target=self._panel_remoto_loop, daemon=True).start()
         self.after(500, self._update_panel_remoto_label)
         # === END PANEL REMOTO ===
+
+        # === BEGIN BACKUP DIARIO (obligatorio, dispara al arrancar) ===
+        # Diferido 1.5s para que la UI ya esté renderizada y los containers estén
+        # responsivos al docker-compose exec. Idempotente: si ya hay backup ok
+        # del día (chequea backup_log), no ejecuta nada.
+        self.after(1500, lambda: self._backup_diario_check(manual=False))
+        # === END BACKUP DIARIO ===
 
     def _ask_project_dir(self):
         dlg = _StartupDialog(self)
@@ -705,6 +717,21 @@ class DockerPanel(tk.Tk):
         self._panel_remoto_lbl.bind("<Button-1>", lambda e: self._config_panel_remoto())
         # === END PANEL REMOTO ===
 
+        # === BEGIN BACKUP DIARIO (mostrar estado + click para reintentar) ===
+        tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
+        self._backup_lbl = tk.Label(
+            self._status_bar,
+            text="○ backup ·",
+            font=("Segoe UI", 8),
+            bg="#111113", fg=FG_DIM,
+            cursor="hand2",
+        )
+        self._backup_lbl.pack(side="right", padx=4)
+        # Click → reintenta el backup (útil si la share no estaba antes).
+        self._backup_lbl.bind("<Button-1>",
+                              lambda e: self._backup_diario_check(manual=True))
+        # === END BACKUP DIARIO ===
+
         # Indicador de PDFs pendientes en carpeta local + botón Revisar
         tk.Label(self._status_bar, text="│", bg="#111113", fg=BORDER).pack(side="right", padx=8)
         self._carpeta_lbl = tk.Label(
@@ -914,6 +941,164 @@ class DockerPanel(tk.Tk):
             self._queue.put(("backup", folder))
             self._update_queue_badge()
             self._append(f"  ↳ backup encolado → {folder}\n", "dim")
+
+    # ── Backup diario obligatorio (corre al arrancar el panel) ────────────────
+
+    def _backup_diario_check(self, manual=False):
+        """Si hoy no hay backup ok en `backup_log`, dispara uno a la share
+        corporativa. Idempotente: si la fila ok del día ya existe, no hace nada.
+        manual=True fuerza el intento aunque ya haya backup hoy (botón
+        Reintentar)."""
+        if not manual:
+            existe = self._db_query_scalar(
+                "SELECT 1 FROM backup_log WHERE fecha = CURRENT_DATE AND ok = true LIMIT 1"
+            )
+            if existe == '1':
+                self._set_backup_status('ok')
+                return
+        self._set_backup_status('running')
+        threading.Thread(target=self._backup_diario_ejecutar, daemon=True).start()
+
+    def _backup_diario_ejecutar(self):
+        """Thread: pg_dump → share → INSERT backup_log → rotación. No bloquea UI."""
+        from datetime import date
+        today = date.today().isoformat()
+        dest_path = os.path.join(BACKUP_SHARE, f'farmacia_{today}.dump')
+
+        self.after(0, self._append,
+                   f"\n💾 backup diario → {dest_path}\n", "bk")
+
+        # 1) ¿Share alcanzable?
+        if not os.path.isdir(BACKUP_SHARE):
+            try:
+                os.makedirs(BACKUP_SHARE, exist_ok=True)
+            except OSError as e:
+                err = f'share no alcanzable: {e}'
+                self._backup_log_insert(False, dest_path, None, err)
+                self.after(0, self._append, f"  ⚠ {err}\n", "err")
+                self.after(0, self._set_backup_status, 'fail',
+                           'share offline')
+                return
+
+        # 2) pg_dump → archivo en la share (redirección de stdout)
+        try:
+            cwd = self.dir_var.get()
+            with open(dest_path, 'wb') as f:
+                r = subprocess.run(
+                    ['docker-compose', 'exec', '-T', 'db', 'pg_dump',
+                     '-Fc', '-U', 'postgres', '-d', 'farmacia'],
+                    stdout=f, stderr=subprocess.PIPE, cwd=cwd, timeout=600,
+                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                )
+            if r.returncode != 0:
+                stderr = r.stderr.decode('utf-8', 'replace')[:500]
+                err = f'pg_dump rc={r.returncode}: {stderr}'
+                try:
+                    os.remove(dest_path)  # archivo parcial
+                except OSError:
+                    pass
+                self._backup_log_insert(False, dest_path, None, err)
+                self.after(0, self._append, f"  ✗ {err[:200]}\n", "err")
+                self.after(0, self._set_backup_status, 'fail', 'pg_dump error')
+                return
+            size = os.path.getsize(dest_path)
+        except Exception as e:
+            err = str(e)[:500]
+            self._backup_log_insert(False, dest_path, None, err)
+            self.after(0, self._append, f"  ✗ {err}\n", "err")
+            self.after(0, self._set_backup_status, 'fail', 'error')
+            return
+
+        # 3) Log success
+        self._backup_log_insert(True, dest_path, size, None)
+        size_mb = size / (1024 * 1024)
+        self.after(0, self._append,
+                   f"  ✓ backup OK ({size_mb:.1f} MB)\n", "ok")
+        self.after(0, self._set_backup_status, 'ok')
+
+        # 4) Rotar viejos (best-effort)
+        try:
+            self._backup_rotar()
+        except Exception:
+            pass
+
+    def _backup_log_insert(self, ok, destino, size, error):
+        """INSERT en backup_log vía docker-compose exec. Best-effort: si la DB
+        local no está disponible, no rompe el flujo del backup."""
+        ok_sql = 'true' if ok else 'false'
+        dest_esc = (destino or '').replace("'", "''")
+        size_sql = str(int(size)) if size else 'NULL'
+        if error:
+            err_esc = error.replace("'", "''")[:1000]
+            err_sql = f"'{err_esc}'"
+        else:
+            err_sql = 'NULL'
+        sql = (f"INSERT INTO backup_log (fecha, destino, tamano_bytes, ok, error) "
+               f"VALUES (CURRENT_DATE, '{dest_esc}', {size_sql}, {ok_sql}, {err_sql})")
+        try:
+            subprocess.run(
+                ['docker-compose', 'exec', '-T', 'db', 'psql',
+                 '-U', 'postgres', 'farmacia', '-c', sql],
+                cwd=self.dir_var.get(), timeout=30, check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+        except Exception:
+            pass
+
+    def _backup_rotar(self):
+        """Borra farmacia_YYYY-MM-DD.dump > BACKUP_RETENTION_DAYS días."""
+        from datetime import date, timedelta
+        if not os.path.isdir(BACKUP_SHARE):
+            return
+        cutoff = date.today() - timedelta(days=BACKUP_RETENTION_DAYS)
+        for nombre in os.listdir(BACKUP_SHARE):
+            if not (nombre.startswith('farmacia_') and nombre.endswith('.dump')):
+                continue
+            fecha_str = nombre[len('farmacia_'):-len('.dump')]
+            try:
+                fdate = date.fromisoformat(fecha_str)
+            except ValueError:
+                continue
+            if fdate < cutoff:
+                try:
+                    os.remove(os.path.join(BACKUP_SHARE, nombre))
+                except OSError:
+                    pass
+
+    def _db_query_scalar(self, sql):
+        """Corre un SELECT que devuelve un único valor; '' si vacío, None si error.
+        Usa docker-compose exec -T db psql -tAc para output limpio (sin headers).
+        """
+        try:
+            r = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'db', 'psql',
+                 '-U', 'postgres', 'farmacia', '-tAc', sql],
+                cwd=self.dir_var.get(), capture_output=True, text=True, timeout=15,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            if r.returncode != 0:
+                return None
+            return r.stdout.strip()
+        except Exception:
+            return None
+
+    def _set_backup_status(self, estado, motivo=None):
+        """Setea el indicador del backup en la barra de estado.
+        estado: 'ok' | 'fail' | 'running'."""
+        if not getattr(self, '_backup_lbl', None):
+            return
+        from datetime import date
+        hoy = date.today().strftime('%d/%m')
+        if estado == 'ok':
+            self._backup_lbl.config(text=f"● backup {hoy} OK", fg=GREEN)
+        elif estado == 'running':
+            self._backup_lbl.config(text="⏳ backup en curso…", fg=YELLOW)
+        else:  # fail
+            txt = f"⚠ backup {hoy} pendiente"
+            if motivo:
+                txt = f"{txt} ({motivo})"
+            self._backup_lbl.config(text=txt, fg=RED)
 
     # ── Restore ───────────────────────────────────────────────────────────────
 

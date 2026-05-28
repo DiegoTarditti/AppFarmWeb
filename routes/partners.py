@@ -102,9 +102,34 @@ def init_app(app):
             return jsonify({'error': 'tipo inválido'}), 400
 
         with database.get_db() as session:
+            name_col = Laboratorio.nombre if tipo == 'laboratorio' else Provider.razon_social
+
+            # Para 'laboratorio' con q ≥ 2 chars: también consultamos
+            # ObsLaboratorio y materializamos en `laboratorios` los faltantes
+            # (vía get_or_create_laboratorio, idempotente). Esto cubre el caso
+            # de labs presentes en ObServer pero nunca materializados — el
+            # autocomplete dejaba afuera Roemmers, Siegfried, etc. La operación
+            # es side-effect en GET pero limitada a humanos tipeando, vinculada
+            # a `observer_id`, y no crea duplicados (dedup por normalización).
+            if tipo == 'laboratorio' and q and len(q) >= 2:
+                from database import ObsLaboratorio
+                from helpers import get_or_create_laboratorio
+                obs_rows = (session.query(ObsLaboratorio.descripcion,
+                                          ObsLaboratorio.observer_id)
+                            .filter(ObsLaboratorio.fecha_baja.is_(None),
+                                    ObsLaboratorio.descripcion.ilike(f'%{q}%'))
+                            .limit(limit).all())
+                for desc, obs_id in obs_rows:
+                    get_or_create_laboratorio(
+                        session, desc, observer_id=obs_id, activo=True)
+                # get_or_create no commitea (flush solo). Si nada nuevo se
+                # agregó, el commit es no-op. Si hubo inserts, los persistimos
+                # antes de re-consultar laboratorios.
+                if obs_rows:
+                    session.commit()
+
             qs = _query_base(session, tipo)
             if q:
-                name_col = Laboratorio.nombre if tipo == 'laboratorio' else Provider.razon_social
                 qs = qs.filter(name_col.ilike(f'%{q}%'))
             rows = qs.order_by('nombre').limit(limit).all()
             data = [{'id': r.id, 'nombre': r.nombre} for r in rows]

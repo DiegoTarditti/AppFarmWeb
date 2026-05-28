@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     DECIMAL,
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -579,6 +580,25 @@ class MvRefreshLog(Base):
     duracion_ms = Column(Integer, nullable=True)
     filas = Column(Integer, nullable=True)
     error = Column(Text, nullable=True)
+
+
+class BackupLog(Base):
+    r"""Log de backups diarios obligatorios de la DB local.
+
+    El DockerPanel al iniciar chequea si hay una fila con `fecha=hoy AND ok=true`.
+    Si no, dispara `pg_dump -Fc` a `\\server-1\D\RespaldoFarmWeb\farmacia_<fecha>.dump`
+    y registra el resultado acá. Permite saber con un SELECT si falta backup
+    aunque la share esté caída, y mantiene historial/auditoría de éxitos y errores
+    para investigar después. Rotación: archivos > 30 días se eliminan del share.
+    """
+    __tablename__ = 'backup_log'
+    id           = Column(Integer, primary_key=True)
+    fecha        = Column(Date, nullable=False, index=True)
+    creado_en    = Column(DateTime, default=now_ar, nullable=False)
+    destino      = Column(Text, nullable=True)
+    tamano_bytes = Column(BigInteger, nullable=True)
+    ok           = Column(Boolean, nullable=False, default=False)
+    error        = Column(Text, nullable=True)
 
 
 class ExportTemplate(Base):
@@ -1996,7 +2016,7 @@ def init_db(database_url=None):
                         'obs_grupos_clientes', 'obs_categorias_clientes',
                         'obs_obras_sociales', 'obs_convenios', 'obs_planes',
                         'obs_clientes', 'clientes',
-                        'cron_log', 'mv_refresh_log',
+                        'cron_log', 'mv_refresh_log', 'backup_log',
                         'obs_colegios_medicos', 'obs_medicos',
                         'obs_medicos_matriculas', 'obs_ventas_detalle',
                         'descuentos_base', 'obs_codigos_barras',
@@ -2387,6 +2407,24 @@ def init_db(database_url=None):
                 _intento + 1, _MAX_RETRIES, zombie, msg.split('\n')[0][:200],
             )
             with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
+                # GUARD: si "zombie" es en realidad una tabla con datos, NO la
+                # dropeamos — preferimos que el deploy falle ruidosamente a
+                # destruir data en silencio. Histórico: el handler dropeó
+                # `configuracion` por un conflicto de pg_type y el CASCADE
+                # arrastró tablas grandes (productos/obs_*/etc.). El bug real
+                # estaba en otro lado, no acá. Ver mejoras_pendientes.md.
+                try:
+                    n_rows = conn.execute(text(
+                        f'SELECT COUNT(*) FROM "{zombie}"'
+                    )).scalar() or 0
+                except Exception:
+                    n_rows = 0  # tabla no existe → es un pg_type huérfano real
+                if n_rows > 0:
+                    raise RuntimeError(
+                        f'init_db: "{zombie}" tiene {n_rows} filas — me niego a '
+                        f'dropearla. El conflicto pg_type debe resolverse a mano. '
+                        f'Error original: {msg.split(chr(10))[0][:200]}'
+                    )
                 for ddl in (f'DROP TABLE IF EXISTS "{zombie}" CASCADE',
                             f'DROP TYPE  IF EXISTS "{zombie}" CASCADE',
                             f'DROP SEQUENCE IF EXISTS "{zombie}_id_seq" CASCADE',

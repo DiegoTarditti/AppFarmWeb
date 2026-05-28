@@ -2189,8 +2189,19 @@ const ALFA_BTN = nombre => {
     const safe = n.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     return `<button type="button" class="btn-alfabeta align-middle text-[#999] hover:text-emerald-600 mr-1 text-xs transition-colors" data-nombre="${safe}" title="Buscar precio en alfabeta.net">💲</button>`;
 };
-const CHART_BTN = ean => `<span class="inline-flex items-center gap-0.5 mr-1.5 align-middle flex-shrink-0">
-    <button onclick="openChart('${ean}')" title="Ver gráfico histórico"
+// Si la EAN es un pack con equivalencia (MODULO_PACKS está indexado por ean_pack),
+// resolvemos al ean_unidad para el gráfico — los packs no tienen ventas propias,
+// las ventas viven en la unidad. El link a /precios sí usa la EAN original
+// (el precio aplica al pack importado, no al EAN equivalente).
+const CHART_BTN = ean => {
+    const _packEquiv = (typeof MODULO_PACKS !== 'undefined' && MODULO_PACKS[ean]) || null;
+    const _eanChart = (_packEquiv && _packEquiv.ean_unidad && _packEquiv.ean_unidad !== ean)
+        ? _packEquiv.ean_unidad : ean;
+    const _tooltip = _eanChart !== ean
+        ? `Ver gráfico histórico (equivalencia ${_eanChart} del pack ${ean})`
+        : 'Ver gráfico histórico';
+    return `<span class="inline-flex items-center gap-0.5 mr-1.5 align-middle flex-shrink-0">
+    <button onclick="openChart('${_eanChart}')" title="${_tooltip}"
         class="inline-flex items-center text-[#999] hover:text-amber-500 transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -2205,6 +2216,7 @@ const CHART_BTN = ean => `<span class="inline-flex items-center gap-0.5 mr-1.5 a
         </svg>
     </a>
 </span>`;
+};
 
 function openChart(barcode) {
     const modal = document.getElementById('hist-chart-modal');
