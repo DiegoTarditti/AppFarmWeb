@@ -538,7 +538,13 @@ def init_app(app):
     @app.route('/api/laboratorio/<int:lab_id>/ofertas-minimo', methods=['GET'])
     def api_ofertas_minimo_get(lab_id):
         with database.get_db() as session:
-            rows = session.query(OfertaMinimo).filter_by(laboratorio_id=lab_id).order_by(OfertaMinimo.grupo_id.nullslast(), OfertaMinimo.id).all()
+            # Solo las ofertas marcadas como ACTIVAS (toggle en
+            # /informes/ofertas-activas). Si el operador dejó solo 1 batch
+            # activo por lab, ese es el que entra al order Stage 2.
+            rows = (session.query(OfertaMinimo)
+                    .filter_by(laboratorio_id=lab_id)
+                    .filter(OfertaMinimo.activo.is_(True))
+                    .order_by(OfertaMinimo.grupo_id.nullslast(), OfertaMinimo.id).all())
             return jsonify({
                 'items': [{
                     'ean': r.ean, 'descripcion': r.descripcion, 'codigo': r.codigo,

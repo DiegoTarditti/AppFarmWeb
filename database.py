@@ -3434,14 +3434,19 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE ofertas_minimo ADD COLUMN IF NOT EXISTS tipo_descuento VARCHAR(20)"
     ))
+    # 2026-05-28: unificar tipos. Toda oferta es 'con_minimo'; sin mín importado
+    # se normaliza a unidades_minima=1. El split 'simple'/'con_minimo' se eliminó
+    # del importer — esta migración colapsa lo viejo para que el listado no
+    # muestre filas duplicadas por lab.
     conn.execute(text("""
         UPDATE ofertas_minimo
-        SET tipo_descuento = CASE
-            WHEN unidades_minima IS NULL OR unidades_minima <= 1 THEN 'simple'
-            ELSE 'con_minimo'
-        END
-        WHERE tipo_descuento IS NULL
+        SET unidades_minima = 1
+        WHERE unidades_minima IS NULL OR unidades_minima < 1
     """))
+    conn.execute(text(
+        "UPDATE ofertas_minimo SET tipo_descuento = 'con_minimo' "
+        "WHERE tipo_descuento IS NULL OR tipo_descuento = 'simple'"
+    ))
     conn.execute(text("""
         CREATE TABLE IF NOT EXISTS documentos_pendientes (
             id SERIAL PRIMARY KEY,

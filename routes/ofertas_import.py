@@ -121,7 +121,9 @@ def _guardar_modo_drog(data):
                 saltados += 1
                 continue
             um = normalizar_unidades_minima(it.get('unidades_minima'))
-            tipo_desc = 'con_minimo' if um > 1 else 'simple'
+            # Una sola categoría: toda oferta es "con_minimo". Si no vino mín.
+            # importado, normalizar_unidades_minima ya coerciona a 1.
+            tipo_desc = 'con_minimo'
             lab_id_item = ean_to_lab.get(ean) if ean else None
             if not lab_id_item:
                 sin_lab += 1
@@ -576,6 +578,9 @@ def init_app(app):
     @app.route('/ofertas/import', methods=['GET'])
     @login_required
     def ofertas_import_page():  # type: ignore[reportUnusedFunction]
+        from sqlalchemy import func as _func
+
+        from database import ObsProducto as _ObsProd
         from database import Provider
         from helpers import get_config
         cfg = get_config()
@@ -583,7 +588,18 @@ def init_app(app):
             labs = (session.query(Laboratorio)
                     .filter(Laboratorio.activo == True)  # noqa: E712
                     .order_by(Laboratorio.nombre).all())
-            labs_data = [{'id': l.id, 'nombre': l.nombre} for l in labs]
+            # Conteo de productos por lab desde ObServer (laboratorio_observer
+            # → Laboratorio.observer_id). La tabla local Producto está casi
+            # vacía para la mayoría de labs.
+            n_por_observer = dict(
+                session.query(_ObsProd.laboratorio_observer,
+                              _func.count(_ObsProd.observer_id))
+                .filter(_ObsProd.fecha_baja.is_(None))
+                .group_by(_ObsProd.laboratorio_observer).all())
+            labs_data = [{'id': l.id, 'nombre': l.nombre,
+                          'n_productos': int(n_por_observer.get(l.observer_id, 0))
+                                         if l.observer_id else 0}
+                         for l in labs]
             drogs = (session.query(Provider)
                      .filter(Provider.tipo == 'drogueria',
                              Provider.activo == True)  # noqa: E712
@@ -603,6 +619,42 @@ def init_app(app):
                                lab_preseleccionado=lab_preseleccionado,
                                lab_nombre_preseleccionado=lab_nombre_preseleccionado,
                                ruta_excels=cfg.get('ruta_excels', ''))
+
+    @app.route('/api/ofertas/import/lab/<int:lab_id>/productos')
+    @login_required
+    def api_ofertas_lab_productos(lab_id):  # type: ignore[reportUnusedFunction]
+        """Lista de productos del catálogo asociados a un lab. Para que el
+        operador verifique que eligió el lab correcto antes de importar.
+
+        Fuente: ObServer (ObsProducto + ObsCodigoBarras). La tabla local
+        Producto está casi vacía para la mayoría de labs.
+        """
+        from database import ObsCodigoBarras, ObsProducto
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            obs_id = lab.observer_id if lab else None
+            if not obs_id:
+                return jsonify({'lab_id': lab_id, 'n': 0, 'productos': [],
+                                'aviso': 'El laboratorio no está linkeado a ObServer.'})
+            prods = (session.query(ObsProducto.observer_id,
+                                   ObsProducto.descripcion)
+                     .filter(ObsProducto.laboratorio_observer == obs_id,
+                             ObsProducto.fecha_baja.is_(None))
+                     .order_by(ObsProducto.descripcion).all())
+            pids = [p[0] for p in prods]
+            ean_by_pid = {}
+            if pids:
+                for cb in (session.query(ObsCodigoBarras.producto_observer,
+                                         ObsCodigoBarras.codigo_barras)
+                           .filter(ObsCodigoBarras.producto_observer.in_(pids),
+                                   ObsCodigoBarras.fecha_baja.is_(None),
+                                   ObsCodigoBarras.orden == 1).all()):
+                    ean_by_pid[cb.producto_observer] = cb.codigo_barras
+        return jsonify({
+            'lab_id': lab_id, 'n': len(prods),
+            'productos': [{'ean': ean_by_pid.get(pid, '') or '',
+                           'desc': desc or ''} for pid, desc in prods],
+        })
 
     @app.route('/api/ofertas/import-preview', methods=['POST'])
     @login_required
@@ -1278,7 +1330,9 @@ def init_app(app):
 
                 # Toda oferta importada tiene mínimo >= 1 (simple = mínimo 1).
                 um = normalizar_unidades_minima(it.get('unidades_minima'))
-                tipo_desc = 'con_minimo' if um > 1 else 'simple'
+                # Una sola categoría: toda oferta es "con_minimo". Si no vino mín.
+            # importado, normalizar_unidades_minima ya coerciona a 1.
+            tipo_desc = 'con_minimo'
 
                 if existing:
                     if it.get('descripcion'):
