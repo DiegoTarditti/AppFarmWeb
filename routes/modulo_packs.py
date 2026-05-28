@@ -50,6 +50,56 @@ def init_app(app):
                     return prod_map[mp.ean_unidad].descripcion or ''
                 return obs_desc_map.get(mp.ean_unidad, '')
 
+            # ── Stock + presentación por ean_unidad (para columna "Stock") ──
+            # Mapeamos ean_unidad → observer_id (vía 'OBS:N' o Producto.observer_id).
+            from services.farmacia import farmacia_operativa
+            _id_farm = farmacia_operativa()
+            ean_to_obs = {}
+            for mp in session.query(database.ModuloPack.ean_unidad).distinct():
+                e = mp[0]
+                if not e:
+                    continue
+                if e.startswith('OBS:'):
+                    try:
+                        ean_to_obs[e] = int(e[4:])
+                    except (ValueError, TypeError):
+                        pass
+                elif e in prod_map and prod_map[e].observer_id:
+                    ean_to_obs[e] = prod_map[e].observer_id
+            stock_actual_by_obs = {}
+            if ean_to_obs and _id_farm:
+                _obs_ids = list({oid for oid in ean_to_obs.values()})
+                for po, sa in (session.query(
+                        database.ObsStock.producto_observer,
+                        database.ObsStock.stock_actual)
+                        .filter(database.ObsStock.id_farmacia == _id_farm,
+                                database.ObsStock.producto_observer.in_(_obs_ids))):
+                    stock_actual_by_obs[po] = int(sa or 0)
+            # Fraccionado + cantidad_envase del producto unidad (cuando exista
+            # en el catálogo master). Si ean_unidad es 'OBS:N' o no está en
+            # productos, no aplica fraccionable display.
+            _prod_ids_unidad = [p.id for p in all_prods if p.codigo_barra in ean_to_obs and p.codigo_barra in prod_map]
+            envase_by_pid = {}
+            if _prod_ids_unidad:
+                for pid, ce in (session.query(database.ProductoAtributo.producto_id,
+                                              database.ProductoAtributo.cantidad_envase)
+                                .filter(database.ProductoAtributo.producto_id.in_(_prod_ids_unidad),
+                                        database.ProductoAtributo.cantidad_envase.isnot(None))):
+                    envase_by_pid[pid] = int(ce)
+
+            def _stock_info_unidad(ean):
+                """Devuelve dict con stock + flags para mostrar la celda. None si no hay dato."""
+                if not ean:
+                    return None
+                oid = ean_to_obs.get(ean)
+                if oid is None or oid not in stock_actual_by_obs:
+                    return None
+                stock = stock_actual_by_obs[oid]
+                p = prod_map.get(ean)
+                fraccionado = bool(p.fraccionado) if p else False
+                envase = envase_by_pid.get(p.id) if p else None
+                return {'stock': stock, 'fraccionado': fraccionado, 'envase': envase}
+
             def _pack_dict(mp):
                 return {'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
                         'cantidad': mp.cantidad,
@@ -58,7 +108,8 @@ def init_app(app):
                         'desc_pack':   mp.descripcion or '',
                         'desc_unidad': _desc_unidad(mp),
                         'prod_unidad_id': prod_map[mp.ean_unidad].id if mp.ean_unidad in prod_map else None,
-                        'modulo_id': mp.modulo_id}
+                        'modulo_id': mp.modulo_id,
+                        'stock_unidad': _stock_info_unidad(mp.ean_unidad)}
 
             modulos_raw = (session.query(Modulo)
                            .outerjoin(Laboratorio)
