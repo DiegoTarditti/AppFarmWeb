@@ -996,8 +996,7 @@ function renderModulosRaw() {
         <th class="text-left px-2 py-2" style="min-width:180px">Módulo / Producto</th>
         <th class="text-left px-2 py-2" style="min-width:80px">EAN</th>
         <th class="text-center px-2 py-2 text-emerald-700" title="Ítem es pack de unidades">Pack</th>
-        <th class="text-right px-2 py-2" title="Cantidad mínima del módulo definida en el Excel del laboratorio">Cant.Min.Mod.</th>
-        <th class="text-right px-2 py-2 text-emerald-700" title="Unidades del pedido que cubre cada slot del módulo">Can.Un.Mod.</th>
+        <th class="text-right px-2 py-2" title="Cantidad mínima del módulo definida en el Excel del laboratorio (para packs, el multiplicador ya se aplica al calcular)">Cant.Min.Mod.</th>
         <th class="text-right px-2 py-2">Desc%</th>
         <th class="text-right px-2 py-2 text-amber-700" title="Unidades ya cargadas en este pedido. NO es stock.">Ya en pedido</th>
         <th class="text-right px-2 py-2 text-cyan-700" title="Stock actual (ObServer). Fraccionables: cajas+sueltas.">Stock</th>
@@ -1037,7 +1036,7 @@ function renderModulosRaw() {
                 <input type="checkbox" id="chk-${modId}" checked
                        onchange="toggleModule(${mi}, this.checked)">
             </td>
-            <td colspan="14" class="px-2 py-1.5">
+            <td colspan="13" class="px-2 py-1.5">
                 <label for="chk-${modId}" class="cursor-pointer font-semibold">${mod.nombre}</label>
                 ${descBadge}
                 <span class="ml-2 text-[10px] text-amber-600 font-normal" id="sug-${mi}"></span>
@@ -1075,7 +1074,6 @@ function renderModulosRaw() {
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
-                <td class="px-2 text-right">${unModCell}</td>
                 <td class="px-2 text-right ${_descColorCls(it.desc_pct || 0)}">${it.desc_pct}%</td>
                 <td class="px-2 text-right font-medium text-amber-700" id="cp-${mi}-${ii}">${cantPedida > 0 ? cantPedida : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right text-cyan-700 font-medium" id="st-${mi}-${ii}">${fmtStock(eanLookup)}</td>
@@ -1089,7 +1087,7 @@ function renderModulosRaw() {
         });
         html += `<tr class="mod-footer-row" id="mod-footer-${mi}">
             <td></td>
-            <td colspan="10" class="px-2 py-2 text-right text-[11px]">
+            <td colspan="9" class="px-2 py-2 text-right text-[11px]">
                 <span class="text-[#888]">Módulos que soporta cada ítem:</span>
                 <span class="ml-1 font-semibold text-amber-700" id="sug-${mi}">—</span>
                 <span class="ml-3 text-[#888]">·</span>
