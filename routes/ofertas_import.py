@@ -1,13 +1,17 @@
-"""Importador unificado de docs de ofertas (Fase B del roadmap).
+"""Importador unificado de docs de ofertas.
 
-Soporta XLSX hoy. PDF/OCR a futuro (Fase B Parte 2).
+Soporta XLSX, XLS, PDF y fotos (JPG/PNG/WEBP/…). Dos caminos de extracción
+intercambiables (mismo shape de salida → resto del wizard no cambia):
+- regex/OCR (carriles `_previsualizar_*` con pdfplumber + field_inference).
+- IA: Claude (services.ofertas_ia) — toggle "Usar IA" en la UI.
 
 Flujo:
-1. POST /api/ofertas/import-preview — sube archivo, parsea, devuelve preview JSON.
-2. POST /api/ofertas/import-validar — valida items contra catálogo via producto_matcher.
-3. POST /api/ofertas/import-candidatos — buscar productos similares para match manual.
-4. POST /api/ofertas/import-guardar — recibe items mapeados + lab_id, upsertea en OfertaMinimo.
-5. GET /ofertas/import — pantalla del wizard.
+1.  POST /api/ofertas/import-preview — sube archivo, parsea, devuelve preview JSON.
+1b. POST /api/ofertas/import-ia      — idem pero via Claude. 503 si falta ANTHROPIC_API_KEY.
+2.  POST /api/ofertas/import-validar — valida items contra catálogo via producto_matcher.
+3.  POST /api/ofertas/import-candidatos — buscar productos similares para match manual.
+4.  POST /api/ofertas/import-guardar — recibe items mapeados + lab_id, upsertea en OfertaMinimo.
+5.  GET  /ofertas/import — pantalla del wizard.
 """
 import os
 import tempfile
@@ -630,6 +634,52 @@ def init_app(app):
                 preview = _previsualizar_xlsx(tmp_path)
         except Exception as e:
             return jsonify({'error': f'Error al parsear: {e}'}), 500
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+        return jsonify({**preview, 'filename': f.filename})
+
+    @app.route('/api/ofertas/import-ia', methods=['POST'])
+    @login_required
+    def api_ofertas_import_ia():
+        """Sube archivo, lo manda a Claude (services.ofertas_ia) y devuelve el
+        mismo shape que /import-preview → la UI y validación no cambian.
+
+        503 si no hay ANTHROPIC_API_KEY; 400 si formato no soportado o archivo
+        inválido; 500 si la API falla o la respuesta no es JSON.
+        """
+        if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+            return jsonify({'error': 'IA no disponible: falta ANTHROPIC_API_KEY '
+                                     'en el servidor.'}), 503
+        if 'archivo' not in request.files:
+            return jsonify({'error': 'Falta archivo'}), 400
+        f = request.files['archivo']
+        if not f.filename:
+            return jsonify({'error': 'Archivo sin nombre'}), 400
+
+        ext = os.path.splitext(f.filename)[1].lower()
+        IMG_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif')
+        if ext not in ('.xlsx', '.xls', '.pdf', *IMG_EXTS):
+            return jsonify({
+                'error': f'Formato {ext} no soportado. Aceptamos XLSX, XLS, PDF '
+                         'y fotos (JPG, PNG, WEBP).'
+            }), 400
+
+        from services import ofertas_ia
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+        try:
+            preview = ofertas_ia.extraer(tmp_path, ext)
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 503
+        except ValueError as e:
+            return jsonify({'error': f'IA: {e}'}), 500
+        except Exception as e:  # noqa: BLE001 — API/red/SDK
+            return jsonify({'error': f'IA: error al extraer — {e}'}), 500
         finally:
             try:
                 os.unlink(tmp_path)
