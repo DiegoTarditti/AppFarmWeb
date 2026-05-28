@@ -282,24 +282,22 @@
             <!-- JS renders table here -->
         </div>
 
-        <!-- Resumen por producto -->
-        <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4 overflow-x-auto">
-            <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen por producto</p>
-            <table class="w-full text-xs border-collapse" style="min-width:880px">
+        <!-- Resumen de módulos a pedir (solo los confirmados con cantidad > 0).
+             El saldo por producto sigue calculado internamente y va a la
+             próxima instancia (ofertas c/mín). -->
+        <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4">
+            <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen de módulos a pedir</p>
+            <table class="w-full text-xs border-collapse" style="min-width:520px">
                 <thead>
                     <tr class="bg-[#f5f0e8] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
-                        <th class="text-left px-2 py-1.5" style="min-width:180px">Producto</th>
-                        <th class="text-left px-2 py-1.5" style="min-width:80px">EAN</th>
-                        <th class="text-right px-2 py-1.5 text-amber-700">Cant.Pedida</th>
-                        <th class="text-right px-2 py-1.5 text-purple-700">Rot. / Prom.mes</th>
-                        <th class="text-right px-2 py-1.5 text-emerald-700">Propuesta Total</th>
-                        <th class="text-right px-2 py-1.5 text-sky-700">Saldo</th>
-                        <th class="text-right px-2 py-1.5 text-[#888]">Tol.%</th>
-                        <th class="text-right px-2 py-1.5 text-rose-700" title="precio_pvp × propuesta total">Importe</th>
-                        <th class="text-right px-2 py-1.5 text-emerald-700" title="Ahorro estimado = pvp × cubierto × desc%">Ahorro</th>
+                        <th class="text-left px-2 py-1.5" style="min-width:280px">Módulo</th>
+                        <th class="text-right px-2 py-1.5 text-emerald-700">Cantidad</th>
+                        <th class="text-right px-2 py-1.5 text-rose-700">Importe</th>
+                        <th class="text-right px-2 py-1.5 text-emerald-700">Ahorro</th>
                     </tr>
                 </thead>
                 <tbody id="tbody-resumen-mod"></tbody>
+                <tfoot id="tfoot-resumen-mod"></tfoot>
             </table>
         </div>
 
@@ -1227,57 +1225,52 @@ function recalcModuloAll(mi) {
 function recalcRow(mi, ii) { recalcModuloAll(mi); }
 
 function renderResumenModulos() {
+    // Resumen al pie: 1 fila por modulo con cantidad confirmada > 0
+    // (titulo + cantidad + importe estimado + ahorro). El saldo por
+    // producto sigue calculado internamente (it.propuesta sobre cada item)
+    // y se preserva en modulesData para la siguiente instancia.
     const wrap  = document.getElementById('resumen-modulos-wrap');
     const tbody = document.getElementById('tbody-resumen-mod');
+    const tfoot = document.getElementById('tfoot-resumen-mod');
     if (!wrap || !tbody) return;
-    const byEan = {};
+    const filas = [];
+    let totCant = 0, totImp = 0, totAhorro = 0;
     modulesData.forEach(mod => {
         if (mod._selected === false) return;
+        const cant = parseInt(mod.modulos_propuesta || 0) || 0;
+        if (cant <= 0) return;
+        let imp = 0, ahorro = 0;
         mod.items.forEach(it => {
-            const pack      = MODULO_PACKS[it.ean];
-            const ean       = pack ? pack.ean_unidad : it.ean;
-            const _ups      = it._unidadesPorSlot ?? it.cant;
-            const cubierto  = (it.propuesta || 0) * _ups;
-            if (!byEan[ean]) {
-                byEan[ean] = {
-                    descripcion: pedidoNom[ean] || it.descripcion,
-                    cant_pedida: pedidoQty[ean] ?? 0,
-                    rot:         pedidoRot[ean] || {},
-                    pvp:         pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0,
-                    cubierto:    0,
-                    ahorro:      0,
-                };
-            }
-            byEan[ean].cubierto += cubierto;
-            // Ahorro estimado = pvp × unidades cubiertas × desc% (Fase 1).
-            byEan[ean].ahorro += byEan[ean].pvp * cubierto * ((it.desc_pct || 0) / 100);
+            const pack = MODULO_PACKS[it.ean];
+            const ean  = pack ? pack.ean_unidad : it.ean;
+            const ups  = it._unidadesPorSlot ?? it.cant;
+            const propUnits = cant * ups;
+            const pvp = pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0;
+            imp    += pvp * propUnits;
+            ahorro += pvp * propUnits * ((it.desc_pct || 0) / 100);
         });
+        filas.push({nombre: mod.nombre, cant, imp, ahorro});
+        totCant += cant; totImp += imp; totAhorro += ahorro;
     });
-    const rows = Object.entries(byEan).sort((a, b) =>
-        (a[1].descripcion || '').localeCompare(b[1].descripcion || '', 'es', {sensitivity: 'base'})
-    );
-    if (rows.length === 0) { wrap.classList.add('hidden'); return; }
-    const fmt = n => n.toLocaleString('es-AR', {maximumFractionDigits: 0});
-    let html = '';
-    rows.forEach(([ean, d]) => {
-        const saldo    = d.cant_pedida - d.cubierto;
-        const pct      = d.cant_pedida > 0 ? Math.min(100, Math.round(d.cubierto / d.cant_pedida * 100)) : 0;
-        const importe  = d.pvp * d.cubierto;
-        const pctCls   = pct >= 100 ? 'text-emerald-700 font-bold' : pct > 0 ? 'text-amber-600' : 'text-[#999]';
-        const saldoCls = saldo > 0 ? 'saldo-ok' : saldo < 0 ? 'saldo-neg' : 'text-[#999]';
-        html += `<tr class="border-b border-[#ede8e0] hover:bg-amber-50/40 transition-colors">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${d.descripcion}</td>
-            <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
-            <td class="px-2 py-1.5 text-right text-amber-700">${d.cant_pedida > 0 ? d.cant_pedida : '<span class="text-[#ccc]">—</span>'}</td>
-            <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
-            <td class="px-2 py-1.5 text-right font-semibold text-emerald-700">${d.cubierto > 0 ? d.cubierto : '<span class="text-[#ccc]">0</span>'}</td>
-            <td class="px-2 py-1.5 text-right ${saldoCls}">${saldo}</td>
-            <td class="px-2 py-1.5 text-right"><span class="${pctCls}">${pct}%</span></td>
-            <td class="px-2 py-1.5 text-right text-rose-700 font-medium">${importe > 0 ? '$' + fmt(importe) : '<span class="text-[#ccc]">—</span>'}</td>
-            <td class="px-2 py-1.5 text-right text-emerald-700 font-semibold">${d.ahorro > 0 ? '$' + fmt(d.ahorro) : '<span class="text-[#ccc]">—</span>'}</td>
-        </tr>`;
-    });
-    tbody.innerHTML = html;
+    if (filas.length === 0) { wrap.classList.add('hidden'); return; }
+    const fmt = n => Math.round(n).toLocaleString('es-AR');
+    const $$ = n => '$' + fmt(n);
+    tbody.innerHTML = filas.map(f => `
+        <tr class="border-b border-[#ede8e0] hover:bg-amber-50/40 transition-colors">
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${f.nombre}</td>
+            <td class="px-2 py-1.5 text-right text-emerald-700 font-bold">${f.cant}</td>
+            <td class="px-2 py-1.5 text-right text-rose-700">${f.imp > 0 ? $$(f.imp) : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right text-emerald-700 font-semibold">${f.ahorro > 0 ? $$(f.ahorro) : '<span class="text-[#ccc]">—</span>'}</td>
+        </tr>
+    `).join('');
+    tfoot.innerHTML = `
+        <tr class="border-t-2 border-[#ddd] bg-[#fafafa]">
+            <td class="px-2 py-2 font-bold uppercase text-[10px] tracking-wide">Total</td>
+            <td class="px-2 py-2 text-right text-emerald-700 font-bold">${totCant}</td>
+            <td class="px-2 py-2 text-right text-rose-700 font-bold">${$$(totImp)}</td>
+            <td class="px-2 py-2 text-right text-emerald-700 font-bold">${$$(totAhorro)}</td>
+        </tr>
+    `;
     wrap.classList.remove('hidden');
 }
 
