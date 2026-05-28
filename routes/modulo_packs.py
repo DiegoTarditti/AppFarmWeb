@@ -435,6 +435,7 @@ def init_app(app):
                 if p.get('ean_unidad_sug'):
                     todos_eans.add(p['ean_unidad_sug'])
             eans_en_catalogo = set()
+            desc_unidad_map = {}
             if todos_eans:
                 # EANs reales (numericos): productos master + alts.
                 eans_reales = [e for e in todos_eans if not e.startswith('OBS:')]
@@ -448,8 +449,8 @@ def init_app(app):
                 # 'OBS:N' = referencia directa a obs_productos.observer_id.
                 # Si el observer_id existe en obs_productos, lo damos por valido.
                 obs_refs = {e for e in todos_eans if e.startswith('OBS:')}
+                obs_ids = []
                 if obs_refs:
-                    obs_ids = []
                     for e in obs_refs:
                         try:
                             obs_ids.append(int(e[4:]))
@@ -465,6 +466,27 @@ def init_app(app):
                                     eans_en_catalogo.add(e)
                             except (ValueError, TypeError):
                                 pass
+
+                # Mapa EAN → descripcion (para mostrar al lado del EAN unidad
+                # del preview, "descripcion equivalencia hija").
+                desc_unidad_map = {}
+                if eans_reales:
+                    for cb, dsc in (session.query(Producto.codigo_barra, Producto.descripcion)
+                                    .filter(Producto.codigo_barra.in_(eans_reales)).all()):
+                        desc_unidad_map[cb] = (dsc or '').strip()
+                    # Alts: si el EAN aparece como alt de un Producto, usar su desc.
+                    for cb, pid in (session.query(ProductoCodigoBarra.codigo_barra,
+                                                  ProductoCodigoBarra.producto_id)
+                                    .filter(ProductoCodigoBarra.codigo_barra.in_(eans_reales)).all()):
+                        if cb not in desc_unidad_map:
+                            p = session.get(Producto, pid)
+                            if p:
+                                desc_unidad_map[cb] = (p.descripcion or '').strip()
+                if obs_ids:
+                    for oid, dsc in (session.query(database.ObsProducto.observer_id,
+                                                   database.ObsProducto.descripcion)
+                                     .filter(database.ObsProducto.observer_id.in_(obs_ids)).all()):
+                        desc_unidad_map[f'OBS:{oid}'] = (dsc or '').strip()
 
             # Conflicto: ¿hay un módulo activo de este lab ya?
             conflicto = None
@@ -519,6 +541,7 @@ def init_app(app):
                         'destacado': bool(it.get('destacado')),
                         'es_pack': es_pack,
                         'ean_unidad': ean_unidad,
+                        'desc_unidad': desc_unidad_map.get(ean_unidad, '') if ean_unidad != ean_pack else '',
                         'cantidad_pack': cantidad,
                         'confianza': confianza,
                         'catalogo_pack': cat_pack,

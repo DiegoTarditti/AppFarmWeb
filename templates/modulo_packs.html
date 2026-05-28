@@ -995,6 +995,8 @@ function mostrarPreview(d) {
                          class="hidden absolute top-full left-0 mt-1 bg-white border border-[#e0e0e0] rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto text-xs"
                          style="min-width:320px"></div>
                 </td>
+                <td class="px-2 py-1.5 text-[11px] text-[#6f6f6f] truncate max-w-[220px]" id="prev-desc-unidad-${mi}-${ii}"
+                    title="${(it.desc_unidad || '').replace(/"/g,'&quot;')}">${(it.desc_unidad || '').replace(/</g,'&lt;')}</td>
                 <td class="px-2 py-1.5">${_badgeCatalogo(it.catalogo_pack)}</td>
                 <td class="px-2 py-1.5" id="prev-cat-unidad-${mi}-${ii}">${_badgeCatalogo(it.catalogo_unidad)}</td>
             </tr>
@@ -1015,6 +1017,7 @@ function mostrarPreview(d) {
                                 <th class="px-2 py-1.5">% dto.</th>
                                 <th class="px-2 py-1.5 text-left">Pack?</th>
                                 <th class="px-2 py-1.5 text-left">EAN unidad</th>
+                                <th class="px-2 py-1.5 text-left">Descripción unidad</th>
                                 <th class="px-2 py-1.5 text-left">Cat. pack</th>
                                 <th class="px-2 py-1.5 text-left">Cat. unidad</th>
                             </tr>
@@ -1144,9 +1147,7 @@ function selectPreviewEan(id, ean, desc) {
     if (!_previewActual || !_previewActual.modulos[mi] || !_previewActual.modulos[mi].items[ii]) return;
     const it = _previewActual.modulos[mi].items[ii];
     it.ean_unidad = ean;
-    // Si el ean_unidad era igual al ean_pack (no había equivalencia detectada),
-    // ahora con la elección hay equivalencia válida → es_pack queda en true si
-    // ya lo era (sin afectar pack_detector que ya corrió en el backend).
+    it.desc_unidad = desc || '';
     it.catalogo_unidad = 'ok';
     // Actualizar UI
     const search = document.getElementById('prev-search-' + id);
@@ -1155,6 +1156,13 @@ function selectPreviewEan(id, ean, desc) {
     if (dd) dd.classList.add('hidden');
     const catCell = document.getElementById('prev-cat-unidad-' + id);
     if (catCell) catCell.innerHTML = _badgeCatalogo('ok');
+    const descCell = document.getElementById('prev-desc-unidad-' + id);
+    if (descCell) {
+        const safeDesc = (desc || '').replace(/</g, '&lt;');
+        const safeTitle = (desc || '').replace(/"/g, '&quot;');
+        descCell.innerHTML = safeDesc;
+        descCell.title = safeTitle;
+    }
 }
 
 // Click-outside para cerrar dropdowns del preview
