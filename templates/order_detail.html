@@ -286,7 +286,14 @@
              El saldo por producto sigue calculado internamente y va a la
              próxima instancia (ofertas c/mín). -->
         <div id="resumen-modulos-wrap" class="hidden border-t border-[#e8e8e8] p-4">
-            <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest mb-2">Resumen de módulos a pedir</p>
+            <div class="flex items-center justify-between mb-2">
+                <p class="text-[10px] font-semibold text-[#888] uppercase tracking-widest">Resumen de módulos a pedir</p>
+                <button type="button" onclick="exportResumenModulos()"
+                        class="text-[11px] bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1 rounded transition-colors"
+                        title="Descargar CSV (se abre en Excel) con nombre + cantidad de cada módulo">
+                    📥 Exportar a Excel
+                </button>
+            </div>
             <table class="w-full text-xs border-collapse" style="min-width:520px">
                 <thead>
                     <tr class="bg-[#f5f0e8] text-[#6f6f6f] uppercase tracking-wide text-[10px]">
@@ -1066,7 +1073,14 @@ function renderModulosRaw() {
                 const _descU = pedidoNom[_eu] || _pack.desc_unidad || '(sin descripción)';
                 const _alfaU = _pack.codigo_alfabeta_unidad
                     ? `<span class="text-[10px] text-emerald-700 font-semibold ml-1">[${_pack.codigo_alfabeta_unidad}]</span>` : '';
-                equivLine = `<div class="text-[10px] text-[#888] mt-0.5 ml-1">↳ <span class="font-mono text-[10px] text-[#aaa]">${_eu}</span>${_alfaU} · ${_descU}</div>`;
+                // Origen del EAN unidad: LOCAL · OBS · ? (no resuelto).
+                const _catU = _pack.cat_unidad || 'none';
+                const _catBadge = _catU === 'local'
+                    ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 ml-1.5" title="EAN unidad en catálogo local">LOCAL</span>'
+                    : _catU === 'observer'
+                    ? '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-violet-100 text-violet-700 ml-1.5" title="EAN unidad en ObServer">OBS</span>'
+                    : '<span class="text-[9px] font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-700 ml-1.5" title="EAN unidad NO encontrado en catálogo — revisar en /modulo-packs">?</span>';
+                equivLine = `<div class="text-[10px] text-[#888] mt-0.5 ml-1">↳ <span class="font-mono text-[10px] text-[#aaa]">${_eu}</span>${_alfaU} · ${_descU}${_catBadge}</div>`;
             }
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
@@ -1222,6 +1236,54 @@ function recalcModuloAll(mi) {
 
 function recalcRow(mi, ii) { recalcModuloAll(mi); }
 
+// Exporta el resumen al pie a CSV (Excel-friendly).
+// Solo módulos con modulos_propuesta > 0. Columnas: Módulo · Cantidad · Importe · Ahorro.
+function exportResumenModulos() {
+    const filas = [];
+    let totCant = 0, totImp = 0, totAhorro = 0;
+    modulesData.forEach(mod => {
+        if (mod._selected === false) return;
+        const cant = parseInt(mod.modulos_propuesta || 0) || 0;
+        if (cant <= 0) return;
+        let imp = 0, ahorro = 0;
+        mod.items.forEach(it => {
+            const pack = MODULO_PACKS[it.ean];
+            const ean  = pack ? pack.ean_unidad : it.ean;
+            const ups  = it._unidadesPorSlot ?? it.cant;
+            const propUnits = cant * ups;
+            const pvp = pedidoPvp[ean] || PRODUCT_PRICES[ean] || PRODUCT_PRICES[it.ean] || 0;
+            imp    += pvp * propUnits;
+            ahorro += pvp * propUnits * ((it.desc_pct || 0) / 100);
+        });
+        filas.push([mod.nombre, cant, Math.round(imp), Math.round(ahorro)]);
+        totCant += cant; totImp += imp; totAhorro += ahorro;
+    });
+    if (filas.length === 0) {
+        alert('No hay módulos con cantidad > 0 para exportar.');
+        return;
+    }
+    // CSV con separador ; (Excel-ES lo reconoce mejor) + BOM UTF-8 para acentos.
+    const escapar = (v) => {
+        const s = String(v ?? '');
+        return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lineas = [
+        ['Módulo', 'Cantidad', 'Importe', 'Ahorro'].map(escapar).join(';'),
+        ...filas.map(f => f.map(escapar).join(';')),
+        ['TOTAL', totCant, Math.round(totImp), Math.round(totAhorro)].map(escapar).join(';'),
+    ];
+    const blob = new Blob(['﻿' + lineas.join('\n')], {type: 'text/csv;charset=utf-8;'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const ts   = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = `resumen-modulos-${(PEDIDO_LABORATORIO || 'pedido').replace(/[^a-z0-9]+/gi, '-')}-${ts}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
 function renderResumenModulos() {
     // Resumen al pie: 1 fila por modulo con cantidad confirmada > 0
     // (titulo + cantidad + importe estimado + ahorro). El saldo por
@@ -1367,7 +1429,7 @@ function buildResumenAgrupado() {
         if (!resumenAgr[ean]) {
             resumenAgrEans.push(ean);
             resumenAgr[ean] = {
-                nombre: pedidoNom[ean] || nombre || ean, cant_mod: 0, cant_oferta_min: 0, cant_nodeal: 0,
+                nombre: pedidoNom[ean] || nombre || ean, cant_mod: 0, cant_mod_packs: 0, cant_oferta_min: 0, cant_nodeal: 0,
                 cant_pedida: pedidoQty[ean] ?? 0, pvp: pedidoPvp[ean] || PRODUCT_PRICES[ean] || 0,
                 rot: pedidoRot[ean] || {}, erp_qty: pedidoErp[ean] ?? null,
                 monodroga: pedidoMono[ean] || '',
@@ -1380,7 +1442,10 @@ function buildResumenAgrupado() {
         mod.items.forEach(it => {
             const pack = MODULO_PACKS[it.ean];
             const ean  = pack ? pack.ean_unidad : it.ean;
-            get(ean, it.descripcion).cant_mod += (it.propuesta || 0) * (it._unidadesPorSlot ?? it.cant);
+            const prop = it.propuesta || 0;
+            const ag   = get(ean, it.descripcion);
+            ag.cant_mod       += prop * (it._unidadesPorSlot ?? it.cant);
+            ag.cant_mod_packs += prop;
         });
     });
     offMinResult.forEach(it => { get(it.ean, it.nombre).cant_oferta_min += it.cantidad; });
@@ -1442,11 +1507,11 @@ function renderResumen() {
             <th class="text-right px-2 py-2" style="width:65px" title="Stock actual ERP">Stock</th>
             <th class="text-right px-2 py-2 text-purple-700" style="width:90px">Rot./Prom.mes</th>
             <th class="text-right px-2 py-2 text-rose-700" style="width:70px">Precio</th>
-            <th class="text-right px-2 py-2 text-amber-700" style="width:70px" title="Unidades de módulos">Módulo</th>
+            <th class="text-right px-2 py-2 text-amber-700" style="width:80px" title="Unidades finales · packs. Si difieren, debajo del total de unidades aparece la cantidad de packs propuestos.">Módulo</th>
             <th class="text-right px-2 py-2 text-purple-600" style="width:80px" title="Editable">Oferta c/mín</th>
             <th class="text-right px-2 py-2 text-sky-700" style="width:80px" title="Editable">Sin Deal</th>
-            <th class="text-right px-2 py-2 text-brand font-bold" style="width:70px">Total</th>
-            <th class="text-right px-2 py-2 text-amber-700" style="width:75px">Cant.Pedida</th>
+            <th class="text-right px-2 py-2 text-brand font-bold" style="width:80px" title="Lo que va a salir del pedido: Módulo + Oferta c/mín + Sin Deal.">Total Pedido</th>
+            <th class="text-right px-2 py-2 text-amber-700" style="width:75px" title="Lo que el sistema sugirió comprar (stock + rotación + días a cubrir).">Sugerido</th>
             <th class="text-right px-2 py-2 text-red-600" style="width:65px">Saldo</th>
         </tr>
     </thead>
@@ -1460,7 +1525,9 @@ function renderResumen() {
         const initSaldo  = d.cant_pedida - initTotal;
         const saldoCls   = initSaldo > 0 ? 'text-red-600 font-bold' : initSaldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]';
         const totalCls   = initTotal > 0 ? 'font-bold text-brand' : 'text-[#ccc]';
-        const stockCell  = d.erp_qty != null ? d.erp_qty : '<span class="text-[#ccc]">—</span>';
+        // Stock = ObServer (pedidoStock vía fmtStock), no ErpStock legacy.
+        // fmtStock maneja fraccionado/envase y devuelve '—' si no hay dato.
+        const stockCell  = fmtStock(ean);
         const _packs = UNIT_TO_PACK[ean] || [];
         const packBadge = _packs.length
             ? `<span class="inline-block text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 rounded font-bold mr-1 align-middle" title="Pack ${_packs.map(p=>p.ean_pack+' ('+p.cantidad+'u)').join(', ')}">${_packs[0].cantidad}u/pk</span>`
@@ -1482,7 +1549,13 @@ function renderResumen() {
             <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
             <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
             <td class="px-2 py-1.5 text-right text-rose-700">${fmtPvp(d.pvp)}</td>
-            <td class="px-2 py-1.5 text-right font-semibold text-amber-700">${d.cant_mod > 0 ? d.cant_mod : '<span class="text-[#ccc]">—</span>'}</td>
+            <td class="px-2 py-1.5 text-right font-semibold text-amber-700">${
+                d.cant_mod > 0
+                    ? (d.cant_mod_packs > 0 && d.cant_mod_packs !== d.cant_mod
+                        ? `${d.cant_mod}<span class="text-[10px] text-[#aaa] font-normal ml-0.5">u</span><span class="block text-[10px] text-[#888] font-normal">${d.cant_mod_packs} pk</span>`
+                        : `${d.cant_mod}<span class="text-[10px] text-[#aaa] font-normal ml-0.5">u</span>`)
+                    : '<span class="text-[#ccc]">—</span>'
+            }</td>
             <td class="px-2 py-1.5 text-right">
                 <input type="number" min="0" value="${initOffMin}"
                        class="res-inp w-14 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400"
@@ -1759,7 +1832,7 @@ async function autocargarOfertasMinimo() {
         const res = await fetch(`/api/laboratorio/${PEDIDO_LAB_ID}/ofertas-minimo`);
         const data = await res.json();
         if (!data.items || !data.items.length) {
-            statusEl.textContent = 'Importá el Excel de ofertas con mínimo';
+            statusEl.innerHTML = '<span class="text-amber-700 font-semibold">Sin ofertas</span> <span class="text-[#999]">— activá una en /informes/ofertas-activas o importá un Excel</span>';
             return;
         }
         ofertasMinData = data.items;
@@ -1768,7 +1841,7 @@ async function autocargarOfertasMinimo() {
         show('btn-procesar-ofertas-min');
         renderOfertasMinImportPreview();
     } catch (e) {
-        statusEl.textContent = 'Importá el Excel de ofertas con mínimo';
+        statusEl.textContent = 'Sin ofertas';
     }
 }
 

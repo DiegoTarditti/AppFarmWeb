@@ -99,12 +99,18 @@
                 <label class="text-xs font-semibold text-violet-900 block mb-1">
                     Laboratorio destino
                 </label>
-                <select id="lab-select-pre" class="w-full bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm">
+                <select id="lab-select-pre" class="w-full bg-white border border-violet-300 rounded-lg px-3 py-2 text-sm"
+                        onchange="onLabSelectChange()">
                     <option value="">— Elegí un laboratorio —</option>
                     {% for l in laboratorios %}
-                    <option value="{{ l.id }}">{{ l.nombre }}</option>
+                    <option value="{{ l.id }}">{{ l.nombre }}{% if l.n_productos %} · {{ l.n_productos }} prod.{% endif %}</option>
                     {% endfor %}
                 </select>
+                <button type="button" id="btn-ver-lab-prods" onclick="verLabProds()" disabled
+                        class="mt-2 text-[11px] bg-violet-600 hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-3 py-1 rounded transition-colors"
+                        title="Ver el catálogo de productos asociados al lab elegido para verificar que es el correcto">
+                    🔍 Ver productos del lab
+                </button>
             </div>
             {% endif %}
 
@@ -261,7 +267,7 @@
                 <select id="lab-select" class="flex-1 bg-white border border-violet-300 rounded px-2 py-1 text-xs">
                     <option value="">— Elegí —</option>
                     {% for l in laboratorios %}
-                    <option value="{{ l.id }}" {% if lab_preseleccionado == l.id %}selected{% endif %}>{{ l.nombre }}</option>
+                    <option value="{{ l.id }}" {% if lab_preseleccionado == l.id %}selected{% endif %}>{{ l.nombre }}{% if l.n_productos %} · {{ l.n_productos }} prod.{% endif %}</option>
                     {% endfor %}
                 </select>
                 <span id="revalidar-status" class="text-[10px] text-violet-700 whitespace-nowrap"></span>
@@ -505,6 +511,27 @@
 
 </div>
 
+<!-- Modal "Ver productos del lab" — fuera de los panel-N para que no quede oculto por el padre -->
+<div id="lab-prods-modal" class="hidden fixed inset-0 bg-black/60 z-[115] flex items-center justify-center p-4"
+     onclick="if(event.target===this) cerrarLabProds()">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col">
+        <div class="px-4 py-3 border-b border-[#ececec] flex items-center justify-between bg-violet-50">
+            <span class="text-sm font-bold text-violet-900">🧪 Catálogo del lab — <span id="lab-prods-nombre">—</span></span>
+            <button type="button" onclick="cerrarLabProds()"
+                    class="w-7 h-7 flex items-center justify-center rounded text-violet-700 hover:bg-violet-100 text-lg">✕</button>
+        </div>
+        <div class="px-4 py-2 border-b border-[#ececec]">
+            <input type="text" id="lab-prods-filter" oninput="filtrarLabProds()"
+                   placeholder="Filtrar por descripción o EAN…"
+                   class="w-full text-xs bg-[#fafafa] border border-[#e0e0e0] rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-400">
+            <p id="lab-prods-count" class="text-[10px] text-[#888] mt-1">—</p>
+        </div>
+        <div class="flex-1 overflow-y-auto px-4 py-2" id="lab-prods-list">
+            <p class="text-xs text-[#888] py-4 text-center">Cargando…</p>
+        </div>
+    </div>
+</div>
+
 <script>
 const CAMPOS = [
     { key: 'codigo',           label: 'Cód. int. prov.',  hint: 'código interno del proveedor (no EAN)' },
@@ -687,6 +714,68 @@ function toggleModoCarga() {
     document.getElementById('campo-lab').classList.toggle('hidden', modo !== 'lab');
     document.getElementById('campo-drog').classList.toggle('hidden', modo !== 'drog');
 }
+
+// ── "Ver productos del lab" — verificar lab antes de importar ─────────────
+let _labProdsCache = {};
+function onLabSelectChange() {
+    const sel = document.getElementById('lab-select-pre');
+    const btn = document.getElementById('btn-ver-lab-prods');
+    if (btn) btn.disabled = !sel || !sel.value;
+}
+async function verLabProds() {
+    const sel = document.getElementById('lab-select-pre');
+    if (!sel || !sel.value) return;
+    const labId = sel.value;
+    const labNombre = sel.options[sel.selectedIndex].textContent;
+    document.getElementById('lab-prods-nombre').textContent = labNombre;
+    document.getElementById('lab-prods-filter').value = '';
+    const cont = document.getElementById('lab-prods-list');
+    cont.innerHTML = '<p class="text-xs text-[#888] py-4 text-center">Cargando…</p>';
+    document.getElementById('lab-prods-modal').classList.remove('hidden');
+    if (_labProdsCache[labId]) {
+        _renderLabProdsList(_labProdsCache[labId]);
+        return;
+    }
+    try {
+        const r = await fetch('/api/ofertas/import/lab/' + labId + '/productos');
+        const data = await r.json();
+        _labProdsCache[labId] = data;
+        _renderLabProdsList(data);
+    } catch (e) {
+        cont.innerHTML = '<p class="text-xs text-red-600 py-4 text-center">Error al cargar.</p>';
+    }
+}
+function _renderLabProdsList(data) {
+    const cont = document.getElementById('lab-prods-list');
+    const filter = (document.getElementById('lab-prods-filter')?.value || '').trim().toLowerCase();
+    const lista = data.productos || [];
+    const filtered = filter
+        ? lista.filter(p => (p.desc + ' ' + p.ean).toLowerCase().includes(filter))
+        : lista;
+    document.getElementById('lab-prods-count').textContent =
+        filter ? `${filtered.length} de ${data.n} productos` : `${data.n} productos`;
+    if (filtered.length === 0) {
+        cont.innerHTML = '<p class="text-xs text-[#888] py-4 text-center">Sin resultados.</p>';
+        return;
+    }
+    cont.innerHTML = filtered.map(p => `
+        <div class="text-xs border-b border-[#f0f0f0] py-1.5 flex items-center gap-3 hover:bg-[#fafafa]">
+            <span class="font-mono text-[10px] text-[#888] flex-shrink-0 w-28">${p.ean || '—'}</span>
+            <span class="text-[#1e1e1e] truncate" title="${(p.desc || '').replace(/"/g, '&quot;')}">${(p.desc || '').replace(/</g, '&lt;')}</span>
+        </div>
+    `).join('');
+}
+function filtrarLabProds() {
+    const sel = document.getElementById('lab-select-pre');
+    if (sel && sel.value && _labProdsCache[sel.value]) {
+        _renderLabProdsList(_labProdsCache[sel.value]);
+    }
+}
+function cerrarLabProds() {
+    document.getElementById('lab-prods-modal').classList.add('hidden');
+}
+// Si el lab ya viene pre-seleccionado, habilitar el botón al cargar
+document.addEventListener('DOMContentLoaded', () => onLabSelectChange());
 function _modoCargaActual() {
     const r = document.querySelector('input[name="modo-carga"]:checked');
     return r ? r.value : 'lab';

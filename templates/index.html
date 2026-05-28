@@ -545,6 +545,20 @@
                             </div>
                         </div>
                     </div>
+                    {# Card: Pedidos con ofertas (express vía /observer/pedido-rapido). #}
+                    <div class="card home-card" style="display:flex; flex-direction:column; gap:8px;"
+                         data-card-text="pedidos ofertas pedido rapido express analisis laboratorio observer modulos descuento">
+                        <a href="{{ url_for('observer_pedido_rapido') }}" class="hover:no-underline" style="text-decoration:none; color:inherit;">
+                            <div class="action-content">
+                                <div class="icon-tile icon-tile-info">⚡</div>
+                                <div class="action-content__body">
+                                    <span class="action-content__title">Pedidos con ofertas</span>
+                                    <div class="action-content__desc">Express: análisis y armado directo a /order/&lt;id&gt; con módulos + ofertas c/mín.</div>
+                                </div>
+                            </div>
+                        </a>
+                        <a href="{{ url_for('observer_pedido_rapido') }}" class="btn btn-mint btn-sm" style="justify-content:center;" title="Crea el pedido directo, saltea la grilla intermedia">⚡ Iniciar</a>
+                    </div>
                     {% endif %}
                     {% if cat_key == 'productos' %}
                     {# Card especial: Comportamientos excepcionales (flags por producto/lab). #}

@@ -979,14 +979,26 @@ function mostrarPreview(d) {
             <tr class="border-t border-[#f0f0f0] ${it.es_pack ? 'bg-violet-50/40' : ''}">
                 <td class="px-2 py-1.5 font-mono text-[11px]">${it.ean_pack || ''}</td>
                 <td class="px-2 py-1.5 text-[11px]">${(it.descripcion || '').replace(/</g,'&lt;')}</td>
+                <td class="px-2 py-1.5">${_badgeCatalogo(it.catalogo_pack)}</td>
                 <td class="px-2 py-1.5 text-center text-[11px]">${it.cant_modulo ?? '—'}</td>
                 <td class="px-2 py-1.5 text-center text-[11px]">${it.desc_pct != null ? it.desc_pct + '%' : '—'}</td>
                 <td class="px-2 py-1.5 text-[11px]">${it.es_pack
                     ? `<span class="text-violet-700 font-semibold">PACK ×${it.cantidad_pack}</span>`
                     : '<span class="text-[#999]">—</span>'}</td>
-                <td class="px-2 py-1.5 font-mono text-[11px]">${it.ean_unidad || ''}</td>
-                <td class="px-2 py-1.5">${_badgeCatalogo(it.catalogo_pack)}</td>
-                <td class="px-2 py-1.5">${_badgeCatalogo(it.catalogo_unidad)}</td>
+                <td class="px-2 py-1.5 relative">
+                    <input type="text" id="prev-search-${mi}-${ii}"
+                           value="${(it.ean_unidad && it.ean_unidad !== it.ean_pack) ? it.ean_unidad : ''}"
+                           placeholder="🔍 buscar..."
+                           oninput="filterPreviewDropdown(${mi}, ${ii})"
+                           onfocus="filterPreviewDropdown(${mi}, ${ii})"
+                           class="w-36 text-[11px] font-mono bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand">
+                    <div id="prev-dd-${mi}-${ii}"
+                         class="hidden absolute top-full left-0 mt-1 bg-white border border-[#e0e0e0] rounded-lg shadow-lg z-30 max-h-48 overflow-y-auto text-xs"
+                         style="min-width:320px"></div>
+                </td>
+                <td class="px-2 py-1.5 text-[11px] text-[#6f6f6f] truncate max-w-[220px]" id="prev-desc-unidad-${mi}-${ii}"
+                    title="${(it.desc_unidad || '').replace(/"/g,'&quot;')}">${(it.desc_unidad || '').replace(/</g,'&lt;')}</td>
+                <td class="px-2 py-1.5" id="prev-cat-unidad-${mi}-${ii}">${_badgeCatalogo(it.catalogo_unidad)}</td>
             </tr>
         `).join('');
         return `
@@ -1001,11 +1013,12 @@ function mostrarPreview(d) {
                             <tr>
                                 <th class="px-2 py-1.5 text-left">EAN pack</th>
                                 <th class="px-2 py-1.5 text-left">Descripción</th>
+                                <th class="px-2 py-1.5 text-left">Cat. pack</th>
                                 <th class="px-2 py-1.5">Cant. mod.</th>
                                 <th class="px-2 py-1.5">% dto.</th>
                                 <th class="px-2 py-1.5 text-left">Pack?</th>
                                 <th class="px-2 py-1.5 text-left">EAN unidad</th>
-                                <th class="px-2 py-1.5 text-left">Cat. pack</th>
+                                <th class="px-2 py-1.5 text-left">Descripción unidad</th>
                                 <th class="px-2 py-1.5 text-left">Cat. unidad</th>
                             </tr>
                         </thead>
@@ -1079,6 +1092,87 @@ async function confirmarImport(accionAnterior) {
         msgEl.classList.add('text-red-500');
     }
 }
+
+// ── Edición inline de EAN unidad en el preview de import ─────────────────
+// Reusa PRODS_ALL + /api/packs/buscar-unidad del editor de packs existente.
+let _prevSearchTimeouts = {};
+function filterPreviewDropdown(mi, ii) {
+    const id = mi + '-' + ii;
+    const search = document.getElementById('prev-search-' + id);
+    const dd = document.getElementById('prev-dd-' + id);
+    if (!search || !dd) return;
+    const q = search.value.trim();
+    dd.classList.remove('hidden');
+    const matchFn = window.MultiTokenFilter ? window.MultiTokenFilter.buildAnyOf(q) : (() => true);
+    const localHits = q.length < 2 ? [] :
+        PRODS_ALL.filter(p => matchFn([p.ean, p.desc]))
+                 .slice(0, 15)
+                 .map(p => ({ean: p.ean, desc: p.desc, fuente: 'local'}));
+    _renderPrevDropdown(id, dd, localHits, q.length < 2);
+    if (q.length < 2) return;
+    clearTimeout(_prevSearchTimeouts[id]);
+    _prevSearchTimeouts[id] = setTimeout(() => {
+        fetch('/api/packs/buscar-unidad?q=' + encodeURIComponent(q))
+            .then(r => r.json())
+            .then(data => _renderPrevDropdown(id, dd, data.results || [], false))
+            .catch(() => {});
+    }, 250);
+}
+
+function _renderPrevDropdown(id, dd, results, loadingHint) {
+    if (loadingHint) {
+        dd.innerHTML = '<div class="px-3 py-2 text-[#bbb]">Escribí al menos 2 letras…</div>';
+        return;
+    }
+    if (!results.length) {
+        dd.innerHTML = '<div class="px-3 py-2 text-[#bbb]">Sin resultados.</div>';
+        return;
+    }
+    dd.innerHTML = results.map(p => {
+        const safeDesc = (p.desc || '').replace(/'/g, "\\'");
+        const badge = p.fuente === 'observer'
+            ? '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 flex-shrink-0">OBS</span>'
+            : '<span class="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 flex-shrink-0">LOCAL</span>';
+        return `<div class="px-3 py-1.5 cursor-pointer hover:bg-amber-50 flex items-center gap-2"
+                     onclick="selectPreviewEan('${id}','${p.ean}','${safeDesc}')">
+                    ${badge}
+                    <span class="font-mono text-[#555] flex-shrink-0 text-[11px]">${p.ean}</span>
+                    <span class="text-[#555] truncate">${p.desc}</span>
+                </div>`;
+    }).join('');
+}
+
+function selectPreviewEan(id, ean, desc) {
+    const [mi, ii] = id.split('-').map(Number);
+    if (!_previewActual || !_previewActual.modulos[mi] || !_previewActual.modulos[mi].items[ii]) return;
+    const it = _previewActual.modulos[mi].items[ii];
+    it.ean_unidad = ean;
+    it.desc_unidad = desc || '';
+    it.catalogo_unidad = 'ok';
+    // Actualizar UI
+    const search = document.getElementById('prev-search-' + id);
+    const dd = document.getElementById('prev-dd-' + id);
+    if (search) search.value = ean;
+    if (dd) dd.classList.add('hidden');
+    const catCell = document.getElementById('prev-cat-unidad-' + id);
+    if (catCell) catCell.innerHTML = _badgeCatalogo('ok');
+    const descCell = document.getElementById('prev-desc-unidad-' + id);
+    if (descCell) {
+        const safeDesc = (desc || '').replace(/</g, '&lt;');
+        const safeTitle = (desc || '').replace(/"/g, '&quot;');
+        descCell.innerHTML = safeDesc;
+        descCell.title = safeTitle;
+    }
+}
+
+// Click-outside para cerrar dropdowns del preview
+document.addEventListener('click', e => {
+    document.querySelectorAll('[id^="prev-dd-"]').forEach(dd => {
+        const id = dd.id.replace('prev-dd-', '');
+        const search = document.getElementById('prev-search-' + id);
+        if (!dd.contains(e.target) && e.target !== search) dd.classList.add('hidden');
+    });
+});
 
 function sugerirNombreLista() {
     const labNombre = _labNombreDe('nm-lab-wrap');

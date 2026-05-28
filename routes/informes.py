@@ -1981,6 +1981,17 @@ def init_app(app):
                      for r in results]
         return jsonify({'items': items})
 
+    # Una observación mal importada suele ser una presentación de producto
+    # ("30 comp", "100 ml", "60 caps") que el wizard mapeó a observacion por
+    # error. Sirve para marcar grupos sospechosos y ofrecer limpieza bulk.
+    import re as _re_obs
+    _OBS_SOSPECHOSA_RE = _re_obs.compile(
+        r'^\s*\d+\s*(ml|comp|cap|caps|sob|amp|sup|kg|grm|gr|g|mg)\b', _re_obs.I,
+    )
+
+    def _obs_es_sospechosa(s):
+        return bool(s and _OBS_SOSPECHOSA_RE.match(s))
+
     @app.route('/informes/ofertas-activas')
     @login_required
     def informe_ofertas_activas():
@@ -2028,7 +2039,9 @@ def init_app(app):
                     g['_vh'] = o.vigencia_hasta
                     g['vigencia'] = o.vigencia_hasta.strftime('%d/%m/%Y')
 
-            grupos = [dict(g, _vh=None) for g in grupos_dict.values()]
+            grupos = [dict(g, _raw_vh=g.get('_vh'), _vh=None,
+                           sospechosa=_obs_es_sospechosa(g.get('observacion')))
+                      for g in grupos_dict.values()]
 
             # ── Módulos — agrupar por lab (nivel 1 solamente) ────────────────
             from sqlalchemy import func as _func2
@@ -2062,6 +2075,134 @@ def init_app(app):
     # Versiones "bulk" del sync/pull por-lab que están en routes/laboratorios.py.
     # Más cómodo cuando las ofertas entran por droguería (no por lab) y querés
     # mover todo de una.
+
+    @app.route('/informes/ofertas-activas/grupo/toggle-activa', methods=['POST'])
+    @login_required
+    def informes_ofertas_grupo_toggle_activa():
+        """Activa/desactiva (activo=True/False) todas las ofertas que matcheen
+        un grupo (lab, observacion, vigencia_hasta, drog, tipo). Para que el
+        operador deje 1 batch activo por lab y los anteriores como histórico.
+        Body JSON: {lab_id, observacion, vigencia_hasta, drog_id, tipo, set_to}.
+        """
+        from datetime import datetime as _dt
+
+        from database import OfertaMinimo
+        d = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(d.get('lab_id')) if d.get('lab_id') not in (None, 'null', '') else None
+        except (TypeError, ValueError):
+            lab_id = None
+        try:
+            drog_id = int(d.get('drog_id')) if d.get('drog_id') not in (None, 'null', '') else None
+        except (TypeError, ValueError):
+            drog_id = None
+        observacion = (d.get('observacion') or '').strip() or None
+        tipo        = (d.get('tipo') or '').strip() or None
+        set_to      = bool(d.get('set_to'))
+        vh_str      = (d.get('vigencia_hasta') or '').strip()
+        vh = None
+        if vh_str:
+            for fmt in ('%Y-%m-%d', '%d/%m/%Y'):
+                try:
+                    vh = _dt.strptime(vh_str, fmt).date(); break
+                except ValueError:
+                    continue
+        with database.get_db() as session:
+            q = session.query(OfertaMinimo)
+            # Lab puede ser None (multi-lab); usamos `is_` cuando corresponde.
+            q = q.filter(OfertaMinimo.laboratorio_id == lab_id) if lab_id is not None \
+                else q.filter(OfertaMinimo.laboratorio_id.is_(None))
+            q = q.filter(OfertaMinimo.drogueria_id == drog_id) if drog_id is not None \
+                else q.filter(OfertaMinimo.drogueria_id.is_(None))
+            if observacion:
+                q = q.filter(OfertaMinimo.observacion == observacion)
+            else:
+                q = q.filter(OfertaMinimo.observacion.is_(None))
+            if tipo:
+                q = q.filter(OfertaMinimo.tipo_descuento == tipo)
+            if vh:
+                q = q.filter(OfertaMinimo.vigencia_hasta == vh)
+            n = q.update({OfertaMinimo.activo: set_to},
+                         synchronize_session=False)
+            session.commit()
+        return jsonify({'ok': True, 'actualizadas': int(n), 'set_to': set_to})
+
+    @app.route('/informes/ofertas-activas/sospechosas/preview', methods=['GET'])
+    @login_required
+    def informes_ofertas_sospechosas_preview():
+        """Lista las ofertas con `observacion` tipo presentación ('30 comp',
+        '100 ml', etc.) — síntoma típico de un import donde la columna se
+        mapeó por error al campo observacion."""
+        from database import Laboratorio, OfertaMinimo
+        with database.get_db() as session:
+            rows = (session.query(OfertaMinimo, Laboratorio.nombre)
+                    .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                    .filter(OfertaMinimo.activo.is_(True),
+                            OfertaMinimo.observacion.isnot(None))
+                    .order_by(Laboratorio.nombre, OfertaMinimo.observacion).all())
+            items = []
+            for o, lab in rows:
+                if _obs_es_sospechosa(o.observacion):
+                    items.append({
+                        'id':  o.id,
+                        'lab': lab or '—',
+                        'observacion': o.observacion,
+                        'ean': o.ean or '',
+                        'descripcion': (o.descripcion or '')[:120],
+                    })
+        return jsonify({'items': items, 'n': len(items)})
+
+    @app.route('/informes/ofertas-activas/sospechosas/borrar', methods=['POST'])
+    @login_required
+    def informes_ofertas_sospechosas_borrar():
+        """Borra (delete) todas las ofertas con observación tipo presentación.
+        El frontend ya confirmó con el user previa visualización."""
+        from database import OfertaMinimo
+        with database.get_db() as session:
+            rows = (session.query(OfertaMinimo)
+                    .filter(OfertaMinimo.activo.is_(True),
+                            OfertaMinimo.observacion.isnot(None)).all())
+            n = 0
+            for o in rows:
+                if _obs_es_sospechosa(o.observacion):
+                    session.delete(o)
+                    n += 1
+            session.commit()
+        return jsonify({'ok': True, 'borradas': n})
+
+    _QUEUE_OBS_PREFIX = 'Aplicada desde queue por '
+
+    @app.route('/informes/ofertas-activas/queue/preview', methods=['GET'])
+    @login_required
+    def informes_ofertas_queue_preview():
+        """Lista las ofertas auto-creadas desde la queue de pendientes
+        (observacion empieza con 'Aplicada desde queue por ...')."""
+        from database import Laboratorio, OfertaMinimo
+        with database.get_db() as session:
+            rows = (session.query(OfertaMinimo, Laboratorio.nombre)
+                    .outerjoin(Laboratorio, Laboratorio.id == OfertaMinimo.laboratorio_id)
+                    .filter(OfertaMinimo.observacion.like(_QUEUE_OBS_PREFIX + '%'))
+                    .order_by(Laboratorio.nombre, OfertaMinimo.observacion).all())
+        items = [{
+            'id':  o.id,
+            'lab': lab or '—',
+            'observacion': o.observacion,
+            'ean': o.ean or '',
+            'descripcion': (o.descripcion or '')[:120],
+        } for o, lab in rows]
+        return jsonify({'items': items, 'n': len(items)})
+
+    @app.route('/informes/ofertas-activas/queue/borrar', methods=['POST'])
+    @login_required
+    def informes_ofertas_queue_borrar():
+        """Borra todas las ofertas auto-creadas desde la queue."""
+        from database import OfertaMinimo
+        with database.get_db() as session:
+            n = (session.query(OfertaMinimo)
+                 .filter(OfertaMinimo.observacion.like(_QUEUE_OBS_PREFIX + '%'))
+                 .delete(synchronize_session=False))
+            session.commit()
+        return jsonify({'ok': True, 'borradas': int(n)})
 
     @app.route('/informes/ofertas-activas/sync-render-bulk', methods=['POST'])
     @login_required
