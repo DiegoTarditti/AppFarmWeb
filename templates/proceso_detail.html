@@ -97,6 +97,13 @@
                    class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white transition-colors">
                     Analizar ventas →
                 </a>
+                <a href="{{ url_for('observer_pedido_rapido',
+                                    lab=(proc.partner_nombre if proc.tipo == 'laboratorio' else None),
+                                    proceso=proc.id) }}"
+                   class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                   title="Express: calcula y crea el pedido directo, sin pantalla de revisión.">
+                    ⚡ Pedido rápido
+                </a>
                 {% endif %}
                 {% if hecho %}
                 <form method="post" action="{{ url_for('proceso_desmarcar_paso', proceso_id=proc.id, paso='analisis') }}">

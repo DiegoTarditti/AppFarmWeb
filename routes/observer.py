@@ -1052,6 +1052,146 @@ def init_app(app):
         flash(f'Análisis de {laboratorio} completado desde ObServer.', 'success')
         return redirect(url_for('purchase_results', uid=uid))
 
+    @app.route('/observer/pedido-rapido', methods=['GET', 'POST'])
+    @login_required
+    def observer_pedido_rapido():
+        """Ciclo rápido paralelo a /observer/analizar: form mínimo (lab + n_days)
+        → calcula stock + ventas → crea el Pedido directo → aterriza en
+        /order/<id>. Se saltea la pantalla intermedia /purchase/results.
+
+        La ruta /observer/analizar queda intacta (camino original con grilla
+        editable y exports). Esta es para el flujo express.
+        """
+        if not _user_tiene_observer(current_user):
+            flash('Tu usuario no tiene acceso a ObServer.', 'error')
+            return redirect(url_for('index'))
+        if not observer_source.observer_analisis_disponible():
+            flash('No hay datos de ventas para analizar. Corré el sync desde la PC '
+                  'de la farmacia.', 'error')
+            return redirect(url_for('purchase_index'))
+
+        if request.method == 'GET':
+            labs = observer_source.get_laboratorios_disponibles()
+            lab_pre = (request.args.get('lab') or '').strip()
+            proceso_id = request.args.get('proceso', type=int)
+            return render_template('observer_pedido_rapido.html',
+                                   laboratorios=labs, n_days_default=35,
+                                   lab_preseleccionado=lab_pre,
+                                   proceso_id=proceso_id)
+
+        # POST: calcular + crear pedido + redirigir a /order/<id>.
+        laboratorio = (request.form.get('laboratorio') or '').strip()
+        try:
+            n_days = max(1, min(365, int(request.form.get('n_days', 35))))
+        except (ValueError, TypeError):
+            n_days = 35
+        proceso_id = request.form.get('proceso_id', type=int)
+
+        if not laboratorio:
+            flash('Elegí un laboratorio.', 'error')
+            return redirect(url_for('observer_pedido_rapido', proceso=proceso_id))
+
+        hoy = datetime.now()
+        anio, mes = hoy.year, hoy.month
+        productos = observer_source.get_ventas_laboratorio(laboratorio, anio, mes)
+        if not productos:
+            flash(f'Sin datos de ventas para "{laboratorio}" este período.', 'warning')
+            return redirect(url_for('observer_pedido_rapido',
+                                    lab=laboratorio, proceso=proceso_id))
+
+        # Ventana 12m hacia atrás (igual que /observer/analizar).
+        start_m = mes - 11
+        start_y = anio
+        while start_m <= 0:
+            start_m += 12
+            start_y -= 1
+
+        cfg = get_config()
+        results = analyze_purchase(
+            productos, n_days, start_m, mes,
+            umbral_pico=cfg['umbral_pico'],
+            umbral_baja=cfg['umbral_baja'],
+            umbral_tendencia=cfg['umbral_tendencia'],
+            rot_alta_min=cfg['rot_alta_min'],
+            rot_media_min=cfg['rot_media_min'],
+        )
+
+        periodo_str = f'{start_m:02d}/{start_y} - {mes:02d}/{anio}'
+        farmacia_nom = current_user.nombre_completo or 'Farmacia'
+
+        with database.get_db() as session:
+            from helpers import _upsert_pedido_items as _ups_pi
+
+            sesion = AnalisisSesion(
+                laboratorio_nombre=laboratorio, periodo=periodo_str,
+                farmacia=farmacia_nom, n_days=n_days, fuente='observer',
+                n_productos=len(results),
+            )
+            session.add(sesion)
+            session.flush()
+            sesion_id = sesion.id
+
+            items = []
+            for p in results:
+                qty = int(p.get('order_qty') or 0)
+                if qty <= 0:
+                    continue
+                cb = (p.get('codigo_barra') or '').strip()
+                obs_id = p.get('observer_id')
+                # Si falta el EAN pero hay observer_id, lookup directo.
+                if not cb and obs_id:
+                    ean_real = (session.query(database.ObsCodigoBarras.codigo_barras)
+                                .filter(database.ObsCodigoBarras.producto_observer == obs_id,
+                                        database.ObsCodigoBarras.orden == 1,
+                                        database.ObsCodigoBarras.fecha_baja.is_(None))
+                                .first())
+                    cb = ean_real[0] if ean_real else ''
+                precio = float(p.get('precio_pvp') or 0)
+                items.append(PedidoItem(
+                    codigo_barra=cb, nombre=p.get('nombre', ''),
+                    cantidad=qty, precio_pvp=precio,
+                    subtotal=round(qty * precio, 2),
+                    rotacion=p.get('rotacion') or None,
+                    avg_monthly=p.get('avg_monthly') or None,
+                ))
+
+            if not items:
+                flash(f'El análisis no sugirió ningún producto a pedir para '
+                      f'"{laboratorio}".', 'warning')
+                return redirect(url_for('observer_pedido_rapido',
+                                        lab=laboratorio, proceso=proceso_id))
+
+            pedido = Pedido(
+                laboratorio=laboratorio, farmacia=farmacia_nom,
+                periodo=periodo_str, n_days=n_days,
+                analisis_sesion_id=sesion_id,
+                items=items, origen='Rapido',
+            )
+            session.add(pedido)
+            _ups_pi(session, items, observer_bridge=True)
+            session.flush()
+            pedido_id = pedido.id
+
+            # Linkear al proceso si vino el query/hidden.
+            if proceso_id:
+                proc = session.get(database.ProcesoCompra, proceso_id)
+                if proc:
+                    proc.pedido_id = pedido_id
+                    proc.analisis_sesion_id = sesion_id
+                    if not proc.analisis_hecho_en:
+                        proc.analisis_hecho_en = now_ar()
+                    if not proc.pedido_hecho_en:
+                        proc.pedido_hecho_en = now_ar()
+                    if proc.estado in ('BORRADOR', None):
+                        proc.estado = 'PEDIDO'
+                    proc.actualizado_en = now_ar()
+
+            session.commit()
+
+        flash(f'Pedido creado para {laboratorio}: {len(items)} productos.',
+              'success')
+        return redirect(url_for('order_detail', pedido_id=pedido_id))
+
     @app.route('/observer/factura/<int:invoice_id>/recepciones')
     @login_required
     def observer_recepciones_factura(invoice_id):
