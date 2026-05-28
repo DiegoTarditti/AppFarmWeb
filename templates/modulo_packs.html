@@ -250,13 +250,14 @@
             {% if m.packs %}
             <table class="w-full text-xs border-collapse">
                 <thead>
-                    <tr class="bg-[#f5f5f5] text-[#aaa] text-[10px] uppercase tracking-wide">
+                    <tr class="bg-[#f5f5f5] text-[#aaa] text-[10px] uppercase tracking-wide sticky top-0 z-10 shadow-sm">
                         <th class="text-center px-2 py-1.5 w-12">Pack</th>
                         <th class="text-left px-4 py-1.5">EAN pack</th>
                         <th class="text-left px-3 py-1.5">Descripción</th>
                         <th class="text-left px-3 py-1.5">EAN unidad (ERP)</th>
                         <th class="text-left px-3 py-1.5">Descripción unidad</th>
-                        <th class="text-center px-3 py-1.5 w-16">Cant.</th>
+                        <th class="text-center px-3 py-1.5 w-20 text-cyan-700" title="Stock actual (ObServer) de la unidad. Fraccionables: cajas+sueltas.">Stock</th>
+                        <th class="text-center px-3 py-1.5 w-20" title="Cantidad mínima del módulo definida en el Excel del laboratorio">Cant.Min.Mod.</th>
                         <th class="text-center px-3 py-1.5 w-16">Unid./pack</th>
                         <th class="text-center px-3 py-1.5 w-20">Unid. equiv.</th>
                         <th class="text-center px-3 py-1.5 w-16">Desc. %</th>
@@ -268,7 +269,7 @@
                 {% set es_pack = (mp.cantidad or 0) > 1 %}
                 {% set sin_equiv = es_pack and mp.ean_unidad == mp.ean_pack %}
                 <!-- Fila vista -->
-                <tr class="border-t border-[#f0f0f0] {% if es_pack %}bg-amber-50/40 hover:bg-amber-50/70{% else %}hover:bg-amber-50/30{% endif %} pack-tr"
+                <tr class="border-t border-[#f0f0f0] {% if sin_equiv %}bg-amber-100/70 hover:bg-amber-200/70{% elif es_pack %}bg-amber-50/40 hover:bg-amber-50/70{% else %}hover:bg-amber-50/30{% endif %} pack-tr"
                     id="pack-row-{{ mp.id }}"
                     data-search="{{ ((mp.desc_pack or '') ~ ' ' ~ (mp.desc_unidad or '') ~ ' ' ~ (mp.ean_pack or '') ~ ' ' ~ (mp.ean_unidad or '')) | lower }}"
                     data-sin-equiv="{{ '1' if sin_equiv else '0' }}">
@@ -287,6 +288,19 @@
                     <td class="px-2 py-1 text-[#1e1e1e]">{{ mp.desc_pack or '—' }}</td>
                     <td class="px-2 py-1 font-mono text-[#555] text-[11px]">{{ mp.ean_unidad if mp.ean_unidad != mp.ean_pack else '—' }}</td>
                     <td class="px-2 py-1 text-[#6f6f6f]">{{ mp.desc_unidad or '—' }}</td>
+                    <td class="px-2 py-1 text-center text-cyan-700 font-medium" title="{% if mp.stock_unidad and mp.stock_unidad.fraccionado %}{{ mp.stock_unidad.stock }} unidades sueltas{% if mp.stock_unidad.envase %} · envase de {{ mp.stock_unidad.envase }}{% endif %}{% endif %}">
+                        {% if mp.stock_unidad %}
+                            {% if mp.stock_unidad.fraccionado and mp.stock_unidad.envase and mp.stock_unidad.envase > 0 %}
+                                {{ mp.stock_unidad.stock // mp.stock_unidad.envase }}+{{ mp.stock_unidad.stock % mp.stock_unidad.envase }}
+                            {% elif mp.stock_unidad.fraccionado %}
+                                <span class="text-amber-700">{{ mp.stock_unidad.stock }} u</span>
+                            {% else %}
+                                {{ mp.stock_unidad.stock }}
+                            {% endif %}
+                        {% else %}
+                            <span class="text-[#ddd]">—</span>
+                        {% endif %}
+                    </td>
                     <td class="px-2 py-1 text-center font-semibold text-brand">{{ mp.cant_modulo if mp.cant_modulo is not none else '—' }}</td>
                     <td class="px-2 py-1 text-center text-[#555]">{{ mp.cantidad }}</td>
                     <td class="px-2 py-1 text-center font-semibold text-[#1e1e1e]">
@@ -352,6 +366,7 @@
                             <span id="edit-unidad-label-{{ mp.id }}" class="text-[10px] text-[#6f6f6f] truncate max-w-[140px]" title="{{ mp.desc_unidad or '' }}">{{ mp.desc_unidad or '' }}</span>
                         </div>
                     </td>
+                    <td class="px-2 py-1.5 text-center text-[#ccc] text-[10px]">—</td>{# placeholder columna Stock #}
                     <td class="px-2 py-1.5"><input type="number" value="{{ mp.cant_modulo or '' }}" id="edit-cant-modulo-{{ mp.id }}" min="1"
                         class="w-full text-xs text-center bg-white border border-[#e0e0e0] rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-brand" placeholder="—"></td>
                     <td class="px-2 py-1.5"><input type="number" value="{{ mp.cantidad }}" id="edit-cantidad-{{ mp.id }}" min="1"
@@ -396,7 +411,7 @@
             <div id="packs-modulo-orphan">
             <table class="w-full text-xs border-collapse">
                 <thead>
-                    <tr class="bg-[#f5f5f5] text-[#aaa] text-[10px] uppercase tracking-wide">
+                    <tr class="bg-[#f5f5f5] text-[#aaa] text-[10px] uppercase tracking-wide sticky top-0 z-10 shadow-sm">
                         <th class="text-left px-4 py-1.5">EAN pack</th>
                         <th class="text-left px-3 py-1.5">Descripción pack</th>
                         <th class="text-left px-3 py-1.5">EAN unidad (ERP)</th>
