@@ -979,6 +979,7 @@ function mostrarPreview(d) {
             <tr class="border-t border-[#f0f0f0] ${it.es_pack ? 'bg-violet-50/40' : ''}">
                 <td class="px-2 py-1.5 font-mono text-[11px]">${it.ean_pack || ''}</td>
                 <td class="px-2 py-1.5 text-[11px]">${(it.descripcion || '').replace(/</g,'&lt;')}</td>
+                <td class="px-2 py-1.5">${_badgeCatalogo(it.catalogo_pack)}</td>
                 <td class="px-2 py-1.5 text-center text-[11px]">${it.cant_modulo ?? '—'}</td>
                 <td class="px-2 py-1.5 text-center text-[11px]">${it.desc_pct != null ? it.desc_pct + '%' : '—'}</td>
                 <td class="px-2 py-1.5 text-[11px]">${it.es_pack
@@ -997,7 +998,6 @@ function mostrarPreview(d) {
                 </td>
                 <td class="px-2 py-1.5 text-[11px] text-[#6f6f6f] truncate max-w-[220px]" id="prev-desc-unidad-${mi}-${ii}"
                     title="${(it.desc_unidad || '').replace(/"/g,'&quot;')}">${(it.desc_unidad || '').replace(/</g,'&lt;')}</td>
-                <td class="px-2 py-1.5">${_badgeCatalogo(it.catalogo_pack)}</td>
                 <td class="px-2 py-1.5" id="prev-cat-unidad-${mi}-${ii}">${_badgeCatalogo(it.catalogo_unidad)}</td>
             </tr>
         `).join('');
@@ -1013,12 +1013,12 @@ function mostrarPreview(d) {
                             <tr>
                                 <th class="px-2 py-1.5 text-left">EAN pack</th>
                                 <th class="px-2 py-1.5 text-left">Descripción</th>
+                                <th class="px-2 py-1.5 text-left">Cat. pack</th>
                                 <th class="px-2 py-1.5">Cant. mod.</th>
                                 <th class="px-2 py-1.5">% dto.</th>
                                 <th class="px-2 py-1.5 text-left">Pack?</th>
                                 <th class="px-2 py-1.5 text-left">EAN unidad</th>
                                 <th class="px-2 py-1.5 text-left">Descripción unidad</th>
-                                <th class="px-2 py-1.5 text-left">Cat. pack</th>
                                 <th class="px-2 py-1.5 text-left">Cat. unidad</th>
                             </tr>
                         </thead>
