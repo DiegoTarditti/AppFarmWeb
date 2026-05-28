@@ -352,6 +352,278 @@ def init_app(app):
             try: os.remove(tmp)
             except OSError: pass
 
+    # ── Nuevo flujo: preview + confirmar (no ensucia las tablas hasta confirmar) ──
+
+    def _parsear_y_armar_preview(modules, lab_id, lista_nombre):
+        """Toma la lista de módulos (output del parser regex o IA) y devuelve
+        el JSON de preview con detección de packs + validación EANs contra
+        catálogo + detección de conflicto (módulo activo del mismo lab)."""
+        from pack_detector import detectar_packs
+        with database.get_db() as session:
+            # Detección packs (igual que /importar).
+            detect = detectar_packs(modules, session, saltear_registrados=False)
+            pack_map = {}
+            for p in detect:
+                if p['confianza'] == 'baja':
+                    continue
+                if not p.get('cantidad'):
+                    if p.get('destacado'):
+                        p = dict(p, cantidad=2)
+                    else:
+                        continue
+                pack_map[p['ean_pack']] = p
+
+            # Validación EANs contra catálogo (master + alts).
+            from database import ProductoCodigoBarra
+            todos_eans = set()
+            for mod in modules:
+                for it in mod.get('items') or []:
+                    if it.get('ean'):
+                        todos_eans.add(str(it['ean']).strip())
+            for p in pack_map.values():
+                if p.get('ean_unidad_sug'):
+                    todos_eans.add(p['ean_unidad_sug'])
+            eans_en_catalogo = set()
+            if todos_eans:
+                eans_en_catalogo = {row[0] for row in
+                    session.query(Producto.codigo_barra)
+                    .filter(Producto.codigo_barra.in_(todos_eans)).all()}
+                eans_en_catalogo |= {row[0] for row in
+                    session.query(ProductoCodigoBarra.codigo_barra)
+                    .filter(ProductoCodigoBarra.codigo_barra.in_(todos_eans)).all()}
+
+            # Conflicto: ¿hay un módulo activo de este lab ya?
+            conflicto = None
+            if lab_id:
+                activo = (session.query(Modulo)
+                          .filter(Modulo.laboratorio_id == lab_id,
+                                  Modulo.activo.is_(True))
+                          .order_by(Modulo.id.desc()).first())
+                if activo:
+                    n_packs = session.query(ModuloPack).filter_by(modulo_id=activo.id).count()
+                    conflicto = {'modulo_id': activo.id, 'nombre': activo.nombre,
+                                 'lista_nombre': activo.lista_nombre or '',
+                                 'n_packs': n_packs}
+
+            # Armar payload por módulo + item.
+            modulos_preview = []
+            n_packs_auto = n_packs_pendientes = 0
+            n_eans_pack_no_cat = n_eans_unidad_no_cat = 0
+            for mod in modules:
+                items_preview = []
+                for it in mod.get('items') or []:
+                    ean_pack = (str(it.get('ean') or '').strip()) or None
+                    if not ean_pack:
+                        continue
+                    det = pack_map.get(ean_pack)
+                    es_pack = bool(det)
+                    if det:
+                        ean_unidad = det.get('ean_unidad_sug') or ean_pack
+                        cantidad = int(det.get('cantidad') or 1)
+                        confianza = det.get('confianza', '—')
+                        n_packs_auto += 1
+                    else:
+                        ean_unidad = ean_pack
+                        cantidad = 1
+                        confianza = None
+                    cat_pack = 'ok' if ean_pack in eans_en_catalogo else 'no_en_catalogo'
+                    if cat_pack == 'no_en_catalogo':
+                        n_eans_pack_no_cat += 1
+                    if es_pack and ean_unidad != ean_pack:
+                        cat_unidad = 'ok' if ean_unidad in eans_en_catalogo else 'no_en_catalogo'
+                        if cat_unidad == 'no_en_catalogo':
+                            n_eans_unidad_no_cat += 1
+                    else:
+                        cat_unidad = 'igual_pack'
+                    if es_pack and not det.get('ean_unidad_sug'):
+                        n_packs_pendientes += 1
+                    items_preview.append({
+                        'ean_pack': ean_pack,
+                        'descripcion': it.get('descripcion', ''),
+                        'cant_modulo': it.get('cant'),
+                        'desc_pct': float(it['desc_pct']) if it.get('desc_pct') is not None else None,
+                        'destacado': bool(it.get('destacado')),
+                        'es_pack': es_pack,
+                        'ean_unidad': ean_unidad,
+                        'cantidad_pack': cantidad,
+                        'confianza': confianza,
+                        'catalogo_pack': cat_pack,
+                        'catalogo_unidad': cat_unidad,
+                    })
+                if items_preview:
+                    modulos_preview.append({'nombre': mod['nombre'], 'items': items_preview})
+
+            stats = {
+                'n_modulos': len(modulos_preview),
+                'n_items': sum(len(m['items']) for m in modulos_preview),
+                'n_packs_auto': n_packs_auto,
+                'n_packs_pendientes': n_packs_pendientes,
+                'n_eans_pack_no_catalogo': n_eans_pack_no_cat,
+                'n_eans_unidad_no_catalogo': n_eans_unidad_no_cat,
+            }
+            return {
+                'ok': True,
+                'modulos': modulos_preview,
+                'lista_nombre': lista_nombre,
+                'lab_id': lab_id,
+                'conflicto_activo': conflicto,
+                'stats': stats,
+            }
+
+    @app.route('/modulo-packs/import-preview', methods=['POST'])
+    def modulo_packs_import_preview():
+        """Sube el archivo, lo parsea (regex o IA) y devuelve el JSON de
+        preview con equivalencias + validación. NO toca la DB.
+        Form: file (XLSX/PDF/imagen), lab_id, lista_nombre, usar_ia (0|1).
+        """
+        f = request.files.get('file')
+        if not f:
+            return jsonify({'error': 'No se recibió archivo'}), 400
+        lab_id = request.form.get('lab_id') or None
+        try:
+            lab_id = int(lab_id) if lab_id else None
+        except (TypeError, ValueError):
+            lab_id = None
+        lista_nombre = (request.form.get('lista_nombre') or '').strip() or None
+        usar_ia = request.form.get('usar_ia') in ('1', 'true', 'on')
+
+        ext = os.path.splitext(f.filename)[1].lower()
+        IMG_EXTS = ('.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif')
+        if usar_ia:
+            if ext not in ('.xlsx', '.xls', '.pdf', *IMG_EXTS):
+                return jsonify({'error': f'Formato {ext} no soportado por IA. Aceptamos XLSX, PDF y fotos.'}), 400
+            if not os.environ.get('ANTHROPIC_API_KEY', '').strip():
+                return jsonify({'error': 'IA no disponible: falta ANTHROPIC_API_KEY.'}), 503
+        else:
+            if ext not in ('.xlsx',):
+                return jsonify({'error': 'El parser regex solo acepta XLSX. Para PDF/foto tildá "Usar IA".'}), 400
+
+        tmp = os.path.join(UPLOAD_FOLDER, secure_filename(f.filename))
+        f.save(tmp)
+        try:
+            if usar_ia:
+                from services import modulos_ia
+                try:
+                    modules = modulos_ia.extraer(tmp, ext)
+                except RuntimeError as e:
+                    return jsonify({'error': str(e)}), 503
+                except Exception as e:   # noqa: BLE001
+                    return jsonify({'error': f'IA: {e}'}), 500
+            else:
+                from parsers.modulos_xlsx import parse_modulos_xlsx
+                try:
+                    modules = parse_modulos_xlsx(tmp)
+                except Exception as e:   # noqa: BLE001
+                    return jsonify({'error': f'Parser: {e}'}), 500
+
+            if not modules:
+                return jsonify({'error': 'No se encontraron módulos en el archivo'}), 400
+
+            preview = _parsear_y_armar_preview(modules, lab_id, lista_nombre)
+            return jsonify(preview)
+        finally:
+            try: os.remove(tmp)
+            except OSError: pass
+
+    @app.route('/modulo-packs/import-confirmar', methods=['POST'])
+    def modulo_packs_import_confirmar():
+        """Recibe el JSON del preview (posiblemente editado) y persiste:
+          - Si hay módulo activo del mismo lab: aplica accion_anterior:
+              'pisar' → borra el viejo (cascade ModuloPacks);
+              'conservar' → setea su activo=False (queda histórico);
+              ausente y hay conflicto → 409.
+          - Crea los Modulo + ModuloPack nuevos con activo=True.
+        Body JSON: {lab_id, lista_nombre, modulos, accion_anterior?}.
+        """
+        from helpers import now_ar
+        data = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(data.get('lab_id')) if data.get('lab_id') else None
+        except (TypeError, ValueError):
+            lab_id = None
+        lista_nombre = (data.get('lista_nombre') or '').strip() or None
+        modulos_in = data.get('modulos') or []
+        accion = (data.get('accion_anterior') or '').strip().lower()  # '' | 'pisar' | 'conservar'
+
+        if not modulos_in:
+            return jsonify({'error': 'No hay módulos para confirmar'}), 400
+
+        with database.get_db() as session:
+            try:
+                # Conflicto con el activo previo (si hay lab).
+                viejo = None
+                if lab_id:
+                    viejo = (session.query(Modulo)
+                             .filter(Modulo.laboratorio_id == lab_id,
+                                     Modulo.activo.is_(True))
+                             .order_by(Modulo.id.desc()).first())
+                if viejo and not accion:
+                    return jsonify({
+                        'error': 'conflicto_activo',
+                        'conflicto': {'modulo_id': viejo.id, 'nombre': viejo.nombre},
+                    }), 409
+                if viejo:
+                    if accion == 'pisar':
+                        session.delete(viejo)
+                        session.flush()
+                    elif accion == 'conservar':
+                        viejo.activo = False
+                    else:
+                        return jsonify({'error': f'accion_anterior inválida: {accion}'}), 400
+
+                creados = 0
+                packs_agregados = 0
+                primer_modulo_id = None
+                for mod in modulos_in:
+                    nombre_mod = (mod.get('nombre') or '').strip()
+                    if not nombre_mod:
+                        continue
+                    nuevo = Modulo(
+                        nombre=nombre_mod, laboratorio_id=lab_id,
+                        lista_nombre=lista_nombre, activo=True,
+                    )
+                    session.add(nuevo)
+                    session.flush()
+                    if primer_modulo_id is None:
+                        primer_modulo_id = nuevo.id
+                    creados += 1
+                    for it in mod.get('items') or []:
+                        ean_pack = (str(it.get('ean_pack') or '').strip())
+                        if not ean_pack:
+                            continue
+                        ean_unidad = (str(it.get('ean_unidad') or '').strip()) or ean_pack
+                        try:
+                            cantidad = max(1, int(it.get('cantidad_pack') or 1))
+                        except (TypeError, ValueError):
+                            cantidad = 1
+                        desc_pct = it.get('desc_pct')
+                        try:
+                            desc_pct = float(desc_pct) if desc_pct not in (None, '') else None
+                        except (TypeError, ValueError):
+                            desc_pct = None
+                        try:
+                            cant_modulo = int(it.get('cant_modulo')) if it.get('cant_modulo') not in (None, '') else None
+                        except (TypeError, ValueError):
+                            cant_modulo = None
+                        session.add(ModuloPack(
+                            ean_pack=ean_pack, ean_unidad=ean_unidad,
+                            cantidad=cantidad,
+                            descripcion=(it.get('descripcion') or '')[:255],
+                            cant_modulo=cant_modulo, desc_pct=desc_pct,
+                            modulo_id=nuevo.id,
+                            creado_en=now_ar(),
+                        ))
+                        packs_agregados += 1
+                session.commit()
+                return jsonify({
+                    'ok': True, 'modulos_creados': creados,
+                    'packs_agregados': packs_agregados,
+                    'primer_modulo_id': primer_modulo_id,
+                })
+            except Exception as e:   # noqa: BLE001
+                session.rollback()
+                return jsonify({'error': str(e)}), 500
+
     @app.route('/modulos/delete-by-lista', methods=['POST'])
     def modulos_delete_by_lista():
         """Elimina todos los módulos (y sus packs en cascada) de una lista/importación."""
