@@ -65,3 +65,6 @@ NUL
 
 # DB dumps (backups y pulls puntuales — no van al repo)
 *.dump
+
+# Snapshots de schema diff (artifacts puntuales)
+schema_diff_*.md
