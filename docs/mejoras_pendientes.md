@@ -6,6 +6,34 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Adoptar Alembic para migraciones (2026-05-28)
+
+**Contexto / por qué**: el approach actual de migraciones (`Base.metadata.create_all` + `_pg_add_columns` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` inline) es la causa raíz del wipe del 2026-05-28: una columna NOT NULL agregada al `configuracion` perdió su DEFAULT en algún punto, el INSERT inicial empezó a fallar, el "zombie pg_type handler" lo intentaba arreglar con `DROP TABLE ... CASCADE` y arrastró todos los masters. Mitigado en PR #131 con guard + `RESTRICT`, pero la fragilidad de fondo queda.
+
+**Limitaciones del approach actual**:
+- No hay versionado / historial de migraciones — todo es un pile idempotente.
+- No hay rollback (`alembic downgrade -1` no existe).
+- No hay detección de drift entre instancias (Render perdió DEFAULTs de `transfer_excedente_meses/necesita_meses` sin avisarnos).
+- El zombie handler existe **solo** por la fragilidad de mezclar `create_all` con inline DDL. Con Alembic no se necesita.
+- Auto-generación de migraciones desde modelos: no.
+
+**Plan de adopción** (1 sesión enfocada 4-6 h + gradual):
+1. `alembic init` + config apuntando a `DATABASE_URL`. (~30 min)
+2. **Baseline migration** que represente el schema actual completo (`alembic revision --autogenerate` desde una DB sana + revisión manual línea por línea). (~2-3 h, lo más delicado)
+3. **`alembic stamp head`** en cada instancia (local Badia, Render, Pieri si aplica). Marca cada DB como "ya estás al día". (~30 min)
+4. Cambiar `init_db` para que corra `alembic upgrade head` en vez de `create_all + _pg_add_columns`. (~1 h)
+5. **Gradual**: migrar `_pg_add_columns` a revisiones Alembic dedicadas (las inline ALTERs son idempotentes, no estorban si conviven con Alembic durante la transición). (~1 sesión por mes)
+6. **Borrar el zombie handler** después de tener confianza. (~5 min)
+
+**Riesgos a manejar**:
+- Drift entre instancias (Render vs local). Antes del paso 2, hacer un diff de schemas para reconciliar y arrancar Alembic con baseline limpio en todos.
+- Si el baseline está mal, las migraciones siguientes lo arrastran. La revisión manual del paso 2 es crítica.
+- Adoptar en medio de un sprint de features puede chocar con PRs que agregan columnas. Mejor en una semana tranquila o coordinando.
+
+**No urgente**: el PR #131 ya cortó la sangría (guard + RESTRICT impiden el wipe). Se puede deployar y operar tranquilo con el approach actual. Pero conviene agendar la adopción para no perder este punto.
+
+---
+
 ## 🟢 AppNúcleo — dashboard de grupo (read-only, app separada) (2026-05-27)
 
 **Qué es**: UX separada que consolida las farmacias del grupo (Badia, Pieri; vienen **Grassi** y **Cappone**) **sin** multi-tenant in-DB. Cada farmacia sigue siendo su instancia; el Núcleo solo **lee y agrega**. Vive en `appnucleo/` (app Flask standalone). Detalle en `appnucleo/README.md`.
