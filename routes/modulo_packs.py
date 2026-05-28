@@ -424,7 +424,7 @@ def init_app(app):
                         continue
                 pack_map[p['ean_pack']] = p
 
-            # Validación EANs contra catálogo (master + alts).
+            # Validación EANs contra catálogo (master + alts + obs_productos).
             from database import ProductoCodigoBarra
             todos_eans = set()
             for mod in modules:
@@ -436,12 +436,35 @@ def init_app(app):
                     todos_eans.add(p['ean_unidad_sug'])
             eans_en_catalogo = set()
             if todos_eans:
-                eans_en_catalogo = {row[0] for row in
-                    session.query(Producto.codigo_barra)
-                    .filter(Producto.codigo_barra.in_(todos_eans)).all()}
-                eans_en_catalogo |= {row[0] for row in
-                    session.query(ProductoCodigoBarra.codigo_barra)
-                    .filter(ProductoCodigoBarra.codigo_barra.in_(todos_eans)).all()}
+                # EANs reales (numericos): productos master + alts.
+                eans_reales = [e for e in todos_eans if not e.startswith('OBS:')]
+                if eans_reales:
+                    eans_en_catalogo = {row[0] for row in
+                        session.query(Producto.codigo_barra)
+                        .filter(Producto.codigo_barra.in_(eans_reales)).all()}
+                    eans_en_catalogo |= {row[0] for row in
+                        session.query(ProductoCodigoBarra.codigo_barra)
+                        .filter(ProductoCodigoBarra.codigo_barra.in_(eans_reales)).all()}
+                # 'OBS:N' = referencia directa a obs_productos.observer_id.
+                # Si el observer_id existe en obs_productos, lo damos por valido.
+                obs_refs = {e for e in todos_eans if e.startswith('OBS:')}
+                if obs_refs:
+                    obs_ids = []
+                    for e in obs_refs:
+                        try:
+                            obs_ids.append(int(e[4:]))
+                        except (ValueError, TypeError):
+                            pass
+                    if obs_ids:
+                        ids_vigentes = {oid for (oid,) in
+                            session.query(database.ObsProducto.observer_id)
+                            .filter(database.ObsProducto.observer_id.in_(obs_ids)).all()}
+                        for e in obs_refs:
+                            try:
+                                if int(e[4:]) in ids_vigentes:
+                                    eans_en_catalogo.add(e)
+                            except (ValueError, TypeError):
+                                pass
 
             # Conflicto: ¿hay un módulo activo de este lab ya?
             conflicto = None
