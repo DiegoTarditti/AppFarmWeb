@@ -32,6 +32,12 @@ def _detect_format(ws):
         # Formato A: primera columna es el nombre del módulo
         if vals[0] in ('NOMBRE MÓDULO', 'NOMBRE MODULO', 'MÓDULO', 'MODULO'):
             return 'A'
+        # Formato C: layout "combo" — encabezados nombrados, la DESCRIPCIÓN del
+        # producto va en la primera columna y los módulos se separan con filas
+        # "Combo N" (sin EAN). El orden de columnas NO es fijo: se mapea por
+        # nombre de encabezado. (ej. export de combos Pharmadorf)
+        if vals[0] in ('DESCRIPCION', 'DESCRIPCIÓN') and 'EAN' in vals:
+            return 'C'
     return 'A'  # default
 
 
@@ -96,6 +102,92 @@ def _row_destacada(row_cells):
     return False
 
 
+def _parse_formato_c(ws):
+    """Formato C — layout 'combo' con encabezados nombrados.
+
+    - Mapea columnas por NOMBRE de encabezado (orden no fijo).
+    - Agrupa por filas separadoras 'Combo N' (filas con texto pero sin EAN).
+    - La descripción del producto va en la primera columna; el nombre del
+      módulo sale de la fila separadora.
+    Tolera columnas extra (ID, PLAZO, etc.) que simplemente se ignoran, y
+    columnas mal ubicadas (ej. el combo bajo 'CANT. PEDIDA' y 'COMBO' vacía):
+    el agrupado se hace por las filas separadoras, no por esas columnas.
+    """
+    # 1. Localizar fila de encabezados (la primera que tenga 'EAN').
+    header_idx = None
+    headers = []
+    for i, row in enumerate(ws.iter_rows(min_row=1, max_row=8, values_only=True), 1):
+        up = [str(v).strip().upper() if v is not None else '' for v in row]
+        if 'EAN' in up:
+            header_idx, headers = i, up
+            break
+    if header_idx is None:
+        return []
+
+    def _find(*names):
+        for n in names:
+            if n in headers:
+                return headers.index(n)
+        return None
+
+    idx_ean  = _find('EAN', 'CODIGO EAN', 'CÓDIGO EAN', 'CODIGO DE BARRAS', 'CÓDIGO DE BARRAS')
+    idx_desc = _find('DESCRIPCION', 'DESCRIPCIÓN')
+    # Descuento: NO matchear 'CANT. PEDIDA' (en estos archivos trae el combo).
+    idx_dto  = _find('DESC.', 'DESC', 'DESCUENTO', 'DESC. %', 'DTO', 'DTO.', '% DESC', 'DESCUENTO %')
+    # Cantidad/mínimo: preferimos 'MIN O FIJO'/'CANT. MODULO'. Evitamos 'CANT. PEDIDA'.
+    idx_cant = _find('MIN O FIJO', 'CANT. MODULO', 'CANT. MÓDULO', 'CANTIDAD', 'MINIMO', 'MÍNIMO', 'MIN')
+    idx_combo = _find('COMBO', 'NOMBRE MODULO', 'NOMBRE MÓDULO', 'MODULO', 'MÓDULO')
+
+    if idx_ean is None or idx_desc is None:
+        return []
+
+    modules, current = [], None
+    for row_cells in ws.iter_rows(min_row=header_idx + 1):
+        row = [c.value for c in row_cells]
+        if not row or all(v is None for v in row):
+            continue
+        destacado = _row_destacada(row_cells)
+        ean = _norm_ean(row[idx_ean]) if idx_ean < len(row) else None
+
+        if not ean:
+            # Fila separadora → abre módulo nuevo. Nombre = texto en col 0 / desc.
+            texto = ''
+            for j in (idx_desc, 0):
+                if j is not None and j < len(row) and row[j]:
+                    texto = str(row[j]).strip()
+                    break
+            if texto:
+                if current is not None:
+                    modules.append(current)
+                current = {'nombre': texto, 'items': []}
+            continue
+
+        # Fila de ítem.
+        if current is None:
+            nombre = ''
+            if idx_combo is not None and idx_combo < len(row) and row[idx_combo]:
+                nombre = str(row[idx_combo]).strip()
+            current = {'nombre': nombre or 'SIN NOMBRE', 'items': []}
+        desc = (str(row[idx_desc]).strip()
+                if idx_desc < len(row) and row[idx_desc] else '')
+        cant = row[idx_cant] if idx_cant is not None and idx_cant < len(row) else None
+        dto  = row[idx_dto] if idx_dto is not None and idx_dto < len(row) else 0
+        current['items'].append({
+            'ean':         ean,
+            'descripcion': desc,
+            'cant':        _parse_int(cant),
+            'desc_pct':    _parse_float(dto),
+            'destacado':   destacado,
+        })
+
+    if current is not None:
+        modules.append(current)
+    modules = [m for m in modules if m['items']]
+    for m in modules:
+        m['items'].sort(key=lambda it: (it.get('descripcion') or '').strip().upper())
+    return modules
+
+
 def parse_modulos_xlsx(path):
     """
     Retorna lista de módulos:
@@ -119,6 +211,9 @@ def parse_modulos_xlsx(path):
     ws = wb.active
 
     fmt = _detect_format(ws)
+
+    if fmt == 'C':
+        return _parse_formato_c(ws)
 
     modules = []
     current = None

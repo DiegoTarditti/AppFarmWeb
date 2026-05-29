@@ -1875,7 +1875,8 @@ def init_app(app):
             # Droguerías disponibles para elegir como canal
             droguerias = [{'id': p.id, 'razon_social': p.razon_social}
                           for p in (session.query(database.Provider)
-                                    .filter(database.Provider.tipo == 'drogueria')
+                                    .filter(database.Provider.tipo == 'drogueria',
+                                            database.Provider.activo.is_(True))
                                     .order_by(database.Provider.razon_social).all())]
 
             return render_template('order_detail.html', pedido=data, productos_equiv=equiv,

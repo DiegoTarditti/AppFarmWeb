@@ -2254,7 +2254,17 @@ async function _confirmarEImportar() {
                 items: _items,
             }),
         });
-        return [r, await r.json()];
+        // Parse defensivo: si el server devuelve HTML (500, redirect a login,
+        // timeout de gunicorn) en vez de JSON, no explotamos con
+        // "Unexpected token '<'" — mostramos el status real.
+        const raw = await r.text();
+        let data;
+        try { data = raw ? JSON.parse(raw) : {}; }
+        catch (_) {
+            data = {ok: false, error: `El servidor respondió ${r.status} ${r.statusText || ''}`.trim()
+                                       + '. Revisá el log del servidor.'};
+        }
+        return [r, data];
     }
 
     try {
