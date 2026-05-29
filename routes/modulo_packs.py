@@ -101,6 +101,9 @@ def init_app(app):
                 return {'stock': stock, 'fraccionado': fraccionado, 'envase': envase}
 
             def _pack_dict(mp):
+                # prod_pack: master local del EAN del pack (para tildar Producto.es_pack
+                # desde la fila — toggle inline de "este producto es un pack en catálogo").
+                _pp = prod_map.get(mp.ean_pack)
                 return {'id': mp.id, 'ean_pack': mp.ean_pack, 'ean_unidad': mp.ean_unidad,
                         'cantidad': mp.cantidad,
                         'cant_modulo': mp.cant_modulo,
@@ -108,6 +111,8 @@ def init_app(app):
                         'desc_pack':   mp.descripcion or '',
                         'desc_unidad': _desc_unidad(mp),
                         'prod_unidad_id': prod_map[mp.ean_unidad].id if mp.ean_unidad in prod_map else None,
+                        'prod_pack_id':       _pp.id if _pp else None,
+                        'prod_pack_es_pack':  bool(_pp.es_pack) if _pp else False,
                         'modulo_id': mp.modulo_id,
                         'stock_unidad': _stock_info_unidad(mp.ean_unidad)}
 
@@ -622,6 +627,28 @@ def init_app(app):
             try: os.remove(tmp)
             except OSError: pass
 
+    @app.route('/modulo-packs/producto/marcar-pack', methods=['POST'])
+    def modulo_packs_producto_marcar():
+        """Toggle inline de Producto.es_pack desde la tabla de packs activos.
+        Body JSON: {ean: str, es_pack: 0|1}. Busca el Producto por codigo_barra
+        (master principal). Si no existe master local, devuelve 404 con aviso.
+        """
+        data = request.get_json(silent=True) or {}
+        ean = (str(data.get('ean') or '').strip())
+        if not ean:
+            return jsonify({'ok': False, 'error': 'ean requerido'}), 400
+        val = 1 if data.get('es_pack') in (True, 1, '1', 'true') else 0
+        with database.get_db() as session:
+            prod = (session.query(Producto)
+                    .filter(Producto.codigo_barra == ean).first())
+            if not prod:
+                return jsonify({'ok': False,
+                                'error': 'sin master local',
+                                'producto_id': None}), 404
+            prod.es_pack = val
+            session.commit()
+            return jsonify({'ok': True, 'producto_id': prod.id, 'es_pack': bool(val)})
+
     @app.route('/modulo-packs/import-confirmar', methods=['POST'])
     def modulo_packs_import_confirmar():
         """Recibe el JSON del preview (posiblemente editado) y persiste:
@@ -711,6 +738,15 @@ def init_app(app):
                             creado_en=now_ar(),
                         ))
                         packs_agregados += 1
+                        # Persistencia del flag es_pack a nivel catálogo (si el
+                        # operador lo tildó/destildó en el preview). Solo si
+                        # existe master local — no creamos Producto desde acá.
+                        if 'es_pack' in it:
+                            prod_master = (session.query(Producto)
+                                           .filter(Producto.codigo_barra == ean_pack)
+                                           .first())
+                            if prod_master:
+                                prod_master.es_pack = 1 if it.get('es_pack') else 0
                 session.commit()
                 return jsonify({
                     'ok': True, 'modulos_creados': creados,

@@ -2,91 +2,124 @@
 {% set nav_active = "compras" %}
 
 {% block title %}Analizar pedido — {{ pedido.laboratorio }}{% endblock %}
-{% block body_class %}theme-emerald{% endblock %}
+{# Pantalla con tema claro estándar (no theme-emerald) — más legible y consistente
+   con el resto de la app (/productos, /informes, etc.). #}
 
 {% block aside_extra_class %}no-print{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
 <script>
     const PEDIDO_LABORATORIO = {{ pedido.laboratorio | tojson }};
 </script>
 <style>
-    /* Step cards (3 pasos: módulos / ofertas / resumen) — theme-emerald */
+    /* Markdown del análisis IA — espaciado coherente con el modal. */
+    .ia-markdown h1 { font-size: 16px; font-weight: 700; color: #1e1e1e; margin: 10px 0 6px; }
+    .ia-markdown h2 { font-size: 14px; font-weight: 700; color: #5b21b6; margin: 14px 0 4px; padding-top: 6px; border-top: 1px solid #ede9fe; }
+    .ia-markdown h2:first-child { border-top: 0; padding-top: 0; }
+    .ia-markdown h3 { font-size: 12px; font-weight: 700; color: #6d28d9; margin: 8px 0 4px; }
+    .ia-markdown p  { margin: 4px 0; font-size: 13px; line-height: 1.55; }
+    .ia-markdown ul { padding-left: 20px; margin: 4px 0; }
+    .ia-markdown li { margin: 3px 0; font-size: 13px; line-height: 1.5; }
+    .ia-markdown strong { color: #111; font-weight: 700; }
+    .ia-markdown hr { border: 0; border-top: 1px solid #e5e7eb; margin: 10px 0; }
+    .ia-markdown code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+    /* Override del thead global oscuro (base.html lo pinta gris-casi-negro
+       con texto amarillo) — para esta pantalla usamos un thead gris medio
+       con texto oscuro, contraste fuerte sin ser ribbon negro. */
+    table thead { background-color: #d1d5db !important; }
+    table thead th {
+        background-color: #d1d5db !important;
+        color: #111827 !important;
+        border-color: #9ca3af !important;
+        border-bottom-width: 2px !important;
+    }
+    table tr.table-header, table tr.thead-row {
+        background-color: #d1d5db !important;
+    }
+    table tr.table-header th, table tr.table-header td,
+    table tr.thead-row th, table tr.thead-row td {
+        color: #111827 !important;
+    }
+
+    /* Step cards (3 pasos: módulos / ofertas / resumen) — light theme. */
     .step-card {
-        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
-        border: 1px solid var(--ds-line);
-        border-radius: var(--ds-r-lg);
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px;
         overflow: hidden;
+        box-shadow: 0 1px 2px rgba(0,0,0,.04);
     }
     .step-header {
-        background: rgba(0,0,0,.18);
-        border-bottom: 1px solid var(--ds-line);
+        background: #f9fafb;
+        border-bottom: 1px solid #ececec;
         padding: 12px 16px;
         display: flex; align-items: center; gap: 10px;
-        color: var(--ds-text);
+        color: #1e1e1e;
     }
     .step-badge {
         width: 22px; height: 22px; border-radius: 50%;
-        background: linear-gradient(135deg, var(--ds-orange) 0%, var(--ds-orange-deep) 100%);
+        background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%);
         color: #fff; font-size: 11px; font-weight: 700;
         display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        box-shadow: var(--ds-glow-orange);
+        box-shadow: 0 4px 12px rgba(234,88,12,.25);
     }
     .step-badge.done {
-        background: linear-gradient(135deg, var(--ds-mint) 0%, var(--ds-mint-deep) 100%);
-        color: var(--ds-bg-deep);
-        box-shadow: 0 4px 12px rgba(16,185,129,.3);
+        background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+        color: #ffffff;
+        box-shadow: 0 4px 12px rgba(16,185,129,.25);
     }
     .step-badge.waiting {
-        background: rgba(255,255,255,.08); color: var(--ds-text-mute);
+        background: #e5e7eb; color: #6b7280;
         box-shadow: none;
     }
 
     /* Filas de tablas dentro de los step-cards */
-    .mod-header-row { background: rgba(245,158,11,.10); }
-    .mod-header-row td { font-weight: 600; color: var(--ds-warn); padding: 6px 8px; }
-    .mod-footer-row { background: rgba(95,230,188,.06); }
-    .mod-footer-row td { font-size: 11px; color: var(--ds-mint); padding: 4px 8px; }
-    .data-row td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid var(--ds-line); color: var(--ds-text); }
-    .data-row:hover td { background: rgba(95,230,188,.04); }
-    .saldo-neg { color: var(--ds-danger); font-weight: 600; }
-    .saldo-ok  { color: var(--ds-mint); }
+    .mod-header-row { background: #fff7ed; }
+    .mod-header-row td { font-weight: 600; color: #b45309; padding: 6px 8px; }
+    .mod-footer-row { background: #d1fae5; }
+    .mod-footer-row td { font-size: 11px; color: #065f46; font-weight: 600; padding: 6px 8px; }
+    .data-row td { padding: 5px 8px; font-size: 12px; border-bottom: 1px solid #f1f5f9; color: #1e1e1e; }
+    .data-row:hover td { background: #f8fafc; }
+    .saldo-neg { color: #dc2626; font-weight: 600; }
+    .saldo-ok  { color: #059669; }
 
-    /* Inputs editables de propuesta — alineados al ds-input */
+    /* Inputs editables de propuesta */
     input.prop-input {
         width: 64px;
-        background: var(--ds-surface);
-        border: 1px solid var(--ds-line);
-        border-radius: var(--ds-r-sm);
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
         padding: 2px 6px; text-align: right;
-        font-size: 12px; color: var(--ds-text);
+        font-size: 12px; color: #1e1e1e;
     }
     input.prop-input:focus {
-        outline: none; border-color: var(--ds-mint);
-        box-shadow: 0 0 0 2px rgba(95,230,188,.15);
+        outline: none; border-color: #10b981;
+        box-shadow: 0 0 0 2px rgba(16,185,129,.15);
     }
 
-    /* Top bar custom de la pantalla — usa tokens, NO la global */
+    /* Top bar custom de la pantalla — light */
     .order-topbar {
-        background: linear-gradient(135deg, var(--ds-surface) 0%, var(--ds-bg) 100%);
-        border-bottom: 1px solid var(--ds-line);
+        background: #ffffff;
+        border-bottom: 1px solid #ececec;
         padding: 12px 24px;
         display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     }
     .order-topbar h1 {
         font-family: 'Space Grotesk', sans-serif;
-        font-size: 16px; font-weight: 700; color: var(--ds-text);
+        font-size: 16px; font-weight: 700; color: #1e1e1e;
         margin: 0;
     }
-    .order-topbar .meta { font-size: 11px; color: var(--ds-text-mute); margin-top: 2px; }
-    .order-topbar .save-status { font-size: 11px; color: var(--ds-text-mute); font-style: italic; }
+    .order-topbar .meta { font-size: 11px; color: #6b7280; margin-top: 2px; }
+    .order-topbar .save-status { font-size: 11px; color: #6b7280; font-style: italic; }
     .order-topbar .back-link {
-        font-size: 12px; color: var(--ds-text-soft); text-decoration: none;
+        font-size: 12px; color: #6f6f6f; text-decoration: none;
         display: inline-flex; align-items: center; gap: 5px;
         transition: color .15s;
     }
-    .order-topbar .back-link:hover { color: var(--ds-mint); }
+    .order-topbar .back-link:hover { color: #047857; }
 </style>
 {% endblock %}
 
@@ -138,23 +171,24 @@
     {% endif %}
 
     {% if pedido.analisis_json %}
-    <div id="restore-banner" class="card no-print" style="margin: 16px; padding: 12px 18px; border-color: rgba(139,92,246,.3); background: rgba(139,92,246,.08); display: flex; align-items: center; gap: 12px;">
-        <svg class="w-5 h-5 flex-shrink-0" style="color:#A78BFA;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div id="restore-banner" class="card no-print" style="margin: 16px; padding: 12px 18px; border: 1px solid #ddd6fe; background: #f5f3ff; display: flex; align-items: center; gap: 12px;">
+        <svg class="w-5 h-5 flex-shrink-0" style="color:#7c3aed;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
         <div class="flex-1">
-            <p style="font-size: 13px; font-weight: 600; color: #C4B5FD;">
+            <p style="font-size: 13px; font-weight: 700; color: #5b21b6;">
                 Hay un análisis guardado del {{ pedido.analisis_guardado_en }}
             </p>
-            <p style="font-size: 11px; color: var(--ds-text-soft); margin-top: 2px;">
+            <p style="font-size: 11px; color: #4b5563; margin-top: 2px;">
                 Podés restaurarlo para seguir editando, o descartarlo y arrancar de cero.
             </p>
         </div>
         <button type="button" onclick="restoreAnalysisState()" class="btn btn-sm"
-                style="background: rgba(139,92,246,.2); color: #C4B5FD; border-color: rgba(139,92,246,.3);">
+                style="background: #7c3aed; color: #ffffff; border-color: #7c3aed; font-weight: 600;">
             Restaurar
         </button>
-        <button type="button" onclick="clearAnalysisState()" class="btn btn-ghost btn-sm">
+        <button type="button" onclick="clearAnalysisState()" class="btn btn-sm"
+                style="background: #ffffff; color: #374151; border: 1px solid #d1d5db;">
             Descartar
         </button>
     </div>
@@ -164,19 +198,19 @@
 
     {% if pedido.dias_desde_analisis is not none and pedido.dias_desde_analisis >= 2 %}
     <!-- Aviso de datos desactualizados -->
-    <div class="card no-print" style="padding: 12px 18px; border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); display: flex; align-items: flex-start; gap: 12px;">
-        <svg class="w-6 h-6 flex-shrink-0" style="color: var(--ds-warn); margin-top: 2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div class="card no-print" style="padding: 12px 18px; border: 1px solid #fcd34d; background: #fffbeb; display: flex; align-items: flex-start; gap: 12px;">
+        <svg class="w-6 h-6 flex-shrink-0" style="color: #b45309; margin-top: 2px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
         </svg>
         <div class="flex-1">
-            <p style="font-size: 13px; font-weight: 700; color: var(--ds-warn);">
+            <p style="font-size: 13px; font-weight: 700; color: #92400e;">
                 Atención: el análisis tiene {{ pedido.dias_desde_analisis }} día{{ 's' if pedido.dias_desde_analisis != 1 }} de antigüedad
             </p>
-            <p style="font-size: 11px; color: var(--ds-text-soft); margin-top: 2px; line-height: 1.4;">
+            <p style="font-size: 11px; color: #4b5563; margin-top: 2px; line-height: 1.4;">
                 El stock y las ventas usadas para sugerir cantidades son del {{ pedido.creado_en }}. Desde entonces pudo haber ventas o compras que cambien la sugerencia.
                 Para datos actualizados, volvé a correr el análisis desde
-                <a href="{{ url_for('purchase_suggest') }}" style="color: var(--ds-warn); text-decoration: underline; font-weight: 600;">Compras</a>.
+                <a href="{{ url_for('purchase_suggest') }}" style="color: #b45309; text-decoration: underline; font-weight: 600;">Compras</a>.
             </p>
         </div>
     </div>
@@ -388,6 +422,16 @@
             <span class="text-xs text-[#999] ml-1" id="resumen-status">Disponible después de procesar ofertas con mínimo</span>
             <span id="canal-badge" class="ml-2 hidden text-[10px] font-semibold px-2 py-0.5 rounded"></span>
             <div class="ml-auto flex items-center gap-2 no-print">
+                <button id="btn-analizar-ia" onclick="analizarPedidoIA()"
+                        class="hidden flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                        title="Pedirle a Claude observaciones sobre este pedido (sobrestocks, cobertura desbalanceada, ofertas con poco ROI)">
+                    🤖 Analizar con Claude
+                </button>
+                <button id="btn-ver-ultimo-ia" onclick="verUltimoAnalisisIA()"
+                        class="hidden flex items-center gap-1.5 bg-white border border-violet-300 hover:bg-violet-50 text-violet-700 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                        title="Re-abrir el último análisis cacheado de este pedido (sin gastar créditos)">
+                    📂 Ver último
+                </button>
                 <button id="btn-export-sum-pdf" onclick="printStep('resumen')"
                         class="hidden btn btn-secondary btn-sm" title="Exportar a PDF">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
@@ -487,6 +531,35 @@
     </div>
 
     </div><!-- /overflow-auto -->
+
+    <!-- Modal: análisis IA del pedido (Claude) -->
+    <div id="ia-modal" class="hidden fixed inset-0 bg-black/60 z-[130] flex items-center justify-center p-4"
+         onclick="if(event.target===this) cerrarAnalisisIA()">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
+            <div class="px-4 py-3 border-b border-[#ececec] flex items-center justify-between bg-violet-50">
+                <span class="text-sm font-bold text-violet-900">🤖 Revisión IA del pedido — {{ pedido.laboratorio }}</span>
+                <button type="button" onclick="cerrarAnalisisIA()"
+                        class="w-7 h-7 flex items-center justify-center rounded text-violet-700 hover:bg-violet-100 text-lg">✕</button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-4 py-3" id="ia-body">
+                <p class="text-xs text-[#888] py-6 text-center">Cargando…</p>
+            </div>
+            <div class="px-4 py-3 border-t border-[#ececec] bg-[#fafafa] flex items-center justify-between gap-2">
+                <span class="text-[10px] text-[#888]">Las observaciones son sugerencias — vos decidís.</span>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="ia-btn-pdf" onclick="exportarAnalisisPDF()"
+                            class="hidden text-xs bg-white border border-violet-300 text-violet-700 hover:bg-violet-50 font-semibold px-3 py-1.5 rounded"
+                            title="Abrir vista imprimible del análisis para guardarlo como PDF">
+                        📄 Exportar PDF
+                    </button>
+                    <button type="button" onclick="cerrarAnalisisIA()"
+                            class="text-xs bg-violet-600 hover:bg-violet-700 text-white font-semibold px-4 py-1.5 rounded">
+                        Cerrar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 {% endblock %}
 
 {% block after_main %}
@@ -568,6 +641,7 @@ const PROD_URL_MODULES  = "{{ url_for('order_parse_modules',        pedido_id=pe
 const PROD_URL_MATCHES      = "{{ url_for('order_save_module_matches',  pedido_id=pedido.id) }}";
 const PROD_URL_OFERTAS_MIN  = "/api/ofertas/preview-con-minimo";
 const PEDIDO_LAB_ID = {{ pedido.lab_id | tojson }};
+const PEDIDO_N_DAYS = {{ pedido.n_days | tojson }};   // objetivo de cobertura
 
 const PEDIDO_PRODS    = {{ pedido.productos | tojson }};
 const EQUIV_GROUPS    = {{ productos_equiv | tojson }};
@@ -764,7 +838,7 @@ function restoreAnalysisState() {
     }
     if (resumenAgrEans.length) {
         try { renderResumen(); } catch (_) {}
-        show('btn-export-sum-pdf'); show('btn-export-sum-xlsx');
+        show("btn-export-sum-pdf"); show("btn-export-sum-xlsx"); show("btn-analizar-ia");
         show('btn-export-plantillas-wrap'); show('btn-sin-plantillas');
         enable('card-resumen');
         document.getElementById('badge-3')?.classList.remove('waiting');
@@ -1511,12 +1585,33 @@ function renderResumen() {
             <th class="text-right px-2 py-2 text-purple-600" style="width:80px" title="Editable">Oferta c/mín</th>
             <th class="text-right px-2 py-2 text-sky-700" style="width:80px" title="Editable">Sin Deal</th>
             <th class="text-right px-2 py-2 text-brand font-bold" style="width:80px" title="Lo que va a salir del pedido: Módulo + Oferta c/mín + Sin Deal.">Total Pedido</th>
+            <th class="text-right px-2 py-2 text-cyan-700" style="width:70px" title="Días de cobertura DESPUÉS de aplicar el Total Pedido: (stock + total) / (avg / 30.4). Objetivo del pedido: {{ pedido.n_days }}d.">Cob.Post</th>
             <th class="text-right px-2 py-2 text-amber-700" style="width:75px" title="Lo que el sistema sugirió comprar (stock + rotación + días a cubrir).">Sugerido</th>
             <th class="text-right px-2 py-2 text-red-600" style="width:65px">Saldo</th>
         </tr>
     </thead>
     <tbody id="tbody-resumen">`;
     const fmtPvp = n => n > 0 ? '$' + n.toLocaleString('es-AR', {maximumFractionDigits:0}) : '<span class="text-[#ccc]">—</span>';
+    // Cobertura post-pedido en días: (stock + total) / (avg_mensual / 30.4).
+    // null si no hay avg (rotación nula). Color por gap vs objetivo (PEDIDO_N_DAYS).
+    // Si no hay stock confirmado, asumimos 0 y marcamos con '*' (ver tooltip).
+    const NDAYS = PEDIDO_N_DAYS || 35;
+    function _covPostHtml(stock, total, avgMes) {
+        if (!avgMes || avgMes <= 0) return '<span class="text-[#ccc]">—</span>';
+        const stockKnown = stock != null;
+        const s = stockKnown ? stock : 0;
+        const d = Math.round((s + total) / (avgMes / 30.4));
+        let cls;
+        if (d >= NDAYS * 0.9 && d <= NDAYS * 1.3)      cls = 'text-emerald-700 font-semibold'; // en rango
+        else if (d > NDAYS * 1.3 && d <= NDAYS * 2)    cls = 'text-amber-700 font-semibold';   // se pasa un poco
+        else if (d > NDAYS * 2)                        cls = 'text-amber-900 font-bold';       // sobrestock fuerte
+        else if (d >= NDAYS * 0.6)                     cls = 'text-amber-700';                  // un poco corto
+        else                                           cls = 'text-red-700 font-bold';          // corto fuerte
+        const star = stockKnown ? '' : '<span class="text-amber-600 font-bold" title="Sin stock confirmado — calculado asumiendo stock=0">*</span>';
+        const tip  = stockKnown ? `objetivo ${NDAYS}d`
+                                 : `objetivo ${NDAYS}d · sin stock confirmado (asumido 0)`;
+        return `<span class="${cls}" title="${tip}">${d}d${star}</span>`;
+    }
     resumenAgrEans.forEach(ean => {
         const d = resumenAgr[ean];
         const initOffMin = d.cant_oferta_min;
@@ -1525,6 +1620,9 @@ function renderResumen() {
         const initSaldo  = d.cant_pedida - initTotal;
         const saldoCls   = initSaldo > 0 ? 'text-red-600 font-bold' : initSaldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]';
         const totalCls   = initTotal > 0 ? 'font-bold text-brand' : 'text-[#ccc]';
+        const stockNum   = (pedidoStock[ean] != null ? pedidoStock[ean] : null);
+        const avgMes     = (d.rot && d.rot.avg) || 0;
+        const covPost    = _covPostHtml(stockNum, initTotal, avgMes);
         // Stock = ObServer (pedidoStock vía fmtStock), no ErpStock legacy.
         // fmtStock maneja fraccionado/envase y devuelve '—' si no hay dato.
         const stockCell  = fmtStock(ean);
@@ -1567,6 +1665,7 @@ function renderResumen() {
                        data-ean="${ean}" data-field="nodeal" oninput="recalcResumenRow('${ean}')">
             </td>
             <td class="px-2 py-1.5 text-right ${totalCls}" id="res-total-${ean}">${initTotal}</td>
+            <td class="px-2 py-1.5 text-right" id="res-covpost-${ean}">${covPost}</td>
             <td class="px-2 py-1.5 text-right text-amber-700">${d.cant_pedida > 0 ? d.cant_pedida : '<span class="text-[#ccc]">—</span>'}</td>
             <td class="px-2 py-1.5 text-right ${saldoCls}" id="res-saldo-${ean}">${initSaldo}</td>
         </tr>`;
@@ -1596,6 +1695,30 @@ function recalcResumenRow(ean) {
     if (saldoEl) {
         saldoEl.textContent = saldo;
         saldoEl.className = `px-2 py-1.5 text-right ${saldo > 0 ? 'text-red-600 font-bold' : saldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]'}`;
+    }
+    // Cobertura post-pedido — recalcular con el total ajustado.
+    const covEl = document.getElementById(`res-covpost-${ean}`);
+    if (covEl) {
+        const stockNum = (pedidoStock[ean] != null ? pedidoStock[ean] : null);
+        const avgMes   = (d.rot && d.rot.avg) || 0;
+        const NDAYS_   = PEDIDO_N_DAYS || 35;
+        if (!avgMes || avgMes <= 0) {
+            covEl.innerHTML = '<span class="text-[#ccc]">—</span>';
+        } else {
+            const stockKnown = stockNum != null;
+            const s = stockKnown ? stockNum : 0;
+            const days = Math.round((s + total) / (avgMes / 30.4));
+            let cls;
+            if (days >= NDAYS_ * 0.9 && days <= NDAYS_ * 1.3)      cls = 'text-emerald-700 font-semibold';
+            else if (days > NDAYS_ * 1.3 && days <= NDAYS_ * 2)    cls = 'text-amber-700 font-semibold';
+            else if (days > NDAYS_ * 2)                            cls = 'text-amber-900 font-bold';
+            else if (days >= NDAYS_ * 0.6)                         cls = 'text-amber-700';
+            else                                                   cls = 'text-red-700 font-bold';
+            const star = stockKnown ? '' : '<span class="text-amber-600 font-bold" title="Sin stock confirmado — calculado asumiendo stock=0">*</span>';
+            const tip  = stockKnown ? `objetivo ${NDAYS_}d`
+                                     : `objetivo ${NDAYS_}d · sin stock confirmado (asumido 0)`;
+            covEl.innerHTML = `<span class="${cls}" title="${tip}">${days}d${star}</span>`;
+        }
     }
     const row = resumenRows.find(r => r.ean === ean);
     if (row) { row.cant_oferta_min = oferta_min; row.cant_nodeal = nodeal; row.total = total; row.saldo = saldo; }
@@ -1693,6 +1816,7 @@ async function exportPlantillaUnificada(plantillaId, formato) {
 }
 
 function exportResumen() {
+    const NDAYS_ = PEDIDO_N_DAYS || 35;
     const exportData = resumenAgrEans.map(ean => {
         const d = resumenAgr[ean];
         let oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
@@ -1701,14 +1825,187 @@ function exportResumen() {
             if (inp.dataset.field === 'oferta_min')  oferta_min = v;
             if (inp.dataset.field === 'nodeal')      nodeal     = v;
         });
-        const total = d.cant_mod + oferta_min + nodeal;
-        return { ean, nombre: d.nombre, erp_qty: d.erp_qty, rotacion: d.rot.rotacion || '',
-                 avg_monthly: d.rot.avg, precio_pvp: d.pvp, cant_modulo: d.cant_mod,
+        const total      = d.cant_mod + oferta_min + nodeal;
+        const stockObs   = (pedidoStock[ean] != null ? pedidoStock[ean] : null);
+        const avgMes     = d.rot.avg || 0;
+        // Cobertura actual y post-pedido en días (null si no hay avg).
+        const dayRate    = avgMes > 0 ? (avgMes / 30.4) : null;
+        const covActual  = dayRate ? Math.round((stockObs || 0) / dayRate) : null;
+        const covPost    = dayRate ? Math.round(((stockObs || 0) + total) / dayRate) : null;
+        const gapVsObj   = covPost != null ? covPost - NDAYS_ : null;
+        return { ean, nombre: d.nombre, erp_qty: d.erp_qty,
+                 stock_obs: stockObs, rotacion: d.rot.rotacion || '',
+                 avg_monthly: avgMes, precio_pvp: d.pvp,
+                 cant_modulo: d.cant_mod, cant_modulo_packs: d.cant_mod_packs || 0,
                  cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
-                 cant_pedida: d.cant_pedida, saldo: d.cant_pedida - total };
+                 cant_pedida: d.cant_pedida, saldo: d.cant_pedida - total,
+                 cobertura_actual_d: covActual, cobertura_post_d: covPost,
+                 gap_vs_objetivo_d: gapVsObj, objetivo_d: NDAYS_ };
     });
     document.getElementById('h-sum-data').value = JSON.stringify(exportData);
     document.getElementById('form-export-sum-xlsx').submit();
+}
+
+// ── Análisis IA del pedido (Claude Haiku 4.5) ──────────────────────────
+// Toma el resumen final + agregados y se lo manda al backend. Resultado en modal.
+let _iaAnalisisText = '';
+let _iaAnalisisHtml = '';
+
+function exportarAnalisisPDF() {
+    if (!_iaAnalisisHtml) return;
+    const win = window.open('', '_blank');
+    if (!win) { alert('Habilitá popups para exportar.'); return; }
+    const fecha = new Date().toLocaleDateString('es-AR');
+    const labEsc = (PEDIDO_LABORATORIO || 'Pedido').replace(/[<>&"']/g, '');
+    win.document.write(`
+        <!doctype html><html lang="es"><head><meta charset="utf-8">
+        <title>Analisis IA - ${labEsc}</title>
+        <style>
+            body { font-family: -apple-system, system-ui, sans-serif; max-width: 780px;
+                   margin: 32px auto; color: #1e1e1e; padding: 0 24px; }
+            h1 { font-size: 18px; margin: 0 0 4px; }
+            h2 { font-size: 14px; margin: 18px 0 6px; color: #5b21b6; }
+            h3 { font-size: 12px; margin: 12px 0 4px; }
+            ul { padding-left: 18px; }
+            li { margin: 3px 0; font-size: 12px; line-height: 1.5; }
+            p  { font-size: 12px; line-height: 1.5; margin: 6px 0; }
+            strong { color: #111; }
+            hr { border: 0; border-top: 1px solid #ccc; margin: 14px 0; }
+            .meta { font-size: 10px; color: #6b7280; margin-bottom: 12px; }
+            .header-block { border-bottom: 2px solid #7c3aed; padding-bottom: 8px; margin-bottom: 14px; }
+            .footer { font-size: 9px; color: #9ca3af; margin-top: 24px;
+                      border-top: 1px solid #e5e7eb; padding-top: 8px; }
+            @media print { body { margin: 12mm; } }
+        </style></head><body>
+        <div class="header-block">
+            <h1>Análisis IA del pedido — ${labEsc}</h1>
+            <p class="meta">Generado el ${fecha} · Claude Haiku 4.5 · Pedido #${PEDIDO_ID}</p>
+        </div>
+        ${_iaAnalisisHtml}
+        <div class="footer">Las observaciones son sugerencias del modelo. La decisión final es del operador.</div>
+        <script>setTimeout(() => window.print(), 400);<\/script>
+        </body></html>`);
+    win.document.close();
+}
+
+function _buildResumenForIA() {
+    const NDAYS_ = PEDIDO_N_DAYS || 35;
+    const rows = resumenAgrEans.map(ean => {
+        const d = resumenAgr[ean];
+        let oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
+        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+            const v = parseInt(inp.value) || 0;
+            if (inp.dataset.field === 'oferta_min')  oferta_min = v;
+            if (inp.dataset.field === 'nodeal')      nodeal     = v;
+        });
+        const total      = d.cant_mod + oferta_min + nodeal;
+        const stockObs   = (pedidoStock[ean] != null ? pedidoStock[ean] : null);
+        const avgMes     = d.rot.avg || 0;
+        const dayRate    = avgMes > 0 ? (avgMes / 30.4) : null;
+        const covActual  = dayRate ? Math.round((stockObs || 0) / dayRate) : null;
+        const covPost    = dayRate ? Math.round(((stockObs || 0) + total) / dayRate) : null;
+        const gapVsObj   = covPost != null ? covPost - NDAYS_ : null;
+        return { ean, nombre: d.nombre,
+                 stock_obs: stockObs, rotacion: d.rot.rotacion || '',
+                 avg_monthly: avgMes, precio_pvp: d.pvp,
+                 cant_modulo: d.cant_mod,
+                 cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
+                 cant_pedida: d.cant_pedida,
+                 cobertura_actual_d: covActual, cobertura_post_d: covPost,
+                 gap_vs_objetivo_d: gapVsObj };
+    });
+    // Agregados a nivel pedido.
+    const n_lineas_con_total = rows.filter(r => r.total > 0).length;
+    const importe_total = rows.reduce((s, r) => s + (r.total * (r.precio_pvp || 0)), 0);
+    const cob_post_promedio = (() => {
+        const xs = rows.filter(r => r.cobertura_post_d != null).map(r => r.cobertura_post_d);
+        return xs.length ? Math.round(xs.reduce((a,b)=>a+b,0) / xs.length) : null;
+    })();
+    const lineas_corto = rows.filter(r => r.gap_vs_objetivo_d != null && r.gap_vs_objetivo_d < -7).length;
+    const lineas_sobrestock = rows.filter(r => r.gap_vs_objetivo_d != null && r.gap_vs_objetivo_d > 60).length;
+    const agregados = {
+        objetivo_d: NDAYS_,
+        n_lineas_total: rows.length,
+        n_lineas_con_pedido: n_lineas_con_total,
+        importe_total_pedido: Math.round(importe_total),
+        cobertura_post_promedio_d: cob_post_promedio,
+        lineas_cortas_gap_lt_minus_7d: lineas_corto,
+        lineas_sobrestock_gap_gt_60d: lineas_sobrestock,
+    };
+    return { rows, agregados };
+}
+
+async function analizarPedidoIA() {
+    const btn = document.getElementById('btn-analizar-ia');
+    const orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '⏳ Analizando…';
+    const modal = document.getElementById('ia-modal');
+    const body  = document.getElementById('ia-body');
+    body.innerHTML = '<p class="text-xs text-[#888] py-6 text-center">Claude está leyendo el pedido… (15-30s)</p>';
+    modal.classList.remove('hidden');
+    try {
+        const payload = _buildResumenForIA();
+        const r = await fetch(`/order/${PEDIDO_ID}/analizar-ia`, {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        if (!d.ok) {
+            body.innerHTML = `<p class="text-xs text-red-600 py-4 text-center">Error: ${d.error || 'sin info'}</p>`;
+            return;
+        }
+        // Render markdown con marked.js. Si no cargó la lib (CDN bloqueada),
+        // fallback a <pre> con texto plano.
+        const md = (window.marked && typeof window.marked.parse === 'function')
+            ? window.marked.parse(d.analisis, {breaks: true, gfm: true})
+            : `<pre class="text-xs whitespace-pre-wrap font-sans">${d.analisis.replace(/</g,'&lt;')}</pre>`;
+        _iaAnalisisText = d.analisis;       // guardado para exportar a PDF
+        _iaAnalisisHtml = md;
+        body.innerHTML = `
+            <div class="bg-violet-50 border-l-4 border-violet-500 px-4 py-2 mb-3 text-[11px] text-violet-900">
+                Análisis generado por Claude Haiku 4.5 · ${d.tokens_in || 0} tok in · ${d.tokens_out || 0} tok out
+            </div>
+            <div class="ia-markdown text-sm text-[#1e1e1e] leading-relaxed px-1">${md}</div>`;
+        document.getElementById('ia-btn-pdf').classList.remove('hidden');
+    } catch (e) {
+        body.innerHTML = `<p class="text-xs text-red-600 py-4 text-center">Error de red: ${e.message}</p>`;
+    } finally {
+        btn.disabled = false; btn.innerHTML = orig;
+    }
+}
+
+function cerrarAnalisisIA() {
+    document.getElementById('ia-modal').classList.add('hidden');
+}
+
+// Re-abre el último análisis cacheado en DB (sin gastar API). 404 si nunca corrió.
+async function verUltimoAnalisisIA() {
+    const modal = document.getElementById('ia-modal');
+    const body  = document.getElementById('ia-body');
+    body.innerHTML = '<p class="text-xs text-[#888] py-6 text-center">Buscando análisis cacheado…</p>';
+    modal.classList.remove('hidden');
+    document.getElementById('ia-btn-pdf').classList.add('hidden');
+    try {
+        const r = await fetch(`/informes/analisis-ia/ultimo?clave=pedido:${PEDIDO_ID}`);
+        const d = await r.json();
+        if (!d.ok) {
+            body.innerHTML = `<p class="text-xs text-amber-700 py-4 text-center">${d.error || 'Sin análisis previo para este pedido. Tocá "Analizar con Claude".'}</p>`;
+            return;
+        }
+        const md = (window.marked && typeof window.marked.parse === 'function')
+            ? window.marked.parse(d.analisis, {breaks: true, gfm: true})
+            : `<pre class="text-xs whitespace-pre-wrap font-sans">${d.analisis.replace(/</g,'&lt;')}</pre>`;
+        _iaAnalisisText = d.analisis;
+        _iaAnalisisHtml = md;
+        body.innerHTML = `
+            <div class="bg-violet-50 border-l-4 border-violet-500 px-4 py-2 mb-3 text-[11px] text-violet-900">
+                Análisis cacheado · generado el ${d.creado_en || '?'} · ${d.tokens_in || 0} tok in · ${d.tokens_out || 0} tok out
+            </div>
+            <div class="ia-markdown text-sm text-[#1e1e1e] leading-relaxed px-1">${md}</div>`;
+        document.getElementById('ia-btn-pdf').classList.remove('hidden');
+    } catch (e) {
+        body.innerHTML = `<p class="text-xs text-red-600 py-4 text-center">Error de red: ${e.message}</p>`;
+    }
 }
 
 let matchPanelRendered = false;
@@ -1993,24 +2290,58 @@ function renderOfertasConMinimoTable() {
     let html = '';
 
     if (individuals.length) {
+        const NDAYS_S2 = PEDIDO_N_DAYS || 35;
+        const _stockStr = (ean) => {
+            const s = pedidoStock[ean];
+            if (s == null) return '<span class="text-[#ccc]">—</span>';
+            return String(s);
+        };
+        const _covPostStr = (ean, qty) => {
+            const avg = (pedidoRot[ean] && pedidoRot[ean].avg) || 0;
+            if (avg <= 0) return '<span class="text-[#ccc]">—</span>';
+            const stockKnown = pedidoStock[ean] != null;
+            const s = stockKnown ? pedidoStock[ean] : 0;
+            const d = Math.round((s + (qty || 0)) / (avg / 30.4));
+            let cls;
+            if (d >= NDAYS_S2 * 0.9 && d <= NDAYS_S2 * 1.3)   cls = 'text-emerald-700 font-semibold';
+            else if (d > NDAYS_S2 * 1.3 && d <= NDAYS_S2 * 2) cls = 'text-amber-700 font-semibold';
+            else if (d > NDAYS_S2 * 2)                        cls = 'text-amber-900 font-bold';
+            else if (d >= NDAYS_S2 * 0.6)                     cls = 'text-amber-700';
+            else                                              cls = 'text-red-700 font-bold';
+            const star = stockKnown ? '' : '<span class="text-amber-600 font-bold">*</span>';
+            return `<span class="${cls}">${d}d${star}</span>`;
+        };
+        const _ahorroStr = (qty, precio, dto) => {
+            if (!precio || !dto) return '<span class="text-[#ccc]">—</span>';
+            const v = Math.round(qty * precio * (dto / 100));
+            return v > 0 ? `$${v.toLocaleString('es-AR')}` : '<span class="text-[#ccc]">—</span>';
+        };
         html += `<p class="text-xs font-semibold text-[#555] mb-2">INDIVIDUALES (${individuals.length})</p>
-        <table class="w-full text-xs border-collapse mb-4 min-w-[560px]">
+        <table class="w-full text-xs border-collapse mb-4 min-w-[760px]">
         <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
             <th class="text-left px-2 py-2">EAN</th>
             <th class="text-left px-2 py-2">Producto</th>
+            <th class="text-right px-2 py-2 text-cyan-700" title="Stock actual (ObServer)">Stock</th>
+            <th class="text-right px-2 py-2 text-purple-700" title="Promedio mensual (últimos 12m)">Rot/Mes</th>
             <th class="text-right px-2 py-2 text-amber-700">Saldo</th>
             <th class="text-right px-2 py-2 text-sky-700">Mín.</th>
             <th class="text-right px-2 py-2 text-emerald-700">Dto%</th>
             <th class="text-right px-2 py-2 text-purple-700">A pedir</th>
+            <th class="text-right px-2 py-2 text-cyan-700" title="Días de cobertura DESPUÉS del A pedir actual">Cob.post</th>
+            <th class="text-right px-2 py-2 text-emerald-700" title="A pedir × precio × dto% — ahorro estimado">Ahorro $</th>
             <th class="px-2 py-2"></th>
         </tr></thead><tbody>`;
         individuals.forEach(it => {
             const minVal = it.unidades_minima ?? 0;
             const initOk = minVal > 0 && it.cantidad >= minVal;
             const rowCls = initOk ? 'data-row bg-emerald-50' : 'data-row';
+            const avgMon = (pedidoRot[it.ean] && pedidoRot[it.ean].avg) || 0;
+            const pvp    = pedidoPvp[it.ean] || PRODUCT_PRICES[it.ean] || 0;
             html += `<tr class="${rowCls}" id="row-ofmin-${it.ean}">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
                 <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
+                <td class="px-2 text-right">${_stockStr(it.ean)}</td>
+                <td class="px-2 text-right text-[#555]">${avgMon > 0 ? avgMon.toFixed(1) : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
                 <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
@@ -2019,6 +2350,9 @@ function renderOfertasConMinimoTable() {
                            oninput="recalcIndividualOfmin('${it.ean}', ${minVal})"
                            class="w-16 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold text-xs focus:outline-none focus:ring-1 focus:ring-purple-400">
                 </td>
+                <td class="px-2 text-right" id="cov-ofmin-${it.ean}">${_covPostStr(it.ean, it.cantidad)}</td>
+                <td class="px-2 text-right text-emerald-700 font-semibold" id="ahorro-ofmin-${it.ean}"
+                    data-pvp="${pvp}" data-dto="${it.descuento_psl ?? 0}">${_ahorroStr(it.cantidad, pvp, it.descuento_psl)}</td>
                 <td class="px-2 text-center" id="btn-ofmin-${it.ean}">${minVal > 0 ? (initOk
                     ? `<span class="text-emerald-600 font-bold text-sm">✓</span>`
                     : `<button onclick="completarMinimo('${it.ean}', ${minVal})"
@@ -2045,26 +2379,60 @@ function renderOfertasConMinimoTable() {
                 </span>
                 <span id="grupo-status-${gid}" class="text-xs font-bold ${ok ? 'text-emerald-700' : 'text-amber-700'}">${ok ? '✓ Cumple' : '⚠ Falta ' + (minReq - totalInicial)}</span>
             </div>
-            <table class="w-full text-xs border-collapse min-w-[560px]">
+            <table class="w-full text-xs border-collapse min-w-[760px]">
             <thead><tr class="bg-[#f8f8f8] text-[#6f6f6f] uppercase text-[10px]">
                 <th class="text-left px-2 py-1.5">EAN</th>
                 <th class="text-left px-2 py-1.5">Producto</th>
+                <th class="text-right px-2 py-1.5 text-cyan-700" title="Stock actual (ObServer)">Stock</th>
+                <th class="text-right px-2 py-1.5 text-purple-700" title="Promedio mensual">Rot/Mes</th>
                 <th class="text-right px-2 py-1.5 text-amber-700">Saldo</th>
                 <th class="text-right px-2 py-1.5 text-emerald-700">Dto%</th>
                 <th class="text-right px-2 py-1.5 text-purple-700">A pedir</th>
+                <th class="text-right px-2 py-1.5 text-cyan-700" title="Cobertura post pedido en días">Cob.post</th>
+                <th class="text-right px-2 py-1.5 text-emerald-700" title="A pedir × precio × dto%">Ahorro $</th>
             </tr></thead><tbody>`;
         grupo.items.forEach(it => {
+            const avgMon = (pedidoRot[it.ean] && pedidoRot[it.ean].avg) || 0;
+            const pvp    = pedidoPvp[it.ean] || PRODUCT_PRICES[it.ean] || 0;
+            const stockSpan = pedidoStock[it.ean] != null ? String(pedidoStock[it.ean])
+                                                          : '<span class="text-[#ccc]">—</span>';
+            // Cob.post inicial (la quantity arranca en it.cantidad).
+            let covInit = '<span class="text-[#ccc]">—</span>';
+            if (avgMon > 0) {
+                const NDAYS_ = PEDIDO_N_DAYS || 35;
+                const stockKnown = pedidoStock[it.ean] != null;
+                const s = stockKnown ? pedidoStock[it.ean] : 0;
+                const d = Math.round((s + it.cantidad) / (avgMon / 30.4));
+                let cls;
+                if (d >= NDAYS_ * 0.9 && d <= NDAYS_ * 1.3)   cls = 'text-emerald-700 font-semibold';
+                else if (d > NDAYS_ * 1.3 && d <= NDAYS_ * 2) cls = 'text-amber-700 font-semibold';
+                else if (d > NDAYS_ * 2)                      cls = 'text-amber-900 font-bold';
+                else if (d >= NDAYS_ * 0.6)                   cls = 'text-amber-700';
+                else                                          cls = 'text-red-700 font-bold';
+                const star = stockKnown ? '' : '<span class="text-amber-600 font-bold">*</span>';
+                covInit = `<span class="${cls}">${d}d${star}</span>`;
+            }
+            let ahoInit = '<span class="text-[#ccc]">—</span>';
+            if (pvp && it.descuento_psl) {
+                const v = Math.round(it.cantidad * pvp * (it.descuento_psl / 100));
+                if (v > 0) ahoInit = `$${v.toLocaleString('es-AR')}`;
+            }
             html += `<tr class="data-row">
                 <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
                 <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
+                <td class="px-2 text-right">${stockSpan}</td>
+                <td class="px-2 text-right text-[#555]">${avgMon > 0 ? avgMon.toFixed(1) : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
                 <td class="px-2 text-right">
                     <input type="number" min="0" value="${it.cantidad}" id="qty-ofmin-${it.ean}"
                            data-grupo="${gid}"
                            class="w-16 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold text-xs focus:outline-none focus:ring-1 focus:ring-purple-400"
-                           oninput="recalcGrupoTotal(${gid})">
+                           oninput="recalcGrupoTotal(${gid}); recalcOfminRowExtras('${it.ean}');">
                 </td>
+                <td class="px-2 text-right" id="cov-ofmin-${it.ean}">${covInit}</td>
+                <td class="px-2 text-right text-emerald-700 font-semibold" id="ahorro-ofmin-${it.ean}"
+                    data-pvp="${pvp}" data-dto="${it.descuento_psl ?? 0}">${ahoInit}</td>
             </tr>`;
         });
         html += '</tbody></table></div>';
@@ -2095,6 +2463,46 @@ function recalcIndividualOfmin(ean, minVal) {
                 class="text-[10px] font-semibold px-2 py-0.5 rounded bg-sky-100 hover:bg-sky-200 text-sky-700 border border-sky-300 transition-colors whitespace-nowrap">
                 Completar</button>`;
     }
+    recalcOfminRowExtras(ean);
+}
+
+// Recalcula Cob.post + Ahorro$ de una fila de Stage 2 (sirve tanto para
+// individuales como para items de grupo). Lee el A pedir del input.
+function recalcOfminRowExtras(ean) {
+    const input = document.getElementById('qty-ofmin-' + ean);
+    if (!input) return;
+    const val   = parseInt(input.value) || 0;
+    const covEl = document.getElementById('cov-ofmin-' + ean);
+    const ahoEl = document.getElementById('ahorro-ofmin-' + ean);
+    if (covEl) {
+        const NDAYS_ = PEDIDO_N_DAYS || 35;
+        const avg = (pedidoRot[ean] && pedidoRot[ean].avg) || 0;
+        if (avg <= 0) {
+            covEl.innerHTML = '<span class="text-[#ccc]">—</span>';
+        } else {
+            const stockKnown = pedidoStock[ean] != null;
+            const s = stockKnown ? pedidoStock[ean] : 0;
+            const d = Math.round((s + val) / (avg / 30.4));
+            let cls;
+            if (d >= NDAYS_ * 0.9 && d <= NDAYS_ * 1.3)   cls = 'text-emerald-700 font-semibold';
+            else if (d > NDAYS_ * 1.3 && d <= NDAYS_ * 2) cls = 'text-amber-700 font-semibold';
+            else if (d > NDAYS_ * 2)                      cls = 'text-amber-900 font-bold';
+            else if (d >= NDAYS_ * 0.6)                   cls = 'text-amber-700';
+            else                                          cls = 'text-red-700 font-bold';
+            const star = stockKnown ? '' : '<span class="text-amber-600 font-bold">*</span>';
+            covEl.innerHTML = `<span class="${cls}">${d}d${star}</span>`;
+        }
+    }
+    if (ahoEl) {
+        const pvp = parseFloat(ahoEl.dataset.pvp) || 0;
+        const dto = parseFloat(ahoEl.dataset.dto) || 0;
+        if (!pvp || !dto) {
+            ahoEl.innerHTML = '<span class="text-[#ccc]">—</span>';
+        } else {
+            const v = Math.round(val * pvp * (dto / 100));
+            ahoEl.innerHTML = v > 0 ? `$${v.toLocaleString('es-AR')}` : '<span class="text-[#ccc]">—</span>';
+        }
+    }
 }
 
 function recalcGrupoTotal(gid) {
@@ -2124,6 +2532,8 @@ function confirmarOfertasConMinimo() {
     renderResumen();
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
+    show('btn-analizar-ia');
+    show('btn-ver-ultimo-ia');
     show('btn-export-plantillas-wrap');
     show('btn-sin-plantillas');
     hide('btn-confirmar-ofertas-min');
@@ -2142,6 +2552,8 @@ function saltarOfertasConMinimo() {
     renderResumen();
     show('btn-export-sum-pdf');
     show('btn-export-sum-xlsx');
+    show('btn-analizar-ia');
+    show('btn-ver-ultimo-ia');
     show('btn-export-plantillas-wrap');
     show('btn-sin-plantillas');
     document.getElementById('ofertas-min-status').textContent = 'Omitido';
