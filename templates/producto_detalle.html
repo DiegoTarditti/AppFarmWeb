@@ -166,6 +166,44 @@
     </div>
     {% endif %}
 
+    {% if producto.observer_id %}
+    <!-- Movimientos 30 días: ingresos (factura+pedidos) vs egresos (ventas) -->
+    <div class="bg-white rounded-xl border border-surface-border p-5">
+        <div class="flex items-center justify-between mb-3">
+            <p class="font-semibold text-sm">📊 Movimientos 30 días</p>
+            <span id="mov-stats" class="text-xs text-[#888]"></span>
+        </div>
+        <div id="mov-loading" class="text-center text-sm text-[#999] py-6">Cargando…</div>
+        <div id="mov-empty" class="hidden text-center text-sm text-[#999] py-6">Sin movimientos en los últimos 30 días.</div>
+        <div id="mov-content" class="hidden">
+            <div class="h-72"><canvas id="chart-movs"></canvas></div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-xs">
+                <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    <p class="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Ingresos (facturas)</p>
+                    <p id="kpi-ingresos" class="font-mono font-bold text-emerald-900 text-base mt-0.5">—</p>
+                </div>
+                <div class="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
+                    <p class="text-[10px] uppercase tracking-wide text-sky-700 font-bold">Pedidos emitidos</p>
+                    <p id="kpi-pedidos" class="font-mono font-bold text-sky-900 text-base mt-0.5">—</p>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                    <p class="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Ventas</p>
+                    <p id="kpi-ventas" class="font-mono font-bold text-rose-900 text-base mt-0.5">—</p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <p class="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Pendiente proveedor</p>
+                    <p id="kpi-pendiente" class="font-mono font-bold text-amber-900 text-base mt-0.5">—</p>
+                </div>
+            </div>
+            <p class="text-[10px] text-[#aaa] mt-3">
+                Ingresos: facturas importadas + pedidos emitidos por código de barra del producto.
+                Ventas: <code>obs_ventas_detalle</code> del ObServer. Los movimientos no documentados (compras al
+                contado, ajustes manuales, mermas) no aparecen — requieren snapshot diario de stock.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Histórico de precios embebido -->
     <div class="bg-white rounded-xl border border-surface-border p-5">
         <div class="flex items-center justify-between mb-3">
@@ -196,6 +234,7 @@
 <script>
 const PROD_ID = {{ producto.id }};
 const EAN = {{ producto.codigo_barra|tojson }};
+const OBSERVER_ID = {{ producto.observer_id|tojson if producto.observer_id else 'null' }};
 
 function fmtMoney(v) {
     if (v === null || v === undefined) return '<span class="text-[#bbb]">—</span>';
@@ -286,6 +325,75 @@ async function reExtraer() {
 }
 
 cargarPrecios();
+
+// ─── Movimientos 30 días ─────────────────────────────────────────────────
+async function cargarMovimientos() {
+    if (!OBSERVER_ID) return;  // sin observer_id no hay datos del POS
+    let ventasR, ingresosR;
+    try {
+        [ventasR, ingresosR] = await Promise.all([
+            fetch(`/api/observer-product/${OBSERVER_ID}/chart-mes`).then(r => r.json()),
+            fetch(`/api/observer-product/${OBSERVER_ID}/ingresos-mes`).then(r => r.json()),
+        ]);
+    } catch (e) {
+        document.getElementById('mov-loading').classList.add('hidden');
+        document.getElementById('mov-empty').textContent = 'Error cargando movimientos: ' + e.message;
+        document.getElementById('mov-empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('mov-loading').classList.add('hidden');
+    const totalVentas = (ventasR && ventasR.ok) ? (ventasR.total_30d || 0) : 0;
+    const totalIngresos = (ingresosR && ingresosR.ok) ? (ingresosR.total_30d || 0) : 0;
+    const totalPedidos = (ingresosR && ingresosR.ok) ? (ingresosR.pedido_total_30d || 0) : 0;
+    const pendiente = (ingresosR && ingresosR.ok) ? (ingresosR.pendiente_total || 0) : 0;
+    if (totalVentas === 0 && totalIngresos === 0 && totalPedidos === 0 && pendiente === 0) {
+        document.getElementById('mov-empty').classList.remove('hidden');
+        return;
+    }
+    document.getElementById('mov-content').classList.remove('hidden');
+    document.getElementById('kpi-ventas').textContent = totalVentas.toLocaleString('es-AR');
+    document.getElementById('kpi-ingresos').textContent = totalIngresos.toLocaleString('es-AR');
+    document.getElementById('kpi-pedidos').textContent = totalPedidos.toLocaleString('es-AR');
+    document.getElementById('kpi-pendiente').textContent = pendiente.toLocaleString('es-AR');
+    document.getElementById('mov-stats').textContent =
+        `+${totalIngresos} ingresos · −${totalVentas} ventas`;
+    const labels = (ventasR && ventasR.labels) || (ingresosR && ingresosR.labels) || [];
+    const ventasData = (ventasR && ventasR.data) || labels.map(() => 0);
+    const ingresosData = (ingresosR && ingresosR.data) || labels.map(() => 0);
+    const pedidosData = (ingresosR && ingresosR.pedido_data) || labels.map(() => 0);
+    // Egresos mostrados como negativos para apilar arriba/abajo del eje 0.
+    const ventasNeg = ventasData.map(v => -v);
+    new Chart(document.getElementById('chart-movs').getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'Ingresos (facturas)', data: ingresosData,
+                  backgroundColor: '#10b98199', borderColor: '#059669', borderWidth: 1, stack: 'mov' },
+                { label: 'Pedidos emitidos',    data: pedidosData,
+                  backgroundColor: '#3b82f699', borderColor: '#2563eb', borderWidth: 1, stack: 'mov', hidden: true },
+                { label: 'Ventas',              data: ventasNeg,
+                  backgroundColor: '#ef444499', borderColor: '#dc2626', borderWidth: 1, stack: 'mov' },
+            ],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { stacked: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
+                y: { stacked: true, grid: { color: '#f0f0f0' },
+                     ticks: { callback: v => Math.abs(v), font: { size: 10 } } },
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                tooltip: { callbacks: {
+                    label: ctx => `${ctx.dataset.label}: ${Math.abs(ctx.raw).toLocaleString('es-AR')}`,
+                }},
+            },
+        },
+    });
+}
+cargarMovimientos();
 
 // ─── EANs (1-a-N) ────────────────────────────────────────────────────────
 const FUENTE_BADGE = {
