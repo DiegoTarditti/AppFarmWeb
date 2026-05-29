@@ -229,6 +229,7 @@ if (window.ChartDataLabels) {
 const PROD_ID = {{ producto.id }};
 const EAN = {{ producto.codigo_barra|tojson }};
 const OBSERVER_ID = {{ producto.observer_id|tojson if producto.observer_id else 'null' }};
+const STOCK_ACTUAL = {{ obs.stock_actual if obs and obs.stock_actual is not none else 'null' }};
 
 function fmtMoney(v) {
     if (v === null || v === undefined) return '<span class="text-[#bbb]">—</span>';
@@ -357,19 +358,38 @@ async function cargarMovimientos() {
     const pedidosData = (ingresosR && ingresosR.pedido_data) || labels.map(() => 0);
     // Egresos mostrados como negativos para apilar arriba/abajo del eje 0.
     const ventasNeg = ventasData.map(v => -v);
+    // Stock implícito por día: backwards desde STOCK_ACTUAL (cierre de hoy).
+    // stock(d-1) = stock(d) + ventas(d) - ingresos(d). Pedidos NO se suman
+    // (son pedidos al proveedor, no entrada real al stock).
+    let stockSerie = null;
+    if (STOCK_ACTUAL !== null) {
+        stockSerie = new Array(labels.length);
+        let s = STOCK_ACTUAL;
+        for (let i = labels.length - 1; i >= 0; i--) {
+            stockSerie[i] = s;
+            s = s + (ventasData[i] || 0) - (ingresosData[i] || 0);
+        }
+    }
+    const datasets = [
+        { label: 'Ingresos (facturas)', data: ingresosData,
+          backgroundColor: '#10b98199', borderColor: '#059669', borderWidth: 1, stack: 'mov' },
+        { label: 'Pedidos emitidos',    data: pedidosData,
+          backgroundColor: '#3b82f699', borderColor: '#2563eb', borderWidth: 1, stack: 'mov', hidden: true },
+        { label: 'Ventas',              data: ventasNeg,
+          backgroundColor: '#ef444499', borderColor: '#dc2626', borderWidth: 1, stack: 'mov' },
+    ];
+    if (stockSerie) {
+        datasets.push({
+            type: 'line', label: 'Stock implícito', data: stockSerie,
+            borderColor: '#475569', backgroundColor: '#47556922',
+            borderWidth: 2, pointRadius: 2, pointBackgroundColor: '#475569',
+            tension: 0.2, yAxisID: 'y1',
+            datalabels: { display: false },
+        });
+    }
     new Chart(document.getElementById('chart-movs').getContext('2d'), {
         type: 'bar',
-        data: {
-            labels,
-            datasets: [
-                { label: 'Ingresos (facturas)', data: ingresosData,
-                  backgroundColor: '#10b98199', borderColor: '#059669', borderWidth: 1, stack: 'mov' },
-                { label: 'Pedidos emitidos',    data: pedidosData,
-                  backgroundColor: '#3b82f699', borderColor: '#2563eb', borderWidth: 1, stack: 'mov', hidden: true },
-                { label: 'Ventas',              data: ventasNeg,
-                  backgroundColor: '#ef444499', borderColor: '#dc2626', borderWidth: 1, stack: 'mov' },
-            ],
-        },
+        data: { labels, datasets },
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
@@ -377,6 +397,12 @@ async function cargarMovimientos() {
                 x: { stacked: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
                 y: { stacked: true, grid: { color: '#f0f0f0' },
                      ticks: { callback: v => Math.abs(v), font: { size: 10 } } },
+                y1: stockSerie ? {
+                    position: 'right', beginAtZero: false,
+                    grid: { display: false },
+                    ticks: { font: { size: 10 }, color: '#475569' },
+                    title: { display: true, text: 'Stock', font: { size: 10 }, color: '#475569' },
+                } : { display: false },
             },
             plugins: {
                 legend: { position: 'bottom', labels: { font: { size: 11 } } },
