@@ -601,6 +601,25 @@ class BackupLog(Base):
     error        = Column(Text, nullable=True)
 
 
+class ObsStockSnapshotDiario(Base):
+    r"""Snapshot diario de obs_stock para reconstruir movimientos de stock.
+
+    Se popula 1 vez por día desde el DockerPanel (local-only) cuando la env var
+    STOCK_SNAPSHOT_ENABLED=1 está seteada. En Render queda vacía: cuando alguien
+    consulta el endpoint, devuelve array vacío y el chart de la Ficha sigue
+    mostrando solo el stock implícito (calculado backwards).
+
+    Permite: comparar stock implícito vs stock real → la diferencia es
+    "movimientos no documentados" (compras al contado, ajustes, mermas,
+    transferencias, devoluciones a proveedor).
+    """
+    __tablename__ = 'obs_stock_snapshot_diario'
+    fecha             = Column(Date, primary_key=True)
+    id_farmacia       = Column(Integer, primary_key=True)
+    producto_observer = Column(Integer, primary_key=True)
+    stock_actual      = Column(Integer, nullable=False)
+
+
 class ExportTemplate(Base):
     __tablename__ = 'export_templates'
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
@@ -2017,6 +2036,7 @@ def init_db(database_url=None):
                         'obs_obras_sociales', 'obs_convenios', 'obs_planes',
                         'obs_clientes', 'clientes',
                         'cron_log', 'mv_refresh_log', 'backup_log',
+                        'obs_stock_snapshot_diario',
                         'obs_colegios_medicos', 'obs_medicos',
                         'obs_medicos_matriculas', 'obs_ventas_detalle',
                         'descuentos_base', 'obs_codigos_barras',
@@ -2125,6 +2145,22 @@ def init_db(database_url=None):
                         origen VARCHAR(40)
                     )
                 """))
+                # Snapshot diario de obs_stock (local-only, gated por env var
+                # STOCK_SNAPSHOT_ENABLED=1). En Render la tabla existe pero
+                # queda vacía. Misma razón que panel_comandos para CREATE inline.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS obs_stock_snapshot_diario (
+                        fecha DATE NOT NULL,
+                        id_farmacia INTEGER NOT NULL,
+                        producto_observer INTEGER NOT NULL,
+                        stock_actual INTEGER NOT NULL,
+                        PRIMARY KEY (fecha, id_farmacia, producto_observer)
+                    )
+                """))
+                conn.execute(text(
+                    "CREATE INDEX IF NOT EXISTS ix_stock_snap_producto "
+                    "ON obs_stock_snapshot_diario (producto_observer, fecha)"
+                ))
                 # Estado de notificaciones de alarmas (dedup Telegram).
                 # Mismo motivo que panel_comandos: tabla crítica usada por
                 # endpoints + cron, no debe depender de _pg_add_columns.
