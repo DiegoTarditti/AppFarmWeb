@@ -5,6 +5,14 @@
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<script>
+// El plugin se auto-registra global; lo apagamos por default para que NO afecte
+// al chart de precios. Cada chart lo activa explícitamente si lo necesita.
+if (window.ChartDataLabels) {
+    Chart.defaults.set('plugins.datalabels', { display: false });
+}
+</script>
 {% endblock %}
 
 {% block main %}
@@ -375,6 +383,15 @@ async function cargarMovimientos() {
                 tooltip: { callbacks: {
                     label: ctx => `${ctx.dataset.label}: ${Math.abs(ctx.raw).toLocaleString('es-AR')}`,
                 }},
+                datalabels: {
+                    display: ctx => ctx.dataset.data[ctx.dataIndex] !== 0,
+                    anchor: 'end',
+                    align: 'end',
+                    offset: 1,
+                    formatter: v => v === 0 ? '' : Math.abs(v).toLocaleString('es-AR'),
+                    font: { size: 9, weight: '700' },
+                    color: ctx => ctx.dataset.borderColor,
+                },
             },
         },
     });
