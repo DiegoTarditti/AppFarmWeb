@@ -448,7 +448,15 @@ async function cargarMovimientos() {
             plugins: {
                 legend: { position: 'bottom', labels: { font: { size: 11 } } },
                 tooltip: { callbacks: {
-                    label: ctx => `${ctx.dataset.label}: ${Math.abs(ctx.raw).toLocaleString('es-AR')}`,
+                    label: ctx => {
+                        const v = ctx.raw;
+                        if (v === null || v === undefined) return null;
+                        // Las líneas de stock (eje y1) mantienen su signo real;
+                        // las barras de ventas (que guardé negativas) se muestran positivas.
+                        const shown = (ctx.dataset.yAxisID === 'y1')
+                            ? v : Math.abs(v);
+                        return `${ctx.dataset.label}: ${shown.toLocaleString('es-AR')}`;
+                    },
                 }},
                 datalabels: {
                     display: ctx => ctx.dataset.data[ctx.dataIndex] !== 0,
