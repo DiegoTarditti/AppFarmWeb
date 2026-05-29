@@ -9,6 +9,12 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
+  @font-face {
+    font-family: 'Archicoco';
+    src: url("{{ url_for('static', filename='fonts/Archicoco.otf') }}") format('opentype');
+    font-weight: normal; font-style: normal; font-display: swap;
+  }
+  .nuc-brand { font-family: 'Archicoco', sans-serif; }
   :root{ --bg:#0b1411; --surface:#10201a; --surface2:#152a22; --line:#1e3a30;
          --mint:#34d399; --mint2:#10b981; --text:#e6f2ec; --mute:#7fa394; }
   body{ background:linear-gradient(160deg,#0b1411,#08100d 60%); color:var(--text);
@@ -39,7 +45,7 @@
     <div class="splash-inner">
       {% with lid='nucB', logo_class='w-40 h-40 sm:w-52 sm:h-52' %}{% include "_logo.html" %}{% endwith %}
       <div class="text-center leading-none">
-        <div class="text-4xl sm:text-5xl font-extrabold tracking-tight">núcleo</div>
+        <div class="nuc-brand text-4xl sm:text-5xl font-extrabold tracking-tight">núcleo</div>
         <div class="text-[11px] tracking-[.4em] uppercase text-[color:var(--mute)] mt-2">Pharma Stock</div>
       </div>
     </div>
@@ -49,7 +55,7 @@
     <a href="/" class="flex items-center gap-2.5">
       {% include "_logo.html" %}
       <span class="leading-none">
-        <span class="block font-extrabold tracking-tight text-[26px]">núcleo</span>
+        <span class="nuc-brand block font-extrabold tracking-tight text-[26px]">núcleo</span>
         <span class="block text-[10px] tracking-[.30em] uppercase text-[color:var(--mute)] mt-1">Pharma Stock</span>
       </span>
     </a>
