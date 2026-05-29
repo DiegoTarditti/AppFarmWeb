@@ -261,6 +261,16 @@ class DockerPanel(tk.Tk):
         self.after(1500, lambda: self._backup_diario_check(manual=False))
         # === END BACKUP DIARIO ===
 
+        # === BEGIN SNAPSHOT STOCK DIARIO ===
+        # Snapshot diario de obs_stock para reconstruir movimientos reales del
+        # stock vs los documentados (ventas + facturas). La diferencia es el
+        # "stock invisible": compras al contado, ajustes manuales, mermas,
+        # transferencias, devoluciones a proveedor. Idempotente: si ya hay
+        # snapshot del día, no ejecuta. Local-only por arquitectura (este
+        # archivo no se deploya a Render).
+        self.after(2500, self._snapshot_stock_check)
+        # === END SNAPSHOT STOCK DIARIO ===
+
     def _ask_project_dir(self):
         dlg = _StartupDialog(self)
         return dlg.result
@@ -1021,6 +1031,47 @@ class DockerPanel(tk.Tk):
             self._backup_rotar()
         except Exception:
             pass
+
+    # ── Snapshot stock diario (para reconstruir movimientos) ──────────────────
+
+    def _snapshot_stock_check(self):
+        """Si no hay snapshot de hoy en obs_stock_snapshot_diario, lo crea.
+        Idempotente: si la fila del día ya existe (cualquier producto), no hace
+        nada. INSERT ... SELECT trae los ~67k productos de obs_stock en una
+        sola query."""
+        existe = self._db_query_scalar(
+            "SELECT 1 FROM obs_stock_snapshot_diario WHERE fecha = CURRENT_DATE LIMIT 1"
+        )
+        if existe == '1':
+            return
+        threading.Thread(target=self._snapshot_stock_ejecutar, daemon=True).start()
+
+    def _snapshot_stock_ejecutar(self):
+        """Thread: INSERT idempotente. No bloquea UI."""
+        sql = (
+            "INSERT INTO obs_stock_snapshot_diario "
+            "(fecha, id_farmacia, producto_observer, stock_actual) "
+            "SELECT CURRENT_DATE, id_farmacia, producto_observer, stock_actual "
+            "FROM obs_stock "
+            "ON CONFLICT (fecha, id_farmacia, producto_observer) DO NOTHING"
+        )
+        try:
+            r = subprocess.run(
+                ['docker-compose', 'exec', '-T', 'db', 'psql',
+                 '-U', 'postgres', 'farmacia', '-c', sql],
+                cwd=self.dir_var.get(), timeout=60, check=False,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+            )
+            if r.returncode == 0:
+                self.after(0, self._append, "📸 snapshot stock OK\n", "ok")
+            else:
+                err = r.stderr.decode('utf-8', 'replace')[:200]
+                self.after(0, self._append,
+                           f"⚠ snapshot stock falló: {err}\n", "err")
+        except Exception as e:
+            self.after(0, self._append,
+                       f"⚠ snapshot stock error: {e}\n", "err")
 
     def _backup_log_insert(self, ok, destino, size, error):
         """INSERT en backup_log vía docker-compose exec. Best-effort: si la DB
