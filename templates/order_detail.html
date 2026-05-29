@@ -1975,8 +1975,16 @@ async function analizarPedidoIA() {
 }
 
 function cerrarAnalisisIA() {
-    document.getElementById('ia-modal').classList.add('hidden');
+    const m = document.getElementById('ia-modal');
+    if (m) m.classList.add('hidden');
 }
+// Cierre robusto: Escape, por si el markdown rendereado rompe los handlers
+// inline de los botones.
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    const m = document.getElementById('ia-modal');
+    if (m && !m.classList.contains('hidden')) cerrarAnalisisIA();
+});
 
 // Re-abre el último análisis cacheado en DB (sin gastar API). 404 si nunca corrió.
 async function verUltimoAnalisisIA() {
@@ -2175,6 +2183,12 @@ function renderOfertasMinImportPreview() {
             individuals.push(it);
         }
     });
+    // Dto% concatenado con observación si existe: "30% · TR Lanzamiento".
+    const fmtPctObs = (v, obs) => {
+        const p = v != null ? v + '%' : '—';
+        if (!obs) return p;
+        return `${p} <span class="text-[#888] text-[10px]" title="${obs}">· ${obs}</span>`;
+    };
     const thead = `<thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
         <th class="text-left px-2 py-2">EAN</th>
         <th class="text-left px-2 py-2">Producto</th>
@@ -2187,7 +2201,7 @@ function renderOfertasMinImportPreview() {
         <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
         <td class="px-2 font-medium">${it.descripcion}</td>
         <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
-        <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
+        <td class="px-2 text-right text-emerald-700">${fmtPctObs(it.descuento_psl, it.observacion)}</td>
         <td class="px-2 text-right text-purple-600">${fmtPct(it.rentabilidad)}</td>
         <td class="px-2 text-[#888]">${it.plazo_pago ?? '—'}</td>
     </tr>`;
@@ -2234,6 +2248,7 @@ function procesarOfertasConMinimo() {
                 ean: entry.ean, nombre: entry.nombre, cantidad: entry.cantidad,
                 unidades_minima: bern.unidades_minima, descuento_psl: bern.descuento_psl,
                 rentabilidad: bern.rentabilidad, grupo_id: bern.grupo_id,
+                observacion: bern.observacion,
             });
         } else {
             newNodeal.push(entry);
@@ -2250,6 +2265,7 @@ function procesarOfertasConMinimo() {
                 ean: o.ean, nombre: o.descripcion, cantidad: 0,
                 unidades_minima: o.unidades_minima, descuento_psl: o.descuento_psl,
                 rentabilidad: o.rentabilidad, grupo_id: o.grupo_id,
+                observacion: o.observacion,
             });
             offMinEans.add(o.ean);
         });
@@ -2287,6 +2303,12 @@ function renderOfertasConMinimoTable() {
         }
     });
     const fmtPct = v => v != null ? v + '%' : '—';
+    // Dto% concatenado con observación (ej "30% · TR Lanzamiento") cuando existe.
+    const fmtPctObs = (v, obs) => {
+        const p = v != null ? v + '%' : '—';
+        if (!obs) return p;
+        return `${p} <span class="text-[#888] text-[10px]" title="${obs}">· ${obs}</span>`;
+    };
     let html = '';
 
     if (individuals.length) {
@@ -2344,7 +2366,7 @@ function renderOfertasConMinimoTable() {
                 <td class="px-2 text-right text-[#555]">${avgMon > 0 ? avgMon.toFixed(1) : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
-                <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
+                <td class="px-2 text-right text-emerald-700">${fmtPctObs(it.descuento_psl, it.observacion)}</td>
                 <td class="px-2 text-right">
                     <input type="number" min="0" value="${it.cantidad}" id="qty-ofmin-${it.ean}"
                            oninput="recalcIndividualOfmin('${it.ean}', ${minVal})"
@@ -2423,7 +2445,7 @@ function renderOfertasConMinimoTable() {
                 <td class="px-2 text-right">${stockSpan}</td>
                 <td class="px-2 text-right text-[#555]">${avgMon > 0 ? avgMon.toFixed(1) : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
-                <td class="px-2 text-right text-emerald-700">${fmtPct(it.descuento_psl)}</td>
+                <td class="px-2 text-right text-emerald-700">${fmtPctObs(it.descuento_psl, it.observacion)}</td>
                 <td class="px-2 text-right">
                     <input type="number" min="0" value="${it.cantidad}" id="qty-ofmin-${it.ean}"
                            data-grupo="${gid}"

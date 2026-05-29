@@ -981,6 +981,11 @@ def init_app(app):
         # aplica para GET inicial sin filtros explícitos en URL.
         # Rango automático: el operador NO elige fechas. Traemos desde la
         # última carga del vendedor (− margen rezagadas) hasta hoy.
+        # Primera rendición de un vendedor (rol=rendicion sin bookmark): el
+        # default de N días puede traer demasiado histórico. Pedimos la fecha
+        # al usuario via input visible (primera_vez=True). Una vez que guarde
+        # la primer rendición, el bookmark se crea y vuelve al modo automático.
+        primera_vez = False
         desde_default = (hoy - timedelta(days=DEFAULT_PRIMERA_VEZ_DIAS)).isoformat()
         if vendedor_sugerido:
             with database.get_db() as _s_bm:
@@ -991,6 +996,9 @@ def init_app(app):
                     # pescar rezagadas; el dedup marca las ya cargadas.
                     desde_default = (_bm.ultima_fecha_op.date()
                                      - timedelta(days=MARGEN_REZAGADAS_DIAS)).isoformat()
+                elif rol_actual_get == 'rendicion':
+                    primera_vez = True
+                    desde_default = ''
 
         # Última receta procesada del vendedor (para mostrar en el encabezado
         # de dónde venimos). Es la de mayor creado_en (la última que se cargó).
@@ -1070,6 +1078,7 @@ def init_app(app):
                                    rol_actual=rol_actual_get,
                                    lotes_abiertos=lotes_abiertos,
                                    ultima_procesada=ultima_procesada,
+                                   primera_vez=primera_vez,
                                    lote_id=lote_id_preselect or '')
 
         # POST: buscar
@@ -1213,6 +1222,7 @@ def init_app(app):
                                cargadas=cargadas,
                                rol_actual=rol_actual,
                                lotes_abiertos=lotes_abiertos,
+                               primera_vez=False,
                                lote_id=request.form.get('lote_id', type=int) or '')
 
     @app.route('/rend-recetas/guardar', methods=['POST'])

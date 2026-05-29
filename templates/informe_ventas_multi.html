@@ -10,7 +10,7 @@
 <div class="bg-surface border-b border-surface-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap">
     <h1 class="text-base font-bold text-[#1e1e1e]">🔬 Ventas por droga / producto / médico / fecha</h1>
     <div class="ml-auto flex items-center gap-2">
-        <a href="{{ url_for('informe_ventas_multi_export', desde=desde.isoformat(), hasta=hasta.isoformat(), droga_id=droga_id or '', producto_id=producto_id or '', medico_id=medico_id or '', group_by=group_by) }}"
+        <a href="{{ url_for('informe_ventas_multi_export', desde=desde.isoformat(), hasta=hasta.isoformat(), droga_id=droga_id or '', producto_id=producto_id or '', medico_id=medico_id or '', solo_con_receta='1' if solo_con_receta else '', group_by=group_by) }}"
            class="btn btn-secondary btn-sm" title="Exportar a Excel (XLSX)">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
             XLSX
@@ -53,6 +53,7 @@
                 <select name="group_by" class="bg-white border border-surface-border rounded px-2 py-1 text-sm">
                     <option value="producto" {% if group_by == 'producto' %}selected{% endif %}>Producto</option>
                     <option value="droga" {% if group_by == 'droga' %}selected{% endif %}>Droga</option>
+                    <option value="laboratorio" {% if group_by == 'laboratorio' %}selected{% endif %}>Laboratorio</option>
                     <option value="medico" {% if group_by == 'medico' %}selected{% endif %}>Médico</option>
                     <option value="mes" {% if group_by == 'mes' %}selected{% endif %}>Mes</option>
                     <option value="os" {% if group_by == 'os' %}selected{% endif %}>Obra Social</option>
@@ -64,6 +65,12 @@
                 <input type="checkbox" name="excluir_sin_droga" value="1" class="w-3.5 h-3.5"
                        {% if excluir_sin_droga %}checked{% endif %}>
                 Excluir sin droga
+            </label>
+            <label class="flex items-center gap-1.5 text-xs text-[#3f6650] cursor-pointer pb-1"
+                   title="Filtra productos cuyo TipoVentaControl ≠ 'L' (Libre). Incluye Bajo Receta, Archivada, Psicotrópicos y Estupefacientes.">
+                <input type="checkbox" name="solo_con_receta" value="1" class="w-3.5 h-3.5"
+                       {% if solo_con_receta %}checked{% endif %}>
+                Solo con receta
             </label>
             <div class="flex items-center gap-1 ml-auto">
                 <button type="button" onclick="setRango(7)" class="text-[11px] border border-surface-border px-2 py-1 rounded hover:bg-fuchsia-50">7d</button>

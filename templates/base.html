@@ -63,8 +63,14 @@
         table tr.thead-row th, table tr.thead-row td {
             color: #F4C430 !important;
         }
-        ::-webkit-scrollbar { width: 5px; height: 5px; }
-        ::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 99px; }
+        /* Scrollbars visibles: los usuarios no se daban cuenta que podían
+           scrollear lateralmente en tablas largas. 14px = ancho estándar OS. */
+        * { scrollbar-width: auto; scrollbar-color: #6b7280 #e5e7eb; }
+        ::-webkit-scrollbar { width: 14px; height: 14px; }
+        ::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #6b7280; border-radius: 4px; border: 2px solid #e5e7eb; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        ::-webkit-scrollbar-corner { background: #e5e7eb; }
 
         /* ── Sidebar colapsable (sólo desktop) ── */
         @media (min-width: 1024px) {

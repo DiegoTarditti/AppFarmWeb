@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% set hide_sidebar = True %}
+{% block title %}Consultar Droga — Farmacia{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+
+{% block extra_head %}
+<style>
+.co-screen { max-width: 560px; margin: 0 auto; padding: 16px; }
+.co-h1 { font-size: 22px; font-weight: 700; color: var(--ds-text); margin-bottom: 4px; }
+.co-sub { font-size: 13px; color: var(--ds-text-mute); margin-bottom: 18px; }
+
+.co-input { width: 100%; background: var(--ds-surface-2);
+            border: 1.5px solid var(--ds-line); border-radius: 12px;
+            padding: 14px 14px; font-size: 16px; color: var(--ds-text);
+            font-family: inherit; }
+.co-input:focus { outline: none; border-color: var(--ds-mint);
+                  box-shadow: 0 0 0 3px rgba(95,230,188,.15); }
+
+.co-results { margin-top: 10px; background: var(--ds-surface);
+              border: 1px solid var(--ds-line); border-radius: 12px;
+              overflow: hidden; }
+.co-result-item { padding: 12px 14px; border-bottom: 1px solid var(--ds-line);
+                  cursor: pointer; text-decoration: none; display: block;
+                  color: var(--ds-text); transition: background .15s; }
+.co-result-item:last-child { border-bottom: none; }
+.co-result-item:active { background: rgba(95,230,188,.08); }
+.co-result-nombre { font-size: 14px; font-weight: 600; }
+
+.co-loading { text-align: center; padding: 12px; color: var(--ds-text-mute); font-size: 12px; }
+.co-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 13px; }
+.co-cancel { display: block; width: 100%; padding: 12px; text-align: center;
+             color: var(--ds-text-mute); font-size: 13px; margin-top: 16px;
+             text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="co-screen">
+    <h1 class="co-h1">💊 Consultar Droga</h1>
+    <p class="co-sub">Buscá por nombre. Mínimo 2 letras.</p>
+
+    <input type="text" id="co-q" class="co-input"
+           placeholder="Nombre de la droga..."
+           autocomplete="off" autofocus>
+
+    <div id="co-results"></div>
+
+    <a href="{{ url_for('consulta_stock') }}" class="co-cancel">Cancelar</a>
+</div>
+
+<script>
+(function () {
+    const input = document.getElementById('co-q');
+    const box = document.getElementById('co-results');
+    let debounceId = null;
+    let lastQ = '';
+
+    function render(items) {
+        if (!items.length) {
+            box.innerHTML = '<div class="co-empty">Sin resultados.</div>';
+            return;
+        }
+        box.innerHTML = '<div class="co-results">' + items.map(d =>
+            `<a href="/consulta-droga/${d.id}" class="co-result-item">
+                <div class="co-result-nombre">${escapeHtml(d.nombre)}</div>
+            </a>`
+        ).join('') + '</div>';
+    }
+
+    function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        })[c]);
+    }
+
+    async function buscar(q) {
+        if (q.length < 2) { box.innerHTML = ''; return; }
+        if (q === lastQ) return;
+        lastQ = q;
+        box.innerHTML = '<div class="co-loading">⏳ Buscando…</div>';
+        try {
+            const r = await fetch(`/api/consulta-droga/buscar?q=${encodeURIComponent(q)}`, {
+                credentials: 'same-origin'
+            });
+            const d = await r.json();
+            if (q !== input.value.trim()) return;  // input cambió mientras esperaba
+            render(d.items || []);
+        } catch (e) {
+            box.innerHTML = '<div class="co-empty">Error: ' + e.message + '</div>';
+        }
+    }
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceId);
+        const q = input.value.trim();
+        debounceId = setTimeout(() => buscar(q), 250);
+    });
+})();
+</script>
+{% endblock %}

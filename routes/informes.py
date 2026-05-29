@@ -1060,8 +1060,12 @@ def init_app(app):
         if rubro_id == 0:
             rubro_id = None
         excluir_sin_droga = request.args.get('excluir_sin_droga') == '1'
+        # "Solo con receta": filtra por ObsProducto.id_tipo_venta_control != 'L'.
+        # Valores: L=Venta Libre, R=Bajo Receta, A=Receta Archivada,
+        # 1-4=Psicotrópico, 5-8=Estupefaciente. Todo lo no-libre requiere receta.
+        solo_con_receta = request.args.get('solo_con_receta') == '1'
         group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'medico', 'mes', 'dia', 'os'):
+        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia', 'os'):
             group_by = 'producto'
 
         # Etiquetas opcionales para los filtros aplicados (mostrar en UI).
@@ -1098,7 +1102,7 @@ def init_app(app):
                     os_nombre = os_obj.descripcion
             ya_joined_obs = False
             ya_joined_subrubro = False
-            if droga_id or excluir_sin_droga or rubro_id:
+            if droga_id or excluir_sin_droga or rubro_id or solo_con_receta:
                 # Cualquiera de estos requiere joinear ObsProducto.
                 base = base.join(
                     ObsProducto,
@@ -1112,6 +1116,9 @@ def init_app(app):
                     droga_nombre = d.descripcion
             if excluir_sin_droga:
                 base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
+            if solo_con_receta:
+                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                                   ObsProducto.id_tipo_venta_control != 'L')
             if rubro_id:
                 from database import ObsSubrubro
                 base = base.join(
@@ -1165,6 +1172,33 @@ def init_app(app):
                 for r in base_rows:
                     rows.append({
                         'key_id': r.key, 'key_label': desc_por_id.get(r.key, '— sin droga —' if not r.key else f'#{r.key}'),
+                        'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
+                        'operaciones': int(r.ops or 0),
+                    })
+
+            elif group_by == 'laboratorio':
+                from database import ObsLaboratorio
+                base_q = base if ya_joined_obs else base.join(
+                    ObsProducto,
+                    ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
+                )
+                q = (base_q.with_entities(
+                             ObsProducto.laboratorio_observer.label('key'),
+                             _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                             _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                             _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                         ).group_by(ObsProducto.laboratorio_observer)
+                         .order_by(_func.sum(ObsVentaDetalle.cantidad).desc())
+                         .limit(200))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                lab_por_id = dict(session.query(ObsLaboratorio.observer_id,
+                                                 ObsLaboratorio.descripcion)
+                                  .filter(ObsLaboratorio.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows.append({
+                        'key_id': r.key,
+                        'key_label': lab_por_id.get(r.key, '— sin laboratorio —' if not r.key else f'#{r.key}'),
                         'cantidad': float(r.cant or 0), 'importe': float(r.imp or 0),
                         'operaciones': int(r.ops or 0),
                     })
@@ -1331,6 +1365,7 @@ def init_app(app):
                                os_id=os_id, os_nombre=os_nombre,
                                rubro_id=rubro_id,
                                excluir_sin_droga=excluir_sin_droga,
+                               solo_con_receta=solo_con_receta,
                                rubros=rubros,
                                group_by=group_by, rows=rows,
                                total_cantidad=total_cantidad,
@@ -1370,8 +1405,9 @@ def init_app(app):
         droga_id = request.args.get('droga_id', type=int)
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
+        solo_con_receta = request.args.get('solo_con_receta') == '1'
         group_by = (request.args.get('group_by') or 'producto').strip()
-        if group_by not in ('producto', 'droga', 'medico', 'mes', 'dia'):
+        if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia'):
             group_by = 'producto'
 
         # Reusar la misma lógica de query (copia del handler de la pantalla).
@@ -1387,12 +1423,17 @@ def init_app(app):
                 ids_med = medicos_observer_ids_compartidos(session, medico_id)
                 base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
             ya_joined_obs = False
-            if droga_id:
+            if droga_id or solo_con_receta:
                 base = base.join(
                     ObsProducto,
                     ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
-                ).filter(ObsProducto.nombre_droga_observer == droga_id)
+                )
                 ya_joined_obs = True
+            if droga_id:
+                base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
+            if solo_con_receta:
+                base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
+                                   ObsProducto.id_tipo_venta_control != 'L')
 
             rows_data = []
             if group_by == 'producto':
@@ -1426,6 +1467,25 @@ def init_app(app):
                                    .filter(ObsNombreDroga.observer_id.in_(ids)).all()) if ids else {}
                 for r in base_rows:
                     rows_data.append((desc_por_id.get(r.key, '— sin droga —'),
+                                      int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
+            elif group_by == 'laboratorio':
+                from database import ObsLaboratorio
+                base_q = base if ya_joined_obs else base.join(
+                    ObsProducto, ObsProducto.observer_id == ObsVentaDetalle.producto_observer)
+                q = (base_q.with_entities(
+                        ObsProducto.laboratorio_observer.label('key'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.cantidad), 0).label('cant'),
+                        _func.coalesce(_func.sum(ObsVentaDetalle.importe), 0).label('imp'),
+                        _func.count(ObsVentaDetalle.id_producto_vendido).label('ops'),
+                    ).group_by(ObsProducto.laboratorio_observer)
+                     .order_by(_func.sum(ObsVentaDetalle.cantidad).desc()).limit(2000))
+                base_rows = q.all()
+                ids = [r.key for r in base_rows if r.key]
+                lab_por_id = dict(session.query(ObsLaboratorio.observer_id,
+                                                 ObsLaboratorio.descripcion)
+                                  .filter(ObsLaboratorio.observer_id.in_(ids)).all()) if ids else {}
+                for r in base_rows:
+                    rows_data.append((lab_por_id.get(r.key, '— sin laboratorio —'),
                                       int(r.ops or 0), float(r.cant or 0), float(r.imp or 0)))
             elif group_by == 'medico':
                 q = (base.with_entities(
@@ -2034,6 +2094,7 @@ def init_app(app):
                     'unidades_minima': o.unidades_minima,
                     'descuento':       float(o.descuento_psl) if o.descuento_psl is not None else None,
                     'vigencia':        o.vigencia_hasta.strftime('%d/%m/%Y') if o.vigencia_hasta else None,
+                    'observacion':     o.observacion or '',
                 })
                 if o.vigencia_hasta and (g['_vh'] is None or o.vigencia_hasta > g['_vh']):
                     g['_vh'] = o.vigencia_hasta
@@ -2459,6 +2520,41 @@ def init_app(app):
             q.delete(synchronize_session=False)
             session.commit()
         return ('', 204)
+
+    @app.route('/informes/ofertas-activas/borrar-grupos-bulk', methods=['POST'])
+    @login_required
+    def informe_grupos_borrar_bulk():
+        """Borra varios grupos (lab+tipo+obs+drogueria) en una sola transacción."""
+        from database import OfertaMinimo
+        data = request.get_json(silent=True) or {}
+        groups = data.get('groups') or []
+        if not isinstance(groups, list) or not groups:
+            return jsonify({'ok': False, 'error': 'Sin grupos'}), 400
+        borradas = 0
+        with database.get_db() as session:
+            for g in groups:
+                lab_id  = g.get('lab_id')
+                tipo    = g.get('tipo')
+                obs     = g.get('obs', '')
+                drog_id = g.get('drog_id')
+                q = session.query(OfertaMinimo)
+                if lab_id is not None:
+                    q = q.filter(OfertaMinimo.laboratorio_id == lab_id)
+                else:
+                    q = q.filter(OfertaMinimo.laboratorio_id.is_(None))
+                if tipo:
+                    q = q.filter(OfertaMinimo.tipo_descuento == tipo)
+                if obs:
+                    q = q.filter(OfertaMinimo.observacion == obs)
+                else:
+                    q = q.filter(OfertaMinimo.observacion.is_(None) | (OfertaMinimo.observacion == ''))
+                if drog_id is not None:
+                    q = q.filter(OfertaMinimo.drogueria_id == drog_id)
+                else:
+                    q = q.filter(OfertaMinimo.drogueria_id.is_(None))
+                borradas += q.delete(synchronize_session=False)
+            session.commit()
+        return jsonify({'ok': True, 'borradas': borradas, 'grupos': len(groups)})
 
     @app.route('/informes/ofertas-activas/borrar-modulo/<int:modulo_id>', methods=['POST'])
     @login_required
