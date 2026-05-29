@@ -2246,6 +2246,68 @@ def init_app(app):
             headers={'Content-Disposition': f'attachment; filename="{filename}"'}
         )
 
+    @app.route('/order/<int:pedido_id>/analizar-ia', methods=['POST'])
+    def order_analizar_ia(pedido_id):
+        """Análisis IA del resumen final (Claude Haiku 4.5).
+
+        Body JSON: {rows: [...], agregados: {...}}.
+        - rows = el exportData del frontend (1 fila por EAN con stock+rot+sug+
+          total+cob_post+gap+precio).
+        - agregados = totales calculados client-side ($, ahorro, n productos).
+        Devuelve {ok, analisis, tokens_in, tokens_out} o {ok:false, error}.
+        """
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False,
+                            'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        rows = body.get('rows') or []
+        agregados = body.get('agregados') or {}
+        if not rows:
+            return jsonify({'ok': False, 'error': 'Sin líneas para analizar.'}), 400
+
+        with database.get_db() as session:
+            pedido = session.get(database.Pedido, pedido_id)
+            if not pedido:
+                return jsonify({'ok': False, 'error': 'Pedido inexistente.'}), 404
+            lab_nombre = pedido.laboratorio or '—'
+            n_days = int(pedido.n_days or 35)
+
+        from routes.informes import _guardar_analisis_cache
+        from services import pedido_analisis
+        try:
+            texto, usage = pedido_analisis.analizar_pedido(
+                lab_nombre, n_days, rows, agregados, api_key)
+            _guardar_analisis_cache(
+                f'pedido:{pedido_id}',
+                f'Análisis pedido — {lab_nombre}',
+                texto, usage,
+            )
+        except ImportError:
+            return jsonify({'ok': False,
+                            'error': 'Paquete anthropic no instalado.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:   # noqa: BLE001
+            msg = str(e); low = msg.lower()
+            if 'credit balance' in low or 'insufficient' in low:
+                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+            elif 'invalid' in low and 'api' in low and 'key' in low:
+                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+            elif 'rate limit' in low or '429' in low:
+                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+            else:
+                friendly = f'Claude API: {msg}'
+            return jsonify({'ok': False, 'error': friendly}), 502
+
+        return jsonify({
+            'ok': True,
+            'analisis': texto,
+            'tokens_in': getattr(usage, 'input_tokens', None),
+            'tokens_out': getattr(usage, 'output_tokens', None),
+        })
+
     @app.route('/order/<int:pedido_id>/canal', methods=['POST'])
     def order_set_canal(pedido_id):
         """Setea el canal de compra del pedido: laboratorio (directo) o droguería.
@@ -2500,21 +2562,18 @@ def init_app(app):
         elif step == 'summary':
             rows = data if isinstance(data, list) else []
 
-            hrow(ws, ['EAN', 'Producto', 'Stock ERP', 'Rot.', 'Prom.mes',
-                      'Precio PVP', 'Cant. módulo', 'Oferta c/mín', 'Sin Deal',
-                      'Total', 'Cant. pedida', 'Saldo'])
-            ws.column_dimensions['A'].width = 16
-            ws.column_dimensions['B'].width = 40
-            ws.column_dimensions['C'].width = 10
-            ws.column_dimensions['D'].width = 6
-            ws.column_dimensions['E'].width = 10
-            ws.column_dimensions['F'].width = 12
-            ws.column_dimensions['G'].width = 12
-            ws.column_dimensions['H'].width = 12
-            ws.column_dimensions['I'].width = 10
-            ws.column_dimensions['J'].width = 10
-            ws.column_dimensions['K'].width = 12
-            ws.column_dimensions['L'].width = 10
+            hrow(ws, ['EAN', 'Producto', 'Stock ERP', 'Stock ObServer',
+                      'Rot.', 'Prom.mes', 'Precio PVP',
+                      'Cant. módulo', 'Packs módulo', 'Oferta c/mín', 'Sin Deal',
+                      'Total Pedido', 'Cob. actual (d)', 'Cob. post (d)',
+                      'Gap vs obj. (d)', 'Objetivo (d)',
+                      'Sugerido', 'Saldo'])
+            for col, w in zip('ABCDEFGHIJKLMNOPQR',
+                              [16, 40, 10, 12, 6, 10, 12,
+                               12, 12, 12, 10,
+                               12, 14, 12, 14, 12,
+                               10, 10]):
+                ws.column_dimensions[col].width = w
 
             for row in rows:
                 saldo = row.get('saldo', '')
@@ -2522,23 +2581,30 @@ def init_app(app):
                     row.get('ean', ''),
                     row.get('nombre', ''),
                     row.get('erp_qty', '') if row.get('erp_qty') is not None else '',
+                    row.get('stock_obs', '') if row.get('stock_obs') is not None else '',
                     row.get('rotacion', ''),
                     row.get('avg_monthly', '') if row.get('avg_monthly') is not None else '',
                     row.get('precio_pvp', '') if row.get('precio_pvp') else '',
                     row.get('cant_modulo', '') if row.get('cant_modulo') else '',
+                    row.get('cant_modulo_packs', '') if row.get('cant_modulo_packs') else '',
                     row.get('cant_oferta_min', '') if row.get('cant_oferta_min') else '',
                     row.get('cant_nodeal', '') if row.get('cant_nodeal') else '',
                     row.get('total', ''),
+                    row.get('cobertura_actual_d', '') if row.get('cobertura_actual_d') is not None else '',
+                    row.get('cobertura_post_d', '') if row.get('cobertura_post_d') is not None else '',
+                    row.get('gap_vs_objetivo_d', '') if row.get('gap_vs_objetivo_d') is not None else '',
+                    row.get('objetivo_d', '') if row.get('objetivo_d') is not None else '',
                     row.get('cant_pedida', ''),
                     saldo if saldo != '' else '',
                 ])
                 saldo_val = row.get('saldo')
                 if saldo_val is not None:
                     from openpyxl.styles import PatternFill as _PF
+                    # Saldo es la última columna (R = 18).
                     if saldo_val > 0:
-                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='FEE2E2')
+                        ws.cell(row=ws.max_row, column=18).fill = _PF(fill_type='solid', fgColor='FEE2E2')
                     elif saldo_val < 0:
-                        ws.cell(row=ws.max_row, column=12).fill = _PF(fill_type='solid', fgColor='D1FAE5')
+                        ws.cell(row=ws.max_row, column=18).fill = _PF(fill_type='solid', fgColor='D1FAE5')
 
         if fmt == 'xlsx':
             buf = BytesIO()
