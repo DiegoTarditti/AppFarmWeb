@@ -33,45 +33,89 @@
     </div>
 </div>
 
-<div class="flex-1 overflow-auto p-4 sm:p-6 space-y-5">
+<div class="flex-1 overflow-auto p-3 sm:p-4 space-y-3">
 
-    <!-- Identificación -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="bg-white rounded-xl border border-surface-border p-5">
-            <p class="font-semibold text-sm mb-3">📋 Identificación</p>
-            <dl class="text-sm space-y-2">
+    {% if producto.observer_id %}
+    <!-- Movimientos 30 días: ingresos (factura+pedidos) vs egresos (ventas) -->
+    <div class="bg-white rounded-xl border border-surface-border p-4">
+        <div class="flex items-center justify-between mb-2">
+            <p class="font-semibold text-sm">📊 Movimientos 30 días</p>
+            <span id="mov-stats" class="text-xs text-[#888]"></span>
+        </div>
+        <div id="mov-loading" class="text-center text-sm text-[#999] py-4">Cargando…</div>
+        <div id="mov-empty" class="hidden text-center text-sm text-[#999] py-4">Sin movimientos en los últimos 30 días.</div>
+        <div id="mov-content" class="hidden">
+            <div class="h-56"><canvas id="chart-movs"></canvas></div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
+                <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                    <p class="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Ingresos (facturas)</p>
+                    <p id="kpi-ingresos" class="font-mono font-bold text-emerald-900 text-sm mt-0.5">—</p>
+                </div>
+                <div class="bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
+                    <p class="text-[10px] uppercase tracking-wide text-sky-700 font-bold">Pedidos emitidos</p>
+                    <p id="kpi-pedidos" class="font-mono font-bold text-sky-900 text-sm mt-0.5">—</p>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                    <p class="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Ventas</p>
+                    <p id="kpi-ventas" class="font-mono font-bold text-rose-900 text-sm mt-0.5">—</p>
+                </div>
+                <div class="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                    <p class="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Pendiente proveedor</p>
+                    <p id="kpi-pendiente" class="font-mono font-bold text-amber-900 text-sm mt-0.5">—</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Identificación + Datos ObServer (fusionados) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="bg-white rounded-xl border border-surface-border p-4">
+            <p class="font-semibold text-sm mb-2.5">📋 Identificación</p>
+            <dl class="text-xs grid grid-cols-2 gap-x-3 gap-y-1.5">
                 {% if producto.codigo_alfabeta %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Cód. Alfabeta</dt><dd class="font-mono">{{ producto.codigo_alfabeta }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Cód. Alfabeta</dt><dd class="font-mono">{{ producto.codigo_alfabeta }}</dd></div>
                 {% endif %}
                 {% if producto.observer_id %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Observer ID</dt><dd class="font-mono">{{ producto.observer_id }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Observer ID</dt><dd class="font-mono">{{ producto.observer_id }}</dd></div>
                 {% endif %}
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">PVP</dt><dd class="font-mono font-semibold">{{ '$' + ('{:,.2f}'.format(producto.precio_pvp)|replace(',','X')|replace('.',',')|replace('X','.')) if producto.precio_pvp else '—' }}</dd></div>
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
-                <div class="flex justify-between gap-3"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
-                {% if producto.fuente_creacion %}
-                <div class="flex justify-between gap-3">
-                    <dt class="text-[#888]">Origen</dt>
-                    <dd>
-                        {% if producto.fuente_creacion == 'oferta_import' %}
-                        <span class="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-semibold">
-                            ⚠ Creado desde oferta — catalogar
-                        </span>
-                        {% else %}
-                        <span class="text-[11px] text-[#888]">{{ producto.fuente_creacion }}</span>
-                        {% endif %}
-                    </dd>
+                {% if obs and obs.troquel %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Troquel</dt><dd class="font-mono">{{ obs.troquel }}</dd></div>
+                {% endif %}
+                {% if obs and obs.tvc %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Tipo venta</dt><dd class="font-mono">{{ obs.tvc }}</dd></div>
+                {% endif %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">PVP</dt><dd class="font-mono font-semibold">{{ '$' + ('{:,.2f}'.format(producto.precio_pvp)|replace(',','X')|replace('.',',')|replace('X','.')) if producto.precio_pvp else '—' }}</dd></div>
+                {% if obs and obs.stock_actual is not none %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Stock{% if obs.es_fraccionable %} (u){% endif %}</dt><dd class="font-mono font-semibold">{{ obs.stock_actual }}</dd></div>
+                {% endif %}
+                {% if obs and obs.cantidad_envase %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Cant. envase</dt><dd class="font-mono">{{ obs.cantidad_envase }}</dd></div>
+                {% endif %}
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Última compra</dt><dd>{{ producto.ultima_compra or '—' }}</dd></div>
+                <div class="flex justify-between gap-2"><dt class="text-[#888]">Actualizado</dt><dd class="text-[#888]">{{ producto.actualizado_en or '—' }}</dd></div>
+                {% if obs and obs.cadena_frio %}
+                <div class="col-span-2 flex justify-between gap-2"><dt class="text-rose-700 font-semibold">⚠ Cadena frío</dt><dd class="text-rose-700 font-bold">SÍ</dd></div>
+                {% endif %}
+                {% if obs and obs.baja %}
+                <div class="col-span-2 flex justify-between gap-2"><dt class="text-rose-700 font-semibold">Baja</dt><dd class="text-rose-700">{{ obs.baja.strftime('%d/%m/%Y') }}</dd></div>
+                {% endif %}
+                {% if producto.fuente_creacion and producto.fuente_creacion == 'oferta_import' %}
+                <div class="col-span-2 mt-1">
+                    <span class="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded font-semibold">
+                        ⚠ Creado desde oferta — catalogar
+                    </span>
                 </div>
                 {% endif %}
             </dl>
             <!-- EANs (1-a-N) -->
-            <div class="mt-4 pt-4 border-t border-[#eee]">
-                <div class="flex items-center justify-between mb-2">
-                    <p class="text-xs uppercase tracking-wide text-[#6f6f6f] font-bold">📦 Códigos de barra</p>
+            <div class="mt-3 pt-3 border-t border-[#eee]">
+                <div class="flex items-center justify-between mb-1.5">
+                    <p class="text-[11px] uppercase tracking-wide text-[#6f6f6f] font-bold">📦 Códigos de barra</p>
                     <button type="button" onclick="document.getElementById('add-cb-form').classList.toggle('hidden')"
-                            class="text-[11px] px-2 py-1 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">+ Agregar</button>
+                            class="text-[11px] px-2 py-0.5 rounded bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 font-semibold">+ Agregar</button>
                 </div>
-                <ul id="cb-list" class="space-y-1.5 text-xs">
+                <ul id="cb-list" class="space-y-1 text-xs">
                     <li class="text-[#bbb]">Cargando…</li>
                 </ul>
                 <form id="add-cb-form" class="hidden mt-2 flex gap-2 items-center">
@@ -81,21 +125,20 @@
                     <button type="button" onclick="agregarCB()" class="bg-brand hover:bg-brand-hover text-brand-dark text-xs font-semibold px-2.5 py-1 rounded">✓</button>
                     <button type="button" onclick="document.getElementById('add-cb-form').classList.add('hidden')" class="text-xs text-[#888] hover:text-[#1e1e1e]">✕</button>
                 </form>
-                <p class="text-[10px] text-[#aaa] mt-2">Sin límite de cantidad. El marcado como <strong>principal</strong> se sincroniza con <code>productos.codigo_barra</code>.</p>
             </div>
         </div>
 
         <!-- Atributos catalogados -->
-        <div class="bg-white rounded-xl border border-surface-border p-5">
-            <div class="flex items-center justify-between mb-3">
+        <div class="bg-white rounded-xl border border-surface-border p-4">
+            <div class="flex items-center justify-between mb-2">
                 <p class="font-semibold text-sm">🧬 Atributos estructurados</p>
                 <button type="button" onclick="reExtraer()" id="btn-reextraer"
-                        class="text-[11px] px-2 py-1 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold">
+                        class="text-[11px] px-2 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-800 font-semibold">
                     🔄 Re-extraer
                 </button>
             </div>
             {% if atributos %}
-            <div class="mb-3 flex items-center gap-2 text-[10px]">
+            <div class="mb-2 flex items-center gap-2 text-[10px]">
                 {% set fuente_color = {'observer':'emerald','mixto':'violet','regex':'sky','manual':'rose','llm':'amber'} %}
                 {% set c = fuente_color.get(atributos.fuente, 'slate') %}
                 <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-{{ c }}-100 text-{{ c }}-800 border border-{{ c }}-200 font-bold uppercase">{{ atributos.fuente }}</span>
@@ -103,7 +146,7 @@
                 {% if atributos.extraido_en %}<span class="text-[#aaa]">· {{ atributos.extraido_en }}</span>{% endif %}
             </div>
             {% endif %}
-            <form id="form-atributos" class="text-sm space-y-2.5">
+            <form id="form-atributos" class="text-xs space-y-1.5">
                 <div class="grid grid-cols-3 gap-2 items-center">
                     <label for="atr-monodroga" class="text-[#888]">Monodroga</label>
                     <input type="text" id="atr-monodroga" name="monodroga" value="{{ atributos.monodroga_display if atributos else '' }}"
@@ -146,63 +189,6 @@
             </form>
         </div>
     </div>
-
-    {% if obs %}
-    <div class="bg-white rounded-xl border border-surface-border p-5">
-        <p class="font-semibold text-sm mb-3">🔗 Datos de ObServer</p>
-        <dl class="text-sm grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Descripción ObServer</dt><dd class="text-[#1e1e1e]">{{ obs.descripcion }}</dd></div>
-            {% if obs.monodroga %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Monodroga</dt><dd class="text-[#1e1e1e]">{{ obs.monodroga }}</dd></div>{% endif %}
-            {% if obs.cantidad_envase %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cant. envase</dt><dd class="font-mono">{{ obs.cantidad_envase }}</dd></div>{% endif %}
-            {% if obs.troquel %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Troquel</dt><dd class="font-mono">{{ obs.troquel }}</dd></div>{% endif %}
-            {% if obs.codigo_alfabeta %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Cód. Alfabeta</dt><dd class="font-mono">{{ obs.codigo_alfabeta }}</dd></div>{% endif %}
-            {% if obs.tvc %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Tipo venta</dt><dd class="font-mono">{{ obs.tvc }}</dd></div>{% endif %}
-            <div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Fraccionable</dt>
-                <dd>{% if obs.es_fraccionable %}<span class="text-emerald-700 font-bold">SÍ</span>{% if obs.frac_display %} <span class="font-mono text-[#888]">· {{ obs.frac_display }}</span>{% endif %}{% else %}<span class="text-[#999]">No</span>{% endif %}</dd></div>
-            {% if obs.stock_actual is not none %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Stock{% if obs.es_fraccionable %} (u){% endif %}</dt><dd class="font-mono">{{ obs.stock_actual }}</dd></div>{% endif %}
-            {% if obs.cadena_frio %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">⚠ Cadena frío</dt><dd class="text-rose-700 font-bold">SÍ</dd></div>{% endif %}
-            {% if obs.baja %}<div><dt class="text-[10px] uppercase text-[#888] tracking-wide">Baja</dt><dd class="text-rose-700">{{ obs.baja.strftime('%d/%m/%Y') }}</dd></div>{% endif %}
-        </dl>
-    </div>
-    {% endif %}
-
-    {% if producto.observer_id %}
-    <!-- Movimientos 30 días: ingresos (factura+pedidos) vs egresos (ventas) -->
-    <div class="bg-white rounded-xl border border-surface-border p-5">
-        <div class="flex items-center justify-between mb-3">
-            <p class="font-semibold text-sm">📊 Movimientos 30 días</p>
-            <span id="mov-stats" class="text-xs text-[#888]"></span>
-        </div>
-        <div id="mov-loading" class="text-center text-sm text-[#999] py-6">Cargando…</div>
-        <div id="mov-empty" class="hidden text-center text-sm text-[#999] py-6">Sin movimientos en los últimos 30 días.</div>
-        <div id="mov-content" class="hidden">
-            <div class="h-72"><canvas id="chart-movs"></canvas></div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-xs">
-                <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    <p class="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Ingresos (facturas)</p>
-                    <p id="kpi-ingresos" class="font-mono font-bold text-emerald-900 text-base mt-0.5">—</p>
-                </div>
-                <div class="bg-sky-50 border border-sky-200 rounded-lg px-3 py-2">
-                    <p class="text-[10px] uppercase tracking-wide text-sky-700 font-bold">Pedidos emitidos</p>
-                    <p id="kpi-pedidos" class="font-mono font-bold text-sky-900 text-base mt-0.5">—</p>
-                </div>
-                <div class="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-                    <p class="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Ventas</p>
-                    <p id="kpi-ventas" class="font-mono font-bold text-rose-900 text-base mt-0.5">—</p>
-                </div>
-                <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    <p class="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Pendiente proveedor</p>
-                    <p id="kpi-pendiente" class="font-mono font-bold text-amber-900 text-base mt-0.5">—</p>
-                </div>
-            </div>
-            <p class="text-[10px] text-[#aaa] mt-3">
-                Ingresos: facturas importadas + pedidos emitidos por código de barra del producto.
-                Ventas: <code>obs_ventas_detalle</code> del ObServer. Los movimientos no documentados (compras al
-                contado, ajustes manuales, mermas) no aparecen — requieren snapshot diario de stock.
-            </p>
-        </div>
-    </div>
-    {% endif %}
 
     <!-- Histórico de precios embebido -->
     <div class="bg-white rounded-xl border border-surface-border p-5">
