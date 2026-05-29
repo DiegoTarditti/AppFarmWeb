@@ -75,8 +75,11 @@ YELLOW   = "#FBBF24"
 
 # Backup diario obligatorio (config). Si la share no es alcanzable, se loguea
 # el error en backup_log y se muestra warning rojo (no bloquea el panel).
-BACKUP_SHARE = r'\\server-1\D\RespaldoFarmWeb'
-BACKUP_RETENTION_DAYS = 30
+# Estos son los DEFAULTS — la carpeta real y la retención son configurables
+# en el diálogo "Configurar Agente Pendientes" y viven en agente_config.txt
+# como `backup_share=…` y `backup_retention_days=N`.
+BACKUP_SHARE_DEFAULT = r'\\server-1\D\RespaldoFarmWeb'
+BACKUP_RETENTION_DAYS_DEFAULT = 30
 
 
 # ── Persistencia del último proyecto abierto ──────────────────────────────────
@@ -962,16 +965,17 @@ class DockerPanel(tk.Tk):
     def _backup_diario_ejecutar(self):
         """Thread: pg_dump → share → INSERT backup_log → rotación. No bloquea UI."""
         from datetime import date
+        share = self._get_backup_share()
         today = date.today().isoformat()
-        dest_path = os.path.join(BACKUP_SHARE, f'farmacia_{today}.dump')
+        dest_path = os.path.join(share, f'farmacia_{today}.dump')
 
         self.after(0, self._append,
                    f"\n💾 backup diario → {dest_path}\n", "bk")
 
         # 1) ¿Share alcanzable?
-        if not os.path.isdir(BACKUP_SHARE):
+        if not os.path.isdir(share):
             try:
-                os.makedirs(BACKUP_SHARE, exist_ok=True)
+                os.makedirs(share, exist_ok=True)
             except OSError as e:
                 err = f'share no alcanzable: {e}'
                 self._backup_log_insert(False, dest_path, None, err)
@@ -1047,12 +1051,13 @@ class DockerPanel(tk.Tk):
             pass
 
     def _backup_rotar(self):
-        """Borra farmacia_YYYY-MM-DD.dump > BACKUP_RETENTION_DAYS días."""
+        """Borra farmacia_YYYY-MM-DD.dump más viejos que la retención configurada."""
         from datetime import date, timedelta
-        if not os.path.isdir(BACKUP_SHARE):
+        share = self._get_backup_share()
+        if not os.path.isdir(share):
             return
-        cutoff = date.today() - timedelta(days=BACKUP_RETENTION_DAYS)
-        for nombre in os.listdir(BACKUP_SHARE):
+        cutoff = date.today() - timedelta(days=self._get_backup_retention_days())
+        for nombre in os.listdir(share):
             if not (nombre.startswith('farmacia_') and nombre.endswith('.dump')):
                 continue
             fecha_str = nombre[len('farmacia_'):-len('.dump')]
@@ -1062,7 +1067,7 @@ class DockerPanel(tk.Tk):
                 continue
             if fdate < cutoff:
                 try:
-                    os.remove(os.path.join(BACKUP_SHARE, nombre))
+                    os.remove(os.path.join(share, nombre))
                 except OSError:
                     pass
 
@@ -1210,6 +1215,20 @@ class DockerPanel(tk.Tk):
             except OSError:
                 pass
         return default
+
+    def _get_backup_share(self):
+        """Carpeta destino del backup diario. Configurable desde el diálogo
+        Configurar Agente; fallback al default histórico si no hay config."""
+        return self._read_config_value('backup_share', BACKUP_SHARE_DEFAULT) or BACKUP_SHARE_DEFAULT
+
+    def _get_backup_retention_days(self):
+        """Días de retención del backup diario (1–365). Default 30."""
+        raw = self._read_config_value('backup_retention_days',
+                                       str(BACKUP_RETENTION_DAYS_DEFAULT))
+        try:
+            return max(1, min(365, int(raw)))
+        except (ValueError, TypeError):
+            return BACKUP_RETENTION_DAYS_DEFAULT
 
     def _update_config_file(self, updates):
         """Reescribe agente_config.txt actualizando SOLO las claves de `updates`
@@ -1410,6 +1429,72 @@ class DockerPanel(tk.Tk):
                  bg=BG, fg=FG_DIM).pack(side="left", padx=(6, 0))
         # === END KEEPALIVE RENDER ===
 
+        # ── BACKUP DIARIO ──────────────────────────────────────────────────
+        tk.Frame(dlg, bg=BORDER, height=1).pack(fill="x", padx=16, pady=(14, 8))
+        tk.Label(dlg, text="BACKUP DIARIO", font=("Segoe UI", 8, "bold"),
+                 bg=BG, fg=FG_DIM).pack(anchor="w", padx=16)
+        tk.Label(dlg, text="Carpeta destino del pg_dump diario. Puede ser un share "
+                 "de red (\\\\server\\D\\Backups) o una carpeta local. Retención "
+                 "borra los .dump más viejos automáticamente.",
+                 font=("Segoe UI", 8), bg=BG, fg=FG_DIM, wraplength=460, justify="left"
+                 ).pack(anchor="w", padx=16, pady=(0, 4))
+
+        tk.Label(dlg, text="Carpeta destino:", font=("Segoe UI", 9),
+                 bg=BG, fg=FG).pack(anchor="w", padx=16, pady=(8, 2))
+        row_bk = tk.Frame(dlg, bg=BG)
+        row_bk.pack(fill="x", padx=16)
+        bk_share_var = tk.StringVar(value=self._get_backup_share())
+        tk.Entry(row_bk, textvariable=bk_share_var, font=("Consolas", 9),
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        tk.Button(row_bk, text="Buscar…", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=BRAND, activebackground=BORDER,
+                  activeforeground=BRAND, relief="flat", cursor="hand2",
+                  command=lambda: bk_share_var.set(
+                      filedialog.askdirectory(parent=dlg, initialdir=bk_share_var.get() or os.path.expanduser("~")) or bk_share_var.get()
+                  )).pack(side="left")
+
+        def _probar_carpeta_bk():
+            path = bk_share_var.get().strip()
+            if not path:
+                messagebox.showwarning("Probar carpeta", "Ingresá una ruta primero.", parent=dlg)
+                return
+            if not os.path.isdir(path):
+                try:
+                    os.makedirs(path, exist_ok=True)
+                except OSError as e:
+                    messagebox.showerror("Probar carpeta",
+                                          f"No se puede acceder ni crear:\n{path}\n\n{e}",
+                                          parent=dlg)
+                    return
+            test_file = os.path.join(path, '.dockerpanel_test')
+            try:
+                with open(test_file, 'w', encoding='utf-8') as f:
+                    f.write('ok')
+                os.remove(test_file)
+                messagebox.showinfo("Probar carpeta",
+                                     f"✓ Accesible y escribible:\n{path}",
+                                     parent=dlg)
+            except OSError as e:
+                messagebox.showerror("Probar carpeta",
+                                      f"Accesible pero sin permiso de escritura:\n{path}\n\n{e}",
+                                      parent=dlg)
+
+        row_bk2 = tk.Frame(dlg, bg=BG)
+        row_bk2.pack(fill="x", padx=16, pady=(8, 0))
+        tk.Label(row_bk2, text="Retención (días):", font=("Segoe UI", 9),
+                 bg=BG, fg=FG).pack(side="left")
+        bk_ret_var = tk.StringVar(value=str(self._get_backup_retention_days()))
+        tk.Entry(row_bk2, textvariable=bk_ret_var, font=("Consolas", 9), width=6,
+                 bg=SURFACE, fg=FG, insertbackground=FG, relief="flat", bd=4
+                 ).pack(side="left", padx=(8, 0))
+        tk.Label(row_bk2, text="(1–365)", font=("Segoe UI", 8),
+                 bg=BG, fg=FG_DIM).pack(side="left", padx=(6, 12))
+        tk.Button(row_bk2, text="Probar carpeta", font=("Segoe UI", 9),
+                  bg=SURFACE, fg=BRAND, activebackground=BORDER,
+                  activeforeground=BRAND, relief="flat", cursor="hand2",
+                  command=_probar_carpeta_bk).pack(side="right")
+
         # Botones
         btns = tk.Frame(dlg, bg=BG)
         btns.pack(fill="x", padx=16, pady=(14, 14))
@@ -1417,12 +1502,19 @@ class DockerPanel(tk.Tk):
         def _save():
             try: ka_min_int = max(1, min(60, int(ka_min_var.get())))
             except (ValueError, TypeError): ka_min_int = KEEPALIVE_DEFAULT_MIN
+            try: bk_ret_int = max(1, min(365, int(bk_ret_var.get())))
+            except (ValueError, TypeError): bk_ret_int = BACKUP_RETENTION_DAYS_DEFAULT
             self._save_agente_config(
                 carpeta_var.get().strip(), url_var.get().strip(), mover_var.get(),
                 keepalive=ka_enabled_var.get(),
                 keepalive_url=ka_url_var.get().strip() or KEEPALIVE_DEFAULT_URL,
                 keepalive_min=ka_min_int,
             )
+            # Backup: persiste aparte (no toca las claves del agente/keepalive).
+            self._update_config_file({
+                'backup_share': bk_share_var.get().strip() or BACKUP_SHARE_DEFAULT,
+                'backup_retention_days': str(bk_ret_int),
+            })
             self._append("  ✔  Config del agente guardada.\n", "ok")
             # Actualiza label del status bar inmediatamente
             self._update_keepalive_label()
@@ -1437,7 +1529,7 @@ class DockerPanel(tk.Tk):
 
         # Centrar
         dlg.update_idletasks()
-        w, h = 520, 500
+        w, h = 520, 680
         sw = dlg.winfo_screenwidth()
         sh = dlg.winfo_screenheight()
         dlg.geometry(f"{w}x{h}+{(sw-w)//2}+{(sh-h)//2}")
