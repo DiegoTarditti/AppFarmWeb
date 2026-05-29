@@ -396,7 +396,14 @@ async function cargarMovimientos() {
         datasets.push({
             type: 'line', label: 'Stock implícito', data: stockSerie,
             borderColor: '#475569', backgroundColor: '#47556922',
-            borderWidth: 2, pointRadius: 2, pointBackgroundColor: '#475569',
+            borderWidth: 2, pointRadius: 2,
+            pointBackgroundColor: ctx => (stockSerie[ctx.dataIndex] < 0) ? '#dc2626' : '#475569',
+            segment: {
+                borderColor: ctx =>
+                    (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? '#dc2626' : '#475569',
+                borderDash: ctx =>
+                    (ctx.p0.parsed.y < 0 || ctx.p1.parsed.y < 0) ? [4, 3] : undefined,
+            },
             tension: 0.2, yAxisID: 'y1',
             datalabels: { display: false },
         });
@@ -410,7 +417,7 @@ async function cargarMovimientos() {
             scales: {
                 x: { stacked: true, grid: { color: '#f0f0f0' }, ticks: { font: { size: 10 } } },
                 y: { stacked: true, grid: { color: '#f0f0f0' },
-                     ticks: { callback: v => Math.abs(v), font: { size: 10 } } },
+                     ticks: { font: { size: 10 } } },
                 y1: stockSerie ? {
                     position: 'right', beginAtZero: false,
                     grid: { display: false },
