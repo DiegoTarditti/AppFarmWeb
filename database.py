@@ -10,11 +10,13 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     create_engine,
+    func,
     text,
 )
 
@@ -53,11 +55,11 @@ class Config(Base):
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
     # Backups automáticos (ejecutados por DockerPanel host)
     backup_ruta_remota        = Column(String(500), nullable=True)   # UNC tipo \\server-1\backups\farmacia
-    backup_hora               = Column(Integer, nullable=False, default=17)  # 0-23
-    backup_diarios_max        = Column(Integer, nullable=False, default=7)
-    backup_semanales_max      = Column(Integer, nullable=False, default=0)
-    backup_quincenales_max    = Column(Integer, nullable=False, default=1)
-    backup_mensuales_max      = Column(Integer, nullable=False, default=0)
+    backup_hora               = Column(Integer, nullable=False, default=17, server_default='17')  # 0-23
+    backup_diarios_max        = Column(Integer, nullable=False, default=7, server_default='7')
+    backup_semanales_max      = Column(Integer, nullable=False, default=0, server_default='0')
+    backup_quincenales_max    = Column(Integer, nullable=False, default=1, server_default='1')
+    backup_mensuales_max      = Column(Integer, nullable=False, default=0, server_default='0')
     # Status del último backup (lo escribe DockerPanel via API)
     backup_ultimo_status      = Column(String(10), nullable=True)    # 'OK' / 'FAIL' / NULL
     backup_ultimo_corrida_en  = Column(DateTime, nullable=True)
@@ -66,11 +68,11 @@ class Config(Base):
     # Ruta local al ejecutable del DockerPanel (solo usada desde localhost)
     dockerpanel_ruta = Column(String(500), nullable=True)
     # Observer: cuántos meses hacia atrás trae sync_ventas_mensuales
-    observer_ventas_meses = Column(Integer, nullable=False, default=16)
+    observer_ventas_meses = Column(Integer, nullable=False, default=16, server_default='16')
     # Transferencias entre sucursales (/transferencias): umbrales de cobertura.
     # excedente = cobertura > N meses; necesita = vende y cobertura < M meses.
-    transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0)
-    transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0)
+    transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0, server_default='6.0')
+    transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0, server_default='2.0')
 
 
 class Laboratorio(Base):
@@ -390,6 +392,9 @@ class ObsSyncLog(Base):
     duracion_ms = Column(Integer, nullable=True)
     error = Column(Text, nullable=True)
     ejecutado_en = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_sync_entidad', 'entidad', text('ejecutado_en DESC')),
+    )
 
 
 class CronLog(Base):
@@ -422,7 +427,7 @@ class AlarmaNotificada(Base):
     nombre = Column(String(120), primary_key=True)
     ultima_notif = Column(DateTime, nullable=True)
     ultima_severidad = Column(String(20), nullable=True)
-    count_total = Column(Integer, nullable=False, default=0)
+    count_total = Column(Integer, nullable=False, default=0, server_default='0')
     estado_actual = Column(String(20), nullable=True)  # 'activa' / 'resuelta'
 
 
@@ -455,14 +460,17 @@ class PanelComando(Base):
     id = Column(Integer, primary_key=True)
     comando = Column(String(40), nullable=False)
     # estado: pendiente / en_proceso / ok / error
-    estado = Column(String(20), nullable=False, default='pendiente')
-    solicitado_en = Column(DateTime, default=now_ar, nullable=False)
+    estado = Column(String(20), nullable=False, default='pendiente', server_default='pendiente')
+    solicitado_en = Column(DateTime, default=now_ar, nullable=False, server_default=func.now())
     solicitado_por = Column(String(80), nullable=True)
     tomado_en = Column(DateTime, nullable=True)
     ejecutado_en = Column(DateTime, nullable=True)
     duracion_ms = Column(Integer, nullable=True)
     resultado = Column(Text, nullable=True)
     origen = Column(String(40), nullable=True)
+    __table_args__ = (
+        Index('idx_panel_comandos_estado', 'estado', 'solicitado_en'),
+    )
 
 
 class PanelHeartbeat(Base):
@@ -495,11 +503,12 @@ class ProductoPendienteRevision(Base):
     """
     __tablename__ = 'productos_pendientes_revision'
     id = Column(Integer, primary_key=True)
+    # Indices custom declarados en __table_args__ al final de la clase.
     descripcion_supplier = Column(String(300), nullable=False, index=True)
-    supplier_id = Column(Integer, nullable=True, index=True)         # laboratorio/proveedor (sin FK estricto: puede venir de Producto.laboratorio_id, Provider.id, etc.)
+    supplier_id = Column(Integer, nullable=True)                     # laboratorio/proveedor (sin FK estricto: puede venir de Producto.laboratorio_id, Provider.id, etc.)
     supplier_nombre = Column(String(200), nullable=True)
     archivo_origen = Column(String(60), nullable=True)               # 'ofertas_import' | 'modulos_import' | 'factura' | etc.
-    fecha_creacion = Column(DateTime, default=now_ar, nullable=False, index=True)
+    fecha_creacion = Column(DateTime, default=now_ar, nullable=False)
     veces_aparecido = Column(Integer, nullable=False, default=1)
     score_top_candidato = Column(Float, nullable=True)               # 0.0-1.0; None si bulk no devolvió ningún candidato
     top_candidatos_json = Column(Text, nullable=True)                # snapshot JSON: [{producto_id, descripcion, score}, ...]
@@ -508,7 +517,7 @@ class ProductoPendienteRevision(Base):
                                                                       #  vigencia_hasta, drogueria_id, observacion, archivo_origen,
                                                                       #  laboratorio_id}. Al resolver, se aplica a OfertaMinimo del
                                                                       # producto creado/vinculado para cerrar el loop import → queue → oferta.
-    estado = Column(String(20), nullable=False, default='pendiente', index=True)  # pendiente / agregado / vinculado / descartado
+    estado = Column(String(20), nullable=False, default='pendiente')  # pendiente / agregado / vinculado / descartado
     producto_creado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
     producto_vinculado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
     usuario_resuelve = Column(String(80), nullable=True)
@@ -524,6 +533,12 @@ class ProductoPendienteRevision(Base):
     llm_reasoning = Column(Text, nullable=True)
     llm_action = Column(String(20), nullable=True)
     llm_modelo_usado = Column(String(60), nullable=True)
+    __table_args__ = (
+        Index('idx_pend_rev_supplier', 'supplier_id'),
+        Index('idx_pend_rev_estado', 'estado', 'fecha_creacion'),
+        Index('idx_pend_rev_llm', 'llm_analizado_en',
+              postgresql_where=text('llm_analizado_en IS NULL')),
+    )
 
 
 class Farmacia(Base):
@@ -686,7 +701,7 @@ class ArchivoCompartido(Base):
     nombre          = Column(String(200), nullable=False)
     descripcion     = Column(Text, nullable=True)
     farmacia_origen = Column(String(100), nullable=False)
-    destinatarios   = Column(String(200), nullable=False, default='todos')  # 'todos' o slugs csv
+    destinatarios   = Column(String(200), nullable=False, default='todos', server_default='todos')  # 'todos' o slugs csv
     json_data       = Column(Text, nullable=False)
     n_items         = Column(Integer, default=0)
     creado_en       = Column(DateTime, default=now_ar)
@@ -1202,24 +1217,31 @@ class EquivalenciaProveedor(Base):
     __tablename__ = 'equivalencias_proveedor'
     id = Column(Integer, primary_key=True)
     # Nullable: o lab o drog, al menos uno tiene que estar.
+    # Indices custom declarados en __table_args__ (incluyen partial uniques).
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id', ondelete='CASCADE'),
-                            nullable=True, index=True)
+                            nullable=True)
     drogueria_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
-                          nullable=True, index=True)
+                          nullable=True)
     descripcion_proveedor = Column(String(200), nullable=True)
-    descripcion_proveedor_norm = Column(String(200), nullable=True, index=True)
-    codigo_proveedor = Column(String(50), nullable=True, index=True)
+    descripcion_proveedor_norm = Column(String(200), nullable=True)
+    codigo_proveedor = Column(String(50), nullable=True)
     producto_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'),
                          nullable=True, index=True)
     creado_en = Column(DateTime, default=now_ar)
     laboratorio = relationship('Laboratorio')
     producto = relationship('Producto')
     __table_args__ = (
-        # UC legacy (solo aplica cuando lab está seteado). En drogueria_id,
-        # se chequea uniqueness vía helper guardar_equivalencia (SELECT-then-
-        # insert) — los partial unique indexes se crean inline en init_db.
+        # UC legacy (solo aplica cuando lab está seteado).
         UniqueConstraint('laboratorio_id', 'descripcion_proveedor_norm',
                          name='uq_equiv_lab_desc'),
+        Index('idx_equiv_codigo', 'codigo_proveedor'),
+        Index('idx_equiv_drog', 'drogueria_id'),
+        Index('uq_equiv_drog_codigo', 'drogueria_id', 'codigo_proveedor', unique=True,
+              postgresql_where=text('(drogueria_id IS NOT NULL) AND (codigo_proveedor IS NOT NULL)')),
+        Index('uq_equiv_drog_desc', 'drogueria_id', 'descripcion_proveedor_norm', unique=True,
+              postgresql_where=text('(drogueria_id IS NOT NULL) AND (descripcion_proveedor_norm IS NOT NULL)')),
+        Index('uq_equiv_lab_codigo', 'laboratorio_id', 'codigo_proveedor', unique=True,
+              postgresql_where=text('(laboratorio_id IS NOT NULL) AND (codigo_proveedor IS NOT NULL)')),
     )
 
 
@@ -1239,21 +1261,24 @@ class Producto(Base):
     id = Column(Integer, primary_key=True)
     codigo_barra = Column(String(20), nullable=False, unique=True)
     descripcion = Column(String(200))
-    codigo_barra_alt1 = Column(String(20), index=True)
-    codigo_barra_alt2 = Column(String(20), index=True)
-    codigo_barra_alt3 = Column(String(20), index=True)
+    # Indices custom declarados en __table_args__ (no usamos index=True
+    # para que el nombre matchee el DDL real `idx_productos_*`).
+    codigo_barra_alt1 = Column(String(20))
+    codigo_barra_alt2 = Column(String(20))
+    codigo_barra_alt3 = Column(String(20))
     es_pack = Column(Integer, nullable=False, default=0)   # 1 = es un pack de unidades
     precio_pvp = Column(DECIMAL(14, 2))
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     laboratorio = relationship('Laboratorio')
-    # Puente a ObServer: único nexo entre EAN (local) y IdProducto (ObServer)
-    # unique=True: un observer_id NO puede estar asignado a más de un producto local.
-    # NULL permitido múltiple (productos todavía no vinculados a ObServer).
+    # Puente a ObServer: único nexo entre EAN (local) y IdProducto (ObServer).
+    # Unicidad implementada vía Index parcial `uq_productos_observer_id`
+    # (WHERE observer_id IS NOT NULL). NULL permitido múltiple — productos
+    # todavía no vinculados a ObServer.
     observer_id = Column(Integer, ForeignKey('obs_productos.observer_id'),
-                         nullable=True, unique=True, index=True)
+                         nullable=True)
     obs_producto = relationship('ObsProducto')
     # Código Alfabeta (vademécum). Bridge robusto con obs_productos.codigo_alfabeta.
-    codigo_alfabeta = Column(String(10), nullable=True, index=True)
+    codigo_alfabeta = Column(String(10), nullable=True)
     monodroga = Column(String(200), nullable=True)
     presentacion = Column(String(500), nullable=True)
     accion_terapeutica = Column(String(200), nullable=True)
@@ -1276,6 +1301,17 @@ class Producto(Base):
                                  back_populates='producto',
                                  cascade='all, delete-orphan',
                                  order_by='desc(ProductoCodigoBarra.es_principal), ProductoCodigoBarra.id')
+    __table_args__ = (
+        Index('idx_productos_alt1', 'codigo_barra_alt1'),
+        Index('idx_productos_alt2', 'codigo_barra_alt2'),
+        Index('idx_productos_alt3', 'codigo_barra_alt3'),
+        Index('idx_productos_alfabeta', 'codigo_alfabeta'),
+        Index('idx_productos_observer_id', 'observer_id'),
+        Index('uq_productos_observer_id', 'observer_id', unique=True,
+              postgresql_where=text('observer_id IS NOT NULL')),
+        Index('idx_prod_no_pedir', 'no_pedir',
+              postgresql_where=text('no_pedir = true')),
+    )
 
 
 class ProductoCodigoBarra(Base):
@@ -1289,13 +1325,19 @@ class ProductoCodigoBarra(Base):
     """
     __tablename__ = 'producto_codigos_barra'
     id           = Column(Integer, primary_key=True)
-    producto_id  = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), nullable=False, index=True)
-    codigo_barra = Column(String(20), nullable=False, index=True)
+    # Indices custom declarados en __table_args__ para matchear DDL real `idx_pcb_*`.
+    producto_id  = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
+    codigo_barra = Column(String(20), nullable=False)
     es_principal = Column(Boolean, nullable=False, default=False)
     fuente       = Column(String(20), nullable=False, default='manual')  # manual / factura / observer / import / cruce / legacy_alt
     factura_id   = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
     creado_en    = Column(DateTime, default=now_ar)
     producto = relationship('Producto', back_populates='codigos_barra')
+    __table_args__ = (
+        Index('idx_pcb_producto', 'producto_id'),
+        Index('idx_pcb_codigo', 'codigo_barra'),
+        Index('uq_pcb_producto_codigo', 'producto_id', 'codigo_barra', unique=True),
+    )
 
 
 class ProductoAtributo(Base):
@@ -1314,11 +1356,12 @@ class ProductoAtributo(Base):
       - Identificación rápida sin EAN
     """
     __tablename__ = 'producto_atributos'
+    # Indices custom (matchean DDL `idx_atributos_*`).
     producto_id        = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), primary_key=True)
-    monodroga_norm     = Column(String(500), nullable=True, index=True)  # lower-case sin acentos para match
-    concentracion_mg   = Column(DECIMAL(12, 4), nullable=True, index=True)  # ej 500, 250.5, 0.05
+    monodroga_norm     = Column(String(500), nullable=True)              # lower-case sin acentos para match
+    concentracion_mg   = Column(DECIMAL(12, 4), nullable=True)           # ej 500, 250.5, 0.05
     concentracion_unidad = Column(String(15), nullable=True)             # MG, MCG, G, UI, %, MG/ML, MG/5ML
-    forma_farma        = Column(String(10), nullable=True, index=True)   # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
+    forma_farma        = Column(String(10), nullable=True)               # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
     cantidad_envase    = Column(DECIMAL(10, 3), nullable=True)           # 16, 100, 10
     via_admin          = Column(String(10), nullable=True)               # ORAL, IV, IM, SC, TOP, OFT, NAS, OTI, INH, RECT, VAG
     fuente             = Column(String(15), nullable=False, default='regex')  # observer / regex / llm / manual / mixto
@@ -1326,6 +1369,12 @@ class ProductoAtributo(Base):
     raw_descripcion    = Column(String(300), nullable=True)              # snapshot de la descripción cuando se extrajo (detección de drift)
     extraido_en        = Column(DateTime, default=now_ar)
     producto = relationship('Producto', backref='atributos')
+    __table_args__ = (
+        Index('idx_atributos_droga', 'monodroga_norm'),
+        Index('idx_atributos_conc', 'concentracion_mg'),
+        Index('idx_atributos_forma', 'forma_farma'),
+        Index('idx_atributos_fuente', 'fuente'),
+    )
 
     @property
     def monodroga_display(self):
@@ -1555,7 +1604,7 @@ class AnalisisIaCache(Base):
     texto = Column(Text, nullable=False)
     tokens_in = Column(Integer)
     tokens_out = Column(Integer)
-    creado_en = Column(DateTime, default=now_ar)
+    creado_en = Column(DateTime, default=now_ar, server_default=func.now())
 
 
 class Usuario(Base):
@@ -1599,6 +1648,10 @@ class HomeCardClick(Base):
     usuario_id = Column(Integer, ForeignKey('usuarios.id'), nullable=False, index=True)
     card_id = Column(String(40), nullable=False, index=True)
     clicked_at = Column(DateTime, default=now_ar, nullable=False, index=True)
+    __table_args__ = (
+        Index('idx_hcc_user', 'usuario_id', text('clicked_at DESC')),
+        Index('idx_hcc_card', 'card_id'),
+    )
 
 
 class PackEquivalencia(Base):
@@ -1634,10 +1687,11 @@ class ProductoPrecioHist(Base):
     """
     __tablename__ = 'producto_precios_hist'
     id = Column(Integer, primary_key=True)
-    codigo_barra     = Column(String(20), nullable=False, index=True)
-    proveedor_id     = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=True, index=True)
+    # Indices custom (matchean DDL `idx_precios_*`).
+    codigo_barra     = Column(String(20), nullable=False)
+    proveedor_id     = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=True)
     proveedor_razon  = Column(String(150), nullable=True)  # fallback si no hay proveedor_id
-    fecha            = Column(Date, nullable=False, index=True)  # fecha de la factura
+    fecha            = Column(Date, nullable=False)  # fecha de la factura
     precio_publico   = Column(DECIMAL(14, 2), nullable=True)
     dto_pct          = Column(DECIMAL(6, 2),  nullable=True)
     precio_unitario  = Column(DECIMAL(14, 2), nullable=True)
@@ -1645,6 +1699,11 @@ class ProductoPrecioHist(Base):
     factura_id       = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
     tipo_comprobante = Column(String(5), nullable=True)  # FAC / NCR (para filtrar)
     creado_en        = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_precios_codigo_barra', 'codigo_barra'),
+        Index('idx_precios_proveedor', 'proveedor_id'),
+        Index('idx_precios_fecha', 'fecha'),
+    )
 
 
 class AnalisisSesion(Base):
