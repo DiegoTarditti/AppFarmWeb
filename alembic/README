@@ -1,0 +1,35 @@
+Alembic — migraciones de schema (DRAFT, paso 1 de 6)
+=====================================================
+
+Estado: SOLO scaffolding. Las migraciones reales NO estan adoptadas todavia.
+init_db() en database.py sigue siendo el unico que toca el schema en deploy.
+
+Plan completo: docs/mejoras_pendientes.md -> "Adoptar Alembic para migraciones".
+Tracking de revision del baseline por lotes: docs/alembic_baseline_review.md.
+
+Hecho (paso 1 - 2026-05-29):
+  - alembic init alembic
+  - env.py resuelve DATABASE_URL desde env var (igual que la app)
+  - target_metadata = database.Base.metadata (autogenerate ready)
+  - compare_type + compare_server_default activos (detecta drift de tipos
+    y defaults)
+  - alembic>=1.13 en requirements.txt
+
+Pendiente (ver alembic_baseline_review.md para el detalle por lotes):
+  2. Baseline migration (alembic revision --autogenerate + revision MANUAL
+     linea por linea, 10 tablas por sesion)
+  3. alembic stamp head en cada instancia (Badia, Render, Pieri)
+  4. Switch init_db a alembic upgrade head
+  5. Migrar inline _pg_add_columns a revisiones dedicadas (gradual)
+  6. Borrar zombie handler en database.py
+
+Comandos utiles:
+  alembic current                  # en que revision esta la db?
+  alembic heads                    # ultima revision del repo
+  alembic history                  # historial
+  alembic revision --autogenerate -m "msg"   # generar
+  alembic upgrade head             # aplicar pendientes
+  alembic downgrade -1             # rollback 1 paso
+
+Override de URL solo para alembic (sin tocar la app):
+  ALEMBIC_DATABASE_URL=... alembic upgrade head
