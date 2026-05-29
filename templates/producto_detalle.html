@@ -44,34 +44,40 @@ if (window.ChartDataLabels) {
 <div class="flex-1 overflow-auto p-3 sm:p-4 space-y-3">
 
     {% if producto.observer_id %}
-    <!-- Movimientos 30 días: ingresos (factura+pedidos) vs egresos (ventas) -->
-    <div class="bg-white rounded-xl border border-surface-border p-4">
-        <div class="flex items-center justify-between mb-2">
-            <p class="font-semibold text-sm">📊 Movimientos 30 días</p>
-            <span id="mov-stats" class="text-xs text-[#888]"></span>
-        </div>
-        <div id="mov-loading" class="text-center text-sm text-[#999] py-4">Cargando…</div>
-        <div id="mov-empty" class="hidden text-center text-sm text-[#999] py-4">Sin movimientos en los últimos 30 días.</div>
-        <div id="mov-content" class="hidden">
-            <div class="h-56"><canvas id="chart-movs"></canvas></div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-xs">
-                <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
-                    <p class="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Ingresos (facturas)</p>
-                    <p id="kpi-ingresos" class="font-mono font-bold text-emerald-900 text-sm mt-0.5">—</p>
-                </div>
-                <div class="bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
-                    <p class="text-[10px] uppercase tracking-wide text-sky-700 font-bold">Pedidos emitidos</p>
-                    <p id="kpi-pedidos" class="font-mono font-bold text-sky-900 text-sm mt-0.5">—</p>
-                </div>
-                <div class="bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
-                    <p class="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Ventas</p>
-                    <p id="kpi-ventas" class="font-mono font-bold text-rose-900 text-sm mt-0.5">—</p>
-                </div>
-                <div class="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                    <p class="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Pendiente proveedor</p>
-                    <p id="kpi-pendiente" class="font-mono font-bold text-amber-900 text-sm mt-0.5">—</p>
-                </div>
+    <!-- Movimientos 30 días + Histórico 12m en grid 2 cols -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <!-- Izq: Movimientos 30d -->
+        <div class="bg-white rounded-xl border border-surface-border p-4 flex flex-col">
+            <div class="flex items-center justify-between mb-2">
+                <p class="font-semibold text-sm">📊 Movimientos 30 días</p>
+                <span id="mov-stats" class="text-xs text-[#888]"></span>
             </div>
+            <div id="mov-loading" class="text-center text-sm text-[#999] py-4">Cargando…</div>
+            <div id="mov-empty" class="hidden text-center text-sm text-[#999] py-4">Sin movimientos en los últimos 30 días.</div>
+            <div id="mov-content" class="hidden flex-1 flex flex-col">
+                <div class="flex-1" style="min-height:200px"><canvas id="chart-movs"></canvas></div>
+            </div>
+        </div>
+        <!-- Der: Año 12m (mismo gráfico que /productos botón 📊) -->
+        {% include '_grafico_anio.html' %}
+    </div>
+    <!-- KPIs (full width debajo del grid) -->
+    <div id="mov-kpis" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        <div class="bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-emerald-700 font-bold">Ingresos (facturas)</p>
+            <p id="kpi-ingresos" class="font-mono font-bold text-emerald-900 text-sm mt-0.5">—</p>
+        </div>
+        <div class="bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-sky-700 font-bold">Pedidos emitidos</p>
+            <p id="kpi-pedidos" class="font-mono font-bold text-sky-900 text-sm mt-0.5">—</p>
+        </div>
+        <div class="bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-rose-700 font-bold">Ventas</p>
+            <p id="kpi-ventas" class="font-mono font-bold text-rose-900 text-sm mt-0.5">—</p>
+        </div>
+        <div class="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            <p class="text-[10px] uppercase tracking-wide text-amber-700 font-bold">Pendiente proveedor</p>
+            <p id="kpi-pendiente" class="font-mono font-bold text-amber-900 text-sm mt-0.5">—</p>
         </div>
     </div>
     {% endif %}
@@ -346,6 +352,7 @@ async function cargarMovimientos() {
         return;
     }
     document.getElementById('mov-content').classList.remove('hidden');
+    document.getElementById('mov-kpis').classList.remove('hidden');
     document.getElementById('kpi-ventas').textContent = totalVentas.toLocaleString('es-AR');
     document.getElementById('kpi-ingresos').textContent = totalIngresos.toLocaleString('es-AR');
     document.getElementById('kpi-pedidos').textContent = totalPedidos.toLocaleString('es-AR');
@@ -370,6 +377,7 @@ async function cargarMovimientos() {
             s = s + (ventasData[i] || 0) - (ingresosData[i] || 0);
         }
     }
+    const avgDiario = (ventasR && ventasR.avg_diario) || (totalVentas / Math.max(1, labels.length));
     const datasets = [
         { label: 'Ingresos (facturas)', data: ingresosData,
           backgroundColor: '#10b98199', borderColor: '#059669', borderWidth: 1, stack: 'mov' },
@@ -377,6 +385,12 @@ async function cargarMovimientos() {
           backgroundColor: '#3b82f699', borderColor: '#2563eb', borderWidth: 1, stack: 'mov', hidden: true },
         { label: 'Ventas',              data: ventasNeg,
           backgroundColor: '#ef444499', borderColor: '#dc2626', borderWidth: 1, stack: 'mov' },
+        // Línea de promedio de ventas (negativa para coincidir con el eje de egresos).
+        { type: 'line', label: `Prom. ${avgDiario.toFixed(1)}/día`,
+          data: Array(labels.length).fill(-avgDiario),
+          borderColor: '#EAB308', borderWidth: 2, borderDash: [6, 3],
+          pointRadius: 0, tension: 0, fill: false, yAxisID: 'y',
+          datalabels: { display: false } },
     ];
     if (stockSerie) {
         datasets.push({
@@ -423,6 +437,11 @@ async function cargarMovimientos() {
     });
 }
 cargarMovimientos();
+
+// Histórico anual (12m) en la columna derecha — mismo chart que /productos botón 📊.
+if (OBSERVER_ID && typeof cargarGraficoAnio === 'function') {
+    cargarGraficoAnio(OBSERVER_ID, {{ producto.descripcion|tojson }});
+}
 
 // ─── EANs (1-a-N) ────────────────────────────────────────────────────────
 const FUENTE_BADGE = {
