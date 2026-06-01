@@ -460,12 +460,17 @@ def init_app(app):
                             'confianza': 'alta',
                             'razon': 'aprendido',
                         }
-                    elif not cur.get('ean_unidad_sug'):
+                    else:
+                        # La equivalencia aprendida/manual SIEMPRE pisa la
+                        # sugerencia del detector (incluida cantidad) — el
+                        # usuario ya confirmó este ean_pack: ean_unidad,
+                        # cantidad y descripción son fuente de verdad.
                         cur['ean_unidad_sug'] = pe.ean_unidad
-                        if not cur.get('desc_unidad_sug') and pe.desc_unidad:
+                        if pe.desc_unidad:
                             cur['desc_unidad_sug'] = pe.desc_unidad
-                        if pe.cantidad and pe.cantidad >= 2:
+                        if pe.cantidad and pe.cantidad >= 1:
                             cur['cantidad'] = pe.cantidad
+                        cur['confianza'] = 'alta'
                         cur['razon'] = (cur.get('razon', '') + '+aprendido').lstrip('+')
 
             # Validación EANs contra catálogo (master + alts + obs_productos).
@@ -481,7 +486,11 @@ def init_app(app):
             eans_en_catalogo = set()
             desc_unidad_map = {}
             if todos_eans:
-                # EANs reales (numericos): productos master + alts.
+                # EANs reales (numericos): productos master + alts + maestro ObServer.
+                # ObsCodigoBarras se incluye como 4ta fuente porque las equivalencias
+                # cargadas vía Excel/aprendidas pueden apuntar a EANs que viven en el
+                # maestro ObServer pero todavía no se materializaron a `productos`.
+                # Sin esto, esos EANs daban falso "no en catálogo" en el preview.
                 eans_reales = [e for e in todos_eans if not e.startswith('OBS:')]
                 if eans_reales:
                     eans_en_catalogo = {row[0] for row in
@@ -490,6 +499,10 @@ def init_app(app):
                     eans_en_catalogo |= {row[0] for row in
                         session.query(ProductoCodigoBarra.codigo_barra)
                         .filter(ProductoCodigoBarra.codigo_barra.in_(eans_reales)).all()}
+                    eans_en_catalogo |= {row[0] for row in
+                        session.query(database.ObsCodigoBarras.codigo_barras)
+                        .filter(database.ObsCodigoBarras.codigo_barras.in_(eans_reales),
+                                database.ObsCodigoBarras.fecha_baja.is_(None)).all()}
                 # 'OBS:N' = referencia directa a obs_productos.observer_id.
                 # Si el observer_id existe en obs_productos, lo damos por valido.
                 obs_refs = {e for e in todos_eans if e.startswith('OBS:')}
@@ -526,6 +539,18 @@ def init_app(app):
                             p = session.get(Producto, pid)
                             if p:
                                 desc_unidad_map[cb] = (p.descripcion or '').strip()
+                    # ObServer puro (no materializado a productos): traer desc del
+                    # maestro vía obs_codigos_barras → obs_productos.
+                    pendientes = [e for e in eans_reales if e not in desc_unidad_map]
+                    if pendientes:
+                        for cb, dsc in (session.query(database.ObsCodigoBarras.codigo_barras,
+                                                     database.ObsProducto.descripcion)
+                                       .join(database.ObsProducto,
+                                             database.ObsProducto.observer_id ==
+                                             database.ObsCodigoBarras.producto_observer)
+                                       .filter(database.ObsCodigoBarras.codigo_barras.in_(pendientes),
+                                               database.ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                            desc_unidad_map.setdefault(cb, (dsc or '').strip())
                 if obs_ids:
                     for oid, dsc in (session.query(database.ObsProducto.observer_id,
                                                    database.ObsProducto.descripcion)
