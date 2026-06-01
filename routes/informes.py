@@ -1051,6 +1051,7 @@ def init_app(app):
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
         os_id = request.args.get('os_id', type=int)
+        lab_id = request.args.get('lab_id', type=int)
         # Rubro: si no viene en URL, default = 12 (Medicamentos). Para "Todos"
         # el user pasa rubro_id=0 explícito.
         if 'rubro_id' in request.args:
@@ -1069,7 +1070,7 @@ def init_app(app):
             group_by = 'producto'
 
         # Etiquetas opcionales para los filtros aplicados (mostrar en UI).
-        droga_nombre = producto_desc = medico_nombre = os_nombre = None
+        droga_nombre = producto_desc = medico_nombre = os_nombre = lab_nombre = None
 
         rows = []
         total_cantidad = 0.0
@@ -1102,7 +1103,7 @@ def init_app(app):
                     os_nombre = os_obj.descripcion
             ya_joined_obs = False
             ya_joined_subrubro = False
-            if droga_id or excluir_sin_droga or rubro_id or solo_con_receta:
+            if droga_id or excluir_sin_droga or rubro_id or solo_con_receta or lab_id:
                 # Cualquiera de estos requiere joinear ObsProducto.
                 base = base.join(
                     ObsProducto,
@@ -1114,6 +1115,12 @@ def init_app(app):
                 d = session.get(ObsNombreDroga, droga_id)
                 if d:
                     droga_nombre = d.descripcion
+            if lab_id:
+                from database import ObsLaboratorio
+                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
+                lab_obj = session.get(ObsLaboratorio, lab_id)
+                if lab_obj:
+                    lab_nombre = lab_obj.descripcion
             if excluir_sin_droga:
                 base = base.filter(ObsProducto.nombre_droga_observer.isnot(None))
             if solo_con_receta:
@@ -1363,6 +1370,7 @@ def init_app(app):
                                producto_id=producto_id, producto_desc=producto_desc,
                                medico_id=medico_id, medico_nombre=medico_nombre,
                                os_id=os_id, os_nombre=os_nombre,
+                               lab_id=lab_id, lab_nombre=lab_nombre,
                                rubro_id=rubro_id,
                                excluir_sin_droga=excluir_sin_droga,
                                solo_con_receta=solo_con_receta,
@@ -1405,6 +1413,7 @@ def init_app(app):
         droga_id = request.args.get('droga_id', type=int)
         producto_id = request.args.get('producto_id', type=int)
         medico_id = request.args.get('medico_id', type=int)
+        lab_id = request.args.get('lab_id', type=int)
         solo_con_receta = request.args.get('solo_con_receta') == '1'
         group_by = (request.args.get('group_by') or 'producto').strip()
         if group_by not in ('producto', 'droga', 'laboratorio', 'medico', 'mes', 'dia'):
@@ -1423,7 +1432,7 @@ def init_app(app):
                 ids_med = medicos_observer_ids_compartidos(session, medico_id)
                 base = base.filter(ObsVentaDetalle.medico_observer.in_(ids_med))
             ya_joined_obs = False
-            if droga_id or solo_con_receta:
+            if droga_id or solo_con_receta or lab_id:
                 base = base.join(
                     ObsProducto,
                     ObsProducto.observer_id == ObsVentaDetalle.producto_observer,
@@ -1431,6 +1440,8 @@ def init_app(app):
                 ya_joined_obs = True
             if droga_id:
                 base = base.filter(ObsProducto.nombre_droga_observer == droga_id)
+            if lab_id:
+                base = base.filter(ObsProducto.laboratorio_observer == lab_id)
             if solo_con_receta:
                 base = base.filter(ObsProducto.id_tipo_venta_control.isnot(None),
                                    ObsProducto.id_tipo_venta_control != 'L')
@@ -1819,6 +1830,22 @@ def init_app(app):
                        .limit(20).all())
             return jsonify({'items': [{'id': o.observer_id, 'nombre': o.descripcion}
                                        for o in results]})
+
+    @app.route('/api/informes/buscar-lab')
+    @login_required
+    def api_informes_buscar_lab():
+        """Autocomplete para filtro Laboratorio (catálogo ObServer)."""
+        from database import ObsLaboratorio
+        q = (request.args.get('q') or '').strip()
+        if len(q) < 2:
+            return jsonify({'items': []})
+        with database.get_db() as session:
+            results = (session.query(ObsLaboratorio)
+                       .filter(ObsLaboratorio.descripcion.ilike(f'%{q}%'))
+                       .order_by(ObsLaboratorio.descripcion)
+                       .limit(20).all())
+            return jsonify({'items': [{'id': l.observer_id, 'nombre': l.descripcion}
+                                       for l in results]})
 
     @app.route('/api/informes/buscar-producto-obs')
     @login_required
