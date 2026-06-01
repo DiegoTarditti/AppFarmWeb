@@ -1002,12 +1002,12 @@ function mostrarPreview(d) {
             </tr>
         `).join('');
         return `
-            <div class="mb-4 border border-[#ececec] rounded-lg overflow-hidden">
-                <div class="bg-[#fafafa] px-3 py-2 text-sm font-bold text-[#1e1e1e] border-b border-[#ececec]">
+            <div class="mb-8 border border-[#ececec] rounded-lg">
+                <div class="bg-[#fafafa] px-3 py-2 text-sm font-bold text-[#1e1e1e] border-b border-[#ececec] rounded-t-lg">
                     ${(mod.nombre || '').replace(/</g,'&lt;')}
                     <span class="text-[10px] font-normal text-[#888] ml-2">${mod.items.length} item(s)</span>
                 </div>
-                <div class="overflow-x-auto">
+                <div>
                     <table class="w-full">
                         <thead class="bg-[#fafafa] text-[10px] uppercase text-[#888]">
                             <tr>
@@ -1142,14 +1142,7 @@ function _renderPrevDropdown(id, dd, results, loadingHint) {
     }).join('');
 }
 
-function selectPreviewEan(id, ean, desc) {
-    const [mi, ii] = id.split('-').map(Number);
-    if (!_previewActual || !_previewActual.modulos[mi] || !_previewActual.modulos[mi].items[ii]) return;
-    const it = _previewActual.modulos[mi].items[ii];
-    it.ean_unidad = ean;
-    it.desc_unidad = desc || '';
-    it.catalogo_unidad = 'ok';
-    // Actualizar UI
+function _aplicarSeleccionPreviewUI(id, ean, desc) {
     const search = document.getElementById('prev-search-' + id);
     const dd = document.getElementById('prev-dd-' + id);
     if (search) search.value = ean;
@@ -1163,6 +1156,52 @@ function selectPreviewEan(id, ean, desc) {
         descCell.innerHTML = safeDesc;
         descCell.title = safeTitle;
     }
+}
+
+function selectPreviewEan(id, ean, desc) {
+    const [mi, ii] = id.split('-').map(Number);
+    if (!_previewActual || !_previewActual.modulos[mi] || !_previewActual.modulos[mi].items[ii]) return;
+    const it = _previewActual.modulos[mi].items[ii];
+    const eanPackOrigen = it.ean_pack;
+    it.ean_unidad = ean;
+    it.desc_unidad = desc || '';
+    it.catalogo_unidad = 'ok';
+    _aplicarSeleccionPreviewUI(id, ean, desc);
+
+    // Auto-propagar a los siguientes items con el mismo EAN pack y aún sin
+    // equivalencia (o con la equivalencia trivial ean_unidad == ean_pack).
+    // Evita re-ingresar la misma equivalencia para productos repetidos.
+    let propagados = 0;
+    _previewActual.modulos.forEach((mod2, mi2) => {
+        mod2.items.forEach((it2, ii2) => {
+            if (mi2 === mi && ii2 === ii) return;
+            if (it2.ean_pack !== eanPackOrigen) return;
+            const yaTiene = it2.ean_unidad && it2.ean_unidad !== it2.ean_pack;
+            if (yaTiene) return;
+            it2.ean_unidad = ean;
+            it2.desc_unidad = desc || '';
+            it2.catalogo_unidad = 'ok';
+            _aplicarSeleccionPreviewUI(`${mi2}-${ii2}`, ean, desc);
+            propagados++;
+        });
+    });
+    if (propagados > 0) {
+        _mostrarToastPreview(`✓ Equivalencia propagada a ${propagados} item(s) repetido(s).`);
+    }
+}
+
+function _mostrarToastPreview(msg) {
+    let t = document.getElementById('prev-toast');
+    if (!t) {
+        t = document.createElement('div');
+        t.id = 'prev-toast';
+        t.className = 'fixed bottom-4 right-4 z-50 bg-emerald-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg transition-opacity duration-300';
+        document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = '1';
+    clearTimeout(t._hideTimer);
+    t._hideTimer = setTimeout(() => { t.style.opacity = '0'; }, 2500);
 }
 
 // Click-outside para cerrar dropdowns del preview
