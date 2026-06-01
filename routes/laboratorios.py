@@ -740,6 +740,7 @@ def init_app(app):
                     'descuento_psl': float(r.descuento_psl) if r.descuento_psl is not None else None,
                     'rentabilidad': float(r.rentabilidad) if r.rentabilidad is not None else None,
                     'plazo_pago': r.plazo_pago, 'grupo_id': r.grupo_id,
+                    'observacion': r.observacion,
                 } for r in rows],
                 'count': len(rows),
             })

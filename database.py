@@ -1809,6 +1809,42 @@ class VendedorBookmark(Base):
     actualizado_en = Column(DateTime, default=now_ar, onupdate=now_ar)
 
 
+class RendicionGrupo(Base):
+    """Grupos para clasificar obras sociales en el flujo de rendición.
+    Ej: 'Esencial', 'Receta Solidario', 'Vale Salud'. Cada grupo agrupa N
+    obras sociales (ver RendicionGrupoOS). En `/rend-recetas/buscar` el
+    operador filtra recetas por grupo para procesarlas de a una tanda.
+
+    `operador_user_id` (nullable) — para más adelante asignar un operador
+    responsable. Por ahora no se usa.
+    """
+    __tablename__ = 'rendicion_grupo'
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=False, unique=True)
+    descripcion = Column(String(300), nullable=True)
+    operador_user_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    activo = Column(Boolean, nullable=False, default=True)
+    creado_en = Column(DateTime, default=now_ar)
+    operador = relationship('Usuario')
+    os_items = relationship('RendicionGrupoOS', backref='grupo',
+                             cascade='all, delete-orphan')
+
+
+class RendicionGrupoOS(Base):
+    """OS pertenecientes a un grupo de rendición. UNIQUE(grupo, os)."""
+    __tablename__ = 'rendicion_grupo_os'
+    id = Column(Integer, primary_key=True)
+    grupo_id = Column(Integer, ForeignKey('rendicion_grupo.id', ondelete='CASCADE'),
+                      nullable=False, index=True)
+    obra_social_observer_id = Column(Integer, nullable=False)
+    nombre_cached = Column(String(200), nullable=False, default='')
+    creado_en = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        UniqueConstraint('grupo_id', 'obra_social_observer_id',
+                         name='uq_rend_grupo_os'),
+    )
+
+
 class RolFiltroObraSocial(Base):
     """Filtra qué obras sociales puede VER un rol al buscar/listar recetas.
     Si hay registros para un rol, esas OS quedan OCULTAS para los usuarios
@@ -2037,6 +2073,7 @@ def init_db(database_url=None):
                         'rendicion_lote',
                         'vendedor_bookmark',
                         'rol_filtro_obra_social',
+                        'rendicion_grupo', 'rendicion_grupo_os',
                         'proveedor_cronograma',
                         'tipo_pedido_config',
                         'producto_flags',

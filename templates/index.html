@@ -6,8 +6,11 @@
 
 {% block extra_head %}
     <style>
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-thumb { background: rgba(95,230,188,.25); border-radius: 99px; }
+        /* Override mint del home: ancho visible 14px con tinte mint en hover. */
+        * { scrollbar-width: auto; scrollbar-color: rgba(95,230,188,.55) #e5e7eb; }
+        ::-webkit-scrollbar { width: 14px; height: 14px; }
+        ::-webkit-scrollbar-track { background: #e5e7eb; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(95,230,188,.55); border-radius: 4px; border: 2px solid #e5e7eb; }
         ::-webkit-scrollbar-thumb:hover { background: var(--ds-mint); }
 
         /* Container compacto para pantallas chicas (1366x768 ok) */

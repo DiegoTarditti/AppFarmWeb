@@ -661,6 +661,23 @@ def guardar_equivalencia(session, producto_id, descripcion=None,
             elif by_desc and code_clean and not existente.codigo_proveedor:
                 existente.codigo_proveedor = code_clean
             return
+        # Guard contra uq_equiv_lab_desc (laboratorio_id, descripcion_proveedor_norm):
+        # la búsqueda primaria por código puede no encontrar una fila que YA existe
+        # con esta misma (lab, desc_norm) pero distinto código (o sin código) — ej.
+        # dos ítems del mismo Excel con igual descripción y código interno distinto,
+        # o una fila desc-only de un import previo. Insertar ahí tira UniqueViolation
+        # → 500. Si la encontramos, mergeamos en vez de insertar.
+        if laboratorio_id and desc_norm:
+            dup = (session.query(EquivalenciaProveedor)
+                   .filter(EquivalenciaProveedor.laboratorio_id == laboratorio_id,
+                           EquivalenciaProveedor.descripcion_proveedor_norm == desc_norm)
+                   .first())
+            if dup:
+                if dup.producto_id != producto_id:
+                    dup.producto_id = producto_id
+                if code_clean and not dup.codigo_proveedor:
+                    dup.codigo_proveedor = code_clean
+                return
         nueva = EquivalenciaProveedor(
             laboratorio_id=laboratorio_id,
             drogueria_id=drogueria_id,

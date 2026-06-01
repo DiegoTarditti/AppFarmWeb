@@ -55,6 +55,19 @@
 .cdr-chart-wrap { position: relative; height: 200px; }
 .cdr-empty { text-align: center; padding: 16px; color: var(--ds-text-mute); font-size: 12px; }
 .cdr-notfound { text-align: center; padding: 32px 16px; }
+
+/* Tabs (Por producto / Por médico / Por O.Social) */
+.cdr-tabs { display: flex; gap: 4px; margin-bottom: 12px;
+            background: var(--ds-surface); border: 1px solid var(--ds-line-2);
+            border-radius: 10px; padding: 4px; }
+.cdr-tab { flex: 1; padding: 10px 6px; text-align: center;
+           background: transparent; color: var(--ds-text-mute);
+           border: none; border-radius: 7px; font-size: 12px; font-weight: 600;
+           cursor: pointer; transition: all .15s; font-family: inherit; }
+.cdr-tab:hover { color: var(--ds-text); }
+.cdr-tab.active { background: var(--ds-mint); color: #0a3a2a; }
+.cdr-tab-panel { display: none; }
+.cdr-tab-panel.active { display: block; }
 </style>
 {% endblock %}
 
@@ -114,56 +127,79 @@
         </div>
     </div>
 
-    {# Top productos (drill a /consulta-producto-stats/<id>) #}
-    <div class="cdr-card">
-        <div class="cdr-card-title">Top productos con esta droga</div>
-        {% if info.top_productos %}
-        <div class="cdr-top">
-            {% for p in info.top_productos %}
-            <a href="{{ url_for('consulta_producto_stats', observer_id=p.observer_id, dias=info.n_days) }}"
-               class="cdr-top-row">
-                <span class="cdr-top-name" title="{{ p.nombre }}">📦 {{ p.nombre }}</span>
-                <span class="cdr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
-            </a>
-            {% endfor %}
+    {# Tabs: Por producto / Por médico / Por O.Social #}
+    <div class="cdr-tabs" role="tablist">
+        <button type="button" class="cdr-tab active" data-tab="prod" role="tab">📦 Por producto</button>
+        <button type="button" class="cdr-tab" data-tab="med" role="tab">👨‍⚕️ Por médico</button>
+        <button type="button" class="cdr-tab" data-tab="os" role="tab">🏥 Por O.Social</button>
+    </div>
+
+    {# Tab: Por producto #}
+    <div class="cdr-tab-panel active" data-panel="prod">
+        <div class="cdr-card">
+            <div class="cdr-card-title">Top productos con esta droga</div>
+            {% if info.top_productos %}
+            <div class="cdr-top">
+                {% for p in info.top_productos %}
+                <a href="{{ url_for('consulta_producto_stats', observer_id=p.observer_id, dias=info.n_days) }}"
+                   class="cdr-top-row">
+                    <span class="cdr-top-name" title="{{ p.nombre }}">📦 {{ p.nombre }}</span>
+                    <span class="cdr-top-uds">{{ '%.0f' | format(p.unidades) }}u</span>
+                </a>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="cdr-empty">Sin ventas en este rango.</div>
+            {% endif %}
         </div>
-        {% else %}
-        <div class="cdr-empty">Sin ventas en este rango.</div>
+        {% if info.top_productos %}
+        <div class="cdr-card">
+            <div class="cdr-card-title">Distribución de productos</div>
+            <div class="cdr-chart-wrap" style="height: 260px;"><canvas id="cdr-donut"></canvas></div>
+        </div>
         {% endif %}
     </div>
 
-    {# Top médicos (drill a /consulta-medico/<id>) #}
-    {% if info.top_medicos %}
-    <div class="cdr-card">
-        <div class="cdr-card-title">Top médicos prescriptores</div>
-        <div class="cdr-top">
-            {% for m in info.top_medicos %}
-            <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id, dias=info.n_days) }}"
-               class="cdr-top-row">
-                <span class="cdr-top-name">👨‍⚕️ {{ m.nombre }}</span>
-                <span class="cdr-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>
-            </a>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
-
-    {# Top OS #}
-    {% if info.top_os %}
-    <div class="cdr-card">
-        <div class="cdr-card-title">Top obras sociales</div>
-        <div class="cdr-top">
-            {% for o in info.top_os %}
-            <div class="cdr-top-row">
-                <span class="cdr-top-name">🏥 {{ o.nombre }}</span>
-                <span class="cdr-top-uds">{{ '%.0f' | format(o.unidades) }}u</span>
+    {# Tab: Por médico #}
+    <div class="cdr-tab-panel" data-panel="med">
+        <div class="cdr-card">
+            <div class="cdr-card-title">Top médicos prescriptores</div>
+            {% if info.top_medicos %}
+            <div class="cdr-top">
+                {% for m in info.top_medicos %}
+                <a href="{{ url_for('consulta_medico_detalle', medico_id=m.observer_id, dias=info.n_days) }}"
+                   class="cdr-top-row">
+                    <span class="cdr-top-name">👨‍⚕️ {{ m.nombre }}</span>
+                    <span class="cdr-top-uds">{{ '%.0f' | format(m.unidades) }}u</span>
+                </a>
+                {% endfor %}
             </div>
-            {% endfor %}
+            {% else %}
+            <div class="cdr-empty">Sin médicos prescriptores en este rango.</div>
+            {% endif %}
         </div>
     </div>
-    {% endif %}
 
-    {# Chart histórico 12 meses #}
+    {# Tab: Por O.Social #}
+    <div class="cdr-tab-panel" data-panel="os">
+        <div class="cdr-card">
+            <div class="cdr-card-title">Top obras sociales</div>
+            {% if info.top_os %}
+            <div class="cdr-top">
+                {% for o in info.top_os %}
+                <div class="cdr-top-row">
+                    <span class="cdr-top-name">🏥 {{ o.nombre }}</span>
+                    <span class="cdr-top-uds">{{ '%.0f' | format(o.unidades) }}u</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="cdr-empty">Sin O.Social en este rango.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Chart histórico 12 meses (siempre visible, no en tab — habla de la droga) #}
     <div class="cdr-card">
         <div class="cdr-card-title">Evolución 12 meses</div>
         {% if info.serie %}
@@ -173,15 +209,21 @@
         {% endif %}
     </div>
 
-    {# Chart donut top productos #}
-    {% if info.top_productos %}
-    <div class="cdr-card">
-        <div class="cdr-card-title">Distribución de productos</div>
-        <div class="cdr-chart-wrap" style="height: 260px;"><canvas id="cdr-donut"></canvas></div>
-    </div>
-    {% endif %}
     {% endif %}
 </div>
+
+<script>
+// Tabs: 1 activa a la vez. Click cambia panel.
+(function () {
+    const tabs = document.querySelectorAll('.cdr-tab');
+    const panels = document.querySelectorAll('.cdr-tab-panel');
+    tabs.forEach(t => t.addEventListener('click', () => {
+        const id = t.dataset.tab;
+        tabs.forEach(x => x.classList.toggle('active', x === t));
+        panels.forEach(p => p.classList.toggle('active', p.dataset.panel === id));
+    }));
+})();
+</script>
 
 {% if info.encontrado and info.serie %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>

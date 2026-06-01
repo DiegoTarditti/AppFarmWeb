@@ -606,9 +606,16 @@ def init_app(app):
 
         # Para laboratorio: arrancar directo en Analizar Ventas con el lab precargado.
         # Para droguería/proveedor: ir al detail (el flujo arranca desde factura).
+        # OJO: solo desviamos a Analizar Ventas si hay datos Y el usuario tiene
+        # acceso a ObServer. Sino, observer_analizar rebota al home (con flash
+        # "Tu usuario no tiene acceso a ObServer") y el proceso recién creado
+        # "desaparece" de la vista aunque quedó guardado en BORRADOR. Para roles
+        # sin observer (ej. 'remoto') vamos directo al detail del proceso.
         if tipo == 'laboratorio':
             import observer_source
-            if observer_source.observer_analisis_disponible():
+            from routes.observer import _user_tiene_observer
+            if (observer_source.observer_analisis_disponible()
+                    and _user_tiene_observer(current_user)):
                 return redirect(url_for('observer_analizar',
                                         lab=partner_nombre, proceso=pid))
         return redirect(url_for('proceso_detail', proceso_id=pid))

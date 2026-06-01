@@ -13,6 +13,21 @@
 {% block title %}{{ _titulo_corto }}{% endblock %}
 {% block main %}
 <div class="max-w-7xl mx-auto p-4 space-y-4">
+  {# Flash messages — el handler devoluciones_guardar usa flash()+redirect()
+     para errores de validación. Sin este bloque el usuario ve la pantalla
+     "como si nada" y piensa que falló silenciosamente. #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% for cat, msg in messages %}
+  <div class="px-4 py-3 rounded-lg text-sm font-semibold border
+              {% if cat == 'error' %}bg-red-50 text-red-800 border-red-300
+              {% elif cat == 'warning' %}bg-amber-50 text-amber-800 border-amber-300
+              {% elif cat == 'info' %}bg-sky-50 text-sky-800 border-sky-300
+              {% else %}bg-emerald-50 text-emerald-800 border-emerald-300{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+  {% endwith %}
+
   <div class="flex items-center justify-between">
     <div>
       <h1 class="text-2xl font-bold">{{ _titulo }}</h1>
@@ -48,6 +63,12 @@
   </div>
   {% endif %}
 
+  {% if primera_vez %}
+  <div class="bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2 rounded text-sm">
+    📅 <strong>Primera rendición de este vendedor.</strong> Elegí desde qué fecha querés cargar las recetas (después de la primer rendición las próximas se traen automáticamente desde la última cargada).
+  </div>
+  {% endif %}
+
   {# ── Form de búsqueda ── #}
   <form method="post" action="{{ url_for('devoluciones_buscar') }}"
         class="bg-white rounded-lg shadow-sm border border-gray-200 px-4 py-3 flex items-center gap-3 flex-wrap">
@@ -68,8 +89,17 @@
         {% endfor %}
       </select>
     {% endif %}
-    {# Rango automático (hidden, calculado en backend). #}
-    <input type="hidden" name="desde" value="{{ desde }}">
+    {# Rango: normalmente hidden (calculado desde el bookmark del vendedor).
+       Si es la primer rendición (sin bookmark), el operador elige el "desde"
+       para no traer todo el histórico. #}
+    {% if primera_vez %}
+      <label class="text-xs uppercase text-gray-500 font-semibold">Desde<span class="text-red-600">*</span></label>
+      <input type="date" name="desde" required value="{{ desde }}"
+             class="border border-amber-400 bg-amber-50 rounded px-2 py-1.5 text-sm"
+             title="Primera rendición — elegí desde qué fecha querés cargar las recetas">
+    {% else %}
+      <input type="hidden" name="desde" value="{{ desde }}">
+    {% endif %}
     <input type="hidden" name="hasta" value="{{ hasta }}">
 
     <label class="text-xs uppercase text-gray-500 font-semibold">Rendición{% if _rol == 'rendicion' %}<span class="text-red-600">*</span>{% endif %}</label>
@@ -87,6 +117,9 @@
     <a href="{{ url_for('rendicion_lotes_list') }}" target="_blank"
        title="Crear nueva rendición o gestionar las existentes"
        class="px-2.5 py-1.5 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 font-semibold">Crear</a>
+    <a id="btn-pdf-rendicion" href="#" target="_blank"
+       title="Imprimir PDF de la rendición seleccionada (con firma)"
+       class="px-2.5 py-1.5 border border-amber-300 rounded text-sm bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold {% if not lote_id %}opacity-40 pointer-events-none{% endif %}">📄 PDF</a>
 
     <button type="submit" class="bg-brand hover:bg-brand-hover text-white px-4 py-1.5 rounded text-sm font-semibold">
       Traer recetas
@@ -125,6 +158,17 @@
       <input type="hidden" name="vendedor_nombre" value="{{ vendedor_nombre or '' }}">
       <input type="hidden" name="nro_presentacion" value="{{ nro_presentacion }}">
       <input type="hidden" name="lote_id" value="{{ lote_id }}">
+
+      {# Filtro client-side: matchea contra el texto visible de cada fila
+         (OS, comprobante, productos, operador, fechas, importes). #}
+      <div class="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 flex-wrap">
+        <input type="text" id="row-filter"
+               placeholder="🔎 Filtrar recetas (OS, comprobante, producto, operador…)"
+               class="border border-gray-300 rounded px-2 py-1 text-sm w-80">
+        <span id="row-filter-count" class="text-xs text-gray-600"></span>
+        <button type="button" id="row-filter-clear"
+                class="text-xs text-gray-500 hover:text-gray-800 underline hidden">limpiar</button>
+      </div>
 
       <div class="overflow-auto max-h-[72vh]">
         <table class="w-full text-sm">
@@ -288,6 +332,18 @@ function aplicarPeriodoLote(sel) {
     const inp = document.querySelector('input[name="hasta"]');
     if (inp) inp.value = ph;
   }
+  // Actualizar el link del botón PDF al lote elegido.
+  const btnPdf = document.getElementById('btn-pdf-rendicion');
+  if (btnPdf) {
+    const id = sel.value;
+    if (id) {
+      btnPdf.href = '/rend-recetas/lotes/' + id + '/recibo.pdf';
+      btnPdf.classList.remove('opacity-40', 'pointer-events-none');
+    } else {
+      btnPdf.href = '#';
+      btnPdf.classList.add('opacity-40', 'pointer-events-none');
+    }
+  }
 }
 // Disparar al cargar la página si ya hay un lote pre-seleccionado.
 window.addEventListener('DOMContentLoaded', () => {
@@ -318,6 +374,40 @@ window.addEventListener('DOMContentLoaded', () => {
       if (next) next.focus();
     }
   });
+})();
+
+// Filtro client-side de filas: matchea contra el textContent de cada <tr>
+// (OS, comprobante, productos, operador, importes, fecha).
+(function() {
+  const inp = document.getElementById('row-filter');
+  if (!inp) return;
+  const counter = document.getElementById('row-filter-count');
+  const clearBtn = document.getElementById('row-filter-clear');
+  const rows = () => [...document.querySelectorAll('#form-guardar tbody > tr')];
+
+  function aplicar() {
+    const q = inp.value.trim().toLowerCase();
+    const all = rows();
+    let visibles = 0;
+    if (!q) {
+      all.forEach(tr => tr.style.display = '');
+      visibles = all.length;
+    } else {
+      all.forEach(tr => {
+        const ok = tr.textContent.toLowerCase().includes(q);
+        tr.style.display = ok ? '' : 'none';
+        if (ok) visibles++;
+      });
+    }
+    if (counter) {
+      counter.textContent = q
+        ? `${visibles} de ${all.length} visible(s)`
+        : '';
+    }
+    if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+  }
+  inp.addEventListener('input', aplicar);
+  if (clearBtn) clearBtn.addEventListener('click', () => { inp.value = ''; aplicar(); inp.focus(); });
 })();
 
 // Validación antes de registrar el lote: TODAS las recetas deben estar
