@@ -424,6 +424,45 @@ def init_app(app):
                         continue
                 pack_map[p['ean_pack']] = p
 
+            # Lookup en pack_equivalencias (aprendidas o cargadas manualmente
+            # vía Excel desde el ABM de laboratorios). Si un ean_pack ya tiene
+            # equivalencia persistida, lo aplicamos sin pedirle al user.
+            # Same shape que /importar (modulos_import.py:295-320).
+            todos_ean_pack = [it.get('ean') for mod in modules
+                              for it in (mod.get('items') or []) if it.get('ean')]
+            if todos_ean_pack:
+                q = session.query(database.PackEquivalencia).filter(
+                    database.PackEquivalencia.ean_pack.in_(todos_ean_pack[:1000]))
+                # Si vino lab_id en el form, priorizar equivalencias del lab
+                # (caen primero — luego globales como fallback).
+                aprendidas = q.all()
+                if lab_id:
+                    aprendidas.sort(key=lambda x: 0 if x.laboratorio_id == lab_id else 1)
+                seen = set()
+                for pe in aprendidas:
+                    if pe.ean_pack in seen:
+                        continue
+                    seen.add(pe.ean_pack)
+                    cur = pack_map.get(pe.ean_pack)
+                    if cur is None:
+                        # No detectado como pack — promoverlo igual porque la
+                        # tabla dice que es uno.
+                        pack_map[pe.ean_pack] = {
+                            'ean_pack': pe.ean_pack,
+                            'ean_unidad_sug': pe.ean_unidad,
+                            'desc_unidad_sug': pe.desc_unidad or '',
+                            'cantidad': pe.cantidad or 1,
+                            'confianza': 'alta',
+                            'razon': 'aprendido',
+                        }
+                    elif not cur.get('ean_unidad_sug'):
+                        cur['ean_unidad_sug'] = pe.ean_unidad
+                        if not cur.get('desc_unidad_sug') and pe.desc_unidad:
+                            cur['desc_unidad_sug'] = pe.desc_unidad
+                        if pe.cantidad and pe.cantidad >= 2:
+                            cur['cantidad'] = pe.cantidad
+                        cur['razon'] = (cur.get('razon', '') + '+aprendido').lstrip('+')
+
             # Validación EANs contra catálogo (master + alts + obs_productos).
             from database import ProductoCodigoBarra
             todos_eans = set()
