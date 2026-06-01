@@ -632,8 +632,70 @@ def _find_producto(session, codigo_barra):
     return None
 
 
+def _ensure_producto(session, codigo_barra, *, descripcion=None, precio_pvp=None,
+                     laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
+    """Garantiza un Producto local para ``codigo_barra``.
+
+    Estrategia:
+      1. Si ya existe (principal o alt), lo devuelve sin modificar.
+      2. Si el EAN está en ``obs_codigos_barras`` (vigente), lo materializa
+         vía :func:`materializar_producto` — observer_id linkeado,
+         fuente_creacion='materializar_obs', desc oficial de ObServer.
+         Si el EAN importado no es el primario del observer_id, se agrega
+         como alt en ``producto_codigos_barra``.
+      3. Si no hay match en ObServer, crea un Producto con
+         ``fuente_creacion='import_huerfano'`` para que sea auditable
+         (estos pueden materializarse después si aparecen en un sync).
+    """
+    from database import ObsCodigoBarras
+
+    if not codigo_barra:
+        return None
+    codigo_barra = str(codigo_barra).strip()
+
+    prod = _find_producto(session, codigo_barra)
+    if prod:
+        return prod
+
+    obs_row = (session.query(ObsCodigoBarras.producto_observer)
+               .filter(ObsCodigoBarras.codigo_barras == codigo_barra,
+                       ObsCodigoBarras.fecha_baja.is_(None))
+               .first())
+    if obs_row:
+        prod, _err = materializar_producto(session, obs_row[0])
+        if prod is not None:
+            if prod.codigo_barra != codigo_barra:
+                _add_alt_barcode(session, prod.codigo_barra, codigo_barra, fuente='import')
+            if precio_pvp and float(precio_pvp) > 0:
+                prod.precio_pvp = precio_pvp
+            if fecha_compra and (not prod.ultima_compra or fecha_compra > prod.ultima_compra):
+                prod.ultima_compra = fecha_compra
+            if laboratorio_id and not prod.laboratorio_id:
+                prod.laboratorio_id = laboratorio_id
+            return prod
+        # err = colisión por observer_id; caemos al huérfano para no perder el item.
+
+    prod = Producto(
+        codigo_barra=codigo_barra,
+        descripcion=str(descripcion).strip() if descripcion else '',
+        precio_pvp=precio_pvp,
+        laboratorio_id=laboratorio_id,
+        ultima_compra=fecha_compra,
+        codigo_alfabeta=str(codigo_alfabeta).strip() if codigo_alfabeta else None,
+        fuente_creacion='import_huerfano',
+    )
+    session.add(prod)
+    session.flush()
+    return prod
+
+
 def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, laboratorio_id=None, fecha_compra=None, codigo_alfabeta=None):
-    """Crea o actualiza un producto en la tabla productos."""
+    """Crea o actualiza un producto en la tabla productos.
+
+    Para creaciones nuevas, delega en :func:`_ensure_producto` para que el
+    Producto quede materializado contra ObServer cuando sea posible
+    (evita fantasmas con observer_id=NULL que rompen el bridge).
+    """
     if not codigo_barra:
         return
     codigo_barra = str(codigo_barra).strip()
@@ -653,14 +715,10 @@ def _upsert_producto(session, codigo_barra, descripcion, precio_pvp=None, labora
         from datetime import datetime as _dt
         prod.actualizado_en = _dt.utcnow()
     else:
-        session.add(Producto(
-            codigo_barra=codigo_barra,
-            descripcion=str(descripcion).strip() if descripcion else '',
-            precio_pvp=precio_pvp,
-            laboratorio_id=laboratorio_id,
-            ultima_compra=fecha_compra,
-            codigo_alfabeta=codigo_alfabeta,
-        ))
+        _ensure_producto(session, codigo_barra,
+                         descripcion=descripcion, precio_pvp=precio_pvp,
+                         laboratorio_id=laboratorio_id, fecha_compra=fecha_compra,
+                         codigo_alfabeta=codigo_alfabeta)
 
 
 def _upsert_pedido_items(session, items, observer_bridge=False):
@@ -780,7 +838,6 @@ def _bulk_upsert_productos(session, items):
         except Exception:
             pass
 
-    new_prods = []
     for codigo_barra, descripcion, precio_pvp, fecha_compra in items:
         if not codigo_barra:
             continue
@@ -795,19 +852,15 @@ def _bulk_upsert_productos(session, items):
                 prod.ultima_compra = fecha_compra
             prod.actualizado_en = _dt.utcnow()
         else:
-            new_prod = Producto(
-                codigo_barra=bc,
-                descripcion=str(descripcion).strip() if descripcion else '',
-                precio_pvp=precio_pvp,
-                ultima_compra=fecha_compra,
-            )
-            new_prods.append(new_prod)
-            prod_map[bc] = new_prod
-    if new_prods:
-        session.add_all(new_prods)
-        # Flush para que una llamada subsiguiente vea estos productos en el SELECT
-        # y no intente insertarlos de nuevo (evita UNIQUE violation en codigo_barra).
-        session.flush()
+            # Delegado a _ensure_producto: materializa contra ObServer si está
+            # en obs_codigos_barras (evita fantasmas con observer_id=NULL).
+            # Si no, crea con fuente_creacion='import_huerfano' para auditoría.
+            new_prod = _ensure_producto(session, bc,
+                                        descripcion=descripcion,
+                                        precio_pvp=precio_pvp,
+                                        fecha_compra=fecha_compra)
+            if new_prod is not None:
+                prod_map[bc] = new_prod
 
 
 # ── Normalizador de texto PDF con caracteres cuadruplicados ───────────────

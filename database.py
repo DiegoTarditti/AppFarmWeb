@@ -1622,10 +1622,14 @@ class PackEquivalencia(Base):
     cantidad        = Column(Integer, nullable=False, default=1)  # cuántas unidades en el pack
     desc_pack       = Column(String(255), nullable=True)
     desc_unidad     = Column(String(255), nullable=True)
+    laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id', ondelete='SET NULL'),
+                             nullable=True, index=True)   # filtro per-lab (manual o derivado)
     aprendido_de    = Column(Integer, ForeignKey('modulos.id', ondelete='SET NULL'),
                              nullable=True)   # módulo donde se aprendió por primera vez
+    fuente          = Column(String(20), nullable=False, default='aprendido')  # 'aprendido' | 'manual' | 'excel'
     creado_en       = Column(DateTime, default=now_ar)
     actualizado_en  = Column(DateTime, default=now_ar, onupdate=now_ar)
+    laboratorio = relationship('Laboratorio')
 
 
 class ProductoPrecioHist(Base):
@@ -2787,6 +2791,27 @@ def _pg_add_columns(conn):
     conn.execute(text(
         "ALTER TABLE productos ADD COLUMN IF NOT EXISTS fraccionado BOOLEAN NOT NULL DEFAULT FALSE"
     ))
+    # pack_equivalencias: agregar laboratorio_id (filtrado per-lab) + fuente
+    # (origen del row: 'aprendido' por import, 'manual' edicion en UI, 'excel'
+    # carga masiva). Backfill: para filas con aprendido_de set, copiar
+    # Modulo.laboratorio_id.
+    conn.execute(text(
+        "ALTER TABLE pack_equivalencias ADD COLUMN IF NOT EXISTS laboratorio_id INTEGER REFERENCES laboratorios(id) ON DELETE SET NULL"
+    ))
+    conn.execute(text(
+        "ALTER TABLE pack_equivalencias ADD COLUMN IF NOT EXISTS fuente VARCHAR(20) NOT NULL DEFAULT 'aprendido'"
+    ))
+    conn.execute(text(
+        "CREATE INDEX IF NOT EXISTS idx_pack_equiv_lab ON pack_equivalencias (laboratorio_id) WHERE laboratorio_id IS NOT NULL"
+    ))
+    conn.execute(text("""
+        UPDATE pack_equivalencias pe
+        SET laboratorio_id = m.laboratorio_id
+        FROM modulos m
+        WHERE pe.aprendido_de = m.id
+          AND pe.laboratorio_id IS NULL
+          AND m.laboratorio_id IS NOT NULL
+    """))
     # Multi-tenant Fase 2: farmacia_id en tablas transaccionales (pedidos,
     # pedido_items, procesos_compra). Default=1 hace el backfill automático
     # sobre filas existentes — todo el histórico cae en la farmacia original.
