@@ -2034,8 +2034,7 @@ def init_app(app):
     @app.route('/rend-recetas/config-grupos', methods=['GET', 'POST'])
     @login_required
     def rendicion_grupos():
-        from database import (ObsObraSocial, RendicionGrupo,
-                              RendicionGrupoOS)
+        from database import ObsObraSocial, RendicionGrupo, RendicionGrupoOS
         with database.get_db() as session:
             if request.method == 'POST':
                 nombre = (request.form.get('nombre') or '').strip()
@@ -2072,8 +2071,7 @@ def init_app(app):
     @app.route('/rend-recetas/config-grupos/<int:gid>/agregar-os', methods=['POST'])
     @login_required
     def rendicion_grupo_agregar_os(gid):
-        from database import (ObsObraSocial, RendicionGrupo,
-                              RendicionGrupoOS)
+        from database import ObsObraSocial, RendicionGrupo, RendicionGrupoOS
         # Acepta múltiples ids (multi-select). getlist parsea repetidos.
         ids_raw = request.form.getlist('obra_social_observer_id')
         os_ids = []

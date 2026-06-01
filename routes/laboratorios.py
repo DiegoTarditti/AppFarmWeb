@@ -512,7 +512,9 @@ def init_app(app):
 
         import os
         import tempfile
+
         from openpyxl import load_workbook
+
         from helpers import UPLOAD_FOLDER
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}', dir=UPLOAD_FOLDER)
@@ -555,9 +557,10 @@ def init_app(app):
             for r in rows[1:]:
                 if not r:
                     continue
-                def _cell(name):
-                    if name not in col: return None
-                    v = r[col[name]] if col[name] < len(r) else None
+                def _cell(name, _r=r):
+                    if name not in col:
+                        return None
+                    v = _r[col[name]] if col[name] < len(_r) else None
                     return str(v).strip() if v is not None and str(v).strip() else None
                 ep = _cell('ean_pack')
                 eu = _cell('ean_unidad')

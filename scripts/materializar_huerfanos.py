@@ -20,8 +20,7 @@ import argparse
 import sys
 
 import database
-from database import (Laboratorio, ObsCodigoBarras, ObsLaboratorio,
-                      ObsProducto, Producto)
+from database import Laboratorio, ObsCodigoBarras, ObsLaboratorio, ObsProducto, Producto
 
 
 def materializar_huerfanos(dry_run=False):
