@@ -322,14 +322,21 @@ post-adopción para barrer esos `ix_*` de las instancias existentes.
 > Cuando aparezca un drift entre instancias en una tabla, anotar acá la
 > decisión (qué versión gana) + el ALTER que reconcilia.
 
-Pendientes del diff de Pieri (ver `schema_diff_pieri.md`):
+Diff en vivo Local vs Render (Pieri `db_pieri`) generado 2026-06-02 con
+`scripts/schema_diff.py`. **Canónico = la versión con el DEFAULT/FK/sequence**
+(el modelo declara todos ahora con `server_default`). Estado:
 
-| Diff | Decisión | ALTER |
-|---|---|---|
-| `compartido_importado.accion` ≠DEFAULT | — | — |
-| `compartido_importado.creado_en` ≠DEFAULT + ≠NULL | — | — |
-| `factura_faltante.id` ≠DEFAULT (Render sin sequence) | — | — |
-| `panel_comandos.id` ≠DEFAULT (Local sin sequence) | — | — |
-| `parser_ofertas_lab.column_mapping` ≠DEFAULT | — | — |
-| `parser_ofertas_lab.formato` ≠DEFAULT | — | — |
-| `parser_ofertas_lab.laboratorio_id_fkey` perdida en Render | — | — |
+| Diff | Decisión (canónico) | ALTER | Estado |
+|---|---|---|---|
+| `compartido_importado.accion` ≠DEFAULT | DEFAULT 'importado' | `SET DEFAULT 'importado'` en Local | ✅ Local 2026-06-02 |
+| `compartido_importado.creado_en` ≠DEFAULT+≠NULL | `now()` + NOT NULL | `SET DEFAULT now()` + `SET NOT NULL` en Local (0 filas) | ✅ Local 2026-06-02 |
+| `parser_ofertas_lab.column_mapping` ≠DEFAULT | DEFAULT '{}' | `SET DEFAULT '{}'` en Local | ✅ Local 2026-06-02 |
+| `parser_ofertas_lab.formato` ≠DEFAULT | DEFAULT 'plano' | `SET DEFAULT 'plano'` en Local | ✅ Local 2026-06-02 |
+| `panel_comandos.id` (Local sin sequence) | SERIAL | `CREATE SEQUENCE panel_comandos_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` en Local | ✅ Local 2026-06-02 |
+| `factura_faltante.id` (Render sin sequence) | SERIAL | `CREATE SEQUENCE factura_faltante_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` en Render | ⏳ Render pendiente (INSERTs rotos hoy) |
+| `parser_ofertas_lab.laboratorio_id_fkey` perdida en Render | FK presente | `ADD CONSTRAINT ... FOREIGN KEY (laboratorio_id) REFERENCES laboratorios(id)` en Render | ⏳ Render pendiente |
+
+`alembic_version` (solo en Local) = bookkeeping de Alembic; se resuelve cuando se
+stampee Render. No es drift real.
+
+Post-reconciliación Local: drift bajó de 9 → 3 (2 reales de Render + alembic_version).
