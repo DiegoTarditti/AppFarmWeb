@@ -2210,8 +2210,9 @@ def _alembic_sync(database_url):
     try:
         import os as _os
 
-        from alembic import command
         from alembic.config import Config
+
+        from alembic import command
         _here = _os.path.dirname(_os.path.abspath(__file__))
         cfg = Config(_os.path.join(_here, 'alembic.ini'))
         cfg.set_main_option('script_location', _os.path.join(_here, 'alembic'))
