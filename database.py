@@ -2233,8 +2233,23 @@ def _alembic_sync(database_url):
                     'SELECT version_num FROM alembic_version LIMIT 1'
                 )).scalar() if has_version else None
             if current:
-                log.info('Alembic: upgrade head (revisión actual=%s)', current)
-                command.upgrade(cfg, 'head')
+                # Guard de base compartida: Alembic usa UNA sola tabla
+                # alembic_version por base. Si la revisión actual NO es de ESTE
+                # repo (no está entre nuestras migraciones), la base está bajo el
+                # control de OTRA app que comparte la base — ej. Badia comparte
+                # `farmacia_yhvp` con la app magistral (alembic_version=d3h8a5e2f6c1).
+                # En ese caso NO tocamos Alembic: este repo sigue gestionando su
+                # schema con create_all + _pg_add_columns. No es error → skip limpio.
+                from alembic.script import ScriptDirectory
+                _known = {r.revision for r in ScriptDirectory.from_config(cfg).walk_revisions()}
+                if current not in _known:
+                    log.warning(
+                        'Alembic: revisión actual %s es AJENA a este repo (base '
+                        'compartida con otra app) → no toco Alembic acá. Schema lo '
+                        'gestiona create_all + _pg_add_columns.', current)
+                else:
+                    log.info('Alembic: upgrade head (revisión actual=%s)', current)
+                    command.upgrade(cfg, 'head')
             else:
                 log.info('Alembic: DB sin stampear → stamp head')
                 command.stamp(cfg, 'head')
