@@ -10,11 +10,13 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
     create_engine,
+    func,
     text,
 )
 
@@ -53,11 +55,11 @@ class Config(Base):
     keep_alive_interval_min = Column(Integer, nullable=False, default=10)
     # Backups automáticos (ejecutados por DockerPanel host)
     backup_ruta_remota        = Column(String(500), nullable=True)   # UNC tipo \\server-1\backups\farmacia
-    backup_hora               = Column(Integer, nullable=False, default=17)  # 0-23
-    backup_diarios_max        = Column(Integer, nullable=False, default=7)
-    backup_semanales_max      = Column(Integer, nullable=False, default=0)
-    backup_quincenales_max    = Column(Integer, nullable=False, default=1)
-    backup_mensuales_max      = Column(Integer, nullable=False, default=0)
+    backup_hora               = Column(Integer, nullable=False, default=17, server_default='17')  # 0-23
+    backup_diarios_max        = Column(Integer, nullable=False, default=7, server_default='7')
+    backup_semanales_max      = Column(Integer, nullable=False, default=0, server_default='0')
+    backup_quincenales_max    = Column(Integer, nullable=False, default=1, server_default='1')
+    backup_mensuales_max      = Column(Integer, nullable=False, default=0, server_default='0')
     # Status del último backup (lo escribe DockerPanel via API)
     backup_ultimo_status      = Column(String(10), nullable=True)    # 'OK' / 'FAIL' / NULL
     backup_ultimo_corrida_en  = Column(DateTime, nullable=True)
@@ -66,11 +68,11 @@ class Config(Base):
     # Ruta local al ejecutable del DockerPanel (solo usada desde localhost)
     dockerpanel_ruta = Column(String(500), nullable=True)
     # Observer: cuántos meses hacia atrás trae sync_ventas_mensuales
-    observer_ventas_meses = Column(Integer, nullable=False, default=16)
+    observer_ventas_meses = Column(Integer, nullable=False, default=16, server_default='16')
     # Transferencias entre sucursales (/transferencias): umbrales de cobertura.
     # excedente = cobertura > N meses; necesita = vende y cobertura < M meses.
-    transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0)
-    transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0)
+    transfer_excedente_meses = Column(DECIMAL(5, 1), nullable=False, default=6.0, server_default='6.0')
+    transfer_necesita_meses  = Column(DECIMAL(5, 1), nullable=False, default=2.0, server_default='2.0')
 
 
 class Laboratorio(Base):
@@ -128,11 +130,14 @@ class ObsProducto(Base):
     __tablename__ = 'obs_productos'
     observer_id            = Column(Integer, primary_key=True, autoincrement=False)  # DW.Productos.IdProducto
     descripcion            = Column(String(200), nullable=False)
-    laboratorio_observer   = Column(Integer, ForeignKey('obs_laboratorios.observer_id'), nullable=True, index=True)
+    # index=True quitado en laboratorio_observer/codigo_alfabeta/id_tipo_venta_control:
+    # los idx_obs_prod_* (custom, declarados abajo) los cubren; index=True generaba
+    # ix_* duplicados. Ver lote 3.
+    laboratorio_observer   = Column(Integer, ForeignKey('obs_laboratorios.observer_id'), nullable=True)
     subrubro_observer      = Column(Integer, ForeignKey('obs_subrubros.observer_id'), nullable=True)
     nombre_droga_observer  = Column(Integer, ForeignKey('obs_nombres_drogas.observer_id'), nullable=True)
-    codigo_alfabeta        = Column(String(10), nullable=True, index=True)
-    id_tipo_venta_control  = Column(String(1), nullable=True, index=True)  # DW.TiposVentaYControl: L=Venta Libre, R=Bajo Receta, A=Receta Archivada, 1-4=Psicotrópico, 5-8=Estupefaciente
+    codigo_alfabeta        = Column(String(10), nullable=True)
+    id_tipo_venta_control  = Column(String(1), nullable=True)  # DW.TiposVentaYControl: L=Venta Libre, R=Bajo Receta, A=Receta Archivada, 1-4=Psicotrópico, 5-8=Estupefaciente
     # Descripción editable localmente. Si está, se muestra en lugar de `descripcion`.
     # NO se toca al sincronizar desde Observer ni al pushear a Render.
     descripcion_custom     = Column(String(200), nullable=True)
@@ -140,9 +145,16 @@ class ObsProducto(Base):
     cantidad_envase        = Column(DECIMAL(10, 3), nullable=True)
     es_habilitado_venta    = Column(Boolean, nullable=False, default=True)
     requiere_cadena_frio   = Column(Boolean, nullable=False, default=False)
-    es_fraccionable        = Column(Boolean, nullable=False, default=False)  # DW.Productos.EsFraccionable
+    es_fraccionable        = Column(Boolean, nullable=False, default=False, server_default=text('false'))  # DW.Productos.EsFraccionable
     fecha_baja             = Column(DateTime, nullable=True)
     sync_en                = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_prod_lab', 'laboratorio_observer'),
+        Index('idx_obs_prod_alfabeta', 'codigo_alfabeta'),
+        Index('idx_obs_prod_tvc', 'id_tipo_venta_control'),
+        Index('idx_obs_productos_descripcion_trgm', 'descripcion',
+              postgresql_using='gin', postgresql_ops={'descripcion': 'gin_trgm_ops'}),
+    )
 
 
 class ObsStock(Base):
@@ -153,7 +165,7 @@ class ObsStock(Base):
     stock_actual = Column(Integer, nullable=False, default=0)
     maximo = Column(Integer, nullable=True)
     minimo = Column(Integer, nullable=True)
-    fraccionado = Column(Boolean, nullable=False, default=False)  # DW.StockFarmaciasProductos.Fraccionado
+    fraccionado = Column(Boolean, nullable=False, default=False, server_default=text('false'))  # DW.StockFarmaciasProductos.Fraccionado
     sync_en = Column(DateTime, default=now_ar)
 
 
@@ -169,6 +181,9 @@ class ObsVentaMensual(Base):
     monto             = Column(DECIMAL(14, 2), nullable=False, default=0)
     transacciones     = Column(Integer, nullable=False, default=0)
     sync_en           = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_vtas_anio_mes', 'anio', 'mes'),
+    )
 
 
 class ObsCodigoBarras(Base):
@@ -267,9 +282,20 @@ class ObsVentaDetalle(Base):
     # Otros
     id_farmacia                    = Column(Integer, nullable=False, index=True)
     canal_venta_observer           = Column(Integer, nullable=True)
-    tipo_operacion                 = Column(String(2), nullable=True, index=True)  # 'V'=venta, 'D'=devol., 'NC'=nota crédito
-    operador_observer              = Column(String(40), nullable=True, index=True)  # IdOperador (UUID) → ObsOperador. Stats x vendedor
+    # index=True quitado: idx_ovd_tipo / idx_obs_vd_operador (custom) los cubren.
+    tipo_operacion                 = Column(String(2), nullable=True)  # 'V'=venta, 'D'=devol., 'NC'=nota crédito
+    operador_observer              = Column(String(40), nullable=True)  # IdOperador (UUID) → ObsOperador. Stats x vendedor
     sync_en                        = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        # Single-col custom (dups de los ix_* que se removieron).
+        Index('idx_ovd_tipo', 'tipo_operacion'),
+        Index('idx_obs_vd_operador', 'operador_observer'),
+        # Compuestos (entidad + fecha) para los reportes de ventas multi-dim.
+        Index('idx_ovd_cliente_fecha', 'cliente_observer', 'fecha_estadistica'),
+        Index('idx_ovd_medico_fecha', 'medico_observer', 'fecha_estadistica'),
+        Index('idx_ovd_os_fecha', 'obra_social_observer', 'fecha_estadistica'),
+        Index('idx_ovd_producto_fecha', 'producto_observer', 'fecha_estadistica'),
+    )
 
 
 class ObsOperador(Base):
@@ -390,6 +416,9 @@ class ObsSyncLog(Base):
     duracion_ms = Column(Integer, nullable=True)
     error = Column(Text, nullable=True)
     ejecutado_en = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_sync_entidad', 'entidad', text('ejecutado_en DESC')),
+    )
 
 
 class CronLog(Base):
@@ -422,7 +451,7 @@ class AlarmaNotificada(Base):
     nombre = Column(String(120), primary_key=True)
     ultima_notif = Column(DateTime, nullable=True)
     ultima_severidad = Column(String(20), nullable=True)
-    count_total = Column(Integer, nullable=False, default=0)
+    count_total = Column(Integer, nullable=False, default=0, server_default='0')
     estado_actual = Column(String(20), nullable=True)  # 'activa' / 'resuelta'
 
 
@@ -455,14 +484,17 @@ class PanelComando(Base):
     id = Column(Integer, primary_key=True)
     comando = Column(String(40), nullable=False)
     # estado: pendiente / en_proceso / ok / error
-    estado = Column(String(20), nullable=False, default='pendiente')
-    solicitado_en = Column(DateTime, default=now_ar, nullable=False)
+    estado = Column(String(20), nullable=False, default='pendiente', server_default='pendiente')
+    solicitado_en = Column(DateTime, default=now_ar, nullable=False, server_default=func.now())
     solicitado_por = Column(String(80), nullable=True)
     tomado_en = Column(DateTime, nullable=True)
     ejecutado_en = Column(DateTime, nullable=True)
     duracion_ms = Column(Integer, nullable=True)
     resultado = Column(Text, nullable=True)
     origen = Column(String(40), nullable=True)
+    __table_args__ = (
+        Index('idx_panel_comandos_estado', 'estado', 'solicitado_en'),
+    )
 
 
 class PanelHeartbeat(Base):
@@ -495,11 +527,12 @@ class ProductoPendienteRevision(Base):
     """
     __tablename__ = 'productos_pendientes_revision'
     id = Column(Integer, primary_key=True)
+    # Indices custom declarados en __table_args__ al final de la clase.
     descripcion_supplier = Column(String(300), nullable=False, index=True)
-    supplier_id = Column(Integer, nullable=True, index=True)         # laboratorio/proveedor (sin FK estricto: puede venir de Producto.laboratorio_id, Provider.id, etc.)
+    supplier_id = Column(Integer, nullable=True)                     # laboratorio/proveedor (sin FK estricto: puede venir de Producto.laboratorio_id, Provider.id, etc.)
     supplier_nombre = Column(String(200), nullable=True)
     archivo_origen = Column(String(60), nullable=True)               # 'ofertas_import' | 'modulos_import' | 'factura' | etc.
-    fecha_creacion = Column(DateTime, default=now_ar, nullable=False, index=True)
+    fecha_creacion = Column(DateTime, default=now_ar, nullable=False)
     veces_aparecido = Column(Integer, nullable=False, default=1)
     score_top_candidato = Column(Float, nullable=True)               # 0.0-1.0; None si bulk no devolvió ningún candidato
     top_candidatos_json = Column(Text, nullable=True)                # snapshot JSON: [{producto_id, descripcion, score}, ...]
@@ -508,7 +541,7 @@ class ProductoPendienteRevision(Base):
                                                                       #  vigencia_hasta, drogueria_id, observacion, archivo_origen,
                                                                       #  laboratorio_id}. Al resolver, se aplica a OfertaMinimo del
                                                                       # producto creado/vinculado para cerrar el loop import → queue → oferta.
-    estado = Column(String(20), nullable=False, default='pendiente', index=True)  # pendiente / agregado / vinculado / descartado
+    estado = Column(String(20), nullable=False, default='pendiente')  # pendiente / agregado / vinculado / descartado
     producto_creado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
     producto_vinculado_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'), nullable=True)
     usuario_resuelve = Column(String(80), nullable=True)
@@ -524,6 +557,12 @@ class ProductoPendienteRevision(Base):
     llm_reasoning = Column(Text, nullable=True)
     llm_action = Column(String(20), nullable=True)
     llm_modelo_usado = Column(String(60), nullable=True)
+    __table_args__ = (
+        Index('idx_pend_rev_supplier', 'supplier_id'),
+        Index('idx_pend_rev_estado', 'estado', 'fecha_creacion'),
+        Index('idx_pend_rev_llm', 'llm_analizado_en',
+              postgresql_where=text('llm_analizado_en IS NULL')),
+    )
 
 
 class Farmacia(Base):
@@ -638,15 +677,23 @@ class OfertaMinimo(Base):
     # Droguería a la que aplica este transfer/oferta. NULL = aplica a venta DIRECTA
     # al laboratorio (sin pasar por droguería). Si está cargado → solo aplica
     # cuando el optimizador evalúa esa droguería para este producto.
-    drogueria_id    = Column(Integer, ForeignKey('proveedores.id'), nullable=True, index=True)
+    # index=True quitado: idx_ofertas_drog (custom) cubre drogueria_id; index=True
+    # generaba ix_ofertas_minimo_drogueria_id duplicado. Ver lote 3.
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id'), nullable=True)
     # Vigencia: el optimizador filtra automáticamente los vencidos.
     vigencia_desde  = Column(Date, nullable=True)
-    vigencia_hasta  = Column(Date, nullable=True, index=True)
+    # index=True quitado: idx_ofertas_vig (custom) cubre vigencia_hasta.
+    vigencia_hasta  = Column(Date, nullable=True)
     # Categoría/observación libre (ej "TR Lanzamiento", "TRs OTC", "TR Excepcional").
     observacion     = Column(String(200), nullable=True)
     # Activación manual (para "pausar" sin borrar)
     activo          = Column(Boolean, nullable=False, default=True)
     actualizado_en  = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_ofertas_drog', 'drogueria_id'),
+        Index('idx_ofertas_vig', 'vigencia_hasta'),
+        Index('idx_ofertas_minimo_lab_tipo', 'laboratorio_id', 'tipo_descuento'),
+    )
 
 
 class ParserOfertasLab(Base):
@@ -665,8 +712,8 @@ class ParserOfertasLab(Base):
     """
     __tablename__ = 'parser_ofertas_lab'
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
-    column_mapping = Column(Text, nullable=False, default='{}')
-    formato        = Column(String(30), nullable=False, default='plano')
+    column_mapping = Column(Text, nullable=False, default='{}', server_default='{}')
+    formato        = Column(String(30), nullable=False, default='plano', server_default='plano')
     header_row     = Column(Integer, nullable=True)
     creado_por     = Column(String(80), nullable=True)
     actualizado_en = Column(DateTime, default=now_ar)
@@ -686,7 +733,7 @@ class ArchivoCompartido(Base):
     nombre          = Column(String(200), nullable=False)
     descripcion     = Column(Text, nullable=True)
     farmacia_origen = Column(String(100), nullable=False)
-    destinatarios   = Column(String(200), nullable=False, default='todos')  # 'todos' o slugs csv
+    destinatarios   = Column(String(200), nullable=False, default='todos', server_default='todos')  # 'todos' o slugs csv
     json_data       = Column(Text, nullable=False)
     n_items         = Column(Integer, default=0)
     creado_en       = Column(DateTime, default=now_ar)
@@ -704,9 +751,10 @@ class CompartidoImportado(Base):
     archivo_id  = Column(Integer, nullable=False)
     tipo        = Column(String(50))
     nombre      = Column(String(200))
-    accion      = Column(String(20), nullable=False, default='importado')  # 'importado' | 'descartado'
+    accion      = Column(String(20), nullable=False, default='importado',
+                         server_default='importado')  # 'importado' | 'descartado'
     usuario     = Column(String(80))
-    creado_en   = Column(DateTime, default=now_ar)
+    creado_en   = Column(DateTime, nullable=False, default=now_ar, server_default=func.now())
     __table_args__ = (UniqueConstraint('origen_slug', 'archivo_id',
                                        name='uq_compartido_importado'),)
 
@@ -883,8 +931,11 @@ class ProveedorHorarioReparto(Base):
     """
     __tablename__ = 'proveedor_horarios_reparto'
     id            = Column(Integer, primary_key=True)
+    # index=True quitado: el DDL real usa el índice custom idx_horarios_prov
+    # (declarado abajo). Con index=True SQLAlchemy generaba ADEMÁS un
+    # ix_proveedor_horarios_reparto_proveedor_id duplicado. Ver lote 3.
     proveedor_id  = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
-                           nullable=False, index=True)
+                           nullable=False)
     dia_semana    = Column(Integer, nullable=False)   # 0-6
     hora          = Column(String(5), nullable=False)  # 'HH:MM' formato 24h, simple
     activo        = Column(Boolean, nullable=False, default=True)
@@ -892,6 +943,7 @@ class ProveedorHorarioReparto(Base):
     proveedor     = relationship('Provider')
     __table_args__ = (
         UniqueConstraint('proveedor_id', 'dia_semana', 'hora', name='uq_horario_prov_dia_hora'),
+        Index('idx_horarios_prov', 'proveedor_id'),
     )
 
 
@@ -915,8 +967,11 @@ class ProveedorCronograma(Base):
     # partner_tipo + proveedor_id forman partner polimórfico. Mismo patrón que
     # Pedido.canal+partner_id (database.py:1124-1131): sin FK estricto a una
     # tabla específica — id apunta a `laboratorios` o `proveedores` según tipo.
-    partner_tipo        = Column(String(12), nullable=False, default='drogueria',
-                                  index=True)
+    # index=True quitado en partner_tipo: el DDL real usa idx_cronograma_partner_tipo
+    # (declarado abajo); index=True generaba un ix_*_partner_tipo duplicado. Ver
+    # lote 3. proveedor_id/canal_drog_id/proxima_fecha NO tienen dup → conservan
+    # index=True (su ix_* es el único índice).
+    partner_tipo        = Column(String(12), nullable=False, default='drogueria')
     proveedor_id        = Column(Integer, nullable=False, index=True)
     # Solo cuando partner_tipo='laboratorio': por qué droguería entra el pedido.
     # NULL = compra directa al laboratorio (sin intermediario).
@@ -934,6 +989,7 @@ class ProveedorCronograma(Base):
     __table_args__ = (
         UniqueConstraint('partner_tipo', 'proveedor_id', 'tipo_pedido',
                          name='uq_cronograma_partner_tipo'),
+        Index('idx_cronograma_partner_tipo', 'partner_tipo'),
     )
 
 
@@ -1030,11 +1086,14 @@ class PedidoBorrador(Base):
     """
     __tablename__ = 'pedido_borrador'
     id              = Column(Integer, primary_key=True)
+    # index=True quitado en drogueria_id/observer_id: idx_borrador_drog/_obs
+    # (custom) los cubren; index=True generaba ix_* duplicados. producto_id
+    # conserva index=True (su ix_pedido_borrador_producto_id es el único índice).
     drogueria_id    = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
-                              nullable=False, index=True)
+                              nullable=False)
     producto_id     = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'),
                               nullable=True, index=True)
-    observer_id     = Column(Integer, nullable=True, index=True)  # ObsProducto.observer_id si aún no hay Producto local
+    observer_id     = Column(Integer, nullable=True)  # ObsProducto.observer_id si aún no hay Producto local
     laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     cantidad        = Column(Integer, nullable=False, default=0)
     dto_aplicado    = Column(DECIMAL(5, 2), nullable=True)  # snapshot del % aplicado al armar
@@ -1045,6 +1104,8 @@ class PedidoBorrador(Base):
     __table_args__ = (
         UniqueConstraint('drogueria_id', 'producto_id', 'observer_id',
                           name='uq_borrador_drog_prod'),
+        Index('idx_borrador_drog', 'drogueria_id'),
+        Index('idx_borrador_obs', 'observer_id'),
     )
 
 
@@ -1091,7 +1152,8 @@ class Invoice(Base):
 class InvoiceItem(Base):
     __tablename__ = 'factura_items'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False, index=True)
+    # index=True quitado: idx_factura_items_factura (custom) cubre factura_id.
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
     codigo_barra = Column(String(20))
     cantidad = Column(Integer)
     descripcion = Column(String(150))
@@ -1103,6 +1165,9 @@ class InvoiceItem(Base):
     lote = Column(String(30))
     vencimiento = Column(String(20))
     invoice = relationship('Invoice', back_populates='items')
+    __table_args__ = (
+        Index('idx_factura_items_factura', 'factura_id'),
+    )
 
 
 class FacturaFaltante(Base):
@@ -1113,27 +1178,37 @@ class FacturaFaltante(Base):
     """
     __tablename__ = 'factura_faltante'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='CASCADE'), nullable=False, index=True)
-    codigo_barra = Column(String(20), index=True)
+    # index=True quitado: idx_factura_faltante_fac/_cb (custom) cubren estas cols.
+    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='CASCADE'), nullable=False)
+    codigo_barra = Column(String(20))
     codigo_interno = Column(String(30))
     cantidad = Column(Integer)
     descripcion = Column(String(150))
-    creado_en = Column(DateTime, default=now_ar)
+    creado_en = Column(DateTime, default=now_ar, server_default=func.now())
+    __table_args__ = (
+        Index('idx_factura_faltante_fac', 'factura_id'),
+        Index('idx_factura_faltante_cb', 'codigo_barra'),
+    )
 
 
 class ErpStock(Base):
     __tablename__ = 'erp_stock'
     id = Column(Integer, primary_key=True)
-    codigo_barra = Column(String(20), nullable=False, index=True)
+    # index=True quitado: idx_erp_stock_codigo (custom) cubre codigo_barra.
+    codigo_barra = Column(String(20), nullable=False)
     descripcion = Column(String(150))
     cantidad = Column(Integer)
     precio_unitario = Column(DECIMAL(14, 2))
+    __table_args__ = (
+        Index('idx_erp_stock_codigo', 'codigo_barra'),
+    )
 
 
 class StockDifference(Base):
     __tablename__ = 'stock_differences'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False, index=True)
+    # index=True quitado: idx_stock_diff_factura (custom) cubre factura_id.
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
     codigo_barra = Column(String(20))
     descripcion = Column(String(150))
     cantidad_factura = Column(Integer)
@@ -1141,13 +1216,17 @@ class StockDifference(Base):
     diferencia = Column(Integer)
     observaciones = Column(Text)
     claim_items = relationship('ClaimItem', back_populates='difference')
+    __table_args__ = (
+        Index('idx_stock_diff_factura', 'factura_id'),
+    )
 
 
 class Claim(Base):
     __tablename__ = 'reclamos'
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=False)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), index=True)
+    # index=True quitado: idx_reclamos_factura (custom) cubre factura_id.
+    factura_id = Column(Integer, ForeignKey('facturas.id'))
     numero_factura = Column(String(20))
     fecha = Column(Date, nullable=False)
     estado = Column(String(20), nullable=False, default='ABIERTO')
@@ -1155,6 +1234,9 @@ class Claim(Base):
     provider = relationship('Provider', back_populates='claims')
     factura = relationship('Invoice')
     items = relationship('ClaimItem', back_populates='claim')
+    __table_args__ = (
+        Index('idx_reclamos_factura', 'factura_id'),
+    )
 
 
 class ClaimItem(Base):
@@ -1202,24 +1284,31 @@ class EquivalenciaProveedor(Base):
     __tablename__ = 'equivalencias_proveedor'
     id = Column(Integer, primary_key=True)
     # Nullable: o lab o drog, al menos uno tiene que estar.
+    # Indices custom declarados en __table_args__ (incluyen partial uniques).
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id', ondelete='CASCADE'),
-                            nullable=True, index=True)
+                            nullable=True)
     drogueria_id = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
-                          nullable=True, index=True)
+                          nullable=True)
     descripcion_proveedor = Column(String(200), nullable=True)
-    descripcion_proveedor_norm = Column(String(200), nullable=True, index=True)
-    codigo_proveedor = Column(String(50), nullable=True, index=True)
+    descripcion_proveedor_norm = Column(String(200), nullable=True)
+    codigo_proveedor = Column(String(50), nullable=True)
     producto_id = Column(Integer, ForeignKey('productos.id', ondelete='SET NULL'),
                          nullable=True, index=True)
     creado_en = Column(DateTime, default=now_ar)
     laboratorio = relationship('Laboratorio')
     producto = relationship('Producto')
     __table_args__ = (
-        # UC legacy (solo aplica cuando lab está seteado). En drogueria_id,
-        # se chequea uniqueness vía helper guardar_equivalencia (SELECT-then-
-        # insert) — los partial unique indexes se crean inline en init_db.
+        # UC legacy (solo aplica cuando lab está seteado).
         UniqueConstraint('laboratorio_id', 'descripcion_proveedor_norm',
                          name='uq_equiv_lab_desc'),
+        Index('idx_equiv_codigo', 'codigo_proveedor'),
+        Index('idx_equiv_drog', 'drogueria_id'),
+        Index('uq_equiv_drog_codigo', 'drogueria_id', 'codigo_proveedor', unique=True,
+              postgresql_where=text('(drogueria_id IS NOT NULL) AND (codigo_proveedor IS NOT NULL)')),
+        Index('uq_equiv_drog_desc', 'drogueria_id', 'descripcion_proveedor_norm', unique=True,
+              postgresql_where=text('(drogueria_id IS NOT NULL) AND (descripcion_proveedor_norm IS NOT NULL)')),
+        Index('uq_equiv_lab_codigo', 'laboratorio_id', 'codigo_proveedor', unique=True,
+              postgresql_where=text('(laboratorio_id IS NOT NULL) AND (codigo_proveedor IS NOT NULL)')),
     )
 
 
@@ -1239,21 +1328,24 @@ class Producto(Base):
     id = Column(Integer, primary_key=True)
     codigo_barra = Column(String(20), nullable=False, unique=True)
     descripcion = Column(String(200))
-    codigo_barra_alt1 = Column(String(20), index=True)
-    codigo_barra_alt2 = Column(String(20), index=True)
-    codigo_barra_alt3 = Column(String(20), index=True)
+    # Indices custom declarados en __table_args__ (no usamos index=True
+    # para que el nombre matchee el DDL real `idx_productos_*`).
+    codigo_barra_alt1 = Column(String(20))
+    codigo_barra_alt2 = Column(String(20))
+    codigo_barra_alt3 = Column(String(20))
     es_pack = Column(Integer, nullable=False, default=0)   # 1 = es un pack de unidades
     precio_pvp = Column(DECIMAL(14, 2))
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     laboratorio = relationship('Laboratorio')
-    # Puente a ObServer: único nexo entre EAN (local) y IdProducto (ObServer)
-    # unique=True: un observer_id NO puede estar asignado a más de un producto local.
-    # NULL permitido múltiple (productos todavía no vinculados a ObServer).
+    # Puente a ObServer: único nexo entre EAN (local) y IdProducto (ObServer).
+    # Unicidad implementada vía Index parcial `uq_productos_observer_id`
+    # (WHERE observer_id IS NOT NULL). NULL permitido múltiple — productos
+    # todavía no vinculados a ObServer.
     observer_id = Column(Integer, ForeignKey('obs_productos.observer_id'),
-                         nullable=True, unique=True, index=True)
+                         nullable=True)
     obs_producto = relationship('ObsProducto')
     # Código Alfabeta (vademécum). Bridge robusto con obs_productos.codigo_alfabeta.
-    codigo_alfabeta = Column(String(10), nullable=True, index=True)
+    codigo_alfabeta = Column(String(10), nullable=True)
     monodroga = Column(String(200), nullable=True)
     presentacion = Column(String(500), nullable=True)
     accion_terapeutica = Column(String(200), nullable=True)
@@ -1276,6 +1368,17 @@ class Producto(Base):
                                  back_populates='producto',
                                  cascade='all, delete-orphan',
                                  order_by='desc(ProductoCodigoBarra.es_principal), ProductoCodigoBarra.id')
+    __table_args__ = (
+        Index('idx_productos_alt1', 'codigo_barra_alt1'),
+        Index('idx_productos_alt2', 'codigo_barra_alt2'),
+        Index('idx_productos_alt3', 'codigo_barra_alt3'),
+        Index('idx_productos_alfabeta', 'codigo_alfabeta'),
+        Index('idx_productos_observer_id', 'observer_id'),
+        Index('uq_productos_observer_id', 'observer_id', unique=True,
+              postgresql_where=text('observer_id IS NOT NULL')),
+        Index('idx_prod_no_pedir', 'no_pedir',
+              postgresql_where=text('no_pedir = true')),
+    )
 
 
 class ProductoCodigoBarra(Base):
@@ -1289,13 +1392,19 @@ class ProductoCodigoBarra(Base):
     """
     __tablename__ = 'producto_codigos_barra'
     id           = Column(Integer, primary_key=True)
-    producto_id  = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), nullable=False, index=True)
-    codigo_barra = Column(String(20), nullable=False, index=True)
+    # Indices custom declarados en __table_args__ para matchear DDL real `idx_pcb_*`.
+    producto_id  = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), nullable=False)
+    codigo_barra = Column(String(20), nullable=False)
     es_principal = Column(Boolean, nullable=False, default=False)
     fuente       = Column(String(20), nullable=False, default='manual')  # manual / factura / observer / import / cruce / legacy_alt
     factura_id   = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
     creado_en    = Column(DateTime, default=now_ar)
     producto = relationship('Producto', back_populates='codigos_barra')
+    __table_args__ = (
+        Index('idx_pcb_producto', 'producto_id'),
+        Index('idx_pcb_codigo', 'codigo_barra'),
+        Index('uq_pcb_producto_codigo', 'producto_id', 'codigo_barra', unique=True),
+    )
 
 
 class ProductoAtributo(Base):
@@ -1314,11 +1423,12 @@ class ProductoAtributo(Base):
       - Identificación rápida sin EAN
     """
     __tablename__ = 'producto_atributos'
+    # Indices custom (matchean DDL `idx_atributos_*`).
     producto_id        = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'), primary_key=True)
-    monodroga_norm     = Column(String(500), nullable=True, index=True)  # lower-case sin acentos para match
-    concentracion_mg   = Column(DECIMAL(12, 4), nullable=True, index=True)  # ej 500, 250.5, 0.05
+    monodroga_norm     = Column(String(500), nullable=True)              # lower-case sin acentos para match
+    concentracion_mg   = Column(DECIMAL(12, 4), nullable=True)           # ej 500, 250.5, 0.05
     concentracion_unidad = Column(String(15), nullable=True)             # MG, MCG, G, UI, %, MG/ML, MG/5ML
-    forma_farma        = Column(String(10), nullable=True, index=True)   # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
+    forma_farma        = Column(String(10), nullable=True)               # CPR, CAP, SUSP, SUP, AMP, JER, CRE, POM, GTS, SOL, INH, OVU, PCH, POL
     cantidad_envase    = Column(DECIMAL(10, 3), nullable=True)           # 16, 100, 10
     via_admin          = Column(String(10), nullable=True)               # ORAL, IV, IM, SC, TOP, OFT, NAS, OTI, INH, RECT, VAG
     fuente             = Column(String(15), nullable=False, default='regex')  # observer / regex / llm / manual / mixto
@@ -1326,6 +1436,12 @@ class ProductoAtributo(Base):
     raw_descripcion    = Column(String(300), nullable=True)              # snapshot de la descripción cuando se extrajo (detección de drift)
     extraido_en        = Column(DateTime, default=now_ar)
     producto = relationship('Producto', backref='atributos')
+    __table_args__ = (
+        Index('idx_atributos_droga', 'monodroga_norm'),
+        Index('idx_atributos_conc', 'concentracion_mg'),
+        Index('idx_atributos_forma', 'forma_farma'),
+        Index('idx_atributos_fuente', 'fuente'),
+    )
 
     @property
     def monodroga_display(self):
@@ -1372,8 +1488,9 @@ class Pedido(Base):
     # Multi-tenant: a qué farmacia del grupo pertenece este pedido. Default=1
     # (la farmacia original / actual). Cuando se sumen Pieri, etc., los pedidos
     # de cada una llevan su farmacia_id.
+    # index=True quitado: idx_pedidos_farmacia (custom) cubre farmacia_id.
     farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
-                          nullable=False, default=1, index=True)
+                          nullable=False, default=1)
     laboratorio = Column(String(150), nullable=False)
     farmacia = Column(String(200))
     periodo = Column(String(100))
@@ -1385,7 +1502,8 @@ class Pedido(Base):
     # partner_id apunta a proveedores.id cuando canal='drogueria', o al lab cuando canal='laboratorio'
     # (en la tabla proveedores si el lab está registrado; de lo contrario queda None y se usa
     # el campo `laboratorio` como identificador).
-    partner_id = Column(Integer, nullable=True, index=True)
+    # index=True quitado: idx_pedidos_partner_id (custom) cubre partner_id.
+    partner_id = Column(Integer, nullable=True)
     canal_elegido_en = Column(DateTime, nullable=True)
     creado_en = Column(DateTime, default=now_ar, index=True)
     analizado_en = Column(DateTime, nullable=True)
@@ -1398,9 +1516,16 @@ class Pedido(Base):
     # Hasta cuándo mostrar este pedido como candidato en "Pedido Reposición"
     # (compras_dia armado). NULL = no inyectar. Si fecha >= hoy, los productos
     # del pedido aparecen como sugerencia en el armado.
-    mostrar_hasta = Column(Date, nullable=True, index=True)
+    # index=True quitado: idx_pedidos_mostrar_hasta (custom) cubre mostrar_hasta.
+    mostrar_hasta = Column(Date, nullable=True)
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
     analisis_sesion = relationship('AnalisisSesion')
+    __table_args__ = (
+        Index('idx_pedidos_farmacia', 'farmacia_id'),
+        Index('idx_pedidos_partner_id', 'partner_id'),
+        Index('idx_pedidos_mostrar_hasta', 'mostrar_hasta'),
+        Index('idx_pedidos_estado_creado', 'estado', 'creado_en'),
+    )
 
 
 class PedidoItem(Base):
@@ -1410,8 +1535,9 @@ class PedidoItem(Base):
     # Multi-tenant: denormalizado desde Pedido para evitar joins en queries de
     # agregación cross-farmacia (ej. "qué se pidió este mes en F1+Pieri por
     # producto"). Siempre debe coincidir con pedido.farmacia_id.
+    # index=True quitado: idx_pedido_items_farmacia (custom) cubre farmacia_id.
     farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
-                          nullable=False, default=1, index=True)
+                          nullable=False, default=1)
     codigo_barra = Column(String(20))
     nombre = Column(String(200))
     cantidad = Column(Integer, nullable=False, default=0)
@@ -1420,6 +1546,9 @@ class PedidoItem(Base):
     rotacion = Column(String(1), nullable=True)       # A/M/B
     avg_monthly = Column(DECIMAL(10, 2), nullable=True)
     pedido = relationship('Pedido', back_populates='items')
+    __table_args__ = (
+        Index('idx_pedido_items_farmacia', 'farmacia_id'),
+    )
 
 
 class ProcesoCompra(Base):
@@ -1427,8 +1556,9 @@ class ProcesoCompra(Base):
     __tablename__ = 'procesos_compra'
     id = Column(Integer, primary_key=True)
     # Multi-tenant: a qué farmacia pertenece este proceso de compra. Default=1.
+    # index=True quitado: idx_procesos_compra_farmacia (custom) cubre farmacia_id.
     farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
-                          nullable=False, default=1, index=True)
+                          nullable=False, default=1)
     tipo = Column(String(20), nullable=False)             # 'laboratorio' | 'drogueria'
     partner_id = Column(Integer, nullable=True)
     partner_nombre = Column(String(200), nullable=False)
@@ -1448,6 +1578,9 @@ class ProcesoCompra(Base):
     notas = Column(Text, nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     actualizado_en = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_procesos_compra_farmacia', 'farmacia_id'),
+    )
 
 
 class PagoAjusteCC(Base):
@@ -1555,7 +1688,7 @@ class AnalisisIaCache(Base):
     texto = Column(Text, nullable=False)
     tokens_in = Column(Integer)
     tokens_out = Column(Integer)
-    creado_en = Column(DateTime, default=now_ar)
+    creado_en = Column(DateTime, default=now_ar, server_default=func.now())
 
 
 class Usuario(Base):
@@ -1599,6 +1732,10 @@ class HomeCardClick(Base):
     usuario_id = Column(Integer, ForeignKey('usuarios.id'), nullable=False, index=True)
     card_id = Column(String(40), nullable=False, index=True)
     clicked_at = Column(DateTime, default=now_ar, nullable=False, index=True)
+    __table_args__ = (
+        Index('idx_hcc_user', 'usuario_id', text('clicked_at DESC')),
+        Index('idx_hcc_card', 'card_id'),
+    )
 
 
 class PackEquivalencia(Base):
@@ -1622,14 +1759,21 @@ class PackEquivalencia(Base):
     cantidad        = Column(Integer, nullable=False, default=1)  # cuántas unidades en el pack
     desc_pack       = Column(String(255), nullable=True)
     desc_unidad     = Column(String(255), nullable=True)
+    # index=True quitado: idx_pack_equiv_lab (parcial, WHERE laboratorio_id IS NOT
+    # NULL) cubre laboratorio_id; index=True generaba ix_* duplicado. Ver lote 3.
     laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id', ondelete='SET NULL'),
-                             nullable=True, index=True)   # filtro per-lab (manual o derivado)
+                             nullable=True)   # filtro per-lab (manual o derivado)
     aprendido_de    = Column(Integer, ForeignKey('modulos.id', ondelete='SET NULL'),
                              nullable=True)   # módulo donde se aprendió por primera vez
-    fuente          = Column(String(20), nullable=False, default='aprendido')  # 'aprendido' | 'manual' | 'excel'
+    fuente          = Column(String(20), nullable=False, default='aprendido',
+                             server_default='aprendido')  # 'aprendido' | 'manual' | 'excel'
     creado_en       = Column(DateTime, default=now_ar)
     actualizado_en  = Column(DateTime, default=now_ar, onupdate=now_ar)
     laboratorio = relationship('Laboratorio')
+    __table_args__ = (
+        Index('idx_pack_equiv_lab', 'laboratorio_id',
+              postgresql_where=text('laboratorio_id IS NOT NULL')),
+    )
 
 
 class ProductoPrecioHist(Base):
@@ -1638,10 +1782,11 @@ class ProductoPrecioHist(Base):
     """
     __tablename__ = 'producto_precios_hist'
     id = Column(Integer, primary_key=True)
-    codigo_barra     = Column(String(20), nullable=False, index=True)
-    proveedor_id     = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=True, index=True)
+    # Indices custom (matchean DDL `idx_precios_*`).
+    codigo_barra     = Column(String(20), nullable=False)
+    proveedor_id     = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'), nullable=True)
     proveedor_razon  = Column(String(150), nullable=True)  # fallback si no hay proveedor_id
-    fecha            = Column(Date, nullable=False, index=True)  # fecha de la factura
+    fecha            = Column(Date, nullable=False)  # fecha de la factura
     precio_publico   = Column(DECIMAL(14, 2), nullable=True)
     dto_pct          = Column(DECIMAL(6, 2),  nullable=True)
     precio_unitario  = Column(DECIMAL(14, 2), nullable=True)
@@ -1649,6 +1794,11 @@ class ProductoPrecioHist(Base):
     factura_id       = Column(Integer, ForeignKey('facturas.id', ondelete='SET NULL'), nullable=True)
     tipo_comprobante = Column(String(5), nullable=True)  # FAC / NCR (para filtrar)
     creado_en        = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_precios_codigo_barra', 'codigo_barra'),
+        Index('idx_precios_proveedor', 'proveedor_id'),
+        Index('idx_precios_fecha', 'fecha'),
+    )
 
 
 class AnalisisSesion(Base):
@@ -2037,6 +2187,66 @@ def init_engine(database_url=None):
     return database_url
 
 
+def _alembic_sync(database_url):
+    """Pone la DB bajo control de Alembic de forma idempotente, sin romper el boot.
+
+    Patrón bootstrap (corre DESPUÉS de create_all + _pg_add_columns, que durante
+    la transición siguen gestionando el schema de forma idempotente):
+      - DB ya stampeada (existe alembic_version con revisión) → `upgrade head`
+        (aplica migraciones pendientes; no-op si ya está en head).
+      - DB sin stampear (instancia pre-Alembic o fresca recién creada por
+        create_all) → `stamp head` (el schema ya existe, solo la marcamos).
+
+    - SQLite: se saltea (Alembic apunta a Postgres; dev SQLite sigue con create_all).
+    - **Fail-soft**: cualquier excepción se loguea y NO tira abajo el boot — la
+      lección del deploy 19-may es que init_db NUNCA debe colgar/abortar el arranque
+      (Render mata el instance si no bindea el puerto). Una migración que falla se ve
+      en los logs (ERROR) y se corrige; el servicio igual levanta.
+    """
+    if database_url.startswith('sqlite'):
+        return
+    import logging as _logging
+    log = _logging.getLogger(__name__)
+    try:
+        import os as _os
+
+        from alembic.config import Config
+
+        from alembic import command
+        _here = _os.path.dirname(_os.path.abspath(__file__))
+        cfg = Config(_os.path.join(_here, 'alembic.ini'))
+        cfg.set_main_option('script_location', _os.path.join(_here, 'alembic'))
+        cfg.set_main_option('sqlalchemy.url', database_url)
+        # env.py resuelve ALEMBIC_DATABASE_URL > DATABASE_URL > config. Forzamos
+        # ALEMBIC_DATABASE_URL = la url que init_db está usando, para que el
+        # stamp/upgrade vaya SIEMPRE a ESTA DB (no a la del env DATABASE_URL si
+        # difieren, ej. staging o tests). Restauramos el valor previo después.
+        _prev = _os.environ.get('ALEMBIC_DATABASE_URL')
+        _os.environ['ALEMBIC_DATABASE_URL'] = database_url
+        try:
+            with engine.connect() as conn:
+                has_version = conn.execute(text(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema='public' AND table_name='alembic_version')"
+                )).scalar()
+                current = conn.execute(text(
+                    'SELECT version_num FROM alembic_version LIMIT 1'
+                )).scalar() if has_version else None
+            if current:
+                log.info('Alembic: upgrade head (revisión actual=%s)', current)
+                command.upgrade(cfg, 'head')
+            else:
+                log.info('Alembic: DB sin stampear → stamp head')
+                command.stamp(cfg, 'head')
+        finally:
+            if _prev is None:
+                _os.environ.pop('ALEMBIC_DATABASE_URL', None)
+            else:
+                _os.environ['ALEMBIC_DATABASE_URL'] = _prev
+    except Exception as e:
+        log.error('Alembic sync FALLÓ (no-fatal, sigo el boot): %s', e, exc_info=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2405,6 +2615,21 @@ def init_db(database_url=None):
                     print(f'Cleanup estacionalidad_escenarios producto_id: {_e_estac2}')
             except Exception:
                 pass
+    # pg_trgm DEBE existir ANTES de create_all: el modelo declara el índice GIN
+    # idx_obs_productos_descripcion_trgm (gin_trgm_ops), y create_all lo intenta
+    # crear → sin la extensión falla en una DB fresca con "operator class
+    # gin_trgm_ops does not exist". Idempotente. Si no hay permisos para CREATE
+    # EXTENSION, se loguea y se sigue (create_all fallará ruidoso en ese caso, que
+    # es correcto: el schema no se puede construir como está declarado).
+    if not database_url.startswith('sqlite'):
+        try:
+            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as _ext_conn:
+                _ext_conn.execute(text('CREATE EXTENSION IF NOT EXISTS pg_trgm'))
+        except Exception as _ext_e:
+            import logging as _lg_ext
+            _lg_ext.getLogger(__name__).warning(
+                'init_db: no pude crear extensión pg_trgm antes de create_all: %s', _ext_e)
+
     # create_all puede fallar con dos índices distintos cuando hay objetos
     # huérfanos de un deploy previo:
     #   - pg_type_typname_nsp_index   → pg_type zombie (composite type huérfano)
@@ -2495,6 +2720,13 @@ def init_db(database_url=None):
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             _pg_add_columns(conn)
             _crear_matviews(conn)
+
+    # Alembic: el schema ya está construido arriba (create_all + _pg_add_columns,
+    # idempotentes). Acá ponemos la DB bajo control de Alembic (stamp en la 1ra,
+    # upgrade head en las siguientes). Migraciones futuras entran por Alembic;
+    # los _pg_add_columns inline se irán migrando gradualmente (conviven, son IF
+    # NOT EXISTS). Fail-soft: no rompe el boot. Ver docs/alembic_baseline_review.md.
+    _alembic_sync(database_url)
 
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
