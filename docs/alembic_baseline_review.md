@@ -9,7 +9,7 @@ Plan general: ver `docs/mejoras_pendientes.md` → "Adoptar Alembic para migraci
 
 - **Total tablas a revisar**: 93
 - **Lotes**: 10 (de ~10 tablas cada uno)
-- **Revisadas**: 77 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-8 ✅ 2026-06-02)
+- **Revisadas**: 93 / 93 ✅ COMPLETO (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-10 ✅ 2026-06-02)
 
 > ⚠ **BLOQUEANTE antes de finalizar el baseline**: la branch `feat/alembic-baseline`
 > está **atrás de `main`**. El review del lote 4 (2026-06-02) detectó que la diff
@@ -220,31 +220,57 @@ generan `ix_*` que ya existen en la DB sin `idx_*` custom duplicado.
 
 **Verificación**: autogenerate post-cambios → 3 drops de `ix_*` en `obs_productos` + 1 en `obs_ventas_detalle` (todos redundantes, cleanup); 0 referencias a `idx_*`/trgm del lote, 0 `alter_column` de booleanos.
 
-## LOTE 9 — Rendición / Clientes / Plantillas (10)
+## LOTE 9 — Rendición / Clientes / Plantillas (10) ✅ 2026-06-02
+
+**Las 10 OK sin cambios** (0 ops). Tablas recientes/limpias — sin el legado de
+índices duplicados `idx_*`/`ix_*` de las tablas viejas. Sus modelos ya declaran
+todo correcto.
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `devolucion_receta` | ⬜ | |
-| 2 | `motivo_devolucion` | ⬜ | |
-| 3 | `rendicion_grupo` | ⬜ | NUEVA (PR #138). Verificar en Render post-deploy. |
-| 4 | `rendicion_grupo_os` | ⬜ | NUEVA (PR #138). Verificar en Render post-deploy. |
-| 5 | `rendicion_lote` | ⬜ | |
-| 6 | `rol_filtro_obra_social` | ⬜ | |
-| 7 | `vendedor_bookmark` | ⬜ | |
-| 8 | `clientes` | ⬜ | |
-| 9 | `plantilla_campos` | ⬜ | |
-| 10 | `plantillas_exportacion` | ⬜ | |
+| 1 | `devolucion_receta` | ✅ | OK sin cambios. |
+| 2 | `motivo_devolucion` | ✅ | OK sin cambios. |
+| 3 | `rendicion_grupo` | ✅ | OK sin cambios. Existe en DB + modelo (confirmado en esta branch). |
+| 4 | `rendicion_grupo_os` | ✅ | OK sin cambios. |
+| 5 | `rendicion_lote` | ✅ | OK sin cambios. |
+| 6 | `rol_filtro_obra_social` | ✅ | OK sin cambios. |
+| 7 | `vendedor_bookmark` | ✅ | OK sin cambios. |
+| 8 | `clientes` | ✅ | OK sin cambios. |
+| 9 | `plantilla_campos` | ✅ | OK sin cambios. |
+| 10 | `plantillas_exportacion` | ✅ | OK sin cambios. |
 
-## LOTE 10 — Misc / Estacionalidad / Cadencia / Kellerhoff (6)
+## LOTE 10 — Misc / Estacionalidad / Cadencia / Kellerhoff (6) ✅ 2026-06-02
+
+**Las 6 OK sin cambios** (0 ops).
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `kellerhoff_catalogo` | ⬜ | |
-| 2 | `kellerhoff_equivalencia` | ⬜ | |
-| 3 | `estacionalidad_escenarios` | ⬜ | |
-| 4 | `estacionalidad_productos` | ⬜ | |
-| 5 | `cadencia_lab_snapshot` | ⬜ | |
-| 6 | `export_templates` | ⬜ | |
+| 1 | `kellerhoff_catalogo` | ✅ | OK sin cambios. |
+| 2 | `kellerhoff_equivalencia` | ✅ | OK sin cambios. |
+| 3 | `estacionalidad_escenarios` | ✅ | OK sin cambios. |
+| 4 | `estacionalidad_productos` | ✅ | OK sin cambios. |
+| 5 | `cadencia_lab_snapshot` | ✅ | OK sin cambios. |
+| 6 | `export_templates` | ✅ | OK sin cambios. |
+
+---
+
+## ✅ Review COMPLETO (93/93) — próximos pasos para el baseline final
+
+La revisión por lotes terminó. El diff de autogenerate quedó reducido a:
+1. **Drops de `ix_*` redundantes** (lotes 3-8): cleanup legítimo de índices que
+   `index=True` duplicaba con los `idx_*` custom. Al aplicar el baseline en una DB
+   con `upgrade head` se dropean (los `idx_*` siguen vigentes).
+2. **`pack_equivalencias.laboratorio_id`/`fuente` + FK** (ruido de staleness): la
+   branch está atrás de `main`. **Mergear `main` acá** lo resuelve (los modelos
+   pasan a tener esas columnas → desaparece el drop).
+
+**Antes de generar el baseline definitivo:**
+- [ ] Mergear `main` en `feat/alembic-baseline` (trae packs, rendición-grupos,
+      appnucleo, PR #144, etc.) y re-correr el review sobre las tablas que toque.
+- [ ] (Opcional) `include_object` en `env.py` para suprimir los false-positives de
+      sequences SERIAL.
+- [ ] Reconciliar los drift Render vs Local de la tabla de abajo.
+- [ ] Generar el baseline final, `alembic stamp head` en cada instancia.
 
 ---
 
