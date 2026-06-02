@@ -272,7 +272,11 @@ La revisión por lotes terminó. El diff de autogenerate quedó reducido a:
 - [ ] (Opcional) `include_object` en `env.py` para suprimir los false-positives de
       sequences SERIAL.
 - [ ] Reconciliar los drift Render vs Local de la tabla de abajo.
-- [ ] Generar el baseline final, `alembic stamp head` en cada instancia.
+- [x] **Generar el baseline final** — HECHO 2026-06-02: `alembic/versions/ae43763059ec_baseline_schema.py`
+      (93 `create_table` + 141 `create_index`, FKs inline, + `CREATE EXTENSION pg_trgm`
+      manual). Validado: `upgrade head` sobre DB vacía aplica limpio; diff vs local-vivo
+      = solo los ~39 `ix_*` redundantes + `panel_heartbeat.id` (ver drift abajo).
+- [ ] `alembic stamp head` en cada instancia. **Badia NO aplica** — solo Local + Render (`db_pieri`).
 
 ### Sobre los 39 `drop_index('ix_*')` — decisión: NO tocarlos ahora (2026-06-02)
 
@@ -339,6 +343,13 @@ Diff en vivo Local vs Render (Pieri `db_pieri`) generado 2026-06-02 con
 `alembic_version` (solo en Local) = bookkeeping de Alembic; se resuelve cuando se
 stampee Render. No es drift real.
 
-**✅ Drift RESUELTO (2026-06-02)**: tras los ALTERs en Local + Render, el diff
-estructural quedó en **0** (columnas/índices/FKs/constraints). Local == Render ==
-modelo. Único restante: `alembic_version` (cosmético, se va al stampear).
+**✅ Drift Local↔Render RESUELTO (2026-06-02)**: tras los ALTERs, el diff Local vs
+Render quedó en **0** estructural. Único restante: `alembic_version` (cosmético).
+
+**Drift extra descubierto al validar el baseline** (baseline-fresco vs vivo):
+
+| Diff | Decisión | ALTER | Estado |
+|---|---|---|---|
+| `panel_heartbeat.id` sin sequence (AMBAS instancias lo perdieron; modelo=SERIAL) | SERIAL | `CREATE SEQUENCE panel_heartbeat_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` | ✅ Local 2026-06-02 · ⏳ Render pendiente |
+
+(Singleton id=1 → la pérdida nunca rompió nada, pero el baseline lo crea SERIAL.)
