@@ -653,15 +653,23 @@ class OfertaMinimo(Base):
     # Droguería a la que aplica este transfer/oferta. NULL = aplica a venta DIRECTA
     # al laboratorio (sin pasar por droguería). Si está cargado → solo aplica
     # cuando el optimizador evalúa esa droguería para este producto.
-    drogueria_id    = Column(Integer, ForeignKey('proveedores.id'), nullable=True, index=True)
+    # index=True quitado: idx_ofertas_drog (custom) cubre drogueria_id; index=True
+    # generaba ix_ofertas_minimo_drogueria_id duplicado. Ver lote 3.
+    drogueria_id    = Column(Integer, ForeignKey('proveedores.id'), nullable=True)
     # Vigencia: el optimizador filtra automáticamente los vencidos.
     vigencia_desde  = Column(Date, nullable=True)
-    vigencia_hasta  = Column(Date, nullable=True, index=True)
+    # index=True quitado: idx_ofertas_vig (custom) cubre vigencia_hasta.
+    vigencia_hasta  = Column(Date, nullable=True)
     # Categoría/observación libre (ej "TR Lanzamiento", "TRs OTC", "TR Excepcional").
     observacion     = Column(String(200), nullable=True)
     # Activación manual (para "pausar" sin borrar)
     activo          = Column(Boolean, nullable=False, default=True)
     actualizado_en  = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_ofertas_drog', 'drogueria_id'),
+        Index('idx_ofertas_vig', 'vigencia_hasta'),
+        Index('idx_ofertas_minimo_lab_tipo', 'laboratorio_id', 'tipo_descuento'),
+    )
 
 
 class ParserOfertasLab(Base):
@@ -1053,11 +1061,14 @@ class PedidoBorrador(Base):
     """
     __tablename__ = 'pedido_borrador'
     id              = Column(Integer, primary_key=True)
+    # index=True quitado en drogueria_id/observer_id: idx_borrador_drog/_obs
+    # (custom) los cubren; index=True generaba ix_* duplicados. producto_id
+    # conserva index=True (su ix_pedido_borrador_producto_id es el único índice).
     drogueria_id    = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
-                              nullable=False, index=True)
+                              nullable=False)
     producto_id     = Column(Integer, ForeignKey('productos.id', ondelete='CASCADE'),
                               nullable=True, index=True)
-    observer_id     = Column(Integer, nullable=True, index=True)  # ObsProducto.observer_id si aún no hay Producto local
+    observer_id     = Column(Integer, nullable=True)  # ObsProducto.observer_id si aún no hay Producto local
     laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id'), nullable=True)
     cantidad        = Column(Integer, nullable=False, default=0)
     dto_aplicado    = Column(DECIMAL(5, 2), nullable=True)  # snapshot del % aplicado al armar
@@ -1068,6 +1079,8 @@ class PedidoBorrador(Base):
     __table_args__ = (
         UniqueConstraint('drogueria_id', 'producto_id', 'observer_id',
                           name='uq_borrador_drog_prod'),
+        Index('idx_borrador_drog', 'drogueria_id'),
+        Index('idx_borrador_obs', 'observer_id'),
     )
 
 
@@ -1429,8 +1442,9 @@ class Pedido(Base):
     # Multi-tenant: a qué farmacia del grupo pertenece este pedido. Default=1
     # (la farmacia original / actual). Cuando se sumen Pieri, etc., los pedidos
     # de cada una llevan su farmacia_id.
+    # index=True quitado: idx_pedidos_farmacia (custom) cubre farmacia_id.
     farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
-                          nullable=False, default=1, index=True)
+                          nullable=False, default=1)
     laboratorio = Column(String(150), nullable=False)
     farmacia = Column(String(200))
     periodo = Column(String(100))
@@ -1442,7 +1456,8 @@ class Pedido(Base):
     # partner_id apunta a proveedores.id cuando canal='drogueria', o al lab cuando canal='laboratorio'
     # (en la tabla proveedores si el lab está registrado; de lo contrario queda None y se usa
     # el campo `laboratorio` como identificador).
-    partner_id = Column(Integer, nullable=True, index=True)
+    # index=True quitado: idx_pedidos_partner_id (custom) cubre partner_id.
+    partner_id = Column(Integer, nullable=True)
     canal_elegido_en = Column(DateTime, nullable=True)
     creado_en = Column(DateTime, default=now_ar, index=True)
     analizado_en = Column(DateTime, nullable=True)
@@ -1455,9 +1470,16 @@ class Pedido(Base):
     # Hasta cuándo mostrar este pedido como candidato en "Pedido Reposición"
     # (compras_dia armado). NULL = no inyectar. Si fecha >= hoy, los productos
     # del pedido aparecen como sugerencia en el armado.
-    mostrar_hasta = Column(Date, nullable=True, index=True)
+    # index=True quitado: idx_pedidos_mostrar_hasta (custom) cubre mostrar_hasta.
+    mostrar_hasta = Column(Date, nullable=True)
     items = relationship('PedidoItem', back_populates='pedido', cascade='all, delete-orphan')
     analisis_sesion = relationship('AnalisisSesion')
+    __table_args__ = (
+        Index('idx_pedidos_farmacia', 'farmacia_id'),
+        Index('idx_pedidos_partner_id', 'partner_id'),
+        Index('idx_pedidos_mostrar_hasta', 'mostrar_hasta'),
+        Index('idx_pedidos_estado_creado', 'estado', 'creado_en'),
+    )
 
 
 class PedidoItem(Base):
@@ -1467,8 +1489,9 @@ class PedidoItem(Base):
     # Multi-tenant: denormalizado desde Pedido para evitar joins en queries de
     # agregación cross-farmacia (ej. "qué se pidió este mes en F1+Pieri por
     # producto"). Siempre debe coincidir con pedido.farmacia_id.
+    # index=True quitado: idx_pedido_items_farmacia (custom) cubre farmacia_id.
     farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
-                          nullable=False, default=1, index=True)
+                          nullable=False, default=1)
     codigo_barra = Column(String(20))
     nombre = Column(String(200))
     cantidad = Column(Integer, nullable=False, default=0)
@@ -1477,6 +1500,9 @@ class PedidoItem(Base):
     rotacion = Column(String(1), nullable=True)       # A/M/B
     avg_monthly = Column(DECIMAL(10, 2), nullable=True)
     pedido = relationship('Pedido', back_populates='items')
+    __table_args__ = (
+        Index('idx_pedido_items_farmacia', 'farmacia_id'),
+    )
 
 
 class ProcesoCompra(Base):
@@ -1484,8 +1510,9 @@ class ProcesoCompra(Base):
     __tablename__ = 'procesos_compra'
     id = Column(Integer, primary_key=True)
     # Multi-tenant: a qué farmacia pertenece este proceso de compra. Default=1.
+    # index=True quitado: idx_procesos_compra_farmacia (custom) cubre farmacia_id.
     farmacia_id = Column(Integer, ForeignKey('farmacias.id'),
-                          nullable=False, default=1, index=True)
+                          nullable=False, default=1)
     tipo = Column(String(20), nullable=False)             # 'laboratorio' | 'drogueria'
     partner_id = Column(Integer, nullable=True)
     partner_nombre = Column(String(200), nullable=False)
@@ -1505,6 +1532,9 @@ class ProcesoCompra(Base):
     notas = Column(Text, nullable=True)
     creado_en = Column(DateTime, default=now_ar)
     actualizado_en = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_procesos_compra_farmacia', 'farmacia_id'),
+    )
 
 
 class PagoAjusteCC(Base):

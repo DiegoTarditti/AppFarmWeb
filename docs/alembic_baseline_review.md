@@ -9,7 +9,7 @@ Plan general: ver `docs/mejoras_pendientes.md` → "Adoptar Alembic para migraci
 
 - **Total tablas a revisar**: 93
 - **Lotes**: 10 (de ~10 tablas cada uno)
-- **Revisadas**: 37 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lote 4 ✅ 2026-06-02)
+- **Revisadas**: 47 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-5 ✅ 2026-06-02)
 
 > ⚠ **BLOQUEANTE antes de finalizar el baseline**: la branch `feat/alembic-baseline`
 > está **atrás de `main`**. El review del lote 4 (2026-06-02) detectó que la diff
@@ -134,20 +134,27 @@ Cuando una tabla está OK, marcala con ✅ + fecha. Si hay un issue, anotalo en 
 
 **Verificación**: re-corrida de autogenerate → para las 8 tablas solo quedan los 2 drops de `ix_*` redundantes (legítimos); 0 referencias a `idx_cronograma_partner_tipo`/`idx_horarios_prov`. Las otras 6 tablas: 0 ops. (Los `INFO ... SERIAL ... omitting` de sequences son false-positives conocidos.)
 
-## LOTE 5 — Pedidos / Compra (10)
+## LOTE 5 — Pedidos / Compra (10) ✅ 2026-06-02
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `pedidos` | ⬜ | |
-| 2 | `pedido_items` | ⬜ | |
-| 3 | `pedido_borrador` | ⬜ | |
-| 4 | `pedido_emitido` | ⬜ | |
-| 5 | `pedido_emitido_item` | ⬜ | |
-| 6 | `procesos_compra` | ⬜ | |
-| 7 | `ofertas_minimo` | ⬜ | |
-| 8 | `modulos` | ⬜ | |
-| 9 | `modulo_packs` | ⬜ | |
-| 10 | `plantillas` | ⬜ | |
+| 1 | `pedidos` | ✅ | 3 dups (`farmacia_id`/`partner_id`/`mostrar_hasta`) → quitado `index=True`, declarados `idx_pedidos_farmacia`/`_partner_id`/`_mostrar_hasta`. Agregado compuesto `idx_pedidos_estado_creado`. `estado`/`creado_en`/`origen` conservan `index=True` (sin dup). |
+| 2 | `pedido_items` | ✅ | Dup `farmacia_id` → `idx_pedido_items_farmacia`. |
+| 3 | `pedido_borrador` | ✅ | 2 dups (`drogueria_id`/`observer_id`) → `idx_borrador_drog`/`_obs`. `producto_id` conserva `index=True`. |
+| 4 | `pedido_emitido` | ✅ | OK sin cambios. |
+| 5 | `pedido_emitido_item` | ✅ | OK sin cambios. |
+| 6 | `procesos_compra` | ✅ | Dup `farmacia_id` → `idx_procesos_compra_farmacia`. |
+| 7 | `ofertas_minimo` | ✅ | 2 dups (`drogueria_id`/`vigencia_hasta`) → `idx_ofertas_drog`/`_vig`. Agregado compuesto `idx_ofertas_minimo_lab_tipo`. `laboratorio_id` conserva `index=True`. |
+| 8 | `modulos` | ✅ | OK sin cambios. |
+| 9 | `modulo_packs` | ✅ | OK sin cambios. |
+| 10 | `plantillas` | ✅ | OK sin cambios. |
+
+**Cambios en `database.py`**:
+- **8 `index=True` REMOVIDOS** (los que tenían `idx_*` custom duplicado): `pedidos.farmacia_id/partner_id/mostrar_hasta`, `pedido_items.farmacia_id`, `pedido_borrador.drogueria_id/observer_id`, `procesos_compra.farmacia_id`, `ofertas_minimo.drogueria_id/vigencia_hasta`.
+- **9 `Index` agregados** vía `__table_args__` en 5 clases (7 single-col que matchean el `idx_*` custom + 2 compuestos: `idx_pedidos_estado_creado`, `idx_ofertas_minimo_lab_tipo`).
+- Mismo patrón que lotes 3-4 (índice duplicado `idx_*`+`ix_*`).
+
+**Verificación**: autogenerate post-cambios → para las 10 tablas solo quedan 8 drops de `ix_*` redundantes (cleanup legítimo); 0 referencias a cualquier `idx_*` del lote. Las 5 tablas sin dup (`pedido_emitido`, `pedido_emitido_item`, `modulos`, `modulo_packs`, `plantillas`): 0 ops.
 
 ## LOTE 6 — Facturas / Stock / Documentos (10)
 
