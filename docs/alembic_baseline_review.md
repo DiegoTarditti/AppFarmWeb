@@ -333,10 +333,12 @@ Diff en vivo Local vs Render (Pieri `db_pieri`) generado 2026-06-02 con
 | `parser_ofertas_lab.column_mapping` ≠DEFAULT | DEFAULT '{}' | `SET DEFAULT '{}'` en Local | ✅ Local 2026-06-02 |
 | `parser_ofertas_lab.formato` ≠DEFAULT | DEFAULT 'plano' | `SET DEFAULT 'plano'` en Local | ✅ Local 2026-06-02 |
 | `panel_comandos.id` (Local sin sequence) | SERIAL | `CREATE SEQUENCE panel_comandos_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` en Local | ✅ Local 2026-06-02 |
-| `factura_faltante.id` (Render sin sequence) | SERIAL | `CREATE SEQUENCE factura_faltante_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` en Render | ⏳ Render pendiente (INSERTs rotos hoy) |
-| `parser_ofertas_lab.laboratorio_id_fkey` perdida en Render | FK presente | `ADD CONSTRAINT ... FOREIGN KEY (laboratorio_id) REFERENCES laboratorios(id)` en Render | ⏳ Render pendiente |
+| `factura_faltante.id` (Render sin sequence) | SERIAL | `CREATE SEQUENCE factura_faltante_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` en Render | ✅ Render 2026-06-02 (arregló INSERTs rotos) |
+| `parser_ofertas_lab.laboratorio_id_fkey` perdida en Render | FK presente | `ADD CONSTRAINT ... FOREIGN KEY (laboratorio_id) REFERENCES laboratorios(id)` en Render (0 orphans verificados) | ✅ Render 2026-06-02 |
 
 `alembic_version` (solo en Local) = bookkeeping de Alembic; se resuelve cuando se
 stampee Render. No es drift real.
 
-Post-reconciliación Local: drift bajó de 9 → 3 (2 reales de Render + alembic_version).
+**✅ Drift RESUELTO (2026-06-02)**: tras los ALTERs en Local + Render, el diff
+estructural quedó en **0** (columnas/índices/FKs/constraints). Local == Render ==
+modelo. Único restante: `alembic_version` (cosmético, se va al stampear).
