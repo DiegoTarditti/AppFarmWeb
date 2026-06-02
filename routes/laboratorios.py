@@ -611,6 +611,51 @@ def init_app(app):
               'success' if creadas or actualizadas else 'info')
         return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
 
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/crear', methods=['POST'])
+    def lab_pack_equivalencia_crear(lab_id):
+        """Alta manual de una equivalencia (una fila, sin Excel).
+        Form: ean_pack* , ean_unidad* , cantidad (default 1), desc_pack, desc_unidad.
+        Upsert por ean_pack (UNIQUE global): si ya existe, se actualiza y se
+        reasigna al lab con fuente='manual' (mismo criterio que el upload)."""
+        from database import PackEquivalencia
+        lab = None
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            ean_pack = (request.form.get('ean_pack') or '').strip()
+            ean_unidad = (request.form.get('ean_unidad') or '').strip()
+            if not ean_pack or not ean_unidad:
+                flash('EAN pack y EAN unidad son obligatorios.', 'error')
+                return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+            try:
+                cantidad = max(1, int(float(request.form.get('cantidad') or 1)))
+            except (TypeError, ValueError):
+                cantidad = 1
+            desc_pack = (request.form.get('desc_pack') or '').strip() or None
+            desc_unidad = (request.form.get('desc_unidad') or '').strip() or None
+
+            existente = session.query(PackEquivalencia).filter_by(ean_pack=ean_pack).first()
+            if existente:
+                existente.ean_unidad = ean_unidad
+                existente.cantidad = cantidad
+                existente.desc_pack = desc_pack
+                existente.desc_unidad = desc_unidad
+                existente.laboratorio_id = lab_id
+                existente.fuente = 'manual'
+                session.commit()
+                flash(f'El EAN pack {ean_pack} ya existía — se actualizó.', 'info')
+            else:
+                session.add(PackEquivalencia(
+                    ean_pack=ean_pack, ean_unidad=ean_unidad, cantidad=cantidad,
+                    desc_pack=desc_pack, desc_unidad=desc_unidad,
+                    laboratorio_id=lab_id, fuente='manual',
+                ))
+                session.commit()
+                flash(f'Equivalencia {ean_pack} → {ean_unidad} creada.', 'success')
+        return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
     @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/<int:eq_id>/borrar', methods=['POST'])
     def lab_pack_equivalencia_borrar(lab_id, eq_id):
         from database import PackEquivalencia
