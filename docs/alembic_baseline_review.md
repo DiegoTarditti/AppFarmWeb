@@ -9,7 +9,7 @@ Plan general: ver `docs/mejoras_pendientes.md` → "Adoptar Alembic para migraci
 
 - **Total tablas a revisar**: 93
 - **Lotes**: 10 (de ~10 tablas cada uno)
-- **Revisadas**: 57 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-6 ✅ 2026-06-02)
+- **Revisadas**: 77 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-8 ✅ 2026-06-02)
 
 > ⚠ **BLOQUEANTE antes de finalizar el baseline**: la branch `feat/alembic-baseline`
 > está **atrás de `main`**. El review del lote 4 (2026-06-02) detectó que la diff
@@ -178,35 +178,47 @@ Cuando una tabla está OK, marcala con ✅ + fecha. Si hay un issue, anotalo en 
 
 **Verificación**: autogenerate post-cambios → 4 drops de `ix_*` redundantes (cleanup); `factura_faltante` 100% limpia (su DB no tenía `ix_*`, solo `idx_*`). 0 referencias a `idx_*` del lote, 0 `alter_column` de `creado_en`.
 
-## LOTE 7 — ObServer mirror — Catálogo 1 (10)
+## LOTE 7 — ObServer mirror — Catálogo 1 (10) ✅ 2026-06-02
+
+Todas OK sin cambios (0 ops en autogenerate). Los `index=True` de estas tablas
+generan `ix_*` que ya existen en la DB sin `idx_*` custom duplicado.
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `obs_categorias_clientes` | ⬜ | |
-| 2 | `obs_codigos_barras` | ⬜ | Tabla VACÍA en Pieri por permisos Gestion. |
-| 3 | `obs_colegios_medicos` | ⬜ | |
-| 4 | `obs_grupos_clientes` | ⬜ | |
-| 5 | `obs_laboratorios` | ⬜ | |
-| 6 | `obs_medicos` | ⬜ | |
-| 7 | `obs_medicos_matriculas` | ⬜ | |
-| 8 | `obs_nombres_drogas` | ⬜ | |
-| 9 | `obs_operadores` | ⬜ | |
-| 10 | `obs_rubros` | ⬜ | |
+| 1 | `obs_categorias_clientes` | ✅ | OK sin cambios. |
+| 2 | `obs_codigos_barras` | ✅ | OK sin cambios. Tabla VACÍA en Pieri por permisos Gestion. |
+| 3 | `obs_colegios_medicos` | ✅ | OK sin cambios. |
+| 4 | `obs_grupos_clientes` | ✅ | OK sin cambios. |
+| 5 | `obs_laboratorios` | ✅ | OK sin cambios. |
+| 6 | `obs_medicos` | ✅ | OK sin cambios. |
+| 7 | `obs_medicos_matriculas` | ✅ | OK sin cambios. |
+| 8 | `obs_nombres_drogas` | ✅ | OK sin cambios. |
+| 9 | `obs_operadores` | ✅ | OK sin cambios. |
+| 10 | `obs_rubros` | ✅ | OK sin cambios. |
 
-## LOTE 8 — ObServer mirror — Catálogo 2 / Ventas (10)
+## LOTE 8 — ObServer mirror — Catálogo 2 / Ventas (10) ✅ 2026-06-02
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `obs_clientes` | ⬜ | |
-| 2 | `obs_convenios` | ⬜ | |
-| 3 | `obs_obras_sociales` | ⬜ | |
-| 4 | `obs_planes` | ⬜ | |
-| 5 | `obs_productos` | ⬜ | Tabla central, índices importantes (lab/rubro/droga/codigo_alfabeta). |
-| 6 | `obs_subrubros` | ⬜ | |
-| 7 | `obs_stock` | ⬜ | |
-| 8 | `obs_ventas_detalle` | ⬜ | Tabla grande, ~1M filas en Pieri. Cuidado con índices `idx_ovd_*`. |
-| 9 | `obs_ventas_mensuales` | ⬜ | |
-| 10 | `cliente_os_inferida` | ⬜ | |
+| 1 | `obs_clientes` | ✅ | OK sin cambios. |
+| 2 | `obs_convenios` | ✅ | OK sin cambios. |
+| 3 | `obs_obras_sociales` | ✅ | OK sin cambios. |
+| 4 | `obs_planes` | ✅ | OK sin cambios. |
+| 5 | `obs_productos` | ✅ | 3 dups (`laboratorio_observer`/`codigo_alfabeta`/`id_tipo_venta_control`) → `idx_obs_prod_lab`/`_alfabeta`/`_tvc`. Declarado el **GIN trgm** `idx_obs_productos_descripcion_trgm` (`postgresql_using='gin'`, `postgresql_ops={'descripcion':'gin_trgm_ops'}`). `es_fraccionable` → `server_default=text('false')`. |
+| 6 | `obs_subrubros` | ✅ | OK sin cambios. |
+| 7 | `obs_stock` | ✅ | `fraccionado` → `server_default=text('false')`. |
+| 8 | `obs_ventas_detalle` | ✅ | `operador_observer` (solo `idx`, sin `ix`) + `tipo_operacion` (dup) → quitado `index=True`, declarados `idx_obs_vd_operador`/`idx_ovd_tipo`. Agregados 4 compuestos `idx_ovd_{cliente,medico,os,producto}_fecha`. El resto de single-col conservan `index=True`. (~1M filas — solo modelo, no toca la DB.) |
+| 9 | `obs_ventas_mensuales` | ✅ | Agregado compuesto `idx_obs_vtas_anio_mes`. |
+| 10 | `cliente_os_inferida` | ✅ | OK sin cambios. |
+
+**Cambios en `database.py`** (todos en lote 8; lote 7 sin cambios):
+- **6 `index=True` REMOVIDOS** (`obs_productos`: lab/alfabeta/tvc; `obs_ventas_detalle`: operador_observer/tipo_operacion).
+- **9 `Index` agregados** vía `__table_args__`: 5 single-col que matchean `idx_*` custom + 1 **GIN trgm** + 4 compuestos `idx_ovd_*_fecha` (1 más en obs_ventas_mensuales).
+- **2 `server_default=text('false')`** (`obs_productos.es_fraccionable`, `obs_stock.fraccionado`).
+
+**Patrón nuevo**: índice **GIN con trgm** se modela con `Index(name, col, postgresql_using='gin', postgresql_ops={col: 'gin_trgm_ops'})`. Autogenerate lo matchea exacto (requiere extensión `pg_trgm` instalada).
+
+**Verificación**: autogenerate post-cambios → 3 drops de `ix_*` en `obs_productos` + 1 en `obs_ventas_detalle` (todos redundantes, cleanup); 0 referencias a `idx_*`/trgm del lote, 0 `alter_column` de booleanos.
 
 ## LOTE 9 — Rendición / Clientes / Plantillas (10)
 
@@ -254,6 +266,11 @@ Cuando una tabla está OK, marcala con ✅ + fecha. Si hay un issue, anotalo en 
 4. **False-positives a ignorar**: `id` PK SERIAL (`nextval(...)` / `INFO ... assuming
    SERIAL and omitting`) — sequences implícitas, inofensivas. TODO: `include_object`
    en `env.py` para suprimirlas.
+5. **Índice GIN trgm** (lote 8): `Index(name, col, postgresql_using='gin',
+   postgresql_ops={col: 'gin_trgm_ops'})`. Autogenerate lo matchea exacto (requiere
+   extensión `pg_trgm`).
+6. **`server_default` en booleanos** (lote 8): columnas con `DEFAULT false` en DB →
+   `server_default=text('false')` (no `'false'` string, que no matchea el compare).
 
 ---
 

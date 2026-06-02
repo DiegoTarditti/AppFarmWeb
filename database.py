@@ -130,11 +130,14 @@ class ObsProducto(Base):
     __tablename__ = 'obs_productos'
     observer_id            = Column(Integer, primary_key=True, autoincrement=False)  # DW.Productos.IdProducto
     descripcion            = Column(String(200), nullable=False)
-    laboratorio_observer   = Column(Integer, ForeignKey('obs_laboratorios.observer_id'), nullable=True, index=True)
+    # index=True quitado en laboratorio_observer/codigo_alfabeta/id_tipo_venta_control:
+    # los idx_obs_prod_* (custom, declarados abajo) los cubren; index=True generaba
+    # ix_* duplicados. Ver lote 3.
+    laboratorio_observer   = Column(Integer, ForeignKey('obs_laboratorios.observer_id'), nullable=True)
     subrubro_observer      = Column(Integer, ForeignKey('obs_subrubros.observer_id'), nullable=True)
     nombre_droga_observer  = Column(Integer, ForeignKey('obs_nombres_drogas.observer_id'), nullable=True)
-    codigo_alfabeta        = Column(String(10), nullable=True, index=True)
-    id_tipo_venta_control  = Column(String(1), nullable=True, index=True)  # DW.TiposVentaYControl: L=Venta Libre, R=Bajo Receta, A=Receta Archivada, 1-4=Psicotrópico, 5-8=Estupefaciente
+    codigo_alfabeta        = Column(String(10), nullable=True)
+    id_tipo_venta_control  = Column(String(1), nullable=True)  # DW.TiposVentaYControl: L=Venta Libre, R=Bajo Receta, A=Receta Archivada, 1-4=Psicotrópico, 5-8=Estupefaciente
     # Descripción editable localmente. Si está, se muestra en lugar de `descripcion`.
     # NO se toca al sincronizar desde Observer ni al pushear a Render.
     descripcion_custom     = Column(String(200), nullable=True)
@@ -142,9 +145,16 @@ class ObsProducto(Base):
     cantidad_envase        = Column(DECIMAL(10, 3), nullable=True)
     es_habilitado_venta    = Column(Boolean, nullable=False, default=True)
     requiere_cadena_frio   = Column(Boolean, nullable=False, default=False)
-    es_fraccionable        = Column(Boolean, nullable=False, default=False)  # DW.Productos.EsFraccionable
+    es_fraccionable        = Column(Boolean, nullable=False, default=False, server_default=text('false'))  # DW.Productos.EsFraccionable
     fecha_baja             = Column(DateTime, nullable=True)
     sync_en                = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_prod_lab', 'laboratorio_observer'),
+        Index('idx_obs_prod_alfabeta', 'codigo_alfabeta'),
+        Index('idx_obs_prod_tvc', 'id_tipo_venta_control'),
+        Index('idx_obs_productos_descripcion_trgm', 'descripcion',
+              postgresql_using='gin', postgresql_ops={'descripcion': 'gin_trgm_ops'}),
+    )
 
 
 class ObsStock(Base):
@@ -155,7 +165,7 @@ class ObsStock(Base):
     stock_actual = Column(Integer, nullable=False, default=0)
     maximo = Column(Integer, nullable=True)
     minimo = Column(Integer, nullable=True)
-    fraccionado = Column(Boolean, nullable=False, default=False)  # DW.StockFarmaciasProductos.Fraccionado
+    fraccionado = Column(Boolean, nullable=False, default=False, server_default=text('false'))  # DW.StockFarmaciasProductos.Fraccionado
     sync_en = Column(DateTime, default=now_ar)
 
 
@@ -171,6 +181,9 @@ class ObsVentaMensual(Base):
     monto             = Column(DECIMAL(14, 2), nullable=False, default=0)
     transacciones     = Column(Integer, nullable=False, default=0)
     sync_en           = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        Index('idx_obs_vtas_anio_mes', 'anio', 'mes'),
+    )
 
 
 class ObsCodigoBarras(Base):
@@ -269,9 +282,20 @@ class ObsVentaDetalle(Base):
     # Otros
     id_farmacia                    = Column(Integer, nullable=False, index=True)
     canal_venta_observer           = Column(Integer, nullable=True)
-    tipo_operacion                 = Column(String(2), nullable=True, index=True)  # 'V'=venta, 'D'=devol., 'NC'=nota crédito
-    operador_observer              = Column(String(40), nullable=True, index=True)  # IdOperador (UUID) → ObsOperador. Stats x vendedor
+    # index=True quitado: idx_ovd_tipo / idx_obs_vd_operador (custom) los cubren.
+    tipo_operacion                 = Column(String(2), nullable=True)  # 'V'=venta, 'D'=devol., 'NC'=nota crédito
+    operador_observer              = Column(String(40), nullable=True)  # IdOperador (UUID) → ObsOperador. Stats x vendedor
     sync_en                        = Column(DateTime, default=now_ar)
+    __table_args__ = (
+        # Single-col custom (dups de los ix_* que se removieron).
+        Index('idx_ovd_tipo', 'tipo_operacion'),
+        Index('idx_obs_vd_operador', 'operador_observer'),
+        # Compuestos (entidad + fecha) para los reportes de ventas multi-dim.
+        Index('idx_ovd_cliente_fecha', 'cliente_observer', 'fecha_estadistica'),
+        Index('idx_ovd_medico_fecha', 'medico_observer', 'fecha_estadistica'),
+        Index('idx_ovd_os_fecha', 'obra_social_observer', 'fecha_estadistica'),
+        Index('idx_ovd_producto_fecha', 'producto_observer', 'fecha_estadistica'),
+    )
 
 
 class ObsOperador(Base):
