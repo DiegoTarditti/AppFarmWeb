@@ -3,8 +3,23 @@
 Verifica que el data layer agrega coherente y que las pantallas renderizan 200.
 No toca `database`; AppNúcleo es standalone.
 """
+import json
+
+import pytest
+
 from appnucleo import data
 from appnucleo.app import create_app
+
+
+@pytest.fixture(autouse=True)
+def _forzar_demo(monkeypatch):
+    """Smoke tests deterministas: sin registro accesible → modo DEMO, y sin
+    usuarios → acceso abierto. Evita el fan-out real y deja las rutas sin login
+    salvo que el test setee NUCLEO_USERS explícitamente."""
+    monkeypatch.setattr(data, '_farmacias_desde_sucursales', lambda: [])
+    monkeypatch.delenv('NUCLEO_FARMACIAS', raising=False)
+    monkeypatch.delenv('NUCLEO_USERS', raising=False)
+    data._CACHE.clear()
 
 
 def test_demo_grupo_carga():
@@ -42,9 +57,91 @@ def test_ventas_multi_pivot():
     assert vals == sorted(vals, reverse=True)
 
 
+def test_heatmap_cobertura():
+    g = data.cargar_grupo(force=True)
+    h = data.heatmap_cobertura(g, n=8)
+    assert len(h['labs']) <= 8
+    assert h['slugs'] == [f['slug'] for f in g['farmacias']]
+    # cada lab tiene una celda por farmacia y max ≥ cualquier celda
+    for lab in h['labs']:
+        assert set(h['celdas'][lab]) == set(h['slugs'])
+        assert h['max'] >= max(h['celdas'][lab].values())
+        assert 1 <= h['presentes'][lab] <= len(h['slugs'])
+    # labs ordenados desc por total
+    tots = [h['tot_lab'][l] for l in h['labs']]
+    assert tots == sorted(tots, reverse=True)
+
+
+def test_top_labs_por_farmacia():
+    g = data.cargar_grupo(force=True)
+    t = data.top_laboratorios_por_farmacia(g, n=10)
+    assert len(t['labs']) <= 10
+    assert t['slugs'] == [f['slug'] for f in g['farmacias']]
+    # cada farmacia tiene un valor por lab (arrays alineados)
+    for s in t['slugs']:
+        assert len(t['data'][s]) == len(t['labs'])
+    # labs ordenados desc por total del grupo (suma de farmacias)
+    totales = [sum(t['data'][s][i] for s in t['slugs']) for i in range(len(t['labs']))]
+    assert totales == sorted(totales, reverse=True)
+
+
+def test_detalle_por_farmacia():
+    g = data.cargar_grupo(force=True)
+    det = data.detalle_por_farmacia(g, n_labs=5)
+    assert set(det) == {f['slug'] for f in g['farmacias']}
+    for d in det.values():
+        assert len(d['serie']) == 12
+        assert len(d['top_labs']) <= 5
+        vals = [l['ventas_val'] for l in d['top_labs']]
+        assert vals == sorted(vals, reverse=True)
+        assert sum(d['rotacion'].values()) > 0
+
+
 def test_paginas_renderizan():
     c = create_app().test_client()
     assert c.get('/').status_code == 200
     assert c.get('/ventas-multi').status_code == 200
     assert c.get('/ventas-multi?group_by=producto&q=demo').status_code == 200
+    assert c.get('/comparar').status_code == 200
+    assert c.get('/comparar?a=badia&b=pieri').status_code == 200
     assert c.get('/ping').status_code == 200
+
+
+# ── Auth + scoping ───────────────────────────────────────────────────────────
+
+def test_filtrar_grupo_scoping():
+    g = data.cargar_grupo(force=True)            # DEMO: 4 farmacias
+    sub = data.filtrar_grupo(g, ['badia'])
+    assert [f['slug'] for f in sub['farmacias']] == ['badia']
+    assert len(g['farmacias']) == 4              # no muta el original (cacheado)
+    assert data.filtrar_grupo(g, '*') is g       # '*' = todas, sin copia
+
+
+def test_validar_credenciales(monkeypatch):
+    monkeypatch.setenv('NUCLEO_USERS', json.dumps([
+        {'usuario': 'diego', 'password': 'secreto', 'nombre': 'Diego', 'farmacias': '*'}]))
+    assert data.auth_activa()
+    u = data.validar_credenciales('diego', 'secreto')
+    assert u and data.farmacias_permitidas(u) == '*'
+    assert data.validar_credenciales('diego', 'mal') is None
+    assert data.validar_credenciales('nadie', 'secreto') is None
+
+
+def test_login_requerido_y_flujo(monkeypatch):
+    monkeypatch.setenv('NUCLEO_USERS', json.dumps([
+        {'usuario': 'badiaowner', 'password': 'pw', 'nombre': 'Dueño Badia',
+         'farmacias': ['badia']}]))
+    c = create_app().test_client()
+    # sin sesión → redirige a login (pero /ping queda abierto)
+    r = c.get('/')
+    assert r.status_code == 302 and '/login' in r.headers['Location']
+    assert c.get('/ping').status_code == 200
+    # credenciales malas → 200 con form
+    assert c.post('/login', data={'usuario': 'x', 'password': 'y'}).status_code == 200
+    # login OK → redirige, y luego las pantallas abren
+    assert c.post('/login', data={'usuario': 'badiaowner', 'password': 'pw'}).status_code == 302
+    assert c.get('/').status_code == 200
+    assert c.get('/ventas-multi').status_code == 200
+    # logout → vuelve a pedir login
+    c.get('/logout')
+    assert c.get('/').status_code == 302

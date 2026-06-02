@@ -1762,6 +1762,33 @@ def init_app(app):
                 {'barcodes': [b for b in _all_eans(p) if b]}
                 for p in all_prods
             ]
+            # Extensión ObServer: agrega grupos extra construidos desde
+            # obs_codigos_barras (alts ObServer de un mismo producto_observer).
+            # Cubre el punto ciego donde un EAN del pedido vive solo en el
+            # maestro y no fue materializado a `productos` — sin esto, módulos
+            # y ofertas-mínimo no cruzan vía alts para esos productos.
+            # El JS del template propaga transitivamente entre grupos, así que
+            # solapamiento con `equiv` existente no rompe nada (idempotente).
+            ped_eans = {(it.codigo_barra or '').strip()
+                        for it in pedido.items if it.codigo_barra}
+            ped_eans.discard('')
+            if ped_eans:
+                obs_ids_pedido = {oid for (_, oid) in
+                    session.query(database.ObsCodigoBarras.codigo_barras,
+                                  database.ObsCodigoBarras.producto_observer)
+                    .filter(database.ObsCodigoBarras.codigo_barras.in_(list(ped_eans)),
+                            database.ObsCodigoBarras.fecha_baja.is_(None)).all()}
+                if obs_ids_pedido:
+                    grupos_obs = {}
+                    for ean_obs, oid in (
+                        session.query(database.ObsCodigoBarras.codigo_barras,
+                                      database.ObsCodigoBarras.producto_observer)
+                        .filter(database.ObsCodigoBarras.producto_observer.in_(list(obs_ids_pedido)),
+                                database.ObsCodigoBarras.fecha_baja.is_(None)).all()):
+                        grupos_obs.setdefault(oid, set()).add(ean_obs)
+                    for eans_set in grupos_obs.values():
+                        if len(eans_set) >= 2:  # solo si aporta alts
+                            equiv.append({'barcodes': sorted(eans_set)})
             product_prices = {}
             for p in all_prods:
                 if p.precio_pvp is not None:

@@ -601,9 +601,10 @@ def init_app(app):
             try:
                 prod = _find_producto(session, cb)
                 if not prod:
-                    prod = Producto(codigo_barra=cb)
-                    session.add(prod)
-                    session.flush()
+                    from helpers import _ensure_producto
+                    prod = _ensure_producto(session, cb)
+                    if prod is None:
+                        return {'error': 'No se pudo crear el producto'}, 500
                 if field == 'precio_pvp':
                     prod.precio_pvp = float(value.replace(',', '.')) if value else None
                 else:
@@ -652,13 +653,15 @@ def init_app(app):
             existing = session.query(Producto).filter_by(codigo_barra=ean).first()
             if existing:
                 return redirect(url_for('producto_detalle', prod_id=existing.id))
-            prod = Producto(
-                codigo_barra=ean,
-                descripcion=desc or None,
-                laboratorio_id=lab_id,
-                fuente_creacion='oferta_import',
-            )
-            session.add(prod)
+            from helpers import _ensure_producto
+            prod = _ensure_producto(session, ean,
+                                    descripcion=desc or None,
+                                    laboratorio_id=lab_id)
+            # Si quedó huérfano (no estaba en ObServer), preservar la fuente
+            # explícita del wizard ('oferta_import') que era más informativa
+            # que 'import_huerfano' genérico.
+            if prod is not None and prod.fuente_creacion == 'import_huerfano':
+                prod.fuente_creacion = 'oferta_import'
             session.commit()
             prod_id = prod.id
         return redirect(url_for('producto_detalle', prod_id=prod_id))
@@ -673,13 +676,16 @@ def init_app(app):
             try:
                 if session.query(Producto).filter_by(codigo_barra=cb).first():
                     return {'error': 'Ya existe un producto con ese código'}, 409
-                prod = Producto(
-                    codigo_barra=cb,
+                from helpers import _ensure_producto
+                prod = _ensure_producto(
+                    session, cb,
                     descripcion=(data.get('descripcion') or '').strip() or None,
                     precio_pvp=float(data['precio_pvp']) if data.get('precio_pvp') else None,
-                    es_pack=1 if data.get('es_pack') else 0,
                 )
-                session.add(prod)
+                if prod is None:
+                    return {'error': 'No se pudo crear el producto'}, 500
+                if data.get('es_pack'):
+                    prod.es_pack = 1
                 session.commit()
                 return {'ok': True, 'id': prod.id}
             except Exception as e:

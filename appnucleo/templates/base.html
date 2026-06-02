@@ -58,11 +58,20 @@
     <span class="pill bg-amber-500/15 text-amber-300 border border-amber-500/30">DEMO · datos sintéticos</span>
     {% endif %}
     <nav class="ml-auto flex items-center gap-1 text-sm">
+      {% if nuc_user or not auth_activa %}
       <a href="/" class="px-3 py-1.5 rounded-lg hover:bg-white/5 {% block nav_home %}{% endblock %}">Resumen</a>
       <a href="/ventas-multi" class="px-3 py-1.5 rounded-lg hover:bg-white/5 {% block nav_vm %}{% endblock %}">Ventas multi</a>
+      <a href="/comparar" class="px-3 py-1.5 rounded-lg hover:bg-white/5 {% block nav_cmp %}{% endblock %}">Comparar</a>
       <form method="post" action="/refrescar" class="inline">
         <button type="submit" class="px-3 py-1.5 rounded-lg hover:bg-white/5 text-[color:var(--mute)]" title="Refrescar datos">↻</button>
       </form>
+      {% endif %}
+      {% if nuc_user %}
+      <span class="ml-2 pl-3 border-l border-[color:var(--line)] flex items-center gap-2">
+        <span class="text-[color:var(--mute)] text-xs hidden sm:inline">{{ nuc_nombre }}</span>
+        <a href="/logout" class="px-3 py-1.5 rounded-lg hover:bg-white/5 text-[color:var(--mute)]" title="Cerrar sesión">Salir</a>
+      </span>
+      {% endif %}
     </nav>
   </header>
   <main class="px-4 sm:px-6 py-5 max-w-[1280px] mx-auto w-full">
@@ -73,12 +82,15 @@
   </footer>
   <script>
   (function(){
+    // Avisa a la página que el escenario está libre (dispara animaciones que
+    // estarían tapadas por el splash, ej. el count-up de los KPIs).
+    function go(){ window.dispatchEvent(new Event('nuc:start')); }
     var s = document.getElementById('nuc-splash');
-    if (!s) return;
+    if (!s) { go(); return; }
     // Mostrar el splash 1 vez por sesión (no en cada navegación).
-    if (sessionStorage.getItem('nucSplash')) { s.classList.add('done'); return; }
+    if (sessionStorage.getItem('nucSplash')) { s.classList.add('done'); go(); return; }
     sessionStorage.setItem('nucSplash', '1');
-    setTimeout(function(){ s.classList.add('done'); }, 4000);
+    setTimeout(function(){ s.classList.add('done'); go(); }, 4000);
   })();
   </script>
 </body>

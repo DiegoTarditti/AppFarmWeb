@@ -78,6 +78,8 @@ services:
       SUCURSAL_LOCAL: ${SUCURSAL_LOCAL:-}
     ports:
       - "${WEB_PORT:-5000}:5000"
+      # AppNúcleo (dashboard de grupo) corre standalone en 5001 para dev local.
+      - "${NUCLEO_PORT:-5001}:5001"
     # Si no tenés .env, el default es 5000.
     depends_on:
       db:

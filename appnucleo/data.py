@@ -11,6 +11,7 @@ Si no está seteada → modo DEMO con datos sintéticos (para ver la UI sin cred
 Caché en memoria con TTL para no machacar las DBs remotas en cada request.
 Cada farmacia se consulta con try/except: una caída no rompe el dashboard.
 """
+import hmac
 import json
 import os
 import random
@@ -34,15 +35,94 @@ _PA_SQL = sa.text("""
 # ── Config ──────────────────────────────────────────────────────────────────
 
 def farmacias_config():
-    """Lista [{slug, nombre, url}] desde NUCLEO_FARMACIAS. [] si no está."""
+    """Registro de farmacias [{slug, nombre, url}].
+
+    Precedencia: env NUCLEO_FARMACIAS (override manual) → tabla `sucursales`
+    (las activas con url_externa) → [] (modo DEMO).
+    """
     raw = (os.environ.get('NUCLEO_FARMACIAS') or '').strip()
+    if raw:
+        try:
+            cfg = [f for f in json.loads(raw) if f.get('url') and f.get('slug')]
+            if cfg:
+                return cfg
+        except (ValueError, TypeError):
+            pass
+    return _farmacias_desde_sucursales()
+
+
+def _farmacias_desde_sucursales():
+    """Lee el registro desde la tabla `sucursales` de NUCLEO_REGISTRO_URL
+    (o, en su defecto, DATABASE_URL). Una sola fuente de verdad, ya poblada
+    con las url_externa (de Render, funcionan desde local y desde Render).
+    Devuelve [] si no hay URL de registro o la consulta falla."""
+    reg_url = (os.environ.get('NUCLEO_REGISTRO_URL')
+               or os.environ.get('DATABASE_URL') or '').strip()
+    if not reg_url:
+        return []
+    try:
+        eng = _engine(reg_url)
+        out = []
+        with eng.connect() as c:
+            for r in c.execute(sa.text(
+                    "SELECT slug, nombre, url_externa FROM sucursales "
+                    "WHERE activa = true AND url_externa IS NOT NULL "
+                    "ORDER BY slug")):
+                out.append({'slug': r.slug, 'nombre': r.nombre or r.slug,
+                            'url': r.url_externa})
+        eng.dispose()
+        return out
+    except Exception:  # noqa: BLE001 — sin registro accesible → DEMO, no romper
+        return []
+
+
+# ── Auth / usuarios (env NUCLEO_USERS, sin DB) ───────────────────────────────
+
+def usuarios_config():
+    """Lista de usuarios desde NUCLEO_USERS (JSON). [] si no está.
+    Cada usuario: {usuario, password, nombre, farmacias}. `farmacias` = '*'
+    (todas) o lista de slugs (['badia']). Sin la env → auth desactivada (abierto)."""
+    raw = (os.environ.get('NUCLEO_USERS') or '').strip()
     if not raw:
         return []
     try:
-        data = json.loads(raw)
-        return [f for f in data if f.get('url') and f.get('slug')]
+        return [u for u in json.loads(raw) if u.get('usuario')]
     except (ValueError, TypeError):
         return []
+
+
+def auth_activa():
+    """True si hay usuarios configurados (entonces se exige login)."""
+    return bool(usuarios_config())
+
+
+def validar_credenciales(usuario, password):
+    """Devuelve el dict del usuario si user+pass coinciden, si no None.
+    Comparación en tiempo constante (compare_digest) contra timing attacks."""
+    usuario = (usuario or '').strip()
+    password = password or ''
+    for u in usuarios_config():
+        if u.get('usuario') == usuario and hmac.compare_digest(
+                str(u.get('password', '')), password):
+            return u
+    return None
+
+
+def farmacias_permitidas(usuario_dict):
+    """'*' (todas) o lista de slugs que el usuario puede ver."""
+    perm = (usuario_dict or {}).get('farmacias', '*')
+    return perm if perm == '*' else list(perm or [])
+
+
+def filtrar_grupo(grupo, permitidas):
+    """Vista del grupo con solo las farmacias permitidas. NO muta el cacheado
+    (devuelve un dict nuevo con la lista filtrada; las farmacias se comparten
+    por referencia, las agregaciones solo leen)."""
+    if permitidas == '*' or permitidas is None:
+        return grupo
+    perm = set(permitidas)
+    return {'demo': grupo['demo'],
+            'farmacias': [f for f in grupo['farmacias'] if f['slug'] in perm]}
 
 
 def _engine(url):
@@ -169,6 +249,25 @@ def top_laboratorios(grupo, n=10):
     return [{'lab': k, 'ventas_val': round(v, 2)} for k, v in items]
 
 
+def top_laboratorios_por_farmacia(grupo, n=10):
+    """Top-N labs por $ del grupo, con el $ desglosado por farmacia.
+    Para barra horizontal apilada. {'labs':[...ordenados...], 'slugs':[...],
+    'nombres':{}, 'data':{slug:[$ por lab alineado a labs]}}."""
+    slugs = [f['slug'] for f in grupo['farmacias']]
+    nombres = {f['slug']: f['nombre'] for f in grupo['farmacias']}
+    by_lab_far = defaultdict(lambda: defaultdict(float))
+    tot = defaultdict(float)
+    for f in grupo['farmacias']:
+        for r in f['rows']:
+            val = sum(r['ventas']) * r['pvp']
+            if val:
+                by_lab_far[r['laboratorio']][f['slug']] += val
+                tot[r['laboratorio']] += val
+    labs = sorted(tot, key=lambda l: -tot[l])[:n]
+    data = {s: [round(by_lab_far[l].get(s, 0.0), 2) for l in labs] for s in slugs}
+    return {'labs': labs, 'slugs': slugs, 'nombres': nombres, 'data': data}
+
+
 def rotacion_dist(grupo):
     """Conteo de SKUs por rotación A/M/B (sin = sin clasificar)."""
     c = {'A': 0, 'M': 0, 'B': 0, 'sin': 0}
@@ -176,6 +275,52 @@ def rotacion_dist(grupo):
         for r in f['rows']:
             c[r['rotacion'] or 'sin'] += 1
     return c
+
+
+def heatmap_cobertura(grupo, n=12):
+    """Matriz top-N labs × farmacias con $ 12m por celda. Mapa de calor.
+    {'labs':[...], 'slugs':[...], 'nombres':{}, 'celdas':{lab:{slug:$}},
+     'max':$, 'tot_lab':{lab:$}, 'presentes':{lab:int}}."""
+    slugs = [f['slug'] for f in grupo['farmacias']]
+    nombres = {f['slug']: f['nombre'] for f in grupo['farmacias']}
+    by_lab_far = defaultdict(lambda: defaultdict(float))
+    tot_lab = defaultdict(float)
+    for f in grupo['farmacias']:
+        for r in f['rows']:
+            val = sum(r['ventas']) * r['pvp']
+            if val:
+                by_lab_far[r['laboratorio']][f['slug']] += val
+                tot_lab[r['laboratorio']] += val
+    labs = sorted(tot_lab, key=lambda l: -tot_lab[l])[:n]
+    celdas = {l: {s: round(by_lab_far[l].get(s, 0.0), 2) for s in slugs} for l in labs}
+    mx = max((by_lab_far[l].get(s, 0.0) for l in labs for s in slugs), default=0.0)
+    presentes = {l: sum(1 for s in slugs if by_lab_far[l].get(s, 0.0) > 0) for l in labs}
+    return {'labs': labs, 'slugs': slugs, 'nombres': nombres, 'celdas': celdas,
+            'max': round(mx, 2), 'tot_lab': {l: round(tot_lab[l], 2) for l in labs},
+            'presentes': presentes}
+
+
+def detalle_por_farmacia(grupo, n_labs=6):
+    """Por farmacia: serie 12m ($), top labs propios, rotación. Para drill-down."""
+    out = {}
+    for f in grupo['farmacias']:
+        meses = [0.0] * 12
+        labs = defaultdict(float)
+        rot = {'A': 0, 'M': 0, 'B': 0, 'sin': 0}
+        for r in f['rows']:
+            pvp = r['pvp']
+            for i, u in enumerate(r['ventas']):
+                meses[i] += u * pvp
+            labs[r['laboratorio']] += sum(r['ventas']) * pvp
+            rot[r['rotacion'] or 'sin'] += 1
+        top = sorted(labs.items(), key=lambda kv: -kv[1])[:n_labs]
+        out[f['slug']] = {
+            'nombre': f['nombre'],
+            'serie': [round(x, 2) for x in meses],
+            'top_labs': [{'lab': k, 'ventas_val': round(v, 2)} for k, v in top],
+            'rotacion': rot,
+        }
+    return out
 
 
 def meses_labels(hoy=None):

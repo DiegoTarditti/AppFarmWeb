@@ -458,6 +458,197 @@ def init_app(app):
         flash(', '.join(partes) or 'Sin cambios.', 'success' if creadas or actualizadas else 'info')
         return redirect(url_for('lab_equivalencias', lab_id=lab_id))
 
+    # ───────────────────────────────────────────────────────────────────
+    # Pack equivalencias por laboratorio (ean_pack → ean_unidad)
+    # Botón "📦 Packs Equiv." visible solo si lab.usa_packs.
+    # ───────────────────────────────────────────────────────────────────
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias', methods=['GET'])
+    def lab_pack_equivalencias(lab_id):
+        from database import PackEquivalencia
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            rows = (session.query(PackEquivalencia)
+                    .filter(PackEquivalencia.laboratorio_id == lab_id)
+                    .order_by(PackEquivalencia.ean_pack)
+                    .all())
+            equiv = [{
+                'id': r.id,
+                'ean_pack': r.ean_pack,
+                'ean_unidad': r.ean_unidad,
+                'cantidad': r.cantidad or 1,
+                'desc_pack': r.desc_pack or '',
+                'desc_unidad': r.desc_unidad or '',
+                'fuente': r.fuente,
+                'actualizado_en': r.actualizado_en.strftime('%d/%m/%Y %H:%M') if r.actualizado_en else '',
+            } for r in rows]
+        return render_template('lab_pack_equivalencias.html',
+                               lab=lab, equiv=equiv, total=len(equiv))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/upload', methods=['POST'])
+    def lab_pack_equivalencias_upload(lab_id):
+        """Carga masiva desde Excel. Columnas aceptadas (case-insensitive):
+          - ean_pack            (obligatorio)
+          - ean_unidad          (obligatorio)
+          - cantidad            (opcional, default 1)
+          - desc_pack           (opcional)
+          - desc_unidad         (opcional)
+
+        Upsert por ean_pack (UNIQUE). Las filas existentes se actualizan,
+        las nuevas se crean con fuente='excel' y laboratorio_id=lab_id.
+        """
+        from database import PackEquivalencia
+        f = request.files.get('archivo')
+        if not f or not f.filename:
+            flash('Seleccioná un archivo Excel.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+        ext = f.filename.rsplit('.', 1)[-1].lower()
+        if ext not in ('xlsx', 'xls'):
+            flash('Solo se aceptan archivos .xlsx / .xls.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+        import os
+        import tempfile
+
+        from openpyxl import load_workbook
+
+        from helpers import UPLOAD_FOLDER
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f'.{ext}', dir=UPLOAD_FOLDER)
+        f.save(tmp.name)
+        tmp.close()
+
+        try:
+            wb = load_workbook(tmp.name, data_only=True, read_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+        finally:
+            try: os.unlink(tmp.name)
+            except OSError: pass
+
+        if not rows:
+            flash('El archivo está vacío.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+        # Resolver header (case-insensitive)
+        header = [str(c or '').strip().lower() for c in rows[0]]
+        col = {name: header.index(name) for name in
+               ('ean_pack', 'ean_unidad', 'cantidad', 'desc_pack', 'desc_unidad')
+               if name in header}
+        # Sinónimos: aceptamos "ean" para ean_pack, "ean unidad" / "ean_observer" para ean_unidad
+        for syn, real in (('ean', 'ean_pack'), ('ean observer', 'ean_unidad'),
+                          ('ean_observer', 'ean_unidad'), ('descripcion', 'desc_pack'),
+                          ('descripción', 'desc_pack')):
+            if real not in col and syn in header:
+                col[real] = header.index(syn)
+        if 'ean_pack' not in col or 'ean_unidad' not in col:
+            flash('Faltan columnas obligatorias: ean_pack y ean_unidad.', 'error')
+            return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+        creadas = actualizadas = sin_cambio = vacias = 0
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            for r in rows[1:]:
+                if not r:
+                    continue
+                def _cell(name, _r=r):
+                    if name not in col:
+                        return None
+                    v = _r[col[name]] if col[name] < len(_r) else None
+                    return str(v).strip() if v is not None and str(v).strip() else None
+                ep = _cell('ean_pack')
+                eu = _cell('ean_unidad')
+                if not ep or not eu:
+                    vacias += 1
+                    continue
+                try:
+                    cant = int(float(_cell('cantidad'))) if _cell('cantidad') else 1
+                except (TypeError, ValueError):
+                    cant = 1
+                dp = _cell('desc_pack')
+                du = _cell('desc_unidad')
+
+                existente = session.query(PackEquivalencia).filter_by(ean_pack=ep).first()
+                if existente:
+                    cambio = False
+                    if existente.ean_unidad != eu:
+                        existente.ean_unidad = eu; cambio = True
+                    if cant and existente.cantidad != cant:
+                        existente.cantidad = cant; cambio = True
+                    if dp and existente.desc_pack != dp:
+                        existente.desc_pack = dp; cambio = True
+                    if du and existente.desc_unidad != du:
+                        existente.desc_unidad = du; cambio = True
+                    if existente.laboratorio_id != lab_id:
+                        existente.laboratorio_id = lab_id; cambio = True
+                    if existente.fuente != 'excel':
+                        existente.fuente = 'excel'; cambio = True
+                    if cambio:
+                        actualizadas += 1
+                    else:
+                        sin_cambio += 1
+                else:
+                    session.add(PackEquivalencia(
+                        ean_pack=ep, ean_unidad=eu, cantidad=cant,
+                        desc_pack=dp, desc_unidad=du,
+                        laboratorio_id=lab_id, fuente='excel',
+                    ))
+                    creadas += 1
+            session.commit()
+
+        partes = []
+        if creadas: partes.append(f'{creadas} creadas')
+        if actualizadas: partes.append(f'{actualizadas} actualizadas')
+        if sin_cambio: partes.append(f'{sin_cambio} sin cambios')
+        if vacias: partes.append(f'{vacias} filas vacías ignoradas')
+        flash(', '.join(partes) or 'Sin cambios.',
+              'success' if creadas or actualizadas else 'info')
+        return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/<int:eq_id>/borrar', methods=['POST'])
+    def lab_pack_equivalencia_borrar(lab_id, eq_id):
+        from database import PackEquivalencia
+        with database.get_db() as session:
+            eq = session.get(PackEquivalencia, eq_id)
+            if eq and eq.laboratorio_id == lab_id:
+                session.delete(eq)
+                session.commit()
+        return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
+
+    @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/edit', methods=['POST'])
+    def lab_pack_equivalencia_edit(lab_id):
+        """Edición inline. Body JSON: {id, field, value}.
+        field ∈ {ean_unidad, cantidad, desc_pack, desc_unidad}."""
+        from database import PackEquivalencia
+        data = request.get_json(silent=True) or {}
+        try:
+            eq_id = int(data.get('id'))
+        except (TypeError, ValueError):
+            return {'error': 'id inválido'}, 400
+        field = data.get('field')
+        if field not in ('ean_unidad', 'cantidad', 'desc_pack', 'desc_unidad'):
+            return {'error': 'field inválido'}, 400
+        value = data.get('value')
+        with database.get_db() as session:
+            eq = session.get(PackEquivalencia, eq_id)
+            if not eq or eq.laboratorio_id != lab_id:
+                return {'error': 'no encontrado'}, 404
+            if field == 'cantidad':
+                try:
+                    eq.cantidad = max(1, int(value))
+                except (TypeError, ValueError):
+                    return {'error': 'cantidad inválida'}, 400
+            else:
+                setattr(eq, field, (str(value).strip() or None) if value is not None else None)
+            session.commit()
+        return {'ok': True}
+
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
     def lab_ofertas_minimo_borrar_todas(lab_id):
         with database.get_db() as session:

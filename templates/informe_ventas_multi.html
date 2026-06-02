@@ -81,8 +81,8 @@
             </div>
         </div>
 
-        {# Fila 2: rubro + droga + producto + médico + OS — todos en línea si entran #}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+        {# Fila 2: rubro + lab + droga + producto + médico + OS — todos en línea si entran #}
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-3">
             <div>
                 <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Rubro</label>
                 <select name="rubro_id" class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
@@ -91,6 +91,15 @@
                     <option value="{{ r.id }}" {% if rubro_id == r.id %}selected{% endif %}>{{ r.nombre }}</option>
                     {% endfor %}
                 </select>
+            </div>
+            <div class="relative">
+                <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Laboratorio</label>
+                <input type="hidden" name="lab_id" id="lab_id" value="{{ lab_id or '' }}">
+                <input type="text" id="lab_input" autocomplete="off"
+                       value="{{ lab_nombre or '' }}"
+                       placeholder="Buscar laboratorio…"
+                       class="w-full bg-white border border-surface-border rounded px-2 py-1 text-sm">
+                <div id="lab_results" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-surface-border rounded-lg shadow-lg z-30 max-h-64 overflow-auto"></div>
             </div>
             <div class="relative">
                 <label class="block text-[9px] uppercase font-bold text-[#666] mb-0.5">Droga (monodroga)</label>
@@ -252,6 +261,7 @@
         input.addEventListener('input', () => { hidden.value = ''; });  // limpia al escribir
     }
     setupAutocomplete('droga_input', 'droga_id', 'droga_results', '/api/informes/buscar-droga');
+    setupAutocomplete('lab_input', 'lab_id', 'lab_results', '/api/informes/buscar-lab');
     setupAutocomplete('producto_input', 'producto_id', 'producto_results', '/api/informes/buscar-producto-obs');
     setupAutocomplete('medico_input', 'medico_id', 'medico_results', '/api/consulta-medico/buscar');
     setupAutocomplete('os_input', 'os_id', 'os_results', '/api/informes/buscar-os');

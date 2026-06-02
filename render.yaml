@@ -32,3 +32,9 @@ services:
         generateValue: true
       - key: TZ
         value: America/Argentina/Buenos_Aires
+
+# NOTA: AppNúcleo (dashboard de grupo, appnucleo/) NO se declara acá a propósito.
+# Meterlo en este Blueprint obligaría a un "Apply/Sync" que re-evalúa TODO el yaml
+# contra lo que corre y podría pisar farmacia-web/farmacia-db (ya pasó: el plan
+# stale 'free' de la DB casi la degrada en un sync). Se crea como Web Service
+# MANUAL en el dashboard, aislado. Config en docs/lecciones_deploy_render.md.

@@ -167,6 +167,7 @@ const U = {
     ofmin:      "{{ url_for('lab_ofertas_minimo', lab_id=12345) }}",
     plantillas: "{{ url_for('plantillas_list', tipo='laboratorio', id=12345) }}",
     equiv:      "{{ url_for('lab_equivalencias', lab_id=12345) }}",
+    packEquiv:  "{{ url_for('lab_pack_equivalencias', lab_id=12345) }}",
     edit:       "{{ url_for('laboratorio_edit', lab_id=12345) }}",
     del:        "{{ url_for('laboratorio_delete', lab_id=12345) }}",
     packs:      "{{ url_for('modulo_packs_list') }}",
@@ -197,6 +198,7 @@ function renderLab(lab) {
       <td>
         <div class="lab-actions">
           ${lab.usa_packs ? `<a href="${u('packs', id)}?lab=${encodeURIComponent(lab.nombre)}" class="action-link">🧩 Módulos</a>` : ''}
+          ${lab.usa_packs ? `<a href="${u('packEquiv', id)}" class="action-link" title="Pack equivalencias EAN pack → EAN unidad">📦 Packs Equiv.</a>` : ''}
           <a href="${u('ofmin', id)}" class="action-link">🏷️ Ofertas</a>
           <a href="${u('plantillas', id)}" class="action-link violet">📄 Plantillas</a>
           <a href="${u('equiv', id)}" class="action-link">🔀 Equiv.</a>

@@ -140,6 +140,35 @@ def _detectar_duplicados():
     return grupos
 
 
+def _grupos_filtro_ctx():
+    """Contexto para el filtro client-side por *grupo de rendición* de OS.
+
+    Devuelve (grupos, grupo_por_nombre_os):
+      - grupos: [{'id', 'nombre'}] de los grupos activos (para el dropdown).
+      - grupo_por_nombre_os: {NOMBRE_OS_UPPER: {'id', 'nombre'}} para etiquetar
+        cada fila. Se mapea por NOMBRE (no observer_id) porque en estas
+        pantallas las recetas (DevolucionReceta / resultados de ObServer) solo
+        traen el nombre de la OS, no su observer_id.
+
+    El ABM de los grupos vive aparte en /rend-recetas/config-grupos (multiselect).
+    Esto es solo lectura para el filtro, no toca la DB.
+    """
+    with database.get_db() as _s:
+        grupos = [{'id': g.id, 'nombre': g.nombre}
+                  for g in (_s.query(database.RendicionGrupo)
+                            .filter_by(activo=True)
+                            .order_by(database.RendicionGrupo.nombre).all())]
+        nombre_por_id = {g['id']: g['nombre'] for g in grupos}
+        grupo_por_nombre_os = {}
+        for it in _s.query(database.RendicionGrupoOS).all():
+            if it.grupo_id not in nombre_por_id:
+                continue  # OS de un grupo inactivo → no se ofrece en el filtro
+            grupo_por_nombre_os.setdefault(
+                (it.nombre_cached or '').strip().upper(),
+                {'id': it.grupo_id, 'nombre': nombre_por_id[it.grupo_id]})
+    return grupos, grupo_por_nombre_os
+
+
 def init_app(app):
 
     # ──────────────────────────────────────────────────────────────────
@@ -888,6 +917,8 @@ def init_app(app):
                          ).scalar() or 0)
                 alertas['duplicados'] = int(dup_q)
 
+            # Filtro client-side por grupo de OS (etiqueta cada fila por nombre).
+            _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
             return render_template('devoluciones_list.html',
                                    devoluciones=devoluciones, total=total,
                                    page=page, last_page=last_page,
@@ -902,6 +933,8 @@ def init_app(app):
                                    lote_activo_id=lote_activo_id,
                                    vendedores_filtro=vendedores_filtro,
                                    nros_filtro=nros_filtro,
+                                   grupos=_grupos_f,
+                                   grupo_por_nombre_os=_grupo_por_nombre_os,
                                    estado_por_lote=estado_por_lote)
 
     # ──────────────────────────────────────────────────────────────────
@@ -1062,6 +1095,17 @@ def init_app(app):
                     elif rol_actual_get == 'auditor':
                         q_m = q_m.filter(database.MotivoDevolucion.uso_rol.in_(['auditor', 'ambos']))
                     motivos_g = q_m.order_by(database.MotivoDevolucion.nombre).all()
+            # Grupos de rendición activos para el dropdown del form.
+            with database.get_db() as _s_g:
+                grupos_rendicion_view = [
+                    {'id': g.id, 'nombre': g.nombre, 'n_os': len(g.os_items)}
+                    for g in _s_g.query(database.RendicionGrupo)
+                    .filter_by(activo=True)
+                    .order_by(database.RendicionGrupo.nombre).all()
+                ]
+            # Filtro client-side por grupo sobre los resultados ya cargados
+            # (independiente del dropdown server-side del form de búsqueda).
+            _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
             return render_template('devoluciones_buscar.html',
                                    obras_sociales=obras_sociales,
                                    vendedores=vendedores,
@@ -1071,6 +1115,10 @@ def init_app(app):
                                    nro_presentacion='',
                                    vendedor_id=vendedor_sugerido,
                                    obra_social_id='',
+                                   grupo_id='',
+                                   grupos_rendicion=grupos_rendicion_view,
+                                   grupos=_grupos_f,
+                                   grupo_por_nombre_os=_grupo_por_nombre_os,
                                    solo_a_cargo_os=False,
                                    resultados=(resultados_g or None),
                                    cargadas=cargadas_g,
@@ -1084,6 +1132,7 @@ def init_app(app):
         # POST: buscar
         vendedor_id = (request.form.get('vendedor_id') or '').strip() or None
         obra_social_id = request.form.get('obra_social_id', type=int) or None
+        grupo_id = request.form.get('grupo_id', type=int) or None
         nro_presentacion = (request.form.get('nro_presentacion') or '').strip() or None
         desde_str = (request.form.get('desde') or '').strip()
         hasta_str = (request.form.get('hasta') or '').strip()
@@ -1101,8 +1150,27 @@ def init_app(app):
                       'matchee con un OperadorVenta.', 'error')
                 return redirect(url_for('devoluciones_buscar'))
 
-        if not vendedor_id and not obra_social_id:
-            flash('Seleccioná al menos un vendedor o una obra social.', 'error')
+        # Resolver lista de OS a buscar. Prioridad: grupo > obra_social individual.
+        os_ids_buscar = []
+        grupo_nombre = None
+        if grupo_id:
+            with database.get_db() as _s:
+                grupo = _s.get(database.RendicionGrupo, grupo_id)
+                if not grupo:
+                    flash('Grupo no encontrado.', 'error')
+                    return redirect(url_for('devoluciones_buscar'))
+                grupo_nombre = grupo.nombre
+                os_ids_buscar = [o.obra_social_observer_id for o in grupo.os_items
+                                 if o.obra_social_observer_id not in os_ocultas]
+            if not os_ids_buscar:
+                flash(f'El grupo "{grupo_nombre}" no tiene OS visibles para tu rol.',
+                      'error')
+                return redirect(url_for('devoluciones_buscar'))
+        elif obra_social_id:
+            os_ids_buscar = [obra_social_id]
+
+        if not vendedor_id and not os_ids_buscar:
+            flash('Seleccioná un vendedor, una obra social o un grupo.', 'error')
             return redirect(url_for('devoluciones_buscar'))
         try:
             desde = datetime.strptime(desde_str, '%Y-%m-%d').date()
@@ -1120,12 +1188,32 @@ def init_app(app):
             return redirect(url_for('devoluciones_buscar'))
 
         try:
-            resultados = observer_source.buscar_recetas(
-                vendedor_uuid=vendedor_id,
-                obra_social_id=obra_social_id,
-                desde=desde, hasta=hasta,
-                solo_a_cargo_os=solo_a_cargo_os,
-            )
+            if os_ids_buscar:
+                # Iterar las OS del grupo (o la única individual) y concatenar.
+                resultados = []
+                vistos = set()  # dedupe por (id_receta o nro_presentacion+fecha)
+                for _oid in os_ids_buscar:
+                    parciales = observer_source.buscar_recetas(
+                        vendedor_uuid=vendedor_id,
+                        obra_social_id=_oid,
+                        desde=desde, hasta=hasta,
+                        solo_a_cargo_os=solo_a_cargo_os,
+                    )
+                    for r in parciales:
+                        key = r.get('id') or (
+                            r.get('nro_presentacion'), r.get('fecha_operacion'))
+                        if key in vistos:
+                            continue
+                        vistos.add(key)
+                        resultados.append(r)
+            else:
+                # Solo vendedor sin OS — un solo call sin obra_social_id.
+                resultados = observer_source.buscar_recetas(
+                    vendedor_uuid=vendedor_id,
+                    obra_social_id=None,
+                    desde=desde, hasta=hasta,
+                    solo_a_cargo_os=solo_a_cargo_os,
+                )
         except Exception as e:
             flash(f'Error consultando ObServer: {e}', 'error')
             return redirect(url_for('devoluciones_buscar'))
@@ -1205,6 +1293,17 @@ def init_app(app):
                         'editable': (not d.en_auditoria and d.estado == 'pendiente'),
                     }
 
+        # Reload grupos para el dropdown del form en el render del POST.
+        with database.get_db() as _s_g:
+            grupos_rendicion_view = [
+                {'id': g.id, 'nombre': g.nombre, 'n_os': len(g.os_items)}
+                for g in _s_g.query(database.RendicionGrupo)
+                .filter_by(activo=True)
+                .order_by(database.RendicionGrupo.nombre).all()
+            ]
+        # Filtro client-side por grupo sobre los resultados (etiqueta por nombre
+        # de OS — buscar_recetas no devuelve observer_id).
+        _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
         return render_template('devoluciones_buscar.html',
                                obras_sociales=obras_sociales,
                                vendedores=vendedores,
@@ -1214,6 +1313,11 @@ def init_app(app):
                                vendedor_id=vendedor_id or '',
                                vendedor_nombre=vendedor_nombre,
                                obra_social_id=obra_social_id or '',
+                               grupo_id=grupo_id or '',
+                               grupo_nombre=grupo_nombre,
+                               grupos_rendicion=grupos_rendicion_view,
+                               grupos=_grupos_f,
+                               grupo_por_nombre_os=_grupo_por_nombre_os,
                                os_nombre=os_nombre,
                                solo_a_cargo_os=solo_a_cargo_os,
                                resultados=resultados,
@@ -1963,6 +2067,151 @@ def init_app(app):
                 session.commit()
                 flash('Filtro eliminado.', 'success')
         return redirect(url_for('devoluciones_filtros_os'))
+
+    # ──────────────────────────────────────────────────────────────────
+    # ABM Grupos de Rendición (clasifican N OS para procesar en tanda)
+    # Accesible desde /rend-recetas/config-grupos. Usado en /rend-recetas/buscar
+    # como filtro multi-OS.
+    # ──────────────────────────────────────────────────────────────────
+
+    @app.route('/rend-recetas/config-grupos', methods=['GET', 'POST'])
+    @login_required
+    def rendicion_grupos():
+        from database import ObsObraSocial, RendicionGrupo, RendicionGrupoOS
+        with database.get_db() as session:
+            if request.method == 'POST':
+                nombre = (request.form.get('nombre') or '').strip()
+                descripcion = (request.form.get('descripcion') or '').strip() or None
+                if not nombre:
+                    flash('Nombre obligatorio.', 'error')
+                elif session.query(RendicionGrupo).filter_by(nombre=nombre).first():
+                    flash(f'Ya existe un grupo "{nombre}".', 'error')
+                else:
+                    session.add(RendicionGrupo(nombre=nombre, descripcion=descripcion))
+                    session.commit()
+                    flash(f'Grupo "{nombre}" creado.', 'success')
+                return redirect(url_for('rendicion_grupos'))
+
+            grupos_raw = (session.query(RendicionGrupo)
+                          .order_by(RendicionGrupo.nombre).all())
+            grupos = [{
+                'id': g.id, 'nombre': g.nombre,
+                'descripcion': g.descripcion or '',
+                'activo': g.activo,
+                'os_items': [{
+                    'rgo_id': o.id, 'os_id': o.obra_social_observer_id,
+                    'nombre': o.nombre_cached,
+                } for o in sorted(g.os_items, key=lambda x: x.nombre_cached)],
+            } for g in grupos_raw]
+            obras_sociales = [{
+                'id': o.observer_id, 'nombre': o.descripcion,
+            } for o in (session.query(ObsObraSocial)
+                        .filter(ObsObraSocial.fecha_baja.is_(None))
+                        .order_by(ObsObraSocial.descripcion).all())]
+        return render_template('rendicion_grupos.html',
+                               grupos=grupos, obras_sociales=obras_sociales)
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/agregar-os', methods=['POST'])
+    @login_required
+    def rendicion_grupo_agregar_os(gid):
+        from database import ObsObraSocial, RendicionGrupo, RendicionGrupoOS
+        # Acepta múltiples ids (multi-select). getlist parsea repetidos.
+        ids_raw = request.form.getlist('obra_social_observer_id')
+        os_ids = []
+        for v in ids_raw:
+            try:
+                os_ids.append(int(v))
+            except (TypeError, ValueError):
+                continue
+        if not os_ids:
+            flash('Elegí al menos una obra social.', 'error')
+            return redirect(url_for('rendicion_grupos'))
+        with database.get_db() as session:
+            grupo = session.get(RendicionGrupo, gid)
+            if not grupo:
+                flash('Grupo no encontrado.', 'error')
+                return redirect(url_for('rendicion_grupos'))
+            # Pre-fetch: nombres y ya-existentes en una sola query c/u.
+            obs_nombre = {o.observer_id: o.descripcion for o in
+                          session.query(ObsObraSocial)
+                          .filter(ObsObraSocial.observer_id.in_(os_ids)).all()}
+            ya_estan = {x for (x,) in
+                        session.query(RendicionGrupoOS.obra_social_observer_id)
+                        .filter(RendicionGrupoOS.grupo_id == gid,
+                                RendicionGrupoOS.obra_social_observer_id.in_(os_ids))
+                        .all()}
+            agregadas = duplicadas = 0
+            for oid in os_ids:
+                if oid in ya_estan:
+                    duplicadas += 1
+                    continue
+                nom = obs_nombre.get(oid, f'OS#{oid}')
+                session.add(RendicionGrupoOS(
+                    grupo_id=gid, obra_social_observer_id=oid,
+                    nombre_cached=nom,
+                ))
+                agregadas += 1
+            session.commit()
+            partes = []
+            if agregadas:
+                partes.append(f'{agregadas} agregada(s) a "{grupo.nombre}"')
+            if duplicadas:
+                partes.append(f'{duplicadas} ya estaban (omitidas)')
+            flash(', '.join(partes) or 'Sin cambios.',
+                  'success' if agregadas else 'info')
+        return redirect(url_for('rendicion_grupos'))
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/quitar-os/<int:rgo_id>',
+               methods=['POST'])
+    @login_required
+    def rendicion_grupo_quitar_os(gid, rgo_id):
+        from database import RendicionGrupoOS
+        with database.get_db() as session:
+            rgo = session.get(RendicionGrupoOS, rgo_id)
+            if rgo and rgo.grupo_id == gid:
+                session.delete(rgo)
+                session.commit()
+        return redirect(url_for('rendicion_grupos'))
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/editar', methods=['POST'])
+    @login_required
+    def rendicion_grupo_editar(gid):
+        from database import RendicionGrupo
+        nombre = (request.form.get('nombre') or '').strip()
+        descripcion = (request.form.get('descripcion') or '').strip() or None
+        if not nombre:
+            flash('Nombre obligatorio.', 'error')
+            return redirect(url_for('rendicion_grupos'))
+        with database.get_db() as session:
+            grupo = session.get(RendicionGrupo, gid)
+            if not grupo:
+                flash('Grupo no encontrado.', 'error')
+                return redirect(url_for('rendicion_grupos'))
+            otro = (session.query(RendicionGrupo)
+                    .filter(RendicionGrupo.id != gid,
+                            RendicionGrupo.nombre == nombre).first())
+            if otro:
+                flash(f'Ya existe otro grupo "{nombre}".', 'error')
+            else:
+                grupo.nombre = nombre
+                grupo.descripcion = descripcion
+                session.commit()
+                flash('Grupo actualizado.', 'success')
+        return redirect(url_for('rendicion_grupos'))
+
+    @app.route('/rend-recetas/config-grupos/<int:gid>/eliminar',
+               methods=['POST'])
+    @login_required
+    def rendicion_grupo_eliminar(gid):
+        from database import RendicionGrupo
+        with database.get_db() as session:
+            grupo = session.get(RendicionGrupo, gid)
+            if grupo:
+                nom = grupo.nombre
+                session.delete(grupo)   # CASCADE borra RendicionGrupoOS
+                session.commit()
+                flash(f'Grupo "{nom}" eliminado.', 'success')
+        return redirect(url_for('rendicion_grupos'))
 
     # ──────────────────────────────────────────────────────────────────
     # ABM Motivos
