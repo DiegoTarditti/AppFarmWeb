@@ -1758,14 +1758,21 @@ class PackEquivalencia(Base):
     cantidad        = Column(Integer, nullable=False, default=1)  # cuántas unidades en el pack
     desc_pack       = Column(String(255), nullable=True)
     desc_unidad     = Column(String(255), nullable=True)
+    # index=True quitado: idx_pack_equiv_lab (parcial, WHERE laboratorio_id IS NOT
+    # NULL) cubre laboratorio_id; index=True generaba ix_* duplicado. Ver lote 3.
     laboratorio_id  = Column(Integer, ForeignKey('laboratorios.id', ondelete='SET NULL'),
-                             nullable=True, index=True)   # filtro per-lab (manual o derivado)
+                             nullable=True)   # filtro per-lab (manual o derivado)
     aprendido_de    = Column(Integer, ForeignKey('modulos.id', ondelete='SET NULL'),
                              nullable=True)   # módulo donde se aprendió por primera vez
-    fuente          = Column(String(20), nullable=False, default='aprendido')  # 'aprendido' | 'manual' | 'excel'
+    fuente          = Column(String(20), nullable=False, default='aprendido',
+                             server_default='aprendido')  # 'aprendido' | 'manual' | 'excel'
     creado_en       = Column(DateTime, default=now_ar)
     actualizado_en  = Column(DateTime, default=now_ar, onupdate=now_ar)
     laboratorio = relationship('Laboratorio')
+    __table_args__ = (
+        Index('idx_pack_equiv_lab', 'laboratorio_id',
+              postgresql_where=text('laboratorio_id IS NOT NULL')),
+    )
 
 
 class ProductoPrecioHist(Base):

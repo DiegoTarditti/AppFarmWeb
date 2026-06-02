@@ -11,13 +11,13 @@ Plan general: ver `docs/mejoras_pendientes.md` → "Adoptar Alembic para migraci
 - **Lotes**: 10 (de ~10 tablas cada uno)
 - **Revisadas**: 93 / 93 ✅ COMPLETO (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-10 ✅ 2026-06-02)
 
-> ⚠ **BLOQUEANTE antes de finalizar el baseline**: la branch `feat/alembic-baseline`
-> está **atrás de `main`**. El review del lote 4 (2026-06-02) detectó que la diff
-> quiere dropear `pack_equivalencias.laboratorio_id` + `fuente` + su FK — son los
-> campos del feature de packs (PR del 1-jun, mergeado a main DESPUÉS del review del
-> lote 3). Los modelos de esta branch no los tienen. **Hay que mergear `main` acá**
-> (trae packs, rendición-grupos, appnucleo, etc.) antes de generar el baseline
-> definitivo, sino arrastra drops espurios de tablas ya revisadas.
+> ✅ **Merge de `main` HECHO** (2026-06-02, commit de merge en esta branch). Resolvió
+> la staleness de `pack_equivalencias` (`laboratorio_id`+`fuente`+FK ya en el modelo).
+> Post-merge se **re-revisó `pack_equivalencias`** (main la había tocado tras el lote 3):
+> `fuente` → `server_default='aprendido'`; `laboratorio_id` → índice **parcial**
+> `idx_pack_equiv_lab` (`postgresql_where=text('laboratorio_id IS NOT NULL')`), quitado
+> `index=True`. **Resultado: el diff de autogenerate quedó 100% en drops de `ix_*`
+> redundantes (39 ops, todas cleanup) — 0 ops estructurales.**
 
 ## Convención por tabla
 
@@ -265,8 +265,10 @@ La revisión por lotes terminó. El diff de autogenerate quedó reducido a:
    pasan a tener esas columnas → desaparece el drop).
 
 **Antes de generar el baseline definitivo:**
-- [ ] Mergear `main` en `feat/alembic-baseline` (trae packs, rendición-grupos,
-      appnucleo, PR #144, etc.) y re-correr el review sobre las tablas que toque.
+- [x] Mergear `main` en `feat/alembic-baseline` (packs, rendición-grupos, appnucleo,
+      PR #144) y re-correr el review sobre las tablas que toque. **HECHO 2026-06-02**:
+      solo `pack_equivalencias` necesitó re-review (ver arriba). Diff final = 39 drops
+      de `ix_*` redundantes, 0 ops estructurales.
 - [ ] (Opcional) `include_object` en `env.py` para suprimir los false-positives de
       sequences SERIAL.
 - [ ] Reconciliar los drift Render vs Local de la tabla de abajo.
