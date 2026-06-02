@@ -279,9 +279,21 @@ La revisión por lotes terminó. El diff de autogenerate quedó reducido a:
 - [x] `alembic stamp head` en cada instancia. **HECHO 2026-06-02**: Local + Render
       (`db_pieri`) en `ae43763059ec (head)`. Badia NO aplica. (Previo: fix de
       `panel_heartbeat.id` sequence también en Render.)
-- [ ] **Switch real**: cambiar `init_db` para que corra `alembic upgrade head` en vez
-      de `create_all + _pg_add_columns`. ⚠ Sensible — probar en staging (ver
-      [lecciones_deploy_render.md](lecciones_deploy_render.md)).
+- [x] **Switch de `init_db`** — HECHO 2026-06-02 (commit). Patrón bootstrap aditivo:
+      `_alembic_sync()` stampea (1ra vez) o `upgrade head` (siguientes), fail-soft,
+      después de `create_all`+`_pg_add_columns` (que conviven durante la transición).
+      Fuerza `ALEMBIC_DATABASE_URL` a la url de init_db. **Fix de bug latente**: el
+      índice GIN trgm en el modelo hacía fallar `create_all` en DB fresca sin la
+      extensión → ahora `CREATE EXTENSION pg_trgm` ANTES de `create_all`. Verificado:
+      DB fresca → stamp + 93 tablas + trgm OK; DB stampeada → upgrade head no-op.
+      ⚠ Todavía NO deployado a Render (la branch no está en main) — el primer deploy
+      con esto sobre Render (ya stampeada) será un `upgrade head` no-op.
+
+### Pendiente (gradual, no bloqueante)
+- [ ] Migrar los `_pg_add_columns` inline a revisiones Alembic dedicadas (paso 5,
+      conviven mientras tanto — son IF NOT EXISTS).
+- [ ] (Opcional) `include_object` en `env.py` para los false-positives de sequences.
+- [ ] Migración `drop_redundant_ix` (post-deploy del baseline).
 
 ### Sobre los 39 `drop_index('ix_*')` — decisión: NO tocarlos ahora (2026-06-02)
 
