@@ -712,8 +712,8 @@ class ParserOfertasLab(Base):
     """
     __tablename__ = 'parser_ofertas_lab'
     laboratorio_id = Column(Integer, ForeignKey('laboratorios.id'), primary_key=True)
-    column_mapping = Column(Text, nullable=False, default='{}')
-    formato        = Column(String(30), nullable=False, default='plano')
+    column_mapping = Column(Text, nullable=False, default='{}', server_default='{}')
+    formato        = Column(String(30), nullable=False, default='plano', server_default='plano')
     header_row     = Column(Integer, nullable=True)
     creado_por     = Column(String(80), nullable=True)
     actualizado_en = Column(DateTime, default=now_ar)
@@ -751,9 +751,10 @@ class CompartidoImportado(Base):
     archivo_id  = Column(Integer, nullable=False)
     tipo        = Column(String(50))
     nombre      = Column(String(200))
-    accion      = Column(String(20), nullable=False, default='importado')  # 'importado' | 'descartado'
+    accion      = Column(String(20), nullable=False, default='importado',
+                         server_default='importado')  # 'importado' | 'descartado'
     usuario     = Column(String(80))
-    creado_en   = Column(DateTime, default=now_ar)
+    creado_en   = Column(DateTime, nullable=False, default=now_ar, server_default=func.now())
     __table_args__ = (UniqueConstraint('origen_slug', 'archivo_id',
                                        name='uq_compartido_importado'),)
 
