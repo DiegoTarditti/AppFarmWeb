@@ -2187,6 +2187,65 @@ def init_engine(database_url=None):
     return database_url
 
 
+def _alembic_sync(database_url):
+    """Pone la DB bajo control de Alembic de forma idempotente, sin romper el boot.
+
+    Patrón bootstrap (corre DESPUÉS de create_all + _pg_add_columns, que durante
+    la transición siguen gestionando el schema de forma idempotente):
+      - DB ya stampeada (existe alembic_version con revisión) → `upgrade head`
+        (aplica migraciones pendientes; no-op si ya está en head).
+      - DB sin stampear (instancia pre-Alembic o fresca recién creada por
+        create_all) → `stamp head` (el schema ya existe, solo la marcamos).
+
+    - SQLite: se saltea (Alembic apunta a Postgres; dev SQLite sigue con create_all).
+    - **Fail-soft**: cualquier excepción se loguea y NO tira abajo el boot — la
+      lección del deploy 19-may es que init_db NUNCA debe colgar/abortar el arranque
+      (Render mata el instance si no bindea el puerto). Una migración que falla se ve
+      en los logs (ERROR) y se corrige; el servicio igual levanta.
+    """
+    if database_url.startswith('sqlite'):
+        return
+    import logging as _logging
+    log = _logging.getLogger(__name__)
+    try:
+        import os as _os
+
+        from alembic import command
+        from alembic.config import Config
+        _here = _os.path.dirname(_os.path.abspath(__file__))
+        cfg = Config(_os.path.join(_here, 'alembic.ini'))
+        cfg.set_main_option('script_location', _os.path.join(_here, 'alembic'))
+        cfg.set_main_option('sqlalchemy.url', database_url)
+        # env.py resuelve ALEMBIC_DATABASE_URL > DATABASE_URL > config. Forzamos
+        # ALEMBIC_DATABASE_URL = la url que init_db está usando, para que el
+        # stamp/upgrade vaya SIEMPRE a ESTA DB (no a la del env DATABASE_URL si
+        # difieren, ej. staging o tests). Restauramos el valor previo después.
+        _prev = _os.environ.get('ALEMBIC_DATABASE_URL')
+        _os.environ['ALEMBIC_DATABASE_URL'] = database_url
+        try:
+            with engine.connect() as conn:
+                has_version = conn.execute(text(
+                    "SELECT EXISTS(SELECT 1 FROM information_schema.tables "
+                    "WHERE table_schema='public' AND table_name='alembic_version')"
+                )).scalar()
+                current = conn.execute(text(
+                    'SELECT version_num FROM alembic_version LIMIT 1'
+                )).scalar() if has_version else None
+            if current:
+                log.info('Alembic: upgrade head (revisión actual=%s)', current)
+                command.upgrade(cfg, 'head')
+            else:
+                log.info('Alembic: DB sin stampear → stamp head')
+                command.stamp(cfg, 'head')
+        finally:
+            if _prev is None:
+                _os.environ.pop('ALEMBIC_DATABASE_URL', None)
+            else:
+                _os.environ['ALEMBIC_DATABASE_URL'] = _prev
+    except Exception as e:
+        log.error('Alembic sync FALLÓ (no-fatal, sigo el boot): %s', e, exc_info=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2555,6 +2614,21 @@ def init_db(database_url=None):
                     print(f'Cleanup estacionalidad_escenarios producto_id: {_e_estac2}')
             except Exception:
                 pass
+    # pg_trgm DEBE existir ANTES de create_all: el modelo declara el índice GIN
+    # idx_obs_productos_descripcion_trgm (gin_trgm_ops), y create_all lo intenta
+    # crear → sin la extensión falla en una DB fresca con "operator class
+    # gin_trgm_ops does not exist". Idempotente. Si no hay permisos para CREATE
+    # EXTENSION, se loguea y se sigue (create_all fallará ruidoso en ese caso, que
+    # es correcto: el schema no se puede construir como está declarado).
+    if not database_url.startswith('sqlite'):
+        try:
+            with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as _ext_conn:
+                _ext_conn.execute(text('CREATE EXTENSION IF NOT EXISTS pg_trgm'))
+        except Exception as _ext_e:
+            import logging as _lg_ext
+            _lg_ext.getLogger(__name__).warning(
+                'init_db: no pude crear extensión pg_trgm antes de create_all: %s', _ext_e)
+
     # create_all puede fallar con dos índices distintos cuando hay objetos
     # huérfanos de un deploy previo:
     #   - pg_type_typname_nsp_index   → pg_type zombie (composite type huérfano)
@@ -2645,6 +2719,13 @@ def init_db(database_url=None):
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             _pg_add_columns(conn)
             _crear_matviews(conn)
+
+    # Alembic: el schema ya está construido arriba (create_all + _pg_add_columns,
+    # idempotentes). Acá ponemos la DB bajo control de Alembic (stamp en la 1ra,
+    # upgrade head en las siguientes). Migraciones futuras entran por Alembic;
+    # los _pg_add_columns inline se irán migrando gradualmente (conviven, son IF
+    # NOT EXISTS). Fail-soft: no rompe el boot. Ver docs/alembic_baseline_review.md.
+    _alembic_sync(database_url)
 
     # One-shot: importar plantillas legacy a la tabla plantillas nueva
     _migrate_legacy_plantillas()
