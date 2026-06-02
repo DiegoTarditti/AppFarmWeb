@@ -274,6 +274,21 @@ La revisión por lotes terminó. El diff de autogenerate quedó reducido a:
 - [ ] Reconciliar los drift Render vs Local de la tabla de abajo.
 - [ ] Generar el baseline final, `alembic stamp head` en cada instancia.
 
+### Sobre los 39 `drop_index('ix_*')` — decisión: NO tocarlos ahora (2026-06-02)
+
+Esos drops son un **artefacto del validador** (autogenerate contra la DB viva, que
+tiene los `ix_*` redundantes creados por el viejo `index=True`). **No son el baseline
+final**: el baseline se generará contra una **DB vacía**, donde autogenerate hará
+`CREATE` solo de lo que declaran los modelos (los `idx_*`); los `ix_*` no se declaran
+→ no se crean. Las DBs nuevas nacen limpias; las existentes (`stamp head`) conservan
+los `ix_*` redundantes como peso muerto inofensivo.
+
+**No hacemos cleanup manual ahora** (sería DDL en prod + prematuro: Alembic aún no
+está adoptado). Queda como TODO una **migración dedicada `drop_redundant_ix`**
+post-adopción para barrer esos `ix_*` de las instancias existentes.
+- [ ] TODO (post-adopción Alembic): migración que dropea los `ix_*` redundantes
+      listados por el validador en las DBs ya existentes.
+
 ---
 
 ## Notas globales encontradas durante la revisión
