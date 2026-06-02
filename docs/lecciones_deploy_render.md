@@ -137,6 +137,37 @@ setear `RUN_INIT_DB_ON_STARTUP=1` en Environment, redeploy, verificar, desetear.
 
 ---
 
+## 9. AppNúcleo se crea MANUAL, fuera del Blueprint (no en render.yaml)
+
+**Por qué**: meter un servicio nuevo en `render.yaml` solo aplica con un "Apply/Sync"
+del Blueprint, y un Sync **re-evalúa TODO el yaml contra lo que corre**. Si hay
+cualquier discrepancia (plan stale, healthCheckPath overrideado en dashboard,
+instance type vs plan del workspace) Render intenta "corregir" la realidad → puede
+**degradar farmacia-web/farmacia-db de producción**. No vale el riesgo por un
+dashboard read-only. Por eso AppNúcleo NO está declarado en `render.yaml`.
+
+**Cómo crearlo a mano** (Dashboard → New → Web Service, mismo repo):
+- Runtime: **Python** (no Docker — liviano, solo sus deps)
+- Build command: `pip install -r appnucleo/requirements.txt`
+- Start command: `gunicorn 'appnucleo.app:create_app()' --bind 0.0.0.0:$PORT --workers 1 --timeout 120`
+  - 1 worker: `_CACHE` es por proceso → 1 worker = 1 fan-out y menos RAM en free.
+  - Factory pattern con paréntesis. `$PORT` lo inyecta Render. Sin `--preload`.
+- Health Check Path: **`/ping`** (sin DB)
+- Region: **oregon** (misma que las DBs → fan-out en ms, no en segundos)
+- Auto-Deploy: a gusto (on = redeploy en cada push del monorepo)
+- Plan: **free** alcanza (duerme tras inactividad → cold start + fan-out ~13s al
+  despertar). Subir a `starter` si los dueños lo usan seguido.
+- Env vars:
+  - `NUCLEO_REGISTRO_URL` = Internal Connection String de **farmacia-db** (tiene la
+    tabla `sucursales` con las url_externa del grupo). AppNúcleo lee el registro de
+    ahí y hace fan-out read-only a cada farmacia.
+  - `NUCLEO_SECRET_KEY` = generar
+  - `TZ` = `America/Argentina/Buenos_Aires`
+
+No migra nada (read-only) → **sin preDeployCommand**.
+
+---
+
 ## Resumen pragmático
 
 Si volvés a ver "Port scan timeout reached, no open ports detected":

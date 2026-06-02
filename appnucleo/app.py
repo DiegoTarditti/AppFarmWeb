@@ -60,8 +60,10 @@ def create_app():
             por_far=por_far,
             meses=data.meses_labels(),
             tendencia=data.tendencia(grupo),
-            top_labs=data.top_laboratorios(grupo, 10),
+            top_labs=data.top_laboratorios_por_farmacia(grupo, 10),
             rotacion=data.rotacion_dist(grupo),
+            heatmap=data.heatmap_cobertura(grupo, 12),
+            detalle=data.detalle_por_farmacia(grupo, 6),
         )
 
     @app.route('/ventas-multi')
@@ -73,6 +75,19 @@ def create_app():
         pivot = data.ventas_multi(grupo, group_by=group_by, q=q, rubro=rubro)
         return render_template('ventas_multi.html', demo=grupo['demo'],
                                pivot=pivot, q=q, rubro=rubro, group_by=group_by)
+
+    @app.route('/comparar')
+    def comparar():
+        grupo = data.cargar_grupo()
+        _, por_far = data.kpis(grupo)
+        detalle = data.detalle_por_farmacia(grupo, 8)
+        slugs = [p['slug'] for p in por_far]
+        a = request.args.get('a') or (slugs[0] if slugs else '')
+        b = request.args.get('b') or (slugs[1] if len(slugs) > 1 else a)
+        pf = {p['slug']: p for p in por_far}
+        return render_template('comparar.html', demo=grupo['demo'],
+                               por_far=por_far, pf=pf, detalle=detalle,
+                               meses=data.meses_labels(), a=a, b=b)
 
     @app.route('/refrescar', methods=['POST'])
     def refrescar():
