@@ -9,7 +9,15 @@ Plan general: ver `docs/mejoras_pendientes.md` → "Adoptar Alembic para migraci
 
 - **Total tablas a revisar**: 93
 - **Lotes**: 10 (de ~10 tablas cada uno)
-- **Revisadas**: 29 / 93 (Lotes 1-3 ✅ 2026-05-29)
+- **Revisadas**: 37 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lote 4 ✅ 2026-06-02)
+
+> ⚠ **BLOQUEANTE antes de finalizar el baseline**: la branch `feat/alembic-baseline`
+> está **atrás de `main`**. El review del lote 4 (2026-06-02) detectó que la diff
+> quiere dropear `pack_equivalencias.laboratorio_id` + `fuente` + su FK — son los
+> campos del feature de packs (PR del 1-jun, mergeado a main DESPUÉS del review del
+> lote 3). Los modelos de esta branch no los tienen. **Hay que mergear `main` acá**
+> (trae packs, rendición-grupos, appnucleo, etc.) antes de generar el baseline
+> definitivo, sino arrastra drops espurios de tablas ya revisadas.
 
 ## Convención por tabla
 
@@ -105,18 +113,26 @@ Cuando una tabla está OK, marcala con ✅ + fecha. Si hay un issue, anotalo en 
 
 **Verificación**: 160 líneas de baseline post-cambios (-43% del original 282).
 
-## LOTE 4 — Labs / Provs / Descuentos / Cronogramas (8)
+## LOTE 4 — Labs / Provs / Descuentos / Cronogramas (8) ✅ 2026-06-02
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `laboratorios` | ⬜ | |
-| 2 | `proveedores` | ⬜ | |
-| 3 | `descuentos_base` | ⬜ | Drift: `transfer_excedente_meses`/`necesita_meses` perdieron DEFAULT en Render (PR #131). |
-| 4 | `laboratorio_drogueria` | ⬜ | |
-| 5 | `parser_ofertas_lab` | ⬜ | Drift Render: 2×≠DEFAULT, 1 FK perdida (`laboratorio_id_fkey`). |
-| 6 | `proveedor_cronograma` | ⬜ | |
-| 7 | `proveedor_horarios_reparto` | ⬜ | |
-| 8 | `tipo_pedido_config` | ⬜ | |
+| 1 | `laboratorios` | ✅ | OK sin cambios (matchea, incl. uniques `nombre`/`observer_id`). |
+| 2 | `proveedores` | ✅ | OK sin cambios. |
+| 3 | `descuentos_base` | ✅ | Local matchea modelo (incl. `uq_desc_base_lab_drog` + ix por FK). Drift Render diferido a sesión de reconciliación. |
+| 4 | `laboratorio_drogueria` | ✅ | OK sin cambios (`uq_lab_drog` + ix por FK). |
+| 5 | `parser_ofertas_lab` | ✅ | Local matchea modelo (PK = `laboratorio_id`). Drift Render (2×≠DEFAULT + FK perdida) diferido. |
+| 6 | `proveedor_cronograma` | ✅ | Quitado `index=True` de `partner_tipo`; declarado `Index('idx_cronograma_partner_tipo','partner_tipo')`. Dropea el `ix_*_partner_tipo` redundante (cleanup). |
+| 7 | `proveedor_horarios_reparto` | ✅ | Quitado `index=True` de `proveedor_id`; declarado `Index('idx_horarios_prov','proveedor_id')`. Dropea el `ix_*_proveedor_id` redundante (cleanup). |
+| 8 | `tipo_pedido_config` | ✅ | OK sin cambios (`ix_tipo_pedido_config_slug` unique). |
+
+**Cambios en `database.py`**:
+- 2 `index=True` REMOVIDOS (`proveedor_cronograma.partner_tipo`, `proveedor_horarios_reparto.proveedor_id`) — generaban `ix_*` duplicados de los `idx_*` custom del DDL.
+- 2 `Index` agregados a `__table_args__` (`idx_cronograma_partner_tipo`, `idx_horarios_prov`) para matchear el DDL real.
+
+**Patrón (mismo que lote 3)**: índice custom `idx_*` (de inline ALTER en `init_db`) + `index=True` en el mismo Column → DB tiene AMBOS (`idx_*` e `ix_*`, duplicados sobre la misma columna). Fix: quitar `index=True`, declarar el `idx_*` en `__table_args__`. El baseline dropea el `ix_*` redundante = cleanup legítimo (igual que los `ix_*` stale del lote 3).
+
+**Verificación**: re-corrida de autogenerate → para las 8 tablas solo quedan los 2 drops de `ix_*` redundantes (legítimos); 0 referencias a `idx_cronograma_partner_tipo`/`idx_horarios_prov`. Las otras 6 tablas: 0 ops. (Los `INFO ... SERIAL ... omitting` de sequences son false-positives conocidos.)
 
 ## LOTE 5 — Pedidos / Compra (10)
 
@@ -212,7 +228,18 @@ Cuando una tabla está OK, marcala con ✅ + fecha. Si hay un issue, anotalo en 
 > repetidamente (ej. "todas las tablas X usan `default=now_ar` que Alembic
 > no captura como server_default").
 
-(vacío todavía)
+1. **`server_default` faltante** (lotes 1-2): columnas agregadas con `_pg_add_columns`
+   que incluían `DEFAULT X` no reflejan `server_default=` en el modelo. Agregarlo
+   donde corresponda (`compare_server_default=True` los flagea como `alter_column`).
+2. **Índices duplicados `idx_*` + `ix_*`** (lotes 3-4): un Column con `index=True`
+   genera `ix_<tabla>_<col>`; si además hay un `idx_*` custom (inline ALTER) sobre
+   la misma columna, la DB tiene los DOS. Fix: quitar `index=True`, declarar el
+   `idx_*` en `__table_args__`. El baseline dropea el `ix_*` redundante (cleanup OK).
+3. **Índices con `ORDER BY ... DESC`** (lote 2): modelar con `text('col DESC')` en
+   `Index(...)`, no `Column.desc()` (orden de inicialización de la clase).
+4. **False-positives a ignorar**: `id` PK SERIAL (`nextval(...)` / `INFO ... assuming
+   SERIAL and omitting`) — sequences implícitas, inofensivas. TODO: `include_object`
+   en `env.py` para suprimirlas.
 
 ---
 

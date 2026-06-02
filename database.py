@@ -898,8 +898,11 @@ class ProveedorHorarioReparto(Base):
     """
     __tablename__ = 'proveedor_horarios_reparto'
     id            = Column(Integer, primary_key=True)
+    # index=True quitado: el DDL real usa el índice custom idx_horarios_prov
+    # (declarado abajo). Con index=True SQLAlchemy generaba ADEMÁS un
+    # ix_proveedor_horarios_reparto_proveedor_id duplicado. Ver lote 3.
     proveedor_id  = Column(Integer, ForeignKey('proveedores.id', ondelete='CASCADE'),
-                           nullable=False, index=True)
+                           nullable=False)
     dia_semana    = Column(Integer, nullable=False)   # 0-6
     hora          = Column(String(5), nullable=False)  # 'HH:MM' formato 24h, simple
     activo        = Column(Boolean, nullable=False, default=True)
@@ -907,6 +910,7 @@ class ProveedorHorarioReparto(Base):
     proveedor     = relationship('Provider')
     __table_args__ = (
         UniqueConstraint('proveedor_id', 'dia_semana', 'hora', name='uq_horario_prov_dia_hora'),
+        Index('idx_horarios_prov', 'proveedor_id'),
     )
 
 
@@ -930,8 +934,11 @@ class ProveedorCronograma(Base):
     # partner_tipo + proveedor_id forman partner polimórfico. Mismo patrón que
     # Pedido.canal+partner_id (database.py:1124-1131): sin FK estricto a una
     # tabla específica — id apunta a `laboratorios` o `proveedores` según tipo.
-    partner_tipo        = Column(String(12), nullable=False, default='drogueria',
-                                  index=True)
+    # index=True quitado en partner_tipo: el DDL real usa idx_cronograma_partner_tipo
+    # (declarado abajo); index=True generaba un ix_*_partner_tipo duplicado. Ver
+    # lote 3. proveedor_id/canal_drog_id/proxima_fecha NO tienen dup → conservan
+    # index=True (su ix_* es el único índice).
+    partner_tipo        = Column(String(12), nullable=False, default='drogueria')
     proveedor_id        = Column(Integer, nullable=False, index=True)
     # Solo cuando partner_tipo='laboratorio': por qué droguería entra el pedido.
     # NULL = compra directa al laboratorio (sin intermediario).
@@ -949,6 +956,7 @@ class ProveedorCronograma(Base):
     __table_args__ = (
         UniqueConstraint('partner_tipo', 'proveedor_id', 'tipo_pedido',
                          name='uq_cronograma_partner_tipo'),
+        Index('idx_cronograma_partner_tipo', 'partner_tipo'),
     )
 
 
