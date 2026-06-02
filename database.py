@@ -1127,7 +1127,8 @@ class Invoice(Base):
 class InvoiceItem(Base):
     __tablename__ = 'factura_items'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False, index=True)
+    # index=True quitado: idx_factura_items_factura (custom) cubre factura_id.
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
     codigo_barra = Column(String(20))
     cantidad = Column(Integer)
     descripcion = Column(String(150))
@@ -1139,6 +1140,9 @@ class InvoiceItem(Base):
     lote = Column(String(30))
     vencimiento = Column(String(20))
     invoice = relationship('Invoice', back_populates='items')
+    __table_args__ = (
+        Index('idx_factura_items_factura', 'factura_id'),
+    )
 
 
 class FacturaFaltante(Base):
@@ -1149,27 +1153,37 @@ class FacturaFaltante(Base):
     """
     __tablename__ = 'factura_faltante'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='CASCADE'), nullable=False, index=True)
-    codigo_barra = Column(String(20), index=True)
+    # index=True quitado: idx_factura_faltante_fac/_cb (custom) cubren estas cols.
+    factura_id = Column(Integer, ForeignKey('facturas.id', ondelete='CASCADE'), nullable=False)
+    codigo_barra = Column(String(20))
     codigo_interno = Column(String(30))
     cantidad = Column(Integer)
     descripcion = Column(String(150))
-    creado_en = Column(DateTime, default=now_ar)
+    creado_en = Column(DateTime, default=now_ar, server_default=func.now())
+    __table_args__ = (
+        Index('idx_factura_faltante_fac', 'factura_id'),
+        Index('idx_factura_faltante_cb', 'codigo_barra'),
+    )
 
 
 class ErpStock(Base):
     __tablename__ = 'erp_stock'
     id = Column(Integer, primary_key=True)
-    codigo_barra = Column(String(20), nullable=False, index=True)
+    # index=True quitado: idx_erp_stock_codigo (custom) cubre codigo_barra.
+    codigo_barra = Column(String(20), nullable=False)
     descripcion = Column(String(150))
     cantidad = Column(Integer)
     precio_unitario = Column(DECIMAL(14, 2))
+    __table_args__ = (
+        Index('idx_erp_stock_codigo', 'codigo_barra'),
+    )
 
 
 class StockDifference(Base):
     __tablename__ = 'stock_differences'
     id = Column(Integer, primary_key=True)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False, index=True)
+    # index=True quitado: idx_stock_diff_factura (custom) cubre factura_id.
+    factura_id = Column(Integer, ForeignKey('facturas.id'), nullable=False)
     codigo_barra = Column(String(20))
     descripcion = Column(String(150))
     cantidad_factura = Column(Integer)
@@ -1177,13 +1191,17 @@ class StockDifference(Base):
     diferencia = Column(Integer)
     observaciones = Column(Text)
     claim_items = relationship('ClaimItem', back_populates='difference')
+    __table_args__ = (
+        Index('idx_stock_diff_factura', 'factura_id'),
+    )
 
 
 class Claim(Base):
     __tablename__ = 'reclamos'
     id = Column(Integer, primary_key=True)
     proveedor_id = Column(Integer, ForeignKey('proveedores.id'), nullable=False)
-    factura_id = Column(Integer, ForeignKey('facturas.id'), index=True)
+    # index=True quitado: idx_reclamos_factura (custom) cubre factura_id.
+    factura_id = Column(Integer, ForeignKey('facturas.id'))
     numero_factura = Column(String(20))
     fecha = Column(Date, nullable=False)
     estado = Column(String(20), nullable=False, default='ABIERTO')
@@ -1191,6 +1209,9 @@ class Claim(Base):
     provider = relationship('Provider', back_populates='claims')
     factura = relationship('Invoice')
     items = relationship('ClaimItem', back_populates='claim')
+    __table_args__ = (
+        Index('idx_reclamos_factura', 'factura_id'),
+    )
 
 
 class ClaimItem(Base):

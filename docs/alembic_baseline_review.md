@@ -9,7 +9,7 @@ Plan general: ver `docs/mejoras_pendientes.md` → "Adoptar Alembic para migraci
 
 - **Total tablas a revisar**: 93
 - **Lotes**: 10 (de ~10 tablas cada uno)
-- **Revisadas**: 47 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-5 ✅ 2026-06-02)
+- **Revisadas**: 57 / 93 (Lotes 1-3 ✅ 2026-05-29 · Lotes 4-6 ✅ 2026-06-02)
 
 > ⚠ **BLOQUEANTE antes de finalizar el baseline**: la branch `feat/alembic-baseline`
 > está **atrás de `main`**. El review del lote 4 (2026-06-02) detectó que la diff
@@ -156,20 +156,27 @@ Cuando una tabla está OK, marcala con ✅ + fecha. Si hay un issue, anotalo en 
 
 **Verificación**: autogenerate post-cambios → para las 10 tablas solo quedan 8 drops de `ix_*` redundantes (cleanup legítimo); 0 referencias a cualquier `idx_*` del lote. Las 5 tablas sin dup (`pedido_emitido`, `pedido_emitido_item`, `modulos`, `modulo_packs`, `plantillas`): 0 ops.
 
-## LOTE 6 — Facturas / Stock / Documentos (10)
+## LOTE 6 — Facturas / Stock / Documentos (10) ✅ 2026-06-02
 
 | # | Tabla | Estado | Notas |
 |---|---|---|---|
-| 1 | `facturas` | ⬜ | |
-| 2 | `factura_items` | ⬜ | |
-| 3 | `factura_faltante` | ⬜ | Drift Render: ≠DEFAULT `id` (Render perdió la SEQUENCE — INSERTs romperían). |
-| 4 | `invoice_batches` | ⬜ | |
-| 5 | `reclamos` | ⬜ | |
-| 6 | `reclamo_items` | ⬜ | |
-| 7 | `erp_stock` | ⬜ | |
-| 8 | `stock_differences` | ⬜ | |
-| 9 | `documentos_pendientes` | ⬜ | |
-| 10 | `pagos_ajustes_cc` | ⬜ | |
+| 1 | `facturas` | ✅ | OK sin cambios. |
+| 2 | `factura_items` | ✅ | Dup `factura_id` → `idx_factura_items_factura`. |
+| 3 | `factura_faltante` | ✅ | Quitado `index=True` de `factura_id`/`codigo_barra` → `idx_factura_faltante_fac`/`_cb` (DB tenía solo `idx_*`, sin `ix_*`). Agregado `server_default=func.now()` a `creado_en` (DB tiene `DEFAULT now()`). **Drift Render** (`id` perdió SEQUENCE) diferido. |
+| 4 | `invoice_batches` | ✅ | OK sin cambios. |
+| 5 | `reclamos` | ✅ | Dup `factura_id` → `idx_reclamos_factura`. |
+| 6 | `reclamo_items` | ✅ | OK sin cambios. |
+| 7 | `erp_stock` | ✅ | Dup `codigo_barra` → `idx_erp_stock_codigo`. |
+| 8 | `stock_differences` | ✅ | Dup `factura_id` → `idx_stock_diff_factura`. |
+| 9 | `documentos_pendientes` | ✅ | OK sin cambios. |
+| 10 | `pagos_ajustes_cc` | ✅ | OK sin cambios. |
+
+**Cambios en `database.py`**:
+- **5 `index=True` REMOVIDOS** (`factura_items.factura_id`, `factura_faltante.factura_id`+`codigo_barra`, `erp_stock.codigo_barra`, `reclamos.factura_id`, `stock_differences.factura_id`).
+- **5 `Index` agregados** vía `__table_args__` en 5 clases (matchean los `idx_*` custom).
+- **1 `server_default=func.now()`** en `factura_faltante.creado_en`.
+
+**Verificación**: autogenerate post-cambios → 4 drops de `ix_*` redundantes (cleanup); `factura_faltante` 100% limpia (su DB no tenía `ix_*`, solo `idx_*`). 0 referencias a `idx_*` del lote, 0 `alter_column` de `creado_en`.
 
 ## LOTE 7 — ObServer mirror — Catálogo 1 (10)
 
