@@ -276,7 +276,12 @@ La revisión por lotes terminó. El diff de autogenerate quedó reducido a:
       (93 `create_table` + 141 `create_index`, FKs inline, + `CREATE EXTENSION pg_trgm`
       manual). Validado: `upgrade head` sobre DB vacía aplica limpio; diff vs local-vivo
       = solo los ~39 `ix_*` redundantes + `panel_heartbeat.id` (ver drift abajo).
-- [ ] `alembic stamp head` en cada instancia. **Badia NO aplica** — solo Local + Render (`db_pieri`).
+- [x] `alembic stamp head` en cada instancia. **HECHO 2026-06-02**: Local + Render
+      (`db_pieri`) en `ae43763059ec (head)`. Badia NO aplica. (Previo: fix de
+      `panel_heartbeat.id` sequence también en Render.)
+- [ ] **Switch real**: cambiar `init_db` para que corra `alembic upgrade head` en vez
+      de `create_all + _pg_add_columns`. ⚠ Sensible — probar en staging (ver
+      [lecciones_deploy_render.md](lecciones_deploy_render.md)).
 
 ### Sobre los 39 `drop_index('ix_*')` — decisión: NO tocarlos ahora (2026-06-02)
 
@@ -350,6 +355,6 @@ Render quedó en **0** estructural. Único restante: `alembic_version` (cosméti
 
 | Diff | Decisión | ALTER | Estado |
 |---|---|---|---|
-| `panel_heartbeat.id` sin sequence (AMBAS instancias lo perdieron; modelo=SERIAL) | SERIAL | `CREATE SEQUENCE panel_heartbeat_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` | ✅ Local 2026-06-02 · ⏳ Render pendiente |
+| `panel_heartbeat.id` sin sequence (AMBAS instancias lo perdieron; modelo=SERIAL) | SERIAL | `CREATE SEQUENCE panel_heartbeat_id_seq OWNED BY` + `setval` + `SET DEFAULT nextval` | ✅ Local + Render 2026-06-02 |
 
 (Singleton id=1 → la pérdida nunca rompió nada, pero el baseline lo crea SERIAL.)
