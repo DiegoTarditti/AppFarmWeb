@@ -6,8 +6,9 @@ Run local:
 Deploy: gunicorn 'appnucleo.app:create_app()' (servicio Render aparte).
 """
 import os
+from functools import wraps
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, redirect, render_template, request, session, url_for
 
 from appnucleo import data
 
@@ -44,14 +45,59 @@ def create_app():
                 return f"$ {v / div:.1f}{suf}".replace('.', ',')
         return f"$ {v:.0f}"
 
+    # ── Auth ──────────────────────────────────────────────────────────────
+    def login_required(f):
+        """Exige sesión SOLO si hay usuarios configurados (NUCLEO_USERS).
+        Sin usuarios → acceso abierto (dev/tests no se rompen)."""
+        @wraps(f)
+        def wrapper(*a, **k):
+            if data.auth_activa() and not session.get('nuc_user'):
+                return redirect(url_for('login', next=request.path))
+            return f(*a, **k)
+        return wrapper
+
+    def _grupo_del_usuario(force=False):
+        """Carga el grupo y lo filtra a las farmacias permitidas del usuario."""
+        grupo = data.cargar_grupo(force=force)
+        return data.filtrar_grupo(grupo, session.get('nuc_farmacias', '*'))
+
+    @app.route('/login', methods=['GET', 'POST'])
+    def login():
+        if not data.auth_activa():
+            return redirect(url_for('landing'))
+        error = None
+        if request.method == 'POST':
+            u = data.validar_credenciales(request.form.get('usuario'),
+                                          request.form.get('password'))
+            if u:
+                session['nuc_user'] = u['usuario']
+                session['nuc_nombre'] = u.get('nombre', u['usuario'])
+                session['nuc_farmacias'] = data.farmacias_permitidas(u)
+                dest = request.args.get('next') or url_for('landing')
+                return redirect(dest)
+            error = 'Usuario o contraseña incorrectos.'
+        return render_template('login.html', error=error)
+
+    @app.route('/logout')
+    def logout():
+        session.clear()
+        return redirect(url_for('login'))
+
+    @app.context_processor
+    def _inject_auth():
+        return {'auth_activa': data.auth_activa(),
+                'nuc_user': session.get('nuc_user'),
+                'nuc_nombre': session.get('nuc_nombre')}
+
     @app.route('/ping')
     def ping():
         return {'ok': True, 'app': 'appnucleo'}
 
     @app.route('/')
+    @login_required
     def landing():
         force = request.args.get('refrescar') == '1'
-        grupo = data.cargar_grupo(force=force)
+        grupo = _grupo_del_usuario(force=force)
         tot, por_far = data.kpis(grupo)
         return render_template(
             'landing.html',
@@ -67,8 +113,9 @@ def create_app():
         )
 
     @app.route('/ventas-multi')
+    @login_required
     def ventas_multi():
-        grupo = data.cargar_grupo()
+        grupo = _grupo_del_usuario()
         group_by = (request.args.get('group_by') or 'laboratorio').strip()
         q = request.args.get('q', '')
         rubro = request.args.get('rubro', '')
@@ -77,8 +124,9 @@ def create_app():
                                pivot=pivot, q=q, rubro=rubro, group_by=group_by)
 
     @app.route('/comparar')
+    @login_required
     def comparar():
-        grupo = data.cargar_grupo()
+        grupo = _grupo_del_usuario()
         _, por_far = data.kpis(grupo)
         detalle = data.detalle_por_farmacia(grupo, 8)
         slugs = [p['slug'] for p in por_far]
@@ -90,6 +138,7 @@ def create_app():
                                meses=data.meses_labels(), a=a, b=b)
 
     @app.route('/refrescar', methods=['POST'])
+    @login_required
     def refrescar():
         data.cargar_grupo(force=True)
         return redirect(url_for('landing'))
