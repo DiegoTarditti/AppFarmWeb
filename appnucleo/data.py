@@ -11,6 +11,7 @@ Si no está seteada → modo DEMO con datos sintéticos (para ver la UI sin cred
 Caché en memoria con TTL para no machacar las DBs remotas en cada request.
 Cada farmacia se consulta con try/except: una caída no rompe el dashboard.
 """
+import hmac
 import json
 import os
 import random
@@ -73,6 +74,55 @@ def _farmacias_desde_sucursales():
         return out
     except Exception:  # noqa: BLE001 — sin registro accesible → DEMO, no romper
         return []
+
+
+# ── Auth / usuarios (env NUCLEO_USERS, sin DB) ───────────────────────────────
+
+def usuarios_config():
+    """Lista de usuarios desde NUCLEO_USERS (JSON). [] si no está.
+    Cada usuario: {usuario, password, nombre, farmacias}. `farmacias` = '*'
+    (todas) o lista de slugs (['badia']). Sin la env → auth desactivada (abierto)."""
+    raw = (os.environ.get('NUCLEO_USERS') or '').strip()
+    if not raw:
+        return []
+    try:
+        return [u for u in json.loads(raw) if u.get('usuario')]
+    except (ValueError, TypeError):
+        return []
+
+
+def auth_activa():
+    """True si hay usuarios configurados (entonces se exige login)."""
+    return bool(usuarios_config())
+
+
+def validar_credenciales(usuario, password):
+    """Devuelve el dict del usuario si user+pass coinciden, si no None.
+    Comparación en tiempo constante (compare_digest) contra timing attacks."""
+    usuario = (usuario or '').strip()
+    password = password or ''
+    for u in usuarios_config():
+        if u.get('usuario') == usuario and hmac.compare_digest(
+                str(u.get('password', '')), password):
+            return u
+    return None
+
+
+def farmacias_permitidas(usuario_dict):
+    """'*' (todas) o lista de slugs que el usuario puede ver."""
+    perm = (usuario_dict or {}).get('farmacias', '*')
+    return perm if perm == '*' else list(perm or [])
+
+
+def filtrar_grupo(grupo, permitidas):
+    """Vista del grupo con solo las farmacias permitidas. NO muta el cacheado
+    (devuelve un dict nuevo con la lista filtrada; las farmacias se comparten
+    por referencia, las agregaciones solo leen)."""
+    if permitidas == '*' or permitidas is None:
+        return grupo
+    perm = set(permitidas)
+    return {'demo': grupo['demo'],
+            'farmacias': [f for f in grupo['farmacias'] if f['slug'] in perm]}
 
 
 def _engine(url):

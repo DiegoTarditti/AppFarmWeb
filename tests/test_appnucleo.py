@@ -3,6 +3,8 @@
 Verifica que el data layer agrega coherente y que las pantallas renderizan 200.
 No toca `database`; AppNúcleo es standalone.
 """
+import json
+
 import pytest
 
 from appnucleo import data
@@ -11,10 +13,12 @@ from appnucleo.app import create_app
 
 @pytest.fixture(autouse=True)
 def _forzar_demo(monkeypatch):
-    """Smoke tests deterministas: sin registro accesible → modo DEMO.
-    Evita que el fan-out real (tabla sucursales → DBs de Render) se dispare en CI."""
+    """Smoke tests deterministas: sin registro accesible → modo DEMO, y sin
+    usuarios → acceso abierto. Evita el fan-out real y deja las rutas sin login
+    salvo que el test setee NUCLEO_USERS explícitamente."""
     monkeypatch.setattr(data, '_farmacias_desde_sucursales', lambda: [])
     monkeypatch.delenv('NUCLEO_FARMACIAS', raising=False)
+    monkeypatch.delenv('NUCLEO_USERS', raising=False)
     data._CACHE.clear()
 
 
@@ -101,3 +105,43 @@ def test_paginas_renderizan():
     assert c.get('/comparar').status_code == 200
     assert c.get('/comparar?a=badia&b=pieri').status_code == 200
     assert c.get('/ping').status_code == 200
+
+
+# ── Auth + scoping ───────────────────────────────────────────────────────────
+
+def test_filtrar_grupo_scoping():
+    g = data.cargar_grupo(force=True)            # DEMO: 4 farmacias
+    sub = data.filtrar_grupo(g, ['badia'])
+    assert [f['slug'] for f in sub['farmacias']] == ['badia']
+    assert len(g['farmacias']) == 4              # no muta el original (cacheado)
+    assert data.filtrar_grupo(g, '*') is g       # '*' = todas, sin copia
+
+
+def test_validar_credenciales(monkeypatch):
+    monkeypatch.setenv('NUCLEO_USERS', json.dumps([
+        {'usuario': 'diego', 'password': 'secreto', 'nombre': 'Diego', 'farmacias': '*'}]))
+    assert data.auth_activa()
+    u = data.validar_credenciales('diego', 'secreto')
+    assert u and data.farmacias_permitidas(u) == '*'
+    assert data.validar_credenciales('diego', 'mal') is None
+    assert data.validar_credenciales('nadie', 'secreto') is None
+
+
+def test_login_requerido_y_flujo(monkeypatch):
+    monkeypatch.setenv('NUCLEO_USERS', json.dumps([
+        {'usuario': 'badiaowner', 'password': 'pw', 'nombre': 'Dueño Badia',
+         'farmacias': ['badia']}]))
+    c = create_app().test_client()
+    # sin sesión → redirige a login (pero /ping queda abierto)
+    r = c.get('/')
+    assert r.status_code == 302 and '/login' in r.headers['Location']
+    assert c.get('/ping').status_code == 200
+    # credenciales malas → 200 con form
+    assert c.post('/login', data={'usuario': 'x', 'password': 'y'}).status_code == 200
+    # login OK → redirige, y luego las pantallas abren
+    assert c.post('/login', data={'usuario': 'badiaowner', 'password': 'pw'}).status_code == 302
+    assert c.get('/').status_code == 200
+    assert c.get('/ventas-multi').status_code == 200
+    # logout → vuelve a pedir login
+    c.get('/logout')
+    assert c.get('/').status_code == 302

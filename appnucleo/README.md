@@ -33,6 +33,28 @@ Cómodo: copiá `appnucleo/.env.example` → `appnucleo/.env` (gitignored) y pon
 `NUCLEO_FARMACIAS`. Si `python-dotenv` está instalado, se carga solo (y no tenés
 que pasar el `-e` por comando).
 
+> En producción el registro se lee de la tabla `sucursales` (las activas con
+> `url_externa`) vía `NUCLEO_REGISTRO_URL` (o `DATABASE_URL`). Precedencia:
+> `NUCLEO_FARMACIAS` (override) → `sucursales` → DEMO.
+
+## Login (usuarios + scoping por farmacia)
+
+Usuarios por env var `NUCLEO_USERS` (JSON). Cada uno con su `password` y las
+`farmacias` que puede ver (`"*"` = todas, o lista de slugs):
+
+```json
+[
+  {"usuario":"diego","password":"...","nombre":"Diego","farmacias":"*"},
+  {"usuario":"badia","password":"...","nombre":"Dueño Badia","farmacias":["badia"]}
+]
+```
+
+- **Sin `NUCLEO_USERS`** → acceso abierto (sin login). Seteala para exigir login.
+- El usuario solo ve sus farmacias permitidas (el grupo se filtra por sesión).
+- `/ping` queda siempre abierto (healthcheck). `/login` y `/logout` gestionan la sesión.
+- Passwords en texto plano en la env var (scope chico: dueños). La sesión usa
+  `NUCLEO_SECRET_KEY`. Para endurecer a futuro: hashear o pasar a OAuth.
+
 ## Correr
 
 ```bash
