@@ -140,6 +140,35 @@ def _detectar_duplicados():
     return grupos
 
 
+def _grupos_filtro_ctx():
+    """Contexto para el filtro client-side por *grupo de rendición* de OS.
+
+    Devuelve (grupos, grupo_por_nombre_os):
+      - grupos: [{'id', 'nombre'}] de los grupos activos (para el dropdown).
+      - grupo_por_nombre_os: {NOMBRE_OS_UPPER: {'id', 'nombre'}} para etiquetar
+        cada fila. Se mapea por NOMBRE (no observer_id) porque en estas
+        pantallas las recetas (DevolucionReceta / resultados de ObServer) solo
+        traen el nombre de la OS, no su observer_id.
+
+    El ABM de los grupos vive aparte en /rend-recetas/config-grupos (multiselect).
+    Esto es solo lectura para el filtro, no toca la DB.
+    """
+    with database.get_db() as _s:
+        grupos = [{'id': g.id, 'nombre': g.nombre}
+                  for g in (_s.query(database.RendicionGrupo)
+                            .filter_by(activo=True)
+                            .order_by(database.RendicionGrupo.nombre).all())]
+        nombre_por_id = {g['id']: g['nombre'] for g in grupos}
+        grupo_por_nombre_os = {}
+        for it in _s.query(database.RendicionGrupoOS).all():
+            if it.grupo_id not in nombre_por_id:
+                continue  # OS de un grupo inactivo → no se ofrece en el filtro
+            grupo_por_nombre_os.setdefault(
+                (it.nombre_cached or '').strip().upper(),
+                {'id': it.grupo_id, 'nombre': nombre_por_id[it.grupo_id]})
+    return grupos, grupo_por_nombre_os
+
+
 def init_app(app):
 
     # ──────────────────────────────────────────────────────────────────
@@ -888,6 +917,8 @@ def init_app(app):
                          ).scalar() or 0)
                 alertas['duplicados'] = int(dup_q)
 
+            # Filtro client-side por grupo de OS (etiqueta cada fila por nombre).
+            _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
             return render_template('devoluciones_list.html',
                                    devoluciones=devoluciones, total=total,
                                    page=page, last_page=last_page,
@@ -902,6 +933,8 @@ def init_app(app):
                                    lote_activo_id=lote_activo_id,
                                    vendedores_filtro=vendedores_filtro,
                                    nros_filtro=nros_filtro,
+                                   grupos=_grupos_f,
+                                   grupo_por_nombre_os=_grupo_por_nombre_os,
                                    estado_por_lote=estado_por_lote)
 
     # ──────────────────────────────────────────────────────────────────
@@ -1070,6 +1103,9 @@ def init_app(app):
                     .filter_by(activo=True)
                     .order_by(database.RendicionGrupo.nombre).all()
                 ]
+            # Filtro client-side por grupo sobre los resultados ya cargados
+            # (independiente del dropdown server-side del form de búsqueda).
+            _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
             return render_template('devoluciones_buscar.html',
                                    obras_sociales=obras_sociales,
                                    vendedores=vendedores,
@@ -1081,6 +1117,8 @@ def init_app(app):
                                    obra_social_id='',
                                    grupo_id='',
                                    grupos_rendicion=grupos_rendicion_view,
+                                   grupos=_grupos_f,
+                                   grupo_por_nombre_os=_grupo_por_nombre_os,
                                    solo_a_cargo_os=False,
                                    resultados=(resultados_g or None),
                                    cargadas=cargadas_g,
@@ -1263,6 +1301,9 @@ def init_app(app):
                 .filter_by(activo=True)
                 .order_by(database.RendicionGrupo.nombre).all()
             ]
+        # Filtro client-side por grupo sobre los resultados (etiqueta por nombre
+        # de OS — buscar_recetas no devuelve observer_id).
+        _grupos_f, _grupo_por_nombre_os = _grupos_filtro_ctx()
         return render_template('devoluciones_buscar.html',
                                obras_sociales=obras_sociales,
                                vendedores=vendedores,
@@ -1275,6 +1316,8 @@ def init_app(app):
                                grupo_id=grupo_id or '',
                                grupo_nombre=grupo_nombre,
                                grupos_rendicion=grupos_rendicion_view,
+                               grupos=_grupos_f,
+                               grupo_por_nombre_os=_grupo_por_nombre_os,
                                os_nombre=os_nombre,
                                solo_a_cargo_os=solo_a_cargo_os,
                                resultados=resultados,

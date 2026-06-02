@@ -176,12 +176,22 @@
       <input type="hidden" name="nro_presentacion" value="{{ nro_presentacion }}">
       <input type="hidden" name="lote_id" value="{{ lote_id }}">
 
-      {# Filtro client-side: matchea contra el texto visible de cada fila
-         (OS, comprobante, productos, operador, fechas, importes). #}
-      <div class="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-2 flex-wrap">
+      {# Filtros client-side: dropdown de tipo de rendición (grupo) +
+         search libre. Combinan AND: una fila se ve si pasa los dos. #}
+      <div class="px-3 py-2 border-b border-gray-200 bg-gray-50 flex items-center gap-3 flex-wrap">
+        <label class="text-xs uppercase font-semibold text-gray-500">Tipo de rendición</label>
+        <select id="grupo-filter"
+                class="border border-gray-300 rounded px-2 py-1 text-sm">
+          <option value="">— Todos —</option>
+          {% for g in grupos %}
+          <option value="{{ g.id }}">{{ g.nombre }}</option>
+          {% endfor %}
+          <option value="__sin__">— Sin grupo —</option>
+        </select>
+        <span class="text-gray-300">|</span>
         <input type="text" id="row-filter"
                placeholder="🔎 Filtrar recetas (OS, comprobante, producto, operador…)"
-               class="border border-gray-300 rounded px-2 py-1 text-sm w-80">
+               class="border border-gray-300 rounded px-2 py-1 text-sm w-72">
         <span id="row-filter-count" class="text-xs text-gray-600"></span>
         <button type="button" id="row-filter-clear"
                 class="text-xs text-gray-500 hover:text-gray-800 underline hidden">limpiar</button>
@@ -195,6 +205,7 @@
               <th class="px-2 py-2 text-left">Operador</th>
               <th class="px-2 py-2 text-left">Comprobante</th>
               <th class="px-2 py-2 text-left">Obra Social</th>
+              <th class="px-2 py-2 text-left" title="Tipo de rendición (grupo de OS)">Tipo</th>
               <th class="px-2 py-2 text-left">Productos</th>
               <th class="px-2 py-2 text-right">A cargo OS</th>
               <th class="px-2 py-2 text-right">Total</th>
@@ -214,7 +225,9 @@
                o "en tu poder" (no rendida). readonly = ya rendida/cambiada. #}
             {% set cg = cargadas.get(r.id_operacion) %}
             {% set editable = (not cg) or cg.editable %}
-            <tr class="{% if not editable %}bg-gray-50 opacity-70{% else %}hover:bg-gray-50{% endif %}">
+            {% set grp = grupo_por_nombre_os.get((r.obra_social or '').strip().upper()) %}
+            <tr class="{% if not editable %}bg-gray-50 opacity-70{% else %}hover:bg-gray-50{% endif %}"
+                data-grupo-id="{{ grp.id if grp else '' }}">
               <td class="px-2 py-2 align-top text-xs whitespace-nowrap">
                 {# Hidden de snapshot DENTRO de la celda (como hijos directos de
                    <tr> el navegador los saca de la tabla → no se enviaban). #}
@@ -228,6 +241,13 @@
               <td class="px-2 py-2 align-top text-xs">{{ r.operador_nombre or '—' }}</td>
               <td class="px-2 py-2 align-top text-xs font-mono">{{ r.comprobante or '—' }}</td>
               <td class="px-2 py-2 align-top text-xs">{{ r.obra_social }}</td>
+              <td class="px-2 py-2 align-top text-xs">
+                {% if grp %}
+                <span class="inline-block bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">{{ grp.nombre }}</span>
+                {% else %}
+                <span class="text-gray-400 italic">—</span>
+                {% endif %}
+              </td>
               <td class="px-2 py-2 align-top text-xs">
                 <ul class="space-y-0.5">
                   {% for it in r['items'] %}
@@ -393,38 +413,50 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 })();
 
-// Filtro client-side de filas: matchea contra el textContent de cada <tr>
-// (OS, comprobante, productos, operador, importes, fecha).
+// Filtro client-side combinado: dropdown de "Tipo de rendición" (grupo) +
+// texto libre. Una fila se ve si pasa los 2 filtros (AND).
 (function() {
   const inp = document.getElementById('row-filter');
-  if (!inp) return;
+  const grpSel = document.getElementById('grupo-filter');
+  if (!inp && !grpSel) return;
   const counter = document.getElementById('row-filter-count');
   const clearBtn = document.getElementById('row-filter-clear');
   const rows = () => [...document.querySelectorAll('#form-guardar tbody > tr')];
 
   function aplicar() {
-    const q = inp.value.trim().toLowerCase();
+    const q = (inp && inp.value.trim().toLowerCase()) || '';
+    const grp = grpSel ? grpSel.value : '';
     const all = rows();
     let visibles = 0;
-    if (!q) {
-      all.forEach(tr => tr.style.display = '');
-      visibles = all.length;
-    } else {
-      all.forEach(tr => {
-        const ok = tr.textContent.toLowerCase().includes(q);
-        tr.style.display = ok ? '' : 'none';
-        if (ok) visibles++;
-      });
-    }
+    all.forEach(tr => {
+      // Filtro grupo
+      let okGrp = true;
+      if (grp === '__sin__') {
+        okGrp = !tr.dataset.grupoId;  // sin grupo asignado
+      } else if (grp) {
+        okGrp = tr.dataset.grupoId === grp;
+      }
+      // Filtro texto
+      const okTxt = !q || tr.textContent.toLowerCase().includes(q);
+      const visible = okGrp && okTxt;
+      tr.style.display = visible ? '' : 'none';
+      if (visible) visibles++;
+    });
     if (counter) {
-      counter.textContent = q
+      counter.textContent = (q || grp)
         ? `${visibles} de ${all.length} visible(s)`
         : '';
     }
-    if (clearBtn) clearBtn.classList.toggle('hidden', !q);
+    if (clearBtn) clearBtn.classList.toggle('hidden', !q && !grp);
   }
-  inp.addEventListener('input', aplicar);
-  if (clearBtn) clearBtn.addEventListener('click', () => { inp.value = ''; aplicar(); inp.focus(); });
+  if (inp) inp.addEventListener('input', aplicar);
+  if (grpSel) grpSel.addEventListener('change', aplicar);
+  if (clearBtn) clearBtn.addEventListener('click', () => {
+    if (inp) inp.value = '';
+    if (grpSel) grpSel.value = '';
+    aplicar();
+    if (inp) inp.focus();
+  });
 })();
 
 // Validación antes de registrar el lote: TODAS las recetas deben estar

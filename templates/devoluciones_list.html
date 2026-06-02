@@ -163,6 +163,21 @@
     {% if q_presentacion or q_vendedor or q_estado %}
     <a href="{{ url_for('devoluciones_list') }}" class="px-3 py-1.5 rounded border border-gray-300 text-sm">Limpiar</a>
     {% endif %}
+    {# Filtro client-side "Tipo de rendición" (grupo de OS). Útil para
+       auditor: ver de un vendedor solo las recetas de "Esencial", etc. #}
+    {% if grupos %}
+    <div class="flex flex-col">
+      <label class="block text-[10px] uppercase font-bold text-[#555] mb-0.5">Tipo de rendición</label>
+      <select id="grupo-filter-list" onchange="filtrarPorGrupo()"
+              class="border border-gray-300 rounded px-2 py-1.5 text-sm">
+        <option value="">— Todos —</option>
+        {% for g in grupos %}
+        <option value="{{ g.id }}">{{ g.nombre }}</option>
+        {% endfor %}
+        <option value="__sin__">— Sin grupo —</option>
+      </select>
+    </div>
+    {% endif %}
     {# Procesar: oculta/muestra las ya despachadas (OK + resueltas) para
        enfocarse en lo que falta accionar. Toggle visual, no toca la DB. #}
     <button type="button" id="btn-procesar" onclick="toggleProcesar()"
@@ -183,6 +198,7 @@
           <th class="px-2 py-1.5 text-left">Op#</th>
           <th class="px-2 py-1.5 text-left">Receta</th>
           <th class="px-2 py-1.5 text-left">OS</th>
+          <th class="px-2 py-1.5 text-left" title="Tipo de rendición (grupo)">Tipo</th>
           <th class="px-2 py-1.5 text-right">OS $</th>
           <th class="px-2 py-1.5 text-left">Motivo</th>
           <th class="px-2 py-1.5 text-left">Obs.</th>
@@ -193,8 +209,10 @@
       </thead>
       <tbody class="divide-y divide-gray-200">
         {% for d in devoluciones %}
+        {% set _grp = grupo_por_nombre_os.get((d.obra_social_nombre or '').strip().upper()) %}
         <tr class="dev-row hover:bg-gray-50 {% if d.estado == 'descartada' %}opacity-60{% endif %}"
-            data-estado="{{ d.estado }}">
+            data-estado="{{ d.estado }}"
+            data-grupo-id="{{ _grp.id if _grp else '' }}">
           <td class="px-2 py-1.5">
             {% if d.estado == 'pendiente' %}
               <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">PEND.</span>
@@ -225,6 +243,13 @@
           <td class="px-2 py-1.5 text-xs font-mono">{{ d.id_operacion_observer }}</td>
           <td class="px-2 py-1.5 text-xs whitespace-nowrap">{{ d.fecha_operacion.strftime('%d/%m/%y') if d.fecha_operacion else '—' }}</td>
           <td class="px-2 py-1.5 text-xs">{{ d.obra_social_nombre or '—' }}</td>
+          <td class="px-2 py-1.5 text-xs">
+            {% if _grp %}
+            <span class="inline-block bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-semibold whitespace-nowrap">{{ _grp.nombre }}</span>
+            {% else %}
+            <span class="text-gray-300 italic">—</span>
+            {% endif %}
+          </td>
           <td class="px-2 py-1.5 text-xs text-right font-mono">{{ '%.2f'|format(d.importe_a_cargo_os) if d.importe_a_cargo_os else '—' }}</td>
           <td class="px-2 py-1.5 text-xs">{{ d.motivo.nombre if d.motivo else '—' }}</td>
           <td class="px-2 py-1.5 text-xs max-w-xs">
@@ -358,20 +383,28 @@
     </form>
   </div>
   <script>
-    // Procesar: toggle que oculta las filas ya despachadas (OK + resueltas)
-    // para enfocarse en lo que falta accionar. No toca la DB.
+    // Filtros client-side combinados (AND):
+    //  - Procesar: toggle que oculta las filas ya despachadas (OK + resueltas)
+    //  - Grupo: dropdown "Tipo de rendición" (data-grupo-id por fila)
     let _procesarOn = false;
+    function _aplicarFiltrosLista() {
+      const sel = document.getElementById('grupo-filter-list');
+      const grupo = sel ? sel.value : '';
+      document.querySelectorAll('.dev-row').forEach(tr => {
+        const est = tr.dataset.estado;
+        const gid = tr.dataset.grupoId || '';
+        let visible = true;
+        if (_procesarOn && (est === 'ok' || est === 'resuelta')) visible = false;
+        if (grupo === '__sin__' && gid) visible = false;
+        else if (grupo && grupo !== '__sin__' && gid !== grupo) visible = false;
+        tr.style.display = visible ? '' : 'none';
+      });
+    }
+    function filtrarPorGrupo() { _aplicarFiltrosLista(); }
     function toggleProcesar() {
       _procesarOn = !_procesarOn;
       const btn = document.getElementById('btn-procesar');
-      document.querySelectorAll('.dev-row').forEach(tr => {
-        const est = tr.dataset.estado;
-        if (_procesarOn && (est === 'ok' || est === 'resuelta')) {
-          tr.style.display = 'none';
-        } else {
-          tr.style.display = '';
-        }
-      });
+      _aplicarFiltrosLista();
       if (_procesarOn) {
         btn.textContent = 'Ver todas';
         btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
