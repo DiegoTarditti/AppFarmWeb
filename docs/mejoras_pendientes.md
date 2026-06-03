@@ -57,6 +57,14 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
+## ⏳ Pendiente — Gap de marcas: streaming real del web search (2026-06-03)
+
+El informe `/informes/lab-gap-marcas` (web search de Claude) tiene hoy un **teatro animado** (pasos simulados + fuentes reales en stagger) mientras procesa. Pendiente: **streaming real** (SSE) que muestre EN VIVO lo que Claude hace — cada `server_tool_use` (query que busca) y `web_search_tool_result` (página que lee) a medida que ocurren, fuente por fuente. Es el efecto "esto es una locura" porque es genuino.
+
+Implementación: convertir `POST /informes/lab-gap-marcas/recopilar` a `Response(generator, mimetype='text/event-stream')` usando `client.messages.stream()` con la web_search tool; el generator emite eventos (`🔍 buscó: <query>`, `📄 leyó: <url>`) que el front consume con fetch+ReadableStream y pinta en el modal. Caveats: SSE ocupa un worker gunicorn durante el stream (OK para uso interno); solo aplica en la 1ª búsqueda de cada lab (las siguientes vienen del caché, instantáneas).
+
+---
+
 ## ⏳ Pendiente — Transferencias: calcular según presentación (unidades vs cajas) (2026-05-23)
 
 **Problema**: en `/transferencias` las cantidades (stock, venta, sugerido) están en

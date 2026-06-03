@@ -16,12 +16,12 @@ SYSTEM_GAP = """Sos un analista de compras de una farmacia argentina. Te paso, p
 
 Tu trabajo es detectar GAPS DE CAPTURA: marcas líderes (sobre todo ⭐) que la farmacia vende poco o NADA y que debería incorporar/empujar, porque hay demanda nacional comprobada. No inventes números: usá solo los que te doy.
 
-Devolvé un análisis BREVE y ACCIONABLE en español rioplatense, texto plano con viñetas (sin encabezados markdown pesados, usá guiones):
+Devolvé un análisis BREVE y ACCIONABLE en español rioplatense, TEXTO PLANO con viñetas de guiones. NO uses markdown: nada de asteriscos para negrita (prohibido **texto**), ni encabezados con #, ni tablas. Solo guiones para las viñetas.
 1. Oportunidades urgentes: marcas ⭐ que NO vende (o vende muy poco) → las que más conviene incorporar ya.
-2. Dónde ya está bien parada (marcas que vende fuerte).
+2. Dónde ya está bien posicionado (marcas que vende fuerte).
 3. Recomendación concreta: qué pedir/negociar primero y por qué (priorizá por demanda nacional y por gap propio).
 
-Citá nombres de marcas y los números que te paso. No más de ~250 palabras. No repitas la tabla entera."""
+Dirigite al lector en masculino o neutro ("bien posicionado", "lo tenés cubierto"), nunca en femenino. Citá nombres de marcas y los números que te paso. No más de ~250 palabras. No repitas la tabla entera."""
 
 
 def _serializar_gap(data):
@@ -58,6 +58,9 @@ def _llamar(api_key, system, contenido, model, max_tokens):
     texto = ''.join(b.text for b in resp.content if getattr(b, 'type', '') == 'text').strip()
     if not texto:
         raise ValueError('Claude no devolvió texto.')
+    # Defensa: limpiar markdown de negrita por si el modelo lo mete igual
+    # (el texto se muestra/exporta en plano → los ** quedarían literales).
+    texto = texto.replace('**', '').replace('__', '')
     return texto, resp.usage
 
 
