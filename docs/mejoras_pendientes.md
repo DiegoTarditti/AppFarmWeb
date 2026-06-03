@@ -6,7 +6,9 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 
 ---
 
-## ⏳ Pendiente — Adoptar Alembic para migraciones (2026-05-28)
+## ✅ HECHO — Adoptar Alembic para migraciones (2026-05-28 → completado 2026-06-02)
+
+> **HECHO** (PRs #145-147): baseline `alembic/versions/ae43763059ec_baseline_schema.py` con las 93 tablas (review 93/93 ✅ en `docs/alembic_baseline_review.md`), `init_db` adoptó Alembic vía `_alembic_sync()` (bootstrap stamp/upgrade), `stamp head` aplicado en Local + Render, drift reconciliado en ambas. Pendiente gradual (no urgente): migrar los `_pg_add_columns` inline a revisiones dedicadas y borrar el zombie handler cuando haya confianza.
 
 **Contexto / por qué**: el approach actual de migraciones (`Base.metadata.create_all` + `_pg_add_columns` con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` inline) es la causa raíz del wipe del 2026-05-28: una columna NOT NULL agregada al `configuracion` perdió su DEFAULT en algún punto, el INSERT inicial empezó a fallar, el "zombie pg_type handler" lo intentaba arreglar con `DROP TABLE ... CASCADE` y arrastró todos los masters. Mitigado en PR #131 con guard + `RESTRICT`, pero la fragilidad de fondo queda.
 
@@ -46,14 +48,40 @@ Doc maestro de mejoras. Vivo: se actualiza con cada idea/decisión. Cuando algo 
 - `data.py` con fan-out + caché TTL 5min + degradación por instancia + modo DEMO sintético. Logo + splash. 5 smoke tests. Validado contra Badia+Pieri reales (28k SKUs).
 - Config por env `NUCLEO_FARMACIAS` (JSON, **rol read-only por farmacia**, URLs no commiteadas) / carga `appnucleo/.env` si hay python-dotenv.
 
+### ✅ Hecho (2026-06-02/03)
+1. **Deploy**: ✅ servicio Render **manual** (fuera del Blueprint — ver `docs/lecciones_deploy_render.md` #9). Registro desde tabla `sucursales` (no env). En prod con Badia+Pieri reales.
+4. **Fase 3 — scoping por dueño**: ✅ login con usuarios (`NUCLEO_USERS`) + scoping por farmacia (PR #143).
+5. **Visual ("caer los calzones")**: ✅ count-up, mapa de calor, drill-down, comparativa A vs B, animaciones de entrada (PR #142).
+
 ### ⏳ Pendiente — cómo sigue
-1. **Deploy**: subirla como **servicio Render propio** (`gunicorn 'appnucleo.app:create_app()'`), con `NUCLEO_FARMACIAS` + rol Postgres read-only por farmacia. Sumar Grassi + Cappone al registro cuando estén.
 2. **Fase 1 — dims médico (matrícula) + obra social**: no salen de `product_analytics` (necesitan `obs_ventas_detalle`). Resolverlas con **edge-ETL**: cada localhost prepara un feed normalizado (claves naturales) y lo pushea a un **warehouse propio del Núcleo** → el Núcleo consulta local, sin fan-out en vivo. (OS/droga necesitan tabla de normalización de nombres.)
 3. **Fase 2 — pedidos grupales**: se crean en las apps locales (tabla `pedido_grupal` taggeable) y el Núcleo los **consolida** (mantiene al Núcleo read-only).
-4. **Fase 3 — scoping por dueño**: cada dueño ve su farmacia; auth de grupo.
-5. **Visual ("caer los calzones")** en la pantalla grande: drill-down al clickear farmacia/lab, mapa de calor de cobertura, comparativa lado a lado, animación de entrada de los números.
+- **Endurecer**: rol Postgres read-only por farmacia (hoy las url_externa usan owner). Sumar Grassi + Cappone al registro `sucursales` cuando estén.
 
 **Audiencia**: Diego + dueños (por ahora pocos). Ver memoria `project_appnucleo`.
+
+---
+
+## ⏳ Pendiente — Deduplicar modal de gráfico en order_detail.html (2026-06-03)
+
+**Detectado** en auditoría de calidad. `templates/order_detail.html` (líneas ~2630-2797) tiene su **propia copia inline** del modal de gráfico histórico (`openChart` + `renderHistChart` + `closeHistChart` + HTML del modal), ~90 líneas que duplican el partial `templates/_grafico_historico.html` (que ya usan 10+ pantallas vía `{% include %}`).
+
+**Por qué NO se hizo en el quality pass**: la copia de order_detail NO es idéntica, tiene 2 variantes a preservar:
+1. `CHART_BTN` con **resolución de pack EAN** (`MODULO_PACKS[ean] → ean_unidad`): grafica el EAN unidad, no el pack.
+2. **Botón extra de historial de precios** (`/precios/${ean}`).
+Además la versión inline de `renderHistChart` es light-hardcoded (el partial es theme-aware, funcionaría igual en light). El modal usa `z-50` vs `z-[100]` del partial.
+
+**Cómo hacerlo seguro**: extender el partial para parametrizar CHART_BTN (ej. `window.CHART_EAN_RESOLVER` para el pack + flag de botón de precios) y reemplazar el inline por el include. Como el partial lo usan 10+ pantallas y NO hay tests de frontend, requiere **sesión dedicada con la app corriendo** y verificación manual del gráfico en order_detail + las otras pantallas. order_detail es del módulo OS (premium) → cuidado.
+
+---
+
+## ⏳ Pendiente — Seguimiento de pedidos: etapa "Factura" sin implementar (2026-06-03)
+
+**Detectado** en auditoría de calidad. En `routes/compras_dia.py` (líneas ~2279, 2348, 2358) el pipeline de seguimiento de pedidos tiene la etapa **Factura hardcodeada a `False`** con 3 `TODO`:
+- `etapa_factura` siempre `False` (nunca se marca como facturado).
+- Falta **vincular el pedido con `Invoice`** y cruzar con `InvoiceItem` por droguería + fecha.
+
+**Qué falta**: implementar el cruce pedido↔factura (por droguería + fecha + ítems) para que la etapa Factura refleje la realidad. Hoy la UI muestra esa etapa siempre incompleta sin indicador de que es una feature a medio hacer.
 
 ---
 

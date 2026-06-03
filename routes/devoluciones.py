@@ -14,7 +14,7 @@ Flow:
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from flask import flash, jsonify, redirect, render_template, request, url_for
+from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
@@ -372,8 +372,8 @@ def init_app(app):
             try:
                 vendedores = observer_source.listar_vendedores(solo_habilitados=False)
                 vendedor_id, vendedor_nombre = _vendedor_sugerido_actual(vendedores)
-            except Exception:
-                pass
+            except Exception as e:
+                current_app.logger.warning('No se pudo resolver vendedor sugerido (ObServer): %s', e)
 
         with database.get_db() as session:
             existe = (session.query(database.RendicionLote)
@@ -1416,8 +1416,9 @@ def init_app(app):
         try:
             for v in observer_source.listar_vendedores(solo_habilitados=False):
                 vendedor_name_by_id[v['id_usuario']] = v['nombre']
-        except Exception:
-            pass  # si ObServer no responde, guardamos solo UUID sin nombre
+        except Exception as e:
+            # si ObServer no responde, guardamos solo UUID sin nombre
+            current_app.logger.warning('Cache de vendedores vacío (ObServer no respondió): %s', e)
 
         n_creadas = 0
         n_rendidas = 0

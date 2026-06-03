@@ -338,6 +338,25 @@ def _normalizar_nombre_entidad(nombre):
     return s
 
 
+def buscar_laboratorio_por_nombre(session, nombre, excluir_id=None):
+    """Busca un Laboratorio por nombre normalizado (case-insensitive, sin
+    acentos, sin sufijos societarios; ver `_normalizar_nombre_entidad`).
+    Devuelve el primer match o None. NO crea ni modifica nada.
+
+    excluir_id: ignora ese id (para chequear colisión al renombrar OTRO lab).
+    """
+    norm = _normalizar_nombre_entidad(nombre)
+    if not norm:
+        return None
+    q = session.query(database.Laboratorio)
+    if excluir_id is not None:
+        q = q.filter(database.Laboratorio.id != excluir_id)
+    for c in q.all():
+        if _normalizar_nombre_entidad(c.nombre) == norm:
+            return c
+    return None
+
+
 def get_or_create_laboratorio(session, nombre, observer_id=None, activo=True):
     """Devuelve un Laboratorio existente o crea uno nuevo.
 
@@ -363,15 +382,12 @@ def get_or_create_laboratorio(session, nombre, observer_id=None, activo=True):
         if existente:
             return existente
     # 2. Match por nombre normalizado (defensa contra variantes "Roemmers" / "Roemmers S.A." / "ROEMMERS")
-    norm_buscado = _normalizar_nombre_entidad(nombre)
-    if norm_buscado:
-        candidatos = session.query(database.Laboratorio).all()
-        for c in candidatos:
-            if _normalizar_nombre_entidad(c.nombre) == norm_buscado:
-                # Si el existente no tiene observer_id pero el nuevo sí, asignárselo
-                if observer_id is not None and not c.observer_id:
-                    c.observer_id = observer_id
-                return c
+    c = buscar_laboratorio_por_nombre(session, nombre)
+    if c:
+        # Si el existente no tiene observer_id pero el nuevo sí, asignárselo
+        if observer_id is not None and not c.observer_id:
+            c.observer_id = observer_id
+        return c
     # 3. No existe → crear
     nuevo = database.Laboratorio(nombre=nombre, observer_id=observer_id, activo=activo)
     session.add(nuevo)

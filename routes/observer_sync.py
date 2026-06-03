@@ -257,7 +257,7 @@ def _contar_tablas_locales(tablas):
     with database.get_db() as session:
         for t in tablas:
             try:
-                row = session.execute(_text(f'SELECT COUNT(*) FROM {t}')).fetchone()
+                row = session.execute(_text(f'SELECT COUNT(*) FROM "{t}"')).fetchone()
                 out[t] = int(row[0]) if row else 0
             except Exception:
                 out[t] = None  # tabla no existe en local
@@ -282,7 +282,7 @@ def _contar_tablas_render(tablas):
             with conn.cursor() as cur:
                 for t in tablas:
                     try:
-                        cur.execute(f'SELECT COUNT(*) FROM {t}')
+                        cur.execute(f'SELECT COUNT(*) FROM "{t}"')
                         row = cur.fetchone()
                         out[t] = int(row[0]) if row else 0
                     except Exception:
