@@ -2,71 +2,294 @@
 {% set nav_active = "informes" %}
 {% block title %}Gap de captura por marca — Informes{% endblock %}
 {% block body_class %}theme-emerald{% endblock %}
-{% block extra_head %}{% include '_lab_ref_styles.html' %}{% endblock %}
+{% block extra_head %}{% include '_lab_ref_styles.html' %}
+<style>
+.gap-spin{width:18px;height:18px;border:2px solid var(--ds-line);border-top-color:var(--ds-mint);border-radius:50%;animation:gapSpin .7s linear infinite;flex-shrink:0;}
+@keyframes gapSpin{to{transform:rotate(360deg);}}
+.gap-dot{color:var(--ds-mint);animation:gapPulse 1s ease-in-out infinite;}
+@keyframes gapPulse{0%,100%{opacity:.3;}50%{opacity:1;}}
+@keyframes gapFade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+</style>
+{% endblock %}
 
 {% block main %}
 <div class="flex-1 overflow-auto">
 <div class="lr-page">
     {% set titulo = 'Gap de captura por marca estrella' %}
-    {% set subtitulo = '¿Cuánto vendés de las marcas líderes nacionales del lab?' %}
+    {% set subtitulo = '¿Cuánto vendés de las marcas líderes del lab? (datos vía web search)' %}
     {% set icono = '🎯' %}
     {% set endpoint = 'informe_lab_gap_marcas' %}
-    {% set analizar_endpoint = 'informe_lab_gap_marcas_analizar' %}
+    {# Header compartido: solo aporta el dropdown (data=None y sin analizar_endpoint
+       → no muestra los botones del flujo viejo). El flujo de 2 pasos vive acá abajo. #}
     {% include '_lab_ref_header.html' %}
+
+    <label class="no-print" style="display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ds-text-mute);cursor:pointer;margin:-2px 0 10px;user-select:none;">
+        <input type="checkbox" id="gap-demo-toggle" style="accent-color:var(--ds-mint);width:15px;height:15px;">
+        🎬 Mostrar el proceso completo (modo demo)
+    </label>
 
     {% if not lab_id %}
     <div class="lr-empty"><p style="font-size:24px;">🧪</p><p>Elegí un laboratorio.</p></div>
-    {% elif not data %}
-    <div class="lr-empty"><p style="font-size:24px;">📭</p><p>No hay dataset de referencia para este laboratorio.</p></div>
     {% else %}
-    {% if data.nota %}<div class="lr-note">{{ data.nota }}</div>{% endif %}
-
-    <div class="lr-kpis">
-        <div class="lr-kpi"><div class="lbl">Marcas del portfolio</div><div class="val">{{ data.marcas|length }}</div></div>
-        <div class="lr-kpi"><div class="lbl">Unidades 12m (todas)</div><div class="val mint">{{ '{:,}'.format(data.total_u12m).replace(',', '.') }}</div></div>
-        <div class="lr-kpi"><div class="lbl">$ 12m (todas)</div><div class="val mint">$ {{ '{:,.0f}'.format(data.total_monto).replace(',', '.') }}</div></div>
-        {% set sin_vender = data.marcas | rejectattr('vende') | list | length %}
-        <div class="lr-kpi"><div class="lbl">Marcas sin vender</div><div class="val {% if sin_vender > 0 %}warn{% endif %}">{{ sin_vender }}</div></div>
+    <div id="gap-start" class="lr-empty">
+        <p style="font-size:24px;">🔎</p>
+        <p>Recopilá las marcas estrella de este laboratorio con <b>web search de Claude</b>,
+           revisá las fuentes, y después generá el análisis de gap contra tus ventas.</p>
+        <button type="button" class="lr-print-btn" id="gap-recopilar-btn"
+                onclick="gapRecopilar(false)">🔎 Recopilar datos del lab</button>
     </div>
-
-    <div class="lr-card">
-        <table class="lr-table">
-            <thead>
-                <tr>
-                    <th class="left">Marca</th>
-                    <th class="left">Molécula</th>
-                    <th class="left">Indicación</th>
-                    <th class="center" title="Entre los 10 medicamentos más vendidos del país (IQVIA)">Top 10 país</th>
-                    <th title="Productos de tu catálogo que matchean la marca">Prod.</th>
-                    <th title="Unidades vendidas en 12m">u 12m</th>
-                    <th title="Promedio mensual">u/mes</th>
-                    <th title="Monto vendido en 12m">$ 12m</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for m in data.marcas %}
-                <tr class="{% if not m.vende %}lr-novende{% endif %}">
-                    <td class="left" style="font-weight:600;">{{ m.marca }}</td>
-                    <td class="left muted">{{ m.molecula }}</td>
-                    <td class="left muted" style="font-size:11px;">{{ m.indicacion }}</td>
-                    <td class="center">{% if m.top10_nacional %}<span class="lr-star">⭐</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-                    <td class="muted">{{ m.n_productos }}</td>
-                    <td>
-                        {% if m.vende %}<b>{{ '{:,}'.format(m.u12m).replace(',', '.') }}</b>
-                        {% else %}<span class="lr-tag no">no vendés</span>{% endif %}
-                    </td>
-                    <td class="muted">{{ m.u_mensual if m.vende else '—' }}</td>
-                    <td>{% if m.vende %}${{ '{:,.0f}'.format(m.monto).replace(',', '.') }}{% else %}—{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-    <p style="font-size:11px; color:var(--ds-text-mute); margin-top:10px;">
-        ⭐ = entre los 10 más vendidos del país. Marcas atenuadas = sin ventas en 12m
-        (oportunidad de captura si tienen demanda local).
-    </p>
+    <div id="gap-out" style="display:none;"></div>
     {% endif %}
 </div>
 </div>
+
+<script>
+const GAP_RECOPILAR_URL = "{{ url_for('informe_lab_gap_marcas_recopilar') }}";
+const GAP_ANALIZAR_URL  = "{{ url_for('informe_lab_gap_marcas_analizar') }}";
+const GAP_LAB_ID = {{ lab_id if lab_id else 'null' }};
+let GAP_FUENTES = [], GAP_NOMBRE = '', GAP_MARCAS = [], GAP_FECHA = '';
+
+function _esc(s){ return String(s==null?'':s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function _miles(n){ return Math.round(+n||0).toLocaleString('es-AR'); }
+function _pesos(n){ return '$ ' + _miles(n); }
+
+function _gapModal(){
+    let m = document.getElementById('gap-modal');
+    if (!m){
+        m = document.createElement('div'); m.id = 'gap-modal';
+        m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:24px;';
+        m.onclick = e => { if (e.target === m) m.remove(); };
+        document.body.appendChild(m);
+    }
+    return m;
+}
+
+function _gapFuentesHtml(fuentes){
+    if (!fuentes || !fuentes.length) return '<p class="muted" style="font-size:11px;">Sin fuentes citadas.</p>';
+    // stagger: cada fuente aparece de a una (animation-delay incremental)
+    return '<ol style="font-size:11px;margin:6px 0 0 16px;padding:0;">' + fuentes.map((f, i) =>
+        '<li style="margin-bottom:3px;animation:gapFade .4s both;animation-delay:'+(i*70)+'ms;">'
+        + '<a href="'+_esc(f.url)+'" target="_blank" rel="noopener" style="color:var(--ds-mint);">'
+        + _esc(f.titulo || f.url) + '</a></li>').join('') + '</ol>';
+}
+
+function _gapNombreSel(){
+    const sel = document.getElementById('lab-sel');
+    return (sel && sel.selectedOptions[0]) ? sel.selectedOptions[0].textContent.trim() : 'el laboratorio';
+}
+
+// Teatro de procesamiento: pasos animados mientras el web search está en vuelo.
+const _GAP_PASOS = [
+    '🔌 Conectando con la web…',
+    '🔍 Buscando las marcas estrella de {LAB}…',
+    '📚 Rastreando vademécum, IQVIA y prensa del sector…',
+    '🏆 Identificando líderes del ranking nacional…',
+    '🧩 Estructurando resultados y citando fuentes…',
+];
+let _gapTeatroTimer = null;
+
+function _gapTeatro(nombre){
+    const pasos = _GAP_PASOS.map(p => p.replace('{LAB}', _esc(nombre)));
+    _gapModal().innerHTML = '<div style="background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:12px;max-width:480px;width:100%;padding:24px 28px;color:var(--ds-text);">'
+        + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;"><div class="gap-spin"></div>'
+        + '<b style="font-size:14px;">Investigando con IA…</b></div>'
+        + '<div id="gap-teatro" style="font-size:13px;line-height:2.1;"></div></div>';
+    const cont = document.getElementById('gap-teatro');
+    let i = 0;
+    (function next(){
+        if (i > 0){ const prev = cont.children[i-1]; if (prev) prev.innerHTML = '<span style="color:var(--ds-mint);">✓</span> ' + prev.dataset.txt; }
+        if (i < pasos.length){
+            const div = document.createElement('div');
+            div.dataset.txt = pasos[i];
+            div.style.animation = 'gapFade .4s both';
+            div.innerHTML = '<span class="gap-dot">●</span> ' + pasos[i];
+            cont.appendChild(div); i++;
+            _gapTeatroTimer = setTimeout(next, 1100);
+        }
+    })();
+}
+function _gapTeatroStop(){ if (_gapTeatroTimer){ clearTimeout(_gapTeatroTimer); _gapTeatroTimer = null; } }
+
+// Modo demo (persistente): teatro completo (~6s, todos los pasos) vs directo.
+const _GAP_TEATRO_FULL = _GAP_PASOS.length * 1100 + 600;
+function _gapMinTeatro(){
+    return document.getElementById('gap-demo-toggle')?.checked ? _GAP_TEATRO_FULL : 700;
+}
+(function(){
+    const cb = document.getElementById('gap-demo-toggle');
+    if (!cb) return;
+    cb.checked = localStorage.getItem('gapDemo') === '1';
+    cb.addEventListener('change', () => localStorage.setItem('gapDemo', cb.checked ? '1' : '0'));
+})();
+
+// Tabla rica del cruce (marca · molécula · indicación · top10 · prod · u12m · u/mes · $12m).
+function _gapTablaRica(marcas){
+    const rows = (marcas||[]).map(m =>
+        '<tr class="'+(m.vende?'':'lr-novende')+'">'
+        +'<td class="left" style="font-weight:600;">'+_esc(m.marca)+'</td>'
+        +'<td class="left muted">'+_esc(m.molecula)+'</td>'
+        +'<td class="left muted" style="font-size:11px;">'+_esc(m.indicacion||'')+'</td>'
+        +'<td class="center">'+(m.top10_nacional?'<span class="lr-star">⭐</span>':'<span class="muted">—</span>')+'</td>'
+        +'<td class="muted">'+m.n_productos+'</td>'
+        +'<td>'+(m.vende?('<b>'+_miles(m.u12m)+'</b>'):'<span class="lr-tag no">no vendés</span>')+'</td>'
+        +'<td class="muted">'+(m.vende?m.u_mensual:'—')+'</td>'
+        +'<td>'+(m.vende?_pesos(m.monto):'—')+'</td></tr>').join('');
+    return '<div class="lr-card"><table class="lr-table"><thead><tr>'
+        +'<th class="left">Marca</th><th class="left">Molécula</th><th class="left">Indicación</th>'
+        +'<th class="center" title="Entre los 10 medicamentos más vendidos del país">Top 10 país</th>'
+        +'<th title="Productos de tu catálogo que matchean la marca">Prod.</th>'
+        +'<th title="Unidades 12m">u 12m</th><th title="Promedio mensual">u/mes</th>'
+        +'<th title="Monto 12m">$ 12m</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+function _gapKpis(data){
+    const marcas = data.marcas || [];
+    const sinVender = marcas.filter(m => !m.vende).length;
+    return '<div class="lr-kpis">'
+        + '<div class="lr-kpi"><div class="lbl">Marcas del portfolio</div><div class="val">'+marcas.length+'</div></div>'
+        + '<div class="lr-kpi"><div class="lbl">Unidades 12m (todas)</div><div class="val mint">'+_miles(data.total_u12m)+'</div></div>'
+        + '<div class="lr-kpi"><div class="lbl">$ 12m (todas)</div><div class="val mint">'+_pesos(data.total_monto)+'</div></div>'
+        + '<div class="lr-kpi"><div class="lbl">Marcas sin vender</div><div class="val '+(sinVender>0?'warn':'')+'">'+sinVender+'</div></div></div>';
+}
+
+async function gapRecopilar(forzar){
+    if (!GAP_LAB_ID) return;
+    if (!forzar && !confirm('Recopila las marcas del lab con web search de Claude.\nTarda ~10-25s y consume crédito (~5-15 centavos USD). ¿Continuar?')) return;
+    _gapTeatro(_gapNombreSel());
+    const t0 = Date.now();
+    try {
+        const r = await fetch(GAP_RECOPILAR_URL, {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({lab_id: GAP_LAB_ID, forzar: !!forzar}),
+        });
+        const d = await r.json();
+        _gapTeatroStop();
+        if (!d.ok){ const m = document.getElementById('gap-modal'); if (m) m.remove(); alert('Error: ' + (d.error || '?')); return; }
+        GAP_NOMBRE = d.nombre_lab || '';
+        GAP_FUENTES = d.fuentes || [];
+        GAP_MARCAS = d.marcas || [];
+        GAP_FECHA = d.fecha || '';
+        window.__gapEdad = d.edad_dias;
+        // Mínimo de teatro: completo en modo demo, breve en uso diario.
+        const min = _gapMinTeatro(), elapsed = Date.now() - t0;
+        setTimeout(() => _gapModalRevision(d), Math.max(0, min - elapsed));
+    } catch(e){ _gapTeatroStop(); const m = document.getElementById('gap-modal'); if (m) m.remove(); alert('Error de red: ' + e); }
+}
+
+function _gapModalRevision(d){
+    const marcas = d.marcas || [];
+    const rows = marcas.map(m =>
+        '<tr><td style="font-weight:600;">'+_esc(m.marca)+'</td><td class="muted">'+_esc(m.molecula)+'</td>'
+        +'<td class="center">'+(m.top10_nacional?'⭐':'<span class="muted">—</span>')+'</td></tr>').join('');
+    const fechaTxt = d.fecha ? (' · datos del '+_esc(d.fecha)) : '';
+    const viejo = (d.edad_dias || 0) >= 60;
+    const badge = (d.cacheado
+        ? '<span class="lr-tag" style="background:#14532d;color:#86efac;">cacheado'+fechaTxt+'</span>'
+        : '<span class="lr-tag">recién buscado (web)'+fechaTxt+'</span>')
+        + (viejo ? ' <span class="lr-tag" style="background:#7c2d12;color:#fdba74;">datos de hace '+d.edad_dias+' días — conviene re-buscar</span>' : '');
+    _gapModal().innerHTML = '<div style="background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:12px;max-width:680px;max-height:84vh;overflow-y:auto;padding:20px 24px;color:var(--ds-text);font-size:13px;">'
+        + '<h2 style="font-size:15px;margin:0 0 4px;">Datos recopilados — '+_esc(d.nombre_lab||'')+' '+badge+'</h2>'
+        + '<p class="muted" style="font-size:11px;margin:0 0 12px;">Revisá las marcas y las fuentes antes de generar el análisis.</p>'
+        + '<table class="lr-table" style="width:100%;"><thead><tr><th class="left">Marca</th><th class="left">Molécula</th><th class="center">Top 10 país</th></tr></thead><tbody>'
+        + (rows || '<tr><td colspan="3" class="muted">La búsqueda no devolvió marcas.</td></tr>') + '</tbody></table>'
+        + '<h3 style="font-size:12px;margin:16px 0 2px;">Fuentes</h3>' + _gapFuentesHtml(d.fuentes)
+        + '<div style="margin-top:18px;display:flex;gap:8px;justify-content:flex-end;">'
+        + '<button class="lr-print-btn" onclick="gapDescargarJSON()" title="Descargar marcas + links (JSON)">⬇ JSON</button>'
+        + '<button class="lr-print-btn" onclick="gapRecopilar(true)" title="Volver a buscar (ignora caché)">🔄 Re-buscar</button>'
+        + '<button class="lr-print-btn" onclick="gapProcesar()" '+(marcas.length?'':'disabled')+'>📊 Procesar análisis</button>'
+        + '<button class="lr-print-btn" onclick="document.getElementById(\'gap-modal\').remove()">Cerrar</button></div></div>';
+}
+
+async function gapProcesar(){
+    const m = document.getElementById('gap-modal');
+    if (m && m.firstChild) m.firstChild.innerHTML = '<p style="padding:32px;text-align:center;">📊 Cruzando con tus ventas y analizando…</p>';
+    try {
+        const r = await fetch(GAP_ANALIZAR_URL, {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({lab_id: GAP_LAB_ID}),
+        });
+        const d = await r.json();
+        if (!d.ok){ alert('Error: ' + (d.error || '?')); if (m) m.remove(); return; }
+        if (m) m.remove();
+        GAP_FUENTES = d.fuentes || GAP_FUENTES;
+        _gapRenderResultado(d);
+    } catch(e){ alert('Error de red: ' + e); if (m) m.remove(); }
+}
+
+// Renderiza el resultado EN LA PÁGINA (análisis + KPIs + tabla rica + fuentes).
+function _gapRenderResultado(d){
+    window.__gapTexto = d.analisis || '';
+    window.__gapData = d.data || {marcas:[]};
+    const data = window.__gapData;
+    const meta = d.tokens_in ? (d.tokens_in+'→'+d.tokens_out+' tok') : '';
+    const start = document.getElementById('gap-start');
+    if (start) start.style.display = 'none';
+    const out = document.getElementById('gap-out');
+    out.style.display = 'block';
+    out.innerHTML =
+        '<div class="lr-head" style="margin:4px 0 10px;"><h2 style="font-size:16px;margin:0;">Gap de captura — '+_esc(GAP_NOMBRE)+'</h2>'
+        + '<button type="button" class="lr-print-btn no-print" onclick="gapExportarPDF()">📄 Exportar PDF</button>'
+        + '<button type="button" class="lr-print-btn no-print" onclick="gapDescargarJSON()" title="Descargar marcas + links consultados (JSON)">⬇ JSON</button>'
+        + '<button type="button" class="lr-print-btn no-print" onclick="gapRecopilar(true)" title="Re-buscar y re-analizar">🔄 Rehacer</button>'
+        + '<span style="font-size:11px;color:var(--ds-text-mute);margin-left:auto;">'+(GAP_FECHA?('datos de mercado del '+_esc(GAP_FECHA)+' · '):'')+meta+'</span></div>'
+        + '<div class="lr-note" style="white-space:pre-wrap;line-height:1.6;">'+_esc(d.analisis)+'</div>'
+        + _gapKpis(data)
+        + _gapTablaRica(data.marcas)
+        + '<p style="font-size:11px;color:var(--ds-text-mute);margin-top:10px;">⭐ = entre los 10 más vendidos del país. '
+        + 'Filas atenuadas = sin ventas en 12m (oportunidad de captura). Prod. = productos de tu catálogo que matchean la marca.</p>'
+        + '<h3 style="font-size:12px;margin:16px 0 2px;">Fuentes de información</h3>' + _gapFuentesHtml(GAP_FUENTES);
+    out.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function gapDescargarJSON(){
+    const payload = {
+        laboratorio: GAP_NOMBRE,
+        datos_mercado_del: GAP_FECHA || null,
+        generado: new Date().toISOString(),
+        marcas: ((window.__gapData || {}).marcas || []).length ? window.__gapData.marcas : GAP_MARCAS,
+        fuentes: GAP_FUENTES || [],   // links de las páginas consultadas (titulo + url)
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'gap_' + (GAP_NOMBRE || 'lab').toLowerCase().replace(/[^a-z0-9]+/g, '_') + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function gapExportarPDF(){
+    const w = window.open('', '_blank');
+    if (!w){ alert('Permití las ventanas emergentes para exportar a PDF.'); return; }
+    const data = window.__gapData || {marcas:[]};
+    const filas = (data.marcas||[]).map(m =>
+        '<tr'+(m.vende?'':' class="nov"')+'><td class="l">'+_esc(m.marca)+'</td><td class="l">'+_esc(m.molecula)+'</td>'
+        +'<td class="l">'+_esc(m.indicacion||'')+'</td><td class="c">'+(m.top10_nacional?'⭐':'—')+'</td>'
+        +'<td class="c">'+m.n_productos+'</td><td class="r">'+(m.vende?_miles(m.u12m):'—')+'</td>'
+        +'<td class="r">'+(m.vende?m.u_mensual:'—')+'</td><td class="r">'+(m.vende?_pesos(m.monto):'—')+'</td></tr>').join('');
+    const cuerpo = '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Gap '+_esc(GAP_NOMBRE)+'</title>'
+        + '<style>body{font-family:system-ui,"Segoe UI",Arial,sans-serif;max-width:900px;margin:28px auto;padding:0 24px;color:#1a1a1a;line-height:1.55;font-size:12px;}'
+        + 'h1{font-size:18px;color:#0f5132;border-bottom:2px solid #16a34a;padding-bottom:8px;margin-bottom:4px;}'
+        + 'h2{font-size:13px;color:#0f5132;margin:22px 0 6px;}.meta{color:#666;font-size:11px;margin-bottom:16px;}'
+        + 'pre{white-space:pre-wrap;word-wrap:break-word;font-family:inherit;margin:0 0 8px;}'
+        + 'table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;}'
+        + 'th,td{border-bottom:1px solid #e0e0e0;padding:4px 6px;text-align:center;}'
+        + 'th{background:#f3f7f4;color:#0f5132;font-weight:600;}td.l,th.l{text-align:left;}td.r{text-align:right;}td.c{text-align:center;}'
+        + 'tr.nov td{color:#aaa;}ol{font-size:11px;padding-left:18px;}ol a{color:#0a58ca;word-break:break-all;}</style></head><body>'
+        + '<h1>Gap de captura — '+_esc(GAP_NOMBRE)+'</h1>'
+        + '<div class="meta">Análisis generado por IA (Claude + web search) · '+new Date().toLocaleString('es-AR')
+        + (GAP_FECHA ? ' · datos de mercado del '+_esc(GAP_FECHA) : '')+'</div>'
+        + '<pre>'+_esc(window.__gapTexto)+'</pre>'
+        + '<h2>Cruce con tus ventas (12 meses)</h2>'
+        + '<table><thead><tr><th class="l">Marca</th><th class="l">Molécula</th><th class="l">Indicación</th>'
+        + '<th>Top10</th><th>Prod.</th><th>u 12m</th><th>u/mes</th><th>$ 12m</th></tr></thead><tbody>'+filas+'</tbody></table>'
+        + '<h2>Fuentes de información</h2><ol>'
+        + (GAP_FUENTES||[]).map(f => '<li><a href="'+_esc(f.url)+'">'+_esc(f.titulo||f.url)+'</a></li>').join('')
+        + '</ol></body></html>';
+    w.document.write(cuerpo); w.document.close();
+    setTimeout(function(){ try { w.focus(); w.print(); } catch(e){} }, 250);
+}
+</script>
 {% endblock %}

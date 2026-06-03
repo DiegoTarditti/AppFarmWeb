@@ -11,6 +11,7 @@ Pendientes (próximas iteraciones):
 2. Drogas con un solo proveedor — alerta de dependencia.
 4. Presentaciones por droga — qué tamaños venden más.
 """
+import json
 from datetime import date
 
 from flask import jsonify, render_template, request
@@ -96,6 +97,20 @@ def _guardar_analisis_cache(clave, titulo, texto, usage=None):
     except Exception:
         import logging
         logging.getLogger(__name__).warning('no pude cachear análisis %s', clave, exc_info=True)
+
+
+def _friendly_api_error(e):
+    """Mapea una excepción de la API de Claude a un JSON 502 con mensaje claro."""
+    msg = str(e); low = msg.lower()
+    if 'credit balance' in low or 'insufficient' in low:
+        friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
+    elif 'invalid' in low and 'api' in low and 'key' in low:
+        friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
+    elif 'rate limit' in low or '429' in low:
+        friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
+    else:
+        friendly = f'Claude API: {msg}'
+    return jsonify({'ok': False, 'error': friendly}), 502
 
 
 def init_app(app):
@@ -275,20 +290,34 @@ def init_app(app):
                 data = funcion_analisis(session, lab_id)
         return render_template(template, labs_ref=labs_ref, lab_id=lab_id, data=data)
 
+    # ── Gap de marcas (8 labs, web search) ──
+    # Flujo en 2 pasos: (1) /recopilar → Claude+web search trae marcas+fuentes
+    # (cacheado por nombre normalizado del lab); el front muestra un modal con
+    # esos datos; (2) /analizar → cruza esas marcas vs ventas propias + prosa.
+    _GAP_WS_TTL_DIAS = 90  # los datos de mercado cacheados valen 90 días; después se re-buscan
+
+    def _clave_ws_data(nombre_lab):
+        from helpers import _normalizar_nombre_entidad
+        return f'gap_ws_data:{_normalizar_nombre_entidad(nombre_lab)}'[:80]
+
     @app.route('/informes/lab-gap-marcas')
     @login_required
     def informe_lab_gap_marcas():
-        """Informe — Gap de captura por marca estrella del lab."""
-        from helpers import analizar_gap_marcas
-        return _ctx_referencia(analizar_gap_marcas, 'informes_lab_gap_marcas.html')
+        """Informe — Gap de captura por marca estrella. Dropdown de 8 labs; el
+        análisis es on-demand por POST (no se corre en el GET)."""
+        import referencia_mercado
+        with database.get_db() as session:
+            disponibles = referencia_mercado.labs_gap_disponibles(session)
+        labs_ref = [{'id': d['observer_id'], 'nombre': d['nombre']} for d in disponibles]
+        lab_id = request.args.get('lab_id', type=int)
+        return render_template('informes_lab_gap_marcas.html',
+                               labs_ref=labs_ref, lab_id=lab_id, data=None)
 
-    @app.route('/informes/lab-gap-marcas/analizar', methods=['POST'])
+    @app.route('/informes/lab-gap-marcas/recopilar', methods=['POST'])
     @login_required
-    def informe_lab_gap_marcas_analizar():
-        """Análisis IA del gap de captura de un lab (recalcula data + Claude prosa)."""
+    def informe_lab_gap_marcas_recopilar():
+        """PASO 1 — recopila marcas estrella del lab vía web search (cacheado)."""
         import os
-
-        from helpers import analizar_gap_marcas
         api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
         if not api_key:
             return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
@@ -297,33 +326,107 @@ def init_app(app):
             lab_id = int(body.get('lab_id'))
         except (TypeError, ValueError):
             return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        forzar = bool(body.get('forzar'))
         with database.get_db() as session:
-            data = analizar_gap_marcas(session, lab_id)
-        if not data:
-            return jsonify({'ok': False, 'error': 'No hay dataset de referencia para ese lab.'}), 400
-        from services import referencia_ia
+            lab = session.get(ObsLaboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio inexistente.'}), 404
+            nombre = lab.descripcion
+        clave = _clave_ws_data(nombre)
+        if not forzar:
+            with database.get_db() as s:
+                row = s.get(database.AnalisisIaCache, clave)
+            if row and row.texto:
+                edad = (database.now_ar() - row.creado_en).days if row.creado_en else None
+                vencido = edad is not None and edad > _GAP_WS_TTL_DIAS
+                if not vencido:
+                    try:
+                        cached = json.loads(row.texto)
+                        return jsonify({'ok': True, 'cacheado': True, 'nombre_lab': nombre,
+                                        'marcas': cached.get('marcas', []),
+                                        'fuentes': cached.get('fuentes', []),
+                                        'fecha': row.creado_en.strftime('%d/%m/%Y') if row.creado_en else None,
+                                        'edad_dias': edad})
+                    except (ValueError, TypeError):
+                        pass
+                # vencido → cae al web search de abajo (datos frescos)
+        from services import referencia_websearch
         try:
-            texto, usage = referencia_ia.analizar_gap_marcas(data, api_key)
-            _guardar_analisis_cache(f'lab_gap_marcas:{lab_id}',
-                                    f'Gap de captura — {data.get("nombre_lab") or ""}', texto, usage)
+            marcas, fuentes, usage = referencia_websearch.recopilar_marcas_estrella(nombre, api_key)
         except ImportError:
             return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
         except ValueError as e:
             return jsonify({'ok': False, 'error': str(e)}), 400
         except Exception as e:
-            msg = str(e); low = msg.lower()
-            if 'credit balance' in low or 'insufficient' in low:
-                friendly = 'Sin crédito en la cuenta de Anthropic. Cargá crédito y reintentá.'
-            elif 'invalid' in low and 'api' in low and 'key' in low:
-                friendly = 'La ANTHROPIC_API_KEY es inválida o fue revocada.'
-            elif 'rate limit' in low or '429' in low:
-                friendly = 'Rate limit alcanzado. Esperá unos segundos y reintentá.'
-            else:
-                friendly = f'Claude API: {msg}'
-            return jsonify({'ok': False, 'error': friendly}), 502
-        return jsonify({'ok': True, 'analisis': texto,
+            return _friendly_api_error(e)
+        _guardar_analisis_cache(clave, f'Marcas {nombre} (web)',
+                                json.dumps({'marcas': marcas, 'fuentes': fuentes}), usage)
+        return jsonify({'ok': True, 'cacheado': False, 'nombre_lab': nombre,
+                        'marcas': marcas, 'fuentes': fuentes,
+                        'fecha': database.now_ar().strftime('%d/%m/%Y'), 'edad_dias': 0,
                         'tokens_in': getattr(usage, 'input_tokens', None),
                         'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/lab-gap-marcas/analizar', methods=['POST'])
+    @login_required
+    def informe_lab_gap_marcas_analizar():
+        """PASO 2 — cruza las marcas recopiladas vs ventas propias + prosa Claude."""
+        import os
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+        if not api_key:
+            return jsonify({'ok': False, 'error': 'Falta ANTHROPIC_API_KEY en el servidor.'}), 400
+        body = request.get_json(silent=True) or {}
+        try:
+            lab_id = int(body.get('lab_id'))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'lab_id inválido.'}), 400
+        from helpers import cruzar_marcas_vs_ventas
+        with database.get_db() as session:
+            lab = session.get(ObsLaboratorio, lab_id)
+            if not lab:
+                return jsonify({'ok': False, 'error': 'Laboratorio inexistente.'}), 404
+            nombre = lab.descripcion
+            row = session.get(database.AnalisisIaCache, _clave_ws_data(nombre))
+            if not row or not row.texto:
+                return jsonify({'ok': False, 'error': 'Primero recopilá los datos del lab.'}), 400
+            try:
+                cached = json.loads(row.texto)
+            except (ValueError, TypeError):
+                return jsonify({'ok': False, 'error': 'Datos recopilados corruptos. Re-buscá.'}), 400
+            marcas = cached.get('marcas', [])
+            fuentes = cached.get('fuentes', [])
+            if not marcas:
+                return jsonify({'ok': False, 'error': 'No hay marcas recopiladas para este lab.'}), 400
+            data = cruzar_marcas_vs_ventas(session, lab_id, marcas, nombre)
+        from services import referencia_ia
+        try:
+            texto, usage = referencia_ia.analizar_gap_marcas(data, api_key, model='claude-sonnet-4-6')
+            _guardar_analisis_cache(f'lab_gap_marcas:{lab_id}',
+                                    f'Gap de captura — {nombre}', texto, usage)
+        except ImportError:
+            return jsonify({'ok': False, 'error': 'Paquete anthropic no instalado. Reiniciá el container.'}), 500
+        except ValueError as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+        except Exception as e:
+            return _friendly_api_error(e)
+        return jsonify({'ok': True, 'analisis': texto, 'data': data, 'fuentes': fuentes,
+                        'tokens_in': getattr(usage, 'input_tokens', None),
+                        'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/comparativa-drogas')
+    @login_required
+    def informe_comparativa_drogas():
+        """Comparativa por droga: cruza la inteligencia de mercado (marcas del
+        web search cacheadas por lab) con las ventas propias. Panel de labs +
+        última consulta arriba; multiselect (≤3) para refrescar vía web search."""
+        from services import mercado_drogas
+        with database.get_db() as session:
+            labs_estado = mercado_drogas.labs_cacheados_estado(session)
+            comparativa = mercado_drogas.comparativa_mercado_por_droga(session)
+            fuentes_lab = mercado_drogas.fuentes_por_lab(session)
+        return render_template('comparativa_drogas.html',
+                               labs_estado=labs_estado, comparativa=comparativa,
+                               fuentes_lab=fuentes_lab, ttl_dias=_GAP_WS_TTL_DIAS)
 
     @app.route('/informes/lab-ranking-nacional')
     @login_required

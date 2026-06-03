@@ -328,8 +328,8 @@ def _normalizar_nombre_entidad(nombre):
     ]
     for sufijo in sufijos:
         s = re.sub(sufijo + r'\s*$', '', s).strip()
-    # Quitar prefijos genéricos
-    prefijos = [r'^drogueria\s+', r'^drog\.?\s+', r'^laboratorio\s+', r'^lab\.?\s+']
+    # Quitar prefijos genéricos (singular y plural: "Laboratorios Bagó" → "bago")
+    prefijos = [r'^droguerias?\s+', r'^drog\.?\s+', r'^laboratorios?\s+', r'^lab\.?\s+']
     for pref in prefijos:
         s = re.sub(pref, '', s).strip()
     # Colapsar puntos, comas y espacios múltiples
@@ -1961,26 +1961,44 @@ def _ventana_12m_ym(hoy=None):
     return desde_y * 100 + desde_m, hasta
 
 
-def analizar_gap_marcas(session, lab_observer_id):
-    """Informe 1 — Gap de captura por marca estrella.
+def resolver_obs_lab_por_nombre(session, nombre):
+    """Devuelve el observer_id de un ObsLaboratorio cuyo nombre normalizado
+    matchea `nombre`, o None.
 
-    Para cada marca del portfolio de referencia del lab, cruza contra las
-    ventas propias (u12m + monto) de los productos de ese lab cuya descripción
-    matchea el patrón de la marca. Detecta marcas líderes a nivel país que la
-    farmacia vende poco o nada → oportunidad de captura.
-
-    Returns dict {nombre_lab, nota, total_u12m, total_monto, marcas: [...]} o None.
+    Normaliza con `_normalizar_nombre_entidad` (sin acentos, sin sufijos
+    societarios). El observer_id DIFIERE entre farmacias (Badia/Pieri tienen
+    DBs separadas), por eso siempre se resuelve por nombre en runtime.
     """
-    import referencia_mercado
-    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
-    if not ref:
+    norm = _normalizar_nombre_entidad(nombre)
+    if not norm:
         return None
+    for lab in (session.query(database.ObsLaboratorio.observer_id,
+                              database.ObsLaboratorio.descripcion)
+                .filter(database.ObsLaboratorio.fecha_baja.is_(None)).all()):
+        if _normalizar_nombre_entidad(lab.descripcion) == norm:
+            return lab.observer_id
+    return None
+
+
+def cruzar_marcas_vs_ventas(session, lab_observer_id, marcas, nombre_lab, nota=''):
+    """Cruza una lista de marcas contra las ventas propias del lab.
+
+    `marcas`: lista de dicts {marca, molecula, indicacion, top10_nacional,
+    match_pattern}. Para cada una busca los productos del lab cuya descripción
+    matchea `match_pattern` (ILIKE) y suma u12m + monto de la ventana 12m.
+
+    Returns dict {nombre_lab, nota, total_u12m, total_monto, marcas: [...]}.
+    Fuente de las marcas indistinta: dataset curado o web search.
+    """
     from sqlalchemy import func as _f
     desde, hasta = _ventana_12m_ym()
 
     marcas_out = []
     total_u, total_m = 0, 0.0
-    for marca, molecula, indicacion, top10, match in ref['marcas']:
+    for m in marcas:
+        match = (m.get('match_pattern') or m.get('marca') or '').strip()
+        if not match:
+            continue
         prods = (session.query(database.ObsProducto.observer_id)
                  .filter(database.ObsProducto.laboratorio_observer == lab_observer_id,
                          database.ObsProducto.descripcion.ilike(f'%{match}%'),
@@ -2000,18 +2018,36 @@ def analizar_gap_marcas(session, lab_observer_id):
         total_u += u12m
         total_m += monto
         marcas_out.append({
-            'marca': marca, 'molecula': molecula, 'indicacion': indicacion,
-            'top10_nacional': top10, 'n_productos': len(pids),
+            'marca': m.get('marca', ''), 'molecula': m.get('molecula', ''),
+            'indicacion': m.get('indicacion', ''),
+            'top10_nacional': bool(m.get('top10_nacional')),
+            'n_productos': len(pids),
             'u12m': u12m, 'u_mensual': round(u12m / 12.0, 1),
             'monto': round(monto, 2), 'vende': u12m > 0,
         })
     # Orden: top10 nacional primero, dentro de cada grupo por u12m desc.
-    marcas_out.sort(key=lambda m: (not m['top10_nacional'], -m['u12m']))
+    marcas_out.sort(key=lambda x: (not x['top10_nacional'], -x['u12m']))
     return {
-        'nombre_lab': ref['nombre'], 'nota': ref.get('nota', ''),
+        'nombre_lab': nombre_lab, 'nota': nota,
         'total_u12m': total_u, 'total_monto': round(total_m, 2),
         'marcas': marcas_out,
     }
+
+
+def analizar_gap_marcas(session, lab_observer_id):
+    """Informe 1 (dataset curado) — wrapper legacy. Convierte el dataset de
+    referencia a dicts y delega en `cruzar_marcas_vs_ventas`. None si no hay
+    dataset. (El flujo nuevo de gap-marcas usa web search; ver routes/informes.)
+    """
+    import referencia_mercado
+    ref = referencia_mercado.referencia_de_lab(lab_observer_id)
+    if not ref:
+        return None
+    marcas = [{'marca': mc, 'molecula': mol, 'indicacion': ind,
+               'top10_nacional': top10, 'match_pattern': match}
+              for mc, mol, ind, top10, match in ref['marcas']]
+    return cruzar_marcas_vs_ventas(session, lab_observer_id, marcas,
+                                   ref['nombre'], ref.get('nota', ''))
 
 
 def analizar_ranking_vs_nacional(session, lab_observer_id, limit=30):
