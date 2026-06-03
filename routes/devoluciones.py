@@ -432,29 +432,28 @@ def init_app(app):
                     .all())
 
         buf = BytesIO()
+        # Compacto: márgenes chicos + letra chica para meter muchas recetas/hoja.
         doc = SimpleDocTemplate(buf, pagesize=A4,
-                                leftMargin=1.5*cm, rightMargin=1.5*cm,
-                                topMargin=1.5*cm, bottomMargin=1.5*cm)
+                                leftMargin=0.9*cm, rightMargin=0.9*cm,
+                                topMargin=0.9*cm, bottomMargin=0.9*cm)
         styles = getSampleStyleSheet()
         title_st = ParagraphStyle('t', parent=styles['Heading1'],
-                                  fontSize=16, textColor=colors.HexColor('#1F2937'))
+                                  fontSize=12, spaceAfter=0, leading=14,
+                                  textColor=colors.HexColor('#1F2937'))
         meta_st = ParagraphStyle('m', parent=styles['Normal'],
-                                 fontSize=10, textColor=colors.HexColor('#4B5563'))
+                                 fontSize=7.5, leading=10, textColor=colors.HexColor('#4B5563'))
         elems = [
             Paragraph(f'Recibo de Rendición #{lote.nro}', title_st),
-            Spacer(1, 6),
+            Spacer(1, 2),
             Paragraph(
                 f'<b>Vendedor:</b> {lote.vendedor_nombre or "—"} · '
                 f'<b>Período:</b> {lote.periodo_desde.strftime("%d/%m/%Y") if lote.periodo_desde else "—"} → '
-                f'{lote.periodo_hasta.strftime("%d/%m/%Y") if lote.periodo_hasta else "—"}',
-                meta_st),
-            Spacer(1, 4),
-            Paragraph(
+                f'{lote.periodo_hasta.strftime("%d/%m/%Y") if lote.periodo_hasta else "—"} · '
                 f'<b>Etiqueta:</b> {lote.etiqueta or "—"} · '
                 f'<b>Estado:</b> {lote.estado.upper()} · '
                 f'<b>Total recetas:</b> {len(devs)}',
                 meta_st),
-            Spacer(1, 12),
+            Spacer(1, 6),
         ]
         # Tabla de recetas
         hdr = ['#', 'Fecha', 'OS', 'Op#', 'Motivo', 'Auditor', 'A cargo OS']
@@ -477,22 +476,26 @@ def init_app(app):
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F2937')),
             ('TEXTCOLOR',  (0, 0), (-1, 0), colors.HexColor('#F4C430')),
             ('FONTNAME',   (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE',   (0, 0), (-1, -1), 8),
+            ('FONTSIZE',   (0, 0), (-1, -1), 6.5),
+            ('LEFTPADDING',  (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ('TOPPADDING',   (0, 0), (-1, -1), 1.5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5),
             ('ALIGN',      (-1, 1), (-1, -1), 'RIGHT'),
-            ('GRID',       (0, 0), (-1, -1), 0.5, colors.HexColor('#D1D5DB')),
+            ('GRID',       (0, 0), (-1, -1), 0.4, colors.HexColor('#D1D5DB')),
             ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F9FAFB')]),
             ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FEF3C7')),
             ('FONTNAME',   (0, -1), (-1, -1), 'Helvetica-Bold'),
             ('VALIGN',     (0, 0), (-1, -1), 'TOP'),
         ]))
         elems.append(t)
-        elems.append(Spacer(1, 30))
-        # Espacio firmas
+        elems.append(Spacer(1, 14))
+        # Espacio firmas (compacto)
         firma_st = ParagraphStyle('f', parent=styles['Normal'],
-                                  fontSize=9, alignment=1)
+                                  fontSize=7.5, leading=10, alignment=1)
         tbl_firmas = Table([[
-            Paragraph('________________________<br/><br/>Entregó<br/>(firma y aclaración)', firma_st),
-            Paragraph('________________________<br/><br/>Recibió<br/>(firma y aclaración)', firma_st),
+            Paragraph('________________________<br/>Entregó (firma y aclaración)', firma_st),
+            Paragraph('________________________<br/>Recibió (firma y aclaración)', firma_st),
         ]], colWidths=[8*cm, 8*cm])
         elems.append(tbl_firmas)
         doc.build(elems)
@@ -1087,7 +1090,12 @@ def init_app(app):
                             'motivo_id': d.motivo_id, 'obs': d.observaciones or '',
                             'agregar_datos': ad, 'en_auditoria': d.en_auditoria,
                             'estado': d.estado,
-                            'editable': (not d.en_auditoria and d.estado == 'pendiente'),
+                            # Editable: la tiene el vendedor (pendiente) O fue
+                            # devuelta por el auditor (vuelve a corregir y re-rendir).
+                            'editable': (not d.en_auditoria and d.estado in ('pendiente', 'devuelta')),
+                            'devuelta': (d.estado == 'devuelta'),
+                            'auditor_motivo': d.auditor_motivo.nombre if d.auditor_motivo else None,
+                            'auditor_obs': d.auditor_observaciones or '',
                         }
                     q_m = _sg.query(database.MotivoDevolucion).filter_by(activo=True)
                     if rol_actual_get == 'rendicion':
@@ -1116,6 +1124,7 @@ def init_app(app):
                                    vendedor_id=vendedor_sugerido,
                                    obra_social_id='',
                                    grupo_id='',
+                                   grupo_sel=(request.args.get('grupo_id') or ''),
                                    grupos_rendicion=grupos_rendicion_view,
                                    grupos=_grupos_f,
                                    grupo_por_nombre_os=_grupo_por_nombre_os,
@@ -1132,7 +1141,11 @@ def init_app(app):
         # POST: buscar
         vendedor_id = (request.form.get('vendedor_id') or '').strip() or None
         obra_social_id = request.form.get('obra_social_id', type=int) or None
-        grupo_id = request.form.get('grupo_id', type=int) or None
+        # Tipo de rendición (obligatorio): un grupo (id) o "otras" (las OS que
+        # NO están en ningún grupo). Nunca se trae "todas" sin filtro.
+        grupo_raw = (request.form.get('grupo_id') or '').strip()
+        modo_otras = (grupo_raw == 'otras')
+        grupo_id = int(grupo_raw) if grupo_raw.isdigit() else None
         nro_presentacion = (request.form.get('nro_presentacion') or '').strip() or None
         desde_str = (request.form.get('desde') or '').strip()
         hasta_str = (request.form.get('hasta') or '').strip()
@@ -1150,9 +1163,12 @@ def init_app(app):
                       'matchee con un OperadorVenta.', 'error')
                 return redirect(url_for('devoluciones_buscar'))
 
-        # Resolver lista de OS a buscar. Prioridad: grupo > obra_social individual.
+        # Resolver lista de OS a buscar. Tipo de rendición OBLIGATORIO: un grupo,
+        # o "otras" (las OS que no están en ningún grupo). Prioridad: grupo >
+        # obra_social individual > otras.
         os_ids_buscar = []
         grupo_nombre = None
+        nombres_agrupadas = None   # set de nombres de OS de algún grupo (modo "otras")
         if grupo_id:
             with database.get_db() as _s:
                 grupo = _s.get(database.RendicionGrupo, grupo_id)
@@ -1168,9 +1184,18 @@ def init_app(app):
                 return redirect(url_for('devoluciones_buscar'))
         elif obra_social_id:
             os_ids_buscar = [obra_social_id]
+        elif modo_otras:
+            grupo_nombre = 'Otras (sin tipo)'
+            with database.get_db() as _s:
+                nombres_agrupadas = {(o.nombre_cached or '').strip().upper()
+                                     for o in _s.query(database.RendicionGrupoOS).all()
+                                     if o.nombre_cached}
 
-        if not vendedor_id and not os_ids_buscar:
-            flash('Seleccioná un vendedor, una obra social o un grupo.', 'error')
+        if not grupo_id and not obra_social_id and not modo_otras:
+            flash('Elegí un tipo de rendición, o "Otras (sin tipo)".', 'error')
+            return redirect(url_for('devoluciones_buscar'))
+        if modo_otras and not vendedor_id:
+            flash('Para "Otras (sin tipo)" necesitás un vendedor.', 'error')
             return redirect(url_for('devoluciones_buscar'))
         try:
             desde = datetime.strptime(desde_str, '%Y-%m-%d').date()
@@ -1206,6 +1231,18 @@ def init_app(app):
                             continue
                         vistos.add(key)
                         resultados.append(r)
+            elif modo_otras:
+                # "Otras": traer todas las del vendedor y descartar las que
+                # pertenecen a algún tipo (quedan solo las OS sin grupo).
+                resultados = observer_source.buscar_recetas(
+                    vendedor_uuid=vendedor_id,
+                    obra_social_id=None,
+                    desde=desde, hasta=hasta,
+                    solo_a_cargo_os=solo_a_cargo_os,
+                )
+                resultados = [r for r in resultados
+                              if (r.get('obra_social') or '').strip().upper()
+                              not in (nombres_agrupadas or set())]
             else:
                 # Solo vendedor sin OS — un solo call sin obra_social_id.
                 resultados = observer_source.buscar_recetas(
@@ -1289,8 +1326,12 @@ def init_app(app):
                         'agregar_datos': ad,
                         'en_auditoria': d.en_auditoria,
                         'estado': d.estado,
-                        # Editable solo si la tiene el vendedor (no rendida, pendiente).
-                        'editable': (not d.en_auditoria and d.estado == 'pendiente'),
+                        # Editable: la tiene el vendedor (pendiente) O fue devuelta
+                        # por el auditor → vuelve a corregir y re-rendir.
+                        'editable': (not d.en_auditoria and d.estado in ('pendiente', 'devuelta')),
+                        'devuelta': (d.estado == 'devuelta'),
+                        'auditor_motivo': d.auditor_motivo.nombre if d.auditor_motivo else None,
+                        'auditor_obs': d.auditor_observaciones or '',
                     }
 
         # Reload grupos para el dropdown del form en el render del POST.
@@ -1314,6 +1355,7 @@ def init_app(app):
                                vendedor_nombre=vendedor_nombre,
                                obra_social_id=obra_social_id or '',
                                grupo_id=grupo_id or '',
+                               grupo_sel=grupo_raw,
                                grupo_nombre=grupo_nombre,
                                grupos_rendicion=grupos_rendicion_view,
                                grupos=_grupos_f,
@@ -1434,7 +1476,9 @@ def init_app(app):
                 for d in (session.query(database.DevolucionReceta)
                           .filter(database.DevolucionReceta.id_operacion_observer.in_(_ids_int))
                           .filter(database.DevolucionReceta.estado != 'descartada').all()):
-                    if not d.en_auditoria and d.estado == 'pendiente':
+                    # Editable: pendiente (la tiene el vendedor) o devuelta por
+                    # el auditor (vuelve a corregirse). El resto no se toca.
+                    if not d.en_auditoria and d.estado in ('pendiente', 'devuelta'):
                         existentes[d.id_operacion_observer] = d
                     else:
                         no_editables.add(d.id_operacion_observer)
@@ -1468,6 +1512,13 @@ def init_app(app):
                     d.observaciones = obs
                     d.agregar_datos_json = ad_json
                     d.en_auditoria = es_rendida
+                    # Si venía "devuelta" y el operador la re-trabaja, vuelve al
+                    # ciclo limpio (pendiente) y se borra el cierre anterior.
+                    if d.estado == 'devuelta':
+                        d.estado = 'pendiente'
+                        d.nota_cierre = None
+                        d.cerrada_en = None
+                        d.cerrada_por = None
                     n_creadas += 1
                     if es_rendida:
                         n_rendidas += 1
