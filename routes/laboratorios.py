@@ -600,11 +600,30 @@ def init_app(app):
                     creadas += 1
             session.commit()
 
+            # Sync masivo a modulo_packs: pisar ean_unidad/cantidad de las
+            # filas existentes con el nuevo estado de pack_equivalencias.
+            # Sin esto, los módulos viejos quedan apuntando a las equivalencias
+            # anteriores hasta que se re-importen.
+            from sqlalchemy import text as _text
+            sync_res = session.execute(_text("""
+                UPDATE modulo_packs mp
+                SET ean_unidad = pe.ean_unidad,
+                    cantidad = pe.cantidad
+                FROM pack_equivalencias pe
+                WHERE mp.ean_pack = pe.ean_pack
+                  AND pe.laboratorio_id = :lab_id
+                  AND (mp.ean_unidad IS DISTINCT FROM pe.ean_unidad
+                       OR mp.cantidad IS DISTINCT FROM pe.cantidad)
+            """), {'lab_id': lab_id})
+            sincronizadas = sync_res.rowcount or 0
+            session.commit()
+
         partes = []
         if creadas: partes.append(f'{creadas} creadas')
         if actualizadas: partes.append(f'{actualizadas} actualizadas')
         if sin_cambio: partes.append(f'{sin_cambio} sin cambios')
         if vacias: partes.append(f'{vacias} filas vacías ignoradas')
+        if sincronizadas: partes.append(f'{sincronizadas} modulo_packs sincronizados')
         flash(', '.join(partes) or 'Sin cambios.',
               'success' if creadas or actualizadas else 'info')
         return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
@@ -664,6 +683,25 @@ def init_app(app):
                 session.commit()
         return redirect(url_for('lab_pack_equivalencias', lab_id=lab_id))
 
+    def _sync_modulo_packs_desde_equivalencia(session, eq):
+        """Sincroniza las filas ModuloPack con el mismo ean_pack al estado de
+        la equivalencia (ean_unidad + cantidad). Sin esto, editar la tabla de
+        pack_equivalencias dejaba modulo_packs desfasado: /modulo-packs y
+        /order/<id> seguían mostrando la equivalencia vieja. Idempotente.
+
+        Solo sincroniza campos que viven en ambas tablas (ean_unidad, cantidad).
+        Las descripciones se resuelven al render (no se duplican en modulo_packs).
+        """
+        from database import ModuloPack
+        if eq is None or not eq.ean_pack:
+            return 0
+        return (session.query(ModuloPack)
+                .filter(ModuloPack.ean_pack == eq.ean_pack)
+                .update({
+                    'ean_unidad': eq.ean_unidad,
+                    'cantidad': eq.cantidad,
+                }, synchronize_session=False))
+
     @app.route('/laboratorio/<int:lab_id>/pack-equivalencias/edit', methods=['POST'])
     def lab_pack_equivalencia_edit(lab_id):
         """Edición inline. Body JSON: {id, field, value}.
@@ -689,8 +727,13 @@ def init_app(app):
                     return {'error': 'cantidad inválida'}, 400
             else:
                 setattr(eq, field, (str(value).strip() or None) if value is not None else None)
+            # Propagar a las filas ModuloPack existentes para mantener
+            # /modulo-packs y /order/<id> consistentes con la tabla maestra.
+            synced = 0
+            if field in ('ean_unidad', 'cantidad'):
+                synced = _sync_modulo_packs_desde_equivalencia(session, eq)
             session.commit()
-        return {'ok': True}
+        return {'ok': True, 'synced_modulo_packs': synced}
 
     @app.route('/laboratorio/<int:lab_id>/ofertas-minimo/borrar-todas', methods=['POST'])
     def lab_ofertas_minimo_borrar_todas(lab_id):

@@ -1116,6 +1116,33 @@ def init_app(app):
             rot_media_min=cfg['rot_media_min'],
         )
 
+        # Override de ventana: si el lab usa packs (flujo Roemmers), el avg_monthly
+        # y la rotación se calculan con los últimos 3 meses (no los 12 default).
+        # Esto refleja la política del tipo PEDIDO_ROEMMERS (base_demanda=u3m).
+        # Hardcoded por usa_packs como acordamos — si más adelante hay varios
+        # tipos custom, se cambia a un lookup de tipo_pedido_config.
+        try:
+            from sqlalchemy import func as _func
+            from purchase_engine import rotation_index as _rot_idx
+            with database.get_db() as _s_lab:
+                _lab_row = _s_lab.query(database.Laboratorio).filter(
+                    _func.lower(database.Laboratorio.nombre) == laboratorio.lower()
+                ).first()
+                _usa_packs = bool(_lab_row and _lab_row.usa_packs)
+            if _usa_packs:
+                for _r in results:
+                    _v3 = (_r.get('ventas') or [])[-3:]
+                    if len(_v3) >= 1:
+                        _avg3 = sum(_v3) / float(len(_v3))
+                        _r['avg_monthly'] = round(_avg3, 1)
+                        _r['rotacion'] = _rot_idx(
+                            _avg3, cfg['rot_alta_min'], cfg['rot_media_min'])
+        except Exception as _e:
+            # No-fatal: si algo falla seguimos con la ventana 12m default.
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                'override u3m falló para lab=%s: %s', laboratorio, _e)
+
         periodo_str = f'{start_m:02d}/{start_y} - {mes:02d}/{anio}'
         farmacia_nom = current_user.nombre_completo or 'Farmacia'
 

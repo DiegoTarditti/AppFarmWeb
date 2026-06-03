@@ -650,7 +650,7 @@ const PRODUCT_PRICES  = {{ product_prices | tojson }};
 
 const MODULO_PACKS  = {};
 {% for mp in modulo_packs %}
-MODULO_PACKS["{{ mp.ean_pack }}"] = { ean_unidad: "{{ mp.ean_unidad }}", cantidad: {{ mp.cantidad }} };
+MODULO_PACKS["{{ mp.ean_pack }}"] = { ean_unidad: "{{ mp.ean_unidad }}", cantidad: {{ mp.cantidad }}, desc_unidad: {{ mp.desc_unidad | tojson }} };
 {% endfor %}
 const UNIT_TO_PACK = {};
 Object.entries(MODULO_PACKS).forEach(([ep, mp]) => {
@@ -1105,6 +1105,11 @@ function renderModulosRaw() {
                                  _moduloDescPctPonderado(modulesData[a]));
     }
 
+    // Track EAN unidad → primer módulo donde apareció. Usado para etiquetar
+    // REPETIDO en módulos posteriores: si lo cargás arriba, te avisa que
+    // restes mentalmente al elegir cantidades acá abajo. (Implementación
+    // simple — no recalcula saldo dinámico, solo señaliza.)
+    const _vistoEnMod = {};
     _idxOrden.forEach(mi => {
         const mod = modulesData[mi];
         const modId = `mod-${mi}`;
@@ -1128,6 +1133,13 @@ function renderModulosRaw() {
             const esPack = !!_pack;
             const unidadesPorSlot = _pack ? it.cant * _pack.cantidad : it.cant;
             const eanLookup = _pack ? _pack.ean_unidad : it.ean;
+            // REPETIDO badge: si el EAN unidad ya aparecio en un modulo anterior
+            // (segun _idxOrden), mostrar el chip ambar con el nombre del primer.
+            const _repetidoEn = _vistoEnMod[eanLookup];
+            const _repetidoBadge = _repetidoEn
+                ? `<span class="inline-block ml-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300" title="Ya cargaste este producto en: ${_repetidoEn}. Resta mentalmente lo ya pedido para no comprar de mas.">⚠ REPETIDO en ${_repetidoEn}</span>`
+                : '';
+            if (!_repetidoEn) _vistoEnMod[eanLookup] = mod.nombre;
             const cantPedida = pedidoQty[eanLookup] ?? 0;
             const rot = pedidoRot[eanLookup] || {};
             const rotBadge = rotBadgeHtml(rot.rotacion, rot.avg);
@@ -1158,7 +1170,7 @@ function renderModulosRaw() {
             }
             html += `<tr class="data-row" id="row-${mi}-${ii}" data-mi="${mi}" data-ii="${ii}">
                 <td class="px-2"></td>
-                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(eanLookup)}${ALFA_BTN(it.descripcion)}${it.descripcion}${equivLine}</td>
+                <td class="px-2 font-medium text-[#1e1e1e]">${CHART_BTN(eanLookup)}${ALFA_BTN(it.descripcion)}${it.descripcion}${_repetidoBadge}${equivLine}</td>
                 <td class="px-2 text-[#888] font-mono text-[10px]">${it.ean}</td>
                 <td class="px-2 text-center">${packBadge}</td>
                 <td class="px-2 text-right text-[#555]">${it.cant}</td>
@@ -1553,9 +1565,33 @@ function renderResumen() {
                  cant_oferta_min: d.cant_oferta_min, cant_nodeal: d.cant_nodeal,
                  cant_pedida: d.cant_pedida, total, saldo: d.cant_pedida - total };
     });
-    const total_prods = resumenAgrEans.length;
+    // Para Roemmers / pedidos con módulos: step 3 = SOLO saldos fuera de módulos.
+    // Los productos cubiertos solo por módulo (extra = oferta + sin_deal = 0)
+    // se ocultan por default. Toggle 'ver todo' los trae de vuelta.
+    const _showAll = !!window._showResumenAll;
+    const _eansVisibles = _showAll
+        ? resumenAgrEans
+        : resumenAgrEans.filter(ean => {
+            const d = resumenAgr[ean];
+            return (d.cant_oferta_min + d.cant_nodeal) > 0;
+        });
+    const _eansOcultos = resumenAgrEans.length - _eansVisibles.length;
+    const total_prods = _eansVisibles.length;
     const body = document.getElementById('resumen-body');
+    const _btnVerTodo = _eansOcultos > 0
+        ? `<button type="button" onclick="window._showResumenAll = !window._showResumenAll; renderResumen();"
+                   class="ml-3 text-[10px] font-semibold px-2 py-0.5 rounded ${_showAll ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-sky-100 text-sky-700 border border-sky-300'} hover:opacity-80"
+                   title="Por default solo se muestran productos con compra EXTRA fuera de módulos. Tocá para ver también los que se cubrieron por módulos.">
+            ${_showAll ? '✓ mostrando todo' : '👁 ver todo'} (${_eansOcultos} cubiertos solo por módulo)
+           </button>`
+        : '';
     let html = `
+    <div class="flex items-center gap-3 mb-3 no-print flex-wrap">
+        <p class="text-xs text-[#666] flex-1 min-w-[300px]">
+            <strong>Pedido extra</strong> — saldos fuera de módulos (lo que va por canal separado al proveedor).
+            ${_btnVerTodo}
+        </p>
+    </div>
     <div class="flex items-center gap-3 mb-3 no-print flex-wrap">
         <input type="text" id="resumen-filter" placeholder='Filtrar (multi-token: "400 sus" → ambos)'
                oninput="filterResumen()"
@@ -1573,21 +1609,12 @@ function renderResumen() {
         <span id="resumen-count" class="text-xs text-[#999]">${total_prods} productos</span>
     </div>
     <div class="overflow-x-auto">
-    <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:1000px">
+    <table class="w-full text-xs border-collapse" id="resumen-table" style="min-width:500px">
     <thead>
         <tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase tracking-wide text-[10px] sticky top-0 z-20 shadow-sm">
-            <th class="text-left px-2 py-2" style="min-width:150px">Producto</th>
-            <th class="text-left px-2 py-2" style="width:110px">EAN</th>
-            <th class="text-right px-2 py-2" style="width:65px" title="Stock actual ERP">Stock</th>
-            <th class="text-right px-2 py-2 text-purple-700" style="width:90px">Rot./Prom.mes</th>
-            <th class="text-right px-2 py-2 text-rose-700" style="width:70px">Precio</th>
-            <th class="text-right px-2 py-2 text-amber-700" style="width:80px" title="Unidades finales · packs. Si difieren, debajo del total de unidades aparece la cantidad de packs propuestos.">Módulo</th>
-            <th class="text-right px-2 py-2 text-purple-600" style="width:80px" title="Editable">Oferta c/mín</th>
-            <th class="text-right px-2 py-2 text-sky-700" style="width:80px" title="Editable">Sin Deal</th>
-            <th class="text-right px-2 py-2 text-brand font-bold" style="width:80px" title="Lo que va a salir del pedido: Módulo + Oferta c/mín + Sin Deal.">Total Pedido</th>
-            <th class="text-right px-2 py-2 text-cyan-700" style="width:70px" title="Días de cobertura DESPUÉS de aplicar el Total Pedido: (stock + total) / (avg / 30.4). Objetivo del pedido: {{ pedido.n_days }}d.">Cob.Post</th>
-            <th class="text-right px-2 py-2 text-amber-700" style="width:75px" title="Lo que el sistema sugirió comprar (stock + rotación + días a cubrir).">Sugerido</th>
-            <th class="text-right px-2 py-2 text-red-600" style="width:65px">Saldo</th>
+            <th class="text-left px-2 py-2" style="width:120px">EAN</th>
+            <th class="text-left px-2 py-2">Descripción</th>
+            <th class="text-right px-2 py-2 text-brand font-bold" style="width:110px" title="Cantidad a pedir EXTRA (fuera de módulos). Editable.">Cantidad</th>
         </tr>
     </thead>
     <tbody id="tbody-resumen">`;
@@ -1612,62 +1639,23 @@ function renderResumen() {
                                  : `objetivo ${NDAYS}d · sin stock confirmado (asumido 0)`;
         return `<span class="${cls}" title="${tip}">${d}d${star}</span>`;
     }
-    resumenAgrEans.forEach(ean => {
+    // El backend ya consolidó por observer_id (un EAN canónico por producto),
+    // así que iteramos directo sin dedup en frontend. Excluimos los pseudo-EAN
+    // OBS:N porque el proveedor no los acepta.
+    _eansVisibles.forEach(ean => {
+        if (ean && ean.startsWith('OBS:')) return;  // sin EAN real → skip
         const d = resumenAgr[ean];
-        const initOffMin = d.cant_oferta_min;
-        const initNodeal = d.cant_nodeal;
-        const initTotal  = d.cant_mod + initOffMin + initNodeal;
-        const initSaldo  = d.cant_pedida - initTotal;
-        const saldoCls   = initSaldo > 0 ? 'text-red-600 font-bold' : initSaldo < 0 ? 'text-emerald-600 font-bold' : 'text-[#999]';
-        const totalCls   = initTotal > 0 ? 'font-bold text-brand' : 'text-[#ccc]';
-        const stockNum   = (pedidoStock[ean] != null ? pedidoStock[ean] : null);
-        const avgMes     = (d.rot && d.rot.avg) || 0;
-        const covPost    = _covPostHtml(stockNum, initTotal, avgMes);
-        // Stock = ObServer (pedidoStock vía fmtStock), no ErpStock legacy.
-        // fmtStock maneja fraccionado/envase y devuelve '—' si no hay dato.
-        const stockCell  = fmtStock(ean);
-        const _packs = UNIT_TO_PACK[ean] || [];
-        const packBadge = _packs.length
-            ? `<span class="inline-block text-[9px] bg-emerald-100 text-emerald-700 border border-emerald-300 px-1 rounded font-bold mr-1 align-middle" title="Pack ${_packs.map(p=>p.ean_pack+' ('+p.cantidad+'u)').join(', ')}">${_packs[0].cantidad}u/pk</span>`
-            : '';
-        const monoLine = d.monodroga
-            ? `<p class="text-[10px] text-[#888] font-normal leading-tight mt-0.5 pl-4 truncate" title="${d.monodroga}">${d.monodroga}</p>`
-            : '';
+        const initCantidad = (d.cant_oferta_min || 0) + (d.cant_nodeal || 0);
         const _tvc = pedidoTvc[ean] || '';
-        const _drogaId = pedidoDrogaId[ean] || '';
-        const _cmpLabsBtn = _drogaId
-            ? `<button type="button" class="btn-cmp-labs ml-1 align-middle bg-violet-100 hover:bg-violet-200 text-violet-800 text-[9px] font-semibold px-1.5 py-0.5 rounded border border-violet-300 transition-colors"
-                       data-droga="${_drogaId}" data-cb="${ean}" data-nombre="${(d.nombre||'').replace(/"/g,'&quot;')}"
-                       title="Comparar contra otros laboratorios con la misma monodroga">⇄ Otros labs</button>`
-            : '';
         html += `<tr class="border-b border-[#e8e8e8] hover:bg-black/[0.02] transition-colors"
                      data-nombre="${(d.nombre||'').toLowerCase()}" data-ean="${ean}" data-tvc="${_tvc}">
-            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${CHART_BTN(ean)}${ALFA_BTN(d.nombre)}${packBadge}${d.nombre}${_cmpLabsBtn}${monoLine}</td>
-            <td class="px-2 py-1.5 font-mono text-[#888] text-[10px]">${ean}</td>
-            <td class="px-2 py-1.5 text-right text-[#555]">${stockCell}</td>
-            <td class="px-2 py-1.5 text-right">${rotBadgeHtml(d.rot.rotacion, d.rot.avg)}</td>
-            <td class="px-2 py-1.5 text-right text-rose-700">${fmtPvp(d.pvp)}</td>
-            <td class="px-2 py-1.5 text-right font-semibold text-amber-700">${
-                d.cant_mod > 0
-                    ? (d.cant_mod_packs > 0 && d.cant_mod_packs !== d.cant_mod
-                        ? `${d.cant_mod}<span class="text-[10px] text-[#aaa] font-normal ml-0.5">u</span><span class="block text-[10px] text-[#888] font-normal">${d.cant_mod_packs} pk</span>`
-                        : `${d.cant_mod}<span class="text-[10px] text-[#aaa] font-normal ml-0.5">u</span>`)
-                    : '<span class="text-[#ccc]">—</span>'
-            }</td>
+            <td class="px-2 py-1.5 font-mono text-[#888] text-[11px]">${ean}</td>
+            <td class="px-2 py-1.5 font-medium text-[#1e1e1e]">${d.nombre || ''}</td>
             <td class="px-2 py-1.5 text-right">
-                <input type="number" min="0" value="${initOffMin}"
-                       class="res-inp w-14 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold focus:outline-none focus:ring-1 focus:ring-purple-400"
+                <input type="number" min="0" value="${initCantidad}"
+                       class="res-inp w-20 text-right bg-white border border-amber-300 rounded px-1 py-0.5 text-amber-700 font-bold focus:outline-none focus:ring-1 focus:ring-amber-400"
                        data-ean="${ean}" data-field="oferta_min" oninput="recalcResumenRow('${ean}')">
             </td>
-            <td class="px-2 py-1.5 text-right">
-                <input type="number" min="0" value="${initNodeal}"
-                       class="res-inp w-14 text-right bg-white border border-sky-300 rounded px-1 py-0.5 text-sky-700 font-semibold focus:outline-none focus:ring-1 focus:ring-sky-400"
-                       data-ean="${ean}" data-field="nodeal" oninput="recalcResumenRow('${ean}')">
-            </td>
-            <td class="px-2 py-1.5 text-right ${totalCls}" id="res-total-${ean}">${initTotal}</td>
-            <td class="px-2 py-1.5 text-right" id="res-covpost-${ean}">${covPost}</td>
-            <td class="px-2 py-1.5 text-right text-amber-700">${d.cant_pedida > 0 ? d.cant_pedida : '<span class="text-[#ccc]">—</span>'}</td>
-            <td class="px-2 py-1.5 text-right ${saldoCls}" id="res-saldo-${ean}">${initSaldo}</td>
         </tr>`;
     });
     html += '</tbody></table></div>';
@@ -1815,33 +1803,80 @@ async function exportPlantillaUnificada(plantillaId, formato) {
     a.click();
 }
 
+// Agrupa una lista de EANs por su EQUIV_GROUP (alts del mismo producto).
+// Devuelve filas consolidadas: { ean (canonical), nombre, cantidad (sumada),
+// eans_grupo: [...], alts: [...] }. Excluye filas cuyo único EAN posible es
+// OBS:N (pseudo-EAN; el proveedor no lo acepta). Si el grupo tiene EANs
+// reales además del OBS:N, usa el real como canonical.
+function _consolidarParaProveedor(eans) {
+    const _isPseudo = (e) => typeof e === 'string' && e.startsWith('OBS:');
+    // Lookup: ean → ean canónico del grupo (primer real). null si solo OBS:N.
+    const _canonicalDe = (ean) => {
+        for (const g of EQUIV_GROUPS) {
+            if (!g.barcodes) continue;
+            if (g.barcodes.indexOf(ean) < 0) continue;
+            const reales = g.barcodes.filter(b => !_isPseudo(b));
+            if (reales.length > 0) {
+                return { canonical: reales.slice().sort()[0], grupo: g.barcodes.slice() };
+            }
+            return { canonical: null, grupo: g.barcodes.slice() };
+        }
+        return { canonical: _isPseudo(ean) ? null : ean, grupo: [ean] };
+    };
+    const _porCanonical = new Map();
+    eans.forEach(ean => {
+        const d = resumenAgr[ean];
+        if (!d) return;
+        // Cantidad EDITADA si el input está en DOM, sino la del modelo.
+        let qty = (d.cant_oferta_min || 0) + (d.cant_nodeal || 0);
+        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+            const v = parseInt(inp.value, 10);
+            if (!isNaN(v)) qty = v;
+        });
+        const { canonical, grupo } = _canonicalDe(ean);
+        if (!canonical) return;   // solo pseudo-EANs → no se manda al proveedor
+        if (!_porCanonical.has(canonical)) {
+            _porCanonical.set(canonical, {
+                ean: canonical, nombre: d.nombre,
+                cantidad: 0, eans_grupo: grupo,
+                alts: grupo.filter(b => b !== canonical),
+            });
+        }
+        _porCanonical.get(canonical).cantidad += qty;
+    });
+    // Ordenar A→Z por nombre (regla del proyecto).
+    return Array.from(_porCanonical.values())
+        .filter(it => it.cantidad > 0 || !!window._showResumenAll)
+        .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
+}
+
 function exportResumen() {
     const NDAYS_ = PEDIDO_N_DAYS || 35;
-    const exportData = resumenAgrEans.map(ean => {
-        const d = resumenAgr[ean];
-        let oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
-        document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
-            const v = parseInt(inp.value) || 0;
-            if (inp.dataset.field === 'oferta_min')  oferta_min = v;
-            if (inp.dataset.field === 'nodeal')      nodeal     = v;
+    // Mantener el mismo filtro que el render: por default solo productos con
+    // cantidad EXTRA > 0 (los cubiertos solo por módulo no van al Excel del
+    // pedido extra). Toggle 'ver todo' en el UI controla lo que se exporta.
+    const _showAll = !!window._showResumenAll;
+    const _eansExport = _showAll
+        ? resumenAgrEans
+        : resumenAgrEans.filter(ean => {
+            const d = resumenAgr[ean];
+            return (d.cant_oferta_min + d.cant_nodeal) > 0;
         });
-        const total      = d.cant_mod + oferta_min + nodeal;
-        const stockObs   = (pedidoStock[ean] != null ? pedidoStock[ean] : null);
-        const avgMes     = d.rot.avg || 0;
-        // Cobertura actual y post-pedido en días (null si no hay avg).
-        const dayRate    = avgMes > 0 ? (avgMes / 30.4) : null;
-        const covActual  = dayRate ? Math.round((stockObs || 0) / dayRate) : null;
-        const covPost    = dayRate ? Math.round(((stockObs || 0) + total) / dayRate) : null;
-        const gapVsObj   = covPost != null ? covPost - NDAYS_ : null;
-        return { ean, nombre: d.nombre, erp_qty: d.erp_qty,
-                 stock_obs: stockObs, rotacion: d.rot.rotacion || '',
-                 avg_monthly: avgMes, precio_pvp: d.pvp,
-                 cant_modulo: d.cant_mod, cant_modulo_packs: d.cant_mod_packs || 0,
-                 cant_oferta_min: oferta_min, cant_nodeal: nodeal, total,
-                 cant_pedida: d.cant_pedida, saldo: d.cant_pedida - total,
-                 cobertura_actual_d: covActual, cobertura_post_d: covPost,
-                 gap_vs_objetivo_d: gapVsObj, objetivo_d: NDAYS_ };
-    });
+    // Solo 3 columnas en el Excel: EAN · Descripción · Cantidad. Es lo que
+    // mandás al proveedor por el canal del pedido extra (fuera de módulos).
+    // El backend ya consolidó por observer_id. Solo excluimos OBS:N pseudo-EAN.
+    const exportData = _eansExport
+        .filter(ean => !(ean && ean.startsWith('OBS:')))
+        .map(ean => {
+            const d = resumenAgr[ean];
+            let oferta_min = d.cant_oferta_min, nodeal = d.cant_nodeal;
+            document.querySelectorAll(`#tbody-resumen input[data-ean="${ean}"]`).forEach(inp => {
+                const v = parseInt(inp.value) || 0;
+                if (inp.dataset.field === 'oferta_min')  oferta_min = v;
+                if (inp.dataset.field === 'nodeal')      nodeal     = v;
+            });
+            return { ean, nombre: d.nombre, cantidad: oferta_min + nodeal };
+        });
     document.getElementById('h-sum-data').value = JSON.stringify(exportData);
     document.getElementById('form-export-sum-xlsx').submit();
 }
@@ -2227,6 +2262,34 @@ function renderOfertasMinImportPreview() {
     show('ofertas-min-body');
 }
 
+// Agrega por EAN unidad las cantidades comprometidas en módulos (step 1).
+// Usa el valor CURRENT del input modprop-${mi} de cada módulo (puede ser
+// editado por el usuario) × unidadesPorSlot del item. También guarda los
+// nombres de módulos donde apareció el EAN, para mostrar el chip
+// "ya en módulo X" en step 2.
+function _aggregarCompromisoModulos() {
+    const agg = {};  // eanLookup → {total: u, modulos: [nombres]}
+    modulesData.forEach((mod, mi) => {
+        const modPropEl = document.getElementById(`modprop-${mi}`);
+        const numModulos = modPropEl
+            ? (parseInt(modPropEl.value, 10) || 0)
+            : (mod.modulos_sugeridos || 0);
+        if (numModulos <= 0) return;
+        mod.items.forEach(it => {
+            const _pack = MODULO_PACKS[it.ean];
+            const eanLookup = _pack ? _pack.ean_unidad : it.ean;
+            const unidadesPorSlot = _pack ? it.cant * _pack.cantidad : it.cant;
+            const unidadesTotales = unidadesPorSlot * numModulos;
+            if (!agg[eanLookup]) agg[eanLookup] = { total: 0, modulos: [] };
+            agg[eanLookup].total += unidadesTotales;
+            if (!agg[eanLookup].modulos.includes(mod.nombre)) {
+                agg[eanLookup].modulos.push(mod.nombre);
+            }
+        });
+    });
+    return agg;
+}
+
 function procesarOfertasConMinimo() {
     const bernByEan = {};
     ofertasMinData.forEach(o => { bernByEan[o.ean] = o; });
@@ -2239,17 +2302,68 @@ function procesarOfertasConMinimo() {
         if (bernByEan[eanPack] && !bernByEan[pack.ean_unidad]) bernByEan[pack.ean_unidad] = bernByEan[eanPack];
         if (bernByEan[pack.ean_unidad] && !bernByEan[eanPack]) bernByEan[eanPack] = bernByEan[pack.ean_unidad];
     });
+
+    // ── Compromiso del paso 1 (módulos) por EAN unidad ──
+    // Se usa para calcular saldo y para el chip "ya en módulo X".
+    // Lo dejo en window. para que recalcOfminRowExtras (en el oninput del
+    // input "A pedir") lo use también al recalcular Cob.post.
+    const _compromiso = _aggregarCompromisoModulos();
+    window._ofminCompromiso = _compromiso;
+    // Resolver EAN unidad si la fila es un pack. La unidad es lo que se VENDE
+    // y por ende tiene stock + ventas reales. Lo dejo en window. para que
+    // recalc reuse la misma lógica.
+    window._resolveUnitEan = (ean) => {
+        const _p = (window.MODULO_PACKS || MODULO_PACKS)[ean];
+        return (_p && _p.ean_unidad) ? _p.ean_unidad : ean;
+    };
+    const _NDAYS_S2 = PEDIDO_N_DAYS || 35;
+    // Fórmula nueva (regla Roemmers / single source of truth):
+    //   necesario_total = (promedio_mes × n_days) / 30
+    //   saldo           = max(0, ceil(necesario − stock − Σ módulos))
+    // Si saldo ≤ 0, no se agrega al offMinResult (el producto ya está cubierto
+    // entre stock + lo pedido en step 1).
+    // Para EANs pack, resolvemos a la unidad ANTES de leer stock/avg/módulos.
+    const _saldoCalc = (ean) => {
+        const real = window._resolveUnitEan(ean);
+        const promedio = (pedidoRot[real] && pedidoRot[real].avg) || 0;
+        const stock = pedidoStock[real] || 0;
+        const comp = (_compromiso[real] && _compromiso[real].total) || 0;
+        const necesario = (promedio * _NDAYS_S2) / 30;
+        return Math.max(0, Math.ceil(necesario - stock - comp));
+    };
+
     offMinResult = [];
     const newNodeal = [];
     nodealResult.forEach(entry => {
         const bern = bernByEan[entry.ean];
         if (bern) {
-            offMinResult.push({
-                ean: entry.ean, nombre: entry.nombre, cantidad: entry.cantidad,
+            const saldoNuevo = _saldoCalc(entry.ean);
+            if (saldoNuevo <= 0) return;  // ya cubierto, no aparece en ofertas
+            // Para packs, los módulos viven en el ean_unidad.
+            const _realEan = window._resolveUnitEan(entry.ean);
+            const compInfo = _compromiso[_realEan] || { total: 0, modulos: [] };
+            // Sobre-cobertura: si comprar el saldo propuesto (a pedir = saldo)
+            // ya da cob.post > n_days × 2 Y la oferta no tiene mín. > 1 que
+            // obligue a comprar más, sacamos del view por default (lo trae
+            // el toggle "ver sobre-cobertura"). Caso típico: producto de
+            // baja rotación donde 1 unidad cubre meses.
+            const _promReal = (pedidoRot[_realEan] && pedidoRot[_realEan].avg) || 0;
+            const _stockReal = pedidoStock[_realEan] || 0;
+            const _covPostSaldo = _promReal > 0
+                ? Math.round((_stockReal + compInfo.total + saldoNuevo) / (_promReal / 30.4))
+                : 0;
+            const _sobreCobertura = (_covPostSaldo > _NDAYS_S2 * 2)
+                && ((bern.unidades_minima || 0) <= 1);
+            const _row = {
+                ean: entry.ean, nombre: entry.nombre, cantidad: saldoNuevo,
+                comprometido_modulos: compInfo.total,
+                modulos_origen: compInfo.modulos.slice(),
                 unidades_minima: bern.unidades_minima, descuento_psl: bern.descuento_psl,
                 rentabilidad: bern.rentabilidad, grupo_id: bern.grupo_id,
                 observacion: bern.observacion,
-            });
+                _sobre_cobertura: _sobreCobertura,
+            };
+            offMinResult.push(_row);
         } else {
             newNodeal.push(entry);
         }
@@ -2269,6 +2383,48 @@ function procesarOfertasConMinimo() {
             });
             offMinEans.add(o.ean);
         });
+    });
+
+    // Dedup por EQUIV_GROUP: cuando el pedido tiene 2 EANs alts del mismo
+    // producto (caso AMOXIDAL pack vs unit, DEPOCORT pre/post merge, etc.),
+    // ambos pueden pushear filas distintas en offMinResult con la misma
+    // oferta y descripción. Consolidamos: sumar cantidades y dejar un solo
+    // row por grupo. Items sin grupo se mantienen por EAN propio.
+    // grupo_id (de la oferta) se respeta — no se fusiona entre grupos.
+    const _grpKey = (ean) => {
+        for (const g of EQUIV_GROUPS) {
+            if (g.barcodes && g.barcodes.indexOf(ean) >= 0) {
+                return g.barcodes.slice().sort().join('|');
+            }
+        }
+        return ean;
+    };
+    const _dedupMap = new Map();
+    offMinResult.forEach(it => {
+        const key = (it.grupo_id ?? 'NG') + '::' + _grpKey(it.ean);
+        const prev = _dedupMap.get(key);
+        if (prev) {
+            prev.cantidad = (prev.cantidad || 0) + (it.cantidad || 0);
+        } else {
+            _dedupMap.set(key, it);
+        }
+    });
+    offMinResult = Array.from(_dedupMap.values());
+
+    // Re-evaluar sobre-cobertura DESPUÉS del dedup. El dedup suma cantidades
+    // de alts del mismo producto (caso DEPOCORT con 3 EANs), entonces el
+    // _sobre_cobertura que computamos pre-dedup sobre cada row individual
+    // queda stale. Acá recalculamos cob.post real con el cantidad sumado.
+    offMinResult.forEach(it => {
+        const _real = window._resolveUnitEan(it.ean);
+        const _prom = (pedidoRot[_real] && pedidoRot[_real].avg) || 0;
+        const _stk = pedidoStock[_real] || 0;
+        const _mod = ((_compromiso[_real] || {}).total) || 0;
+        const _cov = _prom > 0
+            ? Math.round((_stk + _mod + (it.cantidad || 0)) / (_prom / 30.4))
+            : 0;
+        it._sobre_cobertura = (_cov > _NDAYS_S2 * 2)
+            && ((it.unidades_minima || 0) <= 1);
     });
 
     // A→Z por nombre dentro de cada grupo (regla global del proyecto).
@@ -2293,15 +2449,24 @@ function renderOfertasConMinimoTable() {
         return;
     }
     const grupos = {};
-    const individuals = [];
+    const individualsAll = [];
     offMinResult.forEach(it => {
         if (it.grupo_id !== null && it.grupo_id !== undefined) {
             if (!grupos[it.grupo_id]) grupos[it.grupo_id] = { min: it.unidades_minima, items: [] };
             grupos[it.grupo_id].items.push(it);
         } else {
-            individuals.push(it);
+            individualsAll.push(it);
         }
     });
+    // Filtro sobre-cobertura: por default ocultamos los items donde la
+    // compra mínima posible ya da cob.post > n_days × 2 Y la oferta no exige
+    // unidades_minima > 1 (en ese caso es decisión del operador honrar mín).
+    // Toggle 'verSobreCobertura' los trae de vuelta.
+    const _showSobreCob = !!window._showSobreCobertura;
+    const _individualsHidden = individualsAll.filter(it => it._sobre_cobertura);
+    const individuals = _showSobreCob
+        ? individualsAll
+        : individualsAll.filter(it => !it._sobre_cobertura);
     const fmtPct = v => v != null ? v + '%' : '—';
     // Dto% concatenado con observación (ej "30% · TR Lanzamiento") cuando existe.
     const fmtPctObs = (v, obs) => {
@@ -2323,7 +2488,8 @@ function renderOfertasConMinimoTable() {
             if (avg <= 0) return '<span class="text-[#ccc]">—</span>';
             const stockKnown = pedidoStock[ean] != null;
             const s = stockKnown ? pedidoStock[ean] : 0;
-            const d = Math.round((s + (qty || 0)) / (avg / 30.4));
+            const compMod = ((window._ofminCompromiso || {})[ean] || {}).total || 0;
+            const d = Math.round((s + compMod + (qty || 0)) / (avg / 30.4));
             let cls;
             if (d >= NDAYS_S2 * 0.9 && d <= NDAYS_S2 * 1.3)   cls = 'text-emerald-700 font-semibold';
             else if (d > NDAYS_S2 * 1.3 && d <= NDAYS_S2 * 2) cls = 'text-amber-700 font-semibold';
@@ -2338,16 +2504,33 @@ function renderOfertasConMinimoTable() {
             const v = Math.round(qty * precio * (dto / 100));
             return v > 0 ? `$${v.toLocaleString('es-AR')}` : '<span class="text-[#ccc]">—</span>';
         };
-        html += `<p class="text-xs font-semibold text-[#555] mb-2">INDIVIDUALES (${individuals.length})</p>
-        <table class="w-full text-xs border-collapse mb-4 min-w-[760px]">
+        // Toggle "ver sobre-cobertura" cuando hay items ocultos por la regla.
+        const _toggleSobreCob = _individualsHidden.length > 0
+            ? `<button type="button" onclick="window._showSobreCobertura = !window._showSobreCobertura; renderOfertasConMinimoTable();"
+                       class="ml-3 text-[10px] font-semibold px-2 py-0.5 rounded ${_showSobreCob ? 'bg-amber-100 text-amber-700 border border-amber-300' : 'bg-sky-100 text-sky-700 border border-sky-300'} hover:opacity-80"
+                       title="Items donde la compra mínima (1u) ya cubre &gt; ${(PEDIDO_N_DAYS || 35) * 2} días. Por default ocultos.">
+                ${_showSobreCob ? '✓ mostrando' : '👁 ver'} sobre-cobertura (${_individualsHidden.length})
+               </button>`
+            : '';
+        // Botón para recomputar A pedir de todas las filas visibles al saldo
+        // formal (objetivo − stock − módulos). Útil cuando un EAN apareció
+        // duplicado por alts y el dedup acumuló cantidad mayor a lo necesario.
+        const _btnBajar = `<button type="button" onclick="bajarTodoACoberturaFijada()"
+                                   class="ml-3 text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 hover:bg-amber-200"
+                                   title="Recalcula 'A pedir' al saldo formal: objetivo − stock − módulos. Respeta el Mín. de la oferta si es mayor.">
+                            ↓ bajar a cobertura ${PEDIDO_N_DAYS || 35}d
+                           </button>`;
+        html += `<p class="text-xs font-semibold text-[#555] mb-2">INDIVIDUALES (${individuals.length})${_toggleSobreCob}${_btnBajar}</p>
+        <table class="w-full text-xs border-collapse mb-4 min-w-[820px]">
         <thead><tr class="bg-[#f0f0f0] text-[#6f6f6f] uppercase text-[10px] sticky top-0 z-10 shadow-sm">
             <th class="text-left px-2 py-2">EAN</th>
             <th class="text-left px-2 py-2">Producto</th>
-            <th class="text-right px-2 py-2 text-cyan-700" title="Stock actual (ObServer)">Stock</th>
-            <th class="text-right px-2 py-2 text-purple-700" title="Promedio mensual (últimos 12m)">Rot/Mes</th>
-            <th class="text-right px-2 py-2 text-amber-700">Saldo</th>
+            <th class="text-right px-2 py-2 text-emerald-700" title="Descuento de la oferta. Una observación del Excel se muestra al lado.">Dto%</th>
+            <th class="text-right px-2 py-2 text-purple-700" title="Promedio mensual (últimos 12m, o 3m si el lab tiene packs)">Promedio</th>
+            <th class="text-right px-2 py-2 text-cyan-700" title="Stock actual (ObServer). Para packs, el stock de la unidad equivalente.">Stock</th>
+            <th class="text-right px-2 py-2 text-violet-700" title="Necesario total = ceil(promedio × n_days / 30). Lo que tu farmacia debería tener cubierto para ${PEDIDO_N_DAYS || 35} días.">Objetivo</th>
+            <th class="text-right px-2 py-2 text-amber-700" title="Saldo = objetivo − stock − módulos pedidos">Saldo</th>
             <th class="text-right px-2 py-2 text-sky-700">Mín.</th>
-            <th class="text-right px-2 py-2 text-emerald-700">Dto%</th>
             <th class="text-right px-2 py-2 text-purple-700">A pedir</th>
             <th class="text-right px-2 py-2 text-cyan-700" title="Días de cobertura DESPUÉS del A pedir actual">Cob.post</th>
             <th class="text-right px-2 py-2 text-emerald-700" title="A pedir × precio × dto% — ahorro estimado">Ahorro $</th>
@@ -2357,22 +2540,53 @@ function renderOfertasConMinimoTable() {
             const minVal = it.unidades_minima ?? 0;
             const initOk = minVal > 0 && it.cantidad >= minVal;
             const rowCls = initOk ? 'data-row bg-emerald-50' : 'data-row';
-            const avgMon = (pedidoRot[it.ean] && pedidoRot[it.ean].avg) || 0;
-            const pvp    = pedidoPvp[it.ean] || PRODUCT_PRICES[it.ean] || 0;
+            // Resolver unidad si es pack. La unidad es el producto REAL que se
+            // vende — su stock, ventas y rotación son los datos verdaderos.
+            const _resolveU = window._resolveUnitEan || ((x) => x);
+            const _packMeta = MODULO_PACKS[it.ean];
+            const realEan = _resolveU(it.ean);
+            const avgMon = (pedidoRot[realEan] && pedidoRot[realEan].avg) || 0;
+            const pvp    = pedidoPvp[realEan] || pedidoPvp[it.ean] || PRODUCT_PRICES[realEan] || PRODUCT_PRICES[it.ean] || 0;
+            // Nombre principal = nombre de la unidad (lo que se vende).
+            // Si es pack, mostrar "[nombre unidad] · 📦 [nombre pack]" al lado.
+            const nombreUnidad = _packMeta
+                ? (pedidoNom[realEan] || _packMeta.desc_unidad || it.nombre)
+                : it.nombre;
+            const asidePack = _packMeta
+                ? `<span class="ml-2 text-[10px] text-violet-700" title="La oferta del proveedor viene como pack">· 📦 oferta: ${(it.nombre || '').replace(/</g,'&lt;')}</span>`
+                : '';
+            // Sub-líneas debajo del nombre: observación (si vino del Excel) +
+            // chip "ya en módulo X" (si el EAN entró en algún módulo del step 1).
+            let _subLineas = '';
+            if (it.observacion) {
+                const _obsSafe = String(it.observacion).replace(/</g, '&lt;');
+                _subLineas += `<div class="text-[10px] text-[#888] italic mt-0.5">📝 ${_obsSafe}</div>`;
+            }
+            if (it.modulos_origen && it.modulos_origen.length > 0) {
+                const _mods = it.modulos_origen
+                    .map(m => `<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 border border-violet-300 mr-1" title="Cargado en step 1">📦 ${m}</span>`)
+                    .join('');
+                _subLineas += `<div class="mt-0.5">Ya pedido en módulos: ${_mods} <span class="text-[10px] text-[#999]">(${it.comprometido_modulos || 0}u)</span></div>`;
+            }
+            // Objetivo = ceil(promedio × n_days / 30). Lo que necesita tener cubierto.
+            const _objetivo = avgMon > 0
+                ? Math.ceil((avgMon * NDAYS_S2) / 30)
+                : null;
             html += `<tr class="${rowCls}" id="row-ofmin-${it.ean}">
-                <td class="px-2 font-mono text-[#888] text-[10px]">${it.ean}</td>
-                <td class="px-2 font-medium">${CHART_BTN(it.ean)}${ALFA_BTN(it.nombre)}${it.nombre}</td>
-                <td class="px-2 text-right">${_stockStr(it.ean)}</td>
-                <td class="px-2 text-right text-[#555]">${avgMon > 0 ? avgMon.toFixed(1) : '<span class="text-[#ccc]">—</span>'}</td>
+                <td class="px-2 font-mono text-[#888] text-[10px]">${realEan}${_packMeta ? `<div class="text-[9px] text-violet-600">(pack: ${it.ean})</div>` : ''}</td>
+                <td class="px-2 font-medium">${CHART_BTN(realEan)}${ALFA_BTN(nombreUnidad)}${nombreUnidad}${asidePack}${_subLineas}</td>
+                <td class="px-2 text-right text-emerald-700">${fmtPctObs(it.descuento_psl, it.observacion)}</td>
+                <td class="px-2 text-right text-purple-700">${avgMon > 0 ? avgMon.toFixed(1) : '<span class="text-[#ccc]">—</span>'}</td>
+                <td class="px-2 text-right text-cyan-700">${_stockStr(realEan)}</td>
+                <td class="px-2 text-right text-violet-700 font-semibold">${_objetivo != null ? _objetivo : '<span class="text-[#ccc]">—</span>'}</td>
                 <td class="px-2 text-right text-amber-700">${it.cantidad}</td>
                 <td class="px-2 text-right text-sky-700">${it.unidades_minima ?? '—'}</td>
-                <td class="px-2 text-right text-emerald-700">${fmtPctObs(it.descuento_psl, it.observacion)}</td>
                 <td class="px-2 text-right">
                     <input type="number" min="0" value="${it.cantidad}" id="qty-ofmin-${it.ean}"
                            oninput="recalcIndividualOfmin('${it.ean}', ${minVal})"
                            class="w-16 text-right bg-white border border-purple-300 rounded px-1 py-0.5 text-purple-700 font-semibold text-xs focus:outline-none focus:ring-1 focus:ring-purple-400">
                 </td>
-                <td class="px-2 text-right" id="cov-ofmin-${it.ean}">${_covPostStr(it.ean, it.cantidad)}</td>
+                <td class="px-2 text-right" id="cov-ofmin-${it.ean}">${_covPostStr(realEan, it.cantidad)}</td>
                 <td class="px-2 text-right text-emerald-700 font-semibold" id="ahorro-ofmin-${it.ean}"
                     data-pvp="${pvp}" data-dto="${it.descuento_psl ?? 0}">${_ahorroStr(it.cantidad, pvp, it.descuento_psl)}</td>
                 <td class="px-2 text-center" id="btn-ofmin-${it.ean}">${minVal > 0 ? (initOk
@@ -2498,13 +2712,18 @@ function recalcOfminRowExtras(ean) {
     const ahoEl = document.getElementById('ahorro-ofmin-' + ean);
     if (covEl) {
         const NDAYS_ = PEDIDO_N_DAYS || 35;
-        const avg = (pedidoRot[ean] && pedidoRot[ean].avg) || 0;
+        // Resolver EAN unidad si la fila es un pack — stock/avg/módulos
+        // viven en la unidad, no en el pack.
+        const _resolveU = window._resolveUnitEan || ((x) => x);
+        const realEan = _resolveU(ean);
+        const avg = (pedidoRot[realEan] && pedidoRot[realEan].avg) || 0;
         if (avg <= 0) {
             covEl.innerHTML = '<span class="text-[#ccc]">—</span>';
         } else {
-            const stockKnown = pedidoStock[ean] != null;
-            const s = stockKnown ? pedidoStock[ean] : 0;
-            const d = Math.round((s + val) / (avg / 30.4));
+            const stockKnown = pedidoStock[realEan] != null;
+            const s = stockKnown ? pedidoStock[realEan] : 0;
+            const compMod = ((window._ofminCompromiso || {})[realEan] || {}).total || 0;
+            const d = Math.round((s + compMod + val) / (avg / 30.4));
             let cls;
             if (d >= NDAYS_ * 0.9 && d <= NDAYS_ * 1.3)   cls = 'text-emerald-700 font-semibold';
             else if (d > NDAYS_ * 1.3 && d <= NDAYS_ * 2) cls = 'text-amber-700 font-semibold';
@@ -2523,6 +2742,48 @@ function recalcOfminRowExtras(ean) {
         } else {
             const v = Math.round(val * pvp * (dto / 100));
             ahoEl.innerHTML = v > 0 ? `$${v.toLocaleString('es-AR')}` : '<span class="text-[#ccc]">—</span>';
+        }
+    }
+}
+
+// Recalcula "A pedir" de TODAS las filas visibles al saldo formal:
+//   target = max(min_oferta, ceil(promedio × n_days / 30 − stock − módulos))
+// Útil cuando dedup acumuló cantidades > saldo (caso DEPOCORT con varios alts).
+function bajarTodoACoberturaFijada() {
+    const NDAYS = PEDIDO_N_DAYS || 35;
+    const _resolveU = window._resolveUnitEan || ((x) => x);
+    let _afectadas = 0;
+    document.querySelectorAll('input[id^="qty-ofmin-"]').forEach(input => {
+        const ean = input.id.replace('qty-ofmin-', '');
+        const realEan = _resolveU(ean);
+        const avg = (pedidoRot[realEan] && pedidoRot[realEan].avg) || 0;
+        if (avg <= 0) return;
+        const stock = pedidoStock[realEan] || 0;
+        const comp = ((window._ofminCompromiso || {})[realEan] || {}).total || 0;
+        const necesario = (avg * NDAYS) / 30;
+        let target = Math.max(0, Math.ceil(necesario - stock - comp));
+        // Respetar Mín. de oferta si la fila tiene uno > target
+        const row = document.getElementById('row-ofmin-' + ean);
+        if (row) {
+            const _minTd = row.cells && row.cells[7];   // col Mín. (index 7 con orden nuevo)
+            const _minVal = _minTd ? (parseInt(_minTd.textContent) || 0) : 0;
+            if (_minVal > target) target = _minVal;
+        }
+        if (parseInt(input.value, 10) !== target) {
+            input.value = target;
+            // Disparar el handler de oninput para recalcular cob.post + ahorro.
+            const _ev = new Event('input', { bubbles: true });
+            input.dispatchEvent(_ev);
+            _afectadas++;
+        }
+    });
+    if (_afectadas > 0) {
+        // Pequeño feedback visual
+        const _p = document.querySelector('#ofertas-min-body p');
+        if (_p) {
+            const _old = _p.innerHTML;
+            _p.innerHTML += ` <span class="ml-2 text-emerald-700 font-semibold">✓ ${_afectadas} ajustadas</span>`;
+            setTimeout(() => { _p.innerHTML = _old; }, 2500);
         }
     }
 }
