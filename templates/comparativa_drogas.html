@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% set nav_active = "informes" %}
+{% block title %}Comparativa por droga — Informes{% endblock %}
+{% block body_class %}theme-emerald{% endblock %}
+{% block extra_head %}{% include '_lab_ref_styles.html' %}
+<style>
+.cd-spin{width:16px;height:16px;border:2px solid var(--ds-line);border-top-color:var(--ds-mint);border-radius:50%;animation:cdSpin .7s linear infinite;display:inline-block;vertical-align:middle;}
+@keyframes cdSpin{to{transform:rotate(360deg);}}
+details.lr-card > summary::-webkit-details-marker{display:none;}
+details.lr-card[open] > summary{border-bottom:1px solid var(--ds-line);}
+.cd-fuente-btn{background:none;border:none;color:var(--ds-mint);font-weight:600;cursor:pointer;padding:0;font-size:inherit;text-decoration:underline dotted;}
+.cd-fuentes-row > td{background:rgba(0,0,0,.18);padding:8px 14px;text-align:left;}
+.cd-fuentes-row ol{font-size:11px;margin:4px 0 0 16px;padding:0;}
+.cd-fuentes-row a{color:var(--ds-mint);word-break:break-all;}
+.cd-filtro.cd-on{background:var(--ds-mint);color:#062018;border-color:var(--ds-mint);}
+</style>
+{% endblock %}
+
+{% block main %}
+<div class="flex-1 overflow-auto">
+<div class="lr-page">
+    <a href="{{ url_for('informes_index') }}" class="text-xs no-print" style="color:var(--ds-text-mute);">← Mis Informes</a>
+    <div class="lr-head" style="margin-top:6px;">
+        <span style="font-size:24px;">⚔️</span>
+        <h1>Comparativa de mercado por droga</h1>
+        <span class="sub">Marcas líderes (web search) cruzadas con tus ventas, agrupadas por droga.</span>
+    </div>
+
+    {# ── Panel de labs: última consulta + multiselect (≤3) para refrescar ── #}
+    <div class="lr-card" style="padding:0;margin-bottom:14px;">
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--ds-line);flex-wrap:wrap;">
+            <b style="font-size:13px;">Laboratorios en el mapa</b>
+            <span class="muted" style="font-size:11px;">marcá hasta 3 y refrescá su info de mercado (web search)</span>
+            <button type="button" class="lr-print-btn" id="refrescar-btn" onclick="refrescarMarcados()" disabled style="margin-left:auto;">🔄 Refrescar marcados (0)</button>
+        </div>
+        <table class="lr-table" style="width:100%;">
+            <thead><tr>
+                <th style="width:34px;"></th><th class="left">Laboratorio</th>
+                <th>Última consulta</th><th>Marcas</th><th class="left">Estado</th>
+            </tr></thead>
+            <tbody>
+            {% for l in labs_estado %}
+            <tr>
+                <td class="center"><input type="checkbox" class="lab-chk" value="{{ l.observer_id }}" data-nombre="{{ l.nombre }}"
+                    aria-label="Marcar {{ l.nombre }}" title="Marcar {{ l.nombre }} para refrescar"
+                    style="accent-color:var(--ds-mint);width:15px;height:15px;" {% if not l.en_observer %}disabled data-noobs{% endif %} onchange="onChkLab()"></td>
+                <td class="left" style="font-weight:600;">{{ l.nombre }}{% if not l.en_observer %} <span class="muted" style="font-size:10px;">(no está en tu ObServer)</span>{% endif %}</td>
+                <td>{{ l.consultado_en or '—' }}</td>
+                <td class="muted">{{ l.n_marcas or '—' }}</td>
+                <td class="left">
+                    {% if not l.cacheado %}<span class="lr-tag no">sin consultar</span>
+                    {% elif l.edad_dias is not none and l.edad_dias > ttl_dias %}<span class="lr-tag" style="background:#7c2d12;color:#fdba74;">vencido ({{ l.edad_dias }}d)</span>
+                    {% elif l.edad_dias is not none and l.edad_dias >= 60 %}<span class="lr-tag" style="background:#78350f;color:#fde68a;">{{ l.edad_dias }}d</span>
+                    {% else %}<span class="lr-tag" style="background:#14532d;color:#86efac;">fresco</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {# ── Comparativa por droga ── #}
+    {% if not comparativa %}
+    <div class="lr-empty"><p style="font-size:24px;">🧬</p>
+        <p>Todavía no hay datos de mercado. Marcá labs arriba y refrescá, o recopilalos desde el informe
+        <a href="{{ url_for('informe_lab_gap_marcas') }}" style="color:var(--ds-mint);">Gap de captura por marca</a>.</p></div>
+    {% else %}
+    <div class="muted" style="font-size:11px;margin-bottom:8px;line-height:1.7;">
+        {{ comparativa|length }} drogas con marca líder de mercado conocida · cada una con TODOS tus labs (competencia incluida) · ⭐ = marca líder nacional (web search)<br>
+        <span class="lr-tag" style="background:#7c2d12;color:#fdba74;">⚠ oportunidad de share</span>
+        = la marca líder de mercado capta <b>menos del 40%</b> de tu venta de esa droga → el resto lo despachás con genérico/competencia, hay margen para migrar a la marca líder.
+    </div>
+    <div class="no-print" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+        <button type="button" class="lr-print-btn cd-filtro cd-on" data-f="todas" onclick="cdFiltrar('todas',this)">Todas ({{ comparativa|length }})</button>
+        <button type="button" class="lr-print-btn cd-filtro" data-f="top10" onclick="cdFiltrar('top10',this)">⭐ Con líder nacional</button>
+        <button type="button" class="lr-print-btn cd-filtro" data-f="gap" onclick="cdFiltrar('gap',this)">⚠ Oportunidad de share</button>
+    </div>
+    {% for d in comparativa %}
+    {% set tiene_top10 = d.labs | selectattr('top10_nacional') | list | length > 0 %}
+    <details class="lr-card cd-droga" data-top10="{{ 1 if tiene_top10 else 0 }}" data-gap="{{ 1 if d.gap else 0 }}" style="margin-bottom:8px;">
+        <summary style="cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <b style="font-size:14px;text-transform:capitalize;">{{ d.droga | lower }}</b>
+            <span class="muted" style="font-size:11px;">{{ d.n_labs }} lab(s)</span>
+            {% if d.lider_marca %}
+            <span class="lr-tag" style="background:#14532d;color:#86efac;">líder: {{ d.lider_marca }}{% if d.lider_share_pct is not none %} · {{ d.lider_share_pct }}%{% endif %}</span>
+            {% endif %}
+            {% if d.gap %}<span class="lr-tag" style="background:#7c2d12;color:#fdba74;" title="La marca líder de mercado ({{ d.lider_marca }}) capta solo {{ d.lider_share_pct }}% de tu venta de esta droga (umbral 40%). El resto va a genérico/competencia → oportunidad de migrar share.">⚠ oportunidad de share</span>{% endif %}
+            <span style="margin-left:auto;font-weight:700;color:var(--ds-mint);">{{ '{:,}'.format(d.total_u12m).replace(',', '.') }} u</span>
+        </summary>
+        <table class="lr-table" style="width:100%;">
+            <thead><tr>
+                <th class="left">Laboratorio</th><th class="left">Marca líder</th><th class="center">Top país</th>
+                <th>Prod.</th><th>u 12m</th><th>$ 12m</th><th>Share</th>
+            </tr></thead>
+            <tbody>
+            {% for l in d.labs %}
+            <tr {% if l.es_estrella %}style="background:rgba(52,211,153,.07);"{% endif %}>
+                <td class="left" style="font-weight:600;">{{ l.lab }}</td>
+                <td class="left">{% if l.marca_estrella %}<button type="button" class="cd-fuente-btn" onclick="toggleFuentesLab(this, {{ l.lab_id }})" title="Ver fuentes de mercado de este lab">{{ l.marca_estrella }} 🔗</button>{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td class="center">{% if l.top10_nacional %}<span class="lr-star">⭐</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+                <td class="muted">{{ l.n_productos }}</td>
+                <td><b>{{ '{:,}'.format(l.u12m).replace(',', '.') }}</b></td>
+                <td>$ {{ '{:,.0f}'.format(l.monto).replace(',', '.') }}</td>
+                <td><span style="font-weight:600;{% if l.es_estrella %}color:var(--ds-mint);{% endif %}">{{ l.share_pct }}%</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% endfor %}
+    {% endif %}
+</div>
+</div>
+
+<script>
+const RECOPILAR_URL = "{{ url_for('informe_lab_gap_marcas_recopilar') }}";
+const FUENTES_LAB = {{ fuentes_lab | tojson }};
+
+function _cdEsc(s){ return String(s==null?'':s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function cdFiltrar(f, btn){
+    document.querySelectorAll('.cd-filtro').forEach(b => b.classList.remove('cd-on'));
+    btn.classList.add('cd-on');
+    let vis = 0;
+    document.querySelectorAll('details.cd-droga').forEach(d => {
+        const ok = f === 'todas'
+            || (f === 'top10' && d.dataset.top10 === '1')
+            || (f === 'gap' && d.dataset.gap === '1');
+        d.style.display = ok ? '' : 'none';
+        if (ok) vis++;
+    });
+    return vis;
+}
+
+// Despliega/oculta las fuentes de mercado del lab debajo de su fila.
+function toggleFuentesLab(btn, labId){
+    const tr = btn.closest('tr');
+    const sig = tr.nextElementSibling;
+    if (sig && sig.classList.contains('cd-fuentes-row')){ sig.remove(); return; }
+    const fuentes = FUENTES_LAB[labId] || [];
+    const row = document.createElement('tr');
+    row.className = 'cd-fuentes-row';
+    const inner = fuentes.length
+        ? '<div class="muted" style="font-size:11px;margin-bottom:2px;">Fuentes de mercado de este laboratorio:</div>'
+          + '<ol>' + fuentes.map(f => '<li><a href="'+_cdEsc(f.url)+'" target="_blank" rel="noopener">'+_cdEsc(f.titulo||f.url)+'</a></li>').join('') + '</ol>'
+        : '<span class="muted" style="font-size:11px;">Sin fuentes guardadas para este lab.</span>';
+    row.innerHTML = '<td colspan="'+tr.children.length+'">'+inner+'</td>';
+    tr.after(row);
+}
+
+function onChkLab(){
+    const chks = [...document.querySelectorAll('.lab-chk:not([data-noobs])')];
+    const n = chks.filter(c => c.checked).length;
+    chks.forEach(c => { if (!c.checked) c.disabled = n >= 3; });   // límite 3
+    const btn = document.getElementById('refrescar-btn');
+    btn.disabled = n === 0;
+    btn.textContent = '🔄 Refrescar marcados (' + n + ')';
+}
+
+function _cdModal(labs){
+    let m = document.getElementById('cd-modal');
+    if (!m){
+        m = document.createElement('div'); m.id = 'cd-modal';
+        m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999;display:flex;align-items:center;justify-content:center;padding:24px;';
+        document.body.appendChild(m);
+    }
+    m.innerHTML = '<div style="background:var(--ds-surface);border:1px solid var(--ds-line);border-radius:12px;max-width:480px;width:100%;padding:22px 26px;color:var(--ds-text);">'
+        + '<b style="font-size:14px;">Refrescando info de mercado…</b>'
+        + '<div id="cd-pasos" style="font-size:13px;line-height:2.1;margin-top:14px;">'
+        + labs.map((l,i) => '<div id="cd-paso-'+i+'"><span class="muted">○</span> '+_cdEsc(l.nombre)+'</div>').join('')
+        + '</div><div id="cd-fin" style="margin-top:16px;text-align:right;"></div></div>';
+    return m;
+}
+function _cdPaso(i, estado, nombre){
+    const el = document.getElementById('cd-paso-'+i);
+    if (!el) return;
+    if (estado === 'corriendo') el.innerHTML = '<span class="cd-spin"></span> '+_cdEsc(nombre)+' — buscando…';
+    else if (estado === 'ok') el.innerHTML = '<span style="color:var(--ds-mint);">✓</span> '+_cdEsc(nombre);
+    else el.innerHTML = '<span style="color:#fca5a5;">✗</span> '+_cdEsc(nombre)+' — error';
+}
+
+async function refrescarMarcados(){
+    const labs = [...document.querySelectorAll('.lab-chk')].filter(c => c.checked && !c.hasAttribute('data-noobs'))
+        .map(c => ({id: parseInt(c.value), nombre: c.dataset.nombre}));
+    if (!labs.length) return;
+    if (!confirm('Refrescar '+labs.length+' laboratorio(s) con web search de Claude.\nGasta ~'+(labs.length*10)+' centavos USD y tarda ~'+(labs.length*15)+'s. ¿Seguir?')) return;
+    _cdModal(labs);
+    for (let i = 0; i < labs.length; i++){
+        _cdPaso(i, 'corriendo', labs[i].nombre);
+        try {
+            const r = await fetch(RECOPILAR_URL, {
+                method:'POST', credentials:'same-origin',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({lab_id: labs[i].id, forzar: true}),
+            });
+            const d = await r.json();
+            _cdPaso(i, d.ok ? 'ok' : 'error', labs[i].nombre);
+        } catch(e){ _cdPaso(i, 'error', labs[i].nombre); }
+    }
+    document.getElementById('cd-fin').innerHTML =
+        '<span class="muted" style="font-size:12px;margin-right:auto;">Actualizando informe…</span>'
+        + '<button class="lr-print-btn" onclick="location.reload()">Ver ahora →</button>';
+    setTimeout(() => location.reload(), 1200);   // recarga sola para mostrar el informe
+}
+</script>
+{% endblock %}

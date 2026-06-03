@@ -294,6 +294,8 @@ def init_app(app):
     # Flujo en 2 pasos: (1) /recopilar → Claude+web search trae marcas+fuentes
     # (cacheado por nombre normalizado del lab); el front muestra un modal con
     # esos datos; (2) /analizar → cruza esas marcas vs ventas propias + prosa.
+    _GAP_WS_TTL_DIAS = 90  # los datos de mercado cacheados valen 90 días; después se re-buscan
+
     def _clave_ws_data(nombre_lab):
         from helpers import _normalizar_nombre_entidad
         return f'gap_ws_data:{_normalizar_nombre_entidad(nombre_lab)}'[:80]
@@ -335,13 +337,19 @@ def init_app(app):
             with database.get_db() as s:
                 row = s.get(database.AnalisisIaCache, clave)
             if row and row.texto:
-                try:
-                    cached = json.loads(row.texto)
-                    return jsonify({'ok': True, 'cacheado': True, 'nombre_lab': nombre,
-                                    'marcas': cached.get('marcas', []),
-                                    'fuentes': cached.get('fuentes', [])})
-                except (ValueError, TypeError):
-                    pass
+                edad = (database.now_ar() - row.creado_en).days if row.creado_en else None
+                vencido = edad is not None and edad > _GAP_WS_TTL_DIAS
+                if not vencido:
+                    try:
+                        cached = json.loads(row.texto)
+                        return jsonify({'ok': True, 'cacheado': True, 'nombre_lab': nombre,
+                                        'marcas': cached.get('marcas', []),
+                                        'fuentes': cached.get('fuentes', []),
+                                        'fecha': row.creado_en.strftime('%d/%m/%Y') if row.creado_en else None,
+                                        'edad_dias': edad})
+                    except (ValueError, TypeError):
+                        pass
+                # vencido → cae al web search de abajo (datos frescos)
         from services import referencia_websearch
         try:
             marcas, fuentes, usage = referencia_websearch.recopilar_marcas_estrella(nombre, api_key)
@@ -355,6 +363,7 @@ def init_app(app):
                                 json.dumps({'marcas': marcas, 'fuentes': fuentes}), usage)
         return jsonify({'ok': True, 'cacheado': False, 'nombre_lab': nombre,
                         'marcas': marcas, 'fuentes': fuentes,
+                        'fecha': database.now_ar().strftime('%d/%m/%Y'), 'edad_dias': 0,
                         'tokens_in': getattr(usage, 'input_tokens', None),
                         'tokens_out': getattr(usage, 'output_tokens', None)})
 
@@ -403,6 +412,21 @@ def init_app(app):
         return jsonify({'ok': True, 'analisis': texto, 'data': data, 'fuentes': fuentes,
                         'tokens_in': getattr(usage, 'input_tokens', None),
                         'tokens_out': getattr(usage, 'output_tokens', None)})
+
+    @app.route('/informes/comparativa-drogas')
+    @login_required
+    def informe_comparativa_drogas():
+        """Comparativa por droga: cruza la inteligencia de mercado (marcas del
+        web search cacheadas por lab) con las ventas propias. Panel de labs +
+        última consulta arriba; multiselect (≤3) para refrescar vía web search."""
+        from services import mercado_drogas
+        with database.get_db() as session:
+            labs_estado = mercado_drogas.labs_cacheados_estado(session)
+            comparativa = mercado_drogas.comparativa_mercado_por_droga(session)
+            fuentes_lab = mercado_drogas.fuentes_por_lab(session)
+        return render_template('comparativa_drogas.html',
+                               labs_estado=labs_estado, comparativa=comparativa,
+                               fuentes_lab=fuentes_lab, ttl_dias=_GAP_WS_TTL_DIAS)
 
     @app.route('/informes/lab-ranking-nacional')
     @login_required
