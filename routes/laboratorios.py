@@ -62,13 +62,12 @@ def init_app(app):
             flash('El nombre es obligatorio.')
             return redirect(next_url)
         with database.get_db() as session:
-            from helpers import _normalizar_nombre_entidad, get_or_create_laboratorio
+            from helpers import buscar_laboratorio_por_nombre, get_or_create_laboratorio
             # Detectar duplicado por nombre normalizado (no solo case-insensitive)
-            norm_nuevo = _normalizar_nombre_entidad(nombre)
-            for c in session.query(Laboratorio).all():
-                if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
-                    flash(f'Ya existe un laboratorio: "{c.nombre}". No se creó duplicado.')
-                    return redirect(next_url)
+            existente = buscar_laboratorio_por_nombre(session, nombre)
+            if existente:
+                flash(f'Ya existe un laboratorio: "{existente.nombre}". No se creó duplicado.')
+                return redirect(next_url)
             get_or_create_laboratorio(session, nombre)
             session.commit()
         return redirect(next_url)
@@ -96,16 +95,15 @@ def init_app(app):
             flash('El nombre es obligatorio.')
             return redirect(url_for('laboratorios_list'))
         with database.get_db() as session:
-            from helpers import _normalizar_nombre_entidad
+            from helpers import buscar_laboratorio_por_nombre
             lab = session.get(Laboratorio, lab_id)
             if not lab:
                 return redirect(url_for('laboratorios_list'))
             # Si el nombre nuevo colisiona con OTRO lab (normalizado), avisar.
-            norm_nuevo = _normalizar_nombre_entidad(nombre)
-            for c in session.query(Laboratorio).filter(Laboratorio.id != lab_id).all():
-                if _normalizar_nombre_entidad(c.nombre) == norm_nuevo:
-                    flash(f'Ya existe otro laboratorio: "{c.nombre}". No se renombró para evitar duplicado.')
-                    return redirect(url_for('laboratorios_list'))
+            otro = buscar_laboratorio_por_nombre(session, nombre, excluir_id=lab_id)
+            if otro:
+                flash(f'Ya existe otro laboratorio: "{otro.nombre}". No se renombró para evitar duplicado.')
+                return redirect(url_for('laboratorios_list'))
             lab.nombre = nombre
             lab.usa_packs = request.form.get('usa_packs') == '1'
             session.commit()
@@ -975,7 +973,7 @@ def init_app(app):
         if not lab_nombre or not ofertas:
             return jsonify({'ok': False, 'error': 'Faltan laboratorio_nombre u ofertas'}), 400
 
-        from helpers import _normalizar_nombre_entidad
+        from helpers import buscar_laboratorio_por_nombre
         creadas = 0
         actualizadas = 0
         skip_sin_ean = 0
@@ -983,12 +981,7 @@ def init_app(app):
 
         with database.get_db() as session:
             # Resolver laboratorio por nombre (normalizado). Si no existe, crearlo.
-            norm = _normalizar_nombre_entidad(lab_nombre)
-            lab = None
-            for c in session.query(Laboratorio).all():
-                if _normalizar_nombre_entidad(c.nombre) == norm:
-                    lab = c
-                    break
+            lab = buscar_laboratorio_por_nombre(session, lab_nombre)
             if lab is None:
                 lab = Laboratorio(nombre=lab_nombre, activo=True)
                 session.add(lab)
@@ -1091,12 +1084,8 @@ def init_app(app):
                     return jsonify({'ok': False, 'error': 'Laboratorio no encontrado'}), 404
                 q = q.filter_by(laboratorio_id=lab.id)
             elif lab_nombre_q:
-                from helpers import _normalizar_nombre_entidad
-                norm = _normalizar_nombre_entidad(lab_nombre_q)
-                for c in session.query(Laboratorio).all():
-                    if _normalizar_nombre_entidad(c.nombre) == norm:
-                        lab = c
-                        break
+                from helpers import buscar_laboratorio_por_nombre
+                lab = buscar_laboratorio_por_nombre(session, lab_nombre_q)
                 if not lab:
                     return jsonify({'ok': False, 'error': f'Laboratorio "{lab_nombre_q}" no encontrado'}), 404
                 q = q.filter_by(laboratorio_id=lab.id)
