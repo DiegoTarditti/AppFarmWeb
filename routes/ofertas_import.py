@@ -832,11 +832,6 @@ def init_app(app):
                 'precio': it.get('precio'),
             })
 
-        # Timing instrumentation — para diagnosticar dónde se cuelga.
-        import time as _t
-        _t0 = _t.time()
-        print(f'[ofertas-validar] start: {len(items_para_match)} items, modo={modo}, lab_id={lab_id}', flush=True)
-
         with database.get_db() as session:
             # match_productos_bulk hace el flujo completo (EAN → alfa → fuzzy
             # descripción → fallback observer) reusando una sola precarga de
@@ -848,7 +843,6 @@ def init_app(app):
                 drogueria_id=drog_id_validar,    # para lookup en EquivalenciaProveedor
                 session=session,
             )
-            print(f'[ofertas-validar] match_productos_bulk: {_t.time() - _t0:.2f}s', flush=True)
 
             # Capa 2 — match dimensional para los no encontrados.
             # Extrae atributos (droga, concentración, forma, cantidad) de la descripción
