@@ -24,7 +24,18 @@ except ImportError:
 
 def create_app():
     app = Flask(__name__, template_folder='templates')
-    app.secret_key = os.environ.get('NUCLEO_SECRET_KEY', 'nucleo-dev')
+    # NUCLEO_SECRET_KEY firma las cookies de sesión. Si hay usuarios (login
+    # activo), exigimos una clave fuerte: sin ella las sesiones serían
+    # falsificables. En modo abierto/DEMO (sin NUCLEO_USERS) no hay sesiones
+    # sensibles → fallback de desarrollo, sin romper dev/tests.
+    _secret = os.environ.get('NUCLEO_SECRET_KEY', '').strip()
+    if data.auth_activa() and len(_secret) < 8:
+        raise RuntimeError(
+            "NUCLEO_SECRET_KEY ausente o <8 chars y hay NUCLEO_USERS "
+            "configurados. Generá una con: "
+            "python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    app.secret_key = _secret or 'nucleo-dev-inseguro'
 
     @app.template_filter('miles')
     def _miles(n):

@@ -19,6 +19,7 @@ def _forzar_demo(monkeypatch):
     monkeypatch.setattr(data, '_farmacias_desde_sucursales', lambda: [])
     monkeypatch.delenv('NUCLEO_FARMACIAS', raising=False)
     monkeypatch.delenv('NUCLEO_USERS', raising=False)
+    monkeypatch.setenv('NUCLEO_SECRET_KEY', 'test-secret-key-0123456789abcdef')
     data._CACHE.clear()
 
 
@@ -125,6 +126,19 @@ def test_validar_credenciales(monkeypatch):
     assert u and data.farmacias_permitidas(u) == '*'
     assert data.validar_credenciales('diego', 'mal') is None
     assert data.validar_credenciales('nadie', 'secreto') is None
+
+
+def test_secret_key_guard(monkeypatch):
+    # Con usuarios + key débil/ausente → falla al crear la app.
+    monkeypatch.setenv('NUCLEO_USERS', json.dumps([
+        {'usuario': 'x', 'password': 'y', 'farmacias': '*'}]))
+    monkeypatch.setenv('NUCLEO_SECRET_KEY', 'corta')
+    with pytest.raises(RuntimeError, match='NUCLEO_SECRET_KEY'):
+        create_app()
+    # Sin usuarios (modo abierto) → key débil NO rompe.
+    monkeypatch.delenv('NUCLEO_USERS', raising=False)
+    monkeypatch.setenv('NUCLEO_SECRET_KEY', 'corta')
+    assert create_app() is not None
 
 
 def test_login_requerido_y_flujo(monkeypatch):
