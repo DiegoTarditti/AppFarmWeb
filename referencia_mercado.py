@@ -77,3 +77,25 @@ def referencia_de_lab(lab_observer_id):
 def labs_con_referencia():
     """Lista de (observer_id, nombre) de labs con dataset de referencia cargado."""
     return [(lid, d['nombre']) for lid, d in LABS_REFERENCIA.items()]
+
+
+# ── Gap de marcas con web search ─────────────────────────────────────────────
+# Labs habilitados en el informe de gap (los 8 más grandes del mercado AR). Las
+# marcas estrella las trae la web search de Claude en runtime (no hay dataset
+# curado salvo Roemmers, que igual pasa por el mismo flujo). El observer_id se
+# resuelve por NOMBRE contra obs_laboratorios (difiere entre farmacias).
+LABS_GAP_WEBSEARCH = ['Roemmers', 'Bagó', 'Elea', 'Gador', 'Bayer',
+                      'Montpellier', 'Casasco', 'Raffo']
+
+
+def labs_gap_disponibles(session):
+    """Lista [{'observer_id', 'nombre'}] de los labs de LABS_GAP_WEBSEARCH que
+    existen en esta farmacia (resueltos por nombre). Para el dropdown del informe.
+    """
+    import helpers
+    out = []
+    for nombre in LABS_GAP_WEBSEARCH:
+        oid = helpers.resolver_obs_lab_por_nombre(session, nombre)
+        if oid is not None:
+            out.append({'observer_id': oid, 'nombre': nombre})
+    return out
