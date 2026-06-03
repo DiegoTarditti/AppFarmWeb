@@ -178,6 +178,14 @@
       </select>
     </div>
     {% endif %}
+    {# Lupa de importe total exacto (client-side, sobre lo visible). Para
+       ubicar una receta puntual cuando hay muchas. Opcional. #}
+    <div class="flex flex-col">
+      <label class="block text-[10px] uppercase font-bold text-[#555] mb-0.5">Importe total</label>
+      <input type="text" id="imp-filter-list" inputmode="decimal" oninput="_aplicarFiltrosLista()"
+             placeholder="💲 exacto" title="Filtra por importe Total exacto (sobre las filas visibles)"
+             class="border border-gray-300 rounded px-2 py-1.5 text-sm w-28">
+    </div>
     {# Procesar: oculta/muestra las ya despachadas (OK + resueltas) para
        enfocarse en lo que falta accionar. Toggle visual, no toca la DB. #}
     <button type="button" id="btn-procesar" onclick="toggleProcesar()"
@@ -212,7 +220,8 @@
         {% set _grp = grupo_por_nombre_os.get((d.obra_social_nombre or '').strip().upper()) %}
         <tr class="dev-row hover:bg-gray-50 {% if d.estado == 'descartada' %}opacity-60{% endif %}"
             data-estado="{{ d.estado }}"
-            data-grupo-id="{{ _grp.id if _grp else '' }}">
+            data-grupo-id="{{ _grp.id if _grp else '' }}"
+            data-total="{{ '%.2f'|format(d.importe_total) if d.importe_total else '' }}">
           <td class="px-2 py-1.5">
             {% if d.estado == 'pendiente' %}
               <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-yellow-100 text-yellow-800">PEND.</span>
@@ -390,6 +399,9 @@
     function _aplicarFiltrosLista() {
       const sel = document.getElementById('grupo-filter-list');
       const grupo = sel ? sel.value : '';
+      const impEl = document.getElementById('imp-filter-list');
+      const impRaw = impEl ? impEl.value.trim().replace(',', '.') : '';
+      const impVal = impRaw === '' ? null : parseFloat(impRaw);
       document.querySelectorAll('.dev-row').forEach(tr => {
         const est = tr.dataset.estado;
         const gid = tr.dataset.grupoId || '';
@@ -397,6 +409,11 @@
         if (_procesarOn && (est === 'ok' || est === 'resuelta')) visible = false;
         if (grupo === '__sin__' && gid) visible = false;
         else if (grupo && grupo !== '__sin__' && gid !== grupo) visible = false;
+        // Lupa de importe total exacto (tolerancia 1 centavo).
+        if (visible && impVal !== null && !isNaN(impVal)) {
+          const total = parseFloat(tr.dataset.total);
+          if (isNaN(total) || Math.abs(total - impVal) >= 0.005) visible = false;
+        }
         tr.style.display = visible ? '' : 'none';
       });
     }
