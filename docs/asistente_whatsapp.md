@@ -159,8 +159,8 @@ Política oficial de WhatsApp Business:
 | Canal de prueba | **Telegram** (gratis, sin trámites, para prototipar) |
 | IA | **Claude API** (Sonnet 4.6) — conversación, tool use, visión para recetas |
 | Audio (notas de voz) | **OpenAI Whisper** vía HTTP (opcional, `OPENAI_API_KEY`). Transcribe → mismo cerebro. Sin la key, el bot pide texto |
-| Hosting | **Render** (el webhook vive en la app Flask) |
-| Estado / conversaciones | **Postgres** (la misma DB de la app) |
+| Hosting | **LAN de la farmacia** (la PC/servidor local, mismo stack Docker que ya corre). NO Render — ver §10 |
+| Estado / conversaciones | **Postgres local** (la misma DB de la app) |
 | n8n | **No** — la lógica vive mejor en Flask, que ya tiene la data y Claude |
 
 ---
@@ -169,11 +169,11 @@ Política oficial de WhatsApp Business:
 
 | Fase | Qué | Dónde |
 |---|---|---|
-| **0 — Prototipo** ✅ | Bot en Telegram con menú + IA + data + recetas + ficha | Local |
-| **1 — Handoff + panel** ✅ | Conversaciones en DB + panel `/atencion` + multi-línea + rol operador | App (local; falta subir a Render) |
-| **2 — WhatsApp** | Conseguir número + verificación Meta + adaptador WhatsApp Cloud API | Render |
-| **3 — UI de flujos** | Editor para que el equipo edite el menú sin código | App |
-| **4 — Migración** | Bajar Trii, subir esto al número principal | Producción |
+| **0 — Prototipo** ✅ | Bot en Telegram con menú + IA + data + recetas + ficha | LAN |
+| **1 — Handoff + panel** ✅ | Conversaciones en DB + panel `/atencion` + multi-línea + rol operador | LAN |
+| **2 — WhatsApp** | Conseguir número + verificación Meta + adaptador Cloud API + exponer webhook (ver §10) | LAN + túnel |
+| **3 — UI de flujos** | Editor para que el equipo edite el menú sin código | LAN |
+| **4 — Migración** | Bajar Trii, subir esto al número principal | Producción (LAN) |
 
 ---
 
@@ -185,14 +185,59 @@ Política oficial de WhatsApp Business:
   anota y lo deriva a la bandeja del operador. Pendiente: modelo `BotEncargo`
   propio (hoy queda en el historial del chat) y enganche con el módulo de pedidos.
 - **Mejorar búsqueda** (por síntoma/droga, no solo nombre literal).
+- **Transcripción de audio**: elegir motor STT (ver §10). Como todo corre en LAN,
+  conviene **Whisper local** (sin API key, gratis, privado) o una key de OpenAI.
 - **Regenerar el token** de Telegram de prueba (quedó expuesto en chat).
-- **Subir a Render** lo de Fase 1 (hoy corre local): commit del módulo `bot/` +
-  panel `/atencion`, y definir cómo corre el proceso de Telegram en Render
-  (worker aparte vs. dejar Telegram solo para dev y arrancar WhatsApp por webhook).
+- **Definir el arranque del proceso Telegram en la LAN** (que levante junto al
+  stack Docker, p. ej. un servicio en `docker-compose` o desde el DockerPanel).
 
 ---
 
-## 10. WhatsApp: ¿Twilio o Cloud API directo?
+## 10. Dónde corre: la LAN (no Render)
+
+**Decisión (2026-06-04): todo el chatbot corre en la LAN de la farmacia**, no en
+Render. La misma PC/servidor que ya tiene el stack Docker, la DB local y la data
+de ObServer. Ventajas: acceso directo a la DB, sin límites de RAM de Render free,
+datos sensibles (recetas, audios) que no salen de la farmacia.
+
+**Telegram encaja perfecto:** usa **long polling** (el bot *tira* de Telegram), así
+que **no necesita ninguna URL pública ni puerto abierto**. Corre en la LAN y listo.
+
+**WhatsApp es el único que necesita algo extra**, porque Meta hace **push** a un
+webhook (necesita una URL HTTPS pública). El *envío* (LAN → Graph API de Meta) es
+saliente y siempre funciona; solo la *recepción* necesita ser alcanzable. Opciones
+cuando llegue la Fase 2:
+
+1. **Túnel** que expone SOLO `/wa/webhook` de la LAN a internet:
+   **Cloudflare Tunnel** (gratis, HTTPS, dominio estable) o **Tailscale Funnel**
+   (ya usamos Tailscale en el puente local↔Render). Es lo más simple y seguro.
+2. **Relay mínimo en Render**: un endpoint chico que recibe el webhook de Meta y
+   se lo reenvía a la LAN (reusando el buzón Render→DockerPanel que ya existe).
+   Más piezas, pero sin abrir nada de la LAN.
+
+> Para audio en LAN: ver §11 — conviene **Whisper local** (sin API key, gratis,
+> privado), que es justo lo que pide un setup self-hosted.
+
+---
+
+## 11. Transcripción de audio (notas de voz)
+
+La cañería ya está (`bot/audio.py` + el adaptador baja la nota de voz y la pasa al
+cerebro como texto). Falta el **motor de transcripción**. Dos caminos:
+
+| | **Whisper local** ← recomendado para LAN | **OpenAI Whisper API** |
+|---|---|---|
+| Setup | `faster-whisper` + ffmpeg + bajar modelo (~150 MB base) | Solo `OPENAI_API_KEY` |
+| Costo | Gratis | ~US$0,006/min |
+| Privacidad | El audio no sale de la farmacia | Se manda a OpenAI |
+| Velocidad | Según la CPU del server (unos segundos) | Rápido |
+| Hoy | Falta integrarlo | Funciona poniendo la key |
+
+Sin ninguno de los dos, el bot responde *"escribime por texto"* y no se rompe nada.
+
+---
+
+## 12. WhatsApp: ¿Twilio o Cloud API directo?
 
 **No hace falta Twilio.** Para WhatsApp hay dos caminos sobre la **misma** API
 oficial de Meta (WhatsApp Business Platform):
@@ -223,7 +268,7 @@ una sola API. No es el caso.
 
 ---
 
-## 11. Alta en WhatsApp Cloud API — paso a paso (cuando tengas el número)
+## 13. Alta en WhatsApp Cloud API — paso a paso (cuando tengas el número)
 
 Requisito previo: un **número de celular nuevo**, dedicado al bot, que **no esté
 registrado en WhatsApp** (ni el personal ni el que usa Trii). Puede ser un chip
