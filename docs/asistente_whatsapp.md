@@ -180,7 +180,9 @@ Política oficial de WhatsApp Business:
 
 - **Ficha real de Badia** (hoy hay datos de PRUEBA en `bot/info.py`): horarios,
   servicios (inyecciones, etc.), obras sociales, formas de pago, delivery.
-- **Hacer pedido** (toma producto + cantidad + datos → módulo de pedidos).
+- **Encargar un producto** ✅ (básico): el cliente describe el encargo → el bot lo
+  anota y lo deriva a la bandeja del operador. Pendiente: modelo `BotEncargo`
+  propio (hoy queda en el historial del chat) y enganche con el módulo de pedidos.
 - **Mejorar búsqueda** (por síntoma/droga, no solo nombre literal).
 - **Regenerar el token** de Telegram de prueba (quedó expuesto en chat).
 - **Subir a Render** lo de Fase 1 (hoy corre local): commit del módulo `bot/` +

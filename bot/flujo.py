@@ -23,11 +23,17 @@ FLUJO = {
         ),
         'opciones': [
             {'label': '🔎 Consultar un producto', 'va_a': 'consultar_producto'},
+            {'label': '🛒 Encargar un producto', 'va_a': 'encargar'},
             {'label': '💬 Hacé tu consulta (IA)', 'va_a': 'consulta_ia'},
             {'label': '📸 Enviar una receta', 'va_a': 'receta'},
             {'label': '🕐 Horarios y dirección', 'va_a': 'horarios'},
             {'label': '🙋 Hablar con una persona', 'va_a': 'derivar'},
         ],
+    },
+    'encargar': {
+        'tipo': 'pedir_input',
+        'mensaje': '¿Qué querés encargar? Decime el producto y la cantidad 👇\n(ej: "2 cajas de amoxidal 500")',
+        'accion': 'encargar',
     },
     'consultar_producto': {
         'tipo': 'pedir_input',

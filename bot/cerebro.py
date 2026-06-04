@@ -56,7 +56,13 @@ def _resolver(nodo_actual, esperando, texto, imagen_b64, media_type):
     if esperando:
         accion = ACCIONES.get(esperando)
         if accion:
-            return ({'texto': accion(texto), 'opciones': []}, nodo_actual, esperando, False)
+            out = accion(texto)
+            # Una acción puede devolver un string (sigue en el mismo loop) o un
+            # dict {texto, esperando, derivar} para cortar el loop o derivar.
+            if isinstance(out, dict):
+                return ({'texto': out['texto'], 'opciones': out.get('opciones', [])},
+                        nodo_actual, out.get('esperando'), out.get('derivar', False))
+            return ({'texto': out, 'opciones': []}, nodo_actual, esperando, False)
 
     # 3) Selección dentro del menú actual.
     nodo = FLUJO.get(nodo_actual, FLUJO[NODO_INICIO])
