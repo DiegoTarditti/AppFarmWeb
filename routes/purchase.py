@@ -1691,6 +1691,20 @@ def init_app(app):
                 for bc in _all_eans(p):
                     if bc and bc not in obs_ids_directos:
                         obs_ids_directos[bc] = p.observer_id
+            # Fallback raíz: EANs que no resolvieron vía Producto local — ir
+            # directo a obs_codigos_barras (ObServer es la verdad). Esto elimina
+            # duplicados cuando productos.observer_id es NULL o el EAN ni
+            # existe en productos.
+            _cbs_sin_resolver = [cb for cb in cbs_pedido
+                                 if cb and cb not in obs_ids_directos]
+            if _cbs_sin_resolver:
+                for cb, oid in (session.query(database.ObsCodigoBarras.codigo_barras,
+                                              database.ObsCodigoBarras.producto_observer)
+                                .filter(database.ObsCodigoBarras.codigo_barras.in_(_cbs_sin_resolver),
+                                        database.ObsCodigoBarras.fecha_baja.is_(None))
+                                .all()):
+                    if cb and oid and cb not in obs_ids_directos:
+                        obs_ids_directos[cb] = oid
             todos_obs_ids = list({oid for oid in obs_ids_directos.values()})
             droga_id_by_cb = {}
             if todos_obs_ids:

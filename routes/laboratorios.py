@@ -87,6 +87,17 @@ def init_app(app):
             session.commit()
         return jsonify({'ok': True, 'usa_packs': valor})
 
+    @app.route('/laboratorio/<int:lab_id>/pedido', methods=['GET'])
+    @login_required
+    def laboratorio_pedido(lab_id):
+        with database.get_db() as session:
+            lab = session.get(Laboratorio, lab_id)
+            if not lab:
+                flash('Laboratorio no encontrado.', 'error')
+                return redirect(url_for('laboratorios_list'))
+            nombre = lab.nombre
+        return redirect(url_for('observer_pedido_rapido', lab=nombre))
+
     @app.route('/laboratorio/<int:lab_id>/edit', methods=['POST'])
     @login_required
     def laboratorio_edit(lab_id):
