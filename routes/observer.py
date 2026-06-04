@@ -1123,6 +1123,7 @@ def init_app(app):
         # tipos custom, se cambia a un lookup de tipo_pedido_config.
         try:
             from sqlalchemy import func as _func
+
             from purchase_engine import rotation_index as _rot_idx
             with database.get_db() as _s_lab:
                 _lab_row = _s_lab.query(database.Laboratorio).filter(
