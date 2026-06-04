@@ -2,6 +2,7 @@
 
 from routes import (
     admin,
+    atencion,
     auth_routes,
     batch,
     bi,
@@ -62,6 +63,7 @@ from routes import help as help_module
 
 _modules = [
     auth_routes,
+    atencion,
     observer,
     observer_sync,
     admin,
