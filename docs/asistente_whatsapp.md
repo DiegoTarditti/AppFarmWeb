@@ -158,6 +158,7 @@ Política oficial de WhatsApp Business:
 | Canal WhatsApp | **Meta WhatsApp Cloud API** (oficial; número dedicado + verificación de negocio) |
 | Canal de prueba | **Telegram** (gratis, sin trámites, para prototipar) |
 | IA | **Claude API** (Sonnet 4.6) — conversación, tool use, visión para recetas |
+| Audio (notas de voz) | **OpenAI Whisper** vía HTTP (opcional, `OPENAI_API_KEY`). Transcribe → mismo cerebro. Sin la key, el bot pide texto |
 | Hosting | **Render** (el webhook vive en la app Flask) |
 | Estado / conversaciones | **Postgres** (la misma DB de la app) |
 | n8n | **No** — la lógica vive mejor en Flask, que ya tiene la data y Claude |

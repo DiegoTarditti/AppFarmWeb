@@ -14,22 +14,42 @@ import time
 import requests
 
 import database
-from bot import cerebro
+from bot import audio, cerebro
+
+
+def _descargar_bytes(base, token, file_id):
+    """Descarga un archivo de Telegram y devuelve (bytes, file_path) crudos."""
+    r = requests.get(f'{base}/getFile', params={'file_id': file_id}, timeout=15).json()
+    path = (r.get('result') or {}).get('file_path')
+    if not path:
+        return None, None
+    data = requests.get(f'https://api.telegram.org/file/bot{token}/{path}', timeout=60).content
+    return data, path
 
 
 def _descargar_foto(base, token, file_id):
     """Descarga una foto de Telegram y la devuelve como (base64, media_type)."""
     try:
-        r = requests.get(f'{base}/getFile', params={'file_id': file_id}, timeout=15).json()
-        path = (r.get('result') or {}).get('file_path')
-        if not path:
+        data, path = _descargar_bytes(base, token, file_id)
+        if not data:
             return None, 'image/jpeg'
-        img = requests.get(f'https://api.telegram.org/file/bot{token}/{path}', timeout=30).content
         media = 'image/png' if path.lower().endswith('.png') else 'image/jpeg'
-        return base64.b64encode(img).decode(), media
+        return base64.b64encode(data).decode(), media
     except Exception as e:  # noqa: BLE001
         print('descargar foto error:', e)
         return None, 'image/jpeg'
+
+
+def _transcribir_voz(base, token, file_id):
+    """Baja una nota de voz/audio de Telegram y la transcribe a texto (o None)."""
+    try:
+        data, path = _descargar_bytes(base, token, file_id)
+        if not data:
+            return None
+        return audio.transcribir(data, filename=path.split('/')[-1] if path else 'audio.ogg')
+    except Exception as e:  # noqa: BLE001
+        print('transcribir voz error:', e)
+        return None
 
 
 def _enviar(base, chat_id, resp):
@@ -97,6 +117,19 @@ def main():
                     # Foto (receta): tomamos la de mayor resolución.
                     imagen_b64, media_type = _descargar_foto(
                         base, token, msg['photo'][-1]['file_id'])
+                elif msg.get('voice') or msg.get('audio'):
+                    # Nota de voz: transcribimos y lo tratamos como texto.
+                    a = msg.get('voice') or msg.get('audio')
+                    if chat_id and not audio.disponible():
+                        _enviar(base, chat_id, {'texto': 'Por ahora no puedo escuchar '
+                                'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
+                                'opciones': []})
+                        continue
+                    texto = _transcribir_voz(base, token, a['file_id']) or ''
+                    if chat_id and not texto:
+                        _enviar(base, chat_id, {'texto': 'No pude entender el audio 😕 '
+                                'Probá de nuevo o escribímelo por texto.', 'opciones': []})
+                        continue
             if not chat_id:
                 continue
             try:

@@ -4,7 +4,7 @@ No tocan la IA (Claude) ni `product_analytics` (Postgres): los caminos cubiertos
 son los deterministas. El único punto que consulta stock (encargar) se mockea.
 """
 import bot.acciones
-from bot import store
+from bot import audio, store
 from bot.cerebro import _match_opcion, _resolver, procesar
 from bot.flujo import FLUJO, NODO_INICIO
 
@@ -99,6 +99,12 @@ def test_procesar_deriva_y_silencia_al_bot():
     # El operador la toma → el bot no responde más en ese chat.
     store.set_atencion(conv['id'], 'humano', operador_user_id=None)
     assert procesar('telegram', '333', 'sigo escribiendo') is None
+
+
+def test_audio_sin_key_no_transcribe(monkeypatch):
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    assert audio.disponible() is False
+    assert audio.transcribir(b'fake-bytes') is None
 
 
 def test_procesar_guarda_mensaje_entrante_aunque_este_en_humano():
