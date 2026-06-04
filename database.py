@@ -633,7 +633,9 @@ class BackupLog(Base):
     __tablename__ = 'backup_log'
     id           = Column(Integer, primary_key=True)
     fecha        = Column(Date, nullable=False, index=True)
-    creado_en    = Column(DateTime, default=now_ar, nullable=False)
+    # server_default además del default Python: así un INSERT crudo (DockerPanel)
+    # que no setee creado_en no viola el NOT NULL en DBs nuevas.
+    creado_en    = Column(DateTime, default=now_ar, server_default=text('now()'), nullable=False)
     destino      = Column(Text, nullable=True)
     tamano_bytes = Column(BigInteger, nullable=True)
     ok           = Column(Boolean, nullable=False, default=False)
@@ -3932,22 +3934,27 @@ def _pg_add_columns(conn):
         conn.execute(text("ALTER TABLE producto_atributos ALTER COLUMN monodroga_norm TYPE VARCHAR(500)"))
     except Exception:
         pass
-    # Migración: copiar monodroga_display → productos.monodroga donde esté vacío,
-    # luego dropear la columna (eliminada como dup de Producto.monodroga).
+    # Migración one-time: copiar monodroga_display → productos.monodroga donde esté
+    # vacío, luego dropear la columna (eliminada como dup de Producto.monodroga).
+    # Guardado con un check de existencia: en DBs ya migradas la columna no existe
+    # y el UPDATE tiraba "column does not exist" en cada arranque (ruido en el log).
     try:
-        conn.execute(text("""
-            UPDATE productos p
-               SET monodroga = pa.monodroga_display
-              FROM producto_atributos pa
-             WHERE pa.producto_id = p.id
-               AND (p.monodroga IS NULL OR p.monodroga = '')
-               AND pa.monodroga_display IS NOT NULL
-               AND pa.monodroga_display != ''
-        """))
-    except Exception:
-        pass
-    try:
-        conn.execute(text("ALTER TABLE producto_atributos DROP COLUMN IF EXISTS monodroga_display"))
+        col_existe = conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'producto_atributos'
+               AND column_name = 'monodroga_display'
+        """)).first()
+        if col_existe:
+            conn.execute(text("""
+                UPDATE productos p
+                   SET monodroga = pa.monodroga_display
+                  FROM producto_atributos pa
+                 WHERE pa.producto_id = p.id
+                   AND (p.monodroga IS NULL OR p.monodroga = '')
+                   AND pa.monodroga_display IS NOT NULL
+                   AND pa.monodroga_display != ''
+            """))
+            conn.execute(text("ALTER TABLE producto_atributos DROP COLUMN IF EXISTS monodroga_display"))
     except Exception:
         pass
     conn.execute(text("CREATE INDEX IF NOT EXISTS idx_atributos_droga    ON producto_atributos (monodroga_norm)"))
