@@ -95,6 +95,25 @@ def init_app(app):
             return None
         return redirect(url_for('devoluciones_por_vendedor'))
 
+    # Rol 'operador': atiende el bot. Solo accede al panel /atencion/*.
+    _OPERADOR_PATHS_OK = ('/atencion/', '/static/')
+    _OPERADOR_PATHS_OK_EXACT = {
+        '/atencion', '/login', '/logout', '/cambiar-password', '/health',
+    }
+
+    @app.before_request
+    def _restrict_rol_operador():
+        if not current_user.is_authenticated:
+            return None
+        if getattr(current_user, 'rol', None) != 'operador':
+            return None
+        p = request.path or '/'
+        if p in _OPERADOR_PATHS_OK_EXACT:
+            return None
+        if any(p.startswith(pref) for pref in _OPERADOR_PATHS_OK):
+            return None
+        return redirect(url_for('atencion_panel'))
+
     @app.route('/login', methods=['GET', 'POST'])
     def auth_login():
         if current_user.is_authenticated:
@@ -123,6 +142,8 @@ def init_app(app):
                 return redirect(request.args.get('next') or url_for('devoluciones_buscar'))
             if user.rol == 'auditor':
                 return redirect(request.args.get('next') or url_for('devoluciones_por_vendedor'))
+            if user.rol == 'operador':
+                return redirect(request.args.get('next') or url_for('atencion_panel'))
             return redirect(request.args.get('next') or url_for('index'))
         return render_template('login.html')
 
@@ -158,6 +179,8 @@ def init_app(app):
                 return redirect(url_for('compras_dia'))
             if current_user.rol == 'rendicion':
                 return redirect(url_for('devoluciones_buscar'))
+            if current_user.rol == 'operador':
+                return redirect(url_for('atencion_panel'))
             return redirect(url_for('index'))
         return render_template('cambiar_password.html')
 
@@ -175,7 +198,7 @@ def init_app(app):
             } for u in users]
         return render_template('usuarios_list.html', usuarios=data,
                                modulos=MODULOS, niveles=NIVELES,
-                               roles=['farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion'])
+                               roles=['farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador'])
 
     @app.route('/usuarios/crear', methods=['POST'])
     @requiere_permiso('usuarios', 'admin')
@@ -270,4 +293,4 @@ def init_app(app):
 
 
 # Lista de roles válidos usada en crear/editar
-PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion'}
+PERMISOS_ROLES = {'farmacia', 'dev', 'remoto', 'admin', 'pedidos', 'auditor', 'rendicion', 'operador'}

@@ -2262,6 +2262,38 @@ def _alembic_sync(database_url):
         log.error('Alembic sync FALLÓ (no-fatal, sigo el boot): %s', e, exc_info=True)
 
 
+class BotConversacion(Base):
+    """Conversación del asistente con un cliente, por canal + usuario del canal.
+    Soporta multi-línea (`linea`) y handoff bot↔operador (`estado_atencion`).
+    El estado del flujo (`nodo`/`esperando`) se persiste acá (antes en memoria)."""
+    __tablename__ = 'bot_conversaciones'
+    id = Column(Integer, primary_key=True)
+    canal = Column(String(20), nullable=False, default='telegram')    # telegram | whatsapp
+    linea = Column(String(40))                  # número/línea de entrada (multi-línea)
+    canal_user_id = Column(String(80), nullable=False, index=True)    # chat_id / wa_id del cliente
+    nombre_cliente = Column(String(120))
+    # bot = lo atiende el bot · cola = derivada, esperando operador · humano = la tomó un operador
+    estado_atencion = Column(String(20), nullable=False, default='bot', index=True)
+    operador_user_id = Column(Integer, ForeignKey('usuarios.id'), nullable=True)
+    nodo = Column(String(50), default='inicio')      # estado del flujo conversacional
+    esperando = Column(String(50))                   # acción esperando input del usuario
+    creado_en = Column(DateTime, default=now_ar)
+    ultimo_en = Column(DateTime, default=now_ar, index=True)
+
+
+class BotMensaje(Base):
+    """Un mensaje dentro de una conversación (historial para el panel)."""
+    __tablename__ = 'bot_mensajes'
+    id = Column(Integer, primary_key=True)
+    conversacion_id = Column(Integer,
+                             ForeignKey('bot_conversaciones.id', ondelete='CASCADE'),
+                             nullable=False, index=True)
+    origen = Column(String(12), nullable=False)      # cliente | bot | operador
+    texto = Column(Text)
+    tiene_imagen = Column(Boolean, nullable=False, default=False)
+    creado_en = Column(DateTime, default=now_ar, index=True)
+
+
 def init_db(database_url=None):
     database_url = init_engine(database_url)
     if not database_url.startswith('sqlite'):
@@ -2310,7 +2342,8 @@ def init_db(database_url=None):
                         'archivos_compartidos', 'sucursales',
                         'compartido_importado', 'obs_operadores',
                         'parser_ofertas_lab', 'factura_faltante',
-                        'analisis_ia_cache', 'panel_heartbeat')
+                        'analisis_ia_cache', 'panel_heartbeat',
+                        'bot_conversaciones', 'bot_mensajes')
         with engine.connect().execution_options(isolation_level='AUTOCOMMIT') as conn:
             for tname in zombie_names:
                 # Caso A: hay tabla real en public → no tocar.

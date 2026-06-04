@@ -831,7 +831,7 @@
 {% set nav_sub = "flex items-center gap-2.5 px-2.5 py-1.5 ml-4 rounded-lg text-[11.5px] font-medium text-[#a9ccbd] hover:text-[#eafaf3] hover:bg-[rgba(95,230,188,0.06)] transition-colors" %}
 {% set nav_sub_active = "flex items-center gap-2.5 px-2.5 py-1.5 ml-4 rounded-lg text-[11.5px] font-semibold text-[#5fe6bc] bg-[rgba(95,230,188,0.14)]" %}
 
-{% set _hide_chrome = hide_sidebar | default(False) or (current_user.is_authenticated and current_user.rol in ('pedidos', 'rendicion')) %}
+{% set _hide_chrome = hide_sidebar | default(False) or (current_user.is_authenticated and current_user.rol in ('pedidos', 'rendicion', 'operador')) %}
 {% if not _hide_chrome %}
 <!-- Mobile top bar (solo < lg) -->
 <div class="lg:hidden fixed top-0 left-0 right-0 z-40 bg-[#1f2937] border-b border-[#111827] flex items-center justify-between px-4 h-12">
@@ -1047,6 +1047,11 @@
            class="{{ nav_active_cls if nav_active == 'devoluciones' else nav_link }} pl-8 text-[13px]">
             <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
             Devolución recetas
+        </a>
+        <a href="{{ url_for('atencion_panel') }}"
+           class="{{ nav_active_cls if nav_active == 'atencion' else nav_link }} pl-8 text-[13px]">
+            <svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.8L3 20l1.3-3.9A7.96 7.96 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+            Atención (bot)
         </a>
 
         <p class="js-nav-section px-3 pt-3 pb-1 text-[9px] font-bold text-[#6d9082] uppercase tracking-[.16em] cursor-pointer select-none flex items-center justify-between hover:text-[#a9ccbd]" data-section="documentos">

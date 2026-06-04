@@ -57,6 +57,12 @@ services:
       # docs/lecciones_deploy_render.md).
       RUN_INIT_DB_ON_STARTUP: "1"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Token del bot (Telegram hoy). Lo usa el bot para escuchar y el panel de
+      # atención (/atencion) para enviar las respuestas del operador al cliente.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # Opcional: transcripción de notas de voz (Whisper). Sin esta var, el bot
+      # responde "escribime por texto" y no se rompe nada.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Conexión a DB real de ObServer (SQL Server 2014). Si no seteás OBSERVER_HOST,
       # observer_source.observer_disponible() devuelve False y el sync queda deshabilitado.
       OBSERVER_HOST: ${OBSERVER_HOST:-}
