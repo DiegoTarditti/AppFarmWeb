@@ -1037,8 +1037,10 @@ class DockerPanel(tk.Tk):
             err_sql = f"'{err_esc}'"
         else:
             err_sql = 'NULL'
-        sql = (f"INSERT INTO backup_log (fecha, destino, tamano_bytes, ok, error) "
-               f"VALUES (CURRENT_DATE, '{dest_esc}', {size_sql}, {ok_sql}, {err_sql})")
+        # creado_en es NOT NULL sin default a nivel DB (el default es Python-side
+        # en el modelo y este INSERT crudo lo saltea) → lo seteamos con NOW().
+        sql = (f"INSERT INTO backup_log (fecha, creado_en, destino, tamano_bytes, ok, error) "
+               f"VALUES (CURRENT_DATE, NOW(), '{dest_esc}', {size_sql}, {ok_sql}, {err_sql})")
         try:
             subprocess.run(
                 ['docker-compose', 'exec', '-T', 'db', 'psql',
