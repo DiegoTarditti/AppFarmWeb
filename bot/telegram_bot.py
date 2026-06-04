@@ -52,6 +52,25 @@ def _transcribir_voz(base, token, file_id):
         return None
 
 
+def _typing(base, chat_id):
+    """Muestra 'escribiendo…' en el chat (indicador nativo, dura ~5s). Lindo y
+    barato: avisa que el bot está laburando mientras transcribe/piensa."""
+    try:
+        requests.post(f'{base}/sendChatAction',
+                      data={'chat_id': chat_id, 'action': 'typing'}, timeout=10)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _aviso(base, chat_id, texto):
+    """Mensaje corto de estado (para operaciones que tardan: audio, receta)."""
+    try:
+        requests.post(f'{base}/sendMessage',
+                      data={'chat_id': chat_id, 'text': texto}, timeout=10)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _enviar(base, chat_id, resp):
     payload = {'chat_id': chat_id, 'text': resp['texto']}
     ops = resp.get('opciones') or []
@@ -115,6 +134,9 @@ def main():
                 nombre = (msg.get('from') or {}).get('first_name')
                 if msg.get('photo'):
                     # Foto (receta): tomamos la de mayor resolución.
+                    if chat_id:
+                        _aviso(base, chat_id, '📸 Leyendo tu receta, dame unos segundos…')
+                        _typing(base, chat_id)
                     imagen_b64, media_type = _descargar_foto(
                         base, token, msg['photo'][-1]['file_id'])
                 elif msg.get('voice') or msg.get('audio'):
@@ -125,6 +147,9 @@ def main():
                                 'audios 🙉 Escribime tu consulta por texto y te ayudo 🙂',
                                 'opciones': []})
                         continue
+                    if chat_id:
+                        _aviso(base, chat_id, '🎙️ Escuchando tu audio…')
+                        _typing(base, chat_id)
                     texto = _transcribir_voz(base, token, a['file_id']) or ''
                     if chat_id and not texto:
                         _enviar(base, chat_id, {'texto': 'No pude entender el audio 😕 '
@@ -132,6 +157,8 @@ def main():
                         continue
             if not chat_id:
                 continue
+            # 'escribiendo…' mientras el cerebro piensa (IA, búsqueda, visión).
+            _typing(base, chat_id)
             try:
                 resp = cerebro.procesar('telegram', str(chat_id), texto,
                                         imagen_b64=imagen_b64, media_type=media_type,

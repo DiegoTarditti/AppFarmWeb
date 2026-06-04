@@ -68,3 +68,6 @@ NUL
 
 # Snapshots de schema diff (artifacts puntuales)
 schema_diff_*.md
+
+# Modelos de Whisper local (se bajan en runtime)
+.whisper_cache/

@@ -101,9 +101,11 @@ def test_procesar_deriva_y_silencia_al_bot():
     assert procesar('telegram', '333', 'sigo escribiendo') is None
 
 
-def test_audio_sin_key_no_transcribe(monkeypatch):
+def test_audio_sin_motor_no_transcribe(monkeypatch):
+    # Sin Whisper local (forzado) y sin OPENAI_API_KEY → degrada a None.
+    # (No cargamos el modelo real para no bajar ~150 MB en los tests.)
     monkeypatch.delenv('OPENAI_API_KEY', raising=False)
-    assert audio.disponible() is False
+    monkeypatch.setattr(audio, '_modelo_local', lambda: None)
     assert audio.transcribir(b'fake-bytes') is None
 
 

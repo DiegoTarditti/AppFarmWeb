@@ -60,8 +60,10 @@ services:
       # Token del bot (Telegram hoy). Lo usa el bot para escuchar y el panel de
       # atención (/atencion) para enviar las respuestas del operador al cliente.
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      # Opcional: transcripción de notas de voz (Whisper). Sin esta var, el bot
-      # responde "escribime por texto" y no se rompe nada.
+      # Transcripción de notas de voz. Por defecto usa Whisper LOCAL (sin key,
+      # privado). WHISPER_MODEL: base (default) | small | medium (más exacto, más
+      # lento). OPENAI_API_KEY solo se usa como fallback si el modelo local no carga.
+      WHISPER_MODEL: ${WHISPER_MODEL:-base}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Conexión a DB real de ObServer (SQL Server 2014). Si no seteás OBSERVER_HOST,
       # observer_source.observer_disponible() devuelve False y el sync queda deshabilitado.
