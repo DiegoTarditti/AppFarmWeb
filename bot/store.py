@@ -125,11 +125,12 @@ def _mapa_nombres(session, ids):
 
 
 def listar_conversaciones(linea=None):
-    """Para la bandeja: cola (derivadas) + atendidas por humanos, ordenadas por
-    actividad. Las que están solo con el bot NO ensucian la bandeja."""
+    """Para la bandeja: TODAS las conversaciones recientes (cola, humano y también
+    las que maneja solo el bot), ordenadas por actividad. El panel filtra por
+    pestaña (Sin asignar / Mías / Bot / Todas). Así el equipo puede supervisar
+    y meterse en cualquier charla, no solo en las derivadas."""
     with database.get_db() as s:
-        q = (s.query(database.BotConversacion)
-             .filter(database.BotConversacion.estado_atencion.in_(['cola', 'humano'])))
+        q = s.query(database.BotConversacion)
         if linea:
             q = q.filter(database.BotConversacion.linea == linea)
         convs = q.order_by(database.BotConversacion.ultimo_en.desc()).limit(100).all()

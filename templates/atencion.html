@@ -147,9 +147,10 @@
     <!-- Lista de conversaciones -->
     <div class="col-side" style="border-right:0.5px solid; display:flex; flex-direction:column; min-height:0;">
       <div class="side-head" style="padding:9px 10px; display:flex; gap:6px; border-bottom:0.5px solid;">
-        <button data-vista="sin_asignar" onclick="setVista('sin_asignar')" class="seg" style="flex:1; padding:6px 4px; border-radius:7px; font-size:11px;">Sin asignar <b id="cnt-sin_asignar">0</b></button>
-        <button data-vista="mias" onclick="setVista('mias')" class="seg" style="flex:1; padding:6px 4px; border-radius:7px; font-size:11px;">Mías <b id="cnt-mias">0</b></button>
-        <button data-vista="todas" onclick="setVista('todas')" class="seg" style="flex:1; padding:6px 4px; border-radius:7px; font-size:11px;">Todas <b id="cnt-todas">0</b></button>
+        <button data-vista="sin_asignar" onclick="setVista('sin_asignar')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Cola <b id="cnt-sin_asignar">0</b></button>
+        <button data-vista="mias" onclick="setVista('mias')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Mías <b id="cnt-mias">0</b></button>
+        <button data-vista="bot" onclick="setVista('bot')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Bot <b id="cnt-bot">0</b></button>
+        <button data-vista="todas" onclick="setVista('todas')" class="seg" style="flex:1; padding:6px 3px; border-radius:7px; font-size:11px;">Todas <b id="cnt-todas">0</b></button>
       </div>
       <div id="bandeja" style="flex:1; overflow-y:auto; min-height:0;">
         <div class="muted" style="padding:16px; font-size:13px;">Cargando…</div>
@@ -359,6 +360,7 @@ function setVista(v) {
 function _filtrar(c) {
   if (vista === 'sin_asignar') return c.filter(x => x.estado === 'cola');
   if (vista === 'mias')        return c.filter(x => x.estado === 'humano' && x.operador_id === YO);
+  if (vista === 'bot')         return c.filter(x => x.estado === 'bot');
   return c;
 }
 async function cargarBandeja() {
@@ -367,6 +369,7 @@ async function cargarBandeja() {
   todasConvs = d.conversaciones || [];
   document.getElementById('cnt-sin_asignar').textContent = todasConvs.filter(c => c.estado === 'cola').length;
   document.getElementById('cnt-mias').textContent = todasConvs.filter(c => c.estado === 'humano' && c.operador_id === YO).length;
+  document.getElementById('cnt-bot').textContent = todasConvs.filter(c => c.estado === 'bot').length;
   document.getElementById('cnt-todas').textContent = todasConvs.length;
   renderBandeja();
 }
@@ -383,6 +386,8 @@ function renderBandeja() {
     }
     const badge = c.estado === 'cola'
       ? '<span class="badge" style="font-size:9px; padding:1px 7px; border-radius:8px;">cola</span>'
+      : c.estado === 'bot'
+      ? '<span class="muted2" style="font-size:9px;">🤖 bot</span>'
       : '<span class="accent-txt" style="font-size:9px;">●</span>';
     return `
     <div onclick="abrirConv(${c.id})" class="conv ${activa ? 'conv-active' : ''}"
@@ -431,10 +436,14 @@ function pintarHeader() {
   if (c.estado === 'humano' && !mio) sub = `<span style="color:var(--busytx)">Atendida por ${esc(c.operador_nombre || 'otro')}</span>`;
   else if (mio) sub = '<span class="accent-txt">Te la asignaste</span>';
   else if (c.estado === 'cola') sub = '<span class="accent-txt">En cola</span>';
+  else if (c.estado === 'bot') sub = '<span class="muted2">🤖 La está atendiendo el bot — podés intervenir</span>';
   document.getElementById('chatHeadInner').innerHTML =
     `<div class="title" style="font-size:13px; font-weight:600;">${esc(c.nombre)}</div>
      <div style="font-size:10px;">${esc(c.linea)} · ${sub}</div>`;
-  document.getElementById('btnTomar').style.display = mio ? 'none' : 'inline-block';
+  // Botón Tomar: visible salvo que ya sea mía. En charlas del bot, "Tomar" = intervenir.
+  const btn = document.getElementById('btnTomar');
+  btn.style.display = mio ? 'none' : 'inline-block';
+  btn.textContent = (c.estado === 'bot') ? 'Intervenir' : 'Tomar';
 }
 function burbuja(m) {
   const div = document.createElement('div');
